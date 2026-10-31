@@ -9229,6 +9229,93 @@ test "the checker v2's write through a doubling DAG of shared values costs its d
     }
 }
 
+test "the checker v2's call writing a doubling DAG below a parameter costs its depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *One demand per state below a
+    // parameter's leaf* (#1412): `t_k ( a, b )` pushes onto every leaf of a
+    // 2^k-path tuple, and `caller w = t_n w` hands it its own parameter.
+    // Nothing else names `w` below its root, so every route is one state:
+    // one demand, and the class's writes by node. Each two levels add about
+    // what the last two did, with no limit (it was one demand per path:
+    // `ownership_summary_size` at depth 8, and `t9` was unchecked).
+    const a = testing.allocator;
+    const depths = [_]u32{ 8, 10, 12 };
+    var totals: [depths.len]u64 = undefined;
+    for (depths, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "touch : List Int → Int\ntouch xs =\n    List.length (List.push xs 1)\n\n\nt1 ( a, b ) =\n    touch a + touch b\n");
+        for (2..n + 1) |k| try src.print(a, "\n\nt{d} ( a, b ) =\n    t{d} a + t{d} b\n", .{ k, k - 1, k - 1 });
+        try src.print(a, "\n\npub caller w =\n    t{d} w\n", .{n});
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        const call = try std.fmt.allocPrint(w.arena.allocator(), " Main.t{d} w.", .{n});
+        try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump, call));
+        totals[run] = try accountTotal(dump, "caller");
+    }
+    if (totals[2] - totals[1] > (totals[1] - totals[0]) * 3 / 2) {
+        std.debug.print("depth 8: {d} records, 10: {d}, 12: {d}\n", .{ totals[0], totals[1], totals[2] });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the checker v2's call writing a K-wide type below a parameter makes one demand per state" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *One demand per state below a
+    // parameter's leaf* (#1412): `T = Leaf | N (List Int) T … T`, K wide;
+    // `w2` pushes onto the root's list and, through `w1`, onto each child's,
+    // and `caller t = w2 t` hands it its own parameter. The K children's
+    // lists are one state (each a first return of `T`, then its list), the
+    // root's another: two demands at every K (it was K + 1), and twice K
+    // costs at most 2.2 times as much.
+    const a = testing.allocator;
+    const widths = [_]u32{ 8, 16, 32 };
+    var totals: [widths.len]u64 = undefined;
+    for (widths, 0..) |k, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type T\n    = Leaf\n    | N (List Int)");
+        for (0..k) |_| try src.appendSlice(a, " T");
+        try src.appendSlice(a, "\n\n\nw1 : T → Int\nw1 t =\n    case t of\n        Leaf →\n            0\n\n        N xs");
+        for (0..k) |_| try src.appendSlice(a, " _");
+        try src.appendSlice(a, " →\n            List.length (List.push xs 1)\n\n\nw2 : T → Int\nw2 t =\n    case t of\n        Leaf →\n            0\n\n        N xs");
+        for (0..k) |i| try src.print(a, " t{d}", .{i});
+        try src.appendSlice(a, " →\n            List.length (List.push xs 1)");
+        for (0..k) |i| try src.print(a, " + w1 t{d}", .{i});
+        try src.appendSlice(a, "\n\n\npub caller : T → Int\ncaller t =\n    w2 t\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(usize, 2), std.mem.count(u8, dump, " Main.w2 t"));
+        totals[run] = try accountTotal(dump, "caller");
+    }
+    if (totals[1] * 10 > totals[0] * 22 or totals[2] * 10 > totals[1] * 22) {
+        std.debug.print("K = 8: {d} records, 16: {d}, 32: {d}\n", .{ totals[0], totals[1], totals[2] });
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "the checker v2's call writing many fields of a fresh record literal is linear" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

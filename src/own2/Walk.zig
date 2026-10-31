@@ -126,6 +126,8 @@ pub fn walk(in: Input) Error!Result {
         const last = index.lastUse(h.who);
         h.end = if (last == none or last < h.start) h.start else last;
     };
+    // A use below a parameter's leaf, by node (§2.11 item 3, #1412).
+    try frame.expandGroups(&index);
     const outcomes = try gpa.alloc(Demands.Outcome, frame.demands.items.len);
     defer gpa.free(outcomes);
     try Demands.resolve(env, .{
@@ -560,6 +562,171 @@ const Graft = struct {
     }
 };
 
+/// A group's writes below its leaf, put into the class by node (§2.11 item
+/// 3, #1412): the callee's use there read at the leaf's path along plain
+/// steps (`Transfer.Plain`), with `R W` (and `S` for a deep write) at each
+/// node it marks `W`, as `Mark.at` puts them at the path of each route's
+/// base. A deep write is a leaf, which stands for everything below it, and
+/// a leaf of the class on the way takes the marks below it, as `markUse`
+/// joins them. A route through a step that is not plain has a demand of
+/// its own, which marks it. Memoised by `(callee node, class node, place,
+/// sig)`, so a use that is a DAG is grafted as a DAG, on an explicit stack
+/// (#1138).
+const GraftWrites = struct {
+    env: Env,
+    us: []NodeId,
+    places: []const PlaceId,
+    plain: Transfer.Plain = .{},
+    bits_memo: Ids.FixedDict(3) = .{},
+    below: Ids.FixedDict(1) = .{},
+    memo: Ids.FixedDict(4) = .{},
+    done: Ids.FixedDict(3) = .{},
+    stack: std.ArrayList(Fr) = .empty,
+    steps: std.ArrayList(Place.Step) = .empty,
+    way: std.ArrayList(Way) = .empty,
+
+    const Way = struct { n: NodeId, place: PlaceId, here: SetId };
+    const Fr = struct { u: NodeId, path: PathId, sig: u32, c: NodeId, cells: SetId, children: u32, it: Shape.Table.OverIterator, step: Place.Step };
+
+    fn deinit(g: *GraftWrites) void {
+        const gpa = g.env.gpa;
+        g.plain.deinit(gpa);
+        g.bits_memo.deinit(gpa);
+        g.below.deinit(gpa);
+        g.memo.deinit(gpa);
+        g.done.deinit(gpa);
+        g.stack.deinit(gpa);
+        g.steps.deinit(gpa);
+        g.way.deinit(gpa);
+    }
+
+    fn marks(g: *GraftWrites, deep: bool) Error!SetId {
+        return Summary.Table.marksSet(g.env, .{ .r = true, .w = true, .deep = deep }, &.{});
+    }
+
+    fn bitsAt(g: *GraftWrites, u: NodeId, path: PathId) Error!u32 {
+        return g.plain.bits(g.env, &g.bits_memo, &g.below, u, path);
+    }
+
+    /// `u`, a callee's use, written at `base`, parameter `k`'s path of the
+    /// group's leaf.
+    fn compose(g: *GraftWrites, k: u32, base: PathId, u: NodeId) Error!void {
+        const e = g.env;
+        const gpa = e.gpa;
+        if (k >= g.us.len or e.places.kind(g.places[k]) == .cross) return;
+        try e.charge.reserve(gpa, .memo, 1);
+        if ((try g.done.getOrPut(gpa, .{ k, u.int(), base.int() })).found_existing) return;
+        _ = try Calls.marksBelow(e, u, &g.below);
+        const b = try g.bitsAt(u, base);
+        if (b & 2 == 0) return;
+        // A path in another place graph than the parameter's marks the
+        // parameter whole, as `Mark.at` does.
+        var root = base;
+        while (e.places.pathParent(root) != .none) root = e.places.pathParent(root);
+        if (e.places.pathPlace(root) != g.places[k]) {
+            g.us[k] = try Summary.Table.markUse(e, g.us[k], g.places[k], &.{}, .{ .r = true, .w = true, .deep = b & 4 != 0 }, &.{});
+            return;
+        }
+        try stepsOf(e.places, base, gpa, &g.steps);
+        g.way.clearRetainingCapacity();
+        var n = g.us[k];
+        var place = g.places[k];
+        for (g.steps.items) |s| {
+            try e.charge.reserve(gpa, .shape, 1);
+            const here: SetId = if (n == .none) .none else try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, n);
+            if (n != .none and e.shapes.kind(n) == .leaf and here != .none) {
+                // A leaf on the way holds its marks below.
+                g.us[k] = try Summary.Table.markUse(e, g.us[k], g.places[k], g.steps.items, .{ .r = true, .w = true, .deep = b & 4 != 0 }, &.{});
+                return;
+            }
+            try g.way.append(gpa, .{ .n = n, .place = place, .here = here });
+            var child: NodeId = .none;
+            if (n != .none and e.shapes.kind(n) == .node) {
+                if (e.shapes.overGet(e.shapes.get(n).a, s)) |c| child = c;
+            }
+            n = child;
+            place = e.places.child(place, s) orelse unreachable;
+        }
+        var out = try g.graft(u, base, try g.plain.sigOf(e, base), n);
+        var i = g.steps.items.len;
+        while (g.way.pop()) |lv| {
+            i -= 1;
+            const children: u32 = if (lv.n != .none and e.shapes.kind(lv.n) == .node) e.shapes.get(lv.n).a else Ids.none_int;
+            out = try e.shapes.node(gpa, e.account(), lv.place, lv.here, try e.shapes.overPut(gpa, e.account(), children, g.steps.items[i], out));
+        }
+        g.us[k] = out;
+    }
+
+    fn graft(g: *GraftWrites, u: NodeId, path: PathId, sig: u32, c: NodeId) Error!NodeId {
+        const e = g.env;
+        const gpa = e.gpa;
+        g.stack.clearRetainingCapacity();
+        if (try g.enter(u, path, sig, c, Place.Step.level)) |hit| return hit;
+        while (g.stack.items.len > 0) {
+            const top = &g.stack.items[g.stack.items.len - 1];
+            if (top.it.next()) |ch| {
+                try e.charge.reserve(gpa, .inspection, 1);
+                if ((g.below.get(.{ch.node.int()}) orelse 3) & 1 == 0) continue;
+                // A step that is not plain: its routes' own demands mark them.
+                const next = (try Transfer.Plain.step(e, top.path, ch.step)) orelse continue;
+                if ((try g.bitsAt(ch.node, next)) & 2 == 0) continue;
+                const s = try g.plain.nextSig(e, top.sig, e.places.pathPlace(top.path), next);
+                var cc: NodeId = .none;
+                if (top.c != .none and e.shapes.kind(top.c) == .node) {
+                    if (e.shapes.overGet(e.shapes.get(top.c).a, ch.step)) |x| cc = x;
+                }
+                const step = ch.step;
+                if (try g.enter(ch.node, next, s, cc, step)) |hit| {
+                    const t = &g.stack.items[g.stack.items.len - 1];
+                    t.children = try e.shapes.overPut(gpa, e.account(), t.children, step, hit);
+                }
+                continue;
+            }
+            const done = g.stack.pop().?;
+            const place = e.places.pathPlace(done.path);
+            const node = try e.shapes.node(gpa, e.account(), place, done.cells, done.children);
+            (try g.memo.getOrPut(gpa, .{ done.u.int(), done.c.int(), place.int(), done.sig })).value_ptr.* = node.int();
+            if (g.stack.items.len == 0) return node;
+            const parent = &g.stack.items[g.stack.items.len - 1];
+            parent.children = try e.shapes.overPut(gpa, e.account(), parent.children, done.step, node);
+        }
+        unreachable;
+    }
+
+    /// Starts the graft of `u` at `path` over the class's node `c`: its
+    /// answer when it needs no descent, else a frame pushed and null.
+    fn enter(g: *GraftWrites, u: NodeId, path: PathId, sig: u32, c: NodeId, step: Place.Step) Error!?NodeId {
+        const e = g.env;
+        const gpa = e.gpa;
+        const place = e.places.pathPlace(path);
+        try e.charge.reserve(gpa, .memo, 1);
+        if (g.memo.get(.{ u.int(), c.int(), place.int(), sig })) |hit| return NodeId.from(hit);
+        const here: SetId = if (c == .none) .none else try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, c);
+        if (c != .none and e.shapes.kind(c) == .leaf and here != .none) {
+            const b = try g.bitsAt(u, path);
+            return try e.shapes.leaf(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, try g.marks(b & 4 != 0)));
+        }
+        var w = false;
+        var deep = false;
+        var ct = e.cells.sets.iterate(try e.shapes.cellsOf(gpa, e.account(), &e.cells.sets, u));
+        while (ct.next()) |x| {
+            const m: CellId = .from(x.key);
+            if (e.cells.origin(m) != .mark) continue;
+            switch (e.cells.markOf(m)) {
+                .w => w = true,
+                .deep => deep = true,
+                else => {},
+            }
+        }
+        if (w and deep) return try e.shapes.leaf(gpa, e.account(), place, try e.cells.sets.unionWith(gpa, e.charge, here, try g.marks(true)));
+        const cells = if (w) try e.cells.sets.unionWith(gpa, e.charge, here, try g.marks(false)) else here;
+        const children: u32 = if (c != .none and e.shapes.kind(c) == .node) e.shapes.get(c).a else Ids.none_int;
+        if (e.shapes.kind(u) != .node) return try e.shapes.node(gpa, e.account(), place, cells, children);
+        try g.stack.append(gpa, .{ .u = u, .path = path, .sig = sig, .c = c, .cells = cells, .children = children, .it = e.shapes.overEntries(e.shapes.get(u).a), .step = step });
+        return null;
+    }
+};
+
 /// Which source nodes of a read-off stand at each κ position (#1372's
 /// review): `(source position, image)` → how many distinct built sources
 /// at that position `Shape.map` made that image of. Two built nodes at one
@@ -673,6 +840,14 @@ fn readOff(in: Input, frame: *Transfer.Frame, xreq: SetId) Error!ClassId {
         while (it.next()) |e| if (try paramOf(env, .from(e.key))) |pq| {
             try Mark.at(env, uses, in.param_places, pq[0], pq[1], .{ .r = true, .w = true, .deep = d.kind.isDeep() }, &steps);
         };
+    }
+    // W: what a group's call writes below its leaf, by node (§2.11 item 3,
+    // #1412): one demand stood for every route through its state, and the
+    // class marks every path of them, as a demand per path would have.
+    if (frame.groups.items.len != 0) {
+        var gw: GraftWrites = .{ .env = env, .us = uses, .places = in.param_places };
+        defer gw.deinit();
+        for (frame.groups.items) |g| if (try paramOf(env, g.leaf)) |pq| try gw.compose(pq[0], pq[1], g.node);
     }
     // E: escaped parameter cells; A: the result's.
     for (frame.escapes.items) |esc| {
