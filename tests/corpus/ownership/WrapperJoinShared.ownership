@@ -1,0 +1,16 @@
+module WrapperJoinShared
+  36:26 List.push kids: rejected level: other⟨Rose⟩#Rose.0 may hold it at another level, and is read at 36:54 (approx)
+  46:26 List.push kids: rejected level: other⟨Rose⟩#Rose.0 may hold it at another level, and is read at 46:54 (approx)
+  56:26 List.push kids: rejected level: other⟨Rose⟩#Rose.0 may hold it at another level, and is read at 56:54 (approx)
+  66:26 List.push kids: rejected level: other⟨Rose⟩#Rose.0 may hold it at another level, and is read at 66:54 (approx)
+  summary t2: π2 RA; res #Rose.0 fresh1{excl π2}r{excl π2} fresh2{shared}r{shared}, #Rose.0[*] condition(fresh3) π2, π2, ⟨Rose⟩⁺#Rose.0 condition(fresh4) fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0[*] condition(fresh5) π2
+  summary wrap: π2 RA; res #Rose.0 ~fresh1{excl π2}r{excl π2} ~fresh2{shared}r{shared}, #Rose.0[*] condition(fresh3) π2, π2, ⟨Rose⟩⁺#Rose.0 condition(fresh4) fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0[*] condition(fresh5) π2
+  summary wrap2: π2 RA; res #Rose.0 ~fresh1{excl π2}r{excl π2} ~fresh2{shared}r{shared}, #Rose.0[*] condition(fresh3) π2, π2, ⟨Rose⟩⁺#Rose.0 condition(fresh4) fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0[*] condition(fresh5) π2
+  summary size: π1 R, π1#Rose.0 R
+  summary local: unused
+  summary direct: unused
+  summary viaWrap: unused
+  summary viaWrap2: unused
+  demands 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause level 4

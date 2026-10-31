@@ -11957,3 +11957,113 @@ test "the checker v2 charges a recursive group the same in either declaration or
     try testing.expectEqualStrings(outs[0], outs[1]);
     try testing.expectEqual(growth[0], growth[1]);
 }
+
+/// The `{…}` conditions of `summary <name>:`'s line in `dump`, in order:
+/// what a reader of the class reads, its fresh labels' numbering aside.
+fn summaryConds(a: std.mem.Allocator, dump: []const u8, name: []const u8) ![]const u8 {
+    const head = try std.fmt.allocPrint(a, "  summary {s}: ", .{name});
+    defer a.free(head);
+    const at = (std.mem.indexOf(u8, dump, head) orelse return error.TestUnexpectedResult) + head.len;
+    const end = std.mem.indexOfScalarPos(u8, dump, at, '\n').?;
+    var out: std.ArrayList(u8) = .empty;
+    var i = at;
+    while (std.mem.indexOfScalarPos(u8, dump[0..end], i, '{')) |open| {
+        const close = std.mem.indexOfScalarPos(u8, dump[0..end], open, '}').?;
+        try out.appendSlice(a, dump[open .. close + 1]);
+        i = close + 1;
+    }
+    return out.toOwnedSlice(a);
+}
+
+/// The two joins a wrapper returns unchanged (#1459's review): `inner`, a
+/// recursive group whose port is a joined DAG, and `t2`, a K-shaped join
+/// whose kids list two coexisting levels share.
+const wrapped_joins =
+    \\inner : List (List Int) → List (List Int)
+    \\inner ys =
+    \\    case ys of
+    \\        [] →
+    \\            []
+    \\
+    \\        [ l, …rest ] →
+    \\            [ List.push l 1, …inner rest ]
+    \\
+    \\
+    \\pub type Rose =
+    \\    Rose (List Rose)
+    \\
+    \\
+    \\t2 : Bool, Rose → Rose
+    \\t2 c x =
+    \\    r1 = if c then Rose [ x ] else x
+    \\    if c then Rose [ r1, r1 ] else r1
+    \\
+;
+
+test "the checker v2 reads a join's κ through one and two wrappers as the joined function does, same-module and imported" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1459's review: a call relabels a join's entry onto the view of the
+    // joined DAG node, which no part of the caller's value names, and the
+    // caller's read-off dropped it. A wrapper read `{excl π1[*][*]}` where
+    // `inner` reads `{lost}`, and `t2`'s `shared` kids read `yes`. The view
+    // now has its template's origins (§2.9 *Keyed where a reader looks*).
+    const a = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const ar = arena.allocator();
+    const wrappers =
+        \\pub w1 : List (List Int) → List (List Int)
+        \\w1 ys =
+        \\    {s}inner ys
+        \\
+        \\
+        \\pub w2 : List (List Int) → List (List Int)
+        \\w2 ys =
+        \\    w1 ys
+        \\
+        \\
+        \\pub v1 : Bool, {s}Rose → {s}Rose
+        \\v1 c x =
+        \\    {s}t2 c x
+        \\
+        \\
+        \\pub v2 : Bool, {s}Rose → {s}Rose
+        \\v2 c x =
+        \\    v1 c x
+        \\
+    ;
+    for ([_]bool{ false, true }) |imported| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        const q = if (imported) "Lib." else "";
+        const own = try std.fmt.allocPrint(ar, wrappers, .{ q, q, q, q, q, q });
+        if (imported) {
+            var lib: std.ArrayList(u8) = .empty;
+            try lib.appendSlice(ar, wrapped_joins);
+            // Exposed, so a caller in `Main` calls them.
+            const pub_lib = try std.mem.replaceOwned(u8, ar, lib.items, "inner :", "pub inner :");
+            try w.write("Lib.beni", try std.mem.replaceOwned(u8, ar, pub_lib, "t2 :", "pub t2 :"));
+            try w.write("Main.beni", try std.mem.concat(ar, u8, &.{ "import Lib\n\n\n", own }));
+        } else try w.write("Main.beni", try std.mem.concat(ar, u8, &.{ wrapped_joins, "\n\n", own }));
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", if (imported) "." else "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const inner = try summaryConds(ar, dump.stdout, "inner");
+        const t2 = try summaryConds(ar, dump.stdout, "t2");
+        try testing.expect(std.mem.indexOf(u8, inner, "{lost}") != null);
+        try testing.expect(std.mem.indexOf(u8, t2, "{shared}") != null);
+        try testing.expectEqualStrings(inner, try summaryConds(ar, dump.stdout, "w1"));
+        try testing.expectEqualStrings(inner, try summaryConds(ar, dump.stdout, "w2"));
+        try testing.expectEqualStrings(t2, try summaryConds(ar, dump.stdout, "v1"));
+        try testing.expectEqualStrings(t2, try summaryConds(ar, dump.stdout, "v2"));
+    }
+}
