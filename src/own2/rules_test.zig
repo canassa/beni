@@ -108,7 +108,9 @@ const layers = [_]Entry{
     // a forward name only on a cycle, and the safety check of each reach.
     .{ .file = "BlockRead.zig", .layer = 12, .max_lines = 1235 },
     .{ .file = "Ownership.zig", .layer = 13, .max_lines = 300 },
-    .{ .file = "Enforce.zig", .layer = 14, .max_lines = 450 },
+    // 500 since #1398: the dump checks a module after its imports and reads
+    // the blocks it published itself.
+    .{ .file = "Enforce.zig", .layer = 14, .max_lines = 500 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may

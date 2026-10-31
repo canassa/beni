@@ -8008,6 +8008,32 @@ test "dump --ownership-both prints v1's report, a marker line, then v2's, from o
     try testing.expectEqual(@as(u8, 2), refused.exit_code);
 }
 
+test "dump --ownership-both gives v2 the report --ownership=v2 gives, calls across modules included" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The interface carries one ownership block, v1's under
+    // `--ownership-both`, so v2's importers once read none and every
+    // declaration calling another project module was `unchecked`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/ownership/ElementsApartImported", "_expected.");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const both = try w.run(&.{ "dump", "--stage=ownership", "--ownership-both", "--ownership-everywhere", "--platform=node", "--root=.", "." });
+    const v1 = try w.run(&.{ "dump", "--stage=ownership", "--ownership-everywhere", "--platform=node", "--root=.", "." });
+    const v2 = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-everywhere", "--platform=node", "--root=.", "." });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const want = try std.mem.concat(w.arena.allocator(), u8, &.{ v1.stdout, "== ownership v2\n", v2.stdout });
+    try testing.expectEqualStrings(want, both.stdout);
+    try testing.expect(std.mem.indexOf(u8, v2.stdout, "not built") == null);
+}
+
 test "an ownership dump stops when its verdicts are not the module check's" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
