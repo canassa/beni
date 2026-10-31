@@ -124,6 +124,9 @@ pub const Table = struct {
     /// it, read only by that call (each call its own number, #1372).
     prop_slice: std.ArrayList([2]u32) = .empty,
     prop_calls: u32 = 0,
+    /// `withoutImpliedJoins`' answers by `(key, condition, position)`: all
+    /// three immutable, so never stale.
+    memo_implied: Ids.FixedDict(3) = .{},
     /// `propagate`'s join memo (§2.9, *The join memo*): a state `(joined
     /// node, class and mode bits, run)` whose walk is the same wherever it is
     /// met → the snapshot its walk puts at its position. Written only once
@@ -245,6 +248,7 @@ pub const Table = struct {
         t.prop_runs.deinit(gpa);
         t.prop_slice.deinit(gpa);
         t.memo_prop.deinit(gpa);
+        t.memo_implied.deinit(gpa);
         t.aggs.deinit(gpa);
         t.reach_agg.deinit(gpa);
         t.reach_epoch.deinit(gpa);
@@ -530,7 +534,14 @@ pub const Table = struct {
                 if (nk != .@"union" and nk != .choice and nk != .view) continue;
                 if (!try imageless(pred, .from(e.key))) continue;
                 try charge.reserve(gpa, .inspection, 1);
-                if (try t.joinImplied(gpa, charge, v, .from(e.key), f.at, .from(e.value))) {
+                try charge.reserve(gpa, .memo, 1);
+                const mk: [3]u32 = .{ e.key, e.value, f.at.int() };
+                const implied = if (t.memo_implied.get(mk)) |hit| hit == 1 else blk: {
+                    const got = try t.joinImplied(gpa, charge, v, .from(e.key), f.at, .from(e.value));
+                    (try t.memo_implied.getOrPut(gpa, mk)).value_ptr.* = @intFromBool(got);
+                    break :blk got;
+                };
+                if (implied) {
                     try drop.append(gpa, e.key);
                     continue;
                 }

@@ -103,7 +103,7 @@ const layers = [_]Entry{
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
     // from Rows), which a group's port joins every round.
     // 1 860 since 4d: a class join drops what the other side covers.
-    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1870 },
+    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1910 },
     .{ .file = "Rows.zig", .layer = 8, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
