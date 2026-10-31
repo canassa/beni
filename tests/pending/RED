@@ -331,6 +331,11 @@ tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
 # reports an accounting invariant; ownership-v2.md §4.1.
 tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
 
+# CK-315 (#1435): a local bound to `[]` inside a constructor, handed to a
+# writer of its elements' lists, is refused `disjoint` (approx) by v2; the
+# literal written inline is accepted; R-8.1.
+tests/pending/ownership/LocalEmptyInCtor.beni OwnershipV2Differs
+
 # CK-314 (#1097): a call costs its argument's width, the graft walking it;
 # the call view by reference makes it the callee's size; ownership-v2.md §2.11.
 scenario/CK-314 grows
