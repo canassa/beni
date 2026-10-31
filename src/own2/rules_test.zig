@@ -59,7 +59,9 @@ const layers = [_]Entry{
     // 4 220 since #1335: `foldCondOf` by the cycle walk.
     // §5 says 4 260 since #1372's review: a source with no entry reads
     // `lost` where it shares an image (`Relabel.present`).
-    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4260 },
+    // 4 320 since #1390: a part runs with its anchor's split, and a part below
+    // another cell is `covered`.
+    .{ .file = "Cond.zig", .layer = 4, .max_lines = 4320 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     .{ .file = "Summary.zig", .layer = 5, .max_lines = 1710 },

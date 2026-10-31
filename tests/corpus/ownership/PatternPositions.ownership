@@ -24,6 +24,12 @@ module PatternPositions
   275:26 call PatternPositions.kidsBox a#Box.0: accepted param (PatternPositions.kidsBox writes π1#Box.0)
   275:52 call PatternPositions.kidsBox c#Box.0: accepted param (PatternPositions.kidsBox writes π1#Box.0)
   284:5 call PatternPositions.each <literal>[*]#W.0#Box.0: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.each writes π1[*]#W.0#Box.0)
+  291:15 List.push l: accepted param
+  301:15 call PatternPositions.inner a[*]: accepted param (PatternPositions.inner writes π1[*])
+  313:15 call PatternPositions.inner ys[*]: accepted param (PatternPositions.inner writes π1[*])
+  313:26 call PatternPositions.bumpOne rest[*][*]: accepted param (PatternPositions.bumpOne writes π1[*][*])
+  322:18 call PatternPositions.headTail <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (PatternPositions.headTail writes π1[*][*])
+  326:35 call PatternPositions.headTail <literal>[*][*]: accepted fresh (PatternPositions.headTail writes π1[*][*])
   summary kidsBox: π1 R, π1#Box.0 RAW[storage], π1#Box.0[*] A; res [*] ~π1#Box.0[*], π1#Box.0
   summary rightLeft: π1 R, π1#Pair.0 RA, π1#Pair.1 R, π1#Pair.1#Box.0 RAW[storage], π1#Pair.1#Box.0[*] RA; res .0 condition(fresh2) π1#Pair.1#Box.0, .0[*] ~condition(fresh3) ~π1#Pair.1#Box.0[*], .1 ~condition(fresh4) π1#Pair.0, condition(fresh1){sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}r{sep π1#Pair.0 π1#Pair.1#Box.0, sep π1#Pair.0 π1#Pair.1#Box.0[*]}
   summary sizeBox: π1 R, π1#Box.0 R
@@ -49,7 +55,12 @@ module PatternPositions
   summary twoMatches: π1 R, π1[*] R, π1[*]#Box.0 RW[storage], π1[*]#Box.0[*] R; xreq excl π1
   summary each: π1 R, π1[*]#W.0 R, π1[*]#W.0#Box.0 RW[storage], π1[*]#W.0#Box.0[*] R; xreq excl π1
   summary eachShared: unused
-  demands 25: accepted 16 (fresh 2, call 0, param 14, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
-total 25: accepted 16 (fresh 2, call 0, param 14, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+  summary inner: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] π1[*]{excl π1}, [*][*] ~π1[*][*]{excl π1}, fresh1{excl π1}; xreq excl π1
+  summary bumpOne: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] π1[*][*]{excl π1}, [*][*][*] ~π1[*][*][*]{excl π1}, fresh2{excl π1}; xreq excl π1
+  summary headTail: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh1{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh2{lost}r{lost}; xreq excl π1
+  summary headTailShared: unused
+  summary headTailDistinct: unused
+  demands 31: accepted 21 (fresh 3, call 0, param 18, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 31: accepted 21 (fresh 3, call 0, param 18, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 10
 cause disjoint 3
-cause exclusive 6
+cause exclusive 7

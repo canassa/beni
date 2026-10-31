@@ -282,3 +282,45 @@ pub eachShared : ⊤ → Int
 eachShared ⊤ =
     b = Box [ 0 ]
     each [ W b 1, W b 2 ]
+
+
+inner : List (List Int) → List (List Int)
+inner ys =
+    case ys of
+        [ l ] →
+            [ List.push l 1 ]
+
+        _ →
+            []
+
+
+bumpOne : List (List (List Int)) → List (List (List Int))
+bumpOne xs =
+    case xs of
+        [ a ] →
+            [ inner a ]
+
+        _ →
+            []
+
+
+-- A head beside a call on the rest: `inner ys` and `bumpOne rest` take two
+-- sides of one split, so both calls are accepted and `excl π1[*]` is owed.
+pub headTail : List (List (List Int)) → List (List (List Int))
+headTail xs =
+    case xs of
+        [ ys, …rest ] →
+            [ inner ys, …bumpOne rest ]
+
+        _ →
+            []
+
+
+pub headTailShared : ⊤ → Int
+headTailShared ⊤ =
+    l = [ 3 ]
+    List.length (headTail [ [ l ], [ l ] ])
+
+
+pub headTailDistinct : ⊤ → Int
+headTailDistinct ⊤ = List.length (headTail [ [ [ 3 ] ], [ [ 4 ] ] ])

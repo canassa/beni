@@ -281,7 +281,12 @@ path below them). So the `a` and `c` of `[ W a _, W c _ ]`, `part(elem(ws·ι)�
 position's part while another position's part was held was refused `disjoint`, because the two looked like one
 object; v1 accepts it under `xreq excl π1`. A part has no split of its own, so a holder chain decides each part
 by `alias` and never as one reliance of a split (§2.8 *As built*): k parts held at one canonical position cost
-O(k) `alias` reads per demand on it, each O(chain depth).
+O(k) `alias` reads per demand on it, each O(chain depth). In an `apart` (§2.9's same-base pairs), a part runs
+with its anchor's split, so parts below distinct positions are one pair as the positions are, and the parts of
+one anchor pair among themselves. A part whose anchor, or a shorter part of it, is an arrival too is left out
+with a `lost` pair: everything else meets it as it meets that ancestor. So a literal of n pushed positions,
+`[ List.push p1 1, … ]`, still costs its positions, not its positions times their parts (*As built*:
+`Cond.splitKey`, `Cond.covered`).
 
 **Labels and the fold.** An ordinary label is an interned `(call instruction, callee label id)` pair; a
 direct callback call has no callee label. This records a call chain without copying its tail. Distinct labels
@@ -4608,7 +4613,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 260 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*) |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 320 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*; #1390: a part's split run and `covered`, §2.2 *Parts*) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
