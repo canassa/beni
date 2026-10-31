@@ -703,7 +703,11 @@ pub const Table = struct {
                 var s = sa.?;
                 s.owned = s.owned and sb.?.owned;
                 // The two snapshots of one handed value joined into a new one.
-                s.kappa = try env.conds.propagate(gpa, env.charge, env.view(), try env.conds.kappaMerge(gpa, env.charge, sa.?.kappa, sb.?.kappa), s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
+                const merged = try env.conds.kappaMerge(gpa, env.charge, sa.?.kappa, sb.?.kappa);
+                env.conds.class_join = true;
+                const joined = env.conds.propagate(gpa, env.charge, env.view(), merged, s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
+                env.conds.class_join = false;
+                s.kappa = try joined;
                 try sup.append(gpa, s);
                 i += 1;
                 j += 1;
@@ -775,8 +779,11 @@ pub const Table = struct {
         // side of the joined DAG keeps its own entries (§2.9 *Keyed where a
         // reader looks*, #1093).
         const both = try env.conds.kappaMerge(env.gpa, env.charge, ka, kb);
-        const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
-        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj);
+        env.conds.class_join = true;
+        const mj = env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
+        env.conds.class_join = false;
+        const mj_ok = try mj;
+        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj_ok);
         return .{ .node = w.node, .kappas = w.kappas };
     }
 
@@ -1584,9 +1591,9 @@ pub const Table = struct {
                     if (a.prefix.len > 0) try w.print("{s} ", .{a.prefix});
                     try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
                     var k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, n, a.at_summary);
-                    if (a.dag != .none and a.dag != n) if (env.conds.kappaGet(a.cur, a.dag)) |s| {
-                        k = try env.conds.join(env.gpa, env.charge, k, s);
-                    };
+                    // A reader at this path reads the outermost join on the way,
+                    // which joins every side and every join nested in it (§2.9).
+                    if (a.dag != .none and a.dag != n) k = try env.conds.join(env.gpa, env.charge, k, try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, a.dag, a.at_summary));
                     try p.cond(w, k);
                     if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
                     try stack.append(env.gpa, .{ .line = false, .n = n, .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = a.dag });

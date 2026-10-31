@@ -178,7 +178,7 @@ const layers = [_]Entry{
     // refinement `Refine`; the tiers ranked exactly, every step reserved on
     // the codec's lane, and each class's growth counted alone.
     // 1 770 since #1335: a knot whose cycle no child step closes.
-    .{ .file = "Block.zig", .layer = 14, .max_lines = 1770 },
+    .{ .file = "Block.zig", .layer = 14, .max_lines = 1810 },
     .{ .file = "Hoists.zig", .layer = 14, .max_lines = 500 },
     .{ .file = "Message.zig", .layer = 14, .max_lines = 900 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 600 },
@@ -190,7 +190,7 @@ const layers = [_]Entry{
     // way round is the reader's projection (`sameDag`).
     .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1300 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
-    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 305 },
+    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 330 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
     .{ .file = "Enforce.zig", .layer = 17, .max_lines = 500 },

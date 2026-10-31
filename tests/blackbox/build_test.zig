@@ -9128,12 +9128,27 @@ test "the checker v2's call writing many fields of one parameter costs its calle
 }
 
 /// `caller`'s records per written field of `manyWrites(n)`, with no limit.
-fn recordsPerWrittenField(n: u32) !u64 {
+/// `caller`'s records per written field. `block_limit`: the one limit the
+/// dump may name, the module's block (#1461), which must then be there.
+fn recordsPerWrittenField(n: u32, block_limit: ?[]const u8) !u64 {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const src = try manyWrites(testing.allocator, n, false);
     defer testing.allocator.free(src);
-    return try accountTotal(try ownDumpNoLimit(&w, src), "caller") / n;
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    var rest = dump.stdout;
+    if (block_limit) |l| {
+        const at = std.mem.indexOf(u8, dump.stdout, l) orelse return error.TestUnexpectedResult;
+        rest = try std.mem.concat(w.arena.allocator(), u8, &.{ dump.stdout[0..at], dump.stdout[at + l.len ..] });
+    }
+    if (std.mem.indexOf(u8, rest, "\n  limit ")) |at| {
+        const end = std.mem.indexOfScalarPos(u8, rest, at + 1, '\n') orelse rest.len;
+        std.debug.print("{s}\n", .{rest[at + 1 .. end]});
+        return error.TestUnexpectedResult;
+    }
+    return try accountTotal(dump.stdout, "caller") / n;
 }
 
 // `ownership-v2.md` §4.1 *direct demand query* (#1358): `wall`'s writes are
@@ -9143,7 +9158,7 @@ fn recordsPerWrittenField(n: u32) !u64 {
 // records a field at 320 and at 480 fields (both about 83), with no limit.
 // Two tests, so each stays well under a second.
 test "the checker v2's call writing 320 fields of one parameter stays in its lanes" {
-    const per = try recordsPerWrittenField(320);
+    const per = try recordsPerWrittenField(320, null);
     if (per > 100) {
         std.debug.print("320 fields: {d} records a field\n", .{per});
         return error.TestUnexpectedResult;
@@ -9151,7 +9166,9 @@ test "the checker v2's call writing 320 fields of one parameter stays in its lan
 }
 
 test "the checker v2's call writing 480 fields of one parameter stays in its lanes" {
-    const per = try recordsPerWrittenField(480);
+    // The module's block passes the codec's bound here and is not
+    // published: said since #1459, silent before; #1461 owns it.
+    const per = try recordsPerWrittenField(480, "\n  limit block: ownership_accounting_invariant (codec_index lane of atom 0, inference) (the module's summaries are not published)");
     if (per > 100) {
         std.debug.print("480 fields: {d} records a field\n", .{per});
         return error.TestUnexpectedResult;
@@ -9632,7 +9649,10 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     // Since #1253 the child, the first return `π1#Rose.0[*]`, is a plain
     // path, so its own list is written exactly and the levels below it are
     // `π1#Rose.0[*]⟲`.
-    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RAW, π1#Rose.0[*]⟲ A; res .0 fresh2, .0 π1#Rose.0[*]#Rose.0, .0[*] π1#Rose.0[*]⟲{excl π1#Rose.0[*]⟲}, .0[*]#Rose.0 fresh1, .1 π1#Rose.0\n") != null);
+    // Since #1459 the printer reads each line through the join on its way,
+    // as a reader at that path does: `.0[*]#Rose.0`'s built `fresh1` beside
+    // the parameter's level reads that level's `excl` (§2.9).
+    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: π1 R, π1#Rose.0 RA, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RAW, π1#Rose.0[*]⟲ A; res .0 fresh2, .0 π1#Rose.0[*]#Rose.0, .0[*] π1#Rose.0[*]⟲{excl π1#Rose.0[*]⟲}, .0[*]#Rose.0 fresh1{excl π1#Rose.0[*]⟲#Rose.0}, .1 π1#Rose.0\n") != null);
 }
 
 test "the checker v2's widen keeps a non-recursive function's choice at a tree's root exact (#1360)" {
@@ -10529,8 +10549,8 @@ test "the checker v2 counts a tower of joins of a level and the level below in n
     // 13 056 / 64 744 / 138 217 records at 10 / 40 / 80, 363, 300 and 272
     // per n·log₂(n + 2); 292 195 (249) at 160. Keying every node of the DAG
     // below it made K quadratic (706 567 at 80, refused at 160). 160 is not
-    // gated: its block writes Θ(n²) positions, past the allowance (#1450), and
-    // its dump prints a 7 MB summary (#1426).
+    // gated: it checks in 2 s and its dump prints a 7 MB summary (#1426). Its
+    // block still writes Θ(n²) positions, past the allowance at 300 (#1450).
     try expectTowerNLogN(.choice, &.{ 10, 40, 80 }, 454, true);
 }
 
