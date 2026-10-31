@@ -27,6 +27,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 9 | **`Browser/Events.js`** (`size`, `hidden`) and **`browser-inline`'s `Tea.js`** (`sandbox`, `element`) | **built 2026-10-29**, #1228, below: both siblings deleted |
 | 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
+| 12 | **`node`'s `Http/Server.js`** (`startListen`, `nextRequest`, `requestOf`, `isUpgrade`, `refuseUpgrade`, `notOffered`, `write`, `awaitClosed`, `beginClose`, `boundAddress`) | **specified 2026-11-01**, below: eleven exports and thirteen helpers; `WebSocket.js` stays |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1034,3 +1035,25 @@ accepted under R47-3's reading (the owner, 2026-10-28). The three programs that 
 `run/SuspendReadFile` +6 at raw −23. Every page and every `size.mjs` page line is byte for byte.
 The first cut, with the code table as a `case` over twelve strings, made the two `readFile`
 programs 333 raw bytes larger; the sibling's object table put them below it.
+
+
+## Step 12 — `node`'s `Http/Server.js` (2026-11-01)
+
+**What moves.** The eleven exports of `platforms/node/Http/Server.js` (`boundary.md` §9.10,
+§9.11 (e), (g)) and the thirteen helpers behind them, written in beni over `Js` in
+`Server.beni`, and the file deleted; `WebSocket.js` stays, and takes the upgrade record
+`Server.beni` now makes (§9.11 item 26, amended). The two `catch`es of `invalid` are
+`Js.catchIf`, each naming the `TypeError` codes Node documents; the three error-event handlers
+end in `Js.throw`; `Handle` stays a `foreign type` with no sibling. The host is reached through
+`process.getBuiltinModule` (`node:http`, `node:buffer`, `node:os`) and the globals.
+
+**What changes shape.** `Request` and `Response` crossed the boundary through the `foreign`
+annotations of `requestOf` and `write`, which pinned `method`, `path`, `headers`, `body` and
+`status` in every release build of a program that serves; they cross nothing now, so those
+fields get short names. The upgrade record keeps its eight names (`Js.object`, never renamed).
+
+**The bar** (`core-in-beni.md` R47-3): release brotli no larger on the 24 `run/` programs that
+import `Http.Server` (`bench/size.mjs`, both compilers), the sibling's shape side by side in
+`emit/release/app/HttpServe`, and no reproducible slowdown of a request: the three per-request
+loops are timed against master, both builds, two processes each, and the figures go in the pull
+request's body before it is pushed.

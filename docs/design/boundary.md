@@ -5835,7 +5835,7 @@ leaving the check's wall time within the noise of the compiler before SVG.
 took the three decisions of #331 on 2026-10-17 (dashboard `node-http-q1` to `q3`, recorded in
 (i)): a defect in a handler stops the process, the server lives in the `node` platform, and the
 API shape below is the contract.* The `node` platform gains one module,
-**`Http.Server`** (`platforms/node/Http/Server.beni`, its sibling `Server.js`). It wraps
+**`Http.Server`** (`platforms/node/Http/Server.beni`; its sibling `Server.js` moved to beni on 2026-11-01, *The sibling, moved* below). It wraps
 `node:http`'s server as `Io.readFile` wraps `fs.promises.readFile` (§4.1, `CLAUDE.md` rule 9):
 each failure Node documents is one constructor of a typed error, a cancelled fiber releases what
 it holds, and any other error is thrown again and is a defect.
@@ -6160,7 +6160,7 @@ fourth made (h) the one list of fixtures, with the rows that have none and why.
 - Decision 1, a defect in a handler (`node-http-q1`): **stop the process**. Rule 9 does not
   change; (f) has the rule.
 - Decision 2, where the code lives (`node-http-q2`): **extend the `node` platform**.
-  `Http.Server` is `platforms/node/Http/Server.beni` with its sibling `Server.js`, beside `Io`;
+  `Http.Server` is `platforms/node/Http/Server.beni`, beside `Io` (its sibling `Server.js` is gone, §9.10 *The sibling, moved*);
   one platform for command-line and server programs.
 - Decision 3, the API shape (`node-http-q3`): **accept the shape** of (a)–(d). The choices it
   settles: `method` is a `String` and not a union, since Node fixes the set and a program matches
@@ -6178,6 +6178,33 @@ TLS, HTTP/2, an API for WebSocket and `upgrade` and for `100-continue` (today No
 by itself, (c)), trailers, a Unix socket address and configuring Node's timeouts (#340). Raw `node:net`, routing, command-line arguments, environment
 variables and file writes are #331's later slices. *(Amended 2026-10-20: the WebSocket part of #340 — `upgrade`, and an API
 for a WebSocket — is §9.11.)*
+
+**The sibling, moved (2026-11-01).** `Server.js` is written in beni over `Js` in `Server.beni`,
+one declaration per former export, and the file is deleted (`plans/runtime-in-beni.md` step 12;
+the bar is `plans/core-in-beni.md` R47-3). Nothing a program sees changes: (a)–(j) hold as
+written, (e)'s table is the same list of codes, and every `run/` fixture that drives a server
+prints what it printed. What the move fixes in place:
+
+- **The two `catch`es stay two, and name what they named.** `invalid` runs Node's
+  `validateHeaderName` inside `Js.catchIf`, taking a `TypeError` whose `code` is
+  `ERR_INVALID_HTTP_TOKEN`, and `validateHeaderValue` inside a second, taking a `TypeError` whose
+  `code` is `ERR_INVALID_CHAR` or `ERR_HTTP_INVALID_HEADER_VALUE`; each answers the text (d)
+  gives, and `Js.catchIf` throws everything else again (§4.2, rule 9).
+- **The three error handlers that filter by code** — `listen`'s (e) table, a request's
+  `ECONNRESET`, a socket's `gone` codes and `ENETRESET` by number — end in `Js.throw` for an
+  error they do not name, as `Io.beni`'s rejection handler does: an unknown error crashes.
+- **`Handle` stays a `foreign type`** with no sibling, as the `cloudflare` platform's types do
+  (§4). The handle is a `Js.object` the callbacks write with `Js.set`.
+- **`Request` and `Response` cross no `foreign` any more**, so a release build may rename their
+  fields (`backend.md` §9 item 4); `WebSocket.js` reads none of them, only the upgrade record's
+  `waiting` and `goAway` (item 26 as amended).
+- **The host door** is `process.getBuiltinModule` for `node:http`, `node:buffer` and `node:os`,
+  as `Io.beni` opens `node:fs/promises`; `TextDecoder`, `Date`, `JSON`, `Number` and `Set` are
+  globals, and the handshake key's pattern is `Js.regExp`.
+- **Speed is measured, not assumed**: a request runs three loops in beni that were JavaScript
+  (`requestFrom` over `rawHeaders`, `invalid` and `write` over the response's headers, `tokens`
+  over the `upgrade` and `connection` values), and the pull request's body carries their timings
+  beside master's, both builds, two processes each.
 
 ### 9.11 WebSocket, in a page and on the `node` server (2026-10-20)
 
@@ -6597,10 +6624,10 @@ A defect in `upgrade` or in a session stops the process, as a defect in a handle
 (f)).
 
 *As built, 2026-10-20, the server* (`platforms/node/WebSocket.beni` and its sibling
-`WebSocket.js`; `Http/Server.beni` and `Server.js`; `tests/serve/driver.mjs` and `preload.mjs`),
+`WebSocket.js`; `Http/Server.beni` (and `Server.js`, since moved to beni); `tests/serve/driver.mjs` and `preload.mjs`),
 as (e)–(i) and the amendment's items 14–28 say, with these readings:
 
-- **The two siblings meet by value** (item 26). `Server.js` makes the upgrade's record —
+- **The two siblings meet by value** (item 26; since the move, `Server.beni` makes it). `Server.js` makes the upgrade's record —
   `{ handle, req, socket, head, waiting, goAway, request }` — when the `upgrade` event comes, adds
   its `error` listener (`waiting`) and checks the handshake there, and queues it for the accept
   loop as it queues a request. `Server.beni` calls the program's `upgrade` in a fiber of the
@@ -6933,7 +6960,11 @@ renumbered.
 26. **The siblings meet by value.** `Server.js` and `WebSocket.js` cannot import each other
     (`backend.md` §2): the upgrade's record, which `Server.js` makes and `WebSocket.js` takes,
     carries the socket, the `head` bytes and the functions each side gives the other, as
-    `Browser.js` reaches the render loop (§9.8.7).
+    `Browser.js` reaches the render loop (§9.8.7). *Amended 2026-11-01*: `Server.js` is
+    beni now (§9.10 *The sibling, moved*), and the record is a `Js.object` of the same eight
+    names — `handle`, `req`, `res`, `socket`, `head`, `waiting`, `goAway`, `request` — which
+    `Js.object` never renames (§4.2), so `WebSocket.js` reads and writes it as before: it
+    takes `req`, `socket`, `head` and `handle`, reads `waiting` and writes `goAway`.
 27. **One state, one encoding.** A server frame is not masked, so one state sent to every player
     is the same bytes. The platform keeps one cache for the whole process, not one per socket: the
     last text that `write` framed, and its frame. A `write` of the same text to any socket reuses
