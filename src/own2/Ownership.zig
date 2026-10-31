@@ -118,7 +118,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 line.writer.print(", demands {d}", .{a.demands}) catch return error.OutOfMemory;
                 if (a.hold_listings != 0) line.writer.print(", hold listings {d}", .{a.hold_listings}) catch return error.OutOfMemory;
                 // A recursive group member's walks (§8 S3b slice 4, *Charging*).
-                if (dr.walks != 0) line.writer.print(", walks {d}", .{dr.walks}) catch return error.OutOfMemory;
+                if (dr.walks != 0) line.writer.print(", walks {d}, inference {d}, deliveries {d}", .{ dr.walks, dr.inference, dr.deliveries }) catch return error.OutOfMemory;
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
                 for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;

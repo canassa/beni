@@ -102,7 +102,9 @@ const layers = [_]Entry{
     .{ .file = "Demands.zig", .layer = 9, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
     // 1 630 since #1386: a `sep` side below a constructor.
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1710 },
+    // 1 780 since S3b slice 4b: `positionsAt` and `reentries`, moved from
+    // `Transfer`, read a delivery's marks too.
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1780 },
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write; 2 000 since #1367: an
     // answered value on the write's path, read beside the path.
@@ -128,7 +130,9 @@ const layers = [_]Entry{
     // and a pub alias publishing its target's class.
     // 1 930: the well-known shape with type variables, and an imported
     // alias chain taken hop by hop.
-    .{ .file = "Groups.zig", .layer = 12, .max_lines = 1930 },
+    // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
+    // wake rule.
+    .{ .file = "Groups.zig", .layer = 12, .max_lines = 2200 },
     .{ .file = "Entry.zig", .layer = 12, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.

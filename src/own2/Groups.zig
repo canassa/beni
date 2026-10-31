@@ -588,6 +588,11 @@ pub const DeclResult = struct {
     polymorphic: bool = false,
     /// A recursive group member's walks, 0 for one walked alone.
     walks: u32 = 0,
+    /// Of those, the walks the wake rule woke, round 1's included (§8 S3b
+    /// slice 4b): every other is the read check's.
+    inference: u32 = 0,
+    /// The `(edge, delta)` deliveries its class received.
+    deliveries: u32 = 0,
     lines: []Walk.Line = &.{},
     /// The account's failure, when it stopped the walk.
     failure: ?Ids.Failure = null,
@@ -802,8 +807,22 @@ pub const Module = struct {
         }
         const p = g.ports.items[k];
         for (g.reads.items) |x| if (x[0] == k and x[1] == p.version) return p.class;
-        try g.reads.append(mod.gpa, .{ k, p.version });
+        try g.reads.append(mod.gpa, .{ k, p.version, p.shape });
         return p.class;
+    }
+
+    /// A call a class answered (`Transfer.Context.onCall`): a call of the
+    /// group being solved, made by the walk under way, is one of its edges
+    /// (§8 S3b slice 4b), kept with the version of its callee's port it saw.
+    fn onCall(ctx: *anyopaque, inst: u32, args: []const Walk.Value) Error!void {
+        const mod = self(ctx);
+        const g = mod.group orelse return;
+        if (g.walking == none) return;
+        const h = mod.groupMember(inst) orelse return;
+        const e = &g.staging;
+        const start: u32 = @intCast(e.args.items.len);
+        try e.args.appendSlice(mod.gpa, args);
+        try e.recs.append(mod.gpa, .{ .callee = h, .inst = inst, .version = g.ports.items[h].version, .args = .{ .start = start, .len = @intCast(args.len) } });
     }
 
     /// The declaration a method call dispatches to, when it is one.
@@ -1121,6 +1140,7 @@ pub const Module = struct {
             .ctorOf = ctorOf,
             .sharedIndex = sharedIndex,
             .isListAppend = isListAppend,
+            .onCall = onCall,
         };
     }
 };
@@ -1523,13 +1543,44 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
 
 /// A port (§2.12 *Settled generation*): a member's class for the current
 /// round, immutable, and its version, which moves only when the class does.
-const Port = struct { class: ClassId, version: u32 };
+/// `shape` is the version of its `res.shape` (§8 S3b slice 4, *Ports*): it
+/// moves only when a path of `res` holds a cell where no path held one at
+/// its last move (`shape_res`), and only it wakes an inference walk.
+const Port = struct { class: ClassId, version: u32, shape: u32 = 0, shape_res: Ids.NodeId };
+
+/// A group call one walk of a member made (§8 S3b slice 4b): the callee,
+/// the version of its port the edge has (the call's, then each
+/// delivery's), and its arguments, its argument edges. `tail`: the call is
+/// in tail position, so its answer is the caller's value whole, its result
+/// edge.
+const Rec = struct { callee: u32, inst: u32, version: u32, args: Ids.Range, tail: bool = false };
+
+/// One walk's group calls.
+const Edges = struct {
+    recs: std.ArrayList(Rec) = .empty,
+    args: std.ArrayList(Walk.Value) = .empty,
+
+    fn clear(e: *Edges) void {
+        e.recs.clearRetainingCapacity();
+        e.args.clearRetainingCapacity();
+    }
+
+    fn deinit(e: *Edges, gpa: Allocator) void {
+        e.recs.deinit(gpa);
+        e.args.deinit(gpa);
+    }
+
+    fn argsOf(e: *const Edges, r: Rec) []const Walk.Value {
+        return e.args.items[r.args.start..][0..r.args.len];
+    }
+};
 
 /// The recursive group being solved: its ports, and per member its places,
-/// stable labels, walk count, and its last walk's lines, class and read
-/// vector. It is the group's scratch: nothing here reaches `results` until
-/// the group settles.
+/// stable labels, walk count, and its last walk's lines, class, read
+/// vector and edges. It is the group's scratch: nothing here reaches
+/// `results` until the group settles.
 const Group = struct {
+    gpa: Allocator,
     members: []const u32,
     /// Declaration → member.
     index: Ids.FixedDict(1) = .{},
@@ -1539,13 +1590,28 @@ const Group = struct {
     result_places: std.ArrayList(PlaceId) = .empty,
     fresh: []Ids.FixedDict(3) = &.{},
     walks: []u32 = &.{},
+    /// Per member, its walks the wake rule woke (round 1's included).
+    inference: []u32 = &.{},
+    /// Per member, the `(edge, delta)` deliveries it received.
+    deliveries: []u32 = &.{},
     lines: [][]Walk.Line = &.{},
     out: []ClassId = &.{},
     /// Per member, its last walk's read vector: a run of `vec_store`.
     vectors: []Ids.Range = &.{},
-    vec_store: std.ArrayList([2]u32) = .empty,
-    /// The read vector of the walk under way: `(member, version)` pairs.
-    reads: std.ArrayList([2]u32) = .empty,
+    vec_store: std.ArrayList([3]u32) = .empty,
+    /// The read vector of the walk under way: `(member, version, shape)`.
+    reads: std.ArrayList([3]u32) = .empty,
+    /// Per member, its last walk's edges; `staging`, the walk's under way.
+    edges: []Edges = &.{},
+    staging: Edges = .{},
+    /// The member being walked, `none` between walks.
+    walking: u32 = none,
+    /// The members whose port moved, to carry along their edges.
+    queue: std.ArrayList(u32) = .empty,
+    queued: []bool = &.{},
+    /// Per member, the edges of which it is the callee: `(caller, call)`.
+    callers: []std.ArrayList([2]u32) = &.{},
+    scratch: Calls.Scratch = .{},
     /// The first group call at another instantiation than its member's own.
     poly: u32 = none,
 
@@ -1558,37 +1624,76 @@ const Group = struct {
         for (g.fresh) |*f| f.deinit(gpa);
         gpa.free(g.fresh);
         gpa.free(g.walks);
+        gpa.free(g.inference);
+        gpa.free(g.deliveries);
         for (g.lines) |l| gpa.free(l);
         gpa.free(g.lines);
         gpa.free(g.out);
         gpa.free(g.vectors);
         g.vec_store.deinit(gpa);
         g.reads.deinit(gpa);
+        for (g.edges) |*e| e.deinit(gpa);
+        gpa.free(g.edges);
+        g.staging.deinit(gpa);
+        g.queue.deinit(gpa);
+        gpa.free(g.queued);
+        for (g.callers) |*c| c.deinit(gpa);
+        gpa.free(g.callers);
+        g.scratch.deinit(gpa);
     }
 
-    /// Whether member `k`'s last walk read a version that has moved.
+    /// Whether member `k`'s last walk read a version that has moved: the
+    /// read check (*Validation*).
     fn stale(g: *const Group, k: usize) bool {
         const v = g.vectors[k];
         for (g.vec_store.items[v.start..][0..v.len]) |x| if (g.ports.items[x[0]].version != x[1]) return true;
         return false;
     }
+
+    /// Whether member `k`'s last walk read a `res.shape` that has moved:
+    /// the wake rule (*Ports*).
+    fn woken(g: *const Group, k: usize) bool {
+        const v = g.vectors[k];
+        for (g.vec_store.items[v.start..][0..v.len]) |x| if (g.ports.items[x[0]].shape != x[2]) return true;
+        return false;
+    }
+
+    fn enqueue(g: *Group, k: u32) Allocator.Error!void {
+        if (g.queued[k]) return;
+        g.queued[k] = true;
+        try g.queue.append(g.gpa, k);
+    }
+
+    fn receiver(g: *Group, mod: *Module, k: u32) Walk.Receiver {
+        const run = g.param_runs.items[k];
+        return .{
+            .env = mod.env(),
+            .sums = &mod.sums,
+            .param_places = g.param_places.items[run.start..][0..run.len],
+            .result_place = g.result_places.items[k],
+            .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
+        };
+    }
 };
 
-/// Solve a recursive group (§8 S3b slice 4, 4a): every port from ⊥, then
-/// synchronous rounds. A round walks every member whose read vector is
-/// stale (round 1: all), each against the ports as the round began, in
-/// text order, which fixes ids only; then each walked member's port takes
+/// Solve a recursive group (§8 S3b slice 4): every port from ⊥, then
+/// synchronous rounds. A round walks every member the last one woke
+/// (round 1: all), each against the ports as the round began, in text
+/// order, which fixes ids only; each walked member's port takes
 /// `widen(x ⊔ F(x))` where its read-off is not below it (`Summary.leq`,
-/// coinductive), and its version moves. Any change wakes every walk that
-/// read the port (4a's interim rule). The rounds stop at the joint
-/// fixpoint: every member's last walk read the ports as they stand, and
-/// its read-off is below its port. That walk is its validation: its lines
-/// are the ones reported, and every member publishes at once, renumbered
-/// canonically. A group is built whole or not at all: a member's walk
-/// unbuilt, or a limit anywhere, publishes nothing for any member.
+/// coinductive), and `propagate` then carries the facts along the group's
+/// edges to quiescence (4b). Only a callee's new `res.shape` wakes a walk
+/// (the wake rule); every other fact is delivered. When nothing wakes, the
+/// read check walks again every member whose last walk read a version that
+/// has moved, and the loop stops at the joint fixpoint: every member's
+/// last walk read the ports as they stand, and its read-off is below its
+/// port. That walk is its validation: its lines are the ones reported, and
+/// every member publishes at once. A group is built whole or not at all:
+/// a member's walk unbuilt, or a limit anywhere, publishes nothing for any
+/// member.
 fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass, rs: []DeclResult) Allocator.Error!void {
     const gpa = mod.gpa;
-    var g: Group = .{ .members = members };
+    var g: Group = .{ .gpa = gpa, .members = members };
     defer g.deinit(gpa);
     mod.group = &g;
     // Widen opens a join on a cycle place in a group's rounds (#1363).
@@ -1636,14 +1741,24 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
     @memset(g.fresh, .{});
     g.walks = try gpa.alloc(u32, n);
     @memset(g.walks, 0);
+    g.inference = try gpa.alloc(u32, n);
+    @memset(g.inference, 0);
+    g.deliveries = try gpa.alloc(u32, n);
+    @memset(g.deliveries, 0);
     g.lines = try gpa.alloc([]Walk.Line, n);
     @memset(g.lines, &.{});
     g.out = try gpa.alloc(ClassId, n);
     g.vectors = try gpa.alloc(Ids.Range, n);
     @memset(g.vectors, .{ .start = 0, .len = 0 });
-    const woken = try gpa.alloc(bool, n);
-    defer gpa.free(woken);
-    @memset(woken, true);
+    g.edges = try gpa.alloc(Edges, n);
+    @memset(g.edges, .{});
+    g.queued = try gpa.alloc(bool, n);
+    @memset(g.queued, false);
+    g.callers = try gpa.alloc(std.ArrayList([2]u32), n);
+    @memset(g.callers, .empty);
+    const which = try gpa.alloc(bool, n);
+    defer gpa.free(which);
+    @memset(which, true);
     // ⊥: no marks, `res` nothing, no κ, `xreq` yes (§2.12 *Recursive proofs*).
     for (g.members, 0..) |di, k| {
         (try g.index.getOrPut(gpa, .{di})).value_ptr.* = @intCast(k);
@@ -1658,42 +1773,207 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         const uses = try gpa.alloc(Ids.NodeId, g.param_places.items.len - start);
         defer gpa.free(uses);
         @memset(uses, .none);
-        try g.ports.append(gpa, .{ .class = try mod.sums.add(mod.env(), .{ .params = uses, .res = try mod.shapes.nothing(gpa, mod.account, res) }), .version = 0 });
+        const nothing = try mod.shapes.nothing(gpa, mod.account, res);
+        try g.ports.append(gpa, .{ .class = try mod.sums.add(mod.env(), .{ .params = uses, .res = nothing }), .version = 0, .shape_res = nothing });
     }
-    while (std.mem.indexOfScalar(bool, woken, true) != null) {
-        for (g.members, 0..) |_, k| if (woken[k]) {
-            var res = try walkMember(mod, g, @intCast(k), prepass, &rs[k]);
-            if (res.unbuilt != none) {
-                res.deinit(gpa);
-                rs[k].unbuilt = res.unbuilt;
-                rs[k].polymorphic = res.unbuilt == g.poly;
-                return false;
-            }
-            gpa.free(g.lines[k]);
-            g.lines[k] = res.lines;
-            g.out[k] = res.class;
-            g.vectors[k] = .{ .start = @intCast(g.vec_store.items.len), .len = @intCast(g.reads.items.len) };
-            try g.vec_store.appendSlice(gpa, g.reads.items);
-        };
-        // The round's joins, each charged to the member that receives it (Q2).
-        for (g.members, 0..) |_, k| if (woken[k]) {
-            charging(mod, &rs[k].account);
-            const p = &g.ports.items[k];
-            if (try mod.sums.leq(mod.env(), g.out[k], p.class)) continue;
-            p.class = try mod.sums.join(mod.env(), p.class, g.out[k], .choice);
-            p.version += 1;
-        };
-        for (woken, 0..) |*w, k| w.* = g.stale(k);
+    var inference = true;
+    while (true) {
+        if (!try pass(mod, g, prepass, rs, which, inference)) return false;
+        // The wake rule: a callee's new `res.shape` wakes an inference walk.
+        var any = false;
+        for (which, 0..) |*w, k| {
+            w.* = g.woken(k);
+            any = any or w.*;
+        }
+        inference = any;
+        if (any) continue;
+        // The read check: a walk whose read vector moved is walked again,
+        // against the ports as they stand (*Validation*).
+        for (which, 0..) |*w, k| {
+            w.* = g.stale(k);
+            any = any or w.*;
+        }
+        if (!any) break;
     }
     for (rs, 0..) |*r, k| {
         charging(mod, &r.account);
         // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
         r.class = g.ports.items[k].class;
         r.walks = g.walks[k];
+        r.inference = g.inference[k];
+        r.deliveries = g.deliveries[k];
         r.lines = g.lines[k];
         g.lines[k] = &.{};
     }
     return true;
+}
+
+/// One pass (§8 S3b slice 4): the members `which` walked against the ports
+/// as they stand, each walk's read-off joined into its port, the new
+/// edges given the facts already present, and `propagate` run to
+/// quiescence. False when a walk is unbuilt: the group is.
+fn pass(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclResult, which: []const bool, inference: bool) Error!bool {
+    const gpa = mod.gpa;
+    for (g.members, 0..) |_, k| if (which[k]) {
+        g.staging.clear();
+        g.walking = @intCast(k);
+        var res = walkMember(mod, g, @intCast(k), prepass, &rs[k]) catch |err| {
+            g.walking = none;
+            return err;
+        };
+        g.walking = none;
+        if (res.unbuilt != none) {
+            res.deinit(gpa);
+            rs[k].unbuilt = res.unbuilt;
+            rs[k].polymorphic = res.unbuilt == g.poly;
+            return false;
+        }
+        if (inference) g.inference[k] += 1;
+        gpa.free(g.lines[k]);
+        g.lines[k] = res.lines;
+        g.out[k] = res.class;
+        g.vectors[k] = .{ .start = @intCast(g.vec_store.items.len), .len = @intCast(g.reads.items.len) };
+        try g.vec_store.appendSlice(gpa, g.reads.items);
+        std.mem.swap(Edges, &g.edges[k], &g.staging);
+        try tailCalls(mod, &g.edges[k], mod.in.bir.decls[g.members[k]]);
+    };
+    for (g.callers) |*c| c.clearRetainingCapacity();
+    for (g.edges, 0..) |e, k| for (e.recs.items, 0..) |r, ri| try g.callers[r.callee].append(gpa, .{ @intCast(k), @intCast(ri) });
+    // The pass's joins, each charged to the member that receives it (Q2).
+    for (g.members, 0..) |_, k| if (which[k]) {
+        charging(mod, &rs[k].account);
+        const p = &g.ports.items[k];
+        if (try mod.sums.leq(mod.env(), g.out[k], p.class)) continue;
+        p.class = try mod.sums.join(mod.env(), p.class, g.out[k], .choice);
+        p.version += 1;
+        try g.enqueue(@intCast(k));
+    };
+    // A new edge receives the facts already present once (§2.12
+    // *Termination*): its callee's class, where it moved past the walk's.
+    for (g.members, 0..) |_, k| if (which[k]) {
+        for (g.edges[k].recs.items, 0..) |_, ri| try deliver(mod, g, rs, @intCast(k), @intCast(ri));
+    };
+    try propagate(mod, g, rs);
+    for (g.ports.items, 0..) |*p, k| {
+        charging(mod, &rs[k].account);
+        try shapeMove(mod, p);
+    }
+    return true;
+}
+
+/// `Fix.propagate` (§8 S3b slice 4b): each member whose port moved, in
+/// the order they moved, has its class carried along every edge of which
+/// it is the callee, in member and call order; a delivery that moves its
+/// receiver's port queues the receiver. An edge receives each version of
+/// its callee's class once. Marks go backwards along argument edges, and
+/// cells with their κ forwards along a tail call's result edge; a
+/// delivered fact wakes no walk. The ports only rise in finite lattices
+/// (*Termination*), and every delivery is the receiver's growth, so the
+/// queue empties or a limit stops the group.
+///
+/// The class delivered is the callee's whole port, never the part that
+/// moved: an image of a join is not the join of the images where κ and
+/// the widening's folds are concerned (§2.9), so a delta delivered alone
+/// would make a class the walks do not, and the joint fixpoint another.
+/// A projection of a call's answer carries no result edge (*As built,
+/// 4b*): its image put alone at its path is a partial alternative whose κ
+/// the walk's value does not have, so the read check walks for it.
+fn propagate(mod: *Module, g: *Group, rs: []DeclResult) Error!void {
+    var i: usize = 0;
+    while (i < g.queue.items.len) : (i += 1) {
+        const h = g.queue.items[i];
+        g.queued[h] = false;
+        for (g.callers[h].items) |c| try deliver(mod, g, rs, c[0], c[1]);
+    }
+    g.queue.clearRetainingCapacity();
+}
+
+/// The class of the callee of call `ri` of member `f`'s last walk along
+/// that call's edges, unless the edge has it already: its uses' marks onto
+/// the arguments' parameter parts (`Walk.argumentMarks`), and at a tail
+/// call its `res` applied over the arguments (`Calls.apply`, the call's
+/// own instantiation and label, so its fresh cells are `ι⋆`), read off as
+/// `f`'s walk reads its value off (`Walk.delivered`). Joined into `f`'s
+/// port when not below it.
+fn deliver(mod: *Module, g: *Group, rs: []DeclResult, f: u32, ri: u32) Error!void {
+    const gpa = mod.gpa;
+    const e = &g.edges[f];
+    const r = &e.recs.items[ri];
+    const callee = g.ports.items[r.callee];
+    if (callee.version == r.version) return;
+    r.version = callee.version;
+    const d = callee.class;
+    charging(mod, &rs[f].account);
+    const env = mod.env();
+    try env.charge.reserve(gpa, .task, 1);
+    g.deliveries[f] += 1;
+    const recv = g.receiver(mod, f);
+    const uses = try gpa.alloc(Ids.NodeId, recv.param_places.len);
+    defer gpa.free(uses);
+    @memset(uses, .none);
+    const du = mod.sums.paramUses(d);
+    const args = e.argsOf(r.*);
+    for (args, 0..) |a, k| if (k < du.len) try Walk.argumentMarks(recv, uses, du[k], a);
+    var result: ?Walk.Value = null;
+    if (r.tail) {
+        g.scratch.result_place = try Module.placeOfInst(mod, r.inst);
+        var v = (try Calls.apply(env, &mod.sums, d, args, r.inst, &g.scratch)).result;
+        if (v.node != .none and mod.shapes.place(v.node) != recv.result_place) v.node = try mod.shapes.recast(gpa, env.account(), recv.result_place, v.node);
+        result = v;
+    }
+    const delta = try Walk.delivered(recv, uses, result);
+    const p = &g.ports.items[f];
+    if (try mod.sums.leq(env, delta, p.class)) return;
+    p.class = try mod.sums.join(env, p.class, delta, .choice);
+    p.version += 1;
+    try g.enqueue(f);
+}
+
+/// Marks the calls of a walk in tail position (§8 S3b slice 4b, *result
+/// edges*): the body's value through `let`s and arms, so the call's answer
+/// is the caller's value whole, whatever it holds; a walk over ⊥, whose
+/// answer is nothing, records its edge too.
+fn tailCalls(mod: *Module, e: *Edges, decl: Bir.Decl) Error!void {
+    if (e.recs.items.len == 0) return;
+    const gpa = mod.gpa;
+    const bir = mod.in.bir;
+    var tail: Ids.FixedDict(1) = .{};
+    defer tail.deinit(gpa);
+    var todo: std.ArrayList(u32) = .empty;
+    defer todo.deinit(gpa);
+    if (decl.body.unwrap()) |b| try todo.append(gpa, b.int());
+    while (todo.pop()) |i| {
+        try mod.env().charge.reserve(gpa, .inspection, 1);
+        const d = bir.instData(@fromBackingInt(i));
+        switch (bir.instTag(@fromBackingInt(i))) {
+            .let, .branch => try todo.append(gpa, d.rhs),
+            .case => for (bir.extraSlice(bir.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index)) |b| try todo.append(gpa, b.int()),
+            .call, .method_call => _ = try tail.getOrPut(gpa, .{i}),
+            else => {},
+        }
+    }
+    for (e.recs.items) |*r| r.tail = tail.get(.{r.inst}) != null;
+}
+
+/// Moves `p.shape` when its `res` holds a cell at a path where its last
+/// move's held none (*Ports*): the two shapes compared with every cell
+/// set but the empty one read as one mark, `Shape.leq` per path.
+fn shapeMove(mod: *Module, p: *Port) Error!void {
+    const res = mod.sums.get(p.class).res;
+    if (res == p.shape_res) return;
+    const gpa = mod.gpa;
+    const env = mod.env();
+    const Marker = struct {
+        set: Ids.SetId,
+        fn one(m: *const @This(), s: Ids.SetId) Error!Ids.SetId {
+            return if (s == .none) .none else m.set;
+        }
+    };
+    const marker: Marker = .{ .set = try Summary.Table.marksSet(env, .{ .r = true }, &.{}) };
+    const now = try mod.shapes.map(gpa, env.account(), res, &marker, Marker.one);
+    const then = try mod.shapes.map(gpa, env.account(), p.shape_res, &marker, Marker.one);
+    if (!try mod.shapes.leq(gpa, env.account(), env.places, env.cells, now, then)) p.shape += 1;
+    p.shape_res = res;
 }
 
 /// One walk of member `k` against the ports as they stand, its read

@@ -1389,6 +1389,70 @@ fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
     return memo.get(.{use.int()}).?;
 }
 
+/// The positions one `⟲` step stands for below `x`: each node reached by
+/// one step or more whose place is `x`'s (`positionsAt`).
+pub fn reentries(env: Env, x: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+    const gpa = env.gpa;
+    const shapes = env.shapes;
+    const places = env.places;
+    const p = shapes.place(x);
+    var seen: stamped.Column(NodeId, void) = .{};
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(NodeId) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, x);
+    while (stack.pop()) |y| {
+        for (places.steps(shapes.place(y)).steps) |c| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            if (c.kind == .level) continue;
+            const n = (try shapes.proj(gpa, env.account(), places, env.cells, y, c)) orelse continue;
+            if (seen.contains(n)) continue;
+            try seen.put(gpa, n, {});
+            if (shapes.place(n) == p) try out.append(gpa, n);
+            try stack.append(gpa, n);
+        }
+    }
+}
+
+/// The value `n` at a class's parameter path `steps`, as `Transfer`'s
+/// `positionsAt` reads an argument there: every position the path stands
+/// for, joined; a `⟲` step every re-entry of the place below the value so
+/// far (`reentries`). Without one, a missing step keeps the value reached.
+/// Null when no position is left.
+pub fn positionsAt(env: Env, n: NodeId, steps: []const Step) Error!?NodeId {
+    const gpa = env.gpa;
+    const shapes = env.shapes;
+    const places = env.places;
+    var has_level = false;
+    for (steps) |s| has_level = has_level or s.kind == .level;
+    if (!has_level) {
+        var at = n;
+        for (steps) |s| at = (try shapes.proj(gpa, env.account(), places, env.cells, at, s)) orelse return at;
+        return at;
+    }
+    const task = try env.account().enter(gpa, null);
+    defer env.account().leave(task);
+    var frontier: std.ArrayList(NodeId) = .empty;
+    defer frontier.deinit(gpa);
+    var next: std.ArrayList(NodeId) = .empty;
+    defer next.deinit(gpa);
+    try frontier.append(gpa, n);
+    for (steps) |s| {
+        next.clearRetainingCapacity();
+        for (frontier.items) |x| {
+            if (s.kind != .level) {
+                if (try shapes.proj(gpa, env.account(), places, env.cells, x, s)) |m| try next.append(gpa, m);
+                continue;
+            }
+            try reentries(env, x, &next);
+        }
+        std.mem.swap(std.ArrayList(NodeId), &frontier, &next);
+    }
+    if (frontier.items.len == 0) return null;
+    if (frontier.items.len == 1) return frontier.items[0];
+    return try shapes.join(gpa, env.account(), places, env.cells, frontier.items);
+}
+
 /// A parameter's routes to what its use shape writes (`W`, deep with `S`)
 /// or lets escape (`E`), one at a time, each with its steps from the root
 /// (§2.11 items 3 and 4): a walk of the shape's explicit structure (a leaf's
