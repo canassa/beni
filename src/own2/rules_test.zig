@@ -67,9 +67,9 @@ const layers = [_]Entry{
     // Cond (§5).
     // 2 620 since #1420: the check that a read implies what a rebuild
     // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
-    // 2 640 since #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and the
+    // 2 730 since #1473, on top of #1420: §2.9 *Two positions of one image* in `apartImage` and `sep`, and the
     // repeating split (`repeatingSplit`, `exclOf`, #1478).
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2640 },
+    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2730 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
