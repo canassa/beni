@@ -211,8 +211,10 @@ pub fn Of(comptime Frame: type) type {
                 // The base in this item's runs: what the write's path ends at.
                 if (it.mode == .spine and it.depth == ws.len) try arms.ends.append(gpa, .{ idx, it.v.int() });
                 const mark = stack.items.len;
+                // What this item pushes comes from it, but a read's first state,
+                // which comes from the read's own node (`arms.read`).
                 defer for (stack.items[mark..]) |*x| {
-                    x.from = idx;
+                    if (x.it.mode != .read) x.from = idx;
                 };
                 if (it.mode != .spine and written.holds(where_paths, it.path, it.v)) continue;
                 if (try f.unreached(it.v, own)) continue;

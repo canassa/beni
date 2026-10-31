@@ -125,3 +125,50 @@ unionTwin ⊤ =
 
         [] →
             Rose []
+
+
+-- Two leaves in one list of one arm are two positions of the `⟲` path,
+-- one route each, never a join and its sides counted twice: accepted, as
+-- v1 accepts them.
+pub twoLeaves : Bool → Rose
+twoLeaves d =
+    incAll
+        (if d then
+            Rose []
+         else
+            Rose [ Rose [ Rose [], Rose [] ] ]
+        )
+
+
+pub leafBesideK : Bool → Rose
+leafBesideK d =
+    k = [ Rose [] ]
+    incAll
+        (if d then
+            Rose []
+         else
+            Rose [ Rose [ Rose k, Rose [] ] ]
+        )
+
+
+pub leafBesideKTwice : Bool → Rose
+leafBesideKTwice d =
+    k = [ Rose [] ]
+    incAll
+        (if d then
+            Rose []
+         else
+            Rose [ Rose [ Rose k, Rose [] ], Rose [] ]
+        )
+
+
+pub sameArms : Bool → Rose
+sameArms c =
+    k = [ Rose [] ]
+    s0 = Rose [ Rose [], Rose k ]
+    incAll
+        (if c then
+            Rose [ s0 ]
+         else
+            Rose [ s0 ]
+        )

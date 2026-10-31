@@ -1,0 +1,108 @@
+-- ownership: a choice's arms over the caller's own parameters (#1439,
+-- ownership-v2.md §2.11 item 3 *a choice's arms*). `t2` and `t3` write the
+-- first list of a pair and answer the second; `w2` and `u2` write the first
+-- list of one pair of two and answer the rest. A parameter's cell beside
+-- the write is another path only of a base in a run of its own arm:
+-- `swap`, `same`, `nestp`, `swapPairs`, `fromP`, `swapU` and `fromPU` put
+-- the parameters apart in each arm, accepted. `both` has `p` first and
+-- second in one arm: refused. v1 reads the arms together and refuses all.
+type alias Two =
+    List Int × List Int
+
+
+t2 : List Int × List Int → List Int × List Int
+t2 ( a, b ) = ( List.push a 1, b )
+
+
+t3 : List Int × (List Int × List Int) → List Int × (List Int × List Int)
+t3 ( a, b ) = ( List.push a 1, b )
+
+
+pub swap : Bool, List Int, List Int → List Int × List Int
+swap c p q =
+    t2
+        (if c then
+            ( p, q )
+         else
+            ( q, p )
+        )
+
+
+pub same : Bool, List Int → List Int × List Int
+same c p =
+    t2
+        (if c then
+            ( p, [] )
+         else
+            ( [], p )
+        )
+
+
+pub both : Bool, List Int → List Int × List Int
+both c p =
+    t2
+        (if c then
+            ( p, p )
+         else
+            ( [], [] )
+        )
+
+
+pub nestp : Bool, List Int → List Int × (List Int × List Int)
+nestp c p =
+    t3
+        (if c then
+            ( p, ( [], [] ) )
+         else
+            ( [], ( p, [] ) )
+        )
+
+
+w2 : Two × Two → Two × Two
+w2 ( ( a, b ), c ) = ( ( List.push a 1, b ), c )
+
+
+u2 : Two × Two → Two × Two
+u2 ( c, ( a, b ) ) = ( c, ( List.push a 1, b ) )
+
+
+pub swapPairs : Bool, Two, Two → Two × Two
+swapPairs c p q =
+    w2
+        (if c then
+            ( p, q )
+         else
+            ( q, p )
+        )
+
+
+pub fromP : Bool, Two → Two × Two
+fromP c p =
+    ( x, _ ) = p
+    w2
+        (if c then
+            ( p, ( [], [] ) )
+         else
+            ( ( [], [] ), ( x, [] ) )
+        )
+
+
+pub swapU : Bool, Two, Two → Two × Two
+swapU c p q =
+    u2
+        (if c then
+            ( p, q )
+         else
+            ( q, p )
+        )
+
+
+pub fromPU : Bool, Two → Two × Two
+fromPU c p =
+    ( x, _ ) = p
+    u2
+        (if c then
+            ( p, ( [], [] ) )
+         else
+            ( ( [], [] ), ( x, [] ) )
+        )
