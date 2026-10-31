@@ -1,0 +1,20 @@
+program CompleteTailEvidence.main : Tea.sandbox
+  model CompleteTailEvidence.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (unproved)
+  tail-analysis eligible 1; visits 78; work 4689; candidates 3; resets 4459
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailEvidence.beni:40:37            dynamic    reads ρ.left
+  hole CompleteTailEvidence.beni:40:49            dynamic    reads ρ.right
+  hole CompleteTailEvidence.beni:40:62            dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailEvidence.beni:40:14            unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

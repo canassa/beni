@@ -1,0 +1,20 @@
+program CompleteTailRecursive.main : Tea.sandbox
+  model CompleteTailRecursive.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈
+    tails joined (unproved)
+  tail-analysis eligible 1; visits 123; work 4782; candidates 9; resets 4459
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailRecursive.beni:43:37           dynamic    reads ρ.left
+  hole CompleteTailRecursive.beni:43:49           static     reads ρ.right
+  hole CompleteTailRecursive.beni:43:62           dynamic    reads ρ.after
+  holes 3: static 1, literal 0, static-key 0, dynamic 2
+  site CompleteTailRecursive.beni:43:14           unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 2 over 1 keys and 3 groups (2.00 per key); every key calls 2 of 3 groups (66%)
+  reconciler 0 of 0 lists
+  patchAll <none>

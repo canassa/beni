@@ -1,0 +1,643 @@
+program CompleteTailManyPrograms.main[0] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailManyPrograms:30:20 arm CompleteTailManyPrograms:21:9 writes node ρ; value ρ.after ≈; value ρ.left ≈
+    tail call CompleteTailManyPrograms:30:20 arm CompleteTailManyPrograms:23:9 writes node ρ; value ρ.after ≈; value ρ.right ≈
+  tail-analysis eligible 1; visits 92; work 4979; candidates 6; resets 4456
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[1] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailManyPrograms:30:20 arm CompleteTailManyPrograms:21:9 writes node ρ; value ρ.after ≈; value ρ.left ≈
+    tail call CompleteTailManyPrograms:30:20 arm CompleteTailManyPrograms:23:9 writes node ρ; value ρ.after ≈; value ρ.right ≈
+  tail-analysis eligible 1; visits 92; work 5011; candidates 6; resets 4488
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[2] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailManyPrograms:30:20 arm CompleteTailManyPrograms:21:9 writes node ρ; value ρ.after ≈; value ρ.left ≈
+    tail call CompleteTailManyPrograms:30:20 arm CompleteTailManyPrograms:23:9 writes node ρ; value ρ.after ≈; value ρ.right ≈
+  tail-analysis eligible 1; visits 92; work 5011; candidates 6; resets 4488
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[3] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 92; work 4999; candidates 6; resets 4488
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[4] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[5] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[6] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[7] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[8] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[9] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[10] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[11] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[12] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[13] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[14] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[15] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[16] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[17] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[18] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[19] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[20] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[21] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[22] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[23] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[24] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[25] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[26] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[27] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[28] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[29] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[30] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
+program CompleteTailManyPrograms.main[31] : Tea.sandbox
+  model CompleteTailManyPrograms.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 1; visits 0; work 0; candidates 0; resets 0
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyPrograms.beni:35:37        dynamic    reads ρ.left
+  hole CompleteTailManyPrograms.beni:35:49        dynamic    reads ρ.right
+  hole CompleteTailManyPrograms.beni:35:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyPrograms.beni:35:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

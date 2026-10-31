@@ -1435,3 +1435,88 @@ test "generic entry runtime requires every manifest table" {
         }
     }
 }
+
+/// Actual walk bodies, exposed through the public self-profile product. Positive
+/// controls prevent a disabled replay or disconnected sink from passing as zero.
+fn completeTailCounters(w: *World) !struct {
+    identity: u64,
+    escape: u64,
+    command: u64,
+    in_place: u64,
+    programs: u64,
+    work: u64,
+} {
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, try w.read("tail-trace.json"), .{});
+    defer parsed.deinit();
+    const names = [_][]const u8{
+        "writes_identity_walks",       "writes_escape_walks",       "writes_command_walks",
+        "writes_probe_identity_walks", "writes_probe_escape_walks", "writes_probe_command_walks",
+        "writes_in_place_programs",    "writes_probe_programs",     "writes_probe_work",
+    };
+    var counts: [names.len]?u64 = @splat(null);
+    for (parsed.value.object.get("traceEvents").?.array.items) |event| {
+        if (!std.mem.eql(u8, event.object.get("ph").?.string, "C")) continue;
+        const args = event.object.get("args") orelse continue;
+        for (names, 0..) |name, i| if (args.object.get(name)) |value| {
+            try testing.expect(counts[i] == null);
+            counts[i] = @intCast(value.integer);
+        };
+    }
+    for (counts) |count| try testing.expect(count != null);
+    try testing.expectEqual(@as(u64, 0), counts[3].?);
+    try testing.expectEqual(@as(u64, 0), counts[4].?);
+    try testing.expectEqual(@as(u64, 0), counts[5].?);
+    try testing.expect(counts[0].? > 0);
+    try testing.expect(counts[1].? > 0);
+    try testing.expect(counts[6].? > 0);
+    try testing.expect(counts[7].? > 0);
+    try testing.expect(counts[8].? > 0);
+    return .{ .identity = counts[0].?, .escape = counts[1].?, .command = counts[2].?, .in_place = counts[6].?, .programs = counts[7].?, .work = counts[8].? };
+}
+
+test "complete-handler probe omits unused quadratic walks on real inline wide records" {
+    // PREPARE: flat records exercise replacement minimization, distinct message
+    // paths exercise escape deduplication, and the literal arm needs type fields.
+    for ([_][]const u8{ "Wide256", "Wide512" }) |name| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const path = try std.fmt.allocPrint(w.arena.allocator(), "tests/corpus/writes/CompleteTailInline{s}.beni", .{name});
+        const src = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, w.arena.allocator(), .limited(1 << 20));
+        try w.write("Main.beni", src);
+
+        // EXECUTE: the actual inline lowering enables in-place ownership facts.
+        const result = try w.run(&.{ "build", "--platform=browser-inline", "--release", "--no-prerender", "--no-cache", "--jobs=1", "--out=out", "--self-profile=tail-trace.json", "Main.beni" });
+
+        // VERIFY OUTPUT AND SIDE EFFECTS: successful product and live counters.
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqualStrings("", result.stderr);
+        try testing.expect((try w.read("out/_main.mjs")).len > 0);
+        const counts = try completeTailCounters(&w);
+        try testing.expectEqual(@as(u64, 1), counts.in_place);
+        try testing.expectEqual(@as(u64, 1), counts.programs);
+    }
+}
+
+test "complete-handler probe omits command summaries while retaining command operand evaluation" {
+    // PREPARE: the command expression calls a generic equality helper. Its
+    // unresolved evidence must still make the replay conservative (writes golden).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const src = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/writes/CompleteTailInlineCommand.beni", w.arena.allocator(), .limited(1 << 20));
+    try w.write("Main.beni", src);
+
+    // EXECUTE.
+    const result = try w.run(&.{ "build", "--platform=browser-inline", "--release", "--no-prerender", "--no-cache", "--jobs=1", "--out=out", "--self-profile=tail-trace.json", "Main.beni" });
+
+    // VERIFY OUTPUT AND SIDE EFFECTS: ordinary command analysis remains live.
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stderr);
+    try testing.expect((try w.read("out/_main.mjs")).len > 0);
+    const counts = try completeTailCounters(&w);
+    try testing.expect(counts.command > 0);
+    const facts = try w.run(&.{ "dump", "--stage=writes", "--platform=browser-inline", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), facts.exit_code);
+    try testing.expectEqualStrings("", facts.stderr);
+    try testing.expect(std.mem.indexOf(u8, facts.stdout, "tails joined (unproved)") != null);
+    try testing.expect(std.mem.indexOf(u8, facts.stdout, "    tail call ") == null);
+}

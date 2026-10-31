@@ -1,0 +1,20 @@
+program CompleteTailWide512.main : Tea.sandbox
+  model CompleteTailWide512.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (path limit)
+  tail-analysis eligible 1; visits 578; work 8436; candidates 66; resets 4459
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailWide512.beni:1066:37           dynamic    reads ρ.left
+  hole CompleteTailWide512.beni:1066:49           dynamic    reads ρ.right
+  hole CompleteTailWide512.beni:1066:62           dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailWide512.beni:1066:14           unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

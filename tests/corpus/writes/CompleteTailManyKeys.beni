@@ -1,0 +1,359 @@
+-- writes: probe exhaustion aborts a candidate tree without visiting its siblings.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    flag : Bool
+    left : Int
+    right : Int
+    after : Int
+
+
+type Msg
+    = Step0
+    | Step1
+    | Step2
+    | Step3
+    | Step4
+    | Step5
+    | Step6
+    | Step7
+    | Step8
+    | Step9
+    | Step10
+    | Step11
+    | Step12
+    | Step13
+    | Step14
+    | Step15
+    | Step16
+    | Step17
+    | Step18
+    | Step19
+    | Step20
+    | Step21
+    | Step22
+    | Step23
+    | Step24
+    | Step25
+    | Step26
+    | Step27
+    | Step28
+    | Step29
+    | Step30
+    | Step31
+    | Step32
+    | Step33
+    | Step34
+    | Step35
+    | Step36
+    | Step37
+    | Step38
+    | Step39
+    | Step40
+    | Step41
+    | Step42
+    | Step43
+    | Step44
+    | Step45
+    | Step46
+    | Step47
+    | Step48
+    | Step49
+    | Step50
+    | Step51
+    | Step52
+    | Step53
+    | Step54
+    | Step55
+    | Step56
+    | Step57
+    | Step58
+    | Step59
+    | Step60
+    | Step61
+    | Step62
+    | Step63
+
+
+bump : Model → Model
+bump model =
+    if model.flag then
+        { model | left = model.left + 1 }
+    else
+        { model | right = model.right + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Step0 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step1 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step2 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step3 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step4 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step5 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step6 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step7 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step8 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step9 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step10 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step11 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step12 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step13 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step14 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step15 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step16 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step17 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step18 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step19 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step20 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step21 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step22 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step23 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step24 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step25 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step26 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step27 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step28 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step29 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step30 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step31 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step32 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step33 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step34 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step35 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step36 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step37 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step38 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step39 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step40 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step41 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step42 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step43 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step44 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step45 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step46 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step47 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step48 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step49 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step50 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step51 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step52 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step53 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step54 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step55 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step56 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step57 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step58 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step59 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step60 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step61 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step62 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+        Step63 →
+            next = bump model
+            { next | after = model.after + 1 }
+
+
+view : Model → Html Msg
+view model = <button onClick={Step0}>{model.left}{model.right}{model.after}</button>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+        , update = update
+        , view = view
+        }

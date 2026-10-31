@@ -1,0 +1,201 @@
+-- writes: distinct program sites share one reset and traversal allowance.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    flag : Bool
+    left : Int
+    right : Int
+    after : Int
+
+
+type Msg
+    = Step
+
+
+bump : Model → Model
+bump model =
+    if model.flag then
+        { model | left = model.left + 1 }
+    else
+        { model | right = model.right + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Step →
+            next = bump model
+            { next | after = model.after + 1 }
+
+
+view : Model → Html Msg
+view model = <button onClick={Step}>{model.left}{model.right}{model.after}</button>
+
+
+main : Browser.Program
+main =
+    Browser.programs
+        [ Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        , Tea.sandbox
+            { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+            , update = update
+            , view = view
+            }
+        ]

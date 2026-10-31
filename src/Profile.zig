@@ -335,6 +335,19 @@ pub const Counter = enum {
     emit_units_embedded,
     emit_units_lowered,
 
+    /// Complete-handler facts (`browser-inline.md` §8.5): actual walks,
+    /// separately from the independent replay's charged work. Unused probe
+    /// identity/escape/command summaries must remain zero.
+    writes_identity_walks,
+    writes_escape_walks,
+    writes_command_walks,
+    writes_probe_identity_walks,
+    writes_probe_escape_walks,
+    writes_probe_command_walks,
+    writes_in_place_programs,
+    writes_probe_programs,
+    writes_probe_work,
+
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };
 

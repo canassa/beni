@@ -96,7 +96,10 @@ pub fn write(w: *std.Io.Writer, gpa: Allocator, a: *Writes, run: Writes.Run, pos
                 } else try w.splatByteAll(' ', 11 - class_name.len);
                 try writeSet(w, gpa, a, k.writes);
                 try w.writeByte('\n');
+                try writeTails(w, gpa, a, k.tails, positions);
             }
+            if (prog.tail_route_skipped) try w.writeAll("  tail-analysis ineligible: ordinary routes\n");
+            if (prog.tail_eligible != 0) try w.print("  tail-analysis eligible {d}; visits {d}; work {d}; candidates {d}; resets {d}\n", .{ prog.tail_eligible, prog.tail_visits, prog.tail_work, prog.tail_candidates, prog.tail_reset_rows });
             const n: u32 = @intCast(prog.keys.len);
             const bounded = n - counts[3];
             try w.print("  keys {d}: bounded {d} ({d}%), exact {d}, indexed {d}, structural {d}, * {d}; capped {d}\n", .{
@@ -459,5 +462,39 @@ pub fn writeKeyName(w: *std.Io.Writer, a: *Writes, k: Writes.Key) std.Io.Writer.
             i += 1;
         }
         if (arg) |x| if (a.ctorArity(e.ctor) > 1) try w.print("#{d}", .{x});
+    }
+}
+
+fn writeTails(w: *std.Io.Writer, gpa: Allocator, a: *Writes, partition: Writes.TailPartition, positions: Positions) Error!void {
+    switch (partition.status) {
+        .absent => return,
+        .joined => return w.print("    tails joined ({s})\n", .{switch (partition.reason) {
+            .unproved => "unproved",
+            .work => "probe work exhausted",
+            .paths => "path limit",
+            .routes => "ordinary routes",
+        }}),
+        .exact => {},
+    }
+    var set: std.ArrayList(Writes.Write) = .empty;
+    defer set.deinit(gpa);
+    for (partition.start..partition.start + partition.len) |ti| {
+        const tail = a.tails.get(ti);
+        try w.writeAll("    tail");
+        for (tail.choices_start..tail.choices_start + tail.choices_len) |ci| {
+            const choice = a.tail_choices.get(ci);
+            for (choice.calls_start..choice.calls_start + choice.calls_len) |i| {
+                const call = a.tail_calls.get(i);
+                const at = positions.get(positions.ctx, call.module, a.tailToken(call.module, call.inst));
+                try w.print(" call {s}:{d}:{d}", .{ a.moduleName(call.module), at.line, at.col });
+            }
+            const at = positions.get(positions.ctx, choice.module, a.tailToken(choice.module, choice.branch));
+            try w.print(" arm {s}:{d}:{d}", .{ a.moduleName(choice.module), at.line, at.col });
+        }
+        try w.writeAll(" writes ");
+        set.clearRetainingCapacity();
+        try a.tailWrites(tail, &set, gpa);
+        try writeSet(w, gpa, a, set.items);
+        try w.writeByte('\n');
     }
 }

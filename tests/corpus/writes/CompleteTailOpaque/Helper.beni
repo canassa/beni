@@ -1,0 +1,5 @@
+pub bump model =
+    if model.flag then
+        { model | left = model.left + 1 }
+    else
+        { model | right = model.right + 1 }

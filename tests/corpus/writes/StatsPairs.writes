@@ -5,6 +5,7 @@ program StatsPairs.main : Tea.sandbox
   key Inc                                         exact      node ρ; value ρ.count ≈
   key Rename                                      exact      node ρ; value ρ.count ≈; value ρ.name
   key Clear                                       exact      node ρ; value ρ.count
+  tail-analysis eligible 1; visits 68; work 5405; candidates 1; resets 4453
   keys 3: bounded 3 (100%), exact 3, indexed 0, structural 0, * 0; capped 0
   hole StatsPairs.beni:41:17                      dynamic    reads ρ.count
   hole StatsPairs.beni:42:12                      dynamic    reads ρ.name

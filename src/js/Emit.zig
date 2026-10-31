@@ -3331,6 +3331,7 @@ const Emitter = struct {
         }
         const w = try Writes.init(.{
             .gpa = e.gpa,
+            .profile = if (e.session.profile.enabled) &e.session.profile else null,
             .graph = e.graph(),
             .birs = birs,
             .provenance = e.session.resolution.provenance,
@@ -3523,6 +3524,7 @@ const Emitter = struct {
         for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
         const w = try Writes.init(.{
             .gpa = e.gpa,
+            .profile = if (e.session.profile.enabled) &e.session.profile else null,
             .graph = e.graph(),
             .birs = birs,
             .provenance = e.session.resolution.provenance,

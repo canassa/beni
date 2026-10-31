@@ -61,8 +61,40 @@ full unfiltered gates. The existing optimized 100k-line benchmark records plain
 and dispatch medians of 308,254 and 296,972 LOC/s; every candidate run exceeds
 250k, with identical source hashes and inference counters. The compact entry
 kernel has passed algorithm-level scaling/capture tests; checked-source
-integration and complete-handler tail facts remain under review.
+integration remains under review. Complete-handler tail facts now pass the
+manager full gates and bounded-work regression suite; their integration receipt
+is recorded below.
 
 Neither changes production Task or authorizes worker execution. Remaining native
 callback consumers, per-entry realm and Wire proofs, and public launching stay
 gated. Every further accepted checkpoint stays on PR #1304.
+
+## Complete-handler facts validation
+
+The next compiler foundation retains bounded complete-handler write facts without
+changing runtime lowering. A separate probe shares one additional work allowance
+across the build; unsupported paths, path limits and exhausted work discard the
+partial candidate and retain ordinary joined evidence. Route-bearing programs
+remain joined without speculative probe work. Runtime command preparation and
+DOM write ordering have not changed.
+
+On the merged master baseline, the full unfiltered gates pass: 307/307 steps,
+2058 passed and 17 existing skips. All 90 write-corpus ordinary views match the
+baseline. Seventeen supplemental diagnostic expectations follow changed checker
+reset sizes; two forced-budget regression inputs preserve their original failure
+paths. The default work allowance is unchanged.
+
+Manager-recalculated cost evidence contains 126 successful builds/captures and
+36 positive native initialization events. All emitted trees and ordinary writes
+and ownership evidence match. Pinned development Debug child-CPU medians change
+by +0.16% for Caller, +3.89% for 64 keys and +5.61% for Static50. Independent probe
+initialization medians are 143.280, 153.565 and 132.635 microseconds respectively.
+Other Dagon users were active; these are descriptive compiler-cost observations,
+not optimized throughput or UI acceptance. No budget is waived. The source change
+is in backend write analysis, not the checked-type inference benchmark. Complete
+handler lowering and UI/runtime performance acceptance remain pending.
+
+Compact entry discovery and private typed entry roots have frozen focused-test
+handoffs. They still require independent source review, integration, matching
+cost validation and manager full gates before acceptance. Neither enables public
+worker execution.
