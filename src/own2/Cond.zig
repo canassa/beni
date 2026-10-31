@@ -3650,10 +3650,13 @@ pub const Table = struct {
     pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         const r = try t.propagateWalk(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal);
         if (!(std.debug.runtime_safety and full_cross_check and !t.no_memo)) return r;
-        // Walked again with no memo (*Cross-check*): the same snapshot.
+        // Walked again with no memo (*Cross-check*), on an account of its own
+        // so that the check moves no limit: the same snapshot.
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
         t.no_memo = true;
         defer t.no_memo = false;
-        if (r != try t.propagateWalk(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal)) std.debug.panic("ownership v2: a memoised propagation differs from its walk", .{});
+        if (r != try t.propagateWalk(gpa, .growth(&scratch), v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal)) std.debug.panic("ownership v2: a memoised propagation differs from its walk", .{});
         return r;
     }
 
