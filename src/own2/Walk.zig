@@ -342,7 +342,11 @@ const Graft = struct {
     /// parameter `k`.
     fn compose(g: *Graft, k: u32, base: PathId, u: NodeId) Error!void {
         if (k >= g.us.len or g.env.places.kind(g.places[k]) == .cross) return;
-        try g.jumps.append(g.env.gpa, .{ .u = u, .path = base });
+        // A join of several level paths is each of them (§2.1, #1253).
+        var bases: std.ArrayList(PathId) = .empty;
+        defer bases.deinit(g.env.gpa);
+        try g.env.places.expandLevels(g.env.gpa, g.env.charge, base, &bases);
+        for (bases.items) |b| try g.jumps.append(g.env.gpa, .{ .u = u, .path = b });
         while (g.jumps.pop()) |j| {
             try g.env.charge.reserve(g.env.gpa, .inspection, 1);
             const got = try g.done.getOrPut(g.env.gpa, .{ k, j.u.int(), j.path.int() });

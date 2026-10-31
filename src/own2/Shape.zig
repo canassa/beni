@@ -1716,6 +1716,14 @@ pub const Table = struct {
             // `elem c·ι` by `s` is `part (elem c·ι)·s`, not `c[*]·s`. A loan
             // projects through its canonical position.
             if (o.isRefinement() and o != .loan) {
+                if (s.kind == .level) {
+                    var lv: std.ArrayList(CellId) = .empty;
+                    defer lv.deinit(gpa);
+                    if (try cellt.projectRefinedLevels(gpa, account, places, cell, &lv)) {
+                        for (lv.items) |p| out = try cellt.sets.insert(gpa, .growth(account), out, p.int(), e.value);
+                        continue;
+                    }
+                }
                 const p = (try cellt.projectRefined(gpa, account, places, cell, s)) orelse continue;
                 out = try cellt.sets.insert(gpa, .growth(account), out, p.int(), e.value);
                 continue;
@@ -1723,6 +1731,17 @@ pub const Table = struct {
             const sym = if (o.isRefinement()) (try cellt.unrefined(gpa, account, places, cell)) orelse continue else cell;
             if (!cellt.origin(sym).isSymbolic()) continue;
             const rec = cellt.get(sym);
+            // A `⟲` whose levels have several canonical paths: a cell at each
+            // (§2.1, *one position, one name*, #1253).
+            if (s.kind == .level) if (try places.levelPaths(gpa, .growth(account), .from(rec.b))) |r| {
+                var k: u32 = 0;
+                while (k < r.len) : (k += 1) {
+                    const lp = places.foldPath(r.start + k);
+                    const lc = try cellt.symbolic(gpa, account, places, rec.origin, rec.a, lp, rec.c);
+                    out = try cellt.sets.insert(gpa, .growth(account), out, lc.int(), e.value);
+                }
+                continue;
+            };
             const child_path = (try places.extend(gpa, .growth(account), .from(rec.b), s)) orelse continue;
             const child = try cellt.symbolic(gpa, account, places, rec.origin, rec.a, child_path, rec.c);
             out = try cellt.sets.insert(gpa, .growth(account), out, child.int(), e.value);

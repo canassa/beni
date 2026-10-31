@@ -712,6 +712,19 @@ pub const Table = struct {
             // A `⟲` given directly (a use's or a hold's route): inside a
             // level already it folds onto it, else it is the next step.
             if (t.pathParent(path) != .none and t.pathStep(path).kind == .level) out = path;
+            // At a first return that is not sealed, the levels below are not
+            // `path⟲`: a place of the cycle above has returned already, so a
+            // step-by-step walk folds them onto that return's `⟲` (in
+            // `T = T (List T)`, the lists below `#T.0[*]#T.0` are
+            // `#T.0[*]⟲#T.0`). One position has one name (#1253): a single
+            // level path is that path; several (`B (List B) (List B)`) are
+            // `levelPaths`', and `path⟲` stays only as the name of their join
+            // where one cell must stand for them (`Cell.alias` reads it on
+            // the cycle as overlapping every level path).
+            if (out == null and t.pathParent(path) != .none and !(try t.sealed(charge, gpa, path))) {
+                const r = try t.levelsOf(gpa, charge, path);
+                if (r.len == 1) out = t.fold_paths.items[r.start];
+            }
         } else if (t.sameCycle(here, target)) {
             var at = path;
             while (at != .none) : (at = t.pathParent(at)) {
@@ -737,6 +750,63 @@ pub const Table = struct {
         if (out == null and deepest != .none) t.paths.items(.ret)[result.int()] = true;
         (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = result.int();
         return result;
+    }
+
+    /// The canonical paths a `⟲` at `path` stands for when they are several
+    /// (§2.1, *one position, one name*): `levelsOf` at a first return that is
+    /// not sealed, whose levels fold through more than one route
+    /// (`B (List B) (List B)`: `…⟲#B.0` and `…⟲#B.1`). Null when `extend`'s
+    /// one path names them. A projection of a symbolic cell by `⟲` makes a
+    /// cell at each (`Shape.projectLeaf`); a reader that keeps one cell keeps
+    /// `extend`'s join name.
+    pub fn levelPaths(t: *Table, gpa: Allocator, charge: Charge, path: PathId) Error!?Ids.Range {
+        if (t.pathParent(path) == .none or t.pathStep(path).kind == .level) return null;
+        if (try t.sealed(charge, gpa, path)) return null;
+        const r = try t.levelsOf(gpa, charge, path);
+        return if (r.len > 1) r else null;
+    }
+
+    /// The canonical paths `p` stands for (§2.1, *one position, one
+    /// name*): `p` itself, unless a `⟲` on it is a join of several level
+    /// paths (`levelPaths`), which is then each of them, with the steps
+    /// after it taken again from each. Appended to `out`, each once.
+    pub fn expandLevels(t: *Table, gpa: Allocator, charge: Charge, p: PathId, out: *std.ArrayList(PathId)) Error!void {
+        var route: std.ArrayList(Step) = .empty;
+        defer route.deinit(gpa);
+        var at = p;
+        var join = false;
+        while (t.pathParent(at) != .none) : (at = t.pathParent(at)) {
+            try charge.reserve(gpa, .path, 1);
+            const s = t.pathStep(at);
+            try route.append(gpa, s);
+            if (s.kind == .level and (try t.levelPaths(gpa, charge, t.pathParent(at))) != null) join = true;
+        }
+        if (!join) return out.append(gpa, p);
+        std.mem.reverse(Step, route.items);
+        var cur: std.ArrayList(PathId) = .empty;
+        defer cur.deinit(gpa);
+        var next: std.ArrayList(PathId) = .empty;
+        defer next.deinit(gpa);
+        try cur.append(gpa, at);
+        for (route.items) |s| {
+            next.clearRetainingCapacity();
+            for (cur.items) |c| {
+                try charge.reserve(gpa, .path, 1);
+                if (s.kind == .level) if (try t.levelPaths(gpa, charge, c)) |r| {
+                    var k: u32 = 0;
+                    while (k < r.len) : (k += 1) try appendNew(gpa, &next, t.foldPath(r.start + k));
+                    continue;
+                };
+                if (try t.extend(gpa, charge, c, s)) |e| try appendNew(gpa, &next, e);
+            }
+            std.mem.swap(std.ArrayList(PathId), &cur, &next);
+        }
+        for (cur.items) |c| try appendNew(gpa, out, c);
+    }
+
+    fn appendNew(gpa: Allocator, list: *std.ArrayList(PathId), p: PathId) Allocator.Error!void {
+        for (list.items) |x| if (x == p) return;
+        try list.append(gpa, p);
     }
 
     fn node(t: *Table, gpa: Allocator, account: *Account, parent: PathId, step: Step, place: PlaceId) Error!PathId {

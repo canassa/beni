@@ -38,11 +38,13 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 760 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1150 },
+    // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1200 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1180 },
+    // 1 200 since #1253: a refinement's parts at each level path.
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1200 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
@@ -108,7 +110,8 @@ const layers = [_]Entry{
     // answered value on the write's path, read beside the path.
     // 2 050 since #1390: a match on a rest splits its positions, unless a
     // head is stored beside the rest.
-    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 2050 },
+    // 2 240 since #1253: the written position, by canonical path.
+    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 2240 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 10, .max_lines = 1200 },
