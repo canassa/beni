@@ -2156,6 +2156,74 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
    difference a reader sees is the count: where a shared value is written through `n` paths, v1 reports
    `n` demands and v2 one (`tests/blackbox/ownership-v2-known.txt`). The routes and their values are
    made lazily, a value when its route is reached, in the order the per-path reading made them.
+   **One demand per state below a parameter's leaf (#1412).** A pair is no help where the argument is
+   the caller's own parameter: below its leaf `c` every path is a symbolic leaf of its own (`c·q₁`,
+   `c·q₂`), so no two routes meet one value, and a doubling DAG of use over a parameter cost its paths
+   (`caller w = t₈ w` was `ownership_summary_size`). Merging by `(use node, c)` is wrong too: the frame
+   can tell those paths apart. In `g p = case p of ( x, _ ) → t1 p + List.length x`, `x` holds `p.0`,
+   so `t1 p.0` is refused `alias` and `t1 p.1` accepted. What tells them apart is known only after the
+   walk. The rule (manager's decision on #1412, option 1, *expand after the walk*):
+   - **The stop.** A write route whose value becomes an exact, unrefined leaf `c` of the caller's
+     parameter (one cell, exact, origin `param`) through an exact prefix (no `[*]` or `⟲`) is not
+     walked on (`Calls.Routes.stops`). It is a **group**: the call (its point, its callee, its
+     argument instructions, the callee's `xreq`), the argument, its whole use, the use node `u₀` at the
+     stop and the value there, the prefix, and a **slot**, the count of demands when it stopped.
+     Nothing else is snapshotted. The argument's value is interned and fixed after the walk, so
+     `positionsAt`, `leafDepth` and `spineRefinements` read it then as at the call, and the call's
+     `Beside` index is a memo of that value, made again per call. Escapes are not deferred (#1454).
+   - **The trie `T(c)`**, after the walk and the liveness index, before `Demands.resolve`
+     (`Transfer.Frame.expandGroups`): the canonical paths at and above every parameter cell the
+     frame's escapes reach and the holders live at a group's call reach; the paths below `c` the call's
+     other arguments reach; and the paths below `c` that a later use of a holder of a cell on `c`'s
+     line reads (its use path from that cell, by `extend`). Only a holder live at the call, its life
+     `(start, end]`, can hold against its demand; another's value is not read (#1455). Another
+     demand's operands are no interferer. Where no path tells how a later use reads below `c`, every
+     route of the group stays its own, as the call would have made them: a later use that is a call's
+     (it reads through its callee's use, #1454), a later use of a holder whose value is no leaf, a
+     pending value that is no leaf across the call.
+   - **The walk.** `u₀` is walked from `c` as `Calls.Routes` walks it, each route its own, its value
+     and its canonical path carried. A route **merges** from the first node where its path is no
+     summary path and every route below it to a `W` takes **plain steps** (`Transfer.Plain`: a step
+     `extend` appends, never a fold, a `[*]` or a `⟲`). From there it is a state: the use node, the
+     deepest node of `T(c)` it passed (`t`), its **class** (on `t`, or the place of the step that
+     left it), and the path's `sig` and place. `sig` is what `extend` reads to fold: the run of the
+     path's last places on one strongly connected component, with their `⟲` steps and the root, so
+     two paths of one `sig` take every step alike. A state met again is skipped with what is below it.
+   - **Why every route of a state has the witness's verdict.** #1369's argument, with "same value
+     node" replaced by "same trie state". Below `t` by a plain step, a route never comes back: no
+     fold, so every later path has the off step as its step at `t`. Each interferer is a node of
+     `T(c)` or outside `c`. An ancestor of `t` is a prefix of every route; a node below `t` on
+     another branch parts from every route at `t`, by the same class of step, which is all
+     `pathsMayAlias` and `Cell.below` read there; a cell outside `c` parts above `c`, on `c`'s own
+     path. Condition 2's ancestors and descendants, condition 4's alias, condition 5's holds and use
+     paths, and rule (c)'s base cell are decided by those relations, so verdict, exactness and cause
+     are the witness's. The other paths of one route are param leaves beside it, distinct objects of
+     the caller by rule (c), and below a plain step none of them is the base or above it, so
+     `otherPaths` keeps for every route what it keeps for the witness, and owes no `excl`: an exact
+     path is no summary path.
+   - **Not below `⟲` or `[*]`.** There the write owes the distinctness of its positions upward, `excl
+     cu` of the base's canonical cell, one atom per route (rule (c), folded). One demand would publish
+     its witness's atom only, so those routes stay one demand each until the atoms are published by
+     node (#1453). This is why #1357's precise comparison use, whose writes are K·(2K+1) canonical
+     paths mostly below `⟲`, does not fit yet.
+   - **Order.** The demands of a state are made in the walk's order, its witness the first route met
+     (the last sibling step first, as above), and the group's run is put at its slot, before the
+     demand made there, so the frame's demands stay in evaluation order. The callee's `xreq` goes on
+     the call's first demand after that, or to the frame when it has none.
+   - **The class by node.** One demand stands for every route of its state, so the read-off cannot take
+     the `W` marks from the demands' bases alone. Each group's `u₀` is grafted at `c`'s path along
+     plain steps (`Walk.GraftWrites`), with `R W` at each node it marks `W`, `R W S` and a leaf for a
+     deep write, and the marks below a leaf of the class joined into it, as `Mark.at` puts them per
+     route. A route through a step that is not plain has a demand of its own, which marks it.
+   - **Measured** (records of the caller's account, master → this rule): `caller w = t_n w` at depth
+     4 / 6 / 8 / 10 / 12, 2 959 / 15 595 / limit / `t9` unchecked / unchecked → 476 / 664 / 852 /
+     1 040 / 1 228, and `t_n`'s own frame 2 824 / 15 030 / 75 668 → 738 / 1 068 / 1 398. A K-wide `T`
+     whose root list and children's lists are written, at K = 8 / 16 / 32: K + 1 demands → 2, 1 206 /
+     2 315 / 4 572 → 617 / 941 / 1 613. The doubling family needed one fix outside this item: two
+     place builds could share a cycle component id, so a tuple and its list were one cycle, and
+     `Exits` walked the use of a call by path (#1452). The whole-corpus v2 dump, 2 039 roots, has no
+     line changed but the accounts. Pinned: `ParamLeafByNode` and the two counted tests in
+     `build_test.zig`.
 4. **E**: `cellsAt(aᵢ, q)` escape deeply, one escape per route as item 3 reads them. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
@@ -5966,7 +6034,7 @@ A defect that a fixture finds gets its own issue, and its fix lands in the PR th
 | 5d1 the counted towers | The eight families of §2.9 as counted tests at the default allowance (gated at 10 / 40 / 160, which the 1 s test budget holds and which separates n log n from n²; 1 000 is measured in the pull request, not gated: the manager's decision, 2026-10-31), with per-category counts, read-off and codec work and published bytes, normalised against n log(n + 2). Fixes for K and `Rose [ r, r ]` (#1420) and for the push chain over a parameter (#1419). | `build_test.zig`: the eight families, each with the identity, mutual and `Maybe` forms Appendix B names, and each memo disabled in turn so that its witness fails. K's exclusive seed stays one, with `yes` at the kids path (C×J). | None: no call or group is needed. It can start now. | Each family meets its bound. #1419 and #1420 close. |
 | 5d2 the counted calls | `wrap (wrap … r)` at 10 / 100 / 1 000, same-module and imported, with the identity-helper control and a refused twin (`wrap2 r = Rose [ r, r ]` under a kids writer). #1146's X_k chain counted through `apply`'s view and the κ read, not through `Grafter`. #1289's tree-insert chain flat per call. #1097's done condition. R-7.4's Θ(NK) witness: N transfer nodes and K `res.shape` versions, measured and reserved as growth. | `build_test.zig` counted tests. The source-lanes test is tightened to G_f = 0 for the chain. | 4b for the R-7.4 witness. 5a for the X_k count, if the view path changes. | The bounds hold. #1097 and #1289 close. #1308 may then delete `Grafter.graft`. |
 | 5e the remaining call forms | R-5.13.1: a class Dispatch marks as `eq`/`compare` whose `writes` bit is set is `comparison_changes_value` at its first demand on an arrival. A derived class joins its component classes first (§2.13.13). R-5.5.6: a top-level alias of a function is a call of what it names, through any number of names (`ext_value`, `top`). | `ComparisonWrites` moves from `tests/pending/check/bad/inline/` with a v2 `.diag`. `CallbackListWords`' derived half. `p/AliasWriterCall` moves to `o/`. Each has a known entry against v1. | 4a: a derived comparison over a recursive type is a group. | Both fixtures are green under v2. The new code is in `diagnostic.Code`. `skills/beni/` changes when the code becomes visible without the hidden flag (S10), not before. **As built (#1434):** done; §2.11 and §2.13.13 item 13 have the notes. `ComparisonWrites` pins the code whole in a `.v2.diag`, which `ownershipV2` compares; `AliasWriterCall` (a nine-name chain), `AliasGroupCall` (the target in a recursive group; an alias inside one is a value defined in terms of itself, the checker's error) and `AliasImported` (across three modules) are new or moved. The comparison refusal moved the writing comparisons of fourteen fixtures (eight `Cmp*`, two `ContainerOverWriter*`, two `DerivedOverWriter*`, `EvidenceDeep`, `PrivateEqThroughShapes`) from `param` to refused; `CallbackListWords`' derived half is those fixtures (its callback half is S4's). A comparison written as an alias (`ComparisonAlias`, `ComparisonAliasImported`) and values named `eq` and `compare` of another shape (`ComparisonNameOnly`, accepted) are pinned, and so are a comparison with a type variable parameter (`ComparisonVariableParam`) and a chain through three modules (`AliasThreeModules`). |
-| 5f a use over a parameter, by node (#1412) | Manager's option 1 on #1412: a route stops at an exact leaf of the caller's parameter, and after the walk the group expands over the callee's use DAG paired with what reaches below that leaf. The spec goes into §2.11 item 3 first. | #1412's counted tests (a doubling DAG of depth 8–12 over a parameter, a K-wide type at K = 8 / 16 / 32). #1357's fan-out ring at k = 12 and its syntax tree. | 4a. | #1412 closes. #1357 closes or gets a narrower issue. |
+| 5f a use over a parameter, by node (#1412) | Manager's option 1 on #1412: a route stops at an exact leaf of the caller's parameter, and after the walk the group expands over the callee's use DAG paired with what reaches below that leaf. The spec goes into §2.11 item 3 first. | #1412's counted tests (a doubling DAG of depth 8–12 over a parameter, a K-wide type at K = 8 / 16 / 32). #1357's fan-out ring at k = 12 and its syntax tree. | 4a. | #1412 closes. #1357 closes or gets a narrower issue. **As built (#1412):** §2.11 item 3, *One demand per state below a parameter's leaf*. The two counted tests pass (`caller w = t_n w` at depth 8 / 10 / 12, 852 / 1 040 / 1 228 records, master `ownership_summary_size` at 8; a K-wide `T` at K = 8 / 16 / 32, two demands where master made K + 1). Merging stops at summary paths, where the `excl` a write owes is one per route (#1453), so #1357's precise comparison use does not fit yet and #1357 stays open behind #1453. Escapes and later call uses stay route by route (#1454). A cycle-id defect of `Place` was fixed on the way (#1452), and #1455 records a read-off that depends on forced views. `ParamLeafByNode` pins the merged and the kept-apart routes. |
 | 5z close-out | The *As built* notes of slices 4 and 5 in the row. The counts §8 asks for at close-out: checked against unsupported roots, the `.v2.unchecked` lines by reason, the counted-family table, B_f/G_f/N_f over the corpus. | None | Everything above, and the gating debt below. | #1016 closes. |
 
 *Order.* 4a, then #1308's split, then 4b and 5a in parallel (`Fix`/`Groups` against `Shape`/`Cond`),
