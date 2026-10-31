@@ -1932,6 +1932,36 @@ each reader takes from `D`:
 Fixtures: `ownership/DeepReadAcrossCall` and `ownership/DeepReadAcrossCallImported` (`viaHelper`: v1's
 refusal, in one module and across an import, and the shapes beside it).
 
+**`A` below an answered path adds nothing** [M 2026-10-31, #1451]. `Shape.leq` lets a `res` leaf whose
+cell is `πᵢ·q` cover a node at `q` with children at `q`'s paths below (`res π1` covers `[*] π1[*]`). Read-off
+writes `A` only at the paths of the parameter cells the result reaches, so two `res` equal by `Shape.leq` can
+give different `A` marks. A group member that reads another's published leaf has `A` at `π1` only. The member
+whose own walk saw the node has `A` at `π1[*]` too (`GroupAnswerCover`: `q` and `p`). `Summary.leq` compares
+use shapes literally, node by node (`leqUse`; a missing child is `nothing`), so these two classes are not
+`leq`-equal. `res`'s cover is in `Shape.leq` only. Either class gives the same verdicts, because an `A` that
+the cover drops is always strictly below an `A` that read-off keeps on the same parameter, the leaf's own,
+and every reader reads the kept one as holding every path below it:
+
+- Liveness reads a node marked `A` as covering every path below it (`Cell.readsBelow`: `Holders.stepCursor`,
+  `Exits.deep`; §2.7, *A part a callee answers*).
+- §2.11 item 3: an `A` above the write is read whole for what it holds beside the write (rule (a),
+  `keepAnswered`), and an `A` below a non-exact write is read whole (rule (b)). An `A` at an exact write path
+  holds nothing beside the write.
+- The one literal read is rule (b) at the write's own non-exact path `q`. There, a node form also reads
+  `q`'s paths below; a leaf form does not. That case is "`q` is never beside itself": the callee's `xreq`
+  carries it. A frame that answers one position of `q` beside a write at another relies on the split's
+  `excl`: `g ys = case ys of [ a, b ] → ( List.length (List.push a []), b )` publishes `xreq excl π1[*]`,
+  and `g [ em, [ em ] ]` is refused.
+- `Walk.Graft` composes a callee's `A` as `R` at the same path, so a leaf form gives its caller fewer `R`
+  marks below `q`. That removes only extra caution: what a caller reads through the answer reaches its class
+  through the answer's own cells (`readsOf`).
+
+So read-off keeps the literal paths. Closing `A` under the cover was rejected: a leaf of `A` marks would turn
+a later shallow `W` below it into `S`, as for `D` above, and writing `A` at every canonical path below costs
+the place graph per class. Reading rule (b) through the cover was measured with no verdict change over the
+corpus and core, but it changes a cause from v1's (`exclusive` → `disjoint`), and `Graft` would still differ.
+Fixtures: `ownership/GroupAnswerCover` and `ownership/GroupAnswerCoverImported` (v1's verdicts).
+
 **Room for #587.** A class names no declaration and lives in a class table a summary owns; a `closure` place has a
 class slot (§2.1). #587 attaches an inferred class to every function type and copies it through `Instantiate` as
 effect classes are; `Calls` changes only where it looks the class up. An in-place shared cell type is a
