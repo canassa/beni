@@ -1693,6 +1693,10 @@ pub const Beside = struct {
     /// `(reach, key)` → that reach's cells of that key (`keyed`).
     sets: Ids.FixedDict(5) = .{},
     keyed_done: Ids.FixedDict(1) = .{},
+    /// Per spine index: the keys its children are listed under, a run of
+    /// `key_list`.
+    key_ranges: std.ArrayList([2]u32) = .empty,
+    key_list: std.ArrayList([4]u32) = .empty,
 
     pub const Kid = struct { step: Place.Step, u: NodeId, v: NodeId, stuck: bool, level: bool };
 
@@ -1704,12 +1708,20 @@ pub const Beside = struct {
         b.links.deinit(gpa);
         b.sets.deinit(gpa);
         b.keyed_done.deinit(gpa);
+        b.key_ranges.deinit(gpa);
+        b.key_list.deinit(gpa);
     }
 
     /// The spine index of a node built already, or null.
     pub fn lookup(b: *Beside, env: Env, key: [3]u32) Error!?u32 {
         try env.charge.reserve(env.gpa, .memo, 1);
         return b.memo.get(key);
+    }
+
+    /// The keys `sp`'s children are listed under.
+    pub fn keysOf(b: *const Beside, sp: u32) []const [4]u32 {
+        const r = b.key_ranges.items[sp];
+        return b.key_list.items[r[0]..][0..r[1]];
     }
 
     /// The first link of `key`'s children at spine `sp`, or `none`.
@@ -1728,6 +1740,7 @@ pub const Beside = struct {
         const start: u32 = @intCast(b.kids.items.len);
         try b.kids.appendSlice(gpa, kids);
         try b.ranges.append(gpa, .{ start, @intCast(kids.len) });
+        const keys_at: u32 = @intCast(b.key_list.items.len);
         for (kids, start..) |k, ki| {
             const kid: u32 = @intCast(ki);
             const n = try shapes.force(gpa, env.account(), k.v);
@@ -1752,12 +1765,14 @@ pub const Beside = struct {
                 try b.link(gpa, sp, aliasKey(cells, c), kid);
             }
         }
+        try b.key_ranges.append(gpa, .{ keys_at, @as(u32, @intCast(b.key_list.items.len)) - keys_at });
         return sp;
     }
 
     fn link(b: *Beside, gpa: Allocator, sp: u32, key: [4]u32, kid: u32) Error!void {
         const got = try b.heads.getOrPut(gpa, .{ sp, key[0], key[1], key[2], key[3] });
         if (got.found_existing and b.links.items[got.value_ptr.*][0] == kid) return;
+        if (!got.found_existing) try b.key_list.append(gpa, key);
         const prev = if (got.found_existing) got.value_ptr.* else Ids.none_int;
         got.value_ptr.* = @intCast(b.links.items.len);
         try b.links.append(gpa, .{ kid, prev });
