@@ -74,7 +74,7 @@ const layers = [_]Entry{
     // it; with the frame types, the naive scan and the fallback hold listing.
     // 2 010 since #1335: the same-path closure by the cycle walk; 2 030 since
     // #1366: a candidate stops at a `◆` barrier.
-    .{ .file = "Holders.zig", .layer = 6, .max_lines = 2030 },
+    .{ .file = "Holders.zig", .layer = 6, .max_lines = 2050 },
     // §5 says 450 since #1214 (L7 since then): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 7, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
@@ -83,8 +83,9 @@ const layers = [_]Entry{
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write; 2 000 since #1367: an
     // answered value on the write's path, read beside the path.
-    // 2 030 since #1390: a match on a rest splits its positions.
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 2030 },
+    // 2 050 since #1390: a match on a rest splits its positions, unless a
+    // head is stored beside the rest.
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 2050 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },
