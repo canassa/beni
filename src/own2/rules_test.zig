@@ -40,7 +40,8 @@ const layers = [_]Entry{
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1150 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1110 },
+    // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1180 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
@@ -80,7 +81,8 @@ const layers = [_]Entry{
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write; 2 000 since #1367: an
     // answered value on the write's path, read beside the path.
-    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 2000 },
+    // 2 030 since #1390: a match on a rest splits its positions.
+    .{ .file = "Transfer.zig", .layer = 8, .max_lines = 2030 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 8, .max_lines = 1200 },

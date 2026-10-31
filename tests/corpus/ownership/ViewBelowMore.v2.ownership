@@ -1,10 +1,10 @@
 module ViewBelowMore
-  18:31 List.push g: rejected alias: r[*] holds it and is read at 18:29
-  38:31 List.push g: rejected alias: r[*] holds it and is read at 38:29
+  18:31 List.push g: rejected alias: r holds it and is read at 18:29
+  38:31 List.push g: rejected alias: r holds it and is read at 38:29
   60:39 List.push g: rejected alias: x#Rose.0 holds it and is read at 60:37
   80:31 List.push k1: rejected alias: r holds it and is read at 80:29
-  102:39 List.push g: rejected alias: r[*] holds it and is read at 102:37
-  125:31 List.set g: rejected alias: r[*] holds it and is read at 125:29
+  102:39 List.push g: rejected alias: r holds it and is read at 102:37
+  125:31 List.set g: rejected alias: r holds it and is read at 125:29
   demands 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
 total 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
 cause alias 6

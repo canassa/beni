@@ -286,3 +286,6 @@ tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 ::
 tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.0.1 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
 tests/corpus/ownership/CallNestedResult.beni [node] CallNestedResult 95:16 #0 :: CallNestedResult.t2 <call>.1.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
 tests/corpus/ownership/CallNestedResultImported [node] Main 65:16 #0 :: Pairs.t2 <call>.1.0 :: rejected :: absent  merged into one route by #1369; the call is still refused at <call>.1.1
+#
+# v2 refuses where v1 accepted: two matches of one rest may take one position (ownership-v2.md §2.13.3).
+tests/corpus/ownership/PatternPositions.beni [node] PatternPositions 257:34 #0 :: PatternPositions.rightLeft <Pair …>#Pair.1#Box.0 :: accepted :: rejected  `c` and `d` are both the rest's first element, one box written and answered: v1 accepts it unsoundly

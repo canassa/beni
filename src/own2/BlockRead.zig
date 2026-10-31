@@ -995,6 +995,12 @@ const Reader = struct {
                 return cells.symbolic(gpa, acct, r.env.places, .cb, l.int(), p, try r.get());
             },
             .top => return cells.top(gpa, acct),
+            .part => {
+                const anchor: CellId = .from(try r.need(.cell));
+                const p: PathId = .from(try r.need(.path));
+                if (!cells.origin(anchor).isRefinement() or cells.origin(anchor) == .part or cells.origin(anchor) == .loan or r.env.places.pathParent(p) == .none) return error.Malformed;
+                return cells.part(gpa, acct, r.env.places, anchor, p);
+            },
             .elem, .others, .level, .below, .loan => {
                 const parent: CellId = .from(try r.need(.cell));
                 const l = try r.opt(LabelId, .label);

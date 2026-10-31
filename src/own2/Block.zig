@@ -967,6 +967,10 @@ const Writer = struct {
                         try w.word(d.c);
                     },
                     .top => {},
+                    .part => {
+                        try w.ref(.cell, d.a);
+                        try w.ref(.path, d.c);
+                    },
                     .elem, .others, .level, .below, .loan => {
                         try w.ref(.cell, d.a);
                         try w.ref(.label, d.b);

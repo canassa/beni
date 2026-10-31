@@ -1703,8 +1703,14 @@ pub const Table = struct {
                 out = try cellt.sets.insert(gpa, .growth(account), out, e.key, e.value);
                 continue;
             }
-            // A refinement projects through its canonical position, the
-            // split forgotten (§2.2): `elem c·ι` below is `c[*]` below.
+            // A refinement's projection keeps the position (§2.2 *Parts*):
+            // `elem c·ι` by `s` is `part (elem c·ι)·s`, not `c[*]·s`. A loan
+            // projects through its canonical position.
+            if (o.isRefinement() and o != .loan) {
+                const p = (try cellt.projectRefined(gpa, account, places, cell, s)) orelse continue;
+                out = try cellt.sets.insert(gpa, .growth(account), out, p.int(), e.value);
+                continue;
+            }
             const sym = if (o.isRefinement()) (try cellt.unrefined(gpa, account, places, cell)) orelse continue else cell;
             if (!cellt.origin(sym).isSymbolic()) continue;
             const rec = cellt.get(sym);
