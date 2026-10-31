@@ -56,6 +56,9 @@ pub const Input = struct {
     result_place: PlaceId,
     /// A recursive group member's stable labels (§8 S3b slice 4), or null.
     labels: ?Labels = null,
+    /// A type's `eq` or `compare` (§2.13.13 item 13, R-5.13.1): a demand
+    /// on what it was handed is `comparison`, never accepted.
+    comparison: bool = false,
 };
 
 /// The stable labels of a recursive group member's read-off (§8 S3b slice
@@ -132,6 +135,13 @@ pub fn walk(in: Input) Error!Result {
         .regions = &regions,
         .bindings = frame.binding,
     }, outcomes);
+    // R-5.13.1: a comparison may only read its arguments. A demand the
+    // conditions accept on an arrival (`param`: a cell neither the frame
+    // nor a call made) is the language's refusal, a position rule; one they
+    // refuse keeps its own cause.
+    if (in.comparison) for (outcomes) |*o| if (o.verdict == .accepted and o.accepted == .param) {
+        o.* = .{ .verdict = .refused, .cause = .comparison, .exactness = .position };
+    };
     const lines = try gpa.alloc(Line, outcomes.len);
     errdefer gpa.free(lines);
     // The frame's `xreq` is tested here: its `inst` atoms resolved first.

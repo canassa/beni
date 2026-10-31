@@ -2246,7 +2246,7 @@ const Case = struct {
     }
 
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();
@@ -3978,6 +3978,10 @@ const Case = struct {
                 return error.OwnershipErrorsDisagree;
             }
         } else try expectExit(0, checked);
+        // A `.v2.diag` pins that check's diagnostics whole, code, span and
+        // message, where v2 refuses with a code of its own
+        // (`comparison_changes_value`, R-5.13.1).
+        if (c.goldenExists("v2.diag")) try c.expectGolden("v2.diag", checked.stderr);
         // A `.v2.ownership` is v2's own verdict lines where they differ from
         // v1's on purpose (a red twin v1 gets wrong, a holder named more
         // precisely), the `.v2` file saying why.

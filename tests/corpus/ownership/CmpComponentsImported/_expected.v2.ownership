@@ -1,10 +1,10 @@
 module Inner
-  9:26 List.push l: accepted param
-  account eq: source 20, baseline 241, growth 0 of 65536, total 241, continuation 160 of 20480, demands 22, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
+  9:26 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
+  account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 188 of 20480, demands 24, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
   crossing: reads 0, redone 0, base moves 0
   summary eq: π1 R, π1#Inner.0 RW
-  block: 472 bytes, hash 00cf5419220d02dd
-  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  block: 472 bytes, hash 0e56e013f18182c3
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 module Main
   19:44 call <expression>.0#Inner.0: accepted param
   19:44 call <expression>.0#Inner.0: accepted fresh
@@ -18,28 +18,29 @@ module Main
   31:45 call <expression>.0[*]#Inner.0: accepted fresh
   40:77 call <expression>.0: rejected alias: xs holds it and is read at 40:17
   40:77 call <expression>.0: accepted fresh
-  account direct: source 25, baseline 165, growth 0 of 65536, total 165, continuation 78 of 25600, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 26
+  account direct: source 25, baseline 169, growth 0 of 65536, total 169, continuation 82 of 25600, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 26
   crossing: reads 0, redone 0, base moves 0
   summary direct: π1 RA; res .1 π1
-  account viaTuple: source 29, baseline 210, growth 0 of 65536, total 210, continuation 108 of 29696, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 30
+  account viaTuple: source 29, baseline 220, growth 0 of 65536, total 220, continuation 118 of 29696, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 30
   summary viaTuple: π1 RA; res .1 π1
-  account keepOther: source 27, baseline 324, growth 0 of 65536, total 324, continuation 220 of 27648, demands 55, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 28
+  account keepOther: source 27, baseline 398, growth 0 of 65536, total 398, continuation 294 of 27648, demands 57, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 28
   summary keepOther: π1 RW, π2 RA; res .1 π2
-  account keepWritten: source 27, baseline 334, growth 0 of 65536, total 334, continuation 230 of 27648, demands 65, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 28
+  account keepWritten: source 27, baseline 406, growth 0 of 65536, total 406, continuation 302 of 27648, demands 67, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 3, transfer_settlement lanes 28
   summary keepWritten: π1 RAW, π2 R; res .1 π1
-  account keepSecond: source 31, baseline 434, growth 0 of 65536, total 434, continuation 313 of 31744, demands 90, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 32
+  account keepSecond: source 31, baseline 540, growth 0 of 65536, total 540, continuation 427 of 31744, demands 102, direct_data lanes 2, liveness_index lanes 3, call_view lanes 5, transfer_settlement lanes 32
   summary keepSecond: π1 RW, π2 RAW; res .1 π2
-  account keepInList: source 22, baseline 327, growth 0 of 65536, total 327, continuation 240 of 22528, demands 45, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 2, transfer_settlement lanes 23
+  account keepInList: source 22, baseline 389, growth 0 of 65536, total 389, continuation 302 of 22528, demands 44, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 2, transfer_settlement lanes 23
   summary keepInList: π1 RAW; res .1 π1
-  account keepInTree: source 29, baseline 322, growth 0 of 65536, total 322, continuation 207 of 29696, demands 55, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 30
-  summary keepInTree: π1 RA; res .1 π1
-  block: 1440 bytes, hash b45e2d62d4ff4f7d
+  account keepInTree: source 29, baseline 393, growth 0 of 65536, total 393, continuation 278 of 29696, demands 61, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 30
+  summary keepInTree: π1 RAS; res .1 π1
+  block: 1660 bytes, hash f95490555477ea5f
   demands 12: accepted 8 (fresh 6, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 module Outer
-  account eq: source 23, baseline 139, growth 0 of 65536, total 139, continuation 98 of 23552, demands 1, direct_data lanes 2, liveness_index lanes 4, call_view lanes 1, transfer_settlement lanes 26
+  account eq: source 23, baseline 140, growth 0 of 65536, total 140, continuation 99 of 23552, demands 1, direct_data lanes 2, liveness_index lanes 4, call_view lanes 1, transfer_settlement lanes 26
   crossing: reads 0, redone 0, base moves 0
   summary eq: π1 R, π1#Outer.0 R, π2 R, π2#Outer.0 R
-  block: 504 bytes, hash ed3bbd58fda8b027
+  block: 504 bytes, hash bc9799370e643579
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-total 13: accepted 9 (fresh 6, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 13: accepted 8 (fresh 6, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause alias 4
+cause comparison 1

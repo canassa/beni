@@ -1,6 +1,4 @@
 M maxOf: lines 15-21 (not built: method_call)
-M h: lines 24-26 (not built: top)
 Main maxOf: lines 6-12 (not built: method_call)
-Main h: lines 15-15 (not built: top)
 Main same: lines 18-18 (not built: local)
 Main main: lines 29-39 (not built: call)

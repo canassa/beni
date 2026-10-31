@@ -31,6 +31,7 @@ const Dispatch = @import("../check/Dispatch.zig");
 const Edges = @import("../check/Edges.zig");
 const Scc = @import("../check/Scc.zig");
 const InternPool = @import("../InternPool.zig");
+const Interface = @import("../resolve/Interface.zig");
 
 pub const none: u32 = Ids.none_int;
 
@@ -294,6 +295,46 @@ fn join(gpa: Allocator, bir: *const Bir, targets: []const JoinTargets, inst: Bir
     }
 }
 
+// ---- aliases of functions (R-5.5.6) ----
+
+/// A value with no parameters and no words whose body is a bare name of
+/// another top-level value, of its module or another: an alias, when its
+/// type is a function's (the caller knows; a called name always is one).
+pub fn isAliasShape(bir: *const Bir, d: Bir.Decl) bool {
+    if (d.kind != .value or d.params != 0 or bir.ownSlotsV2(d).len != 0) return false;
+    const b = d.body.unwrap() orelse return false;
+    return switch (bir.instTag(b)) {
+        .top, .ext_value => true,
+        else => false,
+    };
+}
+
+/// The function a called declaration `(module, decl)` names through
+/// top-level aliases (R-5.5.6, ownership-v2.md §8 S3b slice 5e): while it
+/// is an alias shape, the value it names, through any number of names and
+/// across modules (`birs` and `provenance` are the session's, by module).
+/// Only a callee is resolved so: a called value is of a function type, so
+/// each name on the way is an alias of a function, never data (S7's). A
+/// cycle of values is the checker's error; the bound of every declaration
+/// of the session stops one all the same, on a name of it.
+pub fn aliasTarget(birs: []const *const Bir, provenance: []const Interface.Provenance, t0: [2]u32) [2]u32 {
+    var t = t0;
+    var budget: usize = 0;
+    for (birs) |b| budget += b.decls.len;
+    while (budget > 0) : (budget -= 1) {
+        if (t[0] >= birs.len) return t;
+        const owner = birs[t[0]];
+        if (t[1] >= owner.decls.len or !isAliasShape(owner, owner.decls[t[1]])) return t;
+        const b = owner.decls[t[1]].body.unwrap().?;
+        const data = owner.instData(b);
+        t = switch (owner.instTag(b)) {
+            .top => .{ t[0], data.lhs },
+            .ext_value => .{ data.lhs, if (data.lhs < provenance.len) (provenance[data.lhs].valueDecl(data.rhs) orelse return t).int() else return t },
+            else => return t,
+        };
+    }
+    return t;
+}
 // ---------------------------------------------------------------------------
 // Tests: source lowered in-process, no checker (`dispatch` null).
 // ---------------------------------------------------------------------------

@@ -108,7 +108,10 @@ const layers = [_]Entry{
     // 1 780 since S3b slice 4a: the recursive group's solver (ports from ⊥,
     // synchronous rounds, the read vectors, the group built whole or not at
     // all, its cold re-check, polymorphic recursion named apart).
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1780 },
+    // 1 840 since S3b slice 5e: a call through a function alias (the alias
+    // not walked, the callee name followed) and a type's comparison told
+    // for R-5.13.1.
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
     .{ .file = "Entry.zig", .layer = 10, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -186,7 +189,7 @@ const literal_allowlist = [_]Allowed{};
 const causes = [_][]const u8{
     "unknown",   "escaped",  "top_level", "captured_edit", "disjoint", "held_operand", "later_use",
     "alias",     "captured", "element",   "call",          "supply",   "need",         "limit",
-    "exclusive", "once",     "payload",   "read_only",     "level",
+    "exclusive", "once",     "payload",   "read_only",     "level",    "comparison",
 };
 
 const test_marker = "\nconst testing = std.testing;";
@@ -407,7 +410,7 @@ test "the layering table has each file once and every layer below the next" {
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
     try testing.expectEqual(@as(usize, 28), layers.len);
-    try testing.expectEqual(@as(usize, 19), causes.len);
+    try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
 test "the import verdict refuses back doors and accepts the base layer" {

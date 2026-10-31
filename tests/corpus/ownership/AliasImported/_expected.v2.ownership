@@ -1,0 +1,25 @@
+module Deep
+  2:8 List.push xs: accepted param
+  account w: source 12, baseline 259, growth 0 of 65536, total 259, continuation 202 of 12288, demands 22, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 13
+  crossing: reads 0, redone 0, base moves 1
+  summary w: π1 RAW, π1[*] A; res [*] π1[*]{excl π1[*]}, π1
+  block: 620 bytes, hash 4d9fba71f5c32443
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Lib
+  block: 464 bytes, hash a5b8211a8a20c2db
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  11:13 List.push xs: rejected later-use: xs is read again at 11:11
+  15:18 Deep.w xs: rejected later-use: xs is read again at 15:16
+  19:12 Deep.w xs: accepted param
+  account kept: source 18, baseline 310, growth 0 of 65536, total 310, continuation 242 of 18432, demands 26, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 19
+  crossing: reads 0, redone 0, base moves 1
+  summary kept: π1 RAW, π1[*] A; res .0 π1, .0[*] π1[*]{excl π1[*]}, .1 π1
+  account keptChain: source 17, baseline 338, growth 0 of 65536, total 338, continuation 247 of 17408, demands 22, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 18
+  summary keptChain: π1 RAW, π1[*] RA; res .0 π1, .0[*] π1[*]{excl π1[*]}, .1 π1
+  account owned: source 11, baseline 287, growth 0 of 65536, total 287, continuation 207 of 11264, demands 18, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 12
+  summary owned: π1 RAW, π1[*] RA; res [*] π1[*]{excl π1[*]}, π1
+  block: 1024 bytes, hash 961ee7d9fbe3f3c8
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 2

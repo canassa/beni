@@ -1,8 +1,6 @@
 M minOf: lines 5-11 (not built: method_call)
-M h: lines 14-16 (not built: top)
 M lam: lines 19-21 (not built: local)
 Main maxOf: lines 26-32 (not built: method_call)
-Main top: lines 35-37 (not built: top)
 Main lam: lines 40-40 (not built: local)
 Main lamA: lines 43-50 (not built: local)
 Main eqA: lines 53-55 (not built: local)

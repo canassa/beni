@@ -505,6 +505,11 @@ pub const Code = enum {
     prerender_data_failed,
     prerender_data_invalid,
     prerender_data_ignored,
+    /// Appended on 2026-10-31 with R-5.13.1 (ownership-requirements.md;
+    /// ownership-v2.md §2.13.13 item 13): a type's `eq` or `compare` that
+    /// changes a value it is handed, or calls a function that does, at the
+    /// write. A language rule; the ownership checker v2's, an error.
+    comparison_changes_value,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -701,6 +706,7 @@ pub fn title(code: Code) []const u8 {
         .prerender_data_failed => "DATA PROGRAM FAILED",
         .prerender_data_invalid => "PAGE DATA DOES NOT DECODE",
         .prerender_data_ignored => "DATA PROGRAM IGNORED",
+        .comparison_changes_value => "COMPARISON CHANGES A VALUE",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

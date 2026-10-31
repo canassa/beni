@@ -1,0 +1,1 @@
+v2 calls a top-level alias of a function as the function it names (R-5.5.6), here a member of a recursive group; v1 makes the alias pending.

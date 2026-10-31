@@ -1,5 +1,5 @@
 module CmpDeepWrite
-  16:34 List.push l: accepted param
+  16:34 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
   20:16 List.eq ds[*]#Deep.1.1: accepted param
   20:16 List.eq <literal>[*]#Deep.1.1: accepted fresh
   24:19 CmpDeepWrite.listOf ds[*]#Deep.1.1: rejected element: ds[*]#Deep.1.1 holds it and is read at 24:17 (approx)
@@ -12,7 +12,7 @@ module CmpDeepWrite
   40:37 call <expression>.0#Deep.1.1: accepted param
   40:37 call <expression>.0#Deep.1.1: accepted fresh
   44:21 CmpDeepWrite.viaFn2 xs: rejected later-use: xs is read again at 44:19
-  account eq: source 34, baseline 408, growth 0 of 65536, total 408, continuation 265 of 34816, demands 28, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 37, step lanes 2
+  account eq: source 34, baseline 414, growth 0 of 65536, total 414, continuation 271 of 34816, demands 30, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 37, step lanes 2
   crossing: reads 0, redone 0, base moves 0
   summary eq: π1 R, π1#Deep.1.1 RW, π2 R, π2#Deep.1.1 R
   account listOf: source 9, baseline 48, growth 0 of 65536, total 48, continuation 36 of 9216, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 10
@@ -29,10 +29,11 @@ module CmpDeepWrite
   summary viaFn2: π1 RW
   account callerViaFn2: source 15, baseline 41, growth 0 of 65536, total 41, continuation 35 of 15360, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 14
   summary callerViaFn2: π1 RAW; res .1 π1
-  block: 2172 bytes, hash 3e3c9e29e331e364
-  demands 13: accepted 7 (fresh 4, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
-total 13: accepted 7 (fresh 4, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+  block: 2172 bytes, hash b1f8124a26adac4a
+  demands 13: accepted 6 (fresh 4, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 13: accepted 6 (fresh 4, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
 cause disjoint 2
 cause later-use 1
 cause alias 2
 cause element 1
+cause comparison 1
