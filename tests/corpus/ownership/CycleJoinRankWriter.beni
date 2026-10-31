@@ -1,0 +1,61 @@
+-- ownership: the writer half of Appendix B's CycleJoinRank (C×J;
+-- ownership-v2.md §8, slice 4's plan, 4a), written as mutual pattern
+-- recursion (#1394); the counted half, the K tower, is 5d's (#1420).
+-- `incAll` writes the kids list of every `Rose` at every depth, and
+-- `incList` walks a list of `Rose` with `[ s, …rest ]`. From an exclusive
+-- seed, a parameter under one, two and three fresh levels, the writer is
+-- accepted at every height (`height1` to `height3`). `reused` starts from
+-- one kids list `k` at two coexisting depths, `Rose [ Rose k, Rose
+-- [ Rose k ] ]`, and is refused. `chosen` puts `k` at one depth or the
+-- other in two whole-value arms: the choice alone does not make `k`
+-- repeated, and it is accepted. Under v2 the three heights and `chosen`
+-- are refused until #1253 tells apart the levels below the first return
+-- (known entries).
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub height1 : Rose → Rose
+height1 seed = incAll (Rose [ seed ])
+
+
+pub height2 : Rose → Rose
+height2 seed = incAll (Rose [ Rose [ seed ] ])
+
+
+pub height3 : Rose → Rose
+height3 seed = incAll (Rose [ Rose [ Rose [ seed ] ] ])
+
+
+pub reused : Rose
+reused =
+    k = [ Rose [] ]
+    incAll (Rose [ Rose k, Rose [ Rose k ] ])
+
+
+pub chosen : Bool → Rose
+chosen c =
+    k = [ Rose [] ]
+    incAll
+        (if c then
+            Rose [ Rose k ]
+         else
+            Rose [ Rose [ Rose k ] ]
+        )

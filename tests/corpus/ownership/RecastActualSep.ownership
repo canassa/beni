@@ -1,0 +1,12 @@
+module RecastActualSep
+  29:18 List.push xs: accepted param
+  36:5 call RecastActualSep.g <call RecastActualSep.deepest>: rejected call: another operand may be it, through the call at 36:8 (RecastActualSep.g writes π1) (approx)
+  44:5 call RecastActualSep.g <call RecastActualSep.deepest>: accepted fresh (RecastActualSep.g writes π1)
+  51:5 call RecastActualSep.g <expression>: rejected call: another operand may be it, through the call at 51:18 (RecastActualSep.g writes π1) (approx)
+  58:5 call RecastActualSep.g <call RecastActualSep.deepest>: rejected call: another operand may be it, through the call at 58:8 (RecastActualSep.g writes π1) (approx)
+  summary deepest: π1 R, π1⟨T⟩#T.0 RA, π1⟨T⟩#T.0[*] R; res ~π1⟨T⟩⁺#T.0{excl π1#T.0}r{excl π1#T.0} π1#T.0
+  summary g: π1 RW[storage], π2 R
+  summary sharedChoice: unused
+  demands 5: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 5: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause call 3
