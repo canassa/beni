@@ -3383,3 +3383,72 @@ test "a view's cells through a level free the grafter's memos, however far a lim
         };
     }
 }
+
+/// A class whose `res` is `joinRes(a, ka, b, kb)`, applied with no
+/// argument, and κ at `[*]` read through the call's view as a caller reads
+/// it, beside the same read in the class itself (#1399).
+fn joinedElemThroughCall(x: *KnotFixture, a: NodeId, ka: Cond.Kappas, b: NodeId, kb: Cond.Kappas) !struct { class: CondId, caller: CondId } {
+    const gpa = testing.allocator;
+    const env = x.env();
+    const e = Place.Step.elem;
+    const j = try Summary.Table.joinRes(env, a, ka, b, kb, .choice);
+    const class_k = try x.conds.kappaOf(gpa, env.charge, env.view(), x.conds.kappaChild(j.kappas, e), (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, j.node, e)).?, true);
+    const c = try x.sums.add(env, .{ .params = &.{}, .res = j.node, .kappas = j.kappas });
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    const r = (try apply(env, &x.sums, c, &.{}, 1, &s)).result;
+    const child = (try x.shapes.proj(gpa, &x.account, &x.places, &x.cells, r.node, e)).?;
+    const caller_k = try x.conds.kappaOf(gpa, env.charge, env.view(), x.conds.kappaChild(r.kappa, e), child, true);
+    return .{ .class = class_k, .caller = caller_k };
+}
+
+fn joinList(x: *KnotFixture, site_id: u32, elem: ?NodeId) !NodeId {
+    const gpa = testing.allocator;
+    const c = try x.cells.site(gpa, &x.account, site_id, x.list, .list);
+    const cells = try x.cells.sets.insert(gpa, x.env().charge, .none, c.int(), 0);
+    const over = if (elem) |el| try x.one(Place.Step.elem, el) else Ids.none_int;
+    return x.shapes.node(gpa, &x.account, x.list, cells, over);
+}
+
+test "#1399: a joined κ below a choice whose rounds intern to one arm is read through the call" {
+    // GroupJoinShared's rounds: one choice `c = choice([], [x])` in both, its
+    // element `x` read `yes` in round 1 and `shared` in round 2. The join
+    // keys `shared` on `proj(c, [*]) = choice(nothing, x)`, which no part of
+    // `c` names; a caller descends the view's arms and meets `x`.
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const env = x.env();
+    const e = Place.Step.elem;
+    const elem = try x.site(10, x.t_place);
+    const choice = try x.shapes.choice(gpa, &x.account, &x.cells.sets, try joinList(&x, 11, null), try joinList(&x, 12, elem));
+    const root = (try x.conds.kappaSet(gpa, env.charge, .none, choice, Cond.yes)).ctx;
+    const k1 = try x.conds.kappaSetAt(gpa, env.charge, root, &.{e}, elem, Cond.yes);
+    const k2 = try x.conds.kappaSetAt(gpa, env.charge, root, &.{e}, elem, Cond.shared);
+    const got = try joinedElemThroughCall(&x, choice, k1, choice, k2);
+    try testing.expectEqual(Cond.shared, got.class);
+    try testing.expectEqual(Cond.shared, got.caller);
+}
+
+test "#1399: a joined κ keyed on an interned union below a choice is read through the call" {
+    // `a = [x]` reads `yes` at `[*]`; `b`'s element is the union `u = x ∪ y`,
+    // `shared` there. The join keys `shared` on `choice(x, u)`, a node no part
+    // of the choice names; a caller meets `x` and `u`'s sides.
+    const gpa = testing.allocator;
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const env = x.env();
+    const e = Place.Step.elem;
+    const ex = try x.site(10, x.t_place);
+    const ey = try x.site(13, x.t_place);
+    const u = try x.shapes.@"union"(gpa, &x.account, &x.cells.sets, ex, ey);
+    const a = try joinList(&x, 11, ex);
+    const b = try joinList(&x, 12, u);
+    const ka = try x.conds.kappaSetAt(gpa, env.charge, (try x.conds.kappaSet(gpa, env.charge, .none, a, Cond.yes)).ctx, &.{e}, ex, Cond.yes);
+    const kb = try x.conds.kappaSetAt(gpa, env.charge, (try x.conds.kappaSet(gpa, env.charge, .none, b, Cond.yes)).ctx, &.{e}, u, Cond.shared);
+    const got = try joinedElemThroughCall(&x, a, ka, b, kb);
+    try testing.expectEqual(Cond.shared, got.class);
+    try testing.expectEqual(Cond.shared, got.caller);
+}

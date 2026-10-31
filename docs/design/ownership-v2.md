@@ -1292,6 +1292,31 @@ relative to the value's root, and the argument's snapshot is linked under the ar
 back to it): they are its sparse frontier, the routes by which `deep`, `kappaLeq` and a block find what is stored below it
 (#1129).
 
+**Keyed where a reader looks** [M 2026-10-31, #1399]. A join of alternatives (`propagate`'s `.alternatives`:
+a branch join, `Summary.joinRes`, a supplies join, `widenValue`'s carry) sets κ at every position of the joined
+node from the members, keyed by the node it walks there: `proj(joined, q)`. Below a `choice` or a `union` that
+node is a new DAG (`proj` of a choice is the choice of its arms' projections), and no part of the value names
+it. A reader that descends the value's own structure never meets it. A call's view expands a choice into the
+choice of its arms' views and projects arm by arm (`expandView`), so a caller at `q` meets the views of the arms'
+nodes, never the view of `proj(joined, q)`. `map`'s relabelling (`kappaRelabel`) and the printer walk the arms
+too. Only an in-walk reader that projects the joined node itself meets it. So each node of the DAG below
+`proj(joined, q)` (its union, choice and positions sides, recursively) that a member holds is keyed at the same
+position too, with what the members store for it at their own positions, joined: a built node a member holds
+with no entry gives `lost` (the built-node rule above), a recast gives the member's read of it. A leaf's entry
+that is no stronger than its derivation is left out, as everywhere else. This only weakens a node's read,
+because each value written is a member's own reading there. A reader at `q` joins the reads of the nodes it
+meets, which are the members' nodes, so through the view it reads what the members read. The entry on
+`proj(joined, q)` stays, for the in-walk reader and the block (§3.6). A node that no member holds (an image that
+`widen` made, a set leaf that `join` merged from the members' leaves) is left as it reads (#1406). Keying it
+with the joined κ makes a recursive group's rounds diverge: `kappaLeq` projects the port along a round's
+frontier and meets a node that no `propagate` frame walked. A `runtime_safety` build checks at the end of each
+such join that every built side (a node, a delta or a recast) that a member keys is keyed at that position.
+The branch join was already right by accident. It merges its arms' snapshots into the output first, so the
+arms' nodes keep their own entries. `Summary.joinRes` (a recursive group's port, #1395) starts from nothing.
+There, a caller of `build x n = if n == 0 then [] else List.push (build x (n − 1)) x` read `yes` where the
+port stores `shared` (`GroupJoinShared`). On master no program reached this, because only a group's rounds
+build a class join.
+
 **Recursive folds and their read.** `widen` identifies distinct recursive levels in the stored shape.
 Its shape quotient and snapshot quotient are one value operation, at read-off and at a fixpoint unknown.
 A folded template path may also identify explicit actual paths at a call without widening that actual;
@@ -2159,7 +2184,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   relabelled through `force`, so the published summary is keyed by forced ids. A read below a
   call's re-rooted actual may cross into the actual's own snapshot, and the class's conditions are
   instantiated when read
-  (*κ across a call*, below; #1265).
+  (*κ across a call*, below; #1265). The view of a choice projects arm by arm, so the view of a joined node's
+  projection is never met: a join keys the members' entries on that node's DAG sides too, which the arms' views meet
+  (§2.9 *Keyed where a reader looks*, #1399).
 - **`fold_cond` never keys a view.** `widen` forces as it descends, so its fold certificates
   (`Cond.fold_cond`) are made over forced nodes and keyed by them; Block reads them there (§3.6).
 - **Cycles, links and folds.** A widened class's knot needs no tie protocol. `view(T, E)` of a cyclic
@@ -4615,7 +4642,7 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 320 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*; #1390: a part's split run and `covered`, §2.2 *Parts*) |
+| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 460 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*; #1390: a part's split run and `covered`, §2.2 *Parts*; #1399: a join keys its members' entries where a reader looks, §2.9) |
 | `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 680 |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
