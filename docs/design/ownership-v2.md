@@ -1652,10 +1652,14 @@ paid 1.7 times master's records (#1459's review).
   position (`Cond.withoutImpliedJoins`). It moves an entry its sides do not imply onto the sides that `map` met.
   Every read stays the same, and no projection is made for these entries. The reads go on the walk's own
   charge, its lanes and then growth, so a tall snapshot stops at the limit (#1459's review). Each answer is
-  memoised by `(key, condition, position)`. Positions at a fold are kept as they are. The filter is linear in the
-  entries it reads. K inside a recursive function has Θ(n²) of them (#1450), so the filter is quadratic there,
-  as is the rest of that walk (407 364 records at 40 levels without the filter, 452 124 with it). It stops at
-  the limit at 80 levels, in about 14 s on a ReleaseSafe beni. 4d alone refused it at 20.
+  memoised by `(key, condition, position)`. Positions at a fold are kept as they are. The filter reads every
+  `(position, entry)` pair of the round's snapshot, one at a time, because whether an entry is implied depends
+  on its position. A read-off's relabelling shares submaps; the filter cannot. K's snapshot holds Θ(n²) such
+  pairs in O(n log n) map nodes, so K outside a group stays linear: 13 056 / 29 717 / 64 744 / 138 217 records
+  at 10 / 20 / 40 / 80. Inside a recursive function, the filter's reads grow quadratically: 3 171 / 11 232 /
+  44 760 at 10 / 20 / 40. The rest of that walk grows faster than linear too: 65 072 / 154 349 / 407 364 with
+  no filter at all. Its cause is open (#1479). The run stops at `ownership_summary_size` at 80 levels (about
+  14 s ReleaseSafe, 32 s Debug). 4d alone refuses it at 20.
 - **Own origins only.** A view in a group member's read-off follows only its own origins, never its template's
   (`Shape.originHead`'s `templates`). A round's view of a joined node is the previous round's class.
   `Summary.joinRes` reads each round's entries under that round's own snapshot, so the port keeps them.
@@ -1673,6 +1677,11 @@ every position, at most what the dropped choice read there. Mapping a nested cho
 into all kept arms, which only weakens a read. `Summary.zig`'s *a port join that drops a covered arm keeps the
 joined entries below the root* pins it: `x = [a]`, `u = [a | b]` with only `b` certified, `big = [a | c]`. Its
 `[*]` reads `yes` without the carry and fails with it.
+The cover test reads each arm the same way, before any arm is dropped. The arm's κ gets the choice's root entries
+and the same carry, with `root` that arm (`carryTo`). Read under the port's merged snapshot alone, an arm skips `D`'s
+`lost` and borrows another arm's certificate, so a real arm would be judged covered and dropped (#1459's review).
+`Summary.zig`'s *a port join's cover test reads an arm with the join's entries carried to it* pins it: `u = [a | b]`
+read `yes` under `x`'s merged certificate for `a`, and the port then dropped it.
 
 **No entry is dropped for its shape alone.** An earlier version skipped a join's entry wherever every member
 was the joined node or one of its sides. That is unsound once the members' snapshots are merged first. A
@@ -5609,7 +5618,7 @@ L0  Ids
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 190 (#1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
-| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 910 (#1459: a class join merges its members' snapshots first, and a covered arm's drop carries the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
+| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
