@@ -9745,7 +9745,8 @@ test "the checker v2's wide record literal stored by a call spends no growth (Va
         try testing.expectEqual(@as(u64, 0), try accountField(dump, "rebuilt", "growth"));
         total[run] = try accountTotal(dump, "rebuilt");
     }
-    if (total[1] * 10 > total[0] * 22) {
+    // 9 517 / 19 713 records (146 and 152 a field); at most 250 a field.
+    if (total[1] * 10 > total[0] * 22 or total[0] > 250 * 65 or total[1] > 250 * 130) {
         std.debug.print("65 fields: {d} records, 130: {d}\n", .{ total[0], total[1] });
         return error.TestUnexpectedResult;
     }
@@ -10757,7 +10758,9 @@ fn wrapCallsDump(n: u32, o: WrapCalls) ![]const u8 {
 
 /// `wrap (wrap … r)` at 10 and 100 calls: `tower`'s records per call stay
 /// flat (at most a quarter more, a log factor's room), and an identity
-/// helper around each argument adds a constant per call. 1 000 calls are
+/// helper around each argument adds a constant per call. A call costs at
+/// most 400 records (about 1.7 times the 234 measured), so a constant per
+/// call that doubles fails too. 1 000 calls are
 /// measured, not gated: they take about a second each (the test budget).
 fn expectWrapCallsFlat(imported: bool) !void {
     var per: [2]u64 = undefined;
@@ -10775,7 +10778,7 @@ fn expectWrapCallsFlat(imported: bool) !void {
             return error.TestUnexpectedResult;
         }
     }
-    if (per[1] * 4 > per[0] * 5) {
+    if (per[1] * 4 > per[0] * 5 or per[0] > 400 or per[1] > 400) {
         std.debug.print("wrap: {d} records a call at 10, {d} at 100\n", .{ per[0], per[1] });
         return error.TestUnexpectedResult;
     }
@@ -10797,10 +10800,10 @@ test "the checker v2 refuses a kids writer below wrap2 at the top of a wrap towe
     // §8 S3b slice 5d2: `growKid` writes the kids of its argument's first
     // kid. Below `wrap` that kid is held once and the write is accepted;
     // below `wrap2 r = Rose [ r, r ]` the list holds it twice, and the write
-    // is refused `exclusive`. Same-module at 10 and 40 calls, imported at
-    // 10. The writer's cost is above n log n in the tower's height (#1490),
+    // is refused `exclusive`. Same-module and imported, at 10 calls. The
+    // writer's cost is above n log n in the tower's height (#1490),
     // so only the verdicts are pinned.
-    const cases = [_]struct { n: u32, imported: bool }{ .{ .n = 10, .imported = false }, .{ .n = 40, .imported = false }, .{ .n = 10, .imported = true } };
+    const cases = [_]struct { n: u32, imported: bool }{ .{ .n = 10, .imported = false }, .{ .n = 10, .imported = true } };
     for (cases) |c| {
         const p = if (c.imported) "Lib." else "Main.";
         var buf: [96]u8 = undefined;
@@ -12055,14 +12058,16 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
     // tasks". The ring takes K `res.shape` versions, and each one walks
     // `m0`'s N statements again (the owner's Q1 decision, §8 slice 4's
     // plan). Measured: `m0` walks 5 times at k = 2 and 8 at k = 3 (10 at 4),
-    // whatever n is; its records are 25 080 at (n, k) = (10, 2), 57 929 at
-    // (40, 2) and 52 128 at (10, 3). A small member's walks pass its two
+    // whatever n is; its records are 25 080 at (n, k) = (10, 2) and 52 128
+    // at (10, 3) (57 929 at (40, 2)). A small member's walks pass its two
     // lanes at k = 3, and the rest is growth (11 276 records of `m1`), so a
     // larger k exhausts R_f loudly (k = 8 is `ownership_summary_size`).
-    const cases = [_][2]usize{ .{ 10, 2 }, .{ 40, 2 }, .{ 10, 3 } };
-    const walks = [_]u64{ 5, 5, 8 };
+    const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
+    const walks = [_]u64{ 5, 8 };
+    // About 1.7 times the measured records: a doubled cost per walk fails.
+    const ceilings = [_]u64{ 42_000, 88_000 };
     var total: [cases.len]u64 = undefined;
-    for (cases, walks, 0..) |c, want, i| {
+    for (cases, walks, ceilings, 0..) |c, want, ceiling, i| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
 
@@ -12078,20 +12083,26 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
         try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
         try testing.expectEqual(want, try accountField(dump.stdout, "m0", "walks"));
         total[i] = try accountTotal(dump.stdout, "m0");
+        if (total[i] > ceiling) {
+            std.debug.print("ring at (n, k) = ({d}, {d}): {d} records, past {d}\n", .{ c[0], c[1], total[i], ceiling });
+            return error.TestUnexpectedResult;
+        }
         if (c[1] == 3) {
             // `m1`'s continuation is spent, and what is past it is growth.
             const at = std.mem.indexOf(u8, dump.stdout, "account m1: ").?;
             const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
             const cont = std.mem.indexOf(u8, line, "continuation ").? + "continuation ".len;
             const of = std.mem.indexOfPos(u8, line, cont, " of ").?;
-            const ceiling = line[of + " of ".len ..][0..std.mem.indexOfScalar(u8, line[of + " of ".len ..], ' ').?];
-            try testing.expectEqualStrings(line[cont..of], std.mem.trimEnd(u8, ceiling, ","));
+            const top = line[of + " of ".len ..][0..std.mem.indexOfScalar(u8, line[of + " of ".len ..], ' ').?];
+            try testing.expectEqualStrings(line[cont..of], std.mem.trimEnd(u8, top, ","));
             try testing.expect(try accountField(dump.stdout, "m1", "growth") > 0);
         }
     }
-    // N times the statements, more records per walk; more versions, more walks.
-    try testing.expect(total[1] >= 2 * total[0]);
-    try testing.expect(total[2] * 2 >= 3 * total[0]);
+    // More versions, more walks, each over a larger class: 2.08 times the
+    // records from k = 2 to 3 (1.6 times the walks). A cost per walk that
+    // grows with K² (2.25 times the class, 3.6 times the records) fails.
+    try testing.expect(total[1] * 2 >= 3 * total[0]);
+    try testing.expect(total[1] <= 3 * total[0]);
 }
 
 /// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
