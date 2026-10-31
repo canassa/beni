@@ -242,8 +242,9 @@ rule is now:
 | `cb j@λ·q` | what function parameter `j` returned at `q`; λ is this frame's own call instruction ι, or the interned pair `(ι, L)` referring to a callee label. Supplies are attached to the label; identity and the uniform summary/recursion fold are defined below. Explicit pairs are **not** a linear representation (§4.1). | `cb j@λ·(q·s)` | ordinary, or folded by the stated rule |
 | `msg·q` | the message `update` receives, at `q` | `msg·(q·s)` | as `param` |
 | `⊤` | an object the analysis cannot name | `⊤` (prefix-closed) | summary |
-| `elem c·ι` / `others c·ι` | materialised: the one position of `c`'s `[*]` taken at ι, and the others | `proj(c,[*])·s` refined | singleton / summary |
+| `elem c·ι` / `others c·ι` | materialised: the one position of `c`'s `[*]` taken at ι, and the others | `part (elem c·ι)·s`: the position kept (*Parts* below) | singleton / summary |
 | `level c·ι` / `below c·s·ι` | the node a constructor pattern at ι matched out of `c⟲` (its non-recursive arguments) / the levels under its recursive child `s` | likewise | singleton / summary |
+| `part r·q` | the object at canonical path `q` below refinement `r` (*Parts* below) | `part r·(q·s)` canonical | as `param`, below `r`'s |
 | `loan c·ι` | `Ref.get` at ι: a loan of contents cell `c` (§2.13.7) | `c`'s, loaned | as `c` |
 | `mark u` | a use label: `{R,A,E,W}`, fields and deep bit at a parameter path | same mark through a use leaf; explicit children select finer use paths | not a runtime object |
 
@@ -256,6 +257,31 @@ a step. Concrete origins (`site`, `result`, `esc`) have their contents as childr
 cell and a split ι; `base(c)` climbs to the first non-refinement. **The cells form a trie**: every symbolic cell's
 parent is its path minus one step, every refinement's parent is the cell it refines, so the descendants of `c`
 that the program ever named are enumerable (§2.8's deep demands; cost = the trie nodes under `c`).
+
+**Parts: a projection keeps the position** (#1390). The projection by `s` of a refinement `r` (`elem`, `others`,
+`level`, `below`) whose base is symbolic is the cell `part r·s`. It is never `r`'s canonical cell projected:
+`elem(ws·ι)` projected by `#W.0` names that one position's `#W.0`, not `ws[*]#W.0`, which every position
+shares. A part is symbolic below its **anchor** `r`. Its `q` is a canonical path rooted at `r`'s place, a
+projection appends a step (`part r·(q·s)`, folded as any canonical path is), and its trie parent is `part r·q⁻`,
+or `r` when `q` is one step. Its canonical position is `r`'s followed by `q` (`π1[*]#W.0` in the example): a
+summary, a holder chain (§2.8) and a demand's canonical cell read it there. A pattern on a part refines it as it
+refines any cell, and a part of that refinement is anchored there. So a chain alternates splits and parts, and
+it is as deep as the source's pattern nesting plus its projections, each bounded by §4.4's path limit. A `loan`
+keeps its row: it projects as its contents cell does. A refinement of a concrete base still projects to nothing,
+since its contents are explicit children.
+
+`alias` reads a part through its trie parents, as it reads every refinement chain, from the deepest cell the two
+chains share. Below it, two parts of one anchor compare their paths as two symbolic cells of one origin do. A
+part beside a split refinement of the same cell is `yes`. A part below one side of a split, against anything
+below another side, gets that split's answer, `under ι`. This is sound because κ(ι) is a fact about the
+positions' whole reach, not only their roots (§2.9: `excl c[*]` says that two positions share no object at any
+path below them). So the `a` and `c` of `[ W a _, W c _ ]`, `part(elem(ws·ι)₀)·#W.0` and
+`part(elem(ws·ι)₁)·#W.0`, are apart under ι, where both were the one cell `π1[*]#W.0`. The same holds for
+`[ ( a, _ ), ( c, _ ) ]` and for the fields `x.k` and `y.k` of `[ x, y ]`. Without the rule, a write into one
+position's part while another position's part was held was refused `disjoint`, because the two looked like one
+object; v1 accepts it under `xreq excl π1`. A part has no split of its own, so a holder chain decides each part
+by `alias` and never as one reliance of a split (§2.8 *As built*): k parts held at one canonical position cost
+O(k) `alias` reads per demand on it, each O(chain depth).
 
 **Labels and the fold.** An ordinary label is an interned `(call instruction, callee label id)` pair; a
 direct callback call has no callee label. This records a call chain without copying its tail. Distinct labels
@@ -365,7 +391,9 @@ position and alias (`lost` in a `sep`, never an atom: a traversal visits every i
 `under` rule: not aliases if the split's condition `κ` held at ι. A test that passes only *under ι* **relies** on κ(ι)
 (§2.9): `yes` passes, `and{atoms}` passes and records `xreq`, `shared`/`lost` is the refusal `exclusive`.
 `o/Split`'s `construction r: accepted param … xreq excl π1` is this rule. `alias` is the one relation every
-holder test, `sep` atom and Disjoint reads; it costs O(path length) column reads.
+holder test, `sep` atom and Disjoint reads; it costs O(path length) column reads. One base's two refinement
+chains, parts included (*Parts* above), are compared from their deepest common cell, found by climbing both
+chains to equal depth: no fixed bound on the chain's depth applies.
 
 **Materialisations in force.** A frame's `taken` set holds `(container cell c, split ι, κ(ι))` from a destructive
 read (`taken`-worded supply or result, §2.13.6) until the write-back of a `focus` or the frame's end. While ι is in
@@ -2988,7 +3016,22 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
 3. **Patterns and views** (R-2.14, R-4.5): `[ x, …rest ]` on `n`: `x ↦ elem(c·ι)` per container cell
    `c ∈ cellsAt(n, ε)` (§2.2: the position of `c`'s `[*]` taken at ι),
    `rest ↦` a node with `n`'s `ε` cells (a view shares the storage) and `[*] ↦ others(c·ι)`; the split records
-   the container's interpretation at ι: its κ snapshot projected through `[*]`, κ(n, `[*]`·q) at each path q (§2.9). A constructor pattern on a recursive place materialises `level(c·ι)` for the matched node's
+   the container's interpretation at ι: its κ snapshot projected through `[*]`, κ(n, `[*]`·q) at each path q (§2.9).
+   **A match on a rest splits the rest's own positions** (#1390). A rest of split ι is a view of `c`'s storage, so
+   its `ε` cells are `c`'s, and a second list pattern ι′ on it used to split `c` again: `elem(c·ι′)` against the
+   first match's `elem(c·ι)` is two splits of one container, `under_kappa`, which a `sep` or a reliance reads as
+   `lost`. Instead, where the matched value's `[*]` holds `o = others(c·ι)` for a container cell `c` of its `ε`
+   (`o` may itself be a split of positions, the rest of a rest), ι′ splits `o`: `x ↦ elem(o·ι′)` and
+   `rest′ ↦ [*] ↦ others(o·ι′)`. A split of `o` is a split of positions, not of a list: it is made at `o`'s own
+   place and adds no step, so its refinements' canonical position is `c[*]`, as `o`'s is. Its κ is the rest's at
+   `[*]`, which is ι's. The positions of the two matches are then two sides of ι (`elem(c·ι)` against a
+   refinement of `others(c·ι)`, under κ(ι)), and two positions of the inner match are two sides of ι′, so
+   `[ a, …rest ] → case rest of [ c ] → …` compares `a` and `c` exactly. The inner positions are refinements of
+   the rest's positions, not index offsets into `c`: positions are numbered per item of one pattern (`[ a, …r, z ]`
+   numbers `z` 1, from the end), so an offset would need the list's length, which no cell knows. Two different
+   matches of one rest stay two splits of `o`, `under_kappa`, because they may take one position. A `c` whose
+   projection `c[*]` the value's `[*]` also holds (a join of the rest with the whole list) is split as well, as
+   before. The chain is as deep as the nesting of the matches. A constructor pattern on a recursive place materialises `level(c·ι)` for the matched node's
    non-recursive arguments and one `below(c·C#i·ι)` per recursive child step, pairwise apart under κ (R-4.7.1,
    R-4.7.7: `l`'s lists and `r` are two `below`s; `p/WriteOneLevel`); a pattern nested two constructors deep splits
    the inner `below` again, so `v` and `v2` of `Node (Node l v r) v2 r2` are distinct cells; a non-recursive
@@ -3496,9 +3539,9 @@ records enter the same owning-summary account (baseline lanes or growth); layout
 
 ```
 Cell.Table (per walk)
-  origin   : u8     site | param | env | shared | result | esc | cb | msg | top | elem | others | level | below | loan | mark
+  origin   : u8     site | param | env | shared | result | esc | cb | msg | top | elem | others | level | below | loan | mark | part
   kind     : u8     list | dict | record | ref | closure | opaque
-  a, b     : u32    site: instruction; result/esc: LabelId + k; refinements: parent CellId + LabelId (the split's chain); param/env/shared/msg: index + PathId; cb: LabelId + PathId
+  a, b     : u32    site: instruction; result/esc: LabelId + k; refinements: parent CellId + LabelId (the split's chain); param/env/shared/msg: index + PathId; cb: LabelId + PathId; part: anchor CellId + no label, its PathId (rooted at the anchor's place) in `c`
 labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the frame's own call or a folded `ι⋆`), folded: u2 (no | ordinary | recursive; recursive wins), supplies: Range }   interned by (inst, callee_label, folded); refinements' `b` is a LabelId too (a split's chain)
   place    : PlaceId
   parent   : CellId   the trie parent: the path minus one step, or the refined cell; .none at a root
