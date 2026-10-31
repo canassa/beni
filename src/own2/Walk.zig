@@ -907,6 +907,30 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     // Published as the eager graft made it (§2.11 *κ at a view*): each
     // view, and each node holding one, as its eager image.
     _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
+    if (!(std.debug.runtime_safety and Cond.full_cross_check and !env.shapes.stable.off)) return publish(env, ro, result);
+    // The read-off made again with nothing moved, on an account of its own
+    // and the same labels: its κ at every position equals the moved one's
+    // (§2.3, 4e).
+    var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+    defer scratch.deinit(gpa);
+    var raw_env = env;
+    raw_env.charge = .growth(&scratch);
+    ro.env = raw_env;
+    env.shapes.stable.off = true;
+    const raw = publish(raw_env, ro, result);
+    env.shapes.stable.off = false;
+    ro.env = env;
+    const raw_res = try raw;
+    const got = try publish(env, ro, result);
+    const c: Ids.Charge = .growth(&scratch);
+    if (!try env.conds.kappaLeq(gpa, c, env.view(), raw_res.kappas, raw_res.node, got.kappas, got.node, false) or !try env.conds.kappaLeq(gpa, c, env.view(), got.kappas, got.node, raw_res.kappas, raw_res.node, false))
+        std.debug.panic("ownership v2: a read-off with stable images reads other than its raw one (§2.3, 4e)", .{});
+    return got;
+}
+
+/// The eager value relabelled (`ReadOff`), its κ carried, widened.
+fn publish(env: Env, ro: *ReadOff, result: Value) Error!Summary.Table.Joined {
+    const gpa = env.gpa;
     const mapped = try env.shapes.map(gpa, env.account(), result.node, ro, ReadOff.relabel);
     // The value's κ, carried over the relabelling: each entry's node
     // relabelled, its path unchanged (§2.9).

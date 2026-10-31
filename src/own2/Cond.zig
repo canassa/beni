@@ -54,6 +54,7 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
+const Stable = @import("Stable.zig");
 const stamped = @import("../stamped.zig");
 pub const full_cross_check = @import("ownership_options").full_cross_check;
 const CondAlgebra = @import("CondAlgebra.zig");
@@ -619,8 +620,9 @@ pub const Table = struct {
     pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!struct { node: NodeId, kappas: Kappas } {
         var fold: Shape.Table.Fold = .{};
         defer fold.deinit(gpa);
-        const w = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
-        if (w == x) return .{ .node = x, .kappas = kx };
+        const lo = v.shapes.count();
+        const raw = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
+        if (raw == x) return .{ .node = x, .kappas = kx };
         const per = try t.arrivalAggs(gpa, charge, v, x, &fold);
         var it = t.mapEntries(per.map);
         while (it.next()) |e| {
@@ -629,9 +631,44 @@ pub const Table = struct {
             try t.fold_cond.put(gpa, .from(e.key), try t.foldCond(gpa, charge, v.cells, v.places, t.aggs.items[e.value]));
             t.fold_cond_n += 1;
         }
+        // The image interned by its canonical form, `fold_cond` in the key
+        // (§2.3, 4e): a target has the moved node's obligation already.
+        var avoid: Avoid = .{ .t = t, .fold = &fold };
+        var redir = try Stable.widened(v.shapes, gpa, charge.account, raw, lo, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source });
+        defer redir.deinit(gpa);
+        const w: NodeId = if (redir.get(raw.int())) |to| .from(to) else raw;
         // One member: `propagate` keeps its entries at each position it walks
         // outside a fold (§2.9 *Keyed where a reader looks*).
-        return .{ .node = w, .kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null) };
+        const kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null);
+        if (std.debug.runtime_safety and full_cross_check and redir.count() > 0) try t.crossCheckStable(gpa, v, x, kx, w, kappas);
+        return .{ .node = w, .kappas = kappas };
+    }
+
+    /// A widening's side word (`fold_cond`) and its source nodes.
+    const Avoid = struct {
+        t: *Table,
+        fold: *const Shape.Table.Fold,
+        fn word(ctx: *anyopaque, n: NodeId) u32 {
+            const a: *@This() = @ptrCast(@alignCast(ctx));
+            return if (a.t.fold_cond.get(n)) |c| c.int() else Ids.none_int;
+        }
+        fn source(ctx: *anyopaque, n: NodeId) bool {
+            const a: *@This() = @ptrCast(@alignCast(ctx));
+            return a.fold.image.get(n) != null;
+        }
+    };
+
+    /// The widening made again with nothing moved, on an account of its
+    /// own: its κ at every position equals the moved one's (§2.3, 4e).
+    fn crossCheckStable(t: *Table, gpa: Allocator, v: View, x: NodeId, kx: Kappas, w: NodeId, kw: Kappas) Error!void {
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        const was = v.shapes.stable.off;
+        v.shapes.stable.off = true;
+        defer v.shapes.stable.off = was;
+        const raw = try t.widenValue(gpa, .growth(&scratch), v, x, kx);
+        if (!try t.kappaLeq(gpa, .growth(&scratch), v, raw.kappas, raw.node, kw, w, false) or !try t.kappaLeq(gpa, .growth(&scratch), v, kw, w, raw.kappas, raw.node, false))
+            std.debug.panic("ownership v2: a stable image reads other than its raw widening (§2.3, 4e)", .{});
     }
 
     /// `out` merged with a snapshot that sets κ at every position of
