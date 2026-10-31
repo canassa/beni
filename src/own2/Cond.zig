@@ -633,6 +633,11 @@ pub const Table = struct {
         }
         // The image interned by its canonical form, `fold_cond` in the key
         // (§2.3, 4e): a target has the moved node's obligation already.
+        // Under the cross-check, the raw image's κ, read before the move.
+        const check = std.debug.runtime_safety and full_cross_check and !v.shapes.stable.off;
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        const raw_k = if (check) try t.walkAlone(gpa, &scratch, v, raw, x, kx) else .none;
         var avoid: Avoid = .{ .t = t, .fold = &fold };
         var redir = try Stable.widened(v.shapes, gpa, charge.account, raw, lo, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source });
         defer redir.deinit(gpa);
@@ -640,7 +645,8 @@ pub const Table = struct {
         // One member: `propagate` keeps its entries at each position it walks
         // outside a fold (§2.9 *Keyed where a reader looks*).
         const kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null);
-        if (std.debug.runtime_safety and full_cross_check and redir.count() > 0) try t.crossCheckStable(gpa, v, x, kx, w, kappas);
+        if (check and redir.count() > 0 and !try t.stableAgrees(gpa, &scratch, v, raw_k, &redir, try t.walkAlone(gpa, &scratch, v, w, x, kx), w))
+            std.debug.panic("ownership v2: a stable image reads other than its raw widening (§2.3, 4e)", .{});
         return .{ .node = w, .kappas = kappas };
     }
 
@@ -658,17 +664,34 @@ pub const Table = struct {
         }
     };
 
-    /// The widening made again with nothing moved, on an account of its
-    /// own: its κ at every position equals the moved one's (§2.3, 4e).
-    fn crossCheckStable(t: *Table, gpa: Allocator, v: View, x: NodeId, kx: Kappas, w: NodeId, kw: Kappas) Error!void {
-        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
-        defer scratch.deinit(gpa);
-        const was = v.shapes.stable.off;
-        v.shapes.stable.off = true;
-        defer v.shapes.stable.off = was;
-        const raw = try t.widenValue(gpa, .growth(&scratch), v, x, kx);
-        if (!try t.kappaLeq(gpa, .growth(&scratch), v, raw.kappas, raw.node, kw, w, false) or !try t.kappaLeq(gpa, .growth(&scratch), v, kw, w, raw.kappas, raw.node, false))
-            std.debug.panic("ownership v2: a stable image reads other than its raw widening (§2.3, 4e)", .{});
+    /// The image `w` of `x` read as `widenValue` reads it, with no memo,
+    /// on `scratch`: the cross-check's side (§2.3, 4e).
+    fn walkAlone(t: *Table, gpa: Allocator, scratch: *Ids.Account, v: View, w: NodeId, x: NodeId, kx: Kappas) Error!Kappas {
+        const was = t.no_memo;
+        t.no_memo = true;
+        defer t.no_memo = was;
+        return t.propagateWalk(gpa, .growth(scratch), v, .none, w, &.{x}, &.{kx}, .alternatives, false, false, null);
+    }
+
+    /// Whether the raw value's κ, its nodes renamed by the move σ, reads at
+    /// every position of the moved value `w` what the moved value's κ reads
+    /// (`kappaLeq` both ways, over the one value `w`): the cross-check of a
+    /// stable image (§2.3, 4e), like against like.
+    pub fn stableAgrees(t: *Table, gpa: Allocator, scratch: *Ids.Account, v: View, raw_k: Kappas, sigma: *const Stable.Redirect, moved_k: Kappas, w: NodeId) Error!bool {
+        const Sigma = struct {
+            r: *const Stable.Redirect,
+            fn node(ctx: *anyopaque, n: NodeId) Error!?NodeId {
+                const c: *@This() = @ptrCast(@alignCast(ctx));
+                return if (c.r.get(n.int())) |to| .from(to) else n;
+            }
+            fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
+                return k;
+            }
+        };
+        var sg: Sigma = .{ .r = sigma };
+        const c: Charge = .growth(scratch);
+        const renamed = try t.kappaRelabel(gpa, c, raw_k, .{ .ctx = &sg, .node = Sigma.node, .cond = Sigma.cond });
+        return try t.kappaLeq(gpa, c, v, renamed, w, moved_k, w, false) and try t.kappaLeq(gpa, c, v, moved_k, w, renamed, w, false);
     }
 
     /// `out` merged with a snapshot that sets κ at every position of
