@@ -53,8 +53,9 @@ const layers = [_]Entry{
     // join (§2.3); 3 350 since #1350, a view's instantiated place and a
     // join's place.
     // 3 820 since #1420: positions saturate at two, their count maps, the
-    // rebuild and the nodes it dropped (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3896 },
+    // rebuild and the nodes it dropped (§2.3). 3 925 since #1467: a join's
+    // reach leaves out its own cells, checked under runtime safety (§2.3).
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3925 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -108,8 +109,9 @@ const layers = [_]Entry{
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
     // 2 010 since #1335: the same-path closure by the cycle walk; 2 030 since
-    // #1366: a candidate stops at a `◆` barrier.
-    .{ .file = "Holders.zig", .layer = 8, .max_lines = 2050 },
+    // #1366: a candidate stops at a `◆` barrier; 2 070 since #1467: a pair
+    // whose holder has no later use walks no cover.
+    .{ .file = "Holders.zig", .layer = 8, .max_lines = 2070 },
     // §5 says 450 since #1214 (L7 then, L9 since #1308): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 9, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);

@@ -284,6 +284,8 @@ const Index = struct {
     desc: Descent = .{},
     exits: Exits.Memo = .{},
     kid_cache: std.ArrayList([2]u32) = .empty,
+    /// Per holder: `lastPoint`, `none` until asked.
+    last_point: std.ArrayList(u32) = .empty,
 
     fn deinit(ix: *Index) void {
         const info = @typeInfo(Index).@"struct";
@@ -780,6 +782,9 @@ const Index = struct {
             try ix.entries.append(ix.gpa, .{ .tree = t, .rank2 = ix.rank2(h.start), .point = h.start, .start = h.start, .holder = hi, .atom = none, .use = .none, .exact_path = .none, .any_path = .none, .exact_ok = !top, .element = false, .split = none, .until = h.end });
             return;
         }
+        // Every entry and heavy answer is a use after the pair's first
+        // demand: with none, the cover is not walked (§2.8, #1467).
+        if (try ix.lastPoint(hi) <= ix.occ.items[life.start].point) return;
         blocks.clearRetainingCapacity();
         // A refinement of another split at the target's own canonical
         // position (two matches of one recursive value) is held where it is
@@ -833,6 +838,21 @@ const Index = struct {
                 }
             }
         }
+    }
+
+    /// The latest point of binding holder `hi`'s uses (`cover`'s range),
+    /// 0 when it has none; memoised per holder, a record per use once.
+    fn lastPoint(ix: *Index, hi: u32) Error!u32 {
+        if (ix.last_point.items.len == 0) try ix.last_point.appendNTimes(ix.gpa, none, ix.frame.holders.len);
+        if (ix.last_point.items[hi] != none) return ix.last_point.items[hi];
+        const h = ix.frame.holders[hi];
+        const index = ix.frame.index;
+        const all = index.rangeOf(ix.env.places, h.who, &.{}, true);
+        try ix.rec(all.len + 1);
+        var last: u32 = 0;
+        for (all.start..all.start + all.len) |i| last = @max(last, index.get(.from(@intCast(i))).point);
+        ix.last_point.items[hi] = last;
+        return last;
     }
 
     /// The earliest use of block `b` after `p` and compatible with it, ties
