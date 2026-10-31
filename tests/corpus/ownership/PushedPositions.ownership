@@ -1,0 +1,46 @@
+module PushedPositions
+  17:13 call PushedPositions.collect <call List.push>: accepted param (PushedPositions.collect writes π2)
+  17:27 List.push acc: accepted param
+  24:18 List.push xs: accepted param
+  26:21 call PushedPositions.collect <literal>: accepted fresh (PushedPositions.collect writes π2)
+  39:20 construction xs: accepted param
+  41:21 call PushedPositions.collect <literal>: accepted fresh (PushedPositions.collect writes π2)
+  54:18 List.push xs: accepted param
+  56:21 call PushedPositions.collect <literal>: accepted fresh (PushedPositions.collect writes π2)
+  69:18 List.push xs: accepted param
+  71:26 call PushedPositions.collect <literal>: accepted fresh (PushedPositions.collect writes π2)
+  73:31 List.push f: accepted param
+  86:13 call PushedPositions.inF <literal>: accepted fresh (PushedPositions.inF writes π1)
+  86:13 call PushedPositions.inF <literal>[*].0: accepted fresh (PushedPositions.inF writes π1[*].0)
+  95:21 call PushedPositions.collect <literal>: accepted fresh (PushedPositions.collect writes π2)
+  108:15 List.push f: accepted param
+  116:10 call PushedPositions.twin <literal>: accepted fresh (PushedPositions.twin writes π1)
+  118:15 List.push f: accepted call
+  126:10 call PushedPositions.twinSpread <literal>: accepted fresh (PushedPositions.twinSpread writes π1)
+  128:15 List.push f: accepted call
+  136:10 call PushedPositions.twinHead <literal>: accepted fresh (PushedPositions.twinHead writes π1)
+  138:15 List.push f: rejected call: r[*] may hold it through the call at 136:10, and is read at 138:30 (approx)
+  148:15 List.push f: accepted call
+  156:10 call PushedPositions.twin <literal>: accepted fresh (PushedPositions.twin writes π1)
+  160:23 List.push f: rejected call: x may hold it through the call at 156:10, and is read at 160:21 (approx)
+  173:18 List.set xs: accepted param
+  186:10 call PushedPositions.pairUp <literal>: accepted fresh (PushedPositions.pairUp writes π1)
+  188:15 List.push f: rejected call: r[*] may hold it through the call at 186:10, and is read at 188:30 (approx)
+  summary collect: π1 R, π1[*].0 RA, π2 RAW[storage], π2[*] A; res [*] ~condition(fresh1) ~π1[*].0{excl π1} ~π2[*], π2{excl π1, sep π1[*].0 π2[*]}
+  summary twin: π1 RW[storage], π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{excl π1}
+  summary twinSpread: π1 RW, π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{excl π1}
+  summary twinHead: π1 RW[storage], π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{lost}
+  summary inF: π1 RW[storage], π1[*] R, π1[*].0 RAw[storage], π1[*].0[*] A; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, [*][*] ~condition(fresh3) ~π1[*].0[*]{excl π1}, fresh4{lost}r{lost} ~fresh2{excl π1}; xreq excl π1
+  summary inFCall: res [*] ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh3), ~fresh2{lost}
+  summary prepend: π1 R, π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1){excl π1} ~π1[*].0{excl π1}, fresh2{excl π1}
+  summary editFirst: π1 RA, π1[*] RAW[storage], π1[*][*] A; res [*] ~condition(fresh2) π1[*]{excl π1}, [*][*] ~condition(fresh3) ~π1[*][*]{excl π1}, fresh1{lost} ~π1; xreq excl π1
+  summary edit: res [*] fresh3 ~condition(fresh1) ~fresh1, [*][*] ~fresh, fresh4{lost} ~fresh2
+  summary editSpread: res [*] fresh3 ~condition(fresh1) ~fresh1, [*][*] ~fresh, fresh4{lost} ~fresh2
+  summary editHead: res [*] fresh3{lost} ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh5) ~fresh{lost}, fresh4{lost} ~fresh2{lost}
+  summary editPrepend: res [*] fresh3 ~condition(fresh1) ~fresh1, [*][*] ~fresh, fresh4{lost} ~fresh2
+  summary editOne: res [*] fresh ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh3) ~fresh, fresh2{lost}r{lost}
+  summary pairUp: π1 RW[storage], π1[*] R, π1[*].0 RA; res [*] ~condition(fresh1) ~π1[*].0{excl π1}, fresh2{lost}
+  summary editPair: res [*] fresh3{lost} ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh5) ~fresh{lost}, fresh4{lost} ~fresh2{lost}
+  demands 27: accepted 24 (fresh 12, call 3, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 27: accepted 24 (fresh 12, call 3, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause call 3

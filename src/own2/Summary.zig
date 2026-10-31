@@ -811,7 +811,7 @@ pub const Table = struct {
     /// in the order the walk met them. κ home: the entry `ks` stores at a
     /// choice node of the DAG is joined into the entry of each arm below
     /// it, so a read of the kept arms is what it was. A side that is no
-    /// choice, or whose root owes a fold condition, is kept whole.
+    /// choice, or one of whose choice nodes owes a fold condition, is kept whole.
     fn dropCovered(env: Env, s: NodeId, ks: Kappas, o: NodeId, ko: Kappas) Error!Joined {
         const gpa = env.gpa;
         const shapes = env.shapes;
@@ -839,6 +839,10 @@ pub const Table = struct {
                 try arms.append(gpa, f.node);
                 continue;
             }
+            // A choice node's fold condition rides on every read through it
+            // (`foldCondOf`); no entry stores it, so a side holding one is
+            // kept whole.
+            if (env.conds.fold_cond.get(f.node) != null) return whole;
             const d = shapes.get(f.node);
             try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
         }

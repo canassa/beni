@@ -305,6 +305,16 @@ tests/corpus/ownership/PatternPositions.beni [node] PatternPositions 257:34 #0 :
 tests/corpus/ownership/CombinePositions.beni [node] CombinePositions 82:23 #0 :: List.push a :: accepted :: rejected  `a` and `c` are both the rest's first payload, one list written and answered: v1 accepts it unsoundly
 tests/corpus/ownership/CombinePositionsImported [node] Combine 29:23 #0 :: List.push a :: accepted :: rejected  as in CombinePositions: v1 accepts it unsoundly
 #
+# v2 refuses where v1 accepted: a list that holds one of its split's positions twice (ownership-v2.md §2.9 *Two positions of one image*, #1478).
+tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 73:31 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
+tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 118:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
+tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 128:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
+tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 148:15 #0 :: List.push f :: accepted :: rejected  v2 refuses the copied prepend `[ el, …xs ]`, which holds `el` twice, where v1 accepts it: a precision gap, unchanged since #1473
+tests/corpus/ownership/PushedPositionsImported [node] Pushed 67:31 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
+tests/corpus/ownership/PushedPositionsImported [node] Main 12:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
+tests/corpus/ownership/PushedPositionsImported [node] Main 22:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
+tests/corpus/ownership/PushedPositionsImported [node] Main 42:15 #0 :: List.push f :: accepted :: rejected  v2 refuses the copied prepend `[ el, …xs ]`, which holds `el` twice, where v1 accepts it: a precision gap, unchanged since #1473
+#
 # v2 refuses where v1 accepted: a literal head beside its rest may be the rest's first element again (ownership-v2.md §2.13.3).
 tests/corpus/ownership/PatternPositionsStored.beni [node] PatternPositionsStored 140:21 #0 :: PatternPositionsStored.go c#Box.0 :: accepted :: rejected  `[ a, …rest ]`'s first position is `a`, written and answered: v1 accepts it unsoundly
 tests/corpus/ownership/PatternPositionsStoredImported [node] Stored 131:21 #0 :: Stored.go c#Box.0 :: accepted :: rejected  as in PatternPositionsStored: v1 accepts it unsoundly
