@@ -1,0 +1,81 @@
+-- ownership: one argument at two paths of a call's answer (ownership-v2.md
+-- Appendix B, L×A; R-4.3.1, R-5.7.1; #1122). `pair a b` answers
+-- `( a, ( a, b ) )`, so its first argument is at `.0` and at `.1.0`.
+-- `writeFirst` pushes onto the first of a pair. Writing `.1.0` while `.0`
+-- is read after is refused (`refused`), and so it is with the pair
+-- matched whole (`matchedWhole`); writing a copy of `.1.0` is accepted
+-- (`copied`), and so is the write with `.0` read before it only
+-- (`readBefore`) or with `.1.1` read after (`otherRead`). `both a b`
+-- maps two template nodes onto its arguments, `[ a, b ]`; one argument
+-- given twice joins their conditions, and a writer of every element is
+-- refused (`oneTwice`), while two distinct lists are accepted (`twoLists`).
+pair : List Int, List Int → List Int × (List Int × List Int)
+pair a b = ( a, ( a, b ) )
+
+
+writeFirst : List Int × List Int → List Int
+writeFirst p =
+    case p of
+        ( a, _ ) →
+            List.push a 1
+
+
+pub refused : List Int, List Int → List Int × List Int
+refused x y =
+    case pair x y of
+        ( first, inner ) →
+            ( writeFirst inner, first )
+
+
+pub matchedWhole : List Int, List Int → List Int × List Int
+matchedWhole x y =
+    case pair x y of
+        ( first, ( a, _ ) ) →
+            ( List.push a 1, first )
+
+
+pub copied : List Int, List Int → List Int × List Int
+copied x y =
+    case pair x y of
+        ( first, ( a, b ) ) →
+            p = ( List.copy a, b )
+            ( writeFirst p, first )
+
+
+pub readBefore : List Int, List Int → List Int
+readBefore x y =
+    case pair x y of
+        ( first, inner ) →
+            n = List.length first
+            List.push (writeFirst inner) n
+
+
+pub otherRead : List Int, List Int → List Int × List Int
+otherRead x y =
+    case pair x y of
+        ( _, inner ) →
+            case inner of
+                ( _, b ) →
+                    ( writeFirst inner, b )
+
+
+pushAll : List (List Int) → List (List Int)
+pushAll xss =
+    case xss of
+        [ xs, …rest ] →
+            [ List.push xs 1, …pushAll rest ]
+
+        [] →
+            []
+
+
+both : List Int, List Int → List (List Int)
+both a b = [ a, b ]
+
+
+pub oneTwice : List Int → List (List Int)
+oneTwice x = pushAll (both x x)
+
+
+pub twoLists : List Int, List Int → List (List Int)
+twoLists x y = pushAll (both x y)

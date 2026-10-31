@@ -1,0 +1,100 @@
+-- ownership (project): `ViewLinkedSnapshot` with the boxing helpers in
+-- another module (ownership-v2.md Appendix B, V×L; R-4.5.1, R-4.6.4). A
+-- call of an imported helper applies the class its block publishes, so the
+-- verdicts are the same-module fixture's: a write of `xs` while a boxed
+-- view of it is read after is refused (`readAfter`, `firstCursor`,
+-- `secondCursor`, `emptyJoin`); with the view read before only, or a copy
+-- boxed, it is accepted (`deadView`, `copiedView`, `noCursor`,
+-- `emptyJoinCopy`).
+import Boxes
+
+
+pub readAfter : List Int → List Int × List (List Int)
+readAfter xs =
+    case xs of
+        [ _, …rest ] →
+            b = Boxes.box rest
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub deadView : List Int → List Int
+deadView xs =
+    case xs of
+        [ _, …rest ] →
+            b = Boxes.box rest
+            List.push xs (List.length b)
+
+        [] →
+            xs
+
+
+pub copiedView : List Int → List Int × List (List Int)
+copiedView xs =
+    case xs of
+        [ _, …rest ] →
+            b = Boxes.box (List.copy rest)
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub firstCursor : List Int → List Int × List (List Int)
+firstCursor xs =
+    case xs of
+        [ _, …rest ] →
+            case Boxes.cursors rest of
+                ( b, _ ) →
+                    ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub secondCursor : List Int → List Int × List Int
+secondCursor xs =
+    case xs of
+        [ _, …rest ] →
+            case Boxes.cursors rest of
+                ( _, v ) →
+                    ( List.push xs 1, v )
+
+        [] →
+            ( xs, [] )
+
+
+pub noCursor : List Int → List Int
+noCursor xs =
+    case xs of
+        [ _, …rest ] →
+            case Boxes.cursors rest of
+                ( b, v ) →
+                    List.push xs (List.length b + List.length v)
+
+        [] →
+            xs
+
+
+pub emptyJoin : Bool, List Int → List Int × List (List Int)
+emptyJoin c xs =
+    case xs of
+        [ _, …rest ] →
+            b = Boxes.orEmpty c rest
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub emptyJoinCopy : Bool, List Int → List Int × List (List Int)
+emptyJoinCopy c xs =
+    case xs of
+        [ _, …rest ] →
+            b = Boxes.orEmpty c (List.copy rest)
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )

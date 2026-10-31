@@ -586,6 +586,13 @@ tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 53:9 #0 :: WriteO
 # #1394: slice 4a's plan fixtures that walk a list of recursive values, written as mutual pattern recursion.
 tests/corpus/ownership/FoldedPreimageCall.beni FoldedPreimageCall limit incAs  #1372: the four-member group over the mutual `A` and `C` walks past the default allowance, so probe 2 is unchecked; with it raised the group settles in about 22 walks (`incAs` 1 164 270 growth, `incCs` 1 052 887), refuses `mutualShared` as v1 and refuses `mutualDistinct` (#1253)
 #
+# S3b slice 5a's matrix rows (#1498): V×L ViewLinkedSnapshot, L×J LinkedJoinCertificate,
+# L×A RepeatedPathCall and J×A JoinedCallContexts, each with its imported twin.
+tests/corpus/ownership/JoinedCallContexts.beni [node] JoinedCallContexts 68:17 #0 :: JoinedCallContexts.pushAll <call>[*] :: rejected :: accepted  v2 accepts where v1 refused: each `List.copy x` is a new list, so `freshOf`'s two answers are apart; v1 gives the two copies one cell and reads them `lost`
+tests/corpus/ownership/JoinedCallContexts.beni [node] JoinedCallContexts 83:16 #1 :: JoinedCallContexts.pairOf x :: absent :: rejected  the call's second argument written, at its own line; v1 prints one line for the two arguments of one text (`pairOf x x`), with the same verdict
+tests/corpus/ownership/JoinedCallContextsImported [node] Main 42:17 #0 :: Calls.pushAll <call>[*] :: rejected :: accepted  v2 accepts where v1 refused: each `List.copy x` is a new list, so `freshOf`'s two answers are apart; v1 gives the two copies one cell and reads them `lost`
+tests/corpus/ownership/JoinedCallContextsImported [node] Main 53:16 #1 :: Calls.pairOf x :: absent :: rejected  the call's second argument written, at its own line; v1 prints one line for the two arguments of one text (`pairOf x x`), with the same verdict
+#
 # v2 refuses where v1 accepted: a type's `eq` or `compare` that writes what it is handed is
 # `comparison_changes_value` (R-5.13.1, ownership-v2.md §2.13.13 item 13); v1 has no such code.
 tests/corpus/ownership/CmpComponentsImported [node] Inner 9:26 #0 :: List.push l :: accepted :: rejected  R-5.13.1: a comparison may only read its arguments
