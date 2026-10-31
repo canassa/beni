@@ -9270,6 +9270,47 @@ test "the checker v2's call writing a doubling DAG below a parameter costs its d
     }
 }
 
+test "the checker v2 reads a holder's later uses below a parameter's leaf by run, not use by use" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3, *One demand per state below a
+    // parameter's leaf* (#1412's review): `wall` writes `r.fᵢ` and reads
+    // `r` whole through `len` after each write, N times. Each write is a
+    // group, and its trie reads `r`'s uses on the leaf's line. Read use by
+    // use from the range's start, every group walked every earlier `len r`:
+    // 12 432 records at N = 64, ×3.5 a doubling. Read by runs of one path and
+    // group, four times N costs at most 4.5 times as much.
+    const a = testing.allocator;
+    const widths = [_]u32{ 64, 256 };
+    var totals: [widths.len]u64 = undefined;
+    for (widths, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias W =\n");
+        for (0..n) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\ntouch : List Int → Int\ntouch xs =\n    List.length (List.push xs 1)\n\n\nlen : W → Int\nlen r =\n    List.length r.f0\n\n\npub wall : W → Int\nwall r =\n    0");
+        for (0..n) |i| try src.print(a, "\n        + touch r.f{d}\n        + len r", .{i});
+        try src.appendSlice(a, "\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try ownDumpNoLimit(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        totals[run] = try accountTotal(dump, "wall");
+    }
+    if (totals[1] * 10 > totals[0] * 45) {
+        std.debug.print("N = 64: {d} records, 256: {d}\n", .{ totals[0], totals[1] });
+        return error.TestUnexpectedResult;
+    }
+}
+
 test "the checker v2's call writing a K-wide type below a parameter makes one demand per state" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

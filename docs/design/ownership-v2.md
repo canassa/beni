@@ -2176,7 +2176,10 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      frame's escapes reach and the holders live at a group's call reach; the paths below `c` the call's
      other arguments reach; and the paths below `c` that a later use of a holder of a cell on `c`'s
      line reads (its use path from that cell, by `extend`). Only a holder live at the call, its life
-     `(start, end]`, can hold against its demand; another's value is not read (#1455). Another
+     `(start, end]`, can hold against its demand; another's value is not read (#1455). A holder's uses on
+     `c`'s line are read by runs of one path and group (`Liveness` keeps them contiguous, by point),
+     the run's last point telling whether it comes after the call, so a group costs those runs, never
+     the holder's earlier uses; a holder that is no leaf is read by its end alone. Another
      demand's operands are no interferer. Where no path tells how a later use reads below `c`, every
      route of the group stays its own, as the call would have made them: a later use that is a call's
      (it reads through its callee's use, #1454), a later use of a holder whose value is no leaf, a
