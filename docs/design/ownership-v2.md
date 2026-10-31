@@ -282,11 +282,18 @@ position's part while another position's part was held was refused `disjoint`, b
 object; v1 accepts it under `xreq excl π1`. A part has no split of its own, so a holder chain decides each part
 by `alias` and never as one reliance of a split (§2.8 *As built*): k parts held at one canonical position cost
 O(k) `alias` reads per demand on it, each O(chain depth). In an `apart` (§2.9's same-base pairs), a part runs
-with its anchor's split, so parts below distinct positions are one pair as the positions are, and the parts of
-one anchor pair among themselves. A part whose anchor, or a shorter part of it, is an arrival too is left out
-with a `lost` pair: everything else meets it as it meets that ancestor. So a literal of n pushed positions,
+with its anchor's split, so parts below distinct positions are one pair as the positions are. Two cells of one anchor make no same-base
+pair, as two symbolic cells of one origin make none; the group's `apart` atom reads them. A part whose anchor, or a
+shorter part of it, is an arrival too is left out: everything else meets it as it meets that ancestor. So a literal of n pushed positions,
 `[ List.push p1 1, … ]`, still costs its positions, not its positions times their parts (*As built*:
 `Cond.splitKey`, `Cond.covered`).
+
+**A fold through a part** (#1422). A level's parts are canonical below its own place, so they can be distinct
+cells where the canonical position folds: `a` of `QN a b c d` projected by `#QN.k` is `part a·#QN.k`, while every
+one of them is canonically `π1#QN.0⟲`. A write's other paths that meet the base's canonical cell where they fold
+through one leaf with it (§2.11 item 3 (c)) owe `excl` of that canonical cell, as a parameter's fold does. They are
+not one object at two paths. Before this rule, `h a` writing `a`'s four children was refused `disjoint`
+(`QuadChildren`).
 
 **Labels and the fold.** An ordinary label is an interned `(call instruction, callee label id)` pair; a
 direct callback call has no callee label. This records a call chain without copying its tail. Distinct labels
