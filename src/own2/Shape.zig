@@ -1890,6 +1890,9 @@ pub const Table = struct {
         if (d.kind == .view and t.viewProjectsTemplate(places, n, s)) {
             const tp: NodeId = .from(t.memo_proj.get(.{ d.a, s.word() }).?);
             const out = try t.view(gpa, account, tp, d.b);
+            // A call relabels a join's entry onto this view, which no part of the
+            // caller's value names: its origin carries it on (§2.9).
+            try t.addOrigin(gpa, account, n, s, out);
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
             return;
         }
@@ -1951,10 +1954,19 @@ pub const Table = struct {
         return k == .@"union" or k == .choice;
     }
 
+    /// A union or a choice, or a call's view of one: what a join of
+    /// alternatives keys, and what its projections' origins name (§2.9
+    /// *Keyed where a reader looks*).
+    pub fn isJoinNode(t: *const Table, n: NodeId) bool {
+        const k = t.kind(n);
+        if (k == .view) return isJoinKind(t.kind(.from(t.nodes.items(.a)[n.int()])));
+        return isJoinKind(k);
+    }
+
     /// `m`, the projection of DAG `n` at `s`, takes that origin, each of a DAG's
     /// kept, the latest first (§2.9 *Keyed where a reader looks*).
     fn addOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
-        if (!isJoinKind(t.kind(n)) or !isJoinKind(t.kind(m))) return;
+        if (!t.isJoinNode(n) or !t.isJoinNode(m)) return;
         try account.reserve(.memo, 1);
         const got = try t.proj_origin.getOrPut(gpa, .{m.int()});
         const next: u32 = if (got.found_existing) got.value_ptr.* else Ids.none_int;
@@ -1970,6 +1982,18 @@ pub const Table = struct {
     /// where a reader looks*).
     pub fn hasOrigin(t: *const Table, n: NodeId) bool {
         return t.proj_origin.get(.{n.int()}) != null;
+    }
+
+    /// Where `n`'s origins start: its own, or, for a call's view of a node
+    /// with origins, its template's, each origin's node then viewed under the
+    /// view's environment (`env`, none for its own): a call relabels a
+    /// class's join entry onto the view of its node (§2.9 *Keyed where a
+    /// reader looks*).
+    pub fn originHead(t: *const Table, n: NodeId) ?struct { head: u32, env: u32 } {
+        if (t.proj_origin.get(.{n.int()})) |h| return .{ .head = h, .env = Ids.none_int };
+        if (t.kind(n) != .view) return null;
+        const h = t.proj_origin.get(.{t.nodes.items(.a)[n.int()]}) orelse return null;
+        return .{ .head = h, .env = t.nodes.items(.b)[n.int()] };
     }
 
     /// Project a leaf's cells: every symbolic cell to its child at `s`

@@ -965,23 +965,25 @@ pub const Table = struct {
 /// The node a reader of a transported value meets for DAG node `n`, the
 /// projection of a DAG that no part of the value names (§2.9 *Keyed where
 /// a reader looks*): the projection of an origin's, at the origin's step.
-/// A node's own image is `image`'s (null for a node the transport does not
-/// carry); one with none is found through its origins, each tried in turn.
-/// Null where `n` has an image of its own (the transport keys that one),
-/// or no origin leads to one. Memoised per transport in `memo`, so each
-/// node is resolved once; on an explicit stack.
+/// A call's view of such a node has its template's origins, viewed under
+/// its environment (`Shape.originHead`). A node's own image is `image`'s
+/// (null for a node the transport does not carry); one with none is found
+/// through its origins, each tried in turn. Null where `n` has an image of
+/// its own (the transport keys that one), or no origin leads to one.
+/// Memoised per transport in `memo`, so each node is resolved once; on an
+/// explicit stack.
 pub fn projectedImage(t: *Shape.Table, gpa: Allocator, account: *Ids.Account, places: *@import("Place.zig").Table, cellt: *Cell.Table, n: NodeId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), NodeId) Error!?NodeId) Error!?NodeId {
-    // A join of alternatives keys a union or a choice; a positions node is a
-    // literal's, which no transport ever carried.
-    if (t.kind(n) != .@"union" and t.kind(n) != .choice) return null;
-    if (!t.hasOrigin(n)) return null;
+    // A join of alternatives keys a union or a choice, or a call's view of
+    // one; a positions node is a literal's, which no transport carries.
+    if (!t.isJoinNode(n)) return null;
+    const start = t.originHead(n) orelse return null;
     if ((try image(ctx, n)) != null) return null;
     const open: u32 = Ids.none_int - 1;
-    const Frame = struct { node: NodeId, origin: u32 };
+    const Frame = struct { node: NodeId, origin: u32, env: u32 };
     var stack: std.ArrayList(Frame) = .empty;
     defer stack.deinit(gpa);
     var result: ?NodeId = null;
-    try stack.append(gpa, .{ .node = n, .origin = t.proj_origin.get(.{n.int()}).? });
+    try stack.append(gpa, .{ .node = n, .origin = start.head, .env = start.env });
     (try memo.getOrPut(gpa, .{n.int()})).value_ptr.* = open;
     // `result` carries a finished child's answer to its parent frame.
     var returned = false;
@@ -1007,7 +1009,8 @@ pub fn projectedImage(t: *Shape.Table, gpa: Allocator, account: *Ids.Account, pl
             _ = stack.pop();
             continue;
         }
-        const parent: NodeId = .from(t.proj_origins.items[top.origin][0]);
+        const raw: NodeId = .from(t.proj_origins.items[top.origin][0]);
+        const parent = if (top.env == Ids.none_int) raw else try t.view(gpa, account, raw, top.env);
         if (memo.get(.{parent.int()})) |hit| {
             if (hit == open) {
                 top.origin = t.proj_origins.items[top.origin][2];
@@ -1023,13 +1026,13 @@ pub fn projectedImage(t: *Shape.Table, gpa: Allocator, account: *Ids.Account, pl
             returned = true;
             continue;
         }
-        const head = t.proj_origin.get(.{parent.int()}) orelse {
+        const head = t.originHead(parent) orelse {
             (try memo.getOrPut(gpa, .{parent.int()})).value_ptr.* = Ids.none_int;
             top.origin = t.proj_origins.items[top.origin][2];
             continue;
         };
         (try memo.getOrPut(gpa, .{parent.int()})).value_ptr.* = open;
-        try stack.append(gpa, .{ .node = parent, .origin = head });
+        try stack.append(gpa, .{ .node = parent, .origin = head.head, .env = head.env });
     }
     return result;
 }

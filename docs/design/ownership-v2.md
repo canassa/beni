@@ -1619,6 +1619,14 @@ reaches `D`:
   another such projection (`Cond.projectedImage`, memoised per relabel, on an explicit stack). That is the node a
   reader of the published class meets when it projects `res`. The entry is keyed there. A `relabelMap` leaf
   costs one memoised lookup more, so the transport stays per submap and source-sized.
+  **Through a call.** A call relabels the class's entry on `D` onto `view(D, E)`, and that view is no part of
+  the caller's value either. Read-off reaches it the same way. A call's view of a node with origins has its
+  template's origins, each origin's node viewed under `E` (`Shape.originHead`). A view that a caller's
+  projection makes records its own origin too. So a function that returns a call's result publishes the join's
+  entry where its own callers look, through any number of calls (#1459's review: before this, a wrapper of a
+  joined port read the sides alone, `excl` where the port reads `lost`, and `yes` where it reads `shared`).
+  `build_test.zig` pins it: a wrapper's and its wrapper's summaries read as the joined function's, in the
+  same module and imported.
 - **The printer** descends the value's own structure. It carries the outermost union or choice on its way, projected
   along each step since, and joins the entry stored for that projection into each node's read: what a reader at
   that path reads.
