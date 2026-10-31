@@ -12093,8 +12093,9 @@ test "the checker v2 reads a join's κ through one and two wrappers as the joine
 test "the checker v2 counts K inside a recursive function, its read-off filter seen by the limit" {
     // #1459's review: K's tower inside a recursive group (`r0` the recursive
     // call, `r_k = if c then Rose [ r_{k-1} ] else r_{k-1}`). Read-off's
-    // filter reads each joined entry of the round's snapshot, which K makes
-    // Θ(n²) (#1450): its reads are on the walk's lanes and growth, so a tall
+    // filter reads each (position, entry) pair of the round's snapshot, Θ(n²)
+    // for K, and the rest of the group walk is superlinear too (#1479): its
+    // reads are on the walk's lanes and growth, so a tall
     // tower stops at the limit (80 levels: `ownership_summary_size` in about
     // 14 s on a ReleaseSafe beni) instead of running on. 68 243 / 165 581
     // records at 10 / 20 (Debug), growth 0; 4d alone refused it at 20.

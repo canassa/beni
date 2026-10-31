@@ -853,14 +853,6 @@ pub const Table = struct {
             const d = shapes.get(f.node);
             try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
         }
-        var kept: std.ArrayList(NodeId) = .empty;
-        defer kept.deinit(gpa);
-        for (arms.items) |x| {
-            try env.charge.reserve(gpa, .inspection, 1);
-            if (!try resLeq(env, x, ks, o, ko)) try kept.append(gpa, x);
-        }
-        if (kept.items.len == arms.items.len) return whole;
-        if (kept.items.len == 0) return .{ .node = .none, .kappas = .none };
         // Each choice node's entry, with what is carried to it, carried to
         // its sides: parents first, in reverse post-order.
         var acc: Ids.FixedDict(1) = .{};
@@ -879,21 +871,28 @@ pub const Table = struct {
                 got.value_ptr.* = (if (got.found_existing) try env.conds.join(gpa, env.charge, .from(got.value_ptr.*), give) else give).int();
             }
         }
+        // Each arm's cover test reads the arm as its readers will once the
+        // others are dropped: its own κ with the choice's entries carried
+        // to it, at the root and below (`DropCarry`). Read under the merged
+        // snapshot alone it would skip the join's entry and borrow another
+        // arm's certificate (#1459's review).
+        var kept: std.ArrayList(NodeId) = .empty;
+        defer kept.deinit(gpa);
+        for (arms.items) |x| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            var kx = ks;
+            if (acc.get(.{x.int()})) |c| kx = (try env.conds.kappaSet(gpa, env.charge, kx, x, .from(c))).ctx;
+            kx = try carryTo(env, kx, post.items, x);
+            if (!try resLeq(env, x, kx, o, ko)) try kept.append(gpa, x);
+        }
+        if (kept.items.len == arms.items.len) return whole;
+        if (kept.items.len == 0) return .{ .node = .none, .kappas = .none };
         var k = ks;
         for (kept.items) |x| if (acc.get(.{x.int()})) |c| {
             k = (try env.conds.kappaSet(gpa, env.charge, k, x, .from(c))).ctx;
         };
         const root = try balancedChoice(env, kept.items);
-        // Below the root too: the join's entry at each position is keyed on
-        // `proj(choice, q)`, which the kept arms' readers no longer meet. Its
-        // projection correspondence carries it to `proj(root, q)` (§2.9
-        // *Keyed where a reader looks*): the kept arms' reads below the root
-        // join it, as the dropped choice's did, never a certificate merged in
-        // from a dropped arm alone (#1459's review).
-        var carry: DropCarry = .{ .env = env, .root = root };
-        defer carry.deinit();
-        for (post.items) |u| (try carry.choices.getOrPut(gpa, .{u.int()})).value_ptr.* = 1;
-        k = try env.conds.kappaRelabel(gpa, env.charge, k, .{ .ctx = &carry, .node = DropCarry.node, .cond = DropCarry.cond, .projected = DropCarry.projected });
+        k = try carryTo(env, k, post.items, root);
         return .{ .node = root, .kappas = k };
     }
 
@@ -925,6 +924,20 @@ pub const Table = struct {
             return Cond.projectedImage(e.shapes, e.gpa, e.account(), e.places, e.cells, x, &c.memo, ctx, image, true);
         }
     };
+
+    /// `ks` transported through the projection correspondence with every
+    /// choice node in `choices` mapped to `root`: each entry kept where it
+    /// is, and each joined DAG's entry also on `proj(root, q)`. Below the
+    /// root, the join's entry is keyed on `proj(choice, q)`, which `root`'s
+    /// readers never meet; so they read it there, as the choice's did, never
+    /// a certificate merged in from another arm alone (§2.9 *A covered arm's
+    /// drop keeps the join below the root*, #1459's review).
+    fn carryTo(env: Env, ks: Kappas, choices: []const NodeId, root: NodeId) Error!Kappas {
+        var carry: DropCarry = .{ .env = env, .root = root };
+        defer carry.deinit();
+        for (choices) |u| (try carry.choices.getOrPut(env.gpa, .{u.int()})).value_ptr.* = 1;
+        return env.conds.kappaRelabel(env.gpa, env.charge, ks, .{ .ctx = &carry, .node = DropCarry.node, .cond = DropCarry.cond, .projected = DropCarry.projected });
+    }
 
     fn opensChoice(shapes: *Shape.Table, n: NodeId) bool {
         return shapes.kind(n) == .choice and shapes.eagerOf(n) == n;
@@ -2477,5 +2490,55 @@ test "a port join that drops a covered arm keeps the joined entries below the ro
     // as the join did, never the certificate merged in from the dropped arm.
     const at = f.conds.kappaAlong(q.kappas, elem);
     const k = try env.conds.kappaOf(gpa, env.charge, env.view(), at, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, q.node, Place.Step.elem)).?, true);
+    try testing.expect(Cond.Table.fails(k));
+}
+
+test "a port join's cover test reads an arm with the join's entries carried to it (#1459's review)" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lol = try f.placeOf(3);
+    const elem = &[_]Step{Place.Step.elem};
+    const built = struct {
+        fn of(fx: *Fixture, place: PlaceId, k: u32, child: ?NodeId) !NodeId {
+            const over: u32 = if (child) |c| try fx.shapes.overPut(testing.allocator, &fx.account, Ids.none_int, Place.Step.elem, c) else Ids.none_int;
+            return fx.shapes.node(testing.allocator, &fx.account, place, try fx.set(&.{try fx.cells.site(testing.allocator, &fx.account, k, place, .list)}), over);
+        }
+    }.of;
+    const un = struct {
+        fn of(fx: *Fixture, xs: []const NodeId) !NodeId {
+            var out = xs[0];
+            for (xs[1..]) |x| out = try fx.shapes.@"union"(testing.allocator, &fx.account, &fx.cells.sets, out, x);
+            return out;
+        }
+    }.of;
+    const a = try built(&f, list, 1, null);
+    const b = try built(&f, list, 2, null);
+    const c = try built(&f, list, 3, null);
+    const d = try built(&f, list, 5, null);
+    // `x = [a]` certifies `a`; `u = [a | b]` only `b`; `big = [a | c | d]`
+    // all; `v = [b]`. One outer allocation site.
+    const x = try built(&f, lol, 4, a);
+    const u = try built(&f, lol, 4, try un(&f, &.{ a, b }));
+    const big = try built(&f, lol, 4, try un(&f, &.{ a, c, d }));
+    const v = try built(&f, lol, 4, b);
+    const cert = struct {
+        fn of(fx: *Fixture, outer: NodeId, inner: []const NodeId) !Kappas {
+            var k = try fx.setK(.none, outer, Cond.yes);
+            for (inner) |n| k = try fx.conds.kappaSetAt(testing.allocator, fx.env().charge, k, &.{Place.Step.elem}, n, Cond.yes);
+            return k;
+        }
+    }.of;
+    const p1 = try Table.joinRes(env, x, try cert(&f, x, &.{a}), u, try cert(&f, u, &.{b}), .choice);
+    const bb = try Table.joinRes(env, big, try cert(&f, big, &.{ a, c, d }), v, try cert(&f, v, &.{b}), .choice);
+    const q3 = try Table.joinClassRes(env, p1.node, p1.kappas, bb.node, bb.kappas, .choice);
+    // `u` read under `p1`'s merged snapshot alone borrows `a`'s certificate
+    // from `x` and reads `yes`; the join's `[*]` reads `lost`. So `u` is no
+    // arm `bb` covers, and `q3`'s `[*]` keeps that `lost`.
+    const at = f.conds.kappaAlong(q3.kappas, elem);
+    const k = try env.conds.kappaOf(gpa, env.charge, env.view(), at, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, q3.node, Place.Step.elem)).?, true);
     try testing.expect(Cond.Table.fails(k));
 }
