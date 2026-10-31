@@ -2774,34 +2774,44 @@ claims they may be one object. Four rules use this.
   depth. But the four images are four disjoint sets of positions of `X`, so they owe `excl X`, not a
   repeat. The rule:
   - **The group.** The keys of one parameter πᵢ at one call are instantiated by walking the actual along
-    each key's steps, as `Grafter.argAt` does. Views are forced, and built nodes and deltas are projected
-    one step at a time, as in `onePositionAlong`. A key whose walk meets a node that passes rule 3's (b)
-    belongs to the **group** `(call, i, L, node)`, where `L` is the exact prefix (no `[*]`, no `⟲`) at
-    which the walk met the node. (b) asks for a leaf, or a union or choice whose members are leaves, with
-    no approximate cell and no cell under a repeating split. Different calls, different parameters, and
-    different occurrences of one node are different groups: `Node a xs a` meets `a` at `#Node.0` and at
-    `#Node.2`. A key whose walk meets no such node is in no group, and it adds as before.
-  - **(a′) The keys of a group are route-disjoint.** Each key that holds a join (§2.1: `Place.levelPaths`
-    gives several paths) is expanded first into its level paths (`Place.expandLevels`), each path with
-    the key's multiplicity. A path that a group gets twice adds, because a join and its level path name
-    common routes. An approximate key (`~`, a recast's whole reach, §2.13.9) names more than its path's
-    routes, so it is in no group. Every other pair of paths in a group is two distinct walk names.
-  - **The read.** For each member cell `c` of the group's node, the image of a key `L·r` is `c·r`,
-    canonical. A union's or a choice's members are taken one at a time, because one execution holds one
-    of them. An image takes the **maximum** of the multiplicities of the group's keys that land on it,
+    each key's steps. Views are forced, and built nodes and deltas are projected one step at a time, as
+    in `onePositionAlong`. A key whose walk meets a node that passes rule 3's (b) belongs to the
+    **group** `(call, i, L, node)`, where `L` is the exact prefix (no `[*]`, no `⟲`) at which the walk
+    met the node. (b) asks for a leaf, or a union or choice whose members are leaves, with no approximate
+    cell and no cell under a repeating split. The group also asks that the node stand at the parameter's
+    place at `L`: a recast there is in no group. Different calls, different parameters, and different
+    occurrences of one node are different groups: `Node a xs a` meets `a` at `#Node.0` and at `#Node.2`.
+    A key whose walk meets no such node is in no group, and it adds as before.
+  - **(a′) The keys of a group are pairwise alias-apart.** Rule 4 runs only on a certificate whose
+    condition is neither `shared` nor `lost`. Such a certificate's symbolic keys of one base are pairwise
+    alias-apart in the callee (`Cell.alias` is `no`): `aggAdd` pairs every two same-base arrivals that
+    alias, and `KappaRead.sep` reads such a pair `lost`. Published keys are canonical cells, because
+    read-off relabels refinements, so the part exemption (`sameAnchor`) never applies to them. Two
+    alias-apart paths are not prefixes of each other and do not meet through `⟲` matching (§2.2), so
+    their routes are disjoint. This is so for a join name too, `root⟲` included: `alias` reads a `⟲` on a
+    cycle as overlapping every path of that cycle at its place. An approximate key (`~`, a recast's whole
+    reach, §2.13.9) names more than its path's routes, so it is in no group. A certificate that fails is
+    instantiated as before, keys added, and reads its failure anyway.
+  - **The read.** For each member cell `c` of the group's node, the image of a key `L·r` is the symbolic
+    projection `c·r`, canonical, through `⟲` as well. This is not `Grafter.argAt`'s answer: at a level
+    step `argAt` takes the whole reach of the node so far (`recastWhole`, `Calls.zig`), even for a leaf.
+    But a leaf of symbolic cells at the parameter's place stands for exactly the projections of its cells
+    (§2.2: projecting a symbolic cell appends a step). Where a `⟲` of `r` lands on a root or on a path
+    that is not sealed, the image is the join name that `extend` makes there (`root⟲` included), and it
+    is not expanded. A union's or a choice's members are taken one at a time, because one execution holds
+    one of them. An image takes the **maximum** of the multiplicities of the group's keys that land on it,
     not their sum. It enters the caller's multiset once with that multiplicity (twice when it is 2+). An
     `apart` or `sep` atom of the certificate whose two members land on one image `X` of one group
     instantiates to `exclOf(X)`. Everything else adds in the multiset and pairs in `apart` as before:
     images of two groups, an image beside the caller's own arrivals, and keys in no group.
   - *Why it is sound.*
-    1. Canonical naming is a function of the route. `extend` folds each step in one way, and a path
-       that is not a join names exactly the routes whose step-by-step canonicalisation is that path (§2.1,
-       *A direct `⟲` names the levels as the walk does*). So two distinct walk names have disjoint routes.
+    1. By (a′), the keys of a group have pairwise disjoint routes.
     2. In one execution the group's node holds one object `o`, at one caller route `β` of its cell `c`.
        `c` may be a summary cell; `o` is then one of its positions. The callee's route `L·ρ` is the
        caller's route `β·ρ`, and `β·ρ = β·ρ′` only when `ρ = ρ′`. So keys with disjoint routes reach
        disjoint caller positions, and each caller position gets the occurrences of at most one key. Its
-       multiplicity is therefore at most the maximum.
+       multiplicity is therefore at most the maximum. This does not depend on how the images are named:
+       a join name and a level path both name a set of positions that holds the image's routes.
     3. Two keys whose images are one `X` stand at two disjoint sets of positions of `X`. `exclOf(X)` says
        that distinct positions of `X` hold objects apart in their whole reach (§2.2), so it implies the
        callee's atom between the two keys. One member cell gives a shared image only at a summary path:
@@ -2810,32 +2820,41 @@ claims they may be one object. Four rules use this.
        there two route prefixes reach one caller position: two calls with one actual
        (`Node (dupL l) xs (dupL l)`), one node met at two occurrences (`Node a xs a`), and a node below
        `[*]` (two elements may be one object, rule 3 (b)).
-  - *Rule 3 is the same argument with a syntactic test.* Its (a), different last named steps, is a
-    sufficient condition for (a′). It stays as built, because no fixture pins the relaxation. Rule 3
-    reads a callee's `apart`/`sep` sides at a call. Rule 4 reads a certificate's arrival keys wherever
-    one is instantiated.
+
+    *Corrected* (the review of #1519): an earlier version of step 1 claimed that every path other than
+    a join names exactly the routes that canonicalise to it. That is false for a `⟲` at a root:
+    `Place.extend(root, ⟲)` makes `root⟲`, `Place.levelPaths` gives no paths there, and `levelsOf(root)`
+    has several. The rule no longer needs that claim.
+  - *Rule 3 shares the argument but not the test.* Its (a), different last named steps, makes positions
+    distinct but does not make subtrees disjoint (`x#B.0` is a prefix of `x#B.0#B.1`). It stays as
+    built, because no fixture pins a relaxation. Rule 3 reads a callee's `apart`/`sep` sides at a call.
+    Rule 4 reads a certificate's arrival keys wherever one is instantiated.
   - *The read does not depend on the representation* (Lemma R4).
     - The groups are a function of the keys' paths and of the node that rule 3's walk meets. That node
       is the same on a view and its answer, and on a union merged or not (Lemma R3).
+    - (a′) is a function of the certificate's condition, which C1–C4 fix.
     - The maximum is commutative, associative and idempotent, and it agrees with saturation at two (C1).
-    - The expansion of a join reads paths only (`Place.levelPaths` is memoised per path).
+    - An image is a canonical path, computed by `extend` from paths alone.
     - The rule is monotone. A representation that over-approximates more (a built node or a `positions`
       node in place of a leaf) makes no group, and then the keys add, which is weaker.
   - *`runtime_safety` check* (`Grafter.assertRoutesApart`). It runs when a group merges two or more
-    keys onto one image, and shares no walk with the rule.
-    - For each merged key, each `⟲` is unrolled by one lap and by two laps of each of its level paths.
-      Each sample route is canonicalised again by `Place.extend` from the parameter's root, and it must
-      come back to its key. So no merged key is a join, and no two merged keys share a route.
+    keys onto one image, and it shares no walk with the rule.
+    - The merged keys are compared pairwise by `Cell.alias`, computed again from their paths and not read
+      from the multiset, and each pair must be `no`. This tests (a′) itself, so a key at `root⟲` or at
+      another join passes when it is apart and fails when it overlaps. (`wrapR`, §8, merges `π2#Node.1`
+      and `π2⟲#Node.1` at `π1#Node.0⟲#Node.1`, which is sound, and passes.)
     - Rule 3's traced preimage walk (`Calls.Pre` on the denotation, as in `assertOnePosition`) runs over
       the group's images. Every source state that brings a merged image to the callee's keys must stand
       at one actual path, with no summary step.
-    A release build keeps an image that would fail either as separate arrivals (the sum), so a broken
-    assumption reads `lost`, never `yes`.
+
+    The check only checks. The rule's premises (the group's node, the certificate's condition, the
+    approximate keys) are computed in every build.
   - *Cost.* One pass over an instantiation's keys, with a persistent map from image to `(group,
     maximum)`: O(A log A) for A keys, inside the certificate's O(S_validation + H · A log A) (§8). The
-    walk per key is the instantiation's own walk, memoised per `(actual node, prefix)`. A join's expansion
-    is the product of the joins on a path, and a path has at most one `⟲` per first return (§2.1). The
-    check is `runtime_safety` only, O(path length) per sample route.
+    walk per key is the instantiation's own walk, memoised per `(actual node, prefix)`, and the image is
+    one `extend` per step of the key. Nothing is expanded, so a key has one image per member cell of its
+    group's node. (a′) costs nothing: the certificate's condition is read once. The check is
+    `runtime_safety` only, quadratic in the keys that one image merges.
   - *Built as rule 1 is.* `Agg.sides` keeps, per image, the group and the keys of it that reached the
     image. An arrival of the same group with another key is one more position of the image. An arrival
     of another group, or with the same key, is a repeat.
@@ -3430,64 +3449,91 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      `Exits` walked the use of a call by path (#1452). The whole-corpus v2 dump, 2 039 roots, has no
      line changed but the accounts. Pinned: `ParamLeafByNode` and the two counted tests in
      `build_test.zig`.
-   - **(d) Two paths into one certified class** [specified 2026-10-31, #1485; not built]. A view of a
-     certified class (§8 slice 4, *The fold certificate*) is a knot. `same`'s `res` widens to one class,
-     `K = #Node.1`, because `res#Node.0` and `res#Node.2` are the root. So at
+   - **(d) Inside one certified view** [specified 2026-10-31, #1485; revised after the review of #1519;
+     not built]. A view of a certified class (§8 slice 4, *The fold certificate*) is a knot. `same`'s
+     `res` widens to one class, `K = #Node.1`, because `res#Node.0` and `res#Node.2` are the root. So at
      `incP (P (same t) (same t2))` the write at `π1#P.0#Node.1` and the other path
      `π1#P.0#Node.0#Node.1` both project into `K`, and `K` holds `t#Node.1` at both. Each path keeps it
      beside the other, and the call is refused `disjoint` (#1485, *Wall 2*). Neither path has a `⟲`, so
      the graft through `⟲` (reader 3) never reads them. Neither is a leaf fold ((c)), and neither is a
-     summary cell that owes `excl`. The rule: a written path `q` and another path `q′` of πᵢ are not
-     beside each other, and the call relies on the certificate instead, when all of these hold.
-     - **(d1) The paths are apart.** `alias(πᵢ·q, πᵢ·q′)` is `no` in the callee (§2.2): neither path is a
-       prefix of the other, and no `⟲` of one matches the other. So their routes are disjoint, and no
-       position of one is in the reach of a position of the other.
-     - **(d2) One view, one occurrence.** The actual is walked along `q` and along `q′`. Views are tested
-       before they are forced, built nodes and deltas are projected one step at a time, and a `choice` is
-       split arm by arm (*a choice's arms*, above). In one arm, both walks must meet one node `V` at one
-       exact prefix `L` (no `[*]` or `⟲` in `L`). `V` is a view of the class `C` of a group member `f`
-       under an environment `E`, or the forced answer of one (`Shape.answered` maps it back). `C` carries
-       a proved certificate: it is published, or it is a goal of the Prover in the group being solved,
-       which is read as the hypothesis and proved before publication, as every certificate that a walk
-       reads is (§8). A `union`, a `positions` node, a recast or a delta at `L` is not a `V`.
-     - **(d3) One class.** The rests `r` and `r′` (`q` and `q′` after `L`) lie in one class `K` of `C`.
-       `Fold.classAt` over each rest's steps, a `⟲` taken as every return of its place's cycle in `C`'s
-       fold, gives `K` and only `K`, and `A(f, K)` is certified.
+     summary cell that owes `excl`. The same happens at a held path whose rest is not in `K`: `incAll`
+     marks `π1#Node.0⟲ RA` and `incP` marks `π1#P.0#Node.0 RA`, and a held tree's reach in the knot is
+     every class of the view, `K` included, with the written `t#Node.1` in it. So
+     `incRoot (same t)`, with `incRoot t = case t of Node l xs r → Node l (List.push xs 1) r`, is
+     refused, though it is safe and v1 accepts it. The rule works on what `otherPaths` already walks, an
+     item at a time, and never on pairs of paths.
+     - **The premises, on the write.** (d1) The write's path `q` is not approximate. (d2) Its spine (the
+       walk's route along `q`) meets one node `V` at an exact prefix `L` (no `[*]` or `⟲` in `L`). Views
+       are tested before they are forced, built nodes and deltas are projected one step at a time, and a
+       `choice` is split arm by arm (*a choice's arms*, above). `V` is a view of the class `C` of a group
+       member `f` under an environment `E`, or the forced answer of one (`Shape.answered` maps it back).
+       A `union`, a `positions` node, a recast or a delta at `L` is not a `V`. (d3) Every position of `q`
+       after `L` lies in one class `K` of `C`. That is, `Fold.classAt` over the rest of `q`'s steps, with
+       each `⟲` taken as every return of its place's cycle in `C`'s fold, gives `K` and only `K`. And
+       `A(f, K)` is certified (published, or a goal of the Prover, below).
+     - **The items inside `V`.** The items of the walk that descend from the spine's item at `V` are the
+       positions of that one occurrence of `V`. Each such item carries its class in `C`: `V`'s root class,
+       then one step of `C`'s fold per step of the walk (the fold's `(image, step)` map). An item below
+       `V` that the walk reaches by another route is another occurrence (`P w w` meets `w` at `#P.0` and
+       at `#P.1`), and it carries no class.
+       - An item at class `K` keeps nothing of it.
+       - Where an item keeps a reach (`keepReach`), the reach of a position inside `V` is taken by class:
+         the cells of every class of `C` that its class reaches in `C`'s fold, except `K`. Those cells are
+         reader 3's, `A(f, K′)`'s keys instantiated by rule 4 at each class `K′` (*Reader 3 at every step*,
+         §8).
+       - Everything else is read as before: the written positions, the items outside `V`, and the cells
+         of every other class.
 
-     Then the pair relies on **κ̂(V, K)**: the multiset read of `A(f, K)`'s arrival keys instantiated
-     through `E` by §2.9 rule 4, with the certificate's own atoms substituted. `yes` passes, `and{…}`
-     passes and records `xreq`, `shared` is refused `disjoint`, and `lost` is refused `disjoint (approx)`.
-     κ̂ is read once per `(call, V, K)`. A pair that fails (d1)–(d3) is compared by cells, as before. At a
-     view those cells are reader 3's, at every step into a certified class (§8, *Reader 3 at every
-     step*).
+       When the rule drops something at `K`, the call relies once on **κ̂(V, K)**: the multiset read of
+       `A(f, K)`'s arrival keys instantiated through `E` by §2.9 rule 4, with the certificate's own atoms
+       substituted. `yes` passes, `and{…}` passes and records `xreq`, `shared` is refused `disjoint`,
+       and `lost` is refused `disjoint (approx)`. κ̂ is read once per `(call, V, K)`.
      - *Why it is sound.* By (d2), `V` stands for the result of one activation of `f` in this execution:
-       `L` names one position, and an instruction runs once per activation (§2.12, A0). The proved
-       certificate says that every object at a position of `K` in that result is one of `A(f, K)`'s
-       arrivals instantiated through `E`, at most at the counted multiplicity. A κ̂ that passes says three
-       things: no arrival is repeated, distinct arrivals are apart, and distinct positions of a summary
-       arrival are apart. So distinct positions of `K` hold objects that are apart in their whole reach
-       (§2.2). By (d1) and (d3), `q` and `q′` stand at disjoint positions of `V`, all of them in `K`. So
-       no object of the written position is at `q′` or in its reach, and that is what Disjoint asks of
-       the pair. The rule says nothing about the other cases, which keep the cell comparison: two views
-       (`P (same t) (same t)`: `L` is `#P.0` for one path and `#P.1` for the other), one view at two
-       occurrences (`P w w`), a view below `[*]` (two elements may be one value), and two classes of one
-       view (each certificate is about its own `K`).
+       `L` names one position, and an instruction runs once per activation (§2.12, A0). The items that
+       carry a class are positions of that result, and by (d3) every written position is a position of
+       `K` in it. The proved certificate says that every object at a position of `K` in that result is
+       one of `A(f, K)`'s arrivals instantiated through `E`, at most at the counted multiplicity. A κ̂ that
+       passes says three things: no arrival is repeated, distinct arrivals are apart, and distinct
+       positions of a summary arrival are apart. So distinct positions of `K` hold objects that are apart
+       in their whole reach (§2.2). What the rule drops is a position of `K`, at an item or in a reach.
+       Either that position is a written position, and then it is the written object itself, which is
+       never a second path of the write (item 3 (a), #1367, and *the written position*, #1253). Or it is
+       another position of `K`, and its object and that object's whole reach are apart from every written
+       object. This needs no name of either position, so it holds whatever canonical paths the walk
+       makes. The rule keeps the cells of every other class, so an object of another class that the
+       write may meet is still compared. That includes a deep write's own contents (a class inside `K`)
+       and a list that moves between two classes (§8, near-miss row 12). The rule says nothing about two
+       views (`P (same t) (same t)`: the spine meets `same t` at `#P.0`, and the other item meets the
+       other `same t` at `#P.1`), one view at two occurrences (`P w w`), a view below `[*]` (two elements
+       may be one value), or a write whose rest lies in two classes. Those keep the cell comparison.
+     - *A hypothesis is read provisionally.* Inside the group being solved, `C`'s certificate may be a
+       goal of the Prover. The walk then reads the hypothesis (the member's current aggregate), as every
+       reader does during the rounds (§8, *When*). A Disjoint verdict that read a hypothesis is final only
+       when the Prover proves the goal on `x*`'s validation walk. When the proof fails, `lost` is joined
+       into `A(f, K)`, the group goes round again, and the verdict is computed again from the next
+       generation's validation walk, where κ̂ reads `lost`. No verdict is published from a round whose
+       certificate was not proved (§2.12, *Settled generation*).
      - *The read does not depend on the representation* (Lemma C7, §8). (d2)'s `V` is the same before
        and after forcing, because the walk tests a node before it forces it and maps an answer back to
-       its view. A choice is split into the same arms whether `joinAlternatives` flattened it or not.
-       (d3) reads `C`'s fold by steps, a published table, and no node. κ̂ is rule 4's instantiation
-       (Lemma R4) of a certificate that C1–C4 fix. When a premise is not recognised, the pair is compared
-       by cells, which is weaker.
-     - *`runtime_safety` check* (`TransferBeside.assertCertifiedPair`). It runs when the rule clears a
-       pair, and shares no walk with the rule. The actual is walked again with every view forced and
-       every choice flattened, and both paths must meet nodes of `V`'s answer at `L` (through
-       `Shape.answered`). `Calls.Pre`'s traced preimage of that answer at `r` and at `r′`, keyed by
-       canonical path, must land in `K`'s class. And C5 (`F(A) ⊑ A`, from the published class alone)
-       must hold for `A(f, K)`.
-     - *Cost.* (d2) is one walk per written path, as `leafDepth` is (O(|q|)), and one per other path
-       that shares its prefix. (d3) is one `classAt` per rest, memoised per `(class, steps)`. κ̂ is one
-       rule 4 instantiation per `(call, V, K)`, O(A log A). So the rule adds O(Σ |q′|) to what
-       `otherPaths` walks already, and the instantiations.
+       its view. A choice is split into the same arms whether `joinAlternatives` flattened it or not. The
+       classes come from `C`'s fold by steps, a published table, and no node. κ̂ is rule 4's
+       instantiation (Lemma R4) of a certificate that C1–C4 fix. When a premise is not recognised, the
+       items carry no class and are read by cells, which is weaker.
+     - *`runtime_safety` check* (`TransferBeside.assertCertifiedDrop`). It shares no walk with the rule.
+       For every item that dropped `K`, the actual is walked again along the item's route with every view
+       forced and every choice flattened, and it must meet a node of `V`'s answer at `L` (through
+       `Shape.answered`). `Calls.Pre`'s traced preimage of that answer, keyed by canonical path, must put
+       each dropped position in `K`'s class and each written position in `K`'s class. And C5 (`F(A) ⊑ A`,
+       from the published class alone) must hold for `A(f, K)`. Inside a group the class is not
+       published yet. The check is then recorded with the goal and runs at publication, against the
+       certificate that is published, and it runs only if the verdict it covers is final.
+     - *Cost.* Per item of `otherPaths`' walk, which the walk already meets once per `Beside` key: one
+       class id carried, O(1) through the fold's memoised `(image, step)` map. Per `(call, V, K)`: one
+       rule 4 instantiation per class of `C` (O(A log A) each), the reach of each class without `K` as one
+       persistent union over `C`'s fold, memoised, and one κ̂. The premises on the write cost one walk of
+       the spine, as `leafDepth` does (O(|q|)), and one `classAt` of its rest. So a K-wide tree writer
+       stays linear in the walk's items per call, and the rule adds O(|classes(C)| · A log A) per
+       `(call, V, K)`.
 4. **E**: `cellsAt(aᵢ, q)` escape deeply, one escape per route as item 3 reads them. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
@@ -7053,8 +7099,8 @@ that is (the fork, below). It refines the plan above. Nothing above is withdrawn
      witnesses stay refused (the table above). *Amended (#1485):* it reads at every step into a
      certified class, not only at a level step (*Reader 3 at every step*, below).
 
-  Each reader instantiates the certificate by §2.9 rule 4, and Disjoint also reads it between two paths
-  into one class (§2.11 item 3 (d)). Both rules are specified in *The two walls of #1485*, below.
+  Each reader instantiates the certificate by §2.9 rule 4, and Disjoint also reads it for what it meets
+  inside one certified view (§2.11 item 3 (d)). Both rules are specified in *The two walls of #1485*, below.
 - **Cost.** There is one goal per `(member, K)` that a walk read, and the alternatives are the
   validation walk's sources at `K` (each read once, as the walk already does). There is one edge per
   hypothesis node, and the aggregate work is the persistent multiset merges of §2.9 (O(log) per arrival).
@@ -7074,7 +7120,8 @@ that is (the fork, below). It refines the plan above. Nothing above is withdrawn
   base through the other member's goal.
 - *Through records* (`P (same t) (same t)`, `B [ w ] [ w ]`). The record is built outside the component,
   and its two coexisting hypothesis nodes sum. One actual `t` brings each symbolic arrival in twice: 2+,
-  refused. Two actuals `t`, `t2` bring two distinct arrivals: `apart`, accepted. That needs reader 3, and §2.11 item 3 (d) for the pairs inside one view (#1485).
+  refused. Two actuals `t`, `t2` bring two distinct arrivals: `apart`, accepted. That needs reader 3, and §2.11 item 3 (d) for what the walk
+  meets inside one view (#1485).
 - *Through `positions`* (`[ incAll b, …incList rest ]`). A positions node's sides coexist, so they
   sum. #1471 keeps a member at most twice. Two is "repeated", so the aggregate of a member kept twice
   equals the aggregate of one kept k > 2 times (Lemma C1).
@@ -7144,11 +7191,16 @@ position what the certificate already claims, where the reader read it by cell.
   parameter, which the frame takes as apart and its callers check through the marks (§2.11 item 3 (c)).
   `incAll` has the same derivation, since its `List.push xs 1` answers `π1#Node.1`. Counted by cell
   (`aggAdd` today), `X` and `Y` read 2+, and the certificate reads `lost`.
-- **Wall 2 is §2.11 item 3 (d).** At `incP (P (same t) (same t2))`, every pair of `incP`'s paths below
-  `#P.0` meets the one view `V₁ = same t` at the prefix `#P.0`, and its rests lie in `K`. So the pair
-  relies on κ̂(V₁, K), which is `excl t#Node.0⟲#Node.1 ∧ excl t#Node.2⟲#Node.1`. The same holds below
-  `#P.1` with `t2`. A pair across `#P.0` and `#P.1` meets two views and compares cells: `t`'s keys
-  against `t2`'s, which are apart. `incAll (same t)` has every pair in one view, at the empty prefix.
+- **Wall 2 is §2.11 item 3 (d).** At `incP (P (same t) (same t2))`, each write of `incP` below `#P.0` has
+  its spine meet the one view `V₁ = same t` at the prefix `#P.0`, with its rest in `K`. Every item that
+  the walk meets inside `V₁` drops `K`, whether it stands at `K` (`π1#P.0#Node.0#Node.1` beside the
+  write at `π1#P.0#Node.1`) or holds a tree whose reach holds `K` (`π1#P.0#Node.0 RA`). The call relies
+  once on κ̂(V₁, K), which is `excl t#Node.0⟲#Node.1 ∧ excl t#Node.2⟲#Node.1`. The same holds below
+  `#P.1` with `t2`. An item below `#P.1` is outside `V₁` and keeps its cells, `t2`'s keys, which are
+  apart from `t`'s. `incAll (same t)` and `incRoot (same t)` meet `V` at the empty prefix. In
+  `incRoot`, the answered subtrees `π1#Node.0` and `π1#Node.2` hold `K` only, so they keep nothing.
+  (Whether those held marks shrink once rule 4 projects a leaf through `⟲` symbolically is not
+  measured. (d) does not depend on it.)
 - **Reader 3 at every step.** Wherever Disjoint and `otherPaths` read the cells of a certified view at a
   position in `K`, through a level step or a plain one, they read `A(f, K)`'s arrival keys instantiated by
   rule 4. The certificate covers every object at a position of `K`, so this is a sound cell set. It equals
@@ -7166,12 +7218,15 @@ means that the in-place writes reach one list object twice.
 | `incP (P (same t) (same t))` | refused `disjoint` | refused `disjoint (approx)` | refused `disjoint`: `t#Node.1` at `#P.0#Node.1` and `#P.1#Node.1`, two views | unsafe on 25 of 26 |
 | `incP (P (same t) (same t2))` | refused `exclusive (approx)` | refused `disjoint (approx)` | **accepted** `param`, with `excl` of each tree's lists below its first returns in `xreq` | safe on 130 of 130 |
 | `incAll (same t)` | refused `exclusive (approx)` | refused `disjoint (approx)` | **accepted** `param`, likewise | safe on 26 of 26 |
+| `incRoot (same t)`, `incRoot t = case t of Node l xs r → Node l (List.push xs 1) r` | accepted `param` | refused `disjoint (approx)` | **accepted** `param`: the answered `π1#Node.0` and `π1#Node.2` are inside `V` and drop `K` | safe on 677 of 677 (height ≤ 4): the root list is in no subtree |
+| `incRoot (unroll t)` | refused `call (approx)` | refused `disjoint (approx)` | refused `disjoint (approx)`: `A(unroll)` is `lost` | unsafe on 676 of 677: the root list is also the left child's |
 | `incAll (unroll t)`, `unroll t = Node (Node (unroll l) xs Leaf) xs (unroll r)` | refused `exclusive` | refused `disjoint (approx)` | refused `disjoint (approx)`: the own source `π1#Node.1` is met twice, so `A(unroll)` is `lost` | unsafe on 25 of 26 |
 | `w = same t; incP (P w w)` | refused `disjoint` | refused `disjoint (approx)` | refused `disjoint`: `#P.0` against `#P.1`, one view at two occurrences | unsafe on 25 of 26 |
 | `case incAll t of Node l xs r → Node l (List.push xs 2) r` | accepted `param` | refused `element … (approx)` | refused, unchanged: a holder gap (#1483), not a κ one | — |
 
-So each refusal that the rules keep, other than #1483's holder gap, is genuine, and each new acceptance is safe on every input that meets its
-`xreq`. `unroll`, `P w w` and `P (same t) (same t)` write one list twice on every tree that has a list.
+So each refusal that the rules keep, other than #1483's holder gap, is genuine, and each new acceptance
+is safe on every input that meets its `xreq`. `incRoot (same t)` is also a v1 parity line: v1 accepts it,
+and before the review of #1519 this spec still refused it. `unroll`, `P w w` and `P (same t) (same t)` write one list twice on every tree that has a list.
 
 **Near misses, the future fixtures.** These attack the rules where they are weakest: keys with the same
 last step, aliasing at different depths, and two calls that share an argument. In every row the
@@ -7185,14 +7240,15 @@ stay refused.
 | 3 | `shareL`: `Node (same l) ys (same r)`, with `ys` being `l`'s list; `incAll (shareL t)` | refused `disjoint (approx)` | unsafe, 20 of 26 | An own source beside a group's image of the same cell (`π1#Node.0#Node.1`) adds. |
 | 4 | `deeper`: `Node (deeper ll) xs (Node (deeper lr) ys (deeper r))`, with `ll` and `lr` the subtrees of `l`; `incAll (deeper t)` | refused `disjoint (approx)` | **safe**, 26 of 26 | A precision gap. `ll` and `lr` are two positions of the one cell `π1#Node.0⟲`, and two calls are two groups, so their images add. Telling them apart needs the level's sides (`level`/`below`), which rule 1 does not read. |
 | 5 | `incAll (Node (same t) xs (same t))` | refused `disjoint` | unsafe, 25 of 26 | Two views of one tree. |
-| 6 | `incAll (Node (same t) xs (same t2))` | accepted | safe, 130 of 130 | Each view's pairs read its κ̂. The pairs across views compare `t` with `t2`. |
+| 6 | `incAll (Node (same t) xs (same t2))` | accepted | safe, 130 of 130 | The items inside each view drop `K` and read its κ̂. An item in the other view compares `t` with `t2`. |
 | 7 | `incAll (same (Node a xs a))` | refused `disjoint` | unsafe, 25 of 26 | Rule 4 groups by occurrence: `a` at `#Node.0` and at `#Node.2` are two groups, so `a#Node.1` is repeated and κ̂ is `shared`. |
 | 8 | `incAll (same (Node a xs b))` | accepted, with `excl` of `a`'s and `b`'s lists below their roots in `xreq` | safe, 26 of 26 | One group per subtree, each arrival once. |
 | 9 | `incAll (if c then same t else same t2)` | accepted | safe (each arm is row `incAll (same t)`) | (d2) splits the choice, and each arm reads its own κ̂. |
 | 10 | `both a b = P (same a) (same b)`, `incP (both t t)` | refused `disjoint` | unsafe | `both` is in no group, so its result is `P` of two views of `t`. |
 | 11 | `incTs [ same t ]`, where `incTs` writes the lists of every tree in a list | refused `(approx)`, unchanged | safe | A precision gap. `L` crosses `[*]`, which (d2) excludes, as rule 3's *Below `[*]`* does. |
-| 12 | `T2 = N T2 (List Int) (List Int) T2 \| E`, `mix t = N (mix l) ys xs (mix r)`, and a writer of every list over `mix t` | refused `(approx)` | safe | A precision gap. A list moves between the classes `#N.1` and `#N.2` with depth, so a `⟲` rest is in no single class ((d3)), and the pair compares cells. |
-| 13 | `J = J (List Int) (List J) (List J)`, `sameJ`/`sameJs` and `incJ`/`incJs` by explicit recursion, `incJ (sameJ j)` | accepted (predicted) | safe | (a′) expands the join keys below `#J.1[*]#J.1`. The fixture pins the verdict, or records the other reason if it is refused. |
+| 12 | `T2 = N T2 (List Int) (List Int) T2 \| E`, `mix t = N (mix l) ys xs (mix r)`, and a writer of every list over `mix t` | refused `(approx)` | safe | A precision gap. A list moves between the classes `#N.1` and `#N.2` with depth, so a `⟲` rest is in no single class ((d3)), and the walk compares cells. |
+| 13 | `J = J (List Int) (List J) (List J)`, `sameJ`/`sameJs` and `incJ`/`incJs` by explicit recursion, `incJ (sameJ j)` | accepted (predicted) | safe | Join names below `#J.1[*]#J.1` are keys and images, never expanded, and alias-apart from the other keys. The fixture pins the verdict, or records the other reason if it is refused. |
+| 14 | `wrapR n t = if n == 0 then same (Node t [] Leaf) else wrapR (n − 1) t`, called as `incAll (wrapR n ll)` with `ll` a grandchild (`π1#Node.0⟲`) | accepted | safe on 677 of 677 (height ≤ 4) | `A(wrapR, #Node.1)` holds `π2#Node.1` and the root join `π2⟲#Node.1`, which are alias-apart. Both image to `π1#Node.0⟲#Node.1` through `ll`, one group, so the maximum is taken. C6's alias check passes where an unrolling of `π2⟲` would have failed (the review of #1519). The fresh `[]` reaches `K` through the recursive call as a folded `ι⋆`; if that needs S4's `within` (W1–W3), the line is refused `(approx)` for that reason only, and the twin with a parameter list in place of `[]` pins rule 4 alone. |
 
 Rows 4, 11 and 12 are accepted debt (#1518). Row 4 is not a hole in rule 4. It is the
 limit that rule 4 shares with rule 1: positions are told apart below one object, and never across two
@@ -7201,14 +7257,17 @@ calls whose actuals one summary cell names.
 **Lemmas for the walls.** They extend C1–C5. Each has a `runtime_safety` check through a reader that does
 not share its walk.
 - **C6, rule 4.** Lemma R4 (§2.9). *Check:* `Grafter.assertRoutesApart` wherever a group merges keys.
+  It compares the merged keys by `Cell.alias` and traces the one-position walk, and it unrolls nothing.
   C2's check computes the step aggregate again with every view forced and every choice flattened, and
   that computation applies rule 4 too, so C2 also tests R4 on the forced representation.
 - **C7, Disjoint by certificate.** The read of §2.11 item 3 (d). *Check:*
-  `TransferBeside.assertCertifiedPair` wherever the rule clears a pair.
+  `TransferBeside.assertCertifiedDrop` wherever the rule drops `K` at an item. Inside a group being
+  solved the check is deferred to publication, and it runs only if the verdict it covers is final.
 
 **Cost.** Rule 4 is O(A log A) per instantiation, which is inside the certificate's
-O(S_validation + H · A log A) above. Rule (d) adds O(Σ |q′|) to `otherPaths` and one instantiation per
-`(call, V, K)`. Neither adds a walk in a release build. No verdict of today's corpus moves before #1485
+O(S_validation + H · A log A) above. Rule (d) adds O(1) per item of `otherPaths`' walk (one class id
+carried) and, per `(call, V, K)`, one instantiation per class of `C` and one memoised union per class, so a
+K-wide tree writer stays linear per call. Neither rule expands a join or adds a walk in a release build. No verdict of today's corpus moves before #1485
 is built, because both rules read a certificate and no certificate exists yet. #1485 measures the
 corpus with them. 4c's oracle (*What the 4c-owned known entries are*, above) found no corpus verdict that
 certificates change, so the expected corpus diff is the new fixtures only.
@@ -7220,17 +7279,19 @@ the programs on concrete trees with in-place writes. Its abstract verdicts are t
 column and the expected verdicts of the near misses. Under the count by cell, every self-recursive
 certificate (`same`, `swap`, `incAll`) reads `lost` at `π1#Node.0⟲#Node.1` and `π1#Node.2⟲#Node.1`,
 which is Wall 1. Under rule 4 those three are proved, and `dupL`, `unroll`, `shareL` and `deeper` stay
-`lost`.
+`lost`. The model checked the first, pairwise form of (d), which compared only two paths in `K`. The rows
+added after the review of #1519 (`incRoot`, `wrapR`) were checked concretely by a second script, on every
+tree of height 4 or less, and derived on paper for the item form of (d) and the alias form of (a′).
 
 **What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
 instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
-- `o/FoldCertificate`: the witnesses and rows 1–10 in one module.
+- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10 and 14 in one module.
 - `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
   library module, so the certified mark crosses a block (C4).
 - `o/FoldedKnotCall`: reader 2. `incAll`'s `xreq excl π1#Node.0⟲#Node.1` is read at a certified view
   through `Calls.preimage`: `incAll (same t)` is accepted, and `incAll (unroll t)` and `incAll (dupL t)`
   are refused.
-- Two test-only mutations. `cert-rule4-sum` adds the images of a group, and `cert-pair-cells` drops
+- Two test-only mutations. `cert-rule4-sum` adds the images of a group, and `cert-view-cells` drops
   (d). Each must turn the accepted witnesses red.
 
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
