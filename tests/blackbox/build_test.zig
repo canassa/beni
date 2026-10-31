@@ -11058,28 +11058,54 @@ test "the checker v2 says why a summary is not printed" {
     // └─────────────────────────────────────────┘
     // #1182: the summary print reads the class on the declaration's account,
     // so it can pass the allowance the walk stayed under. The dump dropped
-    // that error, and the `summary` line was simply missing.
-    // `doublingProduct` with 64 lists checks at growth 65 227, and its print
-    // passes 65 536: the dump says so.
+    // that error, and the `summary` line was simply missing. Only an
+    // allowance of the walk's growth up to the print's cost shows it, so the
+    // test measures the growth (`doublingProduct` with no extra list, about
+    // 126 000, twice the default allowance; it does not depend on the
+    // allowance) and sets the allowance to it, rather than to a count
+    // picked by hand (#1477). The print costs at least one record.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    try doublingProduct(a, &src, "h", 64);
-    try w.write("Main.beni", src.items);
+    var body: std.ArrayList(u8) = .empty;
+    defer body.deinit(a);
+    try doublingProduct(a, &body, "h", 0);
 
     // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
+    // │ EXECUTE / VERIFY OUTPUT                 │
     // └─────────────────────────────────────────┘
-    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    // A roomy allowance: the summary prints, and the account gives the growth.
+    const roomy = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, 4_194_304) });
+    try testing.expectEqual(@as(u8, 0), roomy.exit_code);
+    try testing.expect(std.mem.indexOf(u8, roomy.stdout, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, roomy.stdout, "  summary h: π1 RA;") != null);
+    const growth = try accountField(roomy.stdout, "h", "growth");
+    try testing.expect(growth > 98_304);
 
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h") == null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary h: not printed: ownership_summary_size\n") != null);
+    // The allowance the growth fills: the walk stays under, the print does not.
+    const edge = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, growth) });
+    try testing.expectEqual(@as(u8, 0), edge.exit_code);
+    try testing.expect(std.mem.indexOf(u8, edge.stdout, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, edge.stdout, "  summary h: not printed: ownership_summary_size\n") != null);
+
+    // Clearly under (the growth is 57% of the allowance): printed.
+    const under = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, growth * 7 / 4) });
+    try testing.expectEqual(@as(u8, 0), under.exit_code);
+    try testing.expect(std.mem.indexOf(u8, under.stdout, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, under.stdout, "  summary h: π1 RA;") != null);
+
+    // Clearly over (the growth is 150% of the allowance): the walk stops.
+    const over = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, growth * 2 / 3) });
+    try testing.expectEqual(@as(u8, 0), over.exit_code);
+    try testing.expect(std.mem.indexOf(u8, over.stdout, "limit h: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, over.stdout, "summary h") == null);
+}
+
+/// `Main.beni` as `body` under a module allowance of `size`; the path to run.
+fn doublingModule(w: *World, body: []const u8, size: u64) ![]const u8 {
+    const text = try std.fmt.allocPrint(w.arena.allocator(), "@ownership_summary_size(module, {d})\n\n\n{s}", .{ size, body });
+    try w.write("Main.beni", text);
+    return "Main.beni";
 }
 
 test "the checker v2 joins a group's port without its unchanged res again" {
