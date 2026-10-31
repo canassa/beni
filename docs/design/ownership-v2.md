@@ -761,6 +761,131 @@ Operations, memoised on their node arguments:
        cycle, and no widen folds that.
   - Neither cause needs S4's labels: no callback, `cb` label, `sep` or `within` is involved. So the fix stays
     in S3b (§8, question 9).
+- **A port keeps no round that its last round covers** [M 2026-10-31, #1368, #1372; proposed, not built].
+  A group's port is `x_{k+1} = widen(x_k ⊔ F(x_k))`, a choice (`Summary.join`, mode `choice`). The rounds
+  are Kleene iterates: `x_k ⊑ x_{k+1}`, and F is monotone, so `F(x_{k−1}) ⊑ F(x_k)`. So every arm that an
+  earlier round put into the port is covered by the arms of the latest round. The join keeps them all the
+  same: the port is a history of rounds, and each round nests the last one's image again. That history is
+  where most of the port's size comes from, not the nesting itself (measured below).
+
+  **The rule.** `Summary.join(a, b, .choice)` already returns `a`'s `res` and κ when `b`'s are under them
+  (#1423). It gains the other direction and the same test per arm:
+  1. **The side below.** When `a`'s `res` and κ are under `b`'s (`Shape.leq` and `Cond.kappaLeq`, the
+     test the stop rule already trusts), the join's `res` and κ are `b`'s, widened as a join's are.
+  2. **The arms below.** Otherwise, each arm of either side's top `choice` DAG (the nodes that its choice
+     edges reach that are not choices) whose value under its side's snapshot is under the whole other side
+     is dropped before `joinRes`. A side whose every arm is dropped is the first case.
+
+  Only `res` and its κ are absorbed. Uses, `xreq`, `funs` and the other parts join as before. Only a
+  class join does it, never `Shape.choice`, `joinChoice` or `joinAlternatives`: a shape constructor has no
+  κ, and an arm γ-below another can still store a weaker entry. Dropping that arm in the shape alone is
+  unsound.
+
+  **It is exact for the join.** A choice reads its arms by the maximum: γ is their union, multiplicity is
+  the maximum per key (§2.9), and κ is the join of the reads of the nodes a reader meets. When `a ⊑ B`
+  under the same order, `max(a, B) = B` for each of these. This holds at every path below too, because
+  `proj` of a choice is the choice of the projections, and at every caller, because instantiation is
+  monotone (the stop rule needs that already). Pairs that `apart` compares are inside one arm, never
+  across arms. So `choice(a, B)` and `B` read the same. *κ home:* an entry keyed at a choice node that
+  the drop removes is the join of the reads of its members (§2.9 *Keyed where a reader looks*), so it is
+  conjoined into the entry of each arm below it at that position. That only weakens, and since the entry
+  is the arms' join, it changes no read. On 5a's representation (a joined node keyed alone and reached
+  by correspondence), the kept arms are read through the side's root, never through a rebuilt node, so
+  every entry the side keys still applies.
+
+  **It is not exact for the fixpoint.** The join's value is the same, but `widen` is not invariant
+  under representation. The history that the rule removes made widen coarser, and that coarsening made
+  some groups settle sooner. Soundness does not rest on the rule: the published class is still x*, a
+  fixpoint that the stop rule checks with `leq`. The corpus (below) changes no verdict that both runs
+  reach. Two groups that were limits are now checked, and summary lines move in about 40 roots. A class
+  can be more precise than the history-widened one. `[*] π1[*]{excl π1[*]}` beside `[*] π1[*] π2[*]{lost}` becomes the second
+  alone. They read the same, because the second covers the first.
+
+  **Cost.** Per class join, one `leq` per arm of each top choice, charged. Each is memoised per pair, as
+  `leq` is. The arms of a port's top choice are those of its last round plus the seed arms, so this is
+  O(|port|) `leq` work per join, far less than the walk that reads the port.
+
+  **Termination is the open point.** At a fixed inventory every part still rises in a finite lattice,
+  so the bound in §8 slice 4's *Termination* still holds. But the rounds now depend on whether `leq`
+  sees a round's value as settled, and `leq` reads nodes. A read-off image that is new every round
+  (#1372 F3) has no stored κ and reads weaker. So a late round can keep finding `F ⋢ x` until the
+  inventory bound. That happens with #1423's mutual writers `wa`/`wb` on 5a's branch. Their port raw
+  grows 196 → 266 → 392 → 548 nodes in four late versions. Read with its unions as sets, it stays at
+  67 nodes. With the rule, they go from 340 452 / 275 136 records in 9 / 10 walks to the limit. On
+  master they are past the limit with or without the rule. A variant that keeps the join's own value
+  and only takes the smaller one when the two are `leq`-equal is no better: `wa` still reaches the limit,
+  and `mergeSort` keeps 112 231 records. *Options:*
+  - (a) Land the rule alone. `wa`/`wb` stay loud, a known limit under #1372, as on master.
+  - (b) Land it with the two pieces below that make a late round's image the node the last round made:
+    union and choice as interned arm sets, and stable knot images. Measure `wa`/`wb` first.
+  - (c) Gate it on a group of one member. That is not principled, and it is not recommended.
+
+  The manager decides between (a) and (b) (#1372). The recommendation is (a) now, then (b) as 4e.
+  (a) makes `mergeSort` and DerivedDeepPaths' `rose` pass on both bases, and it loses nothing that the
+  corpus checks.
+
+  **The two pieces that (b) adds, specified here and not prototyped:**
+  - **Arm sets.** A `choice` or `union` DAG is the balanced tree over the sorted, deduplicated list of its
+    arms. An arm is a node of another kind that its same-kind edges reach. Every constructor makes this
+    form, including `proj`'s, `map`'s, `eager`'s and decode's images, so equal arm sets are one `NodeId`.
+    The interior nodes are the sets of contiguous runs of the sorted list, so they are canonical as well.
+    The sort is by `NodeId`, which fixes ids only (§3.8). A `union` as a set is exact: the primitive reads
+    its sides as one position's set (*One reading of `union`*). `positions` is not flattened. It keeps
+    occurrences, and *Saturation at two* already bounds it. κ home: the same as the rule's above. An entry
+    at an interior node that the canonical tree does not have is conjoined into each arm below it, at its
+    position. `map`'s images stay raw, because the occurrence rule needs that. So `map` builds the image of
+    a choice or union DAG as the arm set of the images of its arms, once per DAG root, memoised by
+    `armCount`'s walk. That differs from the constructor-level flatten that #1463 tried, which made each
+    raw image again and cost more (209 535 records). Measured as an upper bound (the scratch analysis
+    counts arm sets on the dumped DAGs): `mergeSort`'s round-3 port 183 → 86 nodes, `wa`'s late port 548
+    → 67, `removeMin`'s round-2 port 119 → 46, and its expensive joins' DAGs 63–125 → 46–53.
+  - **Stable knot images (#1372 F3).** A widened knot is hash-consed by its canonical form: the SCC is
+    minimised by partition refinement over (kind, place, cells, the classes of its successors), and it is
+    interned by the sequence of its classes in a canonical DFS order from its entry. A knot equal to one
+    made before is that knot. Node-keyed memos and κ entries then hit across rounds. On DerivedDeepPaths'
+    `rose` on 5a's branch, 3 to 4 of the 8 nodes of each late read-off image already existed as structure.
+    On the quadtree, 2 of 58.
+
+  **Options not taken.**
+  - *A widen that folds no-cycle nesting into a knot.* Round k + 1's `res[*]` holds round k's `res[*]`
+    through `positions` (`merge`'s `[ x, …merge xt ys ]`). Folding that occurrence into a cycle through a
+    `positions` node gives every member there an unbounded multiplicity. That reads `repeated` wherever the
+    occurrence was not already doubled, so the fold changes κ. With the rule, `mergeSort`'s port is 11 / 42
+    / 100 nodes after rounds 1 to 3 (8 / 31 / 73 as arm sets), and the group settles in 3 walks with no
+    growth. So it does not need the fold.
+  - *Absorption in the shape constructors.* Unsound, as said above.
+
+  **Measured** (scratch prototype of the rule, Debug, self-hosted, `dump --stage=ownership --ownership=v2
+  --jobs=1`, allowance raised to 10⁸, or 4 194 304 where it says so). The bases are master `fe086e557` and
+  5a's side branch `b030bedcc`. Records, with walks:
+
+  | case | master | + rule | 5a branch | + rule |
+  |---|---|---|---|---|
+  | `run/TailModConsMerge`'s `mergeSort` | 168 829 (4) | **38 477 (3), growth 0** | 187 717 (4) | **42 257 (3)** |
+  | DerivedDeepPaths' `rose` | 16 644 (2) | 10 073 (2) | 177 371 (3) | **45 507 (3)** |
+  | `descend` (copied) | 437 829 | 178 922 | 334 947 | 148 648 |
+  | quadtree self-map | 248 245 | 233 123 | 244 792 | 236 274 |
+  | T3 | 190 537 | 161 378 | 191 627 | 159 927 |
+  | `wa` / `wb` (4 194 304) | limit / 2 485 979 | limit / 2 618 581 | 340 452 / 275 136 | limit / 3 220 753 |
+  | `removeMin` (copied, 4 194 304) | limit | limit | limit | limit |
+  | `incCs` (4 194 304) | 4 111 400 (`incAs` limit) | 4 176 027 (`incAs` limit) | | `incCs` limit |
+
+  The whole corpus, all 2 043 roots of `bench/ownership-roots.mjs` (`allOwnership`, 2 045 on 5a's
+  branch), was dumped under `--ownership-everywhere --ownership=v2`, with `account` and `crossing` lines
+  left out. On master, 43 roots differ, and one verdict changes: `TailModConsMerge`'s `mergeSort` goes
+  from a limit to checked. The other 42 differ only in summary and block lines. On 5a's branch, 42 roots
+  differ, and two verdicts change: `mergeSort` and DerivedDeepPaths' `rose`, each from a limit to checked.
+  Records over the corpus: 6 415 320 → 6 062 066 (−5.5 %) on master, and 6 735 268 → 6 318 916 (−6.2 %)
+  on 5a's branch. The largest increase is `MarkerDisjoint`, 24 873 → 25 802.
+
+  **What the rule does not reach.** Core's `removeMin` and `descend` stay limits. Their cost is not the
+  port. `removeMin`'s port is 25 nodes after round 1 and 119 after round 2. Its walk 2 costs 2 848 729
+  records in `propagate` calls whose joined DAGs have 63 to 125 nodes, unfolded to 29 624 output
+  positions, with 19 states at most per position. They hold 205 to 571 distinct `(node, bits, run)` and 95
+  to 167 distinct sets of states at a position. That is #1465's F2 (the cyclic join memo, by position),
+  with arm sets as the second factor. `descend`'s largest join, after the rule, walks 942 states over 696
+  positions, which hold 108 distinct triples. The quadtree and T3 cost about 1 000 records per port node a
+  walk, in the walk and not in the port. `incCs` likewise.
 - `leq` is **γ-inclusion and kind-blind**: `n ≤ m` iff `cells(n) ⊆ cells(m)` and `proj(n, s) ≤ proj(m, s)` at
   every step `s` of n's place, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
   below `y` when both its sides are (every member is below its join, O4), and two `positions` nodes compare by
@@ -6003,6 +6128,9 @@ deliveries into its class, the Prover goals keyed by it, and its validation.
     n = 16 from 134 542 to 90 141. `mergeSort` stays past the allowance: its `res[*]` positions
     multiset nests both views of the last port every round (#1368), and a self-map's n views are
     forced one by one before widen folds them into one class; both are open (#1372).
+    *Measured again* [M 2026-10-31, #1368]: most of that port is the history of rounds, which the join
+    keeps although the last round covers it. §2.3 *A port keeps no round that its last round covers*
+    drops it, and `mergeSort` falls to 38 477 records in 3 walks with no growth (42 257 on 5a's branch).
   - From 4b, facts are deliveries, each `(edge, fact)` once, bounded by the size of the class the
     group publishes. Inference walks happen only on a new callee `res.shape`. Validation walks are
     one per member per pass of the stop rule, plus the one that follows any inference walk that
@@ -6031,6 +6159,8 @@ RecursiveSummaryGeneration's reorderings).
 | 4a | Ports, ⊥, synchronous rounds, group calls by reference with `(port, version)` in `E`, stable labels, widen(x ⊔ F(x)), `Summary.eq` termination, validation as above, publication all at once, failure and cold re-check of a whole group, the coarse read vector recorded at each group call, and the stop rule's joint loop (the read check and `leq`, with `propagate` from 4b), run in 4a too, where every change wakes its readers. Its first commit gives a call of the walk's own group its own `.v2.unchecked` reason, `recursion`, so the to-do list is exact before any code lands. Any port change wakes every reader, and every walk past the second is growth (interim, Q1). Cycles stay `repeated`. | Every `recursion` line of every `.v2.unchecked` file is gone or carries another reason. Each changed root holds v1's verdicts, or has a known entry that names 4c (`repeated`) or S4 (`within`) as its owner (Q4). The 4a fixtures below are green, the counted ones as stated. The verdict diff over the corpus is reported. |
 | 4b | `Fix.propagate(Edges)`, run to quiescence after each round: argument and result edges (projections included), parameter images as chained edges, and marks, cells, atoms and occurrence facts as deltas. The wake rule: only a callee's new `res.shape` wakes an inference walk. The read check sends what demands and obligations read to the validation walk. | The counted families below meet their bounds. A per-member walk counter pins inference walks against delivered facts. `Rot` holds v1's refusal, and so does `o/RecursiveTupleGuards` at 19:17 and 21:17. No verdict or block changes from 4a except where a known entry says so. |
 | 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). | #1195's witnesses and the 4c fixtures are green. Every known entry that 4a gave to 4c is gone. #1195 closes. |
+| 4d | §2.3 *A port keeps no round that its last round covers*: `Summary.join` in `choice` mode takes the other side's `res` and κ when one side is under the other, and drops each arm of a top choice that the other side covers, with the κ home stated there. Only a class join does it. Proposed 2026-10-31, after 5a. | `run/TailModConsMerge` is checked at the default allowance, with no `.v2.unchecked` line for `mergeSort`. DerivedDeepPaths' `rose` likewise on 5a. No verdict changes over `bench/ownership-roots.mjs`'s roots except limits that become checked. #1423's `wa`/`wb` either hold 5a's figures or carry a known entry under #1372 (§2.3, option (a)). |
+| 4e | Arm sets and stable knot images (§2.3, the two pieces of option (b)). Only if the manager takes (b). | `wa`/`wb` within 5a's figures. `removeMin`'s round-2 port at its arm-set size (46 nodes). |
 
 *As built, 4b (#1440).* What 4b builds, and where it departs from the plan above.
 - **Edges.** A walk records each call of its group (`Transfer.Context.onCall`): the callee, the
@@ -6364,8 +6494,8 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
 | Issue | What | Recommendation |
 |---|---|---|
 | #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
-| #1372 | A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
-| #1368 | `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact, whose κ home is empty. It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
+| #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
+| #1368 | *2026-10-31:* fixed by 4d (§2.3 *A port keeps no round that its last round covers*): 168 829 → 38 477 records, growth 0, exact for the join, and no corpus verdict lost. `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact, whose κ home is empty. It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
 | #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
 | #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
 | #1399 | A port's joined κ below a choice is not read (unsound on 4a). | **Before 4a merges** (#1408). |
@@ -6407,13 +6537,16 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    in the block as the certificate (P, ℓ, M), §2.12, so imported and same-module pairs alike.
 8. **Can S3b close with a core known limit?** On 4a, core's `Dict.removeMin` and `Dict.descend` are
    known limits (#1372). Before 4a, a limit in core always failed the corpus. *Recommendation:* no. S3b
-   closes only when core has no known limit (see #1372 above).
+   closes only when core has no known limit (see #1372 above). *Measured (2026-10-31):* 4d does not make
+   `removeMin` or `descend` pass. Their remaining cost is `propagate`'s walk by position, so #1465's F2,
+   with 4e's arm sets, is what is still needed (§2.3, *What the rule does not reach*).
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
    exact, but it is not the fix. The two causes that remain (choices that projection and relabelling do
    not flatten, and rounds that nest `res[*]` in place) involve no callback, `cb` label, `sep` or
-   `within`. So the known limit stays S3b's, owned by #1368.
+   `within`. So the known limit stays S3b's, owned by #1368. *Proposal (2026-10-31, §2.3 *A port keeps no
+   round that its last round covers*):* 4d fixes it in S3b. Neither the no-cycle fold nor S4 is needed.
 
 The review history sets concrete acceptance obligations, not a duration estimate:
 
