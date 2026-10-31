@@ -201,6 +201,9 @@ pub const Table = struct {
     /// asked for, by node, an index into `member_maps` (the members' keys and
     /// those met twice, sets over `member_sets`).
     counted: std.DynamicBitSetUnmanaged = .{},
+    /// Per node, for `reach` (0) and `arrivals` (1): whether its settled set
+    /// may not hold the node's `cellsOf` (`Reach.short`, #1467).
+    reach_short: [2]std.DynamicBitSetUnmanaged = .{ .{}, .{} },
     member_counts: Ids.FixedDict(1) = .{},
     member_maps: std.ArrayList([2]SetId) = .empty,
     member_sets: Cell.Radix = .{ .category = .memo },
@@ -263,6 +266,7 @@ pub const Table = struct {
         t.dag_members_ties.deinit(gpa);
         t.member_counts.deinit(gpa);
         t.counted.deinit(gpa);
+        for (&t.reach_short) |*b| b.deinit(gpa);
         t.member_maps.deinit(gpa);
         t.member_sets.deinit(gpa);
         t.drop_head.deinit(gpa);
@@ -2180,12 +2184,49 @@ pub const Table = struct {
         }
 
         /// A join whose `ε` cells its sides' reaches hold, so `run` leaves
-        /// them out (§2.3, #1467): its sides' cells (`unionMake`, `choiceMake`,
-        /// a positions node's parts), unless a side is a view (`viewReach`).
+        /// them out (§2.3, #1467): its cells are its sides' `cellsOf`
+        /// (`unionMake`, `choiceMake`, a positions node's parts), and each
+        /// side is settled outside `m`'s component and not `short`, so its
+        /// set holds them. A lazy join's own is nothing already.
         fn ownInSides(r: *const Reach, m: NodeId) bool {
             const d = r.t.get(m);
             if (d.kind != .@"union" and d.kind != .choice and d.kind != .positions) return false;
-            return r.t.kind(.from(d.a)) != .view and r.t.kind(.from(d.b)) != .view;
+            if (r.t.isLazy(m)) return false;
+            for ([2]NodeId{ .from(d.a), .from(d.b) }) |k| if (r.s.on_stack.contains(k) or r.short(k)) return false;
+            return true;
+        }
+
+        /// Whether settled `k`'s set may not hold `cellsOf(k)`: a view's is
+        /// its template's image (`viewReach`), not its answer's cells; a lazy
+        /// node's is its parts' sets alone, which hold its cells only for a
+        /// join over two sides that hold theirs, outside its component. Any
+        /// other node's set holds its own cells, or sides' that hold them.
+        fn short(r: *const Reach, k: NodeId) bool {
+            if (r.t.kind(k) == .view) return true;
+            const b = &r.t.reach_short[@intFromBool(r.filter != null)];
+            return k.int() < b.bit_length and b.isSet(k.int());
+        }
+
+        /// `short` for `m`, of the component closing: its sides outside it
+        /// are settled, those in it still on the stack.
+        fn shortNow(r: *const Reach, m: NodeId) bool {
+            if (r.t.kind(m) == .view) return true;
+            if (!r.t.isLazy(m)) return false;
+            const d = r.t.get(m);
+            if (d.kind != .@"union" and d.kind != .choice and d.kind != .positions) return true;
+            for ([2]NodeId{ .from(d.a), .from(d.b) }) |k| if (r.s.on_stack.contains(k) or r.short(k)) return true;
+            return false;
+        }
+
+        /// Record `short` for `m`: a bit of a column grown by doubling, at
+        /// most twice the nodes made (each charged when it was made).
+        fn markShort(r: *Reach, m: NodeId, v: bool) Error!void {
+            const b = &r.t.reach_short[@intFromBool(r.filter != null)];
+            if (m.int() >= b.bit_length) {
+                if (!v) return;
+                try b.resize(r.gpa, @max(r.t.nodes.len, 2 * b.bit_length), false);
+            }
+            b.setValue(m.int(), v);
         }
 
         /// Whether `set` holds join `m`'s own cells (`own`'s filter applied)
@@ -2267,6 +2308,8 @@ pub const Table = struct {
                 }
                 // The set is the one the joins' own cells would give.
                 if (std.debug.runtime_safety) for (r.s.scc_stack.items[i..]) |m| if (r.ownInSides(m)) std.debug.assert(r.covers(set, m));
+                // Before the members leave the stack, which `shortNow` reads.
+                for (r.s.scc_stack.items[i..]) |m| try r.markShort(m, r.shortNow(m));
                 while (r.s.scc_stack.items.len > 0) {
                     const m = r.s.scc_stack.pop().?;
                     r.s.on_stack.remove(m);

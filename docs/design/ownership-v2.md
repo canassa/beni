@@ -658,12 +658,18 @@ Operations, memoised on their node arguments:
   `reach(union) = reach(l) ∪ reach(r)`, computed once per node; a chain of k updates adding k cells costs
   O(k log C) when each override contributes one cell and the unchanged base root is shared. General unions,
   including scans adding nothing, are charged by §4.1; this special case is not a union theorem. Membership O(log C).
-  *As built (#1467):* a join (`union`, `choice`, `positions`) whose sides are not views takes no union with its
-  own `ε` cells, which are its sides' (`unionMake`, `choiceMake`, a positions node's parts). An `else if` chain
-  of D arms has D, D − 1, … own cells at its levels, and their unions cost O(D²) records. A view's reach is its
-  template's image (`reach(view)` below), which need not hold the view's `ε` cells, so a join with a view side
-  still adds its own. Under runtime safety each component's set is checked to hold every own cell left out, at a
-  value its `and` keeps; the verdicts and summaries of every root of `bench/ownership-roots.mjs` are unchanged.
+  *As built (#1467):* a join (`union`, `choice`, `positions`) whose sides each hold their own `ε` cells in their
+  reach takes no union with its own, which are its sides' (`unionMake`, `choiceMake`, a positions node's parts).
+  An `else if` chain of D arms has D, D − 1, … own cells at its levels, and their unions cost O(D²) records. A
+  side is *short*, its reach perhaps not holding its cells, when it is a view (its reach is its template's
+  image, `reach(view)` below, which need not hold the view's `ε` cells: a call's `result` cell), a lazy node
+  that is no join (its reach is its parts' alone), or a lazy join with a short side or a side in its own
+  component. A join that is not lazy, with a short side or a side in its own component, adds its own cells. A
+  list literal of four items or more is a `positions` root over lazy `positions` nodes, and an item that is a call
+  makes the lazy side above it short. Each node's shortness is a bit kept beside its set, one per walk
+  (`reach`, `arrivals`), set when its component closes. Under runtime safety each component's set is checked to
+  hold every own cell left out, at a value its `and` keeps; the verdicts and summaries of every root of
+  `bench/ownership-roots.mjs` are unchanged.
 - `join(n₁…nₖ)`: deduplicate, **group by base** (a bare node is `delta(n, ∅)`): one group of deltas over one base →
   one `delta(base, s ↦ join(overrides present, base's child))`, O(k + T log(T+2)) grouping/sorting work for T=Σ|Oᵢ| before recursive child joins and set unions; leaves with no children → one leaf with
   the set union; the groups left (one per distinct base, plus leaves) → a balanced `union` DAG over them,
@@ -6054,7 +6060,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 240 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 925 (#1467: a join's reach leaves out its own cells, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 970 (#1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |

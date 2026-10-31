@@ -55,7 +55,7 @@ const layers = [_]Entry{
     // 3 820 since #1420: positions saturate at two, their count maps, the
     // rebuild and the nodes it dropped (§2.3). 3 925 since #1467: a join's
     // reach leaves out its own cells, checked under runtime safety (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3925 },
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3970 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
