@@ -1957,6 +1957,9 @@ pub const Table = struct {
             var ct = sets.iterate(.from(be.value));
             while (ct.next()) |ce| {
                 const c: CellId = .from(ce.key);
+                // A part below a cell the bucket holds meets every other cell
+                // as that cell does (`covered`).
+                if (try covered(gpa, charge, cellt, same, c)) continue;
                 const split = splitKey(cellt, c);
                 var run: ?CellId = null;
                 var run_len: u32 = 0;
@@ -1964,7 +1967,9 @@ pub const Table = struct {
                 while (it.next()) |e| {
                     try charge.reserve(gpa, .inspection, 1);
                     const w: CellId = .from(e.key);
-                    if (split[0] != Ids.none_int and std.mem.eql(u32, &split, &splitKey(cellt, w))) {
+                    // One anchor's cells: a part is symbolic below it (§2.2).
+                    if (sameAnchor(split, splitKey(cellt, w))) continue;
+                    if (sameRun(split, splitKey(cellt, w))) {
                         run_len += 1;
                         run = w;
                         continue;
@@ -2113,6 +2118,7 @@ pub const Table = struct {
         // one pair per split's run, every pair across runs.
         const b = cellt.base(c);
         const same: SetId = if (t.mapGet(a.bases, b.int())) |s| .from(s) else .none;
+        if (try covered(gpa, charge, cellt, same, c)) return a;
         const split = splitKey(cellt, c);
         var run: ?CellId = null;
         var run_len: u32 = 0;
@@ -2120,7 +2126,8 @@ pub const Table = struct {
         while (it.next()) |e| {
             try charge.reserve(gpa, .inspection, 1);
             const y: CellId = .from(e.key);
-            if (split[0] != Ids.none_int and std.mem.eql(u32, &split, &splitKey(cellt, y))) {
+            if (sameAnchor(split, splitKey(cellt, y))) continue;
+            if (sameRun(split, splitKey(cellt, y))) {
                 run_len += 1;
                 run = y;
                 continue;
@@ -2135,11 +2142,46 @@ pub const Table = struct {
         return a;
     }
 
-    fn splitKey(cellt: *const Cell.Table, x: CellId) [2]u32 {
-        const o = cellt.origin(x);
-        if (o != .elem and o != .others) return .{ Ids.none_int, x.int() };
+    /// The split run a cell belongs to, and its anchor: an `elem`/`others`
+    /// by its split, a part of one by its anchor's (§2.2 *Parts*: what is
+    /// below two sides of one split is apart under it, whatever the paths).
+    fn splitKey(cellt: *const Cell.Table, x: CellId) [3]u32 {
         const d = cellt.get(x);
-        return .{ d.parent.int(), d.b };
+        const anchor: CellId = if (d.origin == .part) .from(d.a) else x;
+        const o = cellt.origin(anchor);
+        if (o != .elem and o != .others) return .{ Ids.none_int, x.int(), Ids.none_int };
+        const r = cellt.get(anchor);
+        return .{ r.parent.int(), r.b, anchor.int() };
+    }
+
+    /// Two cells of one split run (`splitKey`) below two of its sides: one
+    /// anchor's cells are not, its parts compare by `alias`.
+    fn sameRun(a: [3]u32, b: [3]u32) bool {
+        return a[0] != Ids.none_int and a[0] == b[0] and a[1] == b[1] and a[2] != b[2];
+    }
+
+    /// Two cells of one anchor (`splitKey`), one of them a part: compared as
+    /// two symbolic cells of one origin are, by no same-base pair (§2.2
+    /// *Parts*); `apart`'s atom over the group reads them.
+    fn sameAnchor(a: [3]u32, b: [3]u32) bool {
+        return a[0] != Ids.none_int and std.mem.eql(u32, &a, &b);
+    }
+
+    /// Whether `c` is a part (§2.2 *Parts*) whose anchor, or a shorter part
+    /// of it, is in `same`. That pair is `lost` (`alias` says `yes`), and
+    /// every other cell meets `c` as it meets that ancestor: a side of the
+    /// anchor's split by the split's κ, a cell above or apart alike, a cell
+    /// below the anchor `lost` or not at all. So `c` adds nothing more, and
+    /// one base's cells stay one per position, not one per position and
+    /// part. Only parts: a split's sides answer more than their container.
+    fn covered(gpa: Allocator, charge: Charge, cellt: *const Cell.Table, same: SetId, c: CellId) Error!bool {
+        var at = c;
+        while (cellt.origin(at) == .part) {
+            try charge.reserve(gpa, .inspection, 1);
+            at = cellt.parent(at);
+            if (cellt.sets.member(same, at.int())) return true;
+        }
+        return false;
     }
 
     /// Every cell of `from` added to `a` (`multiset` as `aggAdd`).
@@ -2857,6 +2899,15 @@ pub const Table = struct {
                 if (cellt.sets.member(whole, cellt.parent(c).int())) return shared;
             };
             acc = try t.@"and"(gpa, charge, acc, try t.apartAtom(gpa, charge, group));
+            // A part below another arrival meets every other one as the
+            // arrival does (`covered`): left out.
+            var kept: usize = 0;
+            for (arrivals.items) |c| {
+                if (try covered(gpa, charge, cellt, group, c)) continue;
+                arrivals.items[kept] = c;
+                kept += 1;
+            }
+            arrivals.shrinkRetainingCapacity(kept);
             acc = try t.@"and"(gpa, charge, acc, try t.sameBasePairs(gpa, charge, cellt, places, arrivals.items, traversal));
         }
         return acc;
@@ -2867,13 +2918,12 @@ pub const Table = struct {
         var acc: CondId = yes;
         // By base, then by split: one split's members answer `sep` alike
         // (`under` it), so its run is one pair; runs pair across (linear).
+        // A part runs with its anchor's split (§2.2 *Parts*), and the cells
+        // of one anchor in a run pair among themselves (`splitKey`).
         const Ctx = struct {
             cellt: *const Cell.Table,
-            fn split(ctx: @This(), x: CellId) [2]u32 {
-                const o = ctx.cellt.origin(x);
-                if (o != .elem and o != .others) return .{ Ids.none_int, x.int() };
-                const d = ctx.cellt.get(x);
-                return .{ d.parent.int(), d.b };
+            fn split(ctx: @This(), x: CellId) [3]u32 {
+                return splitKey(ctx.cellt, x);
             }
         };
         const ctx: Ctx = .{ .cellt = cellt };
@@ -2886,6 +2936,7 @@ pub const Table = struct {
                 const sy = c.split(y);
                 if (sx[0] != sy[0]) return sx[0] < sy[0];
                 if (sx[1] != sy[1]) return sx[1] < sy[1];
+                if (sx[2] != sy[2]) return sx[2] < sy[2];
                 return x.int() < y.int();
             }
         }.lessThan);
@@ -2896,12 +2947,14 @@ pub const Table = struct {
             // The runs of one split in [k, m).
             var x = k;
             while (x < m) {
+                const sx = ctx.split(arrivals[x]);
                 var e = x + 1;
-                while (e < m and std.mem.eql(u32, &ctx.split(arrivals[e]), &ctx.split(arrivals[x])) and ctx.split(arrivals[x])[0] != Ids.none_int) e += 1;
-                if (e - x >= 2) {
+                while (e < m and sx[0] != Ids.none_int and std.mem.eql(u32, ctx.split(arrivals[e])[0..2], sx[0..2])) e += 1;
+                // Two anchors' cells: one pair stands for the run.
+                if (e - x >= 2 and ctx.split(arrivals[e - 1])[2] != sx[2]) {
                     try charge.reserve(gpa, .inspection, @intCast(e - x));
-                    if (cellt.alias(places, arrivals[x], arrivals[x + 1]) != .no) {
-                        acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, arrivals[x], arrivals[x + 1], false, traversal));
+                    if (cellt.alias(places, arrivals[x], arrivals[e - 1]) != .no) {
+                        acc = try t.@"and"(gpa, charge, acc, try t.sep(gpa, charge, cellt, places, arrivals[x], arrivals[e - 1], false, traversal));
                         if (acc == shared) return shared;
                     }
                 }
