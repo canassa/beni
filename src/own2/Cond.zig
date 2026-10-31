@@ -3598,6 +3598,12 @@ pub const Table = struct {
         const Write = struct { path: u32, node: NodeId, k: CondId };
         var outs: std.ArrayList(Write) = .empty;
         defer outs.deinit(gpa);
+        var leaf_entries: std.ArrayList(LeafEntry) = .empty;
+        defer leaf_entries.deinit(gpa);
+        // The joined DAG nodes keyed, for `runtime_safety`'s check below.
+        const DagWrite = struct { path: u32, node: NodeId, first: u32, len: u32 };
+        var dag_writes: std.ArrayList(DagWrite) = .empty;
+        defer dag_writes.deinit(gpa);
         // The positions that are a member's own snapshot, linked as they are.
         const Linked = struct { path: u32, at: Kappas };
         var linked: std.ArrayList(Linked) = .empty;
@@ -3770,6 +3776,18 @@ pub const Table = struct {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });
             }
+            // A joined DAG node a reader descending the value's own structure
+            // never meets: its entry keyed on the nodes that reader does meet
+            // (§2.9 *Keyed where a reader looks*, #1399).
+            if (mode == .alternatives and f.len > 0 and isDag(v.shapes.kind(f.node))) {
+                leaf_entries.clearRetainingCapacity();
+                try t.leafEntries(gpa, charge, v, f.node, runs.items[f.first..][0..f.len], run_ctxs.items[f.first..][0..f.len], f.summary, &leaf_entries);
+                for (leaf_entries.items) |e| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    try outs.append(gpa, .{ .path = f.path, .node = e.node, .k = e.k });
+                }
+                if (std.debug.runtime_safety) try dag_writes.append(gpa, .{ .path = f.path, .node = f.node, .first = f.first, .len = f.len });
+            }
             // Children: the joined node's frontier, the members projected
             // along each step of it, each at its position one step below.
             next.clearRetainingCapacity();
@@ -3906,7 +3924,16 @@ pub const Table = struct {
             try charge.reserve(gpa, .memo, 1);
             (try t.memo_prop.getOrPut(gpa, c.key)).value_ptr.* = pos[c.path].int();
         }
-        return t.kappaMerge(gpa, charge, out, pos[0]);
+        const result = try t.kappaMerge(gpa, charge, out, pos[0]);
+        if (std.debug.runtime_safety) for (dag_writes.items) |w| {
+            var steps_up: std.ArrayList(Step) = .empty;
+            defer steps_up.deinit(gpa);
+            var at_path = w.path;
+            while (paths.items[at_path].parent != Ids.none_int) : (at_path = paths.items[at_path].parent) try steps_up.append(gpa, Step.fromWord(paths.items[at_path].step));
+            std.mem.reverse(Step, steps_up.items);
+            try t.checkKeyedWhereRead(gpa, v, t.kappaAlong(result, steps_up.items), w.node, runs.items[w.first..][0..w.len], run_ctxs.items[w.first..][0..w.len]);
+        };
+        return result;
     }
 
     /// A memo state's bits: its class, the mode, and whether it is the
@@ -3925,6 +3952,116 @@ pub const Table = struct {
     /// An empty leaf: no object can be there.
     fn nothingAt(gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!bool {
         return v.shapes.isNothing(gpa, charge.account, n);
+    }
+
+    /// An entry `leafEntries` keys on a node a structural reader meets.
+    pub const LeafEntry = struct { node: NodeId, k: CondId };
+
+    /// The entries a join of alternatives keys at the sides of `d`, the
+    /// joined node at one position (§2.9 *Keyed where a reader looks*,
+    /// #1399). A reader that descends the value's own structure — a call's
+    /// view, whose projection of a choice is the choice of its arms' views;
+    /// `map`'s relabelling; the printer — meets `d`'s sides, never `d`,
+    /// which no part of the value names. So every node of `d`'s union,
+    /// choice and positions DAG below `d` is keyed with what the members
+    /// store for it at their own positions: a built node a member holds with
+    /// no entry `lost` (§2.9), a recast the member's read of it. A node no
+    /// member holds is left as it reads (#1406). A leaf's entry no stronger
+    /// than its derivation is left out, as `propagate` leaves it out. A record per
+    /// node walked; each member's read as `kappaOf` charges it.
+    fn leafEntries(t: *Table, gpa: Allocator, charge: Charge, v: View, d: NodeId, members: []const NodeId, ctxs: []const Kappas, summary: bool, out: *std.ArrayList(LeafEntry)) Error!void {
+        // `d`'s DAG below it, in the order it is walked, each node once.
+        var at: Ids.FixedDict(1) = .{};
+        defer at.deinit(gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        const root = v.shapes.get(d);
+        try stack.appendSlice(gpa, &.{ .from(root.b), .from(root.a) });
+        while (stack.pop()) |x| {
+            try charge.reserve(gpa, .inspection, 1);
+            if (x == d) continue;
+            const got = try at.getOrPut(gpa, .{x.int()});
+            if (got.found_existing) continue;
+            got.value_ptr.* = @intCast(out.items.len);
+            try out.append(gpa, .{ .node = x, .k = .none });
+            if (isDag(v.shapes.kind(x))) {
+                const n = v.shapes.get(x);
+                try stack.appendSlice(gpa, &.{ .from(n.b), .from(n.a) });
+            }
+        }
+        // What each member stores for those nodes, joined.
+        var seen: Ids.FixedDict(2) = .{};
+        defer seen.deinit(gpa);
+        for (members, ctxs, 0..) |m, c, mi| {
+            try stack.append(gpa, m);
+            while (stack.pop()) |x| {
+                try charge.reserve(gpa, .inspection, 1);
+                if ((try seen.getOrPut(gpa, .{ @as(u32, @intCast(mi)), x.int() })).found_existing) continue;
+                const nk = v.shapes.kind(x);
+                if (isDag(nk)) {
+                    const n = v.shapes.get(x);
+                    try stack.appendSlice(gpa, &.{ .from(n.b), .from(n.a) });
+                }
+                const slot = at.get(.{x.int()}) orelse continue;
+                const stored: ?CondId = switch (nk) {
+                    .leaf, .@"union", .choice, .positions => t.kappaGet(c, x),
+                    .node, .delta => if (t.isCollapsed(c)) lost else t.kappaGet(c, x) orelse lost,
+                    .recast => try t.kappaOf(gpa, charge, v, c, x, summary),
+                    .view => try t.storedAt(gpa, charge, v, c, x),
+                };
+                const s = stored orelse continue;
+                const e = &out.items[slot];
+                e.k = if (e.k == .none) s else try t.join(gpa, charge, e.k, s);
+            }
+        }
+        // Entries a derivation gives already are dropped. A node no member
+        // holds (an image `widen` made, a set leaf `join` merged) is left as
+        // it reads (#1406).
+        var n: usize = 0;
+        for (out.items) |e| {
+            if (e.k == .none) continue;
+            if (v.shapes.kind(e.node) == .leaf and try t.leq(gpa, charge, e.k, try t.kappaRead(gpa, charge, v, .none, e.node, summary, null))) continue;
+            out.items[n] = e;
+            n += 1;
+        }
+        out.shrinkRetainingCapacity(n);
+    }
+
+    /// `runtime_safety`'s check of §2.9 *Keyed where a reader looks*: at the
+    /// position `at` that keys the joined DAG node `d`, every built side of
+    /// `d` (a node, a delta, a recast) that a member keys at its own position
+    /// is keyed. A built side no one keys reads `lost`, which needs no
+    /// entry. Uncharged: it reads the tables only.
+    fn checkKeyedWhereRead(t: *const Table, gpa: Allocator, v: View, at: Kappas, d: NodeId, members: []const NodeId, ctxs: []const Kappas) Allocator.Error!void {
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        var in_d: Ids.FixedDict(1) = .{};
+        defer in_d.deinit(gpa);
+        for (0..members.len + 1) |i| {
+            const root = if (i == 0) d else members[i - 1];
+            const ctx: Kappas = if (i == 0) .none else ctxs[i - 1];
+            seen.deinit(gpa);
+            seen = .{};
+            try stack.append(gpa, root);
+            while (stack.pop()) |x| {
+                if ((try seen.getOrPut(gpa, .{x.int()})).found_existing) continue;
+                if (i == 0) (try in_d.getOrPut(gpa, .{x.int()})).value_ptr.* = 1;
+                const kind_x = v.shapes.kind(x);
+                switch (kind_x) {
+                    .@"union", .choice, .positions => {
+                        const n = v.shapes.get(x);
+                        try stack.appendSlice(gpa, &.{ .from(n.a), .from(n.b) });
+                    },
+                    .node, .delta, .recast => {
+                        const owed = i > 0 and in_d.get(.{x.int()}) != null and t.kappaGet(ctx, x) != null;
+                        if (owed and t.kappaGet(at, x) == null) std.debug.panic("ownership v2: a joined node {d}'s side {d} is not keyed where a reader looks (§2.9, #1399)", .{ d.int(), x.int() });
+                    },
+                    .leaf, .view => {},
+                }
+            }
+        }
     }
 
     /// Whether `joined` is `m` with nothing but empty leaves: a `via` DAG
