@@ -552,11 +552,9 @@ pub const Table = struct {
     /// The strongly connected components of the places from `first` on:
     /// an iterative Tarjan over the child edges, O(E), each component named
     /// by its root's place id plus one (0 is a place not settled), so ids
-    /// never collide across builds. A count at the build's start did not do
-    /// that: a later build started where an earlier one's second component
-    /// was, and a tuple and the list in it were one cycle (#1412). Edges into
-    /// older places are followed for membership but those places keep their
-    /// own component.
+    /// never collide across builds (a count at a build's start did, #1452).
+    /// Edges into older places are followed for membership but those
+    /// places keep their own component.
     fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
         const n = t.count() - first;
         if (n == 0) return;
@@ -1148,6 +1146,8 @@ pub const Table = struct {
             try t.places.append(gpa, .{ .kind = kd, .head = h, .steps = .{ .start = start, .len = len }, .holds = @bitCast(@as(u8, @intCast(hb))), .class = .none, .scc = 0 });
         }
         if (at != words.len) return error.Malformed;
+        // Settled as a build is: at 0, any two places would be one cycle.
+        try t.settleCycles(gpa, 0);
     }
 
     /// Structural equality of `a` in `ta` and `b` in `tb`: a graph-pair
@@ -1501,6 +1501,13 @@ test "encode writes a cycle once through the names table, and decode reads an eq
     var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
     defer decoded.deinit(gpa);
     try testing.expectEqual(@as(u32, 100), decoded.head(.from(3)));
+    // Its cycles are settled: the record is on none, `Tree` on its own.
+    try testing.expect(!decoded.cyclic(.from(0)));
+    var on: u32 = 0;
+    for (0..decoded.count()) |i| on += @intFromBool(decoded.cyclic(.from(@intCast(i))));
+    var on_built: u32 = 0;
+    for (0..f.table.count()) |i| on_built += @intFromBool(f.table.cyclic(.from(@intCast(i))));
+    try testing.expectEqual(on_built, on);
     try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account)));
     // A different graph at the same place count is not equal, and the
     // comparison was charged per pair.
