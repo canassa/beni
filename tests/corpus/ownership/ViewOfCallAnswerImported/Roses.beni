@@ -1,0 +1,35 @@
+-- ownership (project): see Main.beni. The callees.
+pub type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub kidsOf : Rose → List Rose
+kidsOf t =
+    case t of
+        Rose _ ks →
+            ks
+
+
+pub ident : Rose → Rose
+ident t = t
+
+
+pub kidsOrNone : Bool, Rose → List Rose
+kidsOrNone c t = if c then kidsOf t else []
+
+
+pub pushKids : Rose → Rose
+pushKids t =
+    case t of
+        Rose l ks →
+            Rose l (List.push ks (Rose [] []))
+
+
+pub grandKids : Rose → List Rose
+grandKids t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            gs
+
+        _ →
+            []

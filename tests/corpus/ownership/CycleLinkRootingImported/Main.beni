@@ -1,0 +1,76 @@
+-- ownership (project): `CycleLinkRooting` with the types, builders and
+-- writers in another module (ownership-v2.md Appendix B, C×L, the S3b
+-- half). Over `[ r, r ]` each imported write is refused `exclusive`, alone,
+-- under one link, under two and under its parent; over separately built
+-- kids each accepts, and the same through `Maybe` and `A`/`B`. Known
+-- entries: v1 refuses `underOneApart`; v2 refuses `underTwoApart` (#1495).
+-- Both refuse `siblingsApart` (#1495).
+import Roses exposing (Rose, M, A, B)
+
+
+pub alone : ⊤ → Int
+alone ⊤ =
+    r = Rose [] []
+    List.length (Roses.incLabels [ r, r ])
+
+
+pub aloneApart : ⊤ → Int
+aloneApart ⊤ = List.length (Roses.incLabels [ Rose [] [], Rose [] [] ])
+
+
+pub underOne : ⊤ → Int
+underOne ⊤ =
+    r = Rose [] []
+    List.length (Roses.incLabels (Roses.kidsOf (Roses.wrap [ r, r ])))
+
+
+pub underOneApart : ⊤ → Int
+underOneApart ⊤ =
+    List.length (Roses.incLabels (Roses.kidsOf (Roses.wrap [ Rose [] [], Rose [] [] ])))
+
+
+pub underTwo : ⊤ → Int
+underTwo ⊤ =
+    r = Rose [] []
+    List.length (Roses.incLabels (Roses.innerKids (Roses.wrap2 [ r, r ])))
+
+
+pub underTwoApart : ⊤ → Int
+underTwoApart ⊤ =
+    List.length (Roses.incLabels (Roses.innerKids (Roses.wrap2 [ Rose [] [], Rose [] [] ])))
+
+
+pub kidsOfWrapped : ⊤ → Rose
+kidsOfWrapped ⊤ =
+    r = Rose [] []
+    Roses.incKids (Roses.wrap [ r, r ])
+
+
+pub kidsOfWrappedApart : ⊤ → Rose
+kidsOfWrappedApart ⊤ = Roses.incKids (Roses.wrap [ Rose [] [], Rose [] [] ])
+
+
+pub siblingsApart : ⊤ → Rose
+siblingsApart ⊤ =
+    r = Rose [] []
+    Roses.incKids (Roses.wrap2 [ r, r ])
+
+
+pub maybeShared : ⊤ → M
+maybeShared ⊤ =
+    r = Just (M [] [])
+    Roses.incKidsM (Roses.wrapM [ r, r ])
+
+
+pub maybeApart : ⊤ → M
+maybeApart ⊤ = Roses.incKidsM (Roses.wrapM [ Just (M [] []), Just (M [] []) ])
+
+
+pub mutualShared : ⊤ → A
+mutualShared ⊤ =
+    r = B [] []
+    Roses.incKidsA (Roses.wrapA [ r, r ])
+
+
+pub mutualApart : ⊤ → A
+mutualApart ⊤ = Roses.incKidsA (Roses.wrapA [ B [] [], B [] [] ])

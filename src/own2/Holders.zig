@@ -781,7 +781,12 @@ const Index = struct {
             return;
         }
         blocks.clearRetainingCapacity();
-        try ix.cover(h, grp.x, ix.targets.items[grp.target].c, blocks);
+        // A refinement of another split at the target's own canonical
+        // position (two matches of one recursive value) is held where it is
+        // held: neither chain reaches the other, so its hold is the
+        // target's at the same path (#1491).
+        const c = ix.targets.items[grp.target].c;
+        try ix.cover(h, grp.x, if (try ix.samePosition(grp.x, c)) grp.x else c, blocks);
         if (blocks.items.len == 0) return;
         // `element` (§2.8 condition 5): the first hold this use covers is
         // approximate in itself, whatever the base's cells.
@@ -897,6 +902,23 @@ const Index = struct {
         const places = ix.env.places;
         const summary = (places.isSummary(f) or stands(cellt, places, x)) and !isMaterialised(cellt, c);
         return !(approx or summary or cellt.origin(x) == .top or (alt and !places.isSummary(f)));
+    }
+
+    /// Whether `x` and `c` stand at one canonical position, one of them a
+    /// refinement, with neither on the other's chain (`Cell.stepsTo`): two
+    /// splits' sides of one recursive value; a side and the canonical cell a
+    /// call writes; a side of a call's answer, relabelled to that canonical
+    /// cell, and a match's refinement of it (#1491).
+    fn samePosition(ix: *Index, x: CellId, c: CellId) Error!bool {
+        const cellt = ix.env.cells;
+        if (x == c or !(cellt.origin(x).isRefinement() or cellt.origin(c).isRefinement())) return false;
+        try ix.rec(2);
+        const ux = (try cellt.unrefined(ix.gpa, ix.env.account(), ix.env.places, x)) orelse return false;
+        const uc = (try cellt.unrefined(ix.gpa, ix.env.account(), ix.env.places, c)) orelse return false;
+        if (ux != uc) return false;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(ix.gpa);
+        return !(try cellt.stepsTo(ix.env.places, x, c, ix.gpa, &steps)) and !(try cellt.stepsTo(ix.env.places, c, x, ix.gpa, &steps));
     }
 
     /// The steps from a hold of `x` down to `c` (§2.8): a `⟲` first when `x`
@@ -1981,7 +2003,7 @@ const Index = struct {
                         continue;
                     }
                     holds.clearRetainingCapacity();
-                    try ix.holdsAll(h, x, c, &holds);
+                    try ix.holdsAll(h, x, if (try ix.samePosition(x, c)) x else c, &holds);
                     const all = index.rangeOf(ix.env.places, h.who, &.{}, true);
                     var i = all.start;
                     while (i < all.start + all.len) : (i += 1) {

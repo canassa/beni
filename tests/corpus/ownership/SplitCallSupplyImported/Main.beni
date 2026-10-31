@@ -1,0 +1,119 @@
+-- ownership (project): `SplitCallSupply` with the callees in another
+-- module (ownership-v2.md Appendix B, R×A, the S3b half). The container,
+-- or the rest's view, beside the element is refused at an imported
+-- keeper; the copied remainder accepts owing `excl` (v1 refuses it, a
+-- known entry), discharged by callers; the same through a wrapper. Two
+-- refinements of distinct positions of one split in a built record are
+-- evidence of distinct positions (#1272); one head twice is refused.
+import Supply exposing (P)
+
+
+pub wholeAndElem : List (List Int) → List Int × List (List Int)
+wholeAndElem xs =
+    case xs of
+        [ x, …_ ] →
+            Supply.keeper x xs
+
+        [] →
+            ( [], xs )
+
+
+pub restAndElem : List (List Int) → List Int × List (List Int)
+restAndElem xs =
+    case xs of
+        [ x, …rest ] →
+            Supply.keeper x (List.copy rest)
+
+        [] →
+            ( [], xs )
+
+
+pub viewAndElem : List (List Int) → List Int × List (List Int)
+viewAndElem xs =
+    case xs of
+        [ x, …rest ] →
+            Supply.keeper x rest
+
+        [] →
+            ( [], xs )
+
+
+pub viaWrapper : List (List Int) → List Int × List (List Int)
+viaWrapper xs =
+    case xs of
+        [ x, …rest ] →
+            Supply.wrapper x (List.copy rest)
+
+        [] →
+            ( [], xs )
+
+
+pub wholeViaWrapper : List (List Int) → List Int × List (List Int)
+wholeViaWrapper xs =
+    case xs of
+        [ x, …_ ] →
+            Supply.wrapper x xs
+
+        [] →
+            ( [], xs )
+
+
+pub restDistinct : ⊤ → Int
+restDistinct ⊤ =
+    ( l, _ ) = restAndElem [ [ 1 ], [ 2 ] ]
+    List.length l
+
+
+pub restShared : ⊤ → Int
+restShared ⊤ =
+    r = [ 1 ]
+    ( l, _ ) = restAndElem [ r, r ]
+    List.length l
+
+
+pub headAndNext : List (List Int) → List Int × List Int
+headAndNext xs =
+    case xs of
+        [ a, …rest ] →
+            case rest of
+                [ b, …_ ] →
+                    Supply.twoPaths { x = a, y = b }
+
+                [] →
+                    ( [], [] )
+
+        [] →
+            ( [], [] )
+
+
+pub twoHeads : List (List Int) → List Int × List Int
+twoHeads xs =
+    case xs of
+        [ a, b, …_ ] →
+            Supply.twoPaths { x = a, y = b }
+
+        _ →
+            ( [], [] )
+
+
+pub oneHeadTwice : List (List Int) → List Int × List Int
+oneHeadTwice xs =
+    case xs of
+        [ a, …_ ] →
+            Supply.twoPaths { x = a, y = a }
+
+        [] →
+            ( [], [] )
+
+
+pub nextDistinct : ⊤ → Int
+nextDistinct ⊤ =
+    ( l, _ ) = headAndNext [ [ 1 ], [ 2 ] ]
+    List.length l
+
+
+pub nextShared : ⊤ → Int
+nextShared ⊤ =
+    r = [ 1 ]
+    ( l, _ ) = headAndNext [ r, r ]
+    List.length l

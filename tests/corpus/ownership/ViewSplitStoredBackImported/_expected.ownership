@@ -1,0 +1,28 @@
+module Lists
+  6:13 List.push xs: accepted param
+  16:15 List.push x: accepted param
+  16:31 call Lists.incEach rest[*]: accepted param (Lists.incEach writes π1[*])
+  26:15 List.push x: accepted param
+  summary pushBack: π1 RAW[storage], π1[*] RA; res [*] ~condition(fresh1) ~π1[*]{excl π1}, π1
+  summary incEach: π1 R, π1[*] RAW[storage], π1[*][*] RA; res [*] fresh3{excl π1} ~condition(fresh4) ~fresh4{lost} ~fresh6{lost} ~π1[*]{excl π1}, [*][*] ~condition(fresh5) ~π1[*][*]{excl π1}, fresh1{lost}r{excl π1[*][*]} ~fresh2{excl π1} ~fresh6{lost}; xreq excl π1
+  summary editTaken: π1 R, π1[*] RAW[storage], π1[*][*] A; res .0 condition(fresh3) fresh3 π1[*]{excl π1}, .0[*] ~condition(fresh4) ~π1[*][*]{excl π1}, .1 fresh1{lost}, .1[*] ~condition(fresh5) π1[*], condition(fresh2){lost}; xreq excl π1
+  summary firstLength: π1 R, π1[*] R
+  demands 4: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  12:29 call Lists.incEach <call Lists.pushBack>[*]: accepted fresh (Lists.incEach writes π1[*])
+  12:44 call Lists.pushBack <literal>: accepted fresh (Lists.pushBack writes π1)
+  16:32 call Lists.incEach <literal>[*]: accepted fresh (Lists.incEach writes π1[*])
+  21:16 call Lists.editTaken <literal>[*]: accepted fresh (Lists.editTaken writes π1[*])
+  28:16 call Lists.editTaken <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Lists.editTaken writes π1[*])
+  33:31 call Lists.incEach <call List.copy>[*]: rejected element: ys[*] holds it and is read at 33:63 (Lists.incEach writes π1[*]) (approx)
+  37:35 call Lists.incEach <call List.copy>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (Lists.incEach writes π1[*]) (approx)
+  summary storedBack: unused
+  summary notStoredBack: unused
+  summary takenDistinct: unused
+  summary takenShared: unused
+  summary copiedOuter: π1 R, π1[*] RW[storage]
+  summary copiedOuterOnly: π1 R, π1[*] RW[storage]
+  demands 7: accepted 4 (fresh 4, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 11: accepted 8 (fresh 4, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause element 1
+cause exclusive 2

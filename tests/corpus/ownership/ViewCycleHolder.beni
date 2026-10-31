@@ -1,0 +1,300 @@
+-- ownership: a view kept across a type cycle while a write reaches it
+-- (ownership-v2.md Appendix B, V×C; R-4.5.1, R-4.7.1). Two levels of a
+-- `Rose` are matched, a grandchild list's `rest` is kept, and that list is
+-- written: in the frame (`inFrame`) and through a call (`viaCall`), both
+-- refused `alias`. The controls accept: the view dead (`deadView`,
+-- `deadViewCall`), and the off-cycle `List Int` label written instead
+-- (`labelBeside`, `labelCall`). One level through a call
+-- (`oneLevelCall`) and two matches of one value (`twoMatches`) are
+-- refused too (#1491). The same through a mutual pair `A`/`B` and through
+-- `Maybe` children. v1 accepts the three `viaCall` forms, which a
+-- `--sanitize-lists` run shows read stale data: known entries for v1.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+pushInner : Rose → Rose
+pushInner t =
+    case t of
+        Rose l [ Rose m gs, …others ] →
+            Rose l [ Rose m (List.push gs (Rose [] [])), …others ]
+
+        _ →
+            t
+
+
+labelInner : Rose → Rose
+labelInner t =
+    case t of
+        Rose l [ Rose m gs, …others ] →
+            Rose l [ Rose (List.push m 1) gs, …others ]
+
+        _ →
+            t
+
+
+pub inFrame : Rose → Int
+inFrame t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    List.length (List.push gs (Rose [] [])) + List.length rest
+
+                [] →
+                    0
+
+        _ →
+            0
+
+
+pub deadView : Rose → Int
+deadView t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …_ ] →
+                    List.length (List.push gs (Rose [] []))
+
+                [] →
+                    0
+
+        _ →
+            0
+
+
+pub labelBeside : Rose → Int
+labelBeside t =
+    case t of
+        Rose _ [ Rose m gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    List.length (List.push m 1) + List.length rest
+
+                [] →
+                    0
+
+        _ →
+            0
+
+
+pub viaCall : Rose → Rose × List Rose
+viaCall t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( pushInner t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )
+
+
+pub deadViewCall : Rose → Rose
+deadViewCall t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …_ ] →
+                    pushInner t
+
+                [] →
+                    t
+
+        _ →
+            t
+
+
+pub labelCall : Rose → Rose × List Rose
+labelCall t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( labelInner t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )
+
+
+-- One level, through a call: `rest` is a view of `t`'s own kids list,
+-- which `pushKids` writes (#1491), refused. Two matches of one recursive
+-- value in one frame are the same: `ks2` is `ks`'s list, refused.
+pushKids : Rose → Rose
+pushKids t =
+    case t of
+        Rose l ks →
+            Rose l (List.push ks (Rose [] []))
+
+
+pub oneLevelCall : Rose → Rose × List Rose
+oneLevelCall t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    ( pushKids t, rest )
+
+                [] →
+                    ( t, [] )
+
+
+pub twoMatches : Rose → List Rose × List Rose
+twoMatches t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    case t of
+                        Rose _ ks2 →
+                            ( List.push ks2 (Rose [] []), rest )
+
+                [] →
+                    ( [], [] )
+
+
+-- The mutual pair: `A`'s `B`s hold `A`s again.
+type A
+    = A (List Int) (List B)
+
+
+type B
+    = B (List A)
+
+
+pushInnerA : A → A
+pushInnerA a =
+    case a of
+        A l [ B xs, …others ] →
+            A l [ B (List.push xs (A [] [])), …others ]
+
+        _ →
+            a
+
+
+labelInnerA : A → A
+labelInnerA a =
+    case a of
+        A l bs →
+            A (List.push l 1) bs
+
+
+pub viaCallA : A → A × List A
+viaCallA a =
+    case a of
+        A _ [ B xs, …_ ] →
+            case xs of
+                [ _, …rest ] →
+                    ( pushInnerA a, rest )
+
+                [] →
+                    ( a, [] )
+
+        _ →
+            ( a, [] )
+
+
+pub deadViewCallA : A → A
+deadViewCallA a =
+    case a of
+        A _ [ B xs, …_ ] →
+            case xs of
+                [ _, …_ ] →
+                    pushInnerA a
+
+                [] →
+                    a
+
+        _ →
+            a
+
+
+pub labelCallA : A → A × List A
+labelCallA a =
+    case a of
+        A _ [ B xs, …_ ] →
+            case xs of
+                [ _, …rest ] →
+                    ( labelInnerA a, rest )
+
+                [] →
+                    ( a, [] )
+
+        _ →
+            ( a, [] )
+
+
+-- `Maybe` children: the cycle goes through `Maybe`.
+type M
+    = M (List Int) (List (Maybe M))
+
+
+pushInnerM : M → M
+pushInnerM t =
+    case t of
+        M l [ Just (M m gs), …others ] →
+            M l [ Just (M m (List.push gs Nothing)), …others ]
+
+        _ →
+            t
+
+
+labelInnerM : M → M
+labelInnerM t =
+    case t of
+        M l [ Just (M m gs), …others ] →
+            M l [ Just (M (List.push m 1) gs), …others ]
+
+        _ →
+            t
+
+
+pub viaCallM : M → M × List (Maybe M)
+viaCallM t =
+    case t of
+        M _ [ Just (M _ gs), …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( pushInnerM t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )
+
+
+pub deadViewCallM : M → M
+deadViewCallM t =
+    case t of
+        M _ [ Just (M _ gs), …_ ] →
+            case gs of
+                [ _, …_ ] →
+                    pushInnerM t
+
+                [] →
+                    t
+
+        _ →
+            t
+
+
+pub labelCallM : M → M × List (Maybe M)
+labelCallM t =
+    case t of
+        M _ [ Just (M _ gs), …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    ( labelInnerM t, rest )
+
+                [] →
+                    ( t, [] )
+
+        _ →
+            ( t, [] )

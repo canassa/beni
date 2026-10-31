@@ -35,6 +35,13 @@ const Step = Place.Step;
 const Error = Ids.ChargeError;
 const none: u32 = Ids.none_int;
 
+/// Whether `path` is one of a write's `paths` or above one (`isPrefix`).
+fn toward(places: *const Place.Table, paths: []const PathId, path: PathId) bool {
+    if (path == .none) return false;
+    for (paths) |q| if (places.isPrefix(path, q)) return true;
+    return false;
+}
+
 /// Whether a step path names one position: no `[*]` or `⟲` in it.
 fn exactPath(steps: []const Step) bool {
     for (steps) |s| if (s.kind == .elem or s.kind == .level) return false;
@@ -670,7 +677,9 @@ pub fn Of(comptime Frame: type) type {
         /// or at a leaf, the node's whole reach. A value above the write by
         /// position though not by path prefix (the level's own list
         /// `#T.0[*]#T.0` above the lists `#T.0[*]⟲#T.0` below it) so keeps what
-        /// it holds beside them only.
+        /// it holds beside them only. The route down to the written path keeps
+        /// its path on any place, so an answered value above a write through
+        /// `[*]` skips the written positions too (`Split.bumpHead`, #1253).
         pub fn reachBeside(f: *Frame, v: NodeId, where: Where) Error!SetId {
             const shapes = f.env.shapes;
             const places = f.env.places;
@@ -712,7 +721,12 @@ pub fn Of(comptime Frame: type) type {
                     try f.env.charge.reserve(f.gpa, .inspection, 1);
                     if (s.kind == .level) continue;
                     const c = (try shapes.proj(f.gpa, f.account(), places, cells, n, s)) orelse continue;
-                    try stack.append(f.gpa, .{ .n = c, .path = try f.routePath(fr.path, .off, s) });
+                    // Toward a written path the route keeps its path off a
+                    // cycle too: it is the write's own route down to the
+                    // written positions, one path per step (#1253).
+                    try f.env.charge.reserve(f.gpa, .inspection, @intCast(where.paths.len));
+                    const on = (try places.extend(f.gpa, f.env.charge, fr.path, s)) orelse PathId.none;
+                    try stack.append(f.gpa, .{ .n = c, .path = if (toward(places, where.paths, on)) on else try f.routePath(fr.path, .off, s) });
                 }
             }
             return acc;

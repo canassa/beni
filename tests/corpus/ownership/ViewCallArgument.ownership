@@ -1,0 +1,22 @@
+module ViewCallArgument
+  15:31 List.push a: accepted param
+  19:28 List.push a: accepted param
+  26:13 call ViewCallArgument.writeFirst xs: rejected disjoint: another operand of the same operation reaches it (ViewCallArgument.writeFirst writes π1)
+  37:17 call ViewCallArgument.writeOnly xs: accepted param (ViewCallArgument.writeOnly writes π1)
+  49:21 call ViewCallArgument.writeFirst l: rejected disjoint: another operand of the same operation reaches it (ViewCallArgument.writeFirst writes π1)
+  62:26 List.push ks: accepted param
+  69:26 List.push l: accepted param
+  78:21 call ViewCallArgument.writeKids t#Rose.1: rejected disjoint: another operand of the same operation reaches it (ViewCallArgument.writeKids writes π1#Rose.1)
+  90:21 call ViewCallArgument.writeLabel t#Rose.0: accepted param (ViewCallArgument.writeLabel writes π1#Rose.0)
+  summary writeFirst: π1 RW[storage], π2 R
+  summary writeOnly: π1 RW[storage]
+  summary viewAndBase: π1 RW[storage]
+  summary readBefore: π1 RW[storage]
+  summary belowRoot: π1 R, π1⟨Rose⟩⁺#Rose.0 RW[storage]; xreq excl π1#Rose.1
+  summary writeKids: π1 R, π1#Rose.1 RW[storage], π2 R
+  summary writeLabel: π1 R, π1#Rose.0 RW[storage], π2 R
+  summary kidsAndView: π1 R, π1#Rose.1 RW[storage]
+  summary labelAndView: π1 R, π1#Rose.0 RW[storage], π1#Rose.1 R
+  demands 9: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 9: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause disjoint 3

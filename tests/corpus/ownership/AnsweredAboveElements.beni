@@ -1,0 +1,66 @@
+-- ownership: an answer above a write through `[*]` holds the written
+-- positions as the objects written (#1253, ownership-v2.md §2.11 item 3,
+-- rule (a)). `bumpHead` writes its rows' first element and answers
+-- `~π1`: its result may be its argument itself, the head edited in place.
+-- The written positions are the objects written, and their distinctness
+-- is `bumpHead`'s `xreq`, so a caller passing distinct lists accepts: two
+-- literals (`literals`), two parameters (`params`), a bound list of
+-- literals (`bound`) and its own parameter (`passedOn`). One list twice
+-- is refused (`repeated`), and so is a list read after the edit
+-- (`readAfter`). Lists bound to names first (`named`) are refused by v2
+-- only, a known entry (#1492).
+bumpHead : List (List Int) → List (List Int)
+bumpHead rows =
+    case rows of
+        [] →
+            []
+
+        [ r, …rest ] →
+            [ [ …r, 0 ], …rest ]
+
+
+pub literals : ⊤ → Int
+literals ⊤ = List.length (bumpHead [ [ 1 ], [ 2 ] ])
+
+
+pub params : List Int, List Int → Int
+params a b = List.length (bumpHead [ a, b ])
+
+
+pub bound : ⊤ → Int
+bound ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    List.length (bumpHead rows)
+
+
+pub passedOn : List (List Int) → Int
+passedOn xs = List.length (bumpHead xs)
+
+
+pub repeated : ⊤ → Int
+repeated ⊤ =
+    r = [ 1 ]
+    List.length (bumpHead [ r, r ])
+
+
+firstLength : List (List Int) → Int
+firstLength ys =
+    case ys of
+        [ y, …_ ] →
+            List.length y
+
+        [] →
+            0
+
+
+pub readAfter : ⊤ → Int
+readAfter ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    List.length (bumpHead rows) + firstLength rows
+
+
+pub named : ⊤ → Int
+named ⊤ =
+    a = [ 1 ]
+    b = [ 2 ]
+    List.length (bumpHead [ a, b ])

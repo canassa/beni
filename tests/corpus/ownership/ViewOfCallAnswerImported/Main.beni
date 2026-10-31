@@ -1,0 +1,126 @@
+-- ownership (project): `ViewOfCallAnswer` with the callees in another
+-- module (#1491). A view of an imported call's answer held across a write
+-- of the list it views is refused: bound first, matched in place, through
+-- a second call and through a choice; and so are a writer call, the
+-- grandchildren's list and a second match two levels down. The view dead
+-- and the label written instead accept. v1 accepts `twoLevelMatch`: a
+-- known entry for v1.
+import Roses exposing (Rose)
+
+
+pub calleeKids : Rose → List Rose × List Rose
+calleeKids t =
+    v = Roses.kidsOf t
+    case v of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+pub caseKids : Rose → List Rose × List Rose
+caseKids t =
+    case Roses.kidsOf t of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+pub throughTwo : Rose → List Rose × List Rose
+throughTwo t =
+    case Roses.kidsOf (Roses.ident t) of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+pub choiceAnswer : Bool, Rose → List Rose × List Rose
+choiceAnswer c t =
+    case Roses.kidsOrNone c t of
+        [ _, …rest ] →
+            case t of
+                Rose _ ks →
+                    ( List.push ks (Rose [] []), rest )
+
+        [] →
+            ( [], [] )
+
+
+pub callWrites : Rose → Rose × List Rose
+callWrites t =
+    case Roses.kidsOf t of
+        [ _, …rest ] →
+            ( Roses.pushKids t, rest )
+
+        [] →
+            ( t, [] )
+
+
+pub belowLevel : Rose → List Rose × List Rose
+belowLevel t =
+    case Roses.grandKids t of
+        [ _, …rest ] →
+            case t of
+                Rose _ [ Rose _ gs2, …_ ] →
+                    ( List.push gs2 (Rose [] []), rest )
+
+                _ →
+                    ( [], [] )
+
+        [] →
+            ( [], [] )
+
+
+pub twoLevelMatch : Rose → List Rose × List Rose
+twoLevelMatch t =
+    case t of
+        Rose _ [ Rose _ gs, …_ ] →
+            case gs of
+                [ _, …rest ] →
+                    case t of
+                        Rose _ [ Rose _ gs2, …_ ] →
+                            ( List.push gs2 (Rose [] []), rest )
+
+                        _ →
+                            ( [], [] )
+
+                [] →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub deadControl : Rose → List Rose
+deadControl t =
+    case Roses.kidsOf t of
+        [ _, …_ ] →
+            case t of
+                Rose _ ks →
+                    List.push ks (Rose [] [])
+
+        [] →
+            []
+
+
+pub labelControl : Rose → List Int × List Rose
+labelControl t =
+    case Roses.kidsOf t of
+        [ _, …rest ] →
+            case t of
+                Rose l _ →
+                    ( List.push l 1, rest )
+
+        [] →
+            ( [], [] )

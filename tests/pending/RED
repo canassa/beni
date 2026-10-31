@@ -186,7 +186,6 @@ tests/pending/ownership/PatternStoredBack.beni exit=0 ownership-differs
 
 # CK-279 (#395): with mutually recursive types, a List Int field is taken to
 # reach the other type; R-4.7.4.
-tests/pending/ownership/MutualListField.beni exit=0 ownership-differs
 
 # CK-280 (#400): a write to one list under a marker needs the whole region
 # exclusive; R-4.7.8.

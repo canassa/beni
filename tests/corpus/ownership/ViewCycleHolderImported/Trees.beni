@@ -1,0 +1,79 @@
+-- ownership (project): see Main.beni. The types and the writers.
+pub type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub pushInner : Rose → Rose
+pushInner t =
+    case t of
+        Rose l [ Rose m gs, …others ] →
+            Rose l [ Rose m (List.push gs (Rose [] [])), …others ]
+
+        _ →
+            t
+
+
+pub labelInner : Rose → Rose
+labelInner t =
+    case t of
+        Rose l [ Rose m gs, …others ] →
+            Rose l [ Rose (List.push m 1) gs, …others ]
+
+        _ →
+            t
+
+
+pub pushKids : Rose → Rose
+pushKids t =
+    case t of
+        Rose l ks →
+            Rose l (List.push ks (Rose [] []))
+
+
+pub type A
+    = A (List Int) (List B)
+
+
+pub type B
+    = B (List A)
+
+
+pub pushInnerA : A → A
+pushInnerA a =
+    case a of
+        A l [ B xs, …others ] →
+            A l [ B (List.push xs (A [] [])), …others ]
+
+        _ →
+            a
+
+
+pub labelInnerA : A → A
+labelInnerA a =
+    case a of
+        A l bs →
+            A (List.push l 1) bs
+
+
+pub type M
+    = M (List Int) (List (Maybe M))
+
+
+pub pushInnerM : M → M
+pushInnerM t =
+    case t of
+        M l [ Just (M m gs), …others ] →
+            M l [ Just (M m (List.push gs Nothing)), …others ]
+
+        _ →
+            t
+
+
+pub labelInnerM : M → M
+labelInnerM t =
+    case t of
+        M l [ Just (M m gs), …others ] →
+            M l [ Just (M (List.push m 1) gs), …others ]
+
+        _ →
+            t
