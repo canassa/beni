@@ -44,7 +44,8 @@ const layers = [_]Entry{
     // and a refinement's canonical position (`unrefined`) Demands reads.
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
     // 1 200 since #1253: a refinement's parts at each level path.
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1200 },
+    // 1 240 since #1473: `listSide` and `positionsApart` (§2.9 *Two positions of one image*).
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1240 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
@@ -66,6 +67,7 @@ const layers = [_]Entry{
     // Cond (§5).
     // 2 620 since #1420: the check that a read implies what a rebuild
     // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
+    // 2 620 since #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`.
     .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2620 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.

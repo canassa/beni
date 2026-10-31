@@ -1,0 +1,27 @@
+module Combine
+  5:19 call Combine.combineHelp <literal>: accepted fresh (Combine.combineHelp writes π2)
+  17:21 call Combine.combineHelp <call List.push>: accepted param (Combine.combineHelp writes π2)
+  17:39 List.push values: accepted param
+  29:23 List.push a: accepted param
+  summary combine: π1 R, π1[*] R, π1[*]#Ok.0 RA; res #Ok.0 fresh1{excl π1}, #Ok.0[*] ~condition(fresh2) ~π1[*]#Ok.0{excl π1}
+  summary combineHelp: π1 R, π1[*] R, π1[*]#Ok.0 RA, π2 RAW[storage], π2[*] A; res #Ok.0 π2{excl π1, sep π1[*]#Ok.0 π2[*]}, #Ok.0[*] ~condition(fresh1) ~π1[*]#Ok.0{excl π1} ~π2[*]
+  summary twoMatches: π1 R, π1[*]#Ok.0 RAW[storage], π1[*]#Ok.0[*] A; res [*] condition(fresh1) π1[*]#Ok.0{excl π1}, [*][*] ~condition(fresh2) ~π1[*]#Ok.0[*]{excl π1}, fresh3{excl π1, sep π1[*]#Ok.0 π1[*]#Ok.0, sep π1[*]#Ok.0 π1[*]#Ok.0[*]}; xreq excl π1
+  demands 4: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  16:26 List.push first: accepted param
+  26:16 call Main.bump <literal>[*]#Ok.0: accepted param (Main.bump writes π1[*]#Ok.0)
+  30:13 call Main.bump <literal>[*]#Ok.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Main.bump writes π1[*]#Ok.0)
+  35:10 call Combine.combineHelp <literal>: accepted fresh (Combine.combineHelp writes π2)
+  39:26 List.push first: rejected exclusive: the elements of the list it was taken from may share one list
+  49:11 call Main.bump <literal>[*]#Ok.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Main.bump writes π1[*]#Ok.0)
+  53:12 call Main.bump <literal>[*]#Ok.0: rejected call: b holds it and is read at 53:10; the callee writes it only through an approximate step (Main.bump writes π1[*]#Ok.0) (approx)
+  summary bump: π1 R, π1[*] R, π1[*]#Ok.0 RAw[storage], π1[*]#Ok.0[*] A; res #Ok.0 fresh5{lost}r{lost} ~fresh1{excl π1}, #Ok.0[*] fresh2{excl π1} ~condition(fresh3) ~π1[*]#Ok.0{excl π1}, #Ok.0[*][*] ~condition(fresh4) ~fresh{excl π1} ~π1[*]#Ok.0[*]{excl π1}; xreq excl π1
+  summary distinct: π1 RAw[storage], π1[*] A, π2 RAw[storage], π2[*] A; res #Ok.0 ~fresh3{excl π1, excl π2, sep π1 π2} ~fresh4{lost}, #Ok.0[*] ~condition(fresh1){excl π1, excl π2, sep π1 π2} ~fresh1{excl π1, excl π2, sep π1 π2} ~π1{excl π2, sep π1 π2} ~π2{excl π1, sep π1 π2}, #Ok.0[*][*] ~condition(fresh2){excl π1, excl π2, sep π1 π2} ~fresh3{excl π1, excl π2, sep π1 π2} ~π1[*]{excl π1, excl π2, sep π1 π2} ~π2[*]{excl π1, excl π2, sep π1 π2}; xreq excl π1, excl π2, sep π1 π2
+  summary aliased: π1 RAw[storage], π1[*] A; res #Ok.0 ~fresh2{shared} ~fresh4{lost}, #Ok.0[*] ~condition(fresh1){shared} ~fresh1{shared} ~π1{shared}, #Ok.0[*][*] ~condition(fresh3) ~fresh2{shared} ~π1[*]{shared}
+  summary mixed: π1 RAW[storage], π1[*] A; res #Ok.0 fresh4{shared} ~fresh1{shared}, #Ok.0[*] ~condition(fresh2) π1{shared}, #Ok.0[*][*] ~condition(fresh3) ~π1[*]{shared}
+  summary twice: π1 R, π1#Ok.0 Aw[storage], π1#Ok.0[*] A; res #Ok.0 ~fresh2{shared} ~fresh4{lost}, #Ok.0[*] ~condition(fresh1){shared} ~fresh1{shared} ~π1#Ok.0{shared}, #Ok.0[*][*] ~condition(fresh3) ~fresh2{shared} ~π1#Ok.0[*]{shared}
+  summary held: π1 RAw[storage], π1[*] A; res .0#Ok.0 ~fresh1{excl π1} ~fresh4{lost}, .0#Ok.0[*] ~condition(fresh2) ~fresh2{excl π1} ~π1, .0#Ok.0[*][*] ~condition(fresh3) ~fresh1{excl π1} ~π1[*]{excl π1}, .1 ~condition(fresh6) π1, condition(fresh5){lost}; xreq excl π1
+  demands 7: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 11: accepted 7 (fresh 2, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause call 1
+cause exclusive 3
