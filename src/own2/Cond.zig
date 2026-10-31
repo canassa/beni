@@ -2004,6 +2004,8 @@ pub const Table = struct {
             .result, .esc => d.a == Ids.none_int or cellt.labelOf(.from(d.a)).folded,
             .cb => d.a == Ids.none_int or cellt.labelOf(.from(d.a)).folded or places.isSummary(.from(d.b)),
             .param, .env, .shared, .msg => places.isSummary(.from(d.b)),
+            // A part (§2.2 *Parts*): its anchor's, or several below a summary step.
+            .part => isFolded(cellt, places, .from(d.a)) or places.isSummary(.from(d.c)),
             .elem, .others, .level, .below, .loan => d.b == Ids.none_int or cellt.labelOf(.from(d.b)).folded,
         };
     }

@@ -182,7 +182,7 @@ const Pre = struct {
         switch (cells.origin(c)) {
             .site, .result, .esc, .mark => return,
             .top => {},
-            .elem, .others, .level, .below, .loan => sym = (try cells.unrefined(gpa, account, places, c)) orelse return,
+            .elem, .others, .level, .below, .loan, .part => sym = (try cells.unrefined(gpa, account, places, c)) orelse return,
             .param, .env, .shared, .cb, .msg => sym = c,
         }
         if (sym) |s| if (!cells.origin(s).isSymbolic() or cells.origin(s) == .top or places.pathPlace(.from(cells.get(s).b)) != places.pathPlace(path)) {

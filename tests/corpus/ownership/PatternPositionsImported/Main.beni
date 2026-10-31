@@ -1,0 +1,79 @@
+-- ownership (project): `PatternPositions` with the callees in another module
+-- (ownership-v2.md §2.2 *Parts*, §2.13.3, #1390): each callee publishes its
+-- reliance on its list's positions being apart as `xreq excl π1[*]` in its
+-- block, and a call here discharges it as a call of the module's own
+-- declaration does. Refused over positions that share a box, by a
+-- constructor, a tuple, a record or two crossed lists of a record, through
+-- a rest and two levels of rests; accepted over distinct boxes. `relay`
+-- hands its own list on to the imported `nested`, so it owes the
+-- requirement in turn.
+import Positions exposing (Box, W, Two)
+
+
+pub ctorShared : ⊤ → Int × Int
+ctorShared ⊤ =
+    b = Box [ 0 ]
+    Positions.ctor [ W b 1, W b 2 ]
+
+
+pub ctorDistinct : ⊤ → Int × Int
+ctorDistinct ⊤ = Positions.ctor [ W (Box [ 1 ]) 1, W (Box [ 2 ]) 2 ]
+
+
+pub tupleShared : ⊤ → Int × Int
+tupleShared ⊤ =
+    b = Box [ 0 ]
+    Positions.tuple [ ( b, 1 ), ( b, 2 ) ]
+
+
+pub recordShared : ⊤ → Int × Int
+recordShared ⊤ =
+    b = Box [ 0 ]
+    Positions.record [ { k = b }, { k = b } ]
+
+
+pub recordDistinct : Box, Box → Int × Int
+recordDistinct a b = Positions.record [ { k = a }, { k = b } ]
+
+
+pub crossedShared : ⊤ → Int
+crossedShared ⊤ =
+    z = [ 1 ]
+    w = [ 2 ]
+    Positions.crossed [ { k = { l = w, m = z } }, { k = { l = z, m = w } } ]
+
+
+pub nestedShared : ⊤ → Int × Int
+nestedShared ⊤ =
+    b = Box [ 0 ]
+    Positions.nested [ b, b ]
+
+
+pub nestedDistinct : ⊤ → Int × Int
+nestedDistinct ⊤ = Positions.nested [ Box [ 1 ], Box [ 2 ] ]
+
+
+pub twoLevelsShared : ⊤ → Int × Int
+twoLevelsShared ⊤ =
+    b = Box [ 0 ]
+    Positions.twoLevels [ b, Box [ 1 ], b ]
+
+
+pub twoLevelsDistinct : ⊤ → Int × Int
+twoLevelsDistinct ⊤ = Positions.twoLevels [ Box [ 0 ], Box [ 1 ], Box [ 2 ] ]
+
+
+pub eachShared : ⊤ → Int
+eachShared ⊤ =
+    b = Box [ 0 ]
+    Positions.each [ W b 1, W b 2 ]
+
+
+pub relay : List Box → Int × Int
+relay bs = Positions.nested bs
+
+
+pub relayShared : ⊤ → Int × Int
+relayShared ⊤ =
+    b = Box [ 0 ]
+    relay [ b, b ]

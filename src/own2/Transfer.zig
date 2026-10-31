@@ -627,6 +627,34 @@ pub const Frame = struct {
         return .{ .node = n, .kappa = f.env.conds.kappaChild(v.kappa, s) };
     }
 
+    /// The cells a list pattern on `n` splits (§2.13.3), into `out`: each
+    /// symbolic container cell of `n`, or, where `n` is a rest of a split of
+    /// it — its `[*]` (`contents`) holds `others` of that cell's positions —
+    /// those `others`, so the match splits the rest's own positions. A
+    /// container whose plain projection the contents also hold is split too.
+    fn splitTargets(f: *Frame, n: NodeId, contents: NodeId, out: *std.ArrayList(Cell.Radix.Iterator.Entry)) Error!void {
+        const cells = f.env.cells;
+        const at = try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, contents);
+        var it = cells.sets.iterate(try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, n));
+        while (it.next()) |e| {
+            const c: CellId = .from(e.key);
+            const o = cells.origin(c);
+            if (o == .site or o == .result or o == .esc or o == .top) continue;
+            var rests: usize = 0;
+            var plain = false;
+            var ct = cells.sets.iterate(at);
+            while (ct.next()) |x| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                const xc: CellId = .from(x.key);
+                if (cells.origin(xc) == .others and cells.positionsOf(xc) == c) {
+                    try out.append(f.gpa, .{ .key = x.key, .value = e.value | x.value });
+                    rests += 1;
+                } else if (cells.parent(xc) == c and cells.origin(xc) != .elem and cells.origin(xc) != .others) plain = true;
+            }
+            if (rests == 0 or plain) try out.append(f.gpa, e);
+        }
+    }
+
     /// `[ a, b, …rest ]` (§2.13.3): per container cell, the positions taken
     /// at this split are `elem` refinements, the rest `others`; a concrete
     /// container's contents are its explicit elements, on both sides.
@@ -659,15 +687,17 @@ pub const Frame = struct {
         // containers' projections.
         var containers: std.ArrayList(Cell.Radix.Iterator.Entry) = .empty;
         defer containers.deinit(f.gpa);
+        try f.splitTargets(v.node, contents, &containers);
+        // A rest's positions split as positions (`Cell.positions_bit`).
+        var bits: std.ArrayList(u32) = .empty;
+        defer bits.deinit(f.gpa);
+        const own = try f.env.shapes.cellsOf(f.gpa, f.account(), &cells.sets, v.node);
+        for (containers.items) |e| try bits.append(f.gpa, if (cells.origin(.from(e.key)) == .others and cells.sets.member(own, cells.positionsOf(.from(e.key)).int())) Cell.Table.positions_bit else 0);
         var projections: SetId = .none;
-        var it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
-        while (it.next()) |e| {
+        for (containers.items, bits.items) |e, bit| {
             const c: CellId = .from(e.key);
-            const o = cells.origin(c);
-            if (o == .site or o == .result or o == .esc or o == .top) continue;
-            try containers.append(f.gpa, e);
             _ = try cells.split(f.gpa, f.account(), c, p, label, split_kappa);
-            const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, try cells.refine(f.gpa, f.account(), .elem, c, label, 0, elem_place, elem_kind))) orelse continue;
+            const u = (try cells.unrefined(f.gpa, f.account(), f.env.places, try cells.refine(f.gpa, f.account(), .elem, c, label, bit, elem_place, elem_kind))) orelse continue;
             projections = try cells.sets.insert(f.gpa, f.env.charge, projections, u.int(), 0);
         }
         var drop: SetId = .none;
@@ -684,7 +714,7 @@ pub const Frame = struct {
         // position bound to a variable records which it is, under one split
         // of the container whose κ is the contents' (`Demands.Taken`).
         var taken_split: Ids.SplitId = .none;
-        it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
+        var it = cells.sets.iterate((try f.env.shapes.cellsOf(f.gpa, f.account(), &f.env.cells.sets, v.node)));
         while (it.next()) |e| {
             const o = cells.origin(.from(e.key));
             if (o != .site and o != .result and o != .esc) continue;
@@ -701,9 +731,9 @@ pub const Frame = struct {
             defer f.account().leave(kernel);
             const spread = f.tag(item.int()) == .pat_spread;
             var refined: SetId = .none;
-            for (containers.items) |e| {
+            for (containers.items, bits.items) |e, bit| {
                 const c: CellId = .from(e.key);
-                const r = if (spread) try cells.refine(f.gpa, f.account(), .others, c, label, 0, elem_place, elem_kind) else try cells.refine(f.gpa, f.account(), .elem, c, label, position, elem_place, elem_kind);
+                const r = if (spread) try cells.refine(f.gpa, f.account(), .others, c, label, bit, elem_place, elem_kind) else try cells.refine(f.gpa, f.account(), .elem, c, label, position | bit, elem_place, elem_kind);
                 refined = try cells.sets.insert(f.gpa, f.env.charge, refined, r.int(), e.value);
             }
             var node = try shapes.leaf(f.gpa, f.account(), elem_place, refined);

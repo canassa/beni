@@ -1066,6 +1066,10 @@ pub const Table = struct {
                     try n.put(d.c);
                 },
                 .top => {},
+                .part => {
+                    try n.cell(.from(d.a));
+                    try n.path(.from(d.c));
+                },
                 .elem, .others, .level, .below, .loan => {
                     try n.cell(.from(d.a));
                     try n.label(.from(d.b));
@@ -1532,13 +1536,14 @@ pub const Table = struct {
             var at = top;
             while (true) {
                 const o = env.cells.get(at).origin;
-                if (o != .elem and o != .others and o != .level and o != .below and o != .loan) break;
+                if (o != .elem and o != .others and o != .level and o != .below and o != .loan and o != .part) break;
                 chain.append(p.arena, at) catch return error.WriteFailed;
                 try w.writeAll(switch (o) {
                     .elem => "elem(",
                     .others => "others(",
                     .level => "level(",
                     .below => "below(",
+                    .part => "part(",
                     else => "loan(",
                 });
                 at = .from(env.cells.get(at).a);
@@ -1548,6 +1553,11 @@ pub const Table = struct {
             while (i > 0) {
                 i -= 1;
                 const d = env.cells.get(chain.items[i]);
+                if (d.origin == .part) {
+                    try p.path(w, .from(d.c));
+                    try w.writeAll(")");
+                    continue;
+                }
                 if (d.origin == .below) try w.print("#{d}", .{d.c});
                 try w.writeAll("·");
                 try p.label(w, .from(d.b));
@@ -1598,7 +1608,7 @@ pub const Table = struct {
                     try p.path(w, .from(d.b));
                 },
                 .top => try w.writeAll("⊤"),
-                .elem, .others, .level, .below, .loan => unreachable,
+                .elem, .others, .level, .below, .loan, .part => unreachable,
                 .mark => try w.writeAll(switch (env.cells.markOf(c)) {
                     .r, .deep_read => "R",
                     .a => "A",

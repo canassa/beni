@@ -676,7 +676,7 @@ pub const Expansion = struct {
             .cb => if (resolve.goal(cells, c)) |g| try ex.need(g) else ex.refute(.approximate),
             .param => if (incoming != null and d.a == incoming.? and d.b == path.int()) try ex.need(ex.goal) else ex.refute(.approximate),
             .env, .shared => ex.refute(.exact),
-            .esc, .msg, .top, .elem, .others, .level, .below, .loan, .mark => ex.refute(.approximate),
+            .esc, .msg, .top, .elem, .others, .level, .below, .loan, .part, .mark => ex.refute(.approximate),
         }
     }
 
