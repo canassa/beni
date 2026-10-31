@@ -283,3 +283,15 @@ not blanket linearity in source size. Live substitution storage is bounded by th
 current path's explicit expansions and graph traversal; projected frames are
 popped rather than retained. Deterministic tests include compact diamonds at32/64
 levels, mixed structural/projecting aliases and explicitly shadowed parameter0.
+
+
+## Dependency-tainted worker evidence
+
+Outer declaration heads, symbolic continuations and typed entry roots require
+clean transitive dependencies as well as a clean, non-quiet local module.
+Dependency-tainted terms can contain error nodes without a local user error;
+those terms must not enter private evidence publication or add an internal error
+beside the original dependency diagnostic. Clear prior worker evidence before
+fallible module setup and on escaping allocation errors. Quiet, poisoned, locally
+erroneous and dependency-tainted modules retain absent evidence. Restoring valid
+source may reuse the original clean cache entry through the ordinary rules.

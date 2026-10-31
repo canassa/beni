@@ -1604,3 +1604,53 @@ test "generic aliased runtime may store a suspending callback without calling it
         }
     }
 }
+
+test "generic selected entry evidence discards imported error types and restores clean cache" {
+    for ([_]bool{ false, true }) |with_continuation| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w, "import Start exposing (Program)\npub run : Program a → ⊤\nrun _ = ⊤\n");
+        try w.write("platform/beni.json", "{\"platform\":true,\"program\":\"Start.Program\",\"entryKinds\":[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"constructors\":[],\"launches\":[],\"parameters\":[{\"index\":0,\"role\":\"wire\"}]}]}");
+        try w.write("platform/Start.beni", "pub type Program a = Program a\npub make : a → Program a\nmake value = Program value\n");
+        const valid = "pub type alias Bad = Int\npub value : Bad\nvalue = 0\n";
+        try w.write("Library.beni", valid);
+        try w.write("Main.beni", "import Library\nimport Start\nmain : Start.Program Library.Bad\nmain = Start.make Library.value\n");
+        if (with_continuation) try w.write("Main.beni", try std.mem.concat(w.arena.allocator(), u8, &.{
+            "import Task\n",
+            try w.read("Main.beni"),
+            "\npaused : Library.Bad → Library.Bad\npaused value =\n    Task.yieldNow ⊤\n    value\n",
+        }));
+        const clean = try w.run(&.{ "check", "--entries", "--platform=platform", "--cache-dir=cache", "Main.beni", "Library.beni" });
+        try testing.expectEqual(@as(u8, 0), clean.exit_code);
+        try testing.expectEqual(@as(usize, 0), clean.diagnostics.len);
+        try testing.expect(std.mem.indexOf(u8, clean.stdout, "typed-entry-roots proof=ordinary-types wire=false") != null);
+        try w.write("Library.beni", "pub type alias Bad = Missing\npub value : Bad\nvalue = 0\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--entries", "--platform=platform", "--cache-dir=cache", "Main.beni", "Library.beni" },
+            &.{ "check", "--entries", "--platform=platform", "--cache-dir=cache", "Main.beni", "Library.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni", "Library.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni", "Library.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.unbound_type, result.diagnostics[0].code);
+            try testing.expectEqualStrings("Library.beni", result.diagnostics[0].span.file);
+            try testing.expectEqualStrings("", result.stdout);
+            try testing.expect(!w.exists("out"));
+        }
+        try w.write("Library.beni", valid);
+        const restored = try w.run(&.{ "check", "--entries", "--platform=platform", "--cache-dir=cache", "--self-profile=restored.json", "--roundtrip-dispatch", "--jobs=8", "Main.beni", "Library.beni" });
+        try testing.expectEqual(@as(u8, 0), restored.exit_code);
+        try testing.expectEqual(@as(usize, 0), restored.diagnostics.len);
+        try testing.expectEqualStrings(clean.stdout, restored.stdout);
+        const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+        const parsed = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("restored.json"), .{ .ignore_unknown_fields = true });
+        var found = false;
+        for (parsed.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+            try testing.expectEqual(@as(u64, 0), count);
+            found = true;
+        };
+        try testing.expect(found);
+    }
+}

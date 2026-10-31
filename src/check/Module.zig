@@ -123,8 +123,17 @@ pub const Input = struct {
     retained: ?*Retained = null,
 };
 
+fn clearEntryEvidence(gpa: Allocator, table: *Dispatch) void {
+    gpa.free(table.decl_heads);
+    table.decl_heads = &.{};
+    table.continuations.deinit(gpa);
+    table.entry_roots.deinit(gpa);
+}
+
 pub fn check(in: Input) Error!Check.Counters {
     const gpa = in.gpa;
+    clearEntryEvidence(gpa, in.dispatch);
+    errdefer clearEntryEvidence(gpa, in.dispatch);
     const file = in.graph.moduleFile(in.module);
     const bir = in.artifacts.birMut(file);
     const token = if (in.profile) |p| p.begin() else null;
@@ -525,7 +534,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // Private/inferred entry discovery needs outer value heads, not closed keys.
     gpa.free(in.dispatch.decl_heads);
     in.dispatch.decl_heads = &.{};
-    if (!quiet and report.errors == 0) {
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
         const heads = try gpa.alloc(TypeStore.TypeId, bir.decls.len);
         @memset(heads, .none);
         for (bir.decls, decl_scheme, heads) |decl, scheme, *head| {
@@ -543,7 +552,7 @@ pub fn check(in: Input) Error!Check.Counters {
     }
     // Preserve only reachable symbolic site roots before the solved store dies.
     in.dispatch.continuations.deinit(gpa);
-    if (!quiet and report.errors == 0) {
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
         in.dispatch.continuations = @import("ContinuationPlan.zig").build(.{
             .cx = &cx,
             .gpa = gpa,
@@ -571,7 +580,7 @@ pub fn check(in: Input) Error!Check.Counters {
         if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
     }
     in.dispatch.entry_roots.deinit(gpa);
-    if (!quiet and report.errors == 0) {
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
         in.dispatch.entry_roots = @import("EntryRoots.zig").build(.{
             .cx = &cx,
             .gpa = gpa,
@@ -596,12 +605,7 @@ pub fn check(in: Input) Error!Check.Counters {
         };
         if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
     }
-    if (report.errors != 0) {
-        in.dispatch.entry_roots.deinit(gpa);
-        in.dispatch.continuations.deinit(gpa);
-        gpa.free(in.dispatch.decl_heads);
-        in.dispatch.decl_heads = &.{};
-    }
+    if (report.errors != 0 or in.dependency_errors) clearEntryEvidence(gpa, in.dispatch);
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
 
     // A declaration with no body shows its scheme.

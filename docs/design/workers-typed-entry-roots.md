@@ -395,3 +395,15 @@ The public-internal entries.write boundary independently preflights before its
 first byte. Direct callers therefore receive MissingEntryRoots with an empty
 writer rather than partial compact output. Normal CLI callers have already
 converted that condition into the explicit internal diagnostic during inspect.
+
+
+## Dependency-tainted worker evidence
+
+Outer declaration heads, symbolic continuations and typed entry roots require
+clean transitive dependencies as well as a clean, non-quiet local module.
+Dependency-tainted terms can contain error nodes without a local user error;
+those terms must not enter private evidence publication or add an internal error
+beside the original dependency diagnostic. Clear prior worker evidence before
+fallible module setup and on escaping allocation errors. Quiet, poisoned, locally
+erroneous and dependency-tainted modules retain absent evidence. Restoring valid
+source may reuse the original clean cache entry through the ordinary rules.
