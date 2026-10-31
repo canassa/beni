@@ -1,0 +1,51 @@
+-- ownership (project): `LinkedFoldCoverage` with the recursive writer and
+-- the linking writers in another module (ownership-v2.md Appendix B, L×F,
+-- the S3b half with a group writer; R-3.1, R-5.7.4). The block keeps what
+-- `withKids` and `twoTrees` owe their callers, so the verdicts are the
+-- same-module fixture's: a kids list taken from the tree beside it, one
+-- tree twice, and a tree read after it is written (which v1 accepts) are
+-- refused, directly and through `ident`; fresh values are accepted.
+import Roses exposing (Rose)
+
+
+pub kidsOfItself : ⊤ → Rose
+kidsOfItself ⊤ =
+    t = Rose [ Rose [] ]
+    Roses.withKids t (Roses.kidsOf t)
+
+
+pub kidsApart : ⊤ → Rose
+kidsApart ⊤ = Roses.withKids (Rose [ Rose [] ]) [ Rose [] ]
+
+
+pub sameTree : ⊤ → Rose
+sameTree ⊤ =
+    t = Rose [ Rose [] ]
+    Roses.twoTrees t t
+
+
+pub twoFresh : ⊤ → Rose
+twoFresh ⊤ =
+    t = Rose [ Rose [] ]
+    u = Rose [ Rose [] ]
+    Roses.twoTrees t u
+
+
+pub treeReadAfter : ⊤ → Rose × Rose
+treeReadAfter ⊤ =
+    t = Rose [ Rose [] ]
+    u = Rose [ Rose [] ]
+    ( Roses.twoTrees t u, t )
+
+
+pub sameTreeIdent : ⊤ → Rose
+sameTreeIdent ⊤ =
+    t = Rose [ Rose [] ]
+    Roses.twoTreesIdent t t
+
+
+pub twoFreshIdent : ⊤ → Rose
+twoFreshIdent ⊤ =
+    t = Rose [ Rose [] ]
+    u = Rose [ Rose [] ]
+    Roses.twoTreesIdent t u

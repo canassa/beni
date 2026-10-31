@@ -1,0 +1,45 @@
+-- ownership (project): see Main.beni. `incAll` and `incList` push onto
+-- every kids list of a `Rose`; `withKids` and `twoTrees` link their
+-- arguments under one new node and write it.
+pub type Rose
+    = Rose (List Rose)
+
+
+pub incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+pub incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+pub ident : Rose → Rose
+ident r = r
+
+
+pub withKids : Rose, List Rose → Rose
+withKids t ks = incAll (Rose [ t, Rose ks ])
+
+
+pub kidsOf : Rose → List Rose
+kidsOf t =
+    case t of
+        Rose ks →
+            ks
+
+
+pub twoTrees : Rose, Rose → Rose
+twoTrees t u = incAll (Rose [ t, u ])
+
+
+pub twoTreesIdent : Rose, Rose → Rose
+twoTreesIdent t u = incAll (ident (Rose [ t, u ]))

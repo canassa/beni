@@ -1,0 +1,37 @@
+-- ownership (project): `JoinFoldChoice` with the recursive writer and the
+-- choosing helpers in another module (ownership-v2.md Appendix B, J×F, the
+-- S3b half with a group writer; R-4.2.1, R-4.7.5). The verdicts are the
+-- same-module fixture's: one `x` in either arm is accepted; one kids list
+-- at two coexisting depths, alone or in one arm, is refused; `k` at one
+-- depth or the other, and two distinct lists at two depths, are accepted
+-- by v1 and refused by v2 (#1502).
+import Roses exposing (Rose)
+
+
+pub sameArms : Bool → Rose
+sameArms c = Roses.incAll (Roses.same c (Rose [ Rose [] ]))
+
+
+pub twoDepthsShared : ⊤ → Rose
+twoDepthsShared ⊤ =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.twoDepths k)
+
+
+pub sharedArm : Bool → Rose
+sharedArm c =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.sharedOr c k)
+
+
+pub depthArms : Bool → Rose
+depthArms c =
+    k = [ Rose [] ]
+    Roses.incAll (Roses.depthOr c k)
+
+
+pub distinctArms : Bool → Rose
+distinctArms c =
+    a = [ Rose [] ]
+    b = [ Rose [] ]
+    Roses.incAll (Roses.distinctOr c a b)
