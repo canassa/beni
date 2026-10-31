@@ -1,0 +1,80 @@
+{
+  "platforms/browser-inline": {
+    "class": {
+      "native": 180,
+      "data": 127,
+      "mixed": 14
+    },
+    "by_origin": {
+      "native": {
+        "direct-global": 23,
+        "global-selector": 35,
+        "local-or-computed-value": 70,
+        "declaration-parameter": 52
+      },
+      "data": {
+        "local-or-computed-value": 41,
+        "global-selector": 18,
+        "declaration-parameter": 52,
+        "direct-global": 16
+      },
+      "mixed": {
+        "declaration-parameter": 5,
+        "local-or-computed-value": 9
+      }
+    },
+    "native_dynamic_names": 8
+  },
+  "platforms/browser": {
+    "class": {
+      "data": 715,
+      "native": 329,
+      "mixed": 56
+    },
+    "by_origin": {
+      "native": {
+        "direct-global": 47,
+        "global-selector": 65,
+        "local-or-computed-value": 124,
+        "declaration-parameter": 93
+      },
+      "data": {
+        "direct-global": 27,
+        "global-selector": 29,
+        "local-or-computed-value": 311,
+        "declaration-parameter": 348
+      },
+      "mixed": {
+        "local-or-computed-value": 47,
+        "declaration-parameter": 9
+      }
+    },
+    "native_dynamic_names": 14
+  },
+  "core": {
+    "class": {
+      "data": 1288,
+      "native": 47,
+      "mixed": 100
+    },
+    "by_origin": {
+      "native": {
+        "direct-global": 12,
+        "global-selector": 15,
+        "local-or-computed-value": 14,
+        "declaration-parameter": 6
+      },
+      "data": {
+        "direct-global": 121,
+        "global-selector": 122,
+        "declaration-parameter": 511,
+        "local-or-computed-value": 534
+      },
+      "mixed": {
+        "declaration-parameter": 41,
+        "local-or-computed-value": 59
+      }
+    },
+    "native_dynamic_names": 2
+  }
+}

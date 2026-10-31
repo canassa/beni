@@ -3786,6 +3786,23 @@ failures as its tag), `browser/direct/InitThrows` (one golden on both platforms)
 
 ## 23. Slice 3d — owned sends, and navigation as commands (normative from 2026-10-12)
 
+*Worker dependency note, 2026-10-30; specified, not built in v2. V1 is frozen.*
+[workers.md](workers.md) §5/§9
+extends owned sends to native backing identity: views, aliases, models,
+closures and in-flight fibers all participate. Preparation reserves ownership;
+commit consumes the whole attempted list on success or failure because native
+steps can partially detach it. Privileged cleanup releases still-local remnants,
+never resurrects aliases. Port moves rehome cleanup registration. Worker init
+state belongs to its root; all handlers borrow stable state. Serial/concurrent admission
+changes ordering, not state ownership. Atomic Ref/machine updates and scoped
+resource transactions preserve state across request cancellation. Chunk/Reply/Sink/Message tokens enforce one owner and one
+terminal outcome. SharedArrayBuffer is explicitly shared storage, not a move.
+Negative corpus/oracle fixtures must cover these demands before launching ships.
+This worker extension belongs to [ownership-v2.md](ownership-v2.md), not this
+frozen pass. [Callback protocol rows](workers-callback-contracts.md) establish
+obligations without any new syntax; §7 here supplies the entry-contract rationale.
+
+
 *Amends §16.2, §16.11, §18.8, §20.2–§20.9 and §22.3. Sections 1–22 keep their numbers and text; where this
 section changes a rule, it wins. Research 80 measures it.*
 

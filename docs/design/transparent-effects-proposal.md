@@ -2082,6 +2082,23 @@ a page painting through a loop of pure yields. Everything in §16.7 remains undo
 
 ## 17. The adoption: Effect parity, as specified (2026-10-02)
 
+*Amended 2026-10-30; specified, not built.*
+
+Specified, not built. [workers.md](workers.md) §7–§9 extends §16–§17 with
+message-based scoped worker calls. A native send is impure; waiting for ready,
+a reply, stream credits or remote finalizers suspends. Scheduler/fiber state
+is local to each realm; no fiber handle crosses a thread. Interrupt is a
+protocol message and completion waits for the remote handler's cleanup.
+
+Wire exits encode success, typed failure, interrupt and private fatal defect
+control; public `Task.Exit a = Done a | Cancelled` does not change. Log/trace
+metadata crosses, sink functions do not. Normal close is cooperative; explicit
+abort and browser process loss cannot claim finalizer completion. Pools,
+stream back-pressure, acknowledgments and leases have bounded policies in
+workers.md. Research 48 records these as specified/missing, not implemented
+Effect parity. The worker design's owner decisions gate affected lifecycle work.
+
+
 **Status: normative** for slices P1–P5 of [`plans/effects-plan.md`](../../plans/effects-plan.md) §8
 (the kernel's last pieces, time, the structured combinators, schedules, coordination), for the
 logging and tracing of P7–P8, and for the Node rule research 48's finding 3 asks for. It is slice

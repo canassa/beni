@@ -1,0 +1,59 @@
+import Duration
+import Js
+import Js.Buffer as Buffer
+import Task
+
+
+note : String → ⊤
+note text = Js.to (Js.call (Js.global "console") "log" [ Js.from text ])
+
+
+invoke : sync (⊤ → Buffer.Buffer Int), ⊤ → Buffer.Buffer Int
+invoke make token = make token
+
+
+raise : Js.Value → ⊤
+raise error = Js.throw error
+
+
+caughtArgument : ⊤ → Bool
+caughtArgument ⊤ =
+    expected = Js.construct (Js.global "Error") [ Js.from "buffer make argument" ]
+    Js.catchIf
+        (λ⊤ →
+            values : Buffer.Buffer Int
+            values = Buffer.make (raise expected)
+            Buffer.length values > 0
+        )
+        (λobserved → Js.same observed expected)
+        λ_ → True
+
+
+pub exercise : ⊤ → String
+exercise ⊤ =
+    direct : Buffer.Buffer Int
+    direct = Buffer.make (Js.to (Js.call (Js.global "console") "log" [ Js.from "direct" ]))
+    indirect =
+        invoke Buffer.make (Js.to (Js.call (Js.global "console") "log" [ Js.from "indirect" ]))
+    helper : Buffer.Buffer Int
+    helper = Buffer.make (note "helper")
+    String.fromInt (Buffer.length direct)
+        ++ "/"
+        ++ String.fromInt (Buffer.length indirect)
+        ++ "/"
+        ++ String.fromInt (Buffer.length helper)
+        ++ (if caughtArgument ⊤ then ":caught" else ":missed")
+
+
+waitToken : ⊤ → ⊤
+waitToken ⊤ =
+    note "before-wait"
+    Task.sleep (Duration.millis 1)
+    note "after-wait"
+
+
+pub paused : ⊤ → String
+paused ⊤ =
+    values : Buffer.Buffer Int
+    values = Buffer.make (waitToken ⊤)
+    "paused:" ++ String.fromInt (Buffer.length values)

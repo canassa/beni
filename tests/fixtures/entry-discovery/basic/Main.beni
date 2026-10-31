@@ -1,0 +1,45 @@
+import Start
+import Worker
+
+
+first : Int, Int → Int
+first _ value = value
+
+
+second : Int, Int → Int
+second _ value = value + 1
+
+
+callbacks init =
+    { init = init
+    , start = first
+    , handle = λ_ _ value → value
+    , stream = λ_ _ _ value → value
+    }
+
+
+make init = Worker.make (callbacks init)
+
+
+foo = make first
+
+
+bar = make second
+
+
+alias1 = foo
+
+
+alias2 = alias1
+
+
+choose flag = if flag then alias2 else bar
+
+
+begin context value =
+    Worker.open (choose True) ⊤
+    value
+
+
+main : Start.Program
+main = Start.make (callbacks begin)

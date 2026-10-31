@@ -85,6 +85,7 @@ const Var = TypeStore.Var;
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
     gpa: Allocator,
+    entry_selection: *const @import("../entry/Selection.zig") = &.{},
     scratch: *Arena,
     patterns: *Arena,
     graph: *const Graph,
@@ -122,8 +123,19 @@ pub const Input = struct {
     retained: ?*Retained = null,
 };
 
+fn clearEntryEvidence(gpa: Allocator, table: *Dispatch) void {
+    gpa.free(table.decl_heads);
+    table.decl_heads = &.{};
+    table.continuations.deinit(gpa);
+    table.entry_roots.deinit(gpa);
+    table.nominal_layouts.deinit(gpa);
+}
+
 pub fn check(in: Input) Error!Check.Counters {
     const gpa = in.gpa;
+    clearEntryEvidence(gpa, in.dispatch);
+    errdefer clearEntryEvidence(gpa, in.dispatch);
+
     const file = in.graph.moduleFile(in.module);
     const bir = in.artifacts.birMut(file);
     const token = if (in.profile) |p| p.begin() else null;
@@ -172,6 +184,7 @@ pub fn check(in: Input) Error!Check.Counters {
     schemas.key_observer = key_preparation.observer();
     try schemas.buildAll();
     try key_preparation.run();
+    var nominal_parameters = key_preparation.params;
     schemas.key_observer = null;
     schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
@@ -250,7 +263,7 @@ pub fn check(in: Input) Error!Check.Counters {
         // requirement names is the annotation's (static-dispatch-spike.md
         // §2.4): the scheme's requirements, which the writer publishes.
         try Decl.attachWhere(&cx, d, &b, @intCast(i));
-        effects.schemeReading(@intCast(i), reading_start, store.count());
+        try effects.schemeReading(@intCast(i), annotation, reading_start, store.count(), b.scope.items);
         // An Elm curried annotation over a definition of as many
         // parameters is one mistake, reported at the body; its callers are
         // not held to a promise the author did not mean (checker.md §8.7).
@@ -318,6 +331,7 @@ pub fn check(in: Input) Error!Check.Counters {
     for (bir.decls) |d| if (d.kind == .schema) {
         var final_keys = try KeyKinds.Preparation.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir, &schemas, &key_errors);
         try final_keys.run();
+        nominal_parameters = final_keys.params;
         if (final_keys.changed) try KeyKinds.validateFormations(scratch, store, in.types, bir, inst_type, decl_scheme, &key_errors);
         break;
     };
@@ -521,6 +535,99 @@ pub fn check(in: Input) Error!Check.Counters {
     } else .empty;
     try reportKeyErrors(&report, key_errors.items, &reported_keys);
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
+    // Private/inferred entry discovery needs outer value heads, not closed keys.
+    gpa.free(in.dispatch.decl_heads);
+    in.dispatch.decl_heads = &.{};
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
+        const heads = try gpa.alloc(TypeStore.TypeId, bir.decls.len);
+        @memset(heads, .none);
+        for (bir.decls, decl_scheme, heads) |decl, scheme, *head| {
+            if (!decl.kind.isValue()) continue;
+            const value_type = scheme.unwrap() orelse continue;
+            switch (store.resolvedContent(value_type)) {
+                .structure => |flat| switch (flat) {
+                    .app => |app| head.* = app.type,
+                    else => {},
+                },
+                else => {},
+            }
+        }
+        in.dispatch.decl_heads = heads;
+    }
+    // Preserve only reachable symbolic site roots before the solved store dies.
+    in.dispatch.continuations.deinit(gpa);
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
+        in.dispatch.continuations = @import("ContinuationPlan.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .effects = &effects,
+            .dispatch = in.dispatch,
+            .crossing = if (type_keys) |t| t.crossing else &.{},
+            .decl_scheme = decl_scheme,
+            .decl_body = decl_display,
+            .inst_type = inst_type,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                gpa.free(in.dispatch.decl_heads);
+                in.dispatch.decl_heads = &.{};
+                const message = try std.fmt.allocPrint(scratch, "this clean module's symbolic continuation evidence could not be published ({s})", .{@errorName(err)});
+                try report.internal(@fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    }
+    var nominal_work: @import("NominalLayouts.zig").Work = .{};
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
+        in.dispatch.nominal_layouts = @import("NominalLayouts.zig").build(.{
+            .cx = &cx,
+            .parameters = nominal_parameters,
+            .work = if (in.profile) |p| (if (p.enabled) &nominal_work else null) else null,
+            .crossing = if (type_keys) |t| t.crossing else &.{},
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                const message = try std.fmt.allocPrint(scratch, "this clean module's nominal layouts could not be published ({s})", .{@errorName(err)});
+                try report.internal(@fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    }
+    in.dispatch.entry_roots.deinit(gpa);
+    if (!quiet and !in.dependency_errors and report.errors == 0) {
+        in.dispatch.entry_roots = @import("EntryRoots.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .effects = &effects,
+            .dispatch = in.dispatch,
+            .crossing = if (type_keys) |t| t.crossing else &.{},
+            .decl_scheme = decl_scheme,
+            .decl_body = decl_display,
+            .inst_type = inst_type,
+        }, in.entry_selection) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                const message = try std.fmt.allocPrint(scratch, "this clean module's typed entry roots could not be published ({s})", .{@errorName(err)});
+                try report.internal(@fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    }
+    if (report.errors != 0 or in.dependency_errors) clearEntryEvidence(gpa, in.dispatch);
+
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
 
     // A declaration with no body shows its scheme.
@@ -541,6 +648,15 @@ pub fn check(in: Input) Error!Check.Counters {
         .generalisations = solver.generalisations,
         .instantiations = solver.instantiate.instantiations,
         .derived_context_runs = solver.contexts.runs_total,
+        .nominal_owners = nominal_work.owners,
+        .nominal_ctors = nominal_work.ctors,
+        .nominal_args = nominal_work.args,
+        .nominal_source_nodes = nominal_work.reader.nodes,
+        .nominal_alias_bodies = nominal_work.reader.aliases,
+        .nominal_cover_headers = nominal_work.cover_headers,
+        .nominal_cover_ctors = nominal_work.cover_ctors,
+        .nominal_cover_refs = nominal_work.cover_refs,
+        .nominal_cover_terms = nominal_work.cover_terms,
     };
 }
 

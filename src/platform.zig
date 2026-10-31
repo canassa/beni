@@ -455,19 +455,39 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
     // A chain whose runtime module is the whole runtime names no file
     // (`boundary.md` §5.2, amended 2026-10-02): the module's `run` is what
     // the entry file hands `main` to, held to that by `Emit`.
-    const module_runtime = chain.firstMarkup("lowering") != null and chain.firstMarkup("module") != null;
+    var has_entry_runtime = false;
+    if (program) |p| for (chain.layers) |layer| {
+        for (layer.manifest.entryKinds) |kind| {
+            if (std.mem.eql(u8, kind.programType, p.value)) has_entry_runtime = true;
+        }
+    };
+    const has_entry_kinds = for (chain.layers) |layer| {
+        if (layer.manifest.entryKinds.len != 0) break true;
+    } else false;
+    // An invalid row is diagnosed against its own manifest after interfaces
+    // resolve. Do not hide that semantic error behind the legacy load error.
+    const module_runtime = has_entry_kinds or (chain.firstMarkup("lowering") != null and chain.firstMarkup("module") != null);
     if (needs_program and (program == null or (runtime == null and !module_runtime))) return error.Incomplete;
     const entry = chain.first("entry");
     const html = chain.first("html");
     const exports = chain.firstExports();
     const lowering = chain.firstMarkup("lowering");
     const markup_runtime = chain.firstMarkup("runtime");
+    var entry_kinds: std.ArrayList(Emit.EntryKind) = .empty;
+    for (chain.layers, 0..) |layer, layer_index| {
+        for (layer.manifest.entryKinds) |kind| try entry_kinds.append(arena, .{
+            .definition = kind,
+            .root = layer.root,
+            .layer = @intCast(layer_index),
+        });
+    }
     const dirs = try arena.alloc([]const u8, chain.layers.len);
     for (dirs, chain.layers) |*d, layer| d.* = layer.out_dir;
     return .{
         .platform = .{
             .program = if (program) |p| p.value else null,
-            .runtime = if (runtime) |r| r.value else null,
+            .entry_kinds = entry_kinds.items,
+            .runtime = if (has_entry_runtime) null else if (runtime) |r| r.value else null,
             .runtime_root = if (runtime) |r| chain.layers[r.layer].root else chain.top().root,
             .runtime_dir = if (runtime) |r| chain.layers[r.layer].out_dir else Emit.platform_dir,
             // Optional: a chain that says nothing about the entry file gets
@@ -529,11 +549,7 @@ fn collectEmbedded(arena: Allocator, session: *Session, chain: *const Chain) All
     var out: std.ArrayList(Emit.Asset) = .empty;
     // A `--core-root` run reads core from disk, so the embedded copy must
     // not shadow it.
-    if (session.options.core_root == null) {
-        for (core_package.assets) |asset| {
-            try out.append(arena, .{ .path = asset.path, .bytes = asset.bytes });
-        }
-    }
+    try @import("core_assets.zig").append(Emit.Asset, arena, arena, session.io, session.options.core_root, &out);
     for (chain.layers) |layer| {
         const p = layer.embedded orelse continue;
         for (p.assets) |asset| {

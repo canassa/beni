@@ -2635,6 +2635,17 @@ names `Schema.structural`, which skips the module rule for the outermost type.
 
 ## 13. Suspending conversions
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §5
+composes directional schema conversion with Wire evidence. Encoded remains a
+typed beni endpoint, not raw host data. Suspendable conversion runs in prepare;
+native commit is synchronous. Identity-deduplicated transfer collection feeds
+the ownership proof and preserves partial-failure consumption. Unexpected host
+throws remain defects. The owner decision in workers §3 selects shared wire
+names/selective normalization versus universal canonical codecs; differential
+compiled/library tests cover the chosen release representation. A nontrivial
+schema conversion is not silently skipped because its result can be cloned.
+
+
 *Added 2026-10-02; specified, not built* (A.9 Q11, A.10). This supersedes §7's "synchronous until
 P2" and its refusal to authorise an effects implementation, now that the owner has decided and the
 runtime spike has landed (`transparent-effects-proposal.md` §14–§16).

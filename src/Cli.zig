@@ -108,7 +108,7 @@ pub const DiagnosticsFormat = enum { text, json };
 /// `typekeys` is hidden, as `--stage=ownership`'s flags are: the checker's
 /// type keys (checker-v2.md §36), an artifact only the points-to analysis
 /// reads, printed for the corpus.
-pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership, typekeys };
+pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership, typekeys, continuations, entries };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -292,6 +292,10 @@ pub const Cache = struct {
     /// fixture asserts that a module installed from the cache has the keys a
     /// fresh check gives it.
     type_keys: bool = false,
+    /// Hidden cached-artifact inspector, check only; no default output change.
+    continuations: bool = false,
+    /// Hidden compact cached-artifact inspector, check only.
+    entries: bool = false,
 };
 
 pub const Check = struct {
@@ -869,6 +873,18 @@ const CheckSpecific = struct {
             self.consumed = true;
             return null;
         }
+        if (std.mem.eql(u8, name, "--entries")) {
+            if (value != null) return noValue(name);
+            self.cache.entries = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--continuations")) {
+            if (value != null) return noValue(name);
+            self.cache.continuations = true;
+            self.consumed = true;
+            return null;
+        }
         if (std.mem.eql(u8, name, "--type-keys")) {
             if (value != null) return noValue(name);
             self.cache.type_keys = true;
@@ -890,6 +906,10 @@ fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     if (s.positionals.items.len == 0) {
         s.positionals.deinit(gpa);
         return .{ .usage = .init("beni: check needs at least one path", .{}) };
+    }
+    if (s.specific.cache.entries and s.specific.platform == null) {
+        s.positionals.deinit(gpa);
+        return .{ .usage = .init("beni: --entries requires --platform", .{}) };
     }
     // No "check needs --platform": a library, a single module and anything
     // that imports only core must stay checkable with no flag (frontend.md
@@ -1428,6 +1448,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     defer s.positionals.deinit(gpa);
     if (try s.scan(gpa, args)) |u| return .{ .usage = u };
     const stage = s.specific.stage orelse return .{ .usage = .init("beni: dump needs --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership", .{}) };
+    if (stage == .entries and s.specific.platform == null) return .{ .usage = .init("beni: --stage=entries requires --platform", .{}) };
     // A platform is a package of MODULES, so it changes what an import
     // resolves to and nothing else. The stages below it are a function of
     // one file's own bytes, and accepting the flag there would be a flag
@@ -1471,7 +1492,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
 pub fn stageResolvesImports(stage: Stage) bool {
     return switch (stage) {
         .tokens, .ast, .bir => false,
-        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership, .typekeys => true,
+        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership, .typekeys, .continuations, .entries => true,
     };
 }
 

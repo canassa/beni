@@ -1555,6 +1555,15 @@ one spelling to the other.
 
 ## 10. Diagnostics named in this document
 
+*Worker integration, decided 2026-10-30; specified, not built.*
+[workers.md](workers.md) §2 and §4 use ordinary native types generated from pinned
+WebIDL and inferred realm summaries. No realm keyword or record-field qualifier
+syntax is added. entryKinds protocol metadata supplies callback obligations;
+ownership checker v2 checks inferred summaries. Top-level program references
+root separate execution graphs without extra ordinary mains or coercions.
+Shared build-wide wire names and selective normalization are decided in #1305;
+there is no universal codec requirement. The language grammar remains unchanged.
+
 Every diagnostic has a stable snake_case code, a severity, a file, a `{line, col}` start and end
 (end exclusive, same line or later), a title in `SHOUTING CASE` in Elm's style, and a message. The
 codes named above are the M1 catalogue; each has at least one fixture under

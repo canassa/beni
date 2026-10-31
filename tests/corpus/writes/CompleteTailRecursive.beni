@@ -1,0 +1,52 @@
+-- writes: recursive own-module helpers retain joined behavior.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    flag : Bool
+    left : Int
+    right : Int
+    after : Int
+
+
+type Msg
+    = Step
+
+
+choose : Int → Bool
+choose n =
+    if n ≤ 0 then
+        True
+    else
+        choose (n - 1)
+
+
+bump : Model → Model
+bump model =
+    if choose model.after then
+        { model | left = model.left + 1 }
+    else
+        { model | right = model.right + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Step →
+            next = bump model
+            { next | after = model.after + 1 }
+
+
+view : Model → Html Msg
+view model = <button onClick={Step}>{model.left}{model.right}{model.after}</button>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+        , update = update
+        , view = view
+        }

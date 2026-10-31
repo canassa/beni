@@ -1,0 +1,507 @@
+typed-entry-roots proof=ordinary-types wire=false
+typed-module app:Main schema=1 present=true
+  typed-candidate private decl=1 scheme=0
+    role 0 wire parameter=0 path="message" root view=5 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate sharedValue decl=2 scheme=1
+    role 0 wire parameter=0 path="message" root view=11 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate aliased decl=4 scheme=2
+    role 0 wire parameter=0 path="message" root view=20 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate hiddenPayload decl=6 scheme=3
+    role 0 wire parameter=0 path="message" root view=26 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate callable decl=7 scheme=4
+    role 0 wire parameter=0 path="message" root view=32 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate free decl=8 scheme=5
+    role 0 wire parameter=0 path="message" obligation view=36 remaining=0
+    role 1 local parameter=1 path= excluded
+  typed-candidate inferredPhantom decl=9 scheme=6
+    role 0 wire parameter=0 path="message" obligation view=40 remaining=0
+    role 1 local parameter=1 path= excluded
+  typed-candidate knownMismatch decl=10 scheme=7
+    role 0 wire parameter=0 path="message" shape_mismatch view=44 remaining=0
+    role 1 local parameter=1 path= excluded
+  typed-candidate rawLocal decl=11 scheme=8
+    role 0 wire parameter=0 path="message" root view=50 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate constrained decl=12 scheme=9
+    role 0 wire parameter=0 path="message" root view=56 remaining=1
+    role 1 local parameter=1 path= excluded
+  typed-candidate main decl=15 scheme=10
+  view 0 scheme=0 term=6 env=4294967295
+  view 1 scheme=0 term=6 env=4294967295
+  view 2 scheme=0 term=3 env=4294967295
+  view 3 scheme=0 term=3 env=4294967295
+  view 4 scheme=0 term=1 env=4294967295
+  view 5 scheme=0 term=1 env=4294967295
+  view 6 scheme=1 term=13 env=4294967295
+  view 7 scheme=1 term=13 env=4294967295
+  view 8 scheme=1 term=10 env=4294967295
+  view 9 scheme=1 term=10 env=4294967295
+  view 10 scheme=1 term=8 env=4294967295
+  view 11 scheme=1 term=8 env=4294967295
+  view 12 scheme=2 term=17 env=4294967295
+  view 13 scheme=2 term=14 env=4294967295
+  view 14 scheme=2 term=16 env=4294967295
+  view 15 scheme=2 term=21 env=0
+  view 16 scheme=2 term=19 env=0
+  view 17 scheme=2 term=18 env=0
+  view 18 scheme=2 term=25 env=1
+  view 19 scheme=2 term=23 env=1
+  view 20 scheme=2 term=23 env=1
+  view 21 scheme=3 term=32 env=4294967295
+  view 22 scheme=3 term=32 env=4294967295
+  view 23 scheme=3 term=30 env=4294967295
+  view 24 scheme=3 term=30 env=4294967295
+  view 25 scheme=3 term=28 env=4294967295
+  view 26 scheme=3 term=28 env=4294967295
+  view 27 scheme=4 term=38 env=4294967295
+  view 28 scheme=4 term=38 env=4294967295
+  view 29 scheme=4 term=36 env=4294967295
+  view 30 scheme=4 term=36 env=4294967295
+  view 31 scheme=4 term=34 env=4294967295
+  view 32 scheme=4 term=34 env=4294967295
+  view 33 scheme=5 term=41 env=4294967295
+  view 34 scheme=5 term=41 env=4294967295
+  view 35 scheme=5 term=39 env=4294967295
+  view 36 scheme=5 term=39 env=4294967295
+  view 37 scheme=6 term=44 env=4294967295
+  view 38 scheme=6 term=44 env=4294967295
+  view 39 scheme=6 term=42 env=4294967295
+  view 40 scheme=6 term=42 env=4294967295
+  view 41 scheme=7 term=47 env=4294967295
+  view 42 scheme=7 term=47 env=4294967295
+  view 43 scheme=7 term=45 env=4294967295
+  view 44 scheme=7 term=45 env=4294967295
+  view 45 scheme=8 term=53 env=4294967295
+  view 46 scheme=8 term=53 env=4294967295
+  view 47 scheme=8 term=51 env=4294967295
+  view 48 scheme=8 term=51 env=4294967295
+  view 49 scheme=8 term=49 env=4294967295
+  view 50 scheme=8 term=49 env=4294967295
+  view 51 scheme=9 term=59 env=4294967295
+  view 52 scheme=9 term=59 env=4294967295
+  view 53 scheme=9 term=57 env=4294967295
+  view 54 scheme=9 term=57 env=4294967295
+  view 55 scheme=9 term=55 env=4294967295
+  view 56 scheme=9 term=55 env=4294967295
+  frame 0 args=13,14
+  frame 1 args=17
+module Main
+scheme 0 body=6 quantified=2 effects=18
+  q 0 kind=0 equatable=false name=- constraints=0
+  q 1 kind=0 equatable=false name=- constraints=0
+scheme 1 body=13 quantified=2 effects=44
+  q 0 kind=0 equatable=false name=- constraints=0
+  q 1 kind=0 equatable=false name=- constraints=0
+scheme 2 body=17 quantified=2 effects=65
+  q 0 kind=0 equatable=false name=a constraints=0
+  q 1 kind=0 equatable=false name=b constraints=0
+scheme 3 body=32 quantified=1
+  q 0 kind=0 equatable=false name=- constraints=0
+scheme 4 body=38 quantified=1 effects=110
+  q 0 kind=0 equatable=false name=- constraints=0
+scheme 5 body=41 quantified=2
+  q 0 kind=0 equatable=false name=a constraints=0
+  q 1 kind=0 equatable=false name=b constraints=0
+scheme 6 body=44 quantified=2
+  q 0 kind=0 equatable=false name=config constraints=0
+  q 1 kind=0 equatable=false name=state constraints=0
+scheme 7 body=47 quantified=0
+scheme 8 body=53 quantified=1
+  q 0 kind=0 equatable=false name=- constraints=0
+scheme 9 body=59 quantified=1
+  q 0 kind=0 equatable=false name=a constraints=1
+    where eq term=61
+scheme 10 body=62 quantified=0
+typeref 0 core List.List
+typeref 1 platform Worker.Program
+typeref 2 app Main.ProgramAlias body=21
+typeref 3 app Main.Packet body=25
+typeref 4 app Main.Secret
+typeref 5 core Basics.Int
+typeref 6 core Js.Value
+typeref 7 core Basics.Bool
+typeref 8 platform Start.Program
+term 0 var 0 0
+term 1 app 0 0
+term 2 empty_record 0 0
+term 3 record 2 2
+  field message term=1
+term 4 var 1 0
+term 5 func 5 4
+term 6 app 1 7
+term 7 var 0 0
+term 8 app 0 26
+term 9 empty_record 0 0
+term 10 record 28 9
+  field message term=8
+term 11 var 1 0
+term 12 func 31 11
+term 13 app 1 33
+term 14 var 0 0
+term 15 var 1 0
+term 16 func 52 15
+term 17 alias 2 54
+term 18 var 0 0
+term 19 alias 3 74
+term 20 var 1 0
+term 21 app 1 76
+term 22 var 0 0
+term 23 app 0 79
+term 24 empty_record 0 0
+term 25 record 81 24
+  field message term=23
+term 26 var 0 0
+term 27 app 0 84
+term 28 app 4 86
+term 29 empty_record 0 0
+term 30 record 88 29
+  field message term=28
+term 31 unit 0 0
+term 32 app 1 91
+term 33 var 0 0
+term 34 func 98 33
+term 35 empty_record 0 0
+term 36 record 100 35
+  field message term=34
+term 37 unit 0 0
+term 38 app 1 103
+term 39 var 0 0
+term 40 var 1 0
+term 41 app 1 119
+term 42 var 0 0
+term 43 var 1 0
+term 44 app 1 130
+term 45 app 5 141
+term 46 unit 0 0
+term 47 app 1 142
+term 48 var 0 0
+term 49 app 0 145
+term 50 empty_record 0 0
+term 51 record 147 50
+  field message term=49
+term 52 app 6 150
+term 53 app 1 151
+term 54 var 0 0
+term 55 app 0 158
+term 56 empty_record 0 0
+term 57 record 160 56
+  field message term=55
+term 58 unit 0 0
+term 59 app 1 163
+term 60 app 7 166
+term 61 func 167 60
+term 62 app 8 176
+extra 0 1
+extra 1 0
+extra 2 2
+extra 3 2
+extra 4 1
+extra 5 1
+extra 6 4
+extra 7 2
+extra 8 3
+extra 9 5
+extra 10 0
+extra 11 4294967295
+extra 12 0
+extra 13 0
+extra 14 0
+extra 15 4294967295
+extra 16 0
+extra 17 0
+extra 18 1
+extra 19 512
+extra 20 0
+extra 21 1
+extra 22 0
+extra 23 0
+extra 24 1
+extra 25 536870913
+extra 26 1
+extra 27 7
+extra 28 2
+extra 29 6
+extra 30 8
+extra 31 1
+extra 32 11
+extra 33 2
+extra 34 10
+extra 35 12
+extra 36 0
+extra 37 4294967295
+extra 38 0
+extra 39 0
+extra 40 0
+extra 41 4294967295
+extra 42 0
+extra 43 0
+extra 44 1
+extra 45 512
+extra 46 0
+extra 47 1
+extra 48 0
+extra 49 0
+extra 50 1
+extra 51 536870913
+extra 52 1
+extra 53 15
+extra 54 2
+extra 55 14
+extra 56 16
+extra 57 0
+extra 58 8
+extra 59 0
+extra 60 0
+extra 61 0
+extra 62 9
+extra 63 0
+extra 64 0
+extra 65 1
+extra 66 512
+extra 67 0
+extra 68 1
+extra 69 0
+extra 70 0
+extra 71 2
+extra 72 1610612736
+extra 73 536870913
+extra 74 1
+extra 75 18
+extra 76 2
+extra 77 19
+extra 78 20
+extra 79 1
+extra 80 22
+extra 81 2
+extra 82 15
+extra 83 23
+extra 84 1
+extra 85 26
+extra 86 1
+extra 87 27
+extra 88 2
+extra 89 18
+extra 90 28
+extra 91 2
+extra 92 30
+extra 93 31
+extra 94 0
+extra 95 4294967295
+extra 96 0
+extra 97 0
+extra 98 1
+extra 99 33
+extra 100 2
+extra 101 19
+extra 102 34
+extra 103 2
+extra 104 36
+extra 105 37
+extra 106 0
+extra 107 4294967295
+extra 108 0
+extra 109 0
+extra 110 1
+extra 111 512
+extra 112 0
+extra 113 1
+extra 114 0
+extra 115 0
+extra 116 2
+extra 117 536870912
+extra 118 1073741844
+extra 119 2
+extra 120 39
+extra 121 40
+extra 122 0
+extra 123 21
+extra 124 0
+extra 125 0
+extra 126 0
+extra 127 22
+extra 128 0
+extra 129 0
+extra 130 2
+extra 131 42
+extra 132 43
+extra 133 0
+extra 134 23
+extra 135 0
+extra 136 0
+extra 137 0
+extra 138 24
+extra 139 0
+extra 140 0
+extra 141 0
+extra 142 2
+extra 143 45
+extra 144 46
+extra 145 1
+extra 146 48
+extra 147 2
+extra 148 27
+extra 149 49
+extra 150 0
+extra 151 2
+extra 152 51
+extra 153 52
+extra 154 0
+extra 155 4294967295
+extra 156 0
+extra 157 0
+extra 158 1
+extra 159 54
+extra 160 2
+extra 161 31
+extra 162 55
+extra 163 2
+extra 164 57
+extra 165 58
+extra 166 0
+extra 167 2
+extra 168 54
+extra 169 54
+extra 170 32
+extra 171 61
+extra 172 0
+extra 173 30
+extra 174 170
+extra 175 1
+extra 176 0
+scheme-proof 0 total=true identities=
+scheme-proof 1 total=true identities=
+scheme-proof 2 total=true identities=
+scheme-proof 3 total=true identities=
+scheme-proof 4 total=true identities=
+scheme-proof 5 total=true identities=
+scheme-proof 6 total=true identities=
+scheme-proof 7 total=true identities=
+scheme-proof 8 total=true identities=
+scheme-proof 9 total=true identities=
+scheme-proof 10 total=true identities=
+nominal-module app:Main schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Secret kind=adt arity=1 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Secret ordinal=0 args=[0]
+module Main
+scheme 0 body=2 quantified=1
+  q 0 kind=0 equatable=false name=a constraints=0
+typeref 0 app Main.Secret
+term 0 var 0 0
+term 1 app 0 0
+term 2 tuple 2 0
+extra 0 1
+extra 1 0
+extra 2 2
+extra 3 1
+extra 4 0
+extra 5 0
+extra 6 3
+extra 7 0
+extra 8 0
+nominal-module platform:Start schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Program kind=adt arity=0 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Program ordinal=0 args=[21]
+module Start
+scheme 0 body=22 quantified=0
+typeref 0 platform Start.Program
+typeref 1 core Basics.Int
+term 0 app 0 0
+term 1 app 1 1
+term 2 app 1 2
+term 3 app 1 3
+term 4 app 1 4
+term 5 func 5 4
+term 6 app 1 9
+term 7 app 1 10
+term 8 app 1 11
+term 9 func 12 8
+term 10 app 1 15
+term 11 app 1 16
+term 12 app 1 17
+term 13 func 18 12
+term 14 app 1 21
+term 15 app 1 22
+term 16 app 1 23
+term 17 app 1 24
+term 18 app 1 25
+term 19 func 26 18
+term 20 empty_record 0 0
+term 21 record 31 20
+  field handle term=5
+  field init term=9
+  field start term=13
+  field stream term=19
+term 22 tuple 40 0
+extra 0 0
+extra 1 0
+extra 2 0
+extra 3 0
+extra 4 0
+extra 5 3
+extra 6 1
+extra 7 2
+extra 8 3
+extra 9 0
+extra 10 0
+extra 11 0
+extra 12 2
+extra 13 6
+extra 14 7
+extra 15 0
+extra 16 0
+extra 17 0
+extra 18 2
+extra 19 10
+extra 20 11
+extra 21 0
+extra 22 0
+extra 23 0
+extra 24 0
+extra 25 0
+extra 26 4
+extra 27 14
+extra 28 15
+extra 29 16
+extra 30 17
+extra 31 8
+extra 32 5
+extra 33 5
+extra 34 6
+extra 35 9
+extra 36 7
+extra 37 13
+extra 38 8
+extra 39 19
+extra 40 2
+extra 41 0
+extra 42 21
+nominal-module platform:Worker schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Program kind=adt arity=2 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Program ordinal=0 args=[]
+module Worker
+scheme 0 body=3 quantified=2
+  q 0 kind=0 equatable=false name=config constraints=0
+  q 1 kind=0 equatable=false name=state constraints=0
+typeref 0 platform Worker.Program
+term 0 var 0 0
+term 1 var 1 0
+term 2 app 0 0
+term 3 tuple 3 0
+extra 0 2
+extra 1 0
+extra 2 1
+extra 3 1
+extra 4 2
+extra 5 0
+extra 6 3
+extra 7 0
+extra 8 0
+extra 9 0
+extra 10 4
+extra 11 0
+extra 12 0

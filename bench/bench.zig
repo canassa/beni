@@ -609,6 +609,15 @@ const CheckMeasurement = struct {
     /// the cache runs none: its rows are read off its record (checker-v2.md
     /// §14.3), which is what a warm run's 0 here says.
     derived_context_runs: u64 = 0,
+    nominal_owners: u64 = 0,
+    nominal_ctors: u64 = 0,
+    nominal_args: u64 = 0,
+    nominal_source_nodes: u64 = 0,
+    nominal_alias_bodies: u64 = 0,
+    nominal_cover_headers: u64 = 0,
+    nominal_cover_ctors: u64 = 0,
+    nominal_cover_refs: u64 = 0,
+    nominal_cover_terms: u64 = 0,
     diagnostics: u64 = 0,
     /// The check step alone.
     ns: u64 = 0,

@@ -862,6 +862,32 @@ are the same.
 
 ### 5.2 A platform declares its output shape
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2–§4
+replaces the chain-wide `host: page` promise with checked per-entry EntryHost
+proofs. A generic platform `entryKinds` contract names program types,
+constructors, launch-argument roles, realm and runtime. Source references
+discover entry roots; there is no app `workers` list, qualified `realms` map,
+or implicit Program-to-Entry coercion. The platform chain remains unique
+(§5.3); each entry has its own reachability, initialization and runtime graph.
+Worker runtimes need no markup `start`/`flush` union.
+Worker runtime `run : Program config state protocol → ⊤` is impure and
+non-suspending. It starts an owned Task root and returns; init may suspend
+inside that root, driven by the realm-local scheduler. The emitted entry calls
+run(main) synchronously; entry_runtime_suspends rejects a suspending run. Bootstrap stages defect
+listeners before user evaluation. Only a checked Window projection permits
+the release printer's bare `window`; stale host promises are diagnostics.
+Generated native types, HostFree and Host.Raw extend §4's privileged boundary.
+Ordinary type checking retains inferred realm summaries through callbacks and
+containers; native objects cannot erase to Js.Value. Fatal defects cross connections through private control
+frames, without changing Task.Exit; ordinary close awaits cleanup (§9.8.14).
+
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
+
+
 `main`'s type is a platform fact, and so is the shape of the artifact. A browser platform wants a
 module a `<script type="module">` can load; a Node platform wants an entry file; a Workers runtime
 wants a specific export. The platform declares this, the same way it declares `main`, so §9.5's

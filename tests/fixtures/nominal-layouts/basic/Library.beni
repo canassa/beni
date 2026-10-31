@@ -1,0 +1,29 @@
+import Dict exposing (Dict)
+
+
+pub opaque type Secret
+    = Secret Int
+
+
+pub seed : Secret
+seed = Secret 1
+
+
+type PrivatePayload a
+    = PrivatePayload (a → Int)
+
+
+type Spare number phantom
+    = Spare number
+
+
+type Keys a
+    = Keys (Dict a Int)
+
+
+pub opaque type PublicKey a
+    = PublicKey (Dict a Int)
+
+
+type UnusedScalar
+    = UnusedScalar Int

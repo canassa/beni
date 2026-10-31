@@ -1,0 +1,37 @@
+-- writes: another application module retains the ordinary joined behavior.
+import Browser
+import Helper
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    flag : Bool
+    left : Int
+    right : Int
+    after : Int
+
+
+type Msg
+    = Step
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Step →
+            next = Helper.bump model
+            { next | after = model.after + 1 }
+
+
+view : Model → Html Msg
+view model = <button onClick={Step}>{model.left}{model.right}{model.after}</button>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { flag = False, left = 0, right = 0, after = 0 }
+        , update = update
+        , view = view
+        }

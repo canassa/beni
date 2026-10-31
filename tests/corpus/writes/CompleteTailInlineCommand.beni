@@ -1,0 +1,60 @@
+-- The command operand remains abstractly evaluated after model selection.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    flag : Bool
+    left : Int
+    right : Int
+
+
+type Msg
+    = Step Int
+
+
+same : a, a → Bool
+    where a.eq : a, a → Bool
+same x y = x == y
+
+
+prepare : Int → Cmd Msg
+prepare n =
+    if same n 0 then
+        Cmd.none
+    else
+        Cmd.none
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Step n →
+            next =
+                if model.flag then
+                    { model | left = n }
+                else
+                    { model | right = n }
+            ( next, prepare n )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="step" onClick={Step 1}>step</button>
+        <p>{model.left}</p>
+        <p>{model.right}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { flag = True, left = 0, right = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

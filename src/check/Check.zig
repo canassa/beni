@@ -58,6 +58,16 @@ pub const Counters = struct {
     /// installed from the cache runs none: its rows are read off its record
     /// (§14.3), which is what a warm run's 0 here says.
     derived_context_runs: u64 = 0,
+    /// Actual private layout publication/coverage work; worker-local until join.
+    nominal_owners: u64 = 0,
+    nominal_ctors: u64 = 0,
+    nominal_args: u64 = 0,
+    nominal_source_nodes: u64 = 0,
+    nominal_alias_bodies: u64 = 0,
+    nominal_cover_headers: u64 = 0,
+    nominal_cover_ctors: u64 = 0,
+    nominal_cover_refs: u64 = 0,
+    nominal_cover_terms: u64 = 0,
 
     /// Field-by-field sum. Reflective on purpose: a counter added above and
     /// forgotten here would silently report a per-module figure as if it
@@ -158,6 +168,7 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
 }
 
 pub const Options = struct {
+    entry_root_requests: []const @import("../entry/Selection.zig").Request = &.{},
     /// Where the per-module `constrain` and `solve` events go (checker.md
     /// §9). The two halves are timed separately because the
     /// constraint/solve split is the architecture (research/02 §1), and a
@@ -333,6 +344,9 @@ pub fn run(
     check.types = try Types.build(gpa, graph, artifacts, interfaces, provenance, interner);
     if (options.profile) |p| p.end(0, types_token.?, .types, Profile.Event.no_file, 0);
 
+    var entry_selection = try @import("../entry/Selection.zig").resolve(gpa, options.entry_root_requests, graph, &check.types, interner);
+    defer entry_selection.deinit(gpa);
+
     const modules = graph.count();
     // One diagnostics list per module rather than one shared list: a shared
     // one would need a lock on the hot path AND would order messages by
@@ -406,6 +420,7 @@ pub fn run(
         .provenance = provenance,
         .interner = interner,
         .types = &check.types,
+        .entry_selection = &entry_selection,
         .options = options,
         .per_module = per_module,
         .counters = counters,

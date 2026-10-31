@@ -34,6 +34,8 @@ const Types = @import("Types.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
 const Effects = @import("Effects.zig");
 
+const ScopedTerms = @import("ScopedTerms.zig");
+
 const Schemes = @This();
 
 pub const Var = TypeStore.Var;
@@ -147,6 +149,14 @@ pub const Writer = struct {
     /// cross into JavaScript (checker-v2.md §36): its flag word gets the
     /// `crosses` bit.
     crossing: []const bool = &.{},
+    /// Private metadata exports reachable DAGs, not public interface depths.
+    scoped_mode: bool = false,
+    scoped_active: bool = false,
+    scoped_invalid: bool = false,
+    scoped_frames: std.ArrayList(ScopedTerms.Frame) = .empty,
+    scoped_children: std.ArrayList(Var) = .empty,
+    scoped_fields: std.ArrayList(TypeStore.Field) = .empty,
+
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -203,6 +213,9 @@ pub const Writer = struct {
         w.symbols.deinit(w.gpa);
         w.pending_flags.deinit(w.gpa);
         w.pending_roots.deinit(w.gpa);
+        w.scoped_frames.deinit(w.gpa);
+        w.scoped_children.deinit(w.gpa);
+        w.scoped_fields.deinit(w.gpa);
         w.stack.deinit(w.gpa);
         w.rows.deinit(w.gpa);
         w.ref_row.deinit(w.gpa);
@@ -251,6 +264,83 @@ pub const Writer = struct {
             .total = if (w.effects) |p| p.decl < p.effects.total.len and p.effects.total[p.decl] else false,
         });
         try w.finish(mark);
+        return @fromBackingInt(@intCast(index));
+    }
+
+    /// Private ordinary single-root publication, without the public depth cap.
+    pub fn addPrivate(w: *Writer, root: Var) ScopedError!Interface.SchemeIndex {
+        const saved = w.scoped_mode;
+        w.scoped_mode = true;
+        w.scoped_invalid = false;
+        defer w.scoped_mode = saved;
+        const index = try w.add(root);
+        if (w.scoped_invalid) return error.BadScope;
+        return index;
+    }
+
+    /// The two readings of one annotated owner's parameter. The caller obtains
+    /// these from Effects.readings, never from names or coincident store ids.
+    pub const RootBinding = struct { scheme: Var, body: Var };
+    pub const ScopedError = Error || error{BadScope};
+
+    /// One private, ordinary scheme whose tuple body holds ordered roots.
+    /// Root zero is the owner scheme; root one is its checked body reading.
+    /// Reuse one memo epoch so site types retain their shared parameters.
+    pub fn addScopedRoots(w: *Writer, roots: []const Var, bindings: []const RootBinding) ScopedError!Interface.SchemeIndex {
+        if (roots.len < 2) return error.BadScope;
+        const saved_mode = w.scoped_mode;
+        w.scoped_mode = true;
+        w.scoped_invalid = false;
+        defer w.scoped_mode = saved_mode;
+        const bundle = try w.store.fresh(.{ .structure = .{ .tuple = try w.store.addVars(roots) } }, TypeStore.generalized);
+        const mark = try w.begin();
+        var owner_parameters: std.ArrayList(Var) = .empty;
+        defer owner_parameters.deinit(w.gpa);
+        try quantifierOrder(w.store, w.interner, roots[0], &owner_parameters, w.gpa);
+        for (owner_parameters.items) |parameter| {
+            _ = try w.quantifierOf(parameter, w.store.flagsOf(parameter));
+        }
+        var children: std.ArrayList(u32) = .empty;
+        defer children.deinit(w.gpa);
+        try children.append(w.gpa, (try w.writeVar(roots[0])).int());
+        for (bindings) |binding| {
+            const source = w.store.find(binding.scheme);
+            const target = w.store.find(binding.body);
+            const a = switch (w.store.content(source)) {
+                .flex, .rigid => |flags| flags,
+                else => return error.BadScope,
+            };
+            const b = switch (w.store.content(target)) {
+                .rigid => |flags| flags,
+                else => return error.BadScope,
+            };
+            if (a.kind != b.kind or a.equatable != b.equatable or a.name != b.name) return error.BadScope;
+            const term_index = try w.writeVar(source);
+            if (w.live(target) and w.memo[target.int()] != .none and w.memo[target.int()] != term_index) return error.BadScope;
+            _ = w.claim(target);
+            w.memo[target.int()] = term_index;
+            w.quantified[target.int()] = w.quantified[source.int()];
+        }
+        for (roots[1..]) |root| try children.append(w.gpa, (try w.writeVar(root)).int());
+        const body = try w.term(.tuple, try w.addRange(children.items), 0);
+        try w.writeConstraints();
+        for (w.identities) |q| {
+            const flags_at = @as(usize, q) * Interface.Quantified.words;
+            if (q < w.quantified_count and flags_at < w.pending_flags.items.len) w.pending_flags.items[flags_at] |= Interface.Quantified.identity_bit;
+        }
+        const flags_start: u32 = @intCast(w.extra.items.len);
+        try w.extra.appendSlice(w.gpa, w.pending_flags.items);
+        const effects = if (w.effects) |publication| try w.writeEffects(publication, bundle) else Interface.no_terms;
+        const index: u32 = @intCast(w.schemes.items.len);
+        try w.schemes.append(w.gpa, .{
+            .quantified_start = flags_start,
+            .quantified_count = w.quantified_count,
+            .body = body,
+            .effects = effects,
+            .total = false,
+        });
+        try w.finish(mark);
+        if (w.scoped_invalid) return error.BadScope;
         return @fromBackingInt(@intCast(index));
     }
 
@@ -347,6 +437,10 @@ pub const Writer = struct {
         const own_end = w.uses.items.len;
         const first = w.rows_written;
         try w.writeRows();
+        if (w.scoped_mode) {
+            w.uses.shrinkRetainingCapacity(mark);
+            return;
+        }
         for (first..w.rows.items.len) |i| _ = try w.rowDepth(@intCast(i));
         var reach = own_peak;
         for (w.uses.items[mark..own_end]) |u| reach = @max(reach, u.at + w.rows.items[u.row].depth);
@@ -606,7 +700,11 @@ pub const Writer = struct {
         return index;
     }
 
+    /// Postorder primes the existing writer's memo. Each recursive write then
+    /// sees only already-written children, so neither stack nor public depth
+    /// limits depend on the private type's structural depth.
     fn writeVar(w: *Writer, v: Var) Error!Interface.TermIndex {
+        if (w.scoped_mode and !w.scoped_active) return ScopedTerms.write(w, v, .{ .live = live, .claim = claim, .writeVar = writeVar, .term = term });
         w.depth += 1;
         defer w.depth -= 1;
         w.peak = @max(w.peak, w.depth);

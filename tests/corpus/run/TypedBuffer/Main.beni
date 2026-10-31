@@ -1,0 +1,10 @@
+import BufferProbe
+import Node
+
+
+main : Node.Program
+main =
+    direct = BufferProbe.direct ⊤
+    firstClass = BufferProbe.firstClass ⊤
+    Node.print
+        "${Debug.toString direct};${Debug.toString firstClass};${Debug.toString (BufferProbe.earlyStop ⊤)};${String.fromInt (BufferProbe.ordered ⊤)};${Debug.toString (BufferProbe.lengths ⊤)}"

@@ -42,6 +42,7 @@ const Dispatch = @import("../check/Dispatch.zig");
 const SourceStore = @import("../SourceStore.zig");
 pub const Core = @import("Core.zig");
 const Lift = @import("../js/Lift.zig");
+const Profile = @import("../Profile.zig");
 
 const Inst = Bir.Inst;
 const Symbol = InternPool.Symbol;
@@ -69,10 +70,11 @@ pub const cap_leaves: u32 = 256;
 
 pub const none: u32 = std.math.maxInt(u32);
 
-pub const Error = Allocator.Error || error{WorkCap};
+pub const Error = Allocator.Error || error{ WorkCap, ProbeExhausted, TailLimit };
 
 pub const Input = struct {
     gpa: Allocator,
+    profile: ?*Profile = null,
     graph: *const Graph,
     /// Per module index.
     birs: []const *const Bir,
@@ -483,6 +485,31 @@ pub const KeyStep = struct {
     type_ctor: u32 = none,
 };
 
+/// Bounded optimization evidence; ordinary Key.writes remains authoritative.
+pub const TailPartition = struct {
+    status: enum { absent, exact, joined } = .absent,
+    start: u32 = 0,
+    len: u32 = 0,
+    reason: enum { unproved, work, paths, routes } = .unproved,
+};
+
+pub const Tail = struct {
+    choices_start: u32,
+    choices_len: u32,
+    writes_start: u32,
+    writes_len: u32,
+};
+
+pub const TailChoice = struct {
+    module: u32,
+    case: u32,
+    branch: u32,
+    calls_start: u32,
+    calls_len: u32,
+};
+
+pub const TailCall = struct { module: u32, inst: u32 };
+
 pub const Key = struct {
     steps: []const KeyStep,
     writes: []const Write,
@@ -500,6 +527,7 @@ pub const Key = struct {
     replaced_strict: []const u32 = &.{},
     /// `Input.effects` only: what the key's command is.
     command: Command = .{},
+    tails: TailPartition = .{},
 };
 
 pub const HoleKind = enum { child, attribute, each };
@@ -609,6 +637,14 @@ pub const Program = struct {
     index: ?u32,
     kind: ProgramKind,
     recognised: bool,
+    /// The constructor call, retained for isolated optional analysis.
+    call_inst: u32 = none,
+    tail_visits: u64 = 0,
+    tail_work: u64 = 0,
+    tail_candidates: u64 = 0,
+    tail_reset_rows: u64 = 0,
+    tail_route_skipped: bool = false,
+    tail_eligible: u32 = 0,
     /// The model type's annotation instruction (update's second parameter),
     /// in `type_module`, or `none`.
     type_module: u32,
@@ -766,6 +802,17 @@ pub const Capped = struct { module: u32, decl: u32, caps: Caps };
 // State
 // ---------------------------------------------------------------------------
 
+const TailReplay = struct {
+    owner: u32,
+    prefix: []const u32,
+    picked: std.ArrayList(u32) = .empty,
+    choices: std.ArrayList(TailChoice) = .empty,
+    calls: std.ArrayList(TailCall) = .empty,
+    pending: *std.ArrayList([]const u32),
+    failed: bool = false,
+    completed_before: u32,
+};
+
 const Mode = enum { summary, key, view, init, closed };
 
 const SummaryState = union(enum) {
@@ -910,6 +957,19 @@ view_arms: std.HashMapUnmanaged(VHoleKey, bool, std.hash_map.AutoContext(VHoleKe
 
 next_root: u32 = 0,
 
+/// Complete-handler facts are analysis-owned flat rows, never cached separately.
+tails: std.MultiArrayList(Tail) = .empty,
+tail_choices: std.MultiArrayList(TailChoice) = .empty,
+tail_calls: std.MultiArrayList(TailCall) = .empty,
+tail_replay: ?*TailReplay = null,
+tail_writes: std.ArrayList(Write) = .empty,
+probe_only: bool = false,
+probe_work: u64 = 0,
+probe_visits: u64 = 0,
+probe_candidates: u64 = 0,
+probe_reset_rows: u64 = 0,
+probe_eligible: []const bool = &.{},
+
 ctx: Ctx = .{ .mode = .closed },
 inst_depth: u32 = 0,
 active: std.ArrayList(u64) = .empty,
@@ -1042,6 +1102,10 @@ pub fn init(in: Input) Allocator.Error!*Writes {
 
 pub fn deinit(a: *Writes) void {
     const gpa = a.gpa;
+    a.tail_writes.deinit(gpa);
+    a.tails.deinit(gpa);
+    a.tail_choices.deinit(gpa);
+    a.tail_calls.deinit(gpa);
     a.paths.deinit(gpa);
     a.path_len.deinit(gpa);
     a.syms.deinit(gpa);
@@ -1472,8 +1536,11 @@ fn gammaFact(a: *const Writes, g: u32, i: usize) Fact {
 }
 
 /// `g ∪ facts`, or null on a contradiction.
-fn gammaAdd(a: *Writes, g: u32, facts: []const Fact) Allocator.Error!?u32 {
+fn gammaAdd(a: *Writes, g: u32, facts: []const Fact) Error!?u32 {
     if (facts.len == 0) return g;
+    const width: u64 = @as(u64, @intCast(a.gammaLen(g))) +| @as(u64, @intCast(facts.len));
+    // Copy/hash/sort plus addFact's scans. Saturation aborts before work.
+    try a.chargeProbe(8 *| width *| width);
     // The pass's own buffer, kept across calls: a gamma is rebuilt here
     // tens of thousands of times a build, each list a few facts long.
     var list = a.gamma_list;
@@ -1490,9 +1557,10 @@ fn gammaAdd(a: *Writes, g: u32, facts: []const Fact) Allocator.Error!?u32 {
     return try a.gammas.intern(a.gpa, a.scratch.items[mark..]);
 }
 
-fn gammaJoin(a: *Writes, g: u32, h: u32) Allocator.Error!?u32 {
+fn gammaJoin(a: *Writes, g: u32, h: u32) Error!?u32 {
     if (h == 0) return g;
     if (g == 0) return h;
+    try a.chargeProbe(@intCast(a.gammaLen(h)));
     var facts = a.gamma_join_list;
     facts.clearRetainingCapacity();
     defer a.gamma_join_list = facts;
@@ -1809,6 +1877,16 @@ fn mkTup(a: *Writes, parts: []const u32) Error!u32 {
 /// `Rec(base, fields)` with `rest` as `Tag.rec` documents; `pairs` are
 /// `(symbol, term)` and are sorted here.
 fn mkRec(a: *Writes, base: u32, rest: u32, pairs: [][2]u32) Error!u32 {
+    if (a.probe_only) {
+        const count: u64 = @intCast(pairs.len);
+        var width = count;
+        var levels: u64 = 1;
+        while (width > 1) {
+            width = width / 2 + width % 2;
+            levels += 1;
+        }
+        try a.chargeProbe(count *| (levels + 2));
+    }
     std.mem.sort([2]u32, pairs, {}, struct {
         fn less(_: void, x: [2]u32, y: [2]u32) bool {
             return x[0] < y[0];
@@ -2130,7 +2208,19 @@ fn cutNode(a: *Writes, t: u32, level: u32) Error!u32 {
 // Work (W)
 // ---------------------------------------------------------------------------
 
-fn tick(a: *Writes) error{WorkCap}!void {
+fn chargeProbe(a: *Writes, amount: u64) error{ProbeExhausted}!void {
+    if (!a.probe_only) return;
+    if (amount > a.in.work_cap - a.probe_work) {
+        a.probe_work = a.in.work_cap;
+        return error.ProbeExhausted;
+    }
+    a.probe_work += amount;
+    if (a.in.profile) |profile| profile.addCounter(.writes_probe_work, amount);
+}
+
+fn tick(a: *Writes) error{ WorkCap, ProbeExhausted }!void {
+    try a.chargeProbe(1);
+    if (a.probe_only) a.probe_visits += 1;
     a.ctx.work += 1;
     if (a.ctx.work > a.in.work_cap) return error.WorkCap;
 }
@@ -2192,8 +2282,9 @@ const Frame = struct {
     try_deps: u32 = 0,
 };
 
-fn newFrame(a: *Writes, m: u32, d: u32, unknown: u32) Allocator.Error!Frame {
+fn newFrame(a: *Writes, m: u32, d: u32, unknown: u32) Error!Frame {
     const decl = a.bir(m).decls[d];
+    try a.chargeProbe(decl.locals_end - decl.locals_start);
     const env = try a.arena().alloc(u32, decl.locals_end - decl.locals_start);
     @memset(env, none);
     return .{ .m = m, .decl = d, .env = env, .unknown = unknown };
@@ -2209,6 +2300,7 @@ fn unknownLocal(a: *Writes, f: *Frame) Error!u32 {
 
 /// Bind the variables `pat` holds to the parts of `v`, by projection.
 fn bind(a: *Writes, f: *Frame, pat: Inst.Index, v: u32) Error!void {
+    try a.chargeProbe(1);
     const b = a.bir(f.m);
     const data = b.instData(pat);
     switch (b.instTag(pat)) {
@@ -2270,8 +2362,10 @@ const Match = struct {
 /// a fact that holds (§3.2's one rule for skipping an arm).
 fn matchFacts(a: *Writes, f: *Frame, pat: Inst.Index, v: u32, g: u32, out: *Match) Error!void {
     if (!out.ok) return;
+    try a.chargeProbe(1 + @as(u64, @intCast(a.gammaLen(g))));
     const b = a.bir(f.m);
     const data = b.instData(pat);
+    if (b.instTag(pat) == .pat_string or b.instTag(pat) == .pat_int) try a.chargeProbe(@intCast(b.bytes(pat).len));
     switch (b.instTag(pat)) {
         .pat_as => try a.matchFacts(f, @fromBackingInt(data.lhs), v, g, out),
         .pat_ctor => {
@@ -2321,20 +2415,21 @@ fn matchFacts(a: *Writes, f: *Frame, pat: Inst.Index, v: u32, g: u32, out: *Matc
     }
 }
 
-fn irrefutable(a: *Writes, m: u32, pat: Inst.Index) bool {
+fn irrefutable(a: *Writes, m: u32, pat: Inst.Index) Error!bool {
+    try a.chargeProbe(1);
     const b = a.bir(m);
     const data = b.instData(pat);
     return switch (b.instTag(pat)) {
         .pat_wild, .pat_var, .pat_unit, .pat_record => true,
-        .pat_as => a.irrefutable(m, @fromBackingInt(data.lhs)),
+        .pat_as => try a.irrefutable(m, @fromBackingInt(data.lhs)),
         .pat_tuple => {
-            for (b.extraSlice(Bir.inlineRange(data), Inst.Index)) |i| if (!a.irrefutable(m, i)) return false;
+            for (b.extraSlice(Bir.inlineRange(data), Inst.Index)) |i| if (!try a.irrefutable(m, i)) return false;
             return true;
         },
         .pat_ctor => {
             const c = a.ctorTarget(m, @fromBackingInt(data.lhs)) orelse return false;
             if (a.siblings(c).count != 1) return false;
-            for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |i| if (!a.irrefutable(m, i)) return false;
+            for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |i| if (!try a.irrefutable(m, i)) return false;
             return true;
         },
         else => false,
@@ -2344,6 +2439,7 @@ fn irrefutable(a: *Writes, m: u32, pat: Inst.Index) bool {
 /// The negation an arm gives the arms after it (A1–A2): only for a
 /// single-path, irrefutable-below constructor test on a path.
 fn negationOf(a: *Writes, m: u32, pat: Inst.Index, v: u32) Error!?Fact {
+    try a.chargeProbe(1);
     const b = a.bir(m);
     const data = b.instData(pat);
     switch (b.instTag(pat)) {
@@ -2352,14 +2448,14 @@ fn negationOf(a: *Writes, m: u32, pat: Inst.Index, v: u32) Error!?Fact {
             if (a.termTag(v) != .same or !a.factPath(a.termWord(v, 1))) return null;
             const c = a.ctorTarget(m, @fromBackingInt(data.lhs)) orelse return null;
             if (a.siblings(c).count == 1) return null;
-            for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |i| if (!a.irrefutable(m, i)) return null;
+            for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |i| if (!try a.irrefutable(m, i)) return null;
             return .{ .kind = .neg, .key = a.termWord(v, 1), .val = c };
         },
         .pat_tuple => {
             const items = b.extraSlice(Bir.inlineRange(data), Inst.Index);
             var found: ?Fact = null;
             for (items, 0..) |item, j| {
-                if (a.irrefutable(m, item)) continue;
+                if (try a.irrefutable(m, item)) continue;
                 if (found != null) return null;
                 found = (try a.negationOf(m, item, try a.proj(v, .tuple, @intCast(j), 0))) orelse return null;
             }
@@ -2503,6 +2599,7 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
         .call => return a.evalCall(f, inst, g),
         .method_call => return a.evalMethod(f, inst, g),
         .type_dispatch => {
+            a.unresolvedProbeCall();
             const md = b.extraData(@fromBackingInt(data.rhs), Bir.TypeDispatch);
             const args = b.extraSlice(.{ .start = md.args_start, .end = md.args_end }, Inst.Index);
             var d: u32 = 0;
@@ -2540,6 +2637,7 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
             return a.caseOn(f, s, branches, g);
         },
         .@"try" => {
+            if (a.tail_replay) |r| r.failed = true;
             const s = try a.eval(f, @fromBackingInt(data.lhs), g);
             f.try_deps = try a.depsUnion(f.try_deps, try a.deps(s));
             return a.mkFresh(try a.deps(s));
@@ -2550,6 +2648,14 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
 }
 
 fn recordUpdate(a: *Writes, base: u32, pairs: [][2]u32) Error!u32 {
+    if (a.probe_only) {
+        const count: u64 = @intCast(pairs.len);
+        switch (a.termTag(base)) {
+            .rec => try a.chargeProbe((1 + @as(u64, (a.termLen(base) - 3) / 2)) *| (count +| 1)),
+            .alt => try a.chargeProbe(@as(u64, @intCast(a.altLen(base))) *| (count +| 1)),
+            else => {},
+        }
+    }
     switch (a.termTag(base)) {
         .same => return a.withReadControl(try a.mkRec(a.termWord(base, 1), 1, pairs), a.termWord(base, 2)),
         .rec => {
@@ -2587,6 +2693,10 @@ fn recordUpdate(a: *Writes, base: u32, pairs: [][2]u32) Error!u32 {
 
 fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) Error!u32 {
     const b = a.bir(f.m);
+    if (a.tail_replay) |r| if (a.ctx.mode == .key and f.m == r.owner) {
+        if (a.termTag(s) != .alt) return a.tailCase(r, f, s, branches, g);
+        r.failed = true;
+    };
     if (a.termTag(s) == .alt) {
         // Each alternative of the scrutinee is matched under its own facts
         // and the results joined (§3.2).
@@ -2697,6 +2807,9 @@ fn topRef(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
 /// walked again, so the holes of a markup constant are seen.
 fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     _ = g;
+    const replay = a.tail_replay;
+    a.tail_replay = null;
+    defer a.tail_replay = replay;
     // core's empty `Dict` is the empty storage, not its representation
     // (write-sets.md, amended 2026-10-25: `Dict.empty`).
     if (a.in.packages[m] == .core and std.mem.eql(u8, a.in.module_names[m], "Dict") and std.mem.eql(u8, a.declName(m, d), "empty"))
@@ -2770,6 +2883,17 @@ fn evalCall(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     return a.apply(fun, args, g);
 }
 
+fn unresolvedProbeCall(a: *Writes) void {
+    // A summary reached by an active replay can contain unresolved evidence
+    // too; changing analysis mode does not make that call proved.
+    if (a.tail_replay) |r| r.failed = true;
+}
+
+fn unresolvedCall(a: *Writes, args: []const u32) Error!u32 {
+    a.unresolvedProbeCall();
+    return a.freshCall(args);
+}
+
 fn evalMethod(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     const b = a.bir(f.m);
     const data = b.instData(inst);
@@ -2785,15 +2909,15 @@ fn evalMethod(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     var all = try a.arena().alloc(u32, rest.len + 1);
     all[0] = recv;
     @memcpy(all[1..], rest);
-    const dt = a.dispatchOf(f.m) orelse return a.freshCall(all);
-    const site = dt.siteOf(inst) orelse return a.freshCall(all);
-    const ci = site.callee.unwrap() orelse return a.freshCall(all);
+    const dt = a.dispatchOf(f.m) orelse return a.unresolvedCall(all);
+    const site = dt.siteOf(inst) orelse return a.unresolvedCall(all);
+    const ci = site.callee.unwrap() orelse return a.unresolvedCall(all);
     switch (dt.term(ci)) {
         .top => |t| return a.callTop(f.m, t.decl.int(), all, f.m, inst, g),
         .ext => |t| {
             const m2 = t.module.int();
-            if (m2 >= a.in.provenance.len) return a.freshCall(all);
-            const d = a.in.provenance[m2].valueDecl(@backingInt(t.value)) orelse return a.freshCall(all);
+            if (m2 >= a.in.provenance.len) return a.unresolvedCall(all);
+            const d = a.in.provenance[m2].valueDecl(@backingInt(t.value)) orelse return a.unresolvedCall(all);
             return a.callTop(m2, d.int(), all, f.m, inst, g);
         },
         .field => {
@@ -2803,7 +2927,10 @@ fn evalMethod(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
         // A derived or primitive `eq`/`compare` returns a `Bool` or an
         // `Order`, and reads its operands; evidence passed as a parameter
         // is not resolved through a summary in this slice (research 63).
-        else => return a.freshCall(all),
+        .primitive => return a.freshCall(all),
+        .derived => |use| return if (use.args.len == 0) a.freshCall(all) else a.unresolvedCall(all),
+        .ext_derived => |use| return if (use.args.len == 0) a.freshCall(all) else a.unresolvedCall(all),
+        else => return a.unresolvedCall(all),
     }
 }
 
@@ -2931,6 +3058,7 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
 /// What the command half of a `model × Cmd msg` value is: `commandIn` on
 /// each alternative's second component, every shared subterm visited once.
 fn commandOf(a: *Writes, t: u32) Allocator.Error!Command {
+    if (a.in.profile) |profile| profile.addCounter(if (a.probe_only) .writes_probe_command_walks else .writes_command_walks, 1);
     var memo: std.AutoHashMapUnmanaged(u64, Command) = .empty;
     return a.commandIn(t, true, &memo);
 }
@@ -3170,6 +3298,9 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
             };
             return a.applyRow(r, site_m, site, args, g);
         };
+        // The first slice supports explicit core rows, not opaque cached
+        // summaries. Mark the boundary before a cache hit can skip its body.
+        a.unresolvedProbeCall();
         if (a.in.packages[m] == .platform) {
             if (a.ctx.mode == .view and args.len == 2 and std.mem.eql(u8, a.in.module_names[m], "Html") and
                 std.mem.eql(u8, a.declName(m, d), "map") and !a.ctorShape(args[1]))
@@ -3195,6 +3326,14 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
     if (decl.params == 0) return a.apply(try a.topValue(m, d, g), args, g);
     if (args.len != decl.params) return a.opaqueCall(args, m, site_m, site);
+    if (a.tail_replay) |r| if (a.ctx.mode == .key) {
+        if (m == r.owner) {
+            try r.calls.append(a.arena(), .{ .module = site_m, .inst = site.int() });
+            defer _ = r.calls.pop();
+            return a.direct(m, d, args, g);
+        }
+        if (a.isOwn(m)) r.failed = true;
+    };
     if (a.ctx.mode == .view and a.isOwn(m)) return a.direct(m, d, args, g);
     const s = try a.summary(m, d);
     return a.instantiate(s, a.fnId(m, d), args, g);
@@ -3202,7 +3341,7 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
 
 /// Opaque impure host results vary independently of model writes.
 fn opaqueCall(a: *Writes, args: []const u32, m: u32, site_m: u32, site: Inst.Index) Error!u32 {
-    const result = try a.freshCall(args);
+    const result = try a.unresolvedCall(args);
     if (a.ctx.mode != .view or std.mem.eql(u8, a.in.module_names[m], "Debug")) return result;
     const dispatch = a.dispatchOf(site_m) orelse {
         // Checked app call sites must have a dispatch table. Missing host
@@ -3225,7 +3364,12 @@ fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
             const m = a.termWord(fun, 2);
             const x = a.termWord(fun, 3);
             switch (kind) {
-                .top => return a.callTop(m, x, args, m, @fromBackingInt(0), g),
+                .top => {
+                    // An indirect function value has no proved call-site
+                    // occurrence for structured inlining in this slice.
+                    a.unresolvedProbeCall();
+                    return a.callTop(m, x, args, m, @fromBackingInt(0), g);
+                },
                 .ctor => {
                     if (args.len != a.ctorArity(x)) return a.freshCall(args);
                     return a.mkCon(x, args);
@@ -3252,10 +3396,11 @@ fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     var all = try a.arena().alloc(u32, args.len + 1);
     all[0] = fun;
     @memcpy(all[1..], args);
-    return a.freshCall(all);
+    return a.unresolvedCall(all);
 }
 
 fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
+    a.unresolvedProbeCall();
     const kind: FunKind = @fromBackingInt(a.termWord(fun, 1));
     const m = a.termWord(fun, 2);
     const d = a.termWord(fun, 3);
@@ -3320,6 +3465,9 @@ fn noteRecursive(a: *Writes, key: u64) Allocator.Error!void {
 /// view's inlining, `init`.
 fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
     const key = directKey(m, d);
+    if (a.tail_replay) |r| {
+        if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) r.failed = true;
+    }
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) {
         if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true else try a.noteRecursive(key);
         return a.freshCall(args);
@@ -3393,19 +3541,23 @@ fn summary(a: *Writes, m: u32, d: u32) Error!u32 {
         a.summary_stack.items[depth].hit = false;
         const saved = a.ctx;
         const saved_depth = a.inst_depth;
-        a.ctx = .{ .mode = .summary };
-        a.inst_depth = 0;
-        result = a.summaryBody(m, d) catch |err| switch (err) {
-            error.WorkCap => blk: {
-                a.ctx.caps.w = true;
-                break :blk try a.mkFresh(try a.paramDeps(m, d));
-            },
-            else => |e| return e,
-        };
-        result = try a.capSize(result);
-        caps = a.ctx.caps;
-        a.ctx = saved;
-        a.inst_depth = saved_depth;
+        {
+            a.ctx = .{ .mode = .summary };
+            a.inst_depth = 0;
+            defer {
+                a.ctx = saved;
+                a.inst_depth = saved_depth;
+            }
+            result = a.summaryBody(m, d) catch |err| switch (err) {
+                error.WorkCap => blk: {
+                    a.ctx.caps.w = true;
+                    break :blk try a.mkFresh(try a.paramDeps(m, d));
+                },
+                else => |e| return e,
+            };
+            result = try a.capSize(result);
+            caps = a.ctx.caps;
+        }
         if (!a.summary_stack.items[depth].hit or result == approx) break;
         if (blk: {
             var al: Alpha = .{ .floor = floor };
@@ -4080,7 +4232,7 @@ fn atUnknown(e: Edit) Edit {
 
 /// Whether the type at path `p` — a model path, or a summarised function's
 /// parameter by its annotation — is core's `Dict`.
-fn isDictPath(a: *Writes, p: u32) Allocator.Error!bool {
+fn isDictPath(a: *Writes, p: u32) Error!bool {
     const root = a.rootOf(p);
     const start: TyRef = switch (a.pathKind(root)) {
         .rho => a.model_type orelse return false,
@@ -4425,7 +4577,7 @@ fn indexedResult(a: *Writes, p: u32, xs: u32, eps: u32, iota: u32, r: u32) Error
 }
 
 /// The leaves of nested `Alt`s with their accumulated facts; false past 64.
-fn collectLeaves(a: *Writes, t: u32, g: u32, out: *std.ArrayList(AltItem)) Allocator.Error!bool {
+fn collectLeaves(a: *Writes, t: u32, g: u32, out: *std.ArrayList(AltItem)) Error!bool {
     if (out.items.len > 64) return false;
     if (a.termTag(t) != .alt) {
         try out.append(a.gpa, .{ .gamma = g, .term = t });
@@ -4868,10 +5020,11 @@ const Ty = union(enum) {
     other,
 };
 
-fn tyResolve(a: *Writes, r0: TyRef) Allocator.Error!Ty {
+fn tyResolve(a: *Writes, r0: TyRef) Error!Ty {
     var r = r0;
     var fuel: u32 = 64;
     while (fuel > 0) : (fuel -= 1) {
+        try a.chargeProbe(1);
         const b = a.bir(r.m);
         const inst: Inst.Index = @fromBackingInt(r.inst);
         const data = b.instData(inst);
@@ -4885,12 +5038,13 @@ fn tyResolve(a: *Writes, r0: TyRef) Allocator.Error!Ty {
             .type_tuple => return .{ .tuple = r },
             .type_top, .ext_type => {
                 const t = a.typeTarget(r.m, inst) orelse return .other;
-                return a.tyDecl(t.m, t.d, &.{}) orelse .other;
+                return (try a.tyDecl(t.m, t.d, &.{})) orelse .other;
             },
             .type_app => {
                 const head: Inst.Index = @fromBackingInt(data.lhs);
                 const t = a.typeTarget(r.m, head) orelse return .other;
                 const arg_insts = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index);
+                try a.chargeProbe(@intCast(arg_insts.len));
                 const args = try a.arena().alloc(TyRef, arg_insts.len);
                 for (arg_insts, args) |ai, *x| x.* = .{ .m = r.m, .inst = ai.int(), .env = r.env };
                 const decl = a.bir(t.m).decls[t.d];
@@ -4908,11 +5062,14 @@ fn tyResolve(a: *Writes, r0: TyRef) Allocator.Error!Ty {
     return .other;
 }
 
-fn tyDecl(a: *Writes, m: u32, d: u32, args: []const TyRef) ?Ty {
+fn tyDecl(a: *Writes, m: u32, d: u32, args: []const TyRef) Error!?Ty {
     const decl = a.bir(m).decls[d];
     if (decl.kind == .type_alias) {
         const body = decl.annotation.unwrap() orelse return null;
-        return a.tyResolve(.{ .m = m, .inst = body.int(), .env = args }) catch null;
+        return a.tyResolve(.{ .m = m, .inst = body.int(), .env = args }) catch |err| switch (err) {
+            error.OutOfMemory => null, // preserve the ordinary precision fallback
+            else => |e| return e,
+        };
     }
     return .{ .nominal = .{ .m = m, .d = d, .args = args } };
 }
@@ -4932,14 +5089,15 @@ fn typeTarget(a: *const Writes, m: u32, inst: Inst.Index) ?struct { m: u32, d: u
 }
 
 /// The type at model path `p`, or null.
-fn tyAt(a: *Writes, p: u32) Allocator.Error!?Ty {
+fn tyAt(a: *Writes, p: u32) Error!?Ty {
     const model = a.model_type orelse return null;
     if (a.rootOf(p) != rho_path) return null;
     return a.tyWalk(try a.tyResolve(model), p);
 }
 
 /// The type reached from `ty0`, the type at `p`'s root, along `p`'s steps.
-fn tyWalk(a: *Writes, ty0: Ty, p: u32) Allocator.Error!?Ty {
+fn tyWalk(a: *Writes, ty0: Ty, p: u32) Error!?Ty {
+    try a.chargeProbe(1 + @as(u64, a.pathLen(p)));
     var ty = ty0;
     var buf: [k_limit + 1]u32 = undefined;
     for (a.steps(p, &buf)) |s| {
@@ -4951,6 +5109,7 @@ fn tyWalk(a: *Writes, ty0: Ty, p: u32) Allocator.Error!?Ty {
                 };
                 const b = a.bir(rr.m);
                 const fields = b.extraSlice(Bir.inlineRange(b.instData(@fromBackingInt(rr.inst))), Bir.Field);
+                try a.chargeProbe(@intCast(fields.len));
                 for (fields) |fld| {
                     if (@backingInt(b.symbol(fld.name)) == a.pathA(s)) break :blk .{ .m = rr.m, .inst = fld.value.int(), .env = rr.env };
                 }
@@ -5001,7 +5160,7 @@ fn tyWalk(a: *Writes, ty0: Ty, p: u32) Allocator.Error!?Ty {
 }
 
 /// The field symbols of the record type at `p`, or null.
-fn fieldsAt(a: *Writes, p: u32) Allocator.Error!?[]const u32 {
+fn fieldsAt(a: *Writes, p: u32) Error!?[]const u32 {
     const ty = (try a.tyAt(p)) orelse return null;
     const rr = switch (ty) {
         .record => |rr| rr,
@@ -5009,6 +5168,7 @@ fn fieldsAt(a: *Writes, p: u32) Allocator.Error!?[]const u32 {
     };
     const b = a.bir(rr.m);
     const fields = b.extraSlice(Bir.inlineRange(b.instData(@fromBackingInt(rr.inst))), Bir.Field);
+    try a.chargeProbe(@intCast(fields.len));
     const out = try a.arena().alloc(u32, fields.len);
     for (fields, out) |fld, *o| o.* = @backingInt(b.symbol(fld.name));
     return out;
@@ -5587,6 +5747,9 @@ fn ctorShape(a: *Writes, t: u32) bool {
 /// closure's environment is its whole frame, `msg` included, so its deps
 /// name the message whether or not the closure reads it.
 fn noteMu(a: *Writes, t: u32) Allocator.Error!void {
+    // Only the ordinary post-view msgWhole consumer uses this evidence.
+    if (a.probe_only) return;
+    if (a.in.profile) |profile| profile.addCounter(if (a.probe_only) .writes_probe_escape_walks else .writes_escape_walks, 1);
     // A walk's visited terms: a column stamped with this walk's number.
     a.mu_walk +%= 1;
     if (a.mu_walk == 0) {
@@ -5752,9 +5915,17 @@ pub const Run = struct {
     programs: []const Program,
 };
 
+fn clearTailFacts(a: *Writes) void {
+    a.tails.shrinkRetainingCapacity(0);
+    a.tail_choices.shrinkRetainingCapacity(0);
+    a.tail_calls.shrinkRetainingCapacity(0);
+    a.tail_writes.clearRetainingCapacity();
+}
+
 /// Analyse every program whose `main` is in a target module, in module
 /// index order.
 pub fn run(a: *Writes) Allocator.Error!Run {
+    a.clearTailFacts();
     var programs: std.ArrayList(Program) = .empty;
     const n = a.in.graph.count();
     for (0..n) |mi| {
@@ -5767,7 +5938,7 @@ pub fn run(a: *Writes) Allocator.Error!Run {
             const body = decl.body.unwrap() orelse continue;
             a.programsOf(m, @intCast(di), body, &programs) catch |err| switch (err) {
                 // `programsOf` turns W into the top program; nothing else spends it.
-                error.WorkCap => unreachable,
+                error.WorkCap, error.ProbeExhausted, error.TailLimit => unreachable,
                 else => |e| return e,
             };
         }
@@ -5783,6 +5954,7 @@ pub fn run(a: *Writes) Allocator.Error!Run {
         }
         p.index = if (same > 1) at else null;
     }
+    if (!a.probe_only) try a.addCompleteTails(programs.items);
     return .{ .programs = programs.items };
 }
 
@@ -5856,6 +6028,7 @@ fn programOfCall(a: *Writes, m: u32, d: u32, body: Inst.Index) Error!Program {
         else => |e| return e,
     };
     prog.decl = d;
+    prog.call_inst = body.int();
     return prog;
 }
 
@@ -5874,6 +6047,7 @@ fn isOwn(a: *const Writes, m: u32) bool {
 }
 
 pub fn runCalls(a: *Writes) Allocator.Error![]const Call {
+    a.clearTailFacts();
     var calls: std.ArrayList(Call) = .empty;
     const n = a.in.graph.count();
     for (0..n) |mi| {
@@ -5889,12 +6063,18 @@ pub fn runCalls(a: *Writes) Allocator.Error![]const Call {
                 if (tags[at] != .call) continue;
                 if (a.programKind(m, @fromBackingInt(data[at].lhs)) == null) continue;
                 const prog = a.programOfCall(m, @intCast(di), @fromBackingInt(@intCast(at))) catch |err| switch (err) {
-                    error.WorkCap => unreachable,
+                    error.WorkCap, error.ProbeExhausted, error.TailLimit => unreachable,
                     else => |e| return e,
                 };
                 try calls.append(a.arena(), .{ .module = m, .inst = @intCast(at), .program = prog });
             }
         }
+    }
+    if (!a.probe_only) {
+        const programs = try a.arena().alloc(Program, calls.items.len);
+        for (calls.items, programs) |call, *program| program.* = call.program;
+        try a.addCompleteTails(programs);
+        for (calls.items, programs) |*call, program| call.program = program;
     }
     return calls.items;
 }
@@ -5905,7 +6085,41 @@ pub fn ctorPlace(a: *const Writes, c: u32) struct { module: u32, index: u32 } {
     return .{ .module = m, .index = c - a.ctor_base[m] };
 }
 
+/// Repeated native clears/cleanup are charged once, before touching any state.
+fn programResetRows(a: *const Writes) u64 {
+    var rows: u64 = 4; // the four optional fact-table length resets
+    rows +|= a.summaries.len;
+    rows +|= a.summary_caps.len;
+    rows +|= a.top_values.len;
+    rows +|= a.diff_memo.capacity();
+    rows +|= a.view_args.capacity();
+    rows +|= a.view_arms.capacity();
+    rows +|= a.hole_index.capacity();
+    rows +|= a.vhole_index.capacity();
+    rows +|= a.vedge_index.capacity();
+    rows +|= a.varg_index.capacity();
+    rows +|= a.vlet_index.capacity();
+    rows +|= a.site_index.capacity();
+    rows +|= 6 *| @as(u64, @intCast(a.holes.items.len));
+    rows +|= 6 *| @as(u64, @intCast(a.vholes.items.len));
+    rows +|= 6 *| @as(u64, @intCast(a.vedges.items.len));
+    rows +|= 6 *| @as(u64, @intCast(a.vargs.items.len));
+    rows +|= 6 *| @as(u64, @intCast(a.vlets.items.len));
+    rows +|= a.sites.items.len;
+    return rows;
+}
+
 fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_fields: ?Fields) Error!Program {
+    if (!a.probe_only and m < a.in.in_place.len and a.in.in_place[m]) {
+        if (a.in.profile) |profile| profile.addCounter(.writes_in_place_programs, 1);
+    }
+    if (a.probe_only) {
+        const rows = a.programResetRows();
+        try a.chargeProbe(rows);
+        a.probe_reset_rows += rows;
+        // Previous probe facts have been copied to their ordinary owner.
+        a.clearTailFacts();
+    }
     // Each program is analysed as if it were alone (§7): a write set depends
     // on the program's model type (§3.4's full-record row), and a summary's
     // caps are listed for the program that reached it.
@@ -6024,7 +6238,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
             }
         }
         // The pushed-state routes (`findRoutes`), before any key is read.
-        if (a.in.in_place.len != 0 and prog.update_decl != none and prog.update_module == fs.m and a.model_type != null) prog.routes = try a.findRoutes(fs.m, prog.update_decl, kind);
+        if (!a.probe_only and a.in.in_place.len != 0 and prog.update_decl != none and prog.update_module == fs.m and a.model_type != null) prog.routes = try a.findRoutes(fs.m, prog.update_decl, kind);
         // Under `Input.effects`, `init` and each key are read through the
         // platform's functions, as the subscriptions are: a command a
         // layer's function makes — `Navigation.pushUrl` — is read as its
@@ -6045,7 +6259,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                     error.WorkCap => break :blk try a.freshEmpty(),
                     else => |e| return e,
                 };
-                if (a.in.effects != null and kind.commands()) prog.init_command = try a.commandOf(r);
+                if (!a.probe_only and a.in.effects != null and kind.commands()) prog.init_command = try a.commandOf(r);
                 if (kind == .element or kind == .document) r = try a.proj(r, .tuple, 0, 0);
                 break :blk r;
             };
@@ -6059,7 +6273,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                 error.WorkCap => break :blk try a.freshEmpty(),
                 else => |e| return e,
             };
-            if (a.in.effects != null and kind.commands()) prog.init_command = try a.commandOf(r);
+            if (!a.probe_only and a.in.effects != null and kind.commands()) prog.init_command = try a.commandOf(r);
             if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
             break :blk r;
         };
@@ -6076,6 +6290,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         defer path_steps.deinit(a.gpa);
         try a.keyTree(kind, update_fun, 0, &path_steps, &keys, &leaves);
         prog.keys = keys.items;
+        if (a.probe_only) return prog;
         // The model's fields: by `update`'s annotation, or else by what
         // `init` makes — a record literal of every field, a literal, a
         // constructor — and unknown when neither says (an error, never a
@@ -6088,6 +6303,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
             else => none,
         };
     }
+    if (a.probe_only) return prog;
     // Subscription values include the captures of their taggers.
     if (view_fields) |fs| if (fs.subscriptions) |si| {
         prog.subscriptions_module = fs.m;
@@ -6708,12 +6924,12 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
             error.WorkCap => break :blk false,
             else => |e| return e,
         };
-        if (a.in.effects != null and kind.commands()) command = try a.commandOf(if (a.uncut != none) a.uncut else r);
+        if (!a.probe_only and a.in.effects != null and kind.commands()) command = try a.commandOf(if (a.uncut != none) a.uncut else r);
         if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
         r = try a.capSize(r);
         // A message placed in the model is a value (browser-direct.md §11).
         try a.noteMu(r);
-        if (a.in.in_place.len != 0) {
+        if (!a.probe_only and a.in.in_place.len != 0) {
             replaced = try a.identityBreaks(r, true);
             replaced_strict = try a.identityBreaks(r, false);
         }
@@ -6735,6 +6951,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
     const caps = a.ctx.caps;
     const split = if (ok) a.ctx.split_path else none;
     a.ctx = .{ .mode = .closed };
+    try a.chargeProbe(@intCast(ws.items.items.len));
     return .{ .writes = try a.arena().dupe(Write, ws.items.items), .caps = caps, .split = split, .command = command, .replaced = replaced, .replaced_strict = replaced_strict };
 }
 
@@ -6745,6 +6962,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
 /// updates — when `trust_updates`; any other term, a record literal among
 /// them, may be a new object, and so is everything below it.
 fn identityBreaks(a: *Writes, r: u32, trust_updates: bool) Error![]const u32 {
+    if (a.in.profile) |profile| profile.addCounter(if (a.probe_only) .writes_probe_identity_walks else .writes_identity_walks, 1);
     var out: std.ArrayList(u32) = .empty;
     defer out.deinit(a.gpa);
     var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
@@ -6816,9 +7034,360 @@ pub fn fieldPath(a: *Writes, parent: u32, field: u32) Allocator.Error!u32 {
     return a.mkPath(parent, .field, field, 0);
 }
 
+/// Compare only source-stable field/constructor paths. Indexed/rooted paths
+/// need additional facts and remain joined in this first slice.
+fn sameTailPath(a: *const Writes, p0: u32, other: *const Writes, q0: u32) bool {
+    var p = p0;
+    var q = q0;
+    while (p != none and q != none) {
+        const kind = a.pathKind(p);
+        if (kind != other.pathKind(q)) return false;
+        switch (kind) {
+            .rho, .mu, .field, .tuple, .ctor, .tag => {},
+            else => return false,
+        }
+        if (a.pathA(p) != other.pathA(q) or a.pathB(p) != other.pathB(q)) return false;
+        p = a.pathParent(p);
+        q = other.pathParent(q);
+    }
+    return p == q;
+}
+
+fn sameTailKey(a: *const Writes, key: Key, other: *const Writes, candidate: Key) bool {
+    if (key.steps.len != candidate.steps.len) return false;
+    for (key.steps, candidate.steps) |x, y| {
+        if (x.ctor != y.ctor or x.covers != y.covers or x.type_ctor != y.type_ctor or !a.sameTailPath(x.path, other, y.path)) return false;
+    }
+    return true;
+}
+
+/// A sufficient first-slice benefit proof, linear in the key's write rows.
+fn tailEligible(a: *const Writes, key: Key, singleton_reads: []const bool) bool {
+    if (key.caps.any()) return false;
+    var first: u32 = none;
+    for (key.writes) |write| {
+        if (write.kind != .value or a.pathKind(write.path) != .field or a.pathParent(write.path) != rho_path) continue;
+        if (!singleton_reads[write.path]) continue;
+        if (first != none and first != write.path) return true;
+        first = write.path;
+    }
+    return false;
+}
+
+/// Only rows already established by the ordinary run may cross this seam.
+/// Probe-owned term/path/interner ids are never imported into public evidence.
+fn importTailPartition(a: *Writes, key: Key, probe: *const Writes, partition: TailPartition) Allocator.Error!TailPartition {
+    if (partition.status != .exact) return partition;
+    const Field = struct { symbol: u32, row: u32 };
+    var fields: std.ArrayList(Field) = .empty;
+    defer fields.deinit(a.gpa);
+    var root_node: ?Write = null;
+    for (key.writes, 0..) |write, i| {
+        if (write.kind == .node and write.path == rho_path) {
+            root_node = write;
+        } else if (write.kind == .value and a.pathKind(write.path) == .field and a.pathParent(write.path) == rho_path) {
+            try fields.append(a.gpa, .{ .symbol = a.pathA(write.path), .row = @intCast(i) });
+        } else return .{ .status = .joined };
+    }
+    std.mem.sort(Field, fields.items, {}, struct {
+        fn less(_: void, x: Field, y: Field) bool {
+            return x.symbol < y.symbol;
+        }
+    }.less);
+    const start: u32 = @intCast(a.tails.len);
+    const cs = a.tail_choices.len;
+    const calls = a.tail_calls.len;
+    const ws = a.tail_writes.items.len;
+    var published = false;
+    defer if (!published) {
+        a.tails.shrinkRetainingCapacity(start);
+        a.tail_choices.shrinkRetainingCapacity(cs);
+        a.tail_calls.shrinkRetainingCapacity(calls);
+        a.tail_writes.shrinkRetainingCapacity(ws);
+    };
+    for (partition.start..partition.start + partition.len) |ti| {
+        const tail = probe.tails.get(ti);
+        const writes_start: u32 = @intCast(a.tail_writes.items.len);
+        for (probe.tail_writes.items[tail.writes_start..][0..tail.writes_len]) |write| {
+            const mapped: Write = if (write.kind == .node and write.path == rho_path)
+                root_node orelse return .{ .status = .joined }
+            else blk: {
+                if (write.kind != .value or probe.pathKind(write.path) != .field or probe.pathParent(write.path) != rho_path) return .{ .status = .joined };
+                const symbol = probe.pathA(write.path);
+                var lo: usize = 0;
+                var hi = fields.items.len;
+                while (lo < hi) {
+                    const mid = lo + (hi - lo) / 2;
+                    if (fields.items[mid].symbol < symbol) lo = mid + 1 else hi = mid;
+                }
+                if (lo == fields.items.len or fields.items[lo].symbol != symbol) return .{ .status = .joined };
+                break :blk key.writes[fields.items[lo].row];
+            };
+            try a.tail_writes.append(a.gpa, mapped);
+        }
+        const choices_start: u32 = @intCast(a.tail_choices.len);
+        for (tail.choices_start..tail.choices_start + tail.choices_len) |ci| {
+            const choice = probe.tail_choices.get(ci);
+            const calls_start: u32 = @intCast(a.tail_calls.len);
+            for (choice.calls_start..choice.calls_start + choice.calls_len) |i| try a.tail_calls.append(a.gpa, probe.tail_calls.get(i));
+            var copy = choice;
+            copy.calls_start = calls_start;
+            try a.tail_choices.append(a.gpa, copy);
+        }
+        try a.tails.append(a.gpa, .{
+            .choices_start = choices_start,
+            .choices_len = tail.choices_len,
+            .writes_start = writes_start,
+            .writes_len = tail.writes_len,
+        });
+    }
+    published = true;
+    return .{ .status = .exact, .start = start, .len = partition.len };
+}
+
+/// Prepay successful projection so exhaustion cannot publish half a candidate.
+fn chargeTailProjection(probe: *Writes, ordinary: Program, candidate: Program) error{ProbeExhausted}!void {
+    try probe.chargeProbe(@as(u64, @intCast(ordinary.keys.len)) +| @as(u64, @intCast(candidate.keys.len)));
+    var rows: u64 = 0;
+    var max_rows: u64 = 0;
+    var path_steps_work: u64 = 0;
+    for (ordinary.keys) |key| {
+        rows +|= key.writes.len;
+        max_rows = @max(max_rows, key.writes.len);
+        path_steps_work +|= key.steps.len;
+    }
+    for (candidate.keys) |key| path_steps_work +|= key.steps.len;
+    var log: u64 = 1;
+    var width = max_rows;
+    while (width > 1) {
+        width = width / 2 + width % 2;
+        log += 1;
+    }
+    var work = rows *| (log + 2);
+    work +|= path_steps_work *| (k_limit + 2);
+    work +|= @as(u64, @intCast(probe.tail_writes.items.len)) *| (log + 2);
+    work +|= probe.tail_choices.len;
+    work +|= probe.tail_calls.len;
+    work +|= probe.tails.len;
+    try probe.chargeProbe(work);
+}
+
+fn addCompleteTails(a: *Writes, programs: []Program) Allocator.Error!void {
+    var owned_probe: ?*Writes = null;
+    defer if (owned_probe) |probe| probe.deinit();
+    const singleton_reads = try a.arena().alloc(bool, a.pathCount());
+    @memset(singleton_reads, false);
+    for (programs) |*program| {
+        if (!program.recognised or program.call_inst == none) continue;
+        if (program.routes.rows.len != 0 or program.routes.sites.len != 0) {
+            program.tail_route_skipped = true;
+            const keys = try a.arena().dupe(Key, program.keys);
+            for (keys) |*key| key.tails = .{ .status = .joined, .reason = .routes };
+            program.keys = keys;
+            continue;
+        }
+        for (program.holes) |hole| if (hole.reads.len == 1) {
+            singleton_reads[hole.reads[0]] = true;
+        };
+        const eligible = try a.arena().alloc(bool, program.keys.len);
+        var count: u32 = 0;
+        for (program.keys, eligible) |key, *yes| {
+            yes.* = a.tailEligible(key, singleton_reads);
+            count += @intFromBool(yes.*);
+        }
+        for (program.holes) |hole| if (hole.reads.len == 1) {
+            singleton_reads[hole.reads[0]] = false;
+        };
+        if (count == 0) continue;
+        if (owned_probe == null) {
+            owned_probe = try Writes.init(a.in);
+            owned_probe.?.probe_only = true;
+        }
+        const probe = owned_probe.?;
+        probe.probe_eligible = eligible;
+        const before = probe.probe_work;
+        const visits_before = probe.probe_visits;
+        const candidates_before = probe.probe_candidates;
+        const resets_before = probe.probe_reset_rows;
+        var candidate: ?Program = if (probe.probe_work >= a.in.work_cap)
+            null
+        else
+            probe.programOfCall(program.module, program.decl, @fromBackingInt(program.call_inst)) catch |err| switch (err) {
+                error.ProbeExhausted => null,
+                error.WorkCap, error.TailLimit => unreachable,
+                else => |e| return e,
+            };
+        if (candidate) |found| probe.chargeTailProjection(program.*, found) catch |err| switch (err) {
+            error.ProbeExhausted => candidate = null,
+        };
+        const keys = try a.arena().dupe(Key, program.keys);
+        program.tail_work = probe.probe_work - before;
+        program.tail_visits = probe.probe_visits - visits_before;
+        program.tail_candidates = probe.probe_candidates - candidates_before;
+        program.tail_reset_rows = probe.probe_reset_rows - resets_before;
+        program.tail_eligible = count;
+        if (count != 0) {
+            if (a.in.profile) |profile| profile.addCounter(.writes_probe_programs, 1);
+        }
+        for (keys, eligible, 0..) |*key, yes, i| {
+            if (!yes) continue;
+            key.tails = .{ .status = .joined, .reason = if (candidate == null) .work else .unproved };
+            if (candidate) |found| if (i < found.keys.len and !found.keys[i].caps.any() and a.sameTailKey(key.*, probe, found.keys[i])) {
+                key.tails = try a.importTailPartition(key.*, probe, found.keys[i].tails);
+            };
+        }
+        program.keys = keys;
+    }
+}
+
+/// Select one abstract source branch without ending its caller continuation.
+fn tailCase(a: *Writes, replay: *TailReplay, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) Error!u32 {
+    const b = a.bir(f.m);
+    const Candidate = struct { branch: Inst.Index, gamma: u32 };
+    var candidates: std.ArrayList(Candidate) = .empty;
+    var negs: std.ArrayList(Fact) = .empty;
+    defer candidates.deinit(a.gpa);
+    defer negs.deinit(a.gpa);
+    const at = replay.picked.items.len;
+    const maximum: usize = if (at < replay.prefix.len) 64 else 64 - replay.completed_before - replay.pending.items.len;
+    for (branches) |branch| {
+        try a.chargeProbe(1);
+        const pat: Inst.Index = @fromBackingInt(b.instData(branch).lhs);
+        const gn = (try a.gammaAdd(g, negs.items)) orelse break;
+        var match: Match = .{};
+        defer match.facts.deinit(a.gpa);
+        try a.matchFacts(f, pat, s, gn, &match);
+        if (!match.ok) continue;
+        if (a.termTag(s) == .ixeq) if (a.boolPattern(f.m, pat)) |truth| {
+            try match.facts.append(a.gpa, .{ .kind = if (truth) .ieq else .ineq, .key = a.termWord(s, 1), .val = a.termWord(s, 2) });
+        };
+        if (try a.gammaAdd(gn, match.facts.items)) |gi| {
+            a.probe_candidates += 1;
+            if (candidates.items.len >= maximum) return error.TailLimit;
+            try candidates.append(a.gpa, .{ .branch = branch, .gamma = gi });
+        }
+        if (try a.negationOf(f.m, pat, s)) |neg| try negs.append(a.gpa, neg);
+    }
+    if (candidates.items.len == 0) {
+        replay.failed = true;
+        return a.freshEmpty();
+    }
+    var chosen: u32 = 0;
+    if (candidates.items.len > 1) {
+        if (at < replay.prefix.len) {
+            chosen = replay.prefix[at];
+            if (chosen >= candidates.items.len) {
+                replay.failed = true;
+                return a.freshEmpty();
+            }
+        } else {
+            // Each pending prefix owns all decisions before this occurrence.
+            // A continuation reached by another helper call has a different
+            // prefix and call path, even when its BIR instruction is the same.
+            var i = candidates.items.len;
+            while (i > 1) {
+                i -= 1;
+                if (replay.pending.items.len >= 64) {
+                    replay.failed = true;
+                    break;
+                }
+                try a.chargeProbe(@intCast(at + 1));
+                const prefix = try a.arena().alloc(u32, at + 1);
+                @memcpy(prefix[0..at], replay.picked.items);
+                prefix[at] = @intCast(i);
+                try replay.pending.append(a.arena(), prefix);
+            }
+        }
+        try replay.picked.append(a.arena(), chosen);
+        try a.chargeProbe(1 + @as(u64, @intCast(replay.calls.items.len)));
+        const calls_start: u32 = @intCast(a.tail_calls.len);
+        for (replay.calls.items) |call| try a.tail_calls.append(a.gpa, call);
+        try replay.choices.append(a.arena(), .{
+            .module = f.m,
+            .case = @truncate(a.cur_origin),
+            .branch = candidates.items[chosen].branch.int(),
+            .calls_start = calls_start,
+            .calls_len = @intCast(replay.calls.items.len),
+        });
+    }
+    const selected = candidates.items[chosen];
+    try a.bind(f, @fromBackingInt(b.instData(selected.branch).lhs), s);
+    return a.eval(f, @fromBackingInt(b.instData(selected.branch).rhs), selected.gamma);
+}
+
+/// A separate bounded walk: normal acceptance/ownership facts are not replaced.
+fn completeTails(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!TailPartition {
+    const info = try a.funInfo(update_fun);
+    if (info.kind != .top) return .{};
+    const saved_ctx = a.ctx;
+    const saved_uncut = a.uncut;
+    const saved_depth = a.inst_depth;
+    const saved_mu = a.mu_escapes.items.len;
+    try a.chargeProbe(2 *| @as(u64, @intCast(a.split_ctors.items.len)));
+    const saved_split = try a.arena().dupe(u32, a.split_ctors.items);
+    const start: u32 = @intCast(a.tails.len);
+    const choices_start = a.tail_choices.len;
+    const calls_start = a.tail_calls.len;
+    const writes_start = a.tail_writes.items.len;
+    var published = false;
+    defer {
+        a.tail_replay = null;
+        a.ctx = saved_ctx;
+        a.uncut = saved_uncut;
+        a.inst_depth = saved_depth;
+        a.mu_escapes.shrinkRetainingCapacity(saved_mu);
+        a.split_ctors.clearRetainingCapacity();
+        // saved_split was copied from this same retained-capacity list.
+        a.split_ctors.appendSliceAssumeCapacity(saved_split);
+        if (!published) {
+            a.tails.shrinkRetainingCapacity(start);
+            a.tail_choices.shrinkRetainingCapacity(choices_start);
+            a.tail_calls.shrinkRetainingCapacity(calls_start);
+            a.tail_writes.shrinkRetainingCapacity(writes_start);
+        }
+    }
+    var pending: std.ArrayList([]const u32) = .empty;
+    try pending.append(a.arena(), &.{});
+    var completed: u32 = 0;
+    while (pending.pop()) |prefix| {
+        if (completed >= 64) return .{ .status = .joined, .reason = .paths };
+        completed += 1;
+        var replay: TailReplay = .{ .owner = info.m, .prefix = prefix, .pending = &pending, .completed_before = completed - 1 };
+        a.tail_replay = &replay;
+        const result = a.evalKey(kind, update_fun, g) catch |err| switch (err) {
+            error.TailLimit => return .{ .status = .joined, .reason = .paths },
+            else => |e| return e,
+        };
+        a.tail_replay = null;
+        // tick() charges setup and every path to the independent probe's
+        // single shared allowance; evalKey's ordinary cap stays in force.
+        if (replay.failed or result.caps.any()) return .{ .status = .joined };
+        try a.chargeProbe(1 + @as(u64, @intCast(replay.choices.items.len)) +| @as(u64, @intCast(result.writes.len)));
+        const choices: u32 = @intCast(a.tail_choices.len);
+        for (replay.choices.items) |choice| try a.tail_choices.append(a.gpa, choice);
+        const writes: u32 = @intCast(a.tail_writes.items.len);
+        try a.tail_writes.appendSlice(a.gpa, result.writes);
+        try a.tails.append(a.gpa, .{
+            .choices_start = choices,
+            .choices_len = @intCast(replay.choices.items.len),
+            .writes_start = writes,
+            .writes_len = @intCast(result.writes.len),
+        });
+    }
+    if (a.tails.len == start + 1 and a.tails.get(start).choices_len == 0) return .{};
+    published = true;
+    return .{ .status = .exact, .start = start, .len = @intCast(a.tails.len - start) };
+}
+
+/// Copy authoritative ordinary write rows selected by one complete tail.
+pub fn tailWrites(a: *const Writes, tail: Tail, out: *std.ArrayList(Write), allocator: Allocator) Allocator.Error!void {
+    try out.appendSlice(allocator, a.tail_writes.items[tail.writes_start..][0..tail.writes_len]);
+}
+
 fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *std.ArrayList(KeyStep), keys: *std.ArrayList(Key), leaves: *u32) Error!void {
     const res = try a.evalKey(kind, update_fun, g);
     if (res.split != none) {
+        try a.chargeProbe(@intCast(a.split_ctors.items.len));
         const ctors = try a.arena().dupe(u32, a.split_ctors.items);
         const sib = a.siblings(ctors[0]);
         const default = ctors.len < sib.count;
@@ -6845,10 +7414,17 @@ fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *
         }
         var caps = res.caps;
         caps.l = true;
+        try a.chargeProbe(1 + @as(u64, @intCast(path_steps.items.len)));
         try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = caps, .command = res.command, .replaced = res.replaced, .replaced_strict = res.replaced_strict });
         return;
     }
-    try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = res.caps, .command = res.command, .replaced = res.replaced, .replaced_strict = res.replaced_strict });
+    const ki = keys.items.len;
+    const tails = if (a.probe_only and ki < a.probe_eligible.len and a.probe_eligible[ki] and !res.caps.any())
+        try a.completeTails(kind, update_fun, g)
+    else
+        TailPartition{};
+    try a.chargeProbe(1 + @as(u64, @intCast(path_steps.items.len)));
+    try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = res.caps, .command = res.command, .replaced = res.replaced, .replaced_strict = res.replaced_strict, .tails = tails });
 }
 
 // ---------------------------------------------------------------------------
@@ -6882,6 +7458,7 @@ fn isLiteral(a: *Writes, t: u32) bool {
 
 /// The maximal paths `literal(p)` holds at.
 fn literalPaths(a: *Writes, t: u32, p: u32, out: *std.ArrayList(u32)) Error!void {
+    try a.chargeProbe(1);
     if (a.isLiteral(t)) return out.append(a.arena(), p);
     switch (a.termTag(t)) {
         .rec => {
@@ -7606,4 +8183,9 @@ fn scopedBodies(a: *const Writes, t: u32, depth: u32) bool {
         } else false,
         else => true,
     };
+}
+
+/// Source token of a fact anchored to a BIR instruction.
+pub fn tailToken(a: *const Writes, module: u32, inst: u32) u32 {
+    return a.bir(module).insts.items(.main_token)[inst];
 }

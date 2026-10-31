@@ -1,0 +1,22 @@
+-- A typed buffer retains the synchronous callback contract, including when
+-- forEach is forwarded as a first-class function through a generic helper.
+import Js.Buffer as Buffer
+import Task
+
+
+pub direct : Buffer.Buffer Int → ⊤
+direct buffer = Buffer.forEach buffer λ_ → Task.yieldNow ⊤
+
+
+pub forwarded : Buffer.Buffer Int → ⊤
+forwarded buffer = withCallback Buffer.forEach buffer
+
+
+withCallback : (Buffer.Buffer Int, (Int → ⊤) → ⊤), Buffer.Buffer Int → ⊤
+withCallback each buffer = each buffer λ_ → Task.yieldNow ⊤
+
+
+pub whileSuspends : Buffer.Buffer Int → ⊤
+whileSuspends buffer = Buffer.forEachWhile buffer λ_ →
+    Task.yieldNow ⊤
+    True

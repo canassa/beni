@@ -1,0 +1,146 @@
+program CompleteTailManyKeys.main : Tea.sandbox
+  model CompleteTailManyKeys.Model
+  init
+    literal ρ
+  key Step0                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step1                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step2                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step3                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step4                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step5                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step6                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step7                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step8                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step9                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step10                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step11                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step12                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step13                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step14                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step15                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step16                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step17                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step18                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step19                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step20                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step21                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step22                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step23                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step24                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step25                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step26                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step27                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step28                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step29                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step30                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step31                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step32                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step33                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step34                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step35                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step36                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step37                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step38                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step39                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step40                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step41                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step42                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step43                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step44                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step45                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step46                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step47                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step48                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step49                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step50                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step51                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step52                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step53                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step54                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step55                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step56                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step57                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step58                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step59                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step60                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step61                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step62                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Step63                                      exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 64; visits 0; work 2000; candidates 0; resets 0
+  keys 64: bounded 64 (100%), exact 64, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailManyKeys.beni:350:38           dynamic    reads ρ.left
+  hole CompleteTailManyKeys.beni:350:50           dynamic    reads ρ.right
+  hole CompleteTailManyKeys.beni:350:63           dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailManyKeys.beni:350:14           unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 64: under * 0 (0%)
+  pairs 192 over 64 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

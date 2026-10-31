@@ -1,0 +1,5 @@
+import Worker
+
+
+pub run : Worker.Program config state → ⊤
+run _ = ⊤

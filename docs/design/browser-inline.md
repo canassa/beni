@@ -161,6 +161,23 @@ by its type — hides nothing: it is written exactly, and accepted.
    write where the lowering needs it. The message says *"a limit of the compiler"*, so it is never
    read as a rule of the language, and names what would lift it.
 
+*Implementation specified 2026-10-30: scalar String class attributes.* The checker already
+records whether an attribute is its declared String form or a class list
+(`language.md` §11.19; `Item.class`). A vocabulary row carrying `classes` does
+not by itself make every use a list. Inline accepts its `.string` form:
+constants use existing HTML attribute escaping, and changing values use
+`setAttribute` on the existing DOM node only when `getAttribute` differs from
+the desired String, preserving §8.2's binding compare. Target and desired value
+are each evaluated once. An empty String retains an empty
+attribute; no value is discarded or reinterpreted as a class list. Native
+attribute operations avoid assuming `className` is a String property. This
+implementation accepts currently supported HTML shapes; the existing SVG/MathML
+element refusal remains unchanged, and no Inline SVG support is claimed.
+The existing read-set/write guards, initialization and source evaluation order
+remain in force. `raw`, style attributes carrying `styles`, and actual
+`.class_list` values remain their separate existing compiler limits. This adds
+no grammar, vocabulary, runtime escape or alternative class semantics.
+
 ## 6. The release ledger (`plans/direct-rewrite.md` §8, as the owner decided for S0)
 
 - **The dispatch guard and the mid-dispatch send queue are kept** on every page: a defect stops the
@@ -1415,6 +1432,169 @@ written in place, and **each tail** — each result of a `case` or `if` arm the 
 `update` can be (`programArmTails`) — ends with its own pass, of the groups that tail's writes
 reach (`programCallsAt`, `write-sets.md`'s per-path sets, amended 2026-10-17). A function of
 another module is one path: its arm piece returns, and the pass follows.
+
+#### Implementation specified 2026-10-30: complete-handler tail facts
+
+The first implementation of §8.5 covers nonrecursive, statically resolved calls
+of the program's own module. It does not claim the full per-path analysis. A
+recursive call, an opaque call or an unsupported control-flow shape keeps the
+key's existing joined pass. This is a compiler precision boundary, not a new
+source restriction: a program accepted before this implementation remains
+accepted, and its joined write set and ownership checks remain authoritative.
+
+A tail is a **complete handler result**, not the return of a helper. The write-set
+pass records the choices of source branches and own-module call sites that lead
+to that result, evaluates the remaining caller continuations, and derives the
+writes from the final model value. A helper's return followed by another model
+update therefore includes that later update. A helper followed by an effect,
+command preparation, or a possible defect is not an authorization to run a DOM
+pass at the helper's return. The ordinary joined analysis continues to decide
+which keys and markup shapes are accepted.
+
+The ordinary run finishes before optional tail probing starts. The probe owns
+an independent analysis instance, including its terms, interners, summaries,
+top values, escape evidence and work counters. It skips the view walk. A failed
+probe cannot change the ordinary run's ids or public summary evidence. The
+first slice transfers a tail only when its writes map to a subset of the
+ordinary key's existing write rows; it copies those authoritative rows, including
+their approximation evidence, rather than importing a probe term or path id.
+A sorted field-to-row index maps scalar fields without a scan of every ordinary
+write for every probe write. Other cases retain the joined pass. Tail exactness
+describes a complete partition of source choices; it does not strengthen an ordinary write row's
+precision or ownership evidence.
+
+The first exploration bound is 64 complete paths per key, with one additional
+ordinary `W` allowance shared by the entire probe run, including its abstract
+`init` and key analysis. This is an optimization budget, never an acceptance allowance.
+Exhausting that allowance raises a distinct internal probe-abort result; ordinary
+`WorkCap` recovery cannot consume it. The incomplete candidate tree is discarded,
+all its eligible keys keep joined behavior, and no later sibling or program
+starts a probe. The counter saturates at `W`.
+
+Before a candidate changes any reusable state, one coherent setup charge covers
+the summary, capability and top-value reset rows, hash-table clear capacity and
+collector cleanup rows. An insufficient allowance aborts before any clear.
+Repeated frame, pattern, record merge/sort, key-tree, frontier, saved-state and
+result-copy traversal is charged before execution; a saved state's later restoration is prepaid.
+The dump reports actual reset rows separately from total charged work. Across
+many programs, these repeated costs consume the same allowance, not a fresh
+initialization exception for every candidate. The independent probe computes only the final model diff and source choices.
+It skips `identityBreaks`, message-escape collection (`noteMu`/`msgWhole`),
+post-evaluation command classification (`commandOf`) and the unused model-field
+count. Those candidate outputs are never consumed by key matching or tail
+projection; authoritative original identity, escape and command evidence is
+retained. All source operands, command expressions, branches and caller
+continuations still evaluate abstractly in their original order. `model_type`
+remains available for needed closed-record diff; its type/field traversal and
+field-symbol copies consume probe work before walking or allocating. A type
+helper may preserve its ordinary OOM fallback but must propagate ProbeExhausted.
+
+The existing `--self-profile` trace exposes actual ordinary and probe identity,
+message-escape and command-classification walk counts, ordinary in-place program
+count, eligible probe program count and successfully charged probe work. This
+trace counter includes only successful prepayments; the dump allowance counter
+saturates at `W` when another operation cannot be afforded. The optional profile sink is shared with the independent analyzer; without profiling
+it changes neither analysis nor emitted output. Counters increment at actual
+walk bodies, after any probe-only omission. A real Inline wide-record regression
+requires positive ordinary identity/in-place work and positive eligible probe
+work, and zero unused probe walks. It also checks that command operands remain
+abstractly evaluated rather than skipping their source computations.
+
+The ordinary-output eligibility and fallback publication are source-linear
+passes over existing facts. A successful projection prepays its key/header,
+field-index sorting/search and fact-copy work before publishing any tail; if
+that charge fails, the whole candidate keeps joined behavior.
+
+Branch enumeration checks the remaining 64-path allowance as viable branches
+are found, before growing another candidate or negation. A path-limit abort
+immediately abandons that partition. Probe work charges source visits, pattern
+traversal and conservative gamma copy/merge/sort work before executing it;
+reported work units, raw visits and viable tail-case candidates are separate.
+The dump distinguishes an exhausted work allowance, a path limit and an
+unproved partition. Unresolved type dispatch or
+method evidence uses one probe-aware conservative fallback. Recognized primitive
+and derived equality/comparison are explicit supported cases, not a blanket
+permission for unresolved evidence. Derived callees with evidence arguments
+remain unproved in this slice. Existing static core abstraction rows
+(`write-sets.md` §3.7) remain atomic operations; this does not resolve an unknown
+method or evidence handle.
+An authoritative ordinary program with nonempty route rows or sites stays
+joined with an explicit route-boundary reason. It is ineligible for this scalar
+facts slice. The independent probe of a no-route program skips redundant route
+discovery entirely; it does not import route ids from another analysis instance.
+Per-route support remains separate work under #894.
+
+Every non-row external/core call is an unproved boundary before consulting any
+cached summary. This includes `Basics.identity`, whose body has a summary rather
+than a `Core.row`. A cached result must not bypass that boundary merely because
+the earlier ordinary candidate walk already evaluated its body.
+
+Independent analyzer allocation and table initialization cost
+`O(modules + declarations + constructors)` in addition to the work allowance.
+That initialization is documented and timed separately; it is not represented
+as abstract visits or hidden inside the 64-path bound. Compiler throughput must
+include this cost when the foundation is evaluated.
+
+The first eligibility proof requires two distinct scalar-field writes, each read
+by a singleton-read hole. One dense path bitmap is reused across programs;
+eligibility does not scan every hole for every write. Other keys are skipped.
+The implementation records probe visits and proved complete tails so compiler cost
+can be checked independently of dispatch timings. These bounds are not evidence
+that a workload is fast; measurements remain required by rule 8.
+
+The additional facts belong to the write-set analysis and its root plan. They
+are flat indexed records, with variable-length choice paths and write sets in
+side tables. A choice names its BIR module, branch instruction and own-module
+call-site path; two calls of one helper are distinct occurrences. A complete
+tail names its choice path, final write set, and whether the analysis proved
+a complete partition of its source choices. These identities are compiler facts,
+not source names or patterns recognized in emitted JavaScript. Their lifetime is
+the analysis run's; no fact survives replacement of its BIR or checked store.
+Enumeration and numbering follow source order and do not depend on worker
+completion order. Bounded enumeration may fall back to the existing joined
+behavior, but must neither publish incomplete choices as exact nor change the
+meaning of the joined result.
+
+`beni dump --stage=writes` exposes a key's complete-tail facts, including the
+source positions of the choices and calls, each final write set, and an explicit
+joined fallback when the bounded analysis cannot prove a partition. The dump
+prints no internal ids or absolute paths. Black-box fixtures distinguish an
+own-module helper's two results, a caller's later write, two calls of one helper,
+and recursive or opaque fallback. Root-plan facts select buckets by the same
+write/read conflict relation as the joined key. Keeping a tail fact does not
+create ownership permission, remove retention evidence, or bypass a placement
+or boundary check.
+
+The first facts foundation retains the runtime's existing joined passes. Its
+ordinary write and ownership evidence and its emitted output remain unchanged.
+Connecting reviewed facts to root-plan bucket selection and the selector below
+is a subsequent implementation step.
+
+The markup interface currently implements version 1.23. The tail-fact extension
+is version 1.24, additive within major version 1, with accessors for complete
+tails and their selected bucket references. The implementation must connect
+those accessors to the root plan; it must not infer them in the platform from a
+callee's display name. Facts and their dump are reviewed before this interface
+and runtime lowering are connected.
+
+For a handler with proved tails, structured inlining carries one primitive
+local selector through the complete handler. It introduces no global state,
+closure, returned tuple or object, or per-dispatch selection array. Assigning
+that selector is not a DOM write. At the existing final write boundary, after
+the handler and command-value preparation have completed, the lowering first
+prepares **all** values selected by the completed path, then performs one ordered
+write pass. A failure before that boundary leaves the DOM untouched. Actual
+command execution retains its existing position after the pass. An unproved
+path uses the joined fallback at that same boundary.
+
+The existing runtime exports are `pass` and `passes`, both of arity one. `pass`
+runs one pre-existing bucket; `passes` deduplicates existing bucket entries and
+sorts them by their mount-time document ordinal before running them. A selected
+single bucket may use `pass` directly. Multiple buckets must preserve `passes`'
+deduplication and order, using mount-time references rather than constructing a
+new selection wrapper for each dispatch. This slice does not change text
+setters, DOM comparison guards, dispatch reentrancy, FIFO behavior, or the
+prepare-before-any-DOM-write rule of §8.2.
 
 ### 8.6 Lists
 

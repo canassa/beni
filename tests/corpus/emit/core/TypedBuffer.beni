@@ -1,0 +1,22 @@
+-- The typed portable container has the native array's representation.
+-- No callback or element is converted through Js.Value.
+import Js.Buffer as Buffer
+
+
+pub make : a → Buffer.Buffer a
+make value =
+    buffer = Buffer.make ⊤
+    Buffer.push buffer value
+    buffer
+
+
+pub length : Buffer.Buffer a → Int
+length buffer = Buffer.length buffer
+
+
+pub each : Buffer.Buffer a, sync (a → ⊤) → ⊤
+each buffer body = Buffer.forEach buffer λvalue → body value
+
+
+pub while : Buffer.Buffer a, sync (a → Bool) → ⊤
+while buffer body = Buffer.forEachWhile buffer λvalue → body value

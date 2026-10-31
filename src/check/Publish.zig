@@ -255,7 +255,6 @@ fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
     const cx = p.cx;
     const writer = p.writer;
     const gpa = cx.gpa;
-    const scratch = cx.scratch;
     const bir = cx.bir;
     const ctors = try gpa.dupe(Interface.Ctor, iface.ctors);
     errdefer gpa.free(ctors);
@@ -263,31 +262,17 @@ fn ctorTerms(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
         const bir_index = prov.ctorIndex(i) orelse continue;
         if (bir_index >= bir.ctors.len) continue;
         const bc = bir.ctors[bir_index];
-        const owner = bir.decl(bc.decl);
-        const params = bir.declTypeParams(owner);
-        // Read as `Instantiate.ownCtor` reads it, schema endpoints included
-        // (checker-v2.md §11.5).
-        var b = cx.builder(.flex, TypeStore.generalized);
-        defer b.deinit();
-        const param_vars = try scratch.alloc(Var, params.len);
-        defer scratch.free(param_vars);
-        for (params, param_vars) |param, *v| {
-            v.* = try cx.store.fresh(.{ .flex = .{ .name = param.toOptional() } }, TypeStore.generalized);
-            try b.bind(param, v.*);
-        }
-        const args = bir.extraSlice(.{ .start = bc.args_start, .end = bc.args_end }, Bir.Inst.Index);
-        const arg_vars = try scratch.alloc(Var, args.len);
-        defer scratch.free(arg_vars);
-        for (args, arg_vars) |arg, *v| v.* = try b.read(arg);
-        if (b.too_deep) {
+        var inputs = try @import("CtorTypes.zig").read(cx, bc, null, null);
+        defer inputs.deinit();
+        if (inputs.builder.too_deep) {
             try cx.noteDeepDecl(bc.decl);
             continue; // `arg_terms` stays `no_terms`: a use poisons
         }
-        const all_clean = for (arg_vars) |v| {
+        const all_clean = for (inputs.arguments) |v| {
             if (!try p.clean(v, bc.decl)) break false;
         } else true;
         if (!all_clean) continue;
-        const written = try writer.addCtor(param_vars, arg_vars);
+        const written = try writer.addCtor(inputs.parameters, inputs.arguments);
         if (!try p.written(bc.decl)) continue;
         c.arg_terms = written.arg_terms;
         c.quantified_start = written.quantified_start;

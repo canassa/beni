@@ -1,0 +1,7 @@
+-- Typed runtime buffers keep their elements' types, but their mutable native
+-- representation is still privileged. An ordinary program imports its platform.
+import Js.Buffer
+
+
+pub count : Js.Buffer.Buffer Int → Int
+count buffer = Js.Buffer.length buffer

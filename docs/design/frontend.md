@@ -1234,6 +1234,26 @@ itself, where this section left a choice:
 
 ## 10. The developer loop: `new`, `build --watch`, `serve`
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2–§4
+adds generic platform `entryKinds`, source-discovered static program references
+and the explicit standalone `build --entry=value` root. It removes the proposed
+app `workers` list and qualified `realms` map, and withdraws `host: page` in favor
+of checked entry proofs. `check` discovers and validates the same edges.
+No realm word or record-field qualifier syntax is added. Generated binding
+metadata supplies native realm bounds; ordinary call summaries infer their
+requirements. Preserve operation and constructor spans for diagnostics.
+Entry metadata resolves symbols and type roles, never hardcoded platform API
+names; sorted package/module/declaration identities determine output IDs.
+Interfaces include native binding identities, inferred realm summaries,
+HostFree and Wire obligations and entry-role fingerprints (§4 cost model).
+
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
+
+
 *Added 2026-10-01* — Milestone 1's *developer loop v0* (`plans/status-2026-10.md` §6). Four pieces,
 each small, and none of them the daemon: `fast-compiler.md` §4's resident process, its socket, its
 `inotify`/`FSEvents` watching and its cancellation are still M4's, and the daemon's open decisions

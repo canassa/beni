@@ -82,6 +82,7 @@ const fs_read = @import("../fs_read.zig");
 const Lower = @import("Lower.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
+const EntryPlan = @import("../entry/Plan.zig");
 const JsIr = @import("JsIr.zig");
 const Join = @import("Join.zig");
 const Opt = @import("Opt.zig");
@@ -98,6 +99,7 @@ const EmitPack = @import("EmitPack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaValid = @import("SchemaValid.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
+const CheckedTypes = @import("../check/Types.zig");
 const SchemaShare = @import("SchemaShare.zig");
 const SchemaCtor = @import("SchemaCtor.zig");
 const Spec = @import("Spec.zig");
@@ -158,7 +160,14 @@ const entry_export_binding = "$beniExport";
 
 /// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
 /// output key taken from the first package of the chain that declares it.
+pub const EntryKind = struct {
+    definition: Manifest.EntryKind,
+    root: []const u8,
+    layer: u32,
+};
+
 pub const Platform = struct {
+    entry_kinds: []const EntryKind = &.{},
     /// Module-qualified name of the opaque `Program` type `main` must have.
     /// Null for a chain that declares none, which only a library builds for.
     program: ?[]const u8 = null,
@@ -664,6 +673,8 @@ pub fn run(
     options: Options,
     io_failure: *?Session.IoFailure,
 ) Error!Result {
+    session.entry_graph.reset();
+    session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -693,6 +704,7 @@ pub fn run(
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
+    try e.checkEntryKinds();
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -807,6 +819,8 @@ pub fn run(
 /// Diagnostics are owned by the caller, messages included, like `run`'s.
 pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
     var io_failure: ?Session.IoFailure = null;
+    session.entry_graph.reset();
+    session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -823,7 +837,58 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
+    try e.checkEntryKinds();
     return e.diagnostics.toOwnedSlice(gpa);
+}
+
+/// Internal entry-discovery bridge. Contract validation may repopulate the
+/// Session Plan. A fresh Emitter then finds main; no elimination, lowering,
+/// output preflight or output file operation is performed here.
+/// Diagnostics/messages are gpa-owned. Reach's arrays and diagnostic `at`
+/// strings borrow caller scratch, which must outlive rendering/discovery.
+pub const EntryInspection = struct {
+    diagnostics: []const Item,
+    reach: ?Reach.Input = null,
+};
+pub fn inspectEntry(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error!EntryInspection {
+    session.entry_graph.reset();
+    const contract = try checkContract(gpa, scratch, session, options);
+    for (contract) |item| if (item.severity == .@"error") return .{ .diagnostics = contract };
+    var io_failure: ?Session.IoFailure = null;
+    var e: Emitter = .{ .gpa = gpa, .scratch = scratch, .session = session, .options = options, .io_failure = &io_failure };
+    errdefer {
+        for (e.diagnostics.items) |item| gpa.free(item.message);
+        e.diagnostics.deinit(gpa);
+    }
+    e.diagnostics = .fromOwnedSlice(@constCast(contract));
+    const found = if (!options.library) try e.findEntry() else null;
+    if (e.hasErrors() or found == null) return .{ .diagnostics = try e.diagnostics.toOwnedSlice(gpa) };
+    const count = session.graph.count();
+    const birs = try scratch.alloc(*const Bir, count);
+    const tables = try scratch.alloc(*const Dispatch, count);
+    for (birs, tables, 0..) |*b, *d, i| {
+        const module: Graph.Index = @fromBackingInt(@intCast(i));
+        b.* = e.bir(module);
+        d.* = e.dispatchOf(module);
+    }
+    const entry = found.?;
+    return .{ .diagnostics = try e.diagnostics.toOwnedSlice(gpa), .reach = .{
+        .graph = &session.graph,
+        .store = &session.store,
+        .birs = birs,
+        .dispatch = tables,
+        .interfaces = session.resolution.interfaces,
+        .provenance = session.resolution.provenance,
+        .types = &session.checked.types,
+        .interner = &session.interner,
+        .entry = .{ .module = entry.module, .kind = .decl, .index = entry.decl.int() },
+        .library = options.library,
+        .release = options.release,
+        .vocabulary = session.graph.markup.vocabulary,
+        .plans = session.checked.plans,
+        .schema_library = options.schema_library,
+        .test_hooks = options.test_hooks,
+    } };
 }
 
 /// Version 1.8 of the program hook (`boundary.md` §9.4.6): each `For` of one
@@ -1319,6 +1384,9 @@ const Emitter = struct {
     /// every name, and the names its kept part mentions. Found by
     /// `checkMarkupRuntime` and `preciseRuntimeRoots`; scratch-owned.
     runtime_module: ?Graph.Index = null,
+    /// Diagnostic-only identity survives a rejected contract within this
+    /// fresh emitter. Invalid Session plans retain no checked-store facts.
+    entry_program: CheckedTypes.TypeId = .none,
     /// The write-set pass, between `runWrites` and `buildDirect`.
     writes: ?*Writes = null,
     writes_calls: []const Writes.Call = &.{},
@@ -2054,6 +2122,7 @@ const Emitter = struct {
     /// file, copied once, whose exports include `run` — or no file, the
     /// runtime module being both (`moduleIsRuntime`).
     fn markupRuntimeIsProgramRuntime(e: *Emitter) bool {
+        if (e.genericRuntimeSelected()) return false;
         const p = e.options.platform;
         if (e.moduleIsRuntime()) return true;
         const markup = p.markup_runtime orelse return false;
@@ -2304,6 +2373,371 @@ const Emitter = struct {
         }
     }
 
+    /// Checked interface view, including alias arguments. No checker inference
+    /// runs in emit: this reads the immutable schemes it already proved.
+    fn genericRuntimeSelected(e: *const Emitter) bool {
+        if (e.session.entry_plan.validated) return e.session.entry_plan.runtime() != null;
+        // Before validation this selects the legacy markup export request,
+        // not an executable or trusted runtime. Publication follows below.
+        const program = e.options.platform.program orelse return false;
+        for (e.options.platform.entry_kinds) |kind| {
+            if (std.mem.eql(u8, program, kind.definition.programType)) return true;
+        }
+        return false;
+    }
+
+    fn entryRun(e: *const Emitter) ?struct { module: Graph.Index, decl: u32 } {
+        if (e.session.entry_plan.runtime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
+        const module = e.runtime_module orelse return null;
+        const runner = e.suppliedAs("run") orelse return null;
+        return .{ .module = module, .decl = runner.decl };
+    }
+
+    const RuntimeType = struct {
+        iface: *const Interface,
+        at: Interface.TermIndex,
+        bindings: []const RuntimeType = &.{},
+    };
+
+    fn expandRuntimeType(e: *Emitter, original: RuntimeType) !RuntimeType {
+        var view = original;
+        for (0..max_alias_depth) |_| {
+            const term = view.iface.term(view.at);
+            switch (term.tag) {
+                .@"var" => {
+                    if (term.lhs >= view.bindings.len) return view;
+                    view = view.bindings[term.lhs];
+                },
+                .alias => {
+                    const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return view;
+                    if (ref.body == .none) return view;
+                    const args = view.iface.range(term.rhs);
+                    const bindings = try e.scratch.alloc(RuntimeType, args.len);
+                    for (args, bindings) |arg, *binding| binding.* = .{ .iface = view.iface, .at = @fromBackingInt(@intCast(arg)), .bindings = view.bindings };
+                    view = .{ .iface = view.iface, .at = ref.body, .bindings = bindings };
+                },
+                else => return view,
+            }
+        }
+        return view;
+    }
+
+    fn runtimeNamesProgram(e: *Emitter, original: RuntimeType, qualified: []const u8, arity: u32, generic: ?Interface.Scheme) !bool {
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag != .app) return false;
+        const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return false;
+        if (ref.package != .platform or
+            !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.module)), platformModule(qualified)) or
+            !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.name)), shortName(qualified))) return false;
+        const args = view.iface.range(term.rhs);
+        if (args.len != arity) return false;
+        if (generic) |scheme| {
+            const seen = try e.scratch.alloc(u32, args.len);
+            for (args, 0..) |arg, i| {
+                const argument = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(arg)), .bindings = view.bindings });
+                const t = argument.iface.term(argument.at);
+                if (t.tag != .@"var" or t.lhs >= scheme.quantified_count) return false;
+                const quantified = view.iface.quantified(scheme, t.lhs);
+                if (quantified.flags() != 0 or quantified.constraints_len != 0) return false;
+                for (seen[0..i]) |previous| if (previous == t.lhs) return false;
+                seen[i] = t.lhs;
+            }
+        }
+        return true;
+    }
+
+    fn entryKindError(e: *Emitter, kind: EntryKind, comptime fmt: []const u8, args: anytype) !void {
+        try e.reportInFile(.invalid_entry_kind, .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ kind.root, Manifest.file_name }) }, fmt, args);
+    }
+
+    fn entryKindModule(e: *Emitter, name: []const u8) !?Graph.Index {
+        return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
+    }
+
+    const RuntimeValue = struct { module: Graph.Index, decl: u32, iface: *const Interface, scheme: Interface.Scheme, scheme_index: Interface.SchemeIndex };
+
+    fn entryKindValue(e: *Emitter, qualified: []const u8) !?RuntimeValue {
+        const module = try e.entryKindModule(platformModule(qualified)) orelse return null;
+        const decl = e.moduleValue(module, shortName(qualified)) orelse return null;
+        if (module.int() >= e.session.resolution.interfaces.len) return null;
+        const iface = &e.session.resolution.interfaces[module.int()];
+        const b = e.bir(module);
+        const value = iface.findValue(&e.session.interner, b.symbol(b.decls[decl].name)) orelse return null;
+        const scheme_index = iface.values[@backingInt(value)].scheme;
+        if (scheme_index == .none or @backingInt(scheme_index) >= iface.schemes.len) return null;
+        return .{ .module = module, .decl = decl, .iface = iface, .scheme = iface.schemes[@backingInt(scheme_index)], .scheme_index = scheme_index };
+    }
+
+    /// A concrete record exposes its field path now. Generic variables retain
+    /// the path obligation in the entry row for instantiation; they are not
+    /// certified Wire merely because this structural check succeeds.
+    fn entryRolesFit(e: *Emitter, original: RuntimeType, row: Manifest.EntryKind) !bool {
+        const root = try e.expandRuntimeType(original);
+        const term = root.iface.term(root.at);
+        if (term.tag != .app) return false;
+        const args = root.iface.range(term.rhs);
+        for (row.parameters) |parameter| {
+            if (parameter.index >= args.len) return false;
+            var view: RuntimeType = .{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[parameter.index])), .bindings = root.bindings };
+            for (parameter.path) |field_name| {
+                view = try e.expandRuntimeType(view);
+                const field_type = view.iface.term(view.at);
+                if (field_type.tag == .@"var") break;
+                if (field_type.tag != .record) return false;
+                const fields = view.iface.range(field_type.lhs);
+                var found: ?Interface.TermIndex = null;
+                var i: usize = 0;
+                while (i < fields.len) : (i += 2) {
+                    const symbol = view.iface.symbol(@fromBackingInt(@intCast(fields[i])));
+                    if (std.mem.eql(u8, e.session.interner.slice(symbol), field_name)) {
+                        found = @fromBackingInt(@intCast(fields[i + 1]));
+                        break;
+                    }
+                }
+                view.at = found orelse return false;
+            }
+        }
+        return true;
+    }
+
+    fn checkConstructorRecord(e: *Emitter, original: RuntimeType, machine: bool) !bool {
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag != .record) return false;
+        const extension = try e.expandRuntimeType(.{
+            .iface = view.iface,
+            .at = @fromBackingInt(@intCast(term.rhs)),
+            .bindings = view.bindings,
+        });
+        if (extension.iface.term(extension.at).tag != .empty_record) return false;
+        const fields = view.iface.range(term.lhs);
+        const names: []const []const u8 = if (machine) &.{ "init", "update", "subscriptions", "request", "stream" } else &.{ "init", "start", "handle", "stream" };
+        const arities: []const u32 = if (machine) &.{ 2, 3, 1, 2, 2 } else &.{ 2, 2, 3, 4 };
+        if (fields.len != names.len * 2) return false;
+        for (names, arities) |name, arity| {
+            var found = false;
+            var field_index: usize = 0;
+            while (field_index < fields.len) : (field_index += 2) {
+                const symbol = view.iface.symbol(@fromBackingInt(@intCast(fields[field_index])));
+                if (!std.mem.eql(u8, e.session.interner.slice(symbol), name)) continue;
+                const field = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(fields[field_index + 1])), .bindings = view.bindings });
+                const function = field.iface.term(field.at);
+                if (function.tag != .func or field.iface.range(function.lhs).len != arity) return false;
+                found = true;
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    fn checkEntryKinds(e: *Emitter) !void {
+        const plan = &e.session.entry_plan;
+        plan.reset();
+        errdefer plan.reset();
+        if (e.options.platform.program) |program| {
+            e.entry_program = e.session.checked.types.find(
+                e.graph(),
+                .platform,
+                try e.session.interner.getOrPut(e.gpa, platformModule(program)),
+                try e.session.interner.getOrPut(e.gpa, shortName(program)),
+            );
+            plan.top_program = e.entry_program;
+        }
+        const Identity = struct { module: Graph.Index, type: Interface.TypeIndex };
+        const identities = try e.scratch.alloc(?Identity, e.options.platform.entry_kinds.len);
+        @memset(identities, null);
+        for (e.options.platform.entry_kinds, 0..) |kind, kind_index| {
+            const row = kind.definition;
+            const errors_before = e.diagnostics.items.len;
+            const realm = std.meta.stringToEnum(EntryPlan.Realm, row.realm);
+            if (realm == null) {
+                try e.entryKindError(kind, "The entry kind `{s}` names unknown realm `{s}`.", .{ row.programType, row.realm });
+                continue;
+            }
+            const program_module = try e.entryKindModule(platformModule(row.programType)) orelse {
+                try e.entryKindError(kind, "I cannot find the entry kind's Program module `{s}`.", .{platformModule(row.programType)});
+                continue;
+            };
+            if (program_module.int() >= e.session.resolution.interfaces.len) continue;
+            const program_iface = &e.session.resolution.interfaces[program_module.int()];
+            const program_name = try e.session.interner.getOrPut(e.gpa, shortName(row.programType));
+            const type_index = program_iface.findType(&e.session.interner, program_name) orelse {
+                try e.entryKindError(kind, "The entry kind `{s}` must name a public nominal Program type.", .{row.programType});
+                continue;
+            };
+            const identity: Identity = .{ .module = program_module, .type = type_index };
+            const duplicate = for (identities[0..kind_index]) |previous| {
+                if (previous) |actual| if (actual.module == identity.module and actual.type == identity.type) break true;
+            } else false;
+            identities[kind_index] = identity;
+            if (duplicate) {
+                try e.entryKindError(kind, "The entry kind `{s}` is declared more than once. A Program type identifies one entry kind.", .{row.programType});
+                continue;
+            }
+            const program_type = program_iface.types[@backingInt(type_index)];
+            if (program_type.kind == .alias) {
+                try e.entryKindError(kind, "The entry kind `{s}` names an alias. Name its nominal Program type instead.", .{row.programType});
+                continue;
+            }
+            for (row.parameters, 0..) |parameter, parameter_index| {
+                if (parameter.index >= program_type.arity or (!std.mem.eql(u8, parameter.role, "wire") and !std.mem.eql(u8, parameter.role, "local"))) {
+                    try e.entryKindError(kind, "The entry kind `{s}` has an invalid type-parameter role at index {d}.", .{ row.programType, parameter.index });
+                    continue;
+                }
+                for (parameter.path) |field| if (field.len == 0) {
+                    try e.entryKindError(kind, "The entry kind `{s}` has an empty field in a type-role path.", .{row.programType});
+                };
+                for (row.parameters[0..parameter_index]) |previous| {
+                    if (previous.index != parameter.index) continue;
+                    const prefix = @min(previous.path.len, parameter.path.len);
+                    var overlap = true;
+                    for (previous.path[0..prefix], parameter.path[0..prefix]) |a, b| overlap = overlap and std.mem.eql(u8, a, b);
+                    if (overlap) try e.entryKindError(kind, "The entry kind `{s}` has overlapping type roles at index {d}.", .{ row.programType, parameter.index });
+                }
+            }
+            for (0..program_type.arity) |parameter_index| {
+                const covered = for (row.parameters) |parameter| {
+                    if (parameter.index == parameter_index) break true;
+                } else false;
+                if (!covered) try e.entryKindError(kind, "The entry kind `{s}` has no role for type parameter {d}.", .{ row.programType, parameter_index });
+            }
+            var constructors: std.ArrayList(EntryPlan.Constructor) = .empty;
+            for (row.constructors) |constructor| {
+                const protocol_known = std.mem.eql(u8, constructor.callbackProtocol, "handlers") or std.mem.eql(u8, constructor.callbackProtocol, "machine");
+                const value = try e.entryKindValue(constructor.name);
+                if (!protocol_known or value == null) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` must resolve to a public beni function and name callbackProtocol handlers or machine.", .{constructor.name});
+                    continue;
+                }
+                const root = try e.expandRuntimeType(.{ .iface = value.?.iface, .at = value.?.scheme.body });
+                const term = root.iface.term(root.at);
+                if (term.tag != .func or constructor.parameter >= root.iface.range(term.lhs).len or
+                    !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings }, row.programType, program_type.arity, null))
+                {
+                    try e.entryKindError(kind, "The entry constructor `{s}` has an invalid callback parameter index or Program result.", .{constructor.name});
+                    continue;
+                }
+                if (!try e.entryRolesFit(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings }, row)) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` has a Program result that does not contain the declared type-role paths.", .{constructor.name});
+                }
+                const callback = root.iface.range(term.lhs)[constructor.parameter];
+                if (!try e.checkConstructorRecord(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(callback)), .bindings = root.bindings }, std.mem.eql(u8, constructor.callbackProtocol, "machine"))) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` needs a closed `{s}` callback record with the protocol's field arities.", .{ constructor.name, constructor.callbackProtocol });
+                }
+                try constructors.append(e.scratch, .{
+                    .value = .{ .module = value.?.module, .decl = value.?.decl, .scheme = value.?.scheme_index },
+                    .parameter = constructor.parameter,
+                    .protocol = std.meta.stringToEnum(EntryPlan.Protocol, constructor.callbackProtocol).?,
+                });
+            }
+            var launches: std.ArrayList(EntryPlan.Launch) = .empty;
+            for (row.launches) |launch| {
+                const value = try e.entryKindValue(launch.name) orelse {
+                    try e.entryKindError(kind, "I cannot find the public beni entry launch `{s}`.", .{launch.name});
+                    continue;
+                };
+                const root = try e.expandRuntimeType(.{ .iface = value.iface, .at = value.scheme.body });
+                const term = root.iface.term(root.at);
+                const args = if (term.tag == .func) root.iface.range(term.lhs) else &.{};
+                if (launch.parameter >= args.len or
+                    !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[launch.parameter])), .bindings = root.bindings }, row.programType, program_type.arity, null))
+                {
+                    try e.entryKindError(kind, "The entry launch `{s}` has an invalid Program parameter index or type.", .{launch.name});
+                    continue;
+                }
+                if (!try e.entryRolesFit(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[launch.parameter])), .bindings = root.bindings }, row)) {
+                    try e.entryKindError(kind, "The entry launch `{s}` has a Program parameter that does not contain the declared type-role paths.", .{launch.name});
+                }
+                try launches.append(e.scratch, .{
+                    .value = .{ .module = value.module, .decl = value.decl, .scheme = value.scheme_index },
+                    .parameter = launch.parameter,
+                });
+            }
+            const run_name = try std.fmt.allocPrint(e.scratch, "{s}.run", .{row.runtime});
+            const runner = try e.entryKindValue(run_name) orelse {
+                try e.entryKindError(kind, "The entry kind `{s}` needs runtime module `{s}` with a public beni `run` value.", .{ row.programType, row.runtime });
+                continue;
+            };
+            const file = e.graph().moduleFile(runner.module);
+            if (file.int() >= e.session.file_layers.len or e.session.file_layers[file.int()] != kind.layer) {
+                try e.entryKindError(kind, "The runtime module `{s}` must belong to the platform package declaring entry kind `{s}`.", .{ row.runtime, row.programType });
+                continue;
+            }
+            const root = try e.expandRuntimeType(.{ .iface = runner.iface, .at = runner.scheme.body });
+            const term = root.iface.term(root.at);
+            if (term.tag != .func) {
+                try e.report(.invalid_entry_kind, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` must take exactly one `{s}` and return `⊤`, with no evidence parameters or specialized type arguments.", .{ row.runtime, row.programType });
+                continue;
+            }
+            const args = root.iface.range(term.lhs);
+            const result = try e.expandRuntimeType(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings });
+            const convention = Convention.ofDecl(e.dispatchOf(runner.module), e.bir(runner.module), runner.decl);
+            if (term.tag != .func or args.len != 1 or convention.arity != 1 or convention.evidence != 0 or result.iface.term(result.at).tag != .unit or
+                !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[0])), .bindings = root.bindings }, row.programType, program_type.arity, runner.scheme))
+            {
+                try e.report(.invalid_entry_kind, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` must take exactly one `{s}` and return `⊤`, with no evidence parameters or specialized type arguments.", .{ row.runtime, row.programType });
+                continue;
+            }
+            var may_suspend = false;
+            if (runner.iface.effectBlock(runner.scheme)) |effects| {
+                var sites = effects.sites();
+                while (sites.next()) |site| {
+                    if (site.root != 0) continue;
+                    // Alias expansions still name run's own arrow. Structural
+                    // steps enter a parameter/result or another nested value.
+                    const own_arrow = for (site.steps) |step| {
+                        if (Interface.EffectBlock.stepKind(step) != @backingInt(@import("../check/Walk.zig").StepKind.expansion) or
+                            Interface.EffectBlock.stepIndex(step) != 0) break false;
+                    } else true;
+                    if (!own_arrow) continue;
+                    const class = effects.class(site.class);
+                    may_suspend = may_suspend or class.rung == 2 or (class.deps.len != 0 and !class.sync);
+                }
+            }
+            if (may_suspend) {
+                try e.report(.entry_runtime_suspends, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` may suspend, but the generated entry calls it synchronously. Install listeners, start an owned root fiber, then return; initialization may suspend inside that fiber.", .{row.runtime});
+                continue;
+            }
+            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+                if (e.exportsProgram()) {
+                    try e.entryKindError(kind, "The generic entry runtime for `{s}` returns `⊤`, so it cannot also supply the result required by exports program.", .{row.programType});
+                    continue;
+                }
+            };
+            if (e.diagnostics.items.len != errors_before) continue;
+            const constructor_start: u32 = @intCast(plan.constructors.len);
+            for (constructors.items) |constructor| try plan.constructors.append(e.gpa, constructor);
+            const launch_start: u32 = @intCast(plan.launches.len);
+            for (launches.items) |launch| try plan.launches.append(e.gpa, launch);
+            const role_start: u32 = @intCast(plan.roles.len);
+            for (row.parameters) |parameter| {
+                const symbols = try e.scratch.alloc(InternPool.Symbol, parameter.path.len);
+                for (parameter.path, symbols) |field, *symbol| symbol.* = try e.session.interner.getOrPut(e.gpa, field);
+                try plan.appendRole(e.gpa, parameter.index, std.meta.stringToEnum(EntryPlan.RoleKind, parameter.role).?, symbols);
+            }
+            const resolved = try plan.appendKind(e.gpa, .{
+                .program = e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(row.programType)), program_name),
+                .module = program_module,
+                .interface_type = type_index,
+                .arity = program_type.arity,
+                .realm = realm.?,
+                .layer = kind.layer,
+                .runtime = .{ .module = runner.module, .decl = runner.decl, .scheme = runner.scheme_index },
+                .constructors = .{ .start = constructor_start, .len = @intCast(constructors.items.len) },
+                .launches = .{ .start = launch_start, .len = @intCast(launches.items.len) },
+                .roles = .{ .start = role_start, .len = @intCast(row.parameters.len) },
+            });
+            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+                plan.selected = resolved;
+            };
+        }
+        if (!e.hasErrors() and e.options.platform.entry_kinds.len != 0 and e.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
+            if (e.options.platform.program) |program| try e.reportInFile(.invalid_entry_kind, .{ .path = try e.manifestPath() }, "The platform has no runtime file or entryKinds row for its top Program `{s}`.", .{program});
+        }
+        if (e.hasErrors()) plan.reset() else plan.finish();
+    }
+
     // ---- boundary.md §9.2: the runtime module -----------------------------
 
     /// The runtime module the chain names, or null (`boundary.md` §9.2, *A
@@ -2445,8 +2879,9 @@ const Emitter = struct {
     /// module*), coarse: every export it supplies and every value the file
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
-        const module = e.runtime_module orelse return &.{};
         var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.session.entry_plan.runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtime_module orelse return out.items;
         for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
         for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
@@ -2458,7 +2893,9 @@ const Emitter = struct {
     /// a lowering imported, `run` and `start` where the entry file calls
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
-        const module = e.runtime_module orelse return &.{};
+        var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.session.entry_plan.runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
         try names.appendSlice(e.scratch, e.module_uses.items);
         if (entry != null) {
@@ -2478,7 +2915,7 @@ const Emitter = struct {
         const uses = try e.programUses(entry);
         try names.appendSlice(e.scratch, uses);
         e.program_uses = uses;
-        var out: std.ArrayList(Reach.Node) = .empty;
+
         for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
         };
@@ -2694,9 +3131,21 @@ const Emitter = struct {
         ,
             .{try e.writtenProgramName(entry.module)},
         );
+        const program = e.options.platform.program orelse "";
+        const expected = if (e.session.entry_plan.validated) e.session.entry_plan.top_program else e.entry_program;
         if (e.expandedTypeName(entry.module, b, annotation, null, 0)) |t| {
-            if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program orelse "")) and
-                std.mem.eql(u8, t.name, shortName(e.options.platform.program orelse ""))) return;
+            if (expected != .none and t.id == expected) return;
+            if (std.mem.eql(u8, t.module, platformModule(program)) and
+                std.mem.eql(u8, t.name, shortName(program)))
+            {
+                return e.report(.main_not_program, file, d.name_token,
+                    \\`main` must use the platform's `{s}`.
+                    \\
+                    \\This annotation names `{s}` from a different package. Matching names
+                    \\are not the same nominal type. Rename the local module so it does not shadow
+                    \\the platform module.
+                , .{ try e.writtenProgramName(entry.module), e.writtenTypeName(entry.module, t) });
+            }
         }
         // The message names the type as it was WRITTEN, alias and all: that
         // is the name the reader can find above the definition.
@@ -2718,8 +3167,8 @@ const Emitter = struct {
         );
     }
 
-    /// A resolved type reference, split into the two halves a message needs.
-    const TypeRef = struct { module: []const u8, name: []const u8 };
+    /// A printable type reference with its resolved nominal identity when known.
+    const TypeRef = struct { module: []const u8, name: []const u8, id: CheckedTypes.TypeId = .none };
 
     /// An alias being looked through by `expandedTypeName`: its parameters,
     /// and the arguments of the use being expanded, which are instructions
@@ -2741,8 +3190,9 @@ const Emitter = struct {
     /// is looked through (`boundary.md` §5: an alias is the same type, so
     /// `main : App` with `type alias App = Node.Program` is a program), or
     /// null for anything that is not a named type — a function, a record,
-    /// an unbound parameter. An applied nominal type is null too: the
-    /// platform's `Program` takes no arguments.
+    /// an unbound parameter. An applied nominal Program is accepted when
+    /// entryKinds supplies its checked generic runtime contract; legacy
+    /// platform program declarations retain their zero-argument contract.
     fn expandedTypeName(
         e: *Emitter,
         module: Graph.Index,
@@ -2777,10 +3227,11 @@ const Emitter = struct {
         if (id == .none) return null;
         const named = types.entry(id);
         if (named.kind != .alias) {
-            if (args.len != 0) return null;
+            if (args.len != 0 and !e.genericRuntimeSelected()) return null;
             return .{
                 .module = e.session.interner.slice(named.module_name),
                 .name = e.session.interner.slice(named.name),
+                .id = id,
             };
         }
         const alias_bir = e.bir(named.module);
@@ -2939,6 +3390,7 @@ const Emitter = struct {
         }
         const w = try Writes.init(.{
             .gpa = e.gpa,
+            .profile = if (e.session.profile.enabled) &e.session.profile else null,
             .graph = e.graph(),
             .birs = birs,
             .provenance = e.session.resolution.provenance,
@@ -3131,6 +3583,7 @@ const Emitter = struct {
         for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
         const w = try Writes.init(.{
             .gpa = e.gpa,
+            .profile = if (e.session.profile.enabled) &e.session.profile else null,
             .graph = e.graph(),
             .birs = birs,
             .provenance = e.session.resolution.provenance,
@@ -6384,6 +6837,7 @@ const Emitter = struct {
             }
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
+        if (e.session.entry_plan.runtime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
             const b = e.bir(entry.module);
@@ -6414,7 +6868,20 @@ const Emitter = struct {
             }
         }
         var entry_call: ?Spec.Entry = null;
-        if (run_id != null and main_id != null) {
+        var indexed_exports: []const Spec.IndexedExport = &.{};
+        if (e.options.prerender == .tree) {
+            // prerenderExports exports render/routes; it never calls run.
+            if (main_id) |g| {
+                if (e.options.data) {
+                    try escaping.append(e.scratch, g);
+                } else {
+                    indexed_exports = try e.scratch.dupe(Spec.IndexedExport, &.{
+                        .{ .base = g, .index = 0 },
+                        .{ .base = g, .index = 1 },
+                    });
+                }
+            }
+        } else if (run_id != null and main_id != null) {
             entry_call = .{ .callee = run_id.?, .args = try e.scratch.dupe(u32, &.{main_id.?}) };
         } else {
             if (run_id) |g| try escaping.append(e.scratch, g);
@@ -6423,6 +6890,7 @@ const Emitter = struct {
         {
             var root_ids: std.ArrayList(u32) = .empty;
             try root_ids.appendSlice(e.scratch, escaping.items);
+            for (indexed_exports) |projection| try root_ids.append(e.scratch, projection.base);
             if (entry_call) |c| {
                 try root_ids.append(e.scratch, c.callee);
                 try root_ids.appendSlice(e.scratch, c.args);
@@ -6478,6 +6946,7 @@ const Emitter = struct {
             .node_makers = makers.items,
             .escaping = escaping.items,
             .entry = entry_call,
+            .indexed_exports = indexed_exports,
             .one_scope = one_scope,
             .trace_largest = e.options.points_to_largest,
             .check_call_graph = e.options.check_call_graph,
@@ -7150,7 +7619,7 @@ const Emitter = struct {
             // `run` and `start` are the file's unless the runtime module
             // supplies them (`backend.md` §15.1, *The runtime module*).
             if (e.suppliedAs("run") == null) try files.items[runtime_index.?].keep.appendSlice(scratch, &.{"run"});
-        } else if (!e.moduleIsRuntime() or e.suppliedAs("run") == null) return null;
+        } else if (e.entryRun() == null) return null;
         var markup_index: ?u32 = null;
         if (e.markupRuntimeIsProgramRuntime()) {
             markup_index = runtime_index;
@@ -7221,7 +7690,10 @@ const Emitter = struct {
             (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
         else
             null;
-        if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
+        if (e.session.entry_plan.runtime()) |runner| {
+            if (module_at.get(paths[runner.module.int()]) == null) return null;
+            try entry_edges.append(scratch, .{ .module = runner.module.int() });
+        } else if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
         var start: @FieldType(Hoist, "start") = null;
         if (try e.startData()) |s| {
             if (e.suppliedAs("start") != null) {
@@ -7623,23 +8095,23 @@ const Emitter = struct {
             } else try e.moduleSpelling(e.runtime_module.?, "start");
             try out.print(scratch, "{s}({s});", .{ callee, s.data });
         }
-        const run_name = if (e.suppliedAs("run") != null)
-            try e.moduleSpelling(e.runtime_module.?, "run")
-        else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
-        if (e.options.prerender == .tree) {
-            // No call: the exports above are the whole entry.
-        } else if (e.exportsProgram()) {
-            // `boundary.md` §9.12 (c): the hoisted file exports what `run`
-            // returns. The bindings are longer than any short name `Rename`
-            // spells (8 characters at most), so no hoisted declaration can
-            // take them.
-            const prog = entry_program_binding;
-            const exp = entry_export_binding;
-            try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
-            for (e.options.platform.entry_exports, 0..) |name, i| {
-                try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
-            }
-        } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        if (e.options.prerender != .tree) {
+            const run_name = if (e.entryRun()) |runner|
+                try e.moduleSpelling(runner.module, "run")
+            else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
+            if (e.exportsProgram()) {
+                // `boundary.md` §9.12 (c): the hoisted file exports what `run`
+                // returns. The bindings are longer than any short name `Rename`
+                // spells (8 characters at most), so no hoisted declaration can
+                // take them.
+                const prog = entry_program_binding;
+                const exp = entry_export_binding;
+                try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
+                for (e.options.platform.entry_exports, 0..) |name, i| {
+                    try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
+                }
+            } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        }
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
@@ -7819,6 +8291,9 @@ const Emitter = struct {
                 }
             }
         }
+        if (entry != null) if (e.session.entry_plan.runtime()) |runner| {
+            if (e.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.imported.set(ordinal);
+        };
         // What the markup runtime and the entry file import from the
         // runtime module (`backend.md` §15.1, *The runtime module*).
         if (e.runtime_module) |module| {
@@ -8214,6 +8689,7 @@ const Emitter = struct {
         // `checkEntryExports` has refused the one chain this cannot serve,
         // a runtime module, so `exportsProgram` here means a runtime file.
         if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
+        if (e.session.entry_plan.runtime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -8400,12 +8876,12 @@ const Emitter = struct {
             }
         };
         const as = " as ";
-        if (e.suppliedAs("run") != null) {
+        if (e.entryRun() != null) {
             try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}run", .{ try e.moduleSpelling(module, "run"), as }));
         } else try Add.one(e, &imports, runtime_path, "run");
         if (start) |s| {
             if (e.suppliedAs("start") != null) {
-                try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(module, "start"), as }));
+                try Add.one(e, &imports, try e.outputPath(e.runtime_module.?), try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(e.runtime_module.?, "start"), as }));
             } else try Add.one(e, &imports, s.path, "start");
         }
         var text: std.ArrayList(u8) = .empty;
@@ -8429,20 +8905,20 @@ const Emitter = struct {
         // The page's `flush` (§15.11), from the module the page loads when
         // the runtime module supplies it: the entry file imports `run` from
         // no program runtime, so it is the one a harness reads.
-        if (e.suppliedAs("flush")) |s| if (e.live.decl(module, s.decl)) {
-            const spelled = try e.moduleSpelling(module, "flush");
+        if (e.suppliedAs("flush")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtime_module.?, "flush");
             if (release)
-                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, module_path })
+                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
             else
-                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, module_path });
+                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17).
-        if (e.suppliedAs("stop")) |s| if (e.live.decl(module, s.decl)) {
-            const spelled = try e.moduleSpelling(module, "stop");
+        if (e.suppliedAs("stop")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtime_module.?, "stop");
             if (release)
-                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, module_path })
+                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
             else
-                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, module_path });
+                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }

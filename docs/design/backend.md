@@ -76,6 +76,30 @@ backend that cannot be executed is a backend whose bugs survive a green suite.
 
 ## 2. CLI surface
 
+*Amended 2026-10-30; specified, not built.* [workers.md](workers.md) §2–§5
+adds source-discovered entries, `_workers/<stable-entry-id>/_main.mjs`, staged
+runtime bootstrap and relative descriptor URLs. IDs precede parallel work;
+all output paths share collision preflight.
+Worker runtime `run : Program config state protocol → ⊤` is impure and
+non-suspending. It starts an owned Task root and returns; init may suspend
+inside that root, driven by the realm-local scheduler. The emitted entry calls
+run(main) synchronously; entry_runtime_suspends rejects a suspending run. Each entry has separate roots,
+initializers, DCE and source maps (§9/§11); sharing chunks requires exposure
+valid in every importing realm. EntryHost proofs replace `host: page`.
+The owner selected shared wire-visible names and selective normalization in
+[#1305](https://github.com/canassa/beni/issues/1305#issuecomment-6525031242).
+Universal codecs are not adopted. Independently renamed entries cannot exchange
+raw layouts by accident. §4's intended representations and today's emitted
+representations are compared in [the audit](research/workers-host-and-wire.md).
+This amendment does not change either representation merely to ease transport.
+
+The [owner decision of 2026-10-30](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806)
+adopts C: generated native types and ordinary inferred realm summaries.
+A and B remain research alternatives, not contracts. Grouped protocol roles
+keep call and stream inputs distinct. Callback obligations come from entryKinds
+protocol rows and ownership checker v2, without new record-field syntax.
+
+
 ```
 beni build [options] <entry>...      compile to JavaScript
 ```

@@ -1,0 +1,22 @@
+program CompleteTailSharedBudget.main : Tea.sandbox
+  model CompleteTailSharedBudget.Model
+  init
+    literal ρ
+  key Step                                        exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  key Again                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tails joined (probe work exhausted)
+  tail-analysis eligible 2; visits 0; work 140; candidates 0; resets 0
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailSharedBudget.beni:40:37        dynamic    reads ρ.left
+  hole CompleteTailSharedBudget.beni:40:49        dynamic    reads ρ.right
+  hole CompleteTailSharedBudget.beni:40:62        dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailSharedBudget.beni:40:14        unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 6 over 2 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

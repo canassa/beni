@@ -77,6 +77,9 @@ const SourceStore = @import("../SourceStore.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Dispatch = @import("../check/Dispatch.zig");
+const ContinuationPlan = @import("../check/ContinuationPlan.zig");
+const EntryRoots = @import("../check/EntryRoots.zig");
+const NominalLayoutBytes = @import("NominalLayoutBytes.zig");
 const Types = @import("../check/Types.zig");
 
 const Symbol = InternPool.Symbol;
@@ -92,7 +95,7 @@ pub const magic = "BENIDSP\x00";
 /// 13 since scalar dictionary keys (#294) carry key domains.
 /// 14 adds checked render identity facts and their local paths.
 /// 15: effect declaration byte 2 carries the totality proof.
-pub const format_version: u32 = 15;
+pub const format_version: u32 = 18;
 
 pub const Column = enum(u32) {
     terms,
@@ -119,6 +122,10 @@ pub const Column = enum(u32) {
     module_refs,
     type_refs,
     strings,
+    continuations,
+    decl_heads,
+    entry_roots,
+    nominal_layouts,
 
     pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
@@ -149,7 +156,8 @@ pub const Column = enum(u32) {
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
-            .strings => 1,
+            .strings, .continuations, .entry_roots, .nominal_layouts => 1,
+            .decl_heads => 4,
         };
     }
 };
@@ -191,6 +199,32 @@ pub const Loaded = struct {
 
     pub const empty: Loaded = .{ .table = .empty, .module_refs = &.{}, .type_refs = &.{} };
 
+    pub fn verifyDeclHeads(l: *const Loaded, bir: *const Bir, graph: *const Graph, types: *const Types) bool {
+        if (l.table.decl_heads.len != bir.decls.len) return false;
+        for (l.table.decl_heads, bir.decls) |head, decl| {
+            if (head == .none) continue;
+            if (!decl.kind.isValue() or resolveType(l, graph, types, head.int(), @intCast(l.type_refs.len)) == .none) return false;
+        }
+        return true;
+    }
+
+    /// Nonmutating resolution; decoded head words are serialized ref indices.
+    pub fn headId(l: *const Loaded, graph: *const Graph, types: *const Types, head: Types.TypeId) Types.TypeId {
+        return resolveType(l, graph, types, head.int(), @intCast(l.type_refs.len));
+    }
+    pub fn prepareEntryCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, types: *const Types, selection: *const @import("../entry/Selection.zig")) Allocator.Error!bool {
+        if (selection.selected.len == 0 and l.table.entry_roots.present and l.table.entry_roots.roots.len == 0) return true;
+        const heads = try gpa.alloc(Types.TypeId, l.table.decl_heads.len);
+        defer gpa.free(heads);
+        for (l.table.decl_heads, heads) |raw, *head| {
+            head.* = l.headId(graph, types, raw);
+            if (raw != .none and head.* == .none) return false;
+        }
+        return l.table.entry_roots.covers(gpa, bir, graph, types, heads, selection);
+    }
+    pub fn prepareNominalCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, types: *const Types, module: Graph.Index, interner: *const InternPool.Global, own_interface: *const Interface, work: ?*@import("../check/NominalLayouts.zig").Work) Allocator.Error!bool {
+        return l.table.nominal_layouts.covers(gpa, bir, graph, types, module, interner, own_interface, work);
+    }
     pub fn deinit(l: *Loaded, gpa: Allocator) void {
         l.table.deinit(gpa);
         gpa.free(l.module_refs);
@@ -217,6 +251,14 @@ pub fn write(
 ) Allocator.Error![]u8 {
     var w: Writer = .{ .gpa = gpa, .graph = graph, .types = types, .interner = interner };
     defer w.deinit();
+
+    const continuations = try ContinuationPlan.write(gpa, &d.continuations, interner);
+    defer gpa.free(continuations);
+
+    const entry_roots = try EntryRoots.write(gpa, &d.entry_roots, interner);
+    defer gpa.free(entry_roots);
+    const nominal_layouts = try NominalLayoutBytes.write(gpa, &d.nominal_layouts, interner);
+    defer gpa.free(nominal_layouts);
 
     const terms = try gpa.alloc(u8, d.terms.len * term_bytes);
     defer gpa.free(terms);
@@ -359,6 +401,9 @@ pub fn write(
         row[1] = @intFromBool(e.twin);
         row[2] = @intFromBool(e.total);
     }
+    const decl_heads = try gpa.alloc(u8, d.decl_heads.len * 4);
+    defer gpa.free(decl_heads);
+    for (d.decl_heads, 0..) |head, i| std.mem.writeInt(u32, decl_heads[i * 4 ..][0..4], try w.typeRef(head), .little);
     const boundary = try gpa.alloc(u8, d.boundary.len * Column.boundary.width());
     defer gpa.free(boundary);
     @memset(boundary, 0);
@@ -441,6 +486,10 @@ pub fn write(
         module_refs,
         type_refs,
         w.strings.items,
+        continuations,
+        decl_heads,
+        entry_roots,
+        nominal_layouts,
     };
     const lengths = [Column.count]u32{
         @intCast(d.terms.len),
@@ -467,6 +516,10 @@ pub fn write(
         @intCast(w.module_refs.items.len),
         @intCast(w.type_refs.items.len),
         @intCast(w.strings.items.len),
+        @intCast(continuations.len),
+        @intCast(d.decl_heads.len),
+        @intCast(entry_roots.len),
+        @intCast(nominal_layouts.len),
     };
 
     var offsets: [Column.count]u32 = undefined;
@@ -987,6 +1040,43 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
 
+    const head_rows = try gpa.alloc(Types.TypeId, lengths[@backingInt(Column.decl_heads)]);
+    out.table.decl_heads = head_rows;
+    const head_bytes = col(bytes, offsets, .decl_heads);
+    for (head_rows, 0..) |*head, i| {
+        const at = std.mem.readInt(u32, head_bytes[i * 4 ..][0..4], .little);
+        if (at != no_ref and at >= out.type_refs.len) return error.BadSidecar;
+        head.* = @fromBackingInt(@intCast(at));
+    }
+
+    const plan_bytes = col(bytes, offsets, .continuations)[0..lengths[@backingInt(Column.continuations)]];
+    out.table.continuations = (switch (in.*) {
+        .find => |pool| ContinuationPlan.read(gpa, plan_bytes, pool),
+        .get_or_put => |pool| ContinuationPlan.readGrowing(gpa, plan_bytes, pool.pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownSymbol => return error.UnknownSymbol,
+        else => return error.BadSidecar,
+    };
+
+    const root_bytes = col(bytes, offsets, .entry_roots)[0..lengths[@backingInt(Column.entry_roots)]];
+    out.table.entry_roots = (switch (in.*) {
+        .find => |pool| EntryRoots.read(gpa, root_bytes, pool),
+        .get_or_put => |pool| EntryRoots.readGrowing(gpa, root_bytes, pool.pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownSymbol => return error.UnknownSymbol,
+        else => return error.BadSidecar,
+    };
+    const nominal_bytes = col(bytes, offsets, .nominal_layouts)[0..lengths[@backingInt(Column.nominal_layouts)]];
+    out.table.nominal_layouts = (switch (in.*) {
+        .find => |pool| NominalLayoutBytes.read(gpa, nominal_bytes, pool),
+        .get_or_put => |pool| NominalLayoutBytes.readGrowing(gpa, nominal_bytes, pool.pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownSymbol => return error.UnknownSymbol,
+        else => return error.BadSidecar,
+    };
     if (!verify(&out)) return error.BadSidecar;
     return out;
 }
@@ -1093,6 +1183,7 @@ fn readShape(row: *const [12]u8, type_refs: u32) ReadError!Dispatch.Shape {
 /// pins both (it contains the source hash and every import's key).
 pub fn verify(l: *const Loaded) bool {
     const d = &l.table;
+    if (d.decl_heads.len != 0 and d.decl_heads.len != d.decls.len) return false;
     const terms = d.terms.len;
     for (d.terms, 0..) |t, i| {
         const r = t.argsOf();
@@ -1210,6 +1301,7 @@ fn rangeOk(r: Dispatch.Range, limit: usize) bool {
 pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
     const modules = @as(u32, @intCast(l.module_refs.len));
     const type_count = @as(u32, @intCast(l.type_refs.len));
+    for (@constCast(l.table.decl_heads)) |*head| head.* = l.headId(graph, types, head.*);
     for (@constCast(l.table.terms)) |*t| resolveTerm(t, l, graph, types, modules, type_count);
     for (@constCast(l.table.derived)) |*row| {
         switch (row.shape) {
@@ -1287,6 +1379,22 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     try testing.expectEqualSlices(u32, a.render_links, b.render_links);
     try testing.expectEqualSlices(Dispatch.EffectSite, a.effect_sites, b.effect_sites);
     try testing.expectEqualSlices(Dispatch.EffectDecl, a.effect_decls, b.effect_decls);
+    try testing.expectEqualSlices(Types.TypeId, a.decl_heads, b.decl_heads);
+    const roots_a = try EntryRoots.write(testing.allocator, &a.entry_roots, interner);
+    defer testing.allocator.free(roots_a);
+    const roots_b = try EntryRoots.write(testing.allocator, &b.entry_roots, interner);
+    defer testing.allocator.free(roots_b);
+    try testing.expectEqualSlices(u8, roots_a, roots_b);
+    const layouts_a = try NominalLayoutBytes.write(testing.allocator, &a.nominal_layouts, interner);
+    defer testing.allocator.free(layouts_a);
+    const layouts_b = try NominalLayoutBytes.write(testing.allocator, &b.nominal_layouts, interner);
+    defer testing.allocator.free(layouts_b);
+    try testing.expectEqualSlices(u8, layouts_a, layouts_b);
+    const plan_a = try ContinuationPlan.write(testing.allocator, &a.continuations, interner);
+    defer testing.allocator.free(plan_a);
+    const plan_b = try ContinuationPlan.write(testing.allocator, &b.continuations, interner);
+    defer testing.allocator.free(plan_b);
+    try testing.expectEqualSlices(u8, plan_a, plan_b);
     try testing.expectEqualSlices(Dispatch.DeclInfo, a.decls, b.decls);
     try testing.expectEqualSlices(Dispatch.LetInfo, a.lets, b.lets);
     try testing.expectEqualSlices(Dispatch.Derived, a.derived, b.derived);

@@ -213,7 +213,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     // A statement that runs a store of a record update written in place
     // is the update, never an unused pure value (`ownership-checker.md`
     // §31.10, *The optimiser barrier*).
-    for (discarded) |node| if (node.int() < ir.nodes.len and !try ir.holdsStore(arena, &o.stack, node)) o.drop(node);
+    for (discarded) |node| if (node.int() < ir.nodes.len and !try ir.holdsIntrinsicEffect(arena, &o.stack, node)) o.drop(node);
 
     for (ir.extraSlice(ir.body, Index)) |top| {
         o.current += 1;
@@ -789,7 +789,7 @@ const Opt = struct {
             if (o.readOf(idx, "uses") == 0) {
                 const at = stmt.int();
                 const held = (o.kept[at / 32] | o.pinned[at / 32]) & (@as(u32, 1) << @intCast(at % 32)) != 0;
-                if (!held and !try o.ir.holdsStore(o.arena, &o.stack, stmt)) o.drop(stmt);
+                if (!held and !try o.ir.holdsIntrinsicEffect(o.arena, &o.stack, stmt)) o.drop(stmt);
                 continue;
             }
             if (try o.copy(stmts[i + 1 ..], stmt, n, idx)) continue;
@@ -851,7 +851,7 @@ const Opt = struct {
                 o.found = .none;
                 if (try o.ownUses(after, n) != 1) break :reads;
                 const at = o.found.unwrap() orelse break :reads;
-                o.names_only = listed or try o.ir.holdsStore(o.arena, &o.stack, stmt);
+                o.names_only = listed or try o.ir.holdsIntrinsicEffect(o.arena, &o.stack, stmt);
                 defer o.names_only = false;
                 if (!o.readsBefore(after, at)) break :reads;
                 // No taller than lowering lets an expression grow before it
@@ -1199,7 +1199,7 @@ const Opt = struct {
             }
         }
         const writes = switch (tag) {
-            .call, .new_call, .assign => true,
+            .call, .new_call, .assign, .dynamic_import => true,
             .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(o.ir.data(node).rhs))) == .yield,
             else => false,
         };
@@ -1380,7 +1380,7 @@ const Opt = struct {
         if (tag == .ident) if (o.inlined[node.int()].unwrap()) |v| return o.height(v, depth + 1);
         if (tag == .arrow) return n.arrow;
         const weight: u32 = switch (tag) {
-            .call, .new_call => n.call,
+            .dynamic_import, .call, .new_call => n.call,
             .object, .property => n.object,
             .array => n.array,
             .member, .index_get, .unary, .template => n.member,

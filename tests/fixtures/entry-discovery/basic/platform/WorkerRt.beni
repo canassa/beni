@@ -1,0 +1,5 @@
+import Worker exposing (Program)
+
+
+pub run : Program → ⊤
+run _ = ⊤

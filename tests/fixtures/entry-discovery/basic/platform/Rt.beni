@@ -1,0 +1,5 @@
+import Start exposing (Program)
+
+
+pub run : Program → ⊤
+run _ = ⊤

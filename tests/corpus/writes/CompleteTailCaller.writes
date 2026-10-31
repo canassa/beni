@@ -1,0 +1,21 @@
+program CompleteTailCaller.main : Tea.sandbox
+  model CompleteTailCaller.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailCaller:30:20 arm CompleteTailCaller:21:9 writes node ρ; value ρ.after ≈; value ρ.left ≈
+    tail call CompleteTailCaller:30:20 arm CompleteTailCaller:23:9 writes node ρ; value ρ.after ≈; value ρ.right ≈
+  tail-analysis eligible 1; visits 92; work 4979; candidates 6; resets 4456
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailCaller.beni:35:37              dynamic    reads ρ.left
+  hole CompleteTailCaller.beni:35:49              dynamic    reads ρ.right
+  hole CompleteTailCaller.beni:35:62              dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailCaller.beni:35:14              unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>

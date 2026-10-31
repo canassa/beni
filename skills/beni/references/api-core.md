@@ -217,6 +217,13 @@ module Js
   value typeOf : Value → Value
   value undefined : Value
   value write : Ref a, a → ⊤  -- impure
+module Js.Buffer
+  type Buffer a
+  value forEach : Buffer a, (a → ⊤) → ⊤  -- impure
+  value forEachWhile : Buffer a, (a → Bool) → ⊤  -- impure
+  value length : Buffer a → Int  -- impure
+  value make : ⊤ → Buffer a  -- impure
+  value push : Buffer a, a → ⊤  -- impure
 module Json
   value decode : String → Result (List Issue) a where a.codec : ⊤ → Codec a  -- impure
   value decodeValue : Value → Result (List Issue) a where a.codec : ⊤ → Codec a  -- impure

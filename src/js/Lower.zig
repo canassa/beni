@@ -10618,6 +10618,44 @@ pub const Lowerer = struct {
         return l.forOf(out, n, v[0], &.{stmt}, p);
     }
 
+    /// Typed buffer iteration with early stop, preserving the callback's
+    /// value. A literal lambda is written directly in the loop body.
+    fn eachWhileLoop(l: *Lowerer, out: *StmtList, xs: Inst.Index, f: Inst.Index, p: u32) !Node.Index {
+        var body: StmtList = .empty;
+        var iterable: Node.Index = undefined;
+        var n: JsIr.NameIndex = undefined;
+        const condition = blk: {
+            if (l.bir.instTag(f) == .lambda and !l.functionSuspends(f)) {
+                const ld = l.bir.instData(f);
+                const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
+                if (params.len == 1) {
+                    iterable = try l.expr(out, xs);
+                    const param = params[0];
+                    n = switch (l.bir.instTag(param)) {
+                        .pat_var => try l.localName(l.bir.instData(param).lhs),
+                        .pat_wild => try l.fresh(l.well.param),
+                        else => bound: {
+                            const bound_name = try l.fresh(l.well.param);
+                            try l.bindings(&body, param, try l.ident(bound_name, l.pos(param)));
+                            break :bound bound_name;
+                        },
+                    };
+                    break :blk try l.expr(&body, @fromBackingInt(@intCast(ld.rhs)));
+                }
+            }
+            const operands = try l.orderedExprs(out, &.{ xs, f }, false);
+            iterable = operands[0];
+            n = try l.fresh(l.well.param);
+            break :blk try l.call(operands[1], &.{try l.ident(n, p)}, p);
+        };
+        const stopped = try l.add(.break_stmt, p, @backingInt(JsIr.NameIndex.none), Node.Data.unused);
+        const yes = try l.b.addRange(&.{stopped});
+        const no = try l.b.addRange(&.{});
+        const branch = try l.b.addRecord(JsIr.If{ .then_start = yes.start, .then_end = yes.end, .else_start = no.start, .else_end = no.end });
+        try body.append(l.scratch, try l.add(.if_stmt, p, (try l.unary(.not, condition, p)).int(), @backingInt(branch)));
+        return l.forOf(out, n, iterable, body.items, p);
+    }
+
     /// Where a `Js.finally`'s value goes (`backend.md` §4, *`Js.finally` is
     /// `try … finally`*): a temporary the body assigns, nowhere, or out of
     /// the function by the body's own `return`s.
@@ -11060,7 +11098,15 @@ pub const Lowerer = struct {
             try l.report(.internal, args[0], "a `Js.Ref` written as a `let` was lowered as something other than its name.", .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        if (which == .each and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
+        if (which == .makeBuffer) {
+            // The ignored unit argument still runs before allocation, including
+            // its side effects, failures and suspension protocol.
+            for (args) |arg| try l.discard(out, arg, l.pos(arg));
+            const range = try l.b.addRange(&.{});
+            return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+        }
+        if ((which == .each or which == .eachBuffer) and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
+        if (which == .eachBufferWhile and args.len == 2) return l.eachWhileLoop(out, args[0], args[1], p);
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
         if (which == .regExp) return l.regExpLiteral(args, p);
@@ -11152,7 +11198,7 @@ pub const Lowerer = struct {
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
             // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`
             // `objectLiteral` and a `method` `methodFunc`, above.
-            W.each, W.finally, W.catchIf, W.regExp, W.typeIs, W.object, W.method => l.nullNode(p),
+            W.each, W.eachBuffer, W.eachBufferWhile, W.finally, W.catchIf, W.regExp, W.typeIs, W.object, W.method => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
             W.pure, W.suspending => l.call(v[0], &.{}, p),
@@ -11191,6 +11237,13 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            W.makeBuffer => unreachable, // Handled before operand materialisation.
+            W.pushBuffer => blk: {
+                const pushed = try l.call(try l.member(v[0], try l.interner.getOrPut(l.gpa, "push"), p), &.{v[1]}, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, pushed.int(), Node.Data.unused));
+                break :blk l.nullNode(p);
+            },
+            W.lengthBuffer => l.member(v[0], try l.interner.getOrPut(l.gpa, "length"), p),
             W.array => blk: {
                 const range = try l.b.addRange(rest);
                 break :blk l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
@@ -12493,7 +12546,7 @@ pub const Lowerer = struct {
                             if (l.bir.instTag(@fromBackingInt(@intCast(l.bir.instData(ty).rhs))) != .type_unit) return false;
                         },
                         .ext_value => switch (l.jsIntrinsicOf(callee) orelse return false) {
-                            .write, .set, .setAt, .throw, .each => {},
+                            .write, .set, .setAt, .throw, .each, .pushBuffer, .eachBuffer, .eachBufferWhile => {},
                             // `Js.finally`'s value is its body's: a lambda's
                             // body, whose tails are asked in turn.
                             .finally => {

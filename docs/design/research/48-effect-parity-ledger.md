@@ -42,6 +42,25 @@ Other modules are `packages/effect/src/<Module>.ts`, written `<Module>.ts:<line>
 
 ---
 
+
+*Amended 2026-10-30: worker parity; specified, not built.*
+
+Contract: [workers.md](../workers.md); evidence and actual Effect checkout:
+[workers research](workers-api-research.md) §6. These rows are **specified,
+missing**, not implementation or performance parity claims.
+
+| Capability | Retained Effect quality | Beni contract / deliberate distinction | Evidence owed |
+|---|---|---|---|
+| Entry and ready | Ready handshake raced against failure | One browser platform, compiler-emitted module entries, bounded pre-ready queue/deadline | Early failure, URL/realm/DCE fixtures |
+| Requests and exits | Encoded success/failure/interrupt/defect | Typed Result; defects fatal on owning page, never WorkerUnknownError | Exit races and page crash paths |
+| Scoped cancellation | Interrupt handler; cooperative close | Wait remote finalizers, explicit destructive abort only | Child/finalizer order and loss limits |
+| Native transport errors | Send/receive failure visibility | Exact native classifiers, both sides' messageerror, no broad send catch | Native failures and unknown-defect fixtures |
+| Transfer schemas | Collector during encoding | Static backing ownership and partial-failure consumption | Alias/view/capture negative corpus |
+| Context | Request trace/span metadata | Fiber Log metadata only, no cross-thread sinks or fibers | Context restoration/nested spans |
+| Pools | Fixed/elastic, concurrency/utilization | Bounded admission, no automatic replay of moved input | Bounds, retirement, failure tests |
+| Streams | Ack/back-pressure and keep-alive | Byte/chunk limits, independent cancellation control, leases are not proof of death | Slow consumer and cancel saturation |
+| Cost | Small per-worker overhead | No claim before same-machine native/Effect comparison | Per-entry bytes and round-trip distributions |
+
 ## 0. Findings
 
 1. **The kernel is at parity; the library on top of it is not there yet.** Every mechanism Effect's

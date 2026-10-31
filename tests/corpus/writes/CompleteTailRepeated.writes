@@ -1,0 +1,23 @@
+program CompleteTailRepeated.main : Tea.sandbox
+  model CompleteTailRepeated.Model
+  init
+    literal ρ
+  key (any)                                       exact      node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailRepeated:30:21 arm CompleteTailRepeated:21:9 call CompleteTailRepeated:31:20 arm CompleteTailRepeated:21:9 writes node ρ; value ρ.after ≈; value ρ.left ≈
+    tail call CompleteTailRepeated:30:21 arm CompleteTailRepeated:21:9 call CompleteTailRepeated:31:20 arm CompleteTailRepeated:23:9 writes node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailRepeated:30:21 arm CompleteTailRepeated:23:9 call CompleteTailRepeated:31:20 arm CompleteTailRepeated:21:9 writes node ρ; value ρ.after ≈; value ρ.left ≈; value ρ.right ≈
+    tail call CompleteTailRepeated:30:21 arm CompleteTailRepeated:23:9 call CompleteTailRepeated:31:20 arm CompleteTailRepeated:23:9 writes node ρ; value ρ.after ≈; value ρ.right ≈
+  tail-analysis eligible 1; visits 215; work 5571; candidates 20; resets 4456
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole CompleteTailRepeated.beni:36:37            dynamic    reads ρ.left
+  hole CompleteTailRepeated.beni:36:49            dynamic    reads ρ.right
+  hole CompleteTailRepeated.beni:36:62            dynamic    reads ρ.after
+  holes 3: static 0, literal 0, static-key 0, dynamic 3
+  site CompleteTailRepeated.beni:36:14            unique
+  sites 1: unique 1, shared 0, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 3 over 1 keys and 3 groups (3.00 per key); every key calls 3 of 3 groups (100%)
+  reconciler 0 of 0 lists
+  patchAll <none>
