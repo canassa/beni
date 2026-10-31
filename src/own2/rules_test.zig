@@ -105,16 +105,18 @@ const layers = [_]Entry{
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
     // 1 630 since #1386: a `sep` side below a constructor.
     // 1 780 since S3b slice 4b: `positionsAt` and `reentries`, moved from
-    // `Transfer`, read a delivery's marks too.
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1780 },
+    // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
+    // route's stop at a parameter's leaf.
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 1810 },
     // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
     // #1386: two positions of one split beside a write; 2 000 since #1367: an
     // answered value on the write's path, read beside the path.
     // 2 050 since #1390: a match on a rest splits its positions, unless a
     // head is stored beside the rest.
     // 2 380 since #1253: the written position, by canonical path, and the
-    // routes that tell a node at one position of it.
-    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 2380 },
+    // routes that tell a node at one position of it. 3 050 since #1412: a
+    // use below a parameter's leaf, expanded after the walk by state.
+    .{ .file = "Transfer.zig", .layer = 10, .max_lines = 3050 },
     // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
     // S3b's worklist and propagation raise it with their design commit.
     .{ .file = "Fix.zig", .layer = 10, .max_lines = 1200 },

@@ -1351,7 +1351,7 @@ pub const Views = struct {
 /// Per node of a use shape, what is at or below it: 1 a `W`, 2 an `E`.
 /// Memoised per node, on an explicit stack (#1138), so a use shape that is
 /// a DAG costs its nodes.
-fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
+pub fn marksBelow(env: Env, use: NodeId, memo: *Ids.FixedDict(1)) Error!u32 {
     const Frame = struct { node: NodeId, expanded: bool };
     var stack: std.ArrayList(Frame) = .empty;
     defer stack.deinit(env.gpa);
@@ -1470,6 +1470,13 @@ pub fn positionsAt(env: Env, n: NodeId, steps: []const Step) Error!?NodeId {
 /// A value is projected when its route is popped, in the order a caller
 /// that reads the routes one by one and projects each made it. Each pair
 /// popped is a record. A write's other paths are `Transfer`'s (#1325).
+///
+/// **A stop at a parameter's leaf (#1412).** With `stops`, a write route
+/// whose value becomes an exact, unrefined leaf of the caller's own
+/// parameter through an exact prefix (no `[*]` or `⟲`) is not walked on:
+/// it is returned once as a `stop`, with its use node and the leaf, and
+/// the caller expands what is below it after its walk, paired with what
+/// its frame names below that leaf (`Transfer.Frame.expandGroups`).
 pub const Routes = struct {
     env: Env,
     below: Ids.FixedDict(1) = .{},
@@ -1478,13 +1485,17 @@ pub const Routes = struct {
     stack: std.ArrayList(Item) = .empty,
     steps: std.ArrayList(Step) = .empty,
     want: u32 = 0,
+    stops: bool = false,
 
     const Entry = struct { step: Step, parent: u32 };
     /// A use node, its route's entry, and the argument's value: the
     /// parent's until the item is popped, then its own. `stuck` once a step
-    /// is missing; `free`, no value, below a `⟲` or with no argument.
-    const Item = struct { node: NodeId, entry: u32, value: NodeId, stuck: bool, free: bool };
-    pub const Route = struct { steps: []const Step, deep: bool };
+    /// is missing; `free`, no value, below a `⟲` or with no argument;
+    /// `exact` while no step is a `[*]` or a `⟲`.
+    const Item = struct { node: NodeId, entry: u32, value: NodeId, stuck: bool, free: bool, exact: bool = true };
+    /// `stop`: the route stopped at a parameter's leaf (`stops`).
+    pub const Route = struct { steps: []const Step, deep: bool, stop: ?Stop = null };
+    pub const Stop = struct { node: NodeId, leaf: CellId, value: NodeId };
     pub const Want = enum(u2) { writes = 1, escapes = 2 };
 
     pub fn deinit(r: *Routes) void {
@@ -1499,10 +1510,15 @@ pub const Routes = struct {
     /// (`.none`: no argument).
     /// `below` is a node's own and stays: one memo for every walk of the call.
     pub fn start(r: *Routes, use: NodeId, arg: NodeId, want: Want) Error!void {
+        return r.startStops(use, arg, want, false);
+    }
+
+    /// `start`, stopping at a parameter's leaf when `stops` (writes only).
+    pub fn startStops(r: *Routes, use: NodeId, arg: NodeId, want: Want, stops: bool) Error!void {
         const below = r.below;
         r.below = .{};
         r.deinit();
-        r.* = .{ .env = r.env, .below = below, .want = @backingInt(want) };
+        r.* = .{ .env = r.env, .below = below, .want = @backingInt(want), .stops = stops and want == .writes };
         // The use's size: growth chosen before the walk, never the call's
         // lane (§4.1; #1369's review: a use of 600 nodes passed it).
         const walk = try r.env.account().enter(r.env.gpa, null);
@@ -1525,7 +1541,15 @@ pub const Routes = struct {
                     if (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, it.value, e.step)) |n| it.value = n else it.stuck = true;
                 }
                 if (!it.free and (try r.seen.getOrPut(env.gpa, .{ e.parent, it.node.int(), it.value.int(), @intFromBool(it.stuck) })).found_existing) continue;
+                if (e.step.kind == .level or e.step.kind == .elem) it.exact = false;
             }
+            if (r.stops and !it.free and !it.stuck and it.exact) if (try stopLeaf(env, it.value)) |c| {
+                r.steps.clearRetainingCapacity();
+                var at = it.entry;
+                while (at != Ids.none_int) : (at = r.entries.items[at].parent) try r.steps.append(env.gpa, r.entries.items[at].step);
+                std.mem.reverse(Step, r.steps.items);
+                return .{ .steps = r.steps.items, .deep = false, .stop = .{ .node = it.node, .leaf = c, .value = it.value } };
+            };
             var w = false;
             var e = false;
             var deep = false;
@@ -1546,7 +1570,7 @@ pub const Routes = struct {
                     if ((r.below.get(.{k.node.int()}) orelse 3) & r.want == 0) continue;
                     const id: u32 = @intCast(r.entries.items.len);
                     try r.entries.append(env.gpa, .{ .step = k.step, .parent = it.entry });
-                    try r.stack.append(env.gpa, .{ .node = k.node, .entry = id, .value = it.value, .stuck = it.stuck, .free = it.free });
+                    try r.stack.append(env.gpa, .{ .node = k.node, .entry = id, .value = it.value, .stuck = it.stuck, .free = it.free, .exact = it.exact });
                 }
             }
             if (!(if (r.want == 1) w else e)) continue;
@@ -1559,6 +1583,17 @@ pub const Routes = struct {
         return null;
     }
 };
+
+/// The cell of `n` when it is a leaf of exactly one exact, unrefined
+/// parameter cell: where a write route stops (`Routes.stops`, #1412).
+pub fn stopLeaf(env: Env, n: NodeId) Error!?CellId {
+    if (n == .none or env.shapes.kind(n) != .leaf) return null;
+    var it = env.cells.sets.iterate(try env.shapes.cellsOf(env.gpa, env.account(), &env.cells.sets, n));
+    const e = it.next() orelse return null;
+    if (it.next() != null or e.value != 0) return null;
+    const c: CellId = .from(e.key);
+    return if (env.cells.origin(c) == .param) c else null;
+}
 
 /// Apply class `class` at call instruction `inst` to `args` (§2.11). The
 /// answer's slices live in `s` until its next call.

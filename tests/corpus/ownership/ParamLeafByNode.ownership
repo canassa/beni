@@ -1,0 +1,35 @@
+module ParamLeafByNode
+  11:25 List.push xs: accepted param
+  15:15 call ParamLeafByNode.touch a: accepted param (ParamLeafByNode.touch writes π1)
+  15:25 call ParamLeafByNode.touch b: accepted param (ParamLeafByNode.touch writes π1)
+  19:15 call ParamLeafByNode.t1 a.0: accepted param (ParamLeafByNode.t1 writes π1.0)
+  19:15 call ParamLeafByNode.t1 a.1: accepted param (ParamLeafByNode.t1 writes π1.1)
+  19:22 call ParamLeafByNode.t1 b.0: accepted param (ParamLeafByNode.t1 writes π1.0)
+  19:22 call ParamLeafByNode.t1 b.1: accepted param (ParamLeafByNode.t1 writes π1.1)
+  23:11 call ParamLeafByNode.t1 p.0: accepted param (ParamLeafByNode.t1 writes π1.0)
+  23:11 call ParamLeafByNode.t1 p.1: accepted param (ParamLeafByNode.t1 writes π1.1)
+  27:10 call ParamLeafByNode.t2 p.0.0: accepted param (ParamLeafByNode.t2 writes π1.0.0)
+  27:10 call ParamLeafByNode.t2 p.0.1: accepted param (ParamLeafByNode.t2 writes π1.0.1)
+  27:10 call ParamLeafByNode.t2 p.1.0: accepted param (ParamLeafByNode.t2 writes π1.1.0)
+  27:10 call ParamLeafByNode.t2 p.1.1: accepted param (ParamLeafByNode.t2 writes π1.1.1)
+  34:13 call ParamLeafByNode.t1 p.0: rejected alias: x holds it and is read at 34:20 (ParamLeafByNode.t1 writes π1.0)
+  34:13 call ParamLeafByNode.t1 p.1: accepted param (ParamLeafByNode.t1 writes π1.1)
+  41:15 call ParamLeafByNode.t1 p.0: rejected alias: x holds it and is read at 41:13 (ParamLeafByNode.t1 writes π1.0)
+  41:15 call ParamLeafByNode.t1 p.1: accepted param (ParamLeafByNode.t1 writes π1.1)
+  45:19 call ParamLeafByNode.touch a: accepted param (ParamLeafByNode.touch writes π1)
+  45:29 call ParamLeafByNode.touch b: accepted param (ParamLeafByNode.touch writes π1)
+  52:13 call ParamLeafByNode.two p.0: rejected disjoint: another operand of the same operation reaches it (ParamLeafByNode.two writes π1.0)
+  52:13 call ParamLeafByNode.two p.1: accepted param (ParamLeafByNode.two writes π1.1)
+  summary touch: π1 RW[storage]
+  summary t1: π1.0 RW[storage], π1.1 RW[storage]
+  summary t2: π1.0.0 RW[storage], π1.0.1 RW[storage], π1.1.0 RW[storage], π1.1.1 RW[storage]
+  summary alone: π1.0 RW[storage], π1.1 RW[storage]
+  summary deep: π1.0.0 RW[storage], π1.0.1 RW[storage], π1.1.0 RW[storage], π1.1.1 RW[storage]
+  summary held: π1 R, π1.0 RW[storage], π1.1 RW[storage]
+  summary kept: π1 R, π1.0 RAW[storage], π1.1 RW[storage]; res .1 π1.0
+  summary two: π1.0 RW[storage], π1.1 RW[storage], π2 R
+  summary other: π1 R, π1.0 RW[storage], π1.1 RW[storage]
+  demands 21: accepted 18 (fresh 0, call 0, param 18, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 21: accepted 18 (fresh 0, call 0, param 18, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause disjoint 1
+cause alias 2
