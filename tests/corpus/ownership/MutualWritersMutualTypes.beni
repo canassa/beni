@@ -1,0 +1,41 @@
+-- ownership: mutual writers over mutual types (#1429). `wa` writes the
+-- list of an `A` and walks its first `B`; `wb` walks the `A` of a `B`. In
+-- `wb`, the call `wa a` writes `a#A.0` and the lists of the `A`s below it,
+-- which are parts of `wb`'s parameter: accepted `param`, as in v1. A
+-- caller's fresh value is accepted `fresh`.
+-- At the default allowance `wb` stops at its summary-size limit (90 408
+-- records against 65 536, since 5a, #1487), so this module raises it.
+@ownership_summary_size(module, 131072)
+
+type A
+    = A (List Int) B B
+    | AL
+
+
+type B
+    = B (List Int) A
+    | BL
+
+
+wa : A → A
+wa a =
+    case a of
+        A xs b1 b2 →
+            A (List.push xs 1) (wb b1) b2
+
+        AL →
+            AL
+
+
+wb : B → B
+wb b =
+    case b of
+        B ys a →
+            B ys (wa a)
+
+        BL →
+            BL
+
+
+pub main : A
+main = wa (A [] (B [] AL) BL)
