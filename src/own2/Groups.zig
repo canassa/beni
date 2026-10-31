@@ -1,4 +1,4 @@
-//! L10: the module (`docs/design/ownership-v2.md` §2.1, §5, §8 S3a): the
+//! L12: the module (`docs/design/ownership-v2.md` §2.1, §5, §8 S3a): the
 //! source and signature adapters, and the walk of every declaration.
 //!
 //! **The place source** (§2.1). `Place` reads a type through `Place.Source`;

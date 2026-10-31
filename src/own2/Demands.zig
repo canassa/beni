@@ -1,4 +1,4 @@
-//! L7: demands and the check (`docs/design/ownership-v2.md` §2.8). A demand
+//! L9: demands and the check (`docs/design/ownership-v2.md` §2.8). A demand
 //! is a write the walk met — a writer call, a construction, a `++` chain, a
 //! deep consumption — at a point, on a base value; this file resolves each
 //! one against six conditions in R-4.3.6's order:

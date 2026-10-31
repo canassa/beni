@@ -1,4 +1,4 @@
-//! L8: the fixpoint driver (`docs/design/ownership-v2.md` §2.12). As built
+//! L10: the fixpoint driver (`docs/design/ownership-v2.md` §2.12). As built
 //! for S4-verifier (#1180): its proof half, §2.12's *Recursive proofs* — a
 //! finite obligation graph over settled may-facts, and its verifier. S3b adds
 //! the worklist and the sparse propagation beside it.

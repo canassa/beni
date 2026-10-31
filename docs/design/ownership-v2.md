@@ -1178,7 +1178,7 @@ safety, a naive offline scan (every holder live at p, every use of each) runs be
 holders and compares the whole outcome; `-Downership-full-cross-check` compares every frame. That is the safety
 net, not the argument.
 
-*As built (#1214):* `Holders.zig` is on L6 and `Demands.zig` on L7 (§5): an import goes to a strictly lower
+*As built (#1214):* `Holders.zig` is on L8 and `Demands.zig` on L9 (§5): an import goes to a strictly lower
 layer, and Demands reads the index. Demands runs conditions 1–4 per demand, `Holders.answer` answers condition 5
 for every demand that passed them in one sweep, and condition 6 follows. The build differs from the text above in
 these points, each pinned:
@@ -1522,7 +1522,7 @@ position**: the read at the recast joins what is stored at either with the recas
 projections are the position's transitions too, read for what a snapshot stores there (an unstored inner adds
 nothing to the recast's derived read; §2.13.9's restoration reads the same entries). A delta's base is not a
 position: a built node's read is the walk's certificate, so a constraint stored for the base alone is observable
-nowhere. `Cond.frontier` is that one transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing
+nowhere. `KappaRead.frontier` is that one transition function; `propagate`, `kappaLeq` and `deep` walk it and nothing
 else.
 *As built (#1273):* `propagate` keeps one frame per transition, in the order it always walked them. It
 shares only what a frame reads of its run alone, once per run: the run's interned id, its one-member link
@@ -1564,7 +1564,7 @@ reaches `[*].a` through `positions(leaf{π₁}, leaf{π₂})`, and instantiation
 `if c then [ x ] else [ x ]` joins two one-position literals into `union`, and κ at `[*]` stays `yes`: a write
 into the element is accepted (`BranchSameElement`). `proj`, `Shape.map` and `propagate` preserve the kind, and
 `widen` opens a positions member on the cycle (§2.3), retaining its multiplicity in the fold; outside the cycle it keeps the member. No operation may erase coexistence by interpreting it as alternatives. `leq` is
-kind-blind, so the multiplicity a positions node carries is compared through κ only (`Cond.kappaLeq`).
+kind-blind, so the multiplicity a positions node carries is compared through κ only (`KappaRead.kappaLeq`).
 
 A **single-arrival leaf** may default to `yes` at its own ordinary occurrence. A projected symbolic
 summary arrival requires `excl` at the selected path. This is what makes `List.map xs λl → …` record
@@ -1691,7 +1691,7 @@ Where κ is set, always **at the selected path p**:
   insertion work (bounded fixed-word radix depth for cell keys); unchanged subtrees and input pairs
   are reused. A final quotient/codec walks O(n) distinct records, with O(n log n) refinement/order work.
   Thus **total**, not per-query, cost is O(n log n), space O(n) fixed-word records. These are required
-  algorithms. *As built (#1121, first part):* `Cond.Agg` is the apart aggregate (the arrival group with
+  algorithms. *As built (#1121, first part):* `KappaRead.Agg` is the apart aggregate (the arrival group with
   its taken-element parents, base index and same-base pairs, repeats, approximation); `reachAgg` builds
   each node's from its parts' (the larger extended by what `Radix.news` says the smaller adds); a
   literal's one element and a together-join's root read it; each group records its predecessor, so
@@ -1716,7 +1716,7 @@ Where κ is set, always **at the selected path p**:
 
   *As built (#1419, #1420, S3b slice 5d1):* the reads of K find their home (§2.11 *Part 2*, *A read
   at another position*). Read-off maps a snapshot's entry maps one radix node at a time, memoised
-  for each relabel (`Cond.relabelMap`). So a submap that many positions share is mapped once. The
+  for each relabel (`Kappa.relabelMap`). So a submap that many positions share is mapped once. The
   per-entry walk stays only where `Shape.map` made one image of two sources (`map_shared`), because
   there the presence count is per position. K's snapshot holds Θ(n²) `(position, node)` entries in
   O(n log n) map nodes. With these two changes, K came to 284 / 257 / 231 records per
@@ -1752,7 +1752,7 @@ Where κ is set, always **at the selected path p**:
   `List.copy`/`Dict.copy` separate storage and preserve value conditions (R-4.10.9).
 
 There are no deep `sep`/`apart` atoms. A genuinely deep demand enumerates its tracked paths and conjoins
-those paths' obligations through `Cond.deep` (S2): a walk of the value's explicit structure that meets a
+those paths' obligations through `KappaRead.deep` (S2): a walk of the value's explicit structure that meets a
 projected summary arrival as `excl` at that arrival's path. When the demand's path map is many-to-one,
 `deep` also consumes the primitive's preimage aggregate; a visited `(node,class,cursor)` set alone
 cannot stand in for that multiset. S3a's deep demands (send, `consumed`, focus) conjoin
@@ -2212,7 +2212,7 @@ of the same handle still add multiplicity through the path-multiset primitive.
   view, an earlier call's result) and the forced node, are **joined as stored entries, before the
   kind's rule reads them** (joining the two reads instead would give `lost`). The join is one stored
   value per view, memoised with its expansion, and it is how `recast`'s inner is read
-  (`Cond.innersOf`). A forced node is never read alone. Read alone it would miss the class's binding,
+  (`KappaRead.innersOf`). A forced node is never read alone. Read alone it would miss the class's binding,
   or the argument's snapshot keyed by a middle view (`wrap x = { v = x }` over an earlier call's
   result), giving `lost` for a built node and, for a leaf, a derived read that drops the
   constraint (a `FoldedBCall`-shaped callee's instantiated `excl π1⟲·…`). At publish (below) the κ is
@@ -2628,7 +2628,7 @@ of the same handle still add multiplicity through the path-multiset primitive.
       - publishing: read-off's `cond`, a demand's `relies`, and `Walk`'s read of the frame's
         `xreq` (its `fails` test and its `flat`).
   - Resolving is `instantiate` with `Grafter.atom` under `E`, memoised per atom, its result
-    canonical (*Canonical partials*). `Cond.resolved(k)` is the one entry.
+    canonical (*Canonical partials*). `CondAlgebra.resolved(k)` is the one entry.
   - `join`, `and`, `flat` and `kind` treat an `inst` atom as an opaque atom. That is sound, because
     resolving distributes over `and`: `instantiate` maps each atom on its own. So the carriers and
     the table's own operations need no check. Each resolving reader above asserts, at its entry
@@ -2834,7 +2834,7 @@ context)`; a table index or matching array length is not identity. Join alternat
 ones appearing in only one branch, then solve recursive class pairs by a worklist with backreferences.
 `Summary.join`'s current equal-length positional nested arrays are S2 scaffolding, not an implementation
 of this rule. Read-off produces `within` only from a recorded pair of distinct pre-fold labels; neither
-`Cond.sep(c,c)` nor an imported self atom can invent that provenance. Serialize the pair's folded proof
+`KappaRead.sep(c,c)` nor an imported self atom can invent that provenance. Serialize the pair's folded proof
 obligation and traversal certificate together. Whole-graph coinductive equality is never evidence of
 freshness. All pending proof requests carry immutable input generations; failure cannot leave a proved
 answer in a shared memo.
@@ -4697,18 +4697,20 @@ import each other; upward needs go through interface structs passed down (`Class
 `Fix.Instance{ctx, step, join, leq}` for the driver, `Obligation.entry` records for `Entry`).
 
 ```
-L14 Enforce
-L13 Ownership
-L12 BlockRead
-L11 Report  Message  Hoists  Block
-L10 Groups  Entry  Refine
-L9  Walk
-L8  Transfer  Fix
-L7  Calls  Demands
-L6  Rows  Holders
-L5  Summary  Liveness  Exits
-L4  Regions  Cond
-L3  Prepass  Shape
+L16 Enforce
+L15 Ownership
+L14 BlockRead
+L13 Report  Message  Hoists  Block
+L12 Groups  Entry  Refine
+L11 Walk
+L10 Transfer  Fix
+L9  Calls  Demands
+L8  Rows  Holders
+L7  Summary
+L6  Cond
+L5  KappaRead  Liveness  Exits
+L4  Regions  Kappa
+L3  Prepass  Shape  CondAlgebra
 L2  Cell  Facts
 L1  Place
 L0  Ids
@@ -4724,27 +4726,30 @@ L0  Ids
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
-| `Cond.zig` | 4 | per-value immutable κ snapshots, atoms, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), instantiation, rely | `yes/lost/shared`, `and`, the atoms, `Kappas`, `kappaGet`, `kappaSet`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `propagate`, `instantiate`, `rely`, `flat`, `print` | Ids, Facts, Cell, Shape | ≤ 4 620 (#1335: `foldCondOf` by the cycle walk; #1372: a relabelled source with no entry reads `lost`, §2.3 *map*, and `propagate`'s per-call memos, §2.9 *As built (#1372)*; #1390: a part's split run and `covered`, §2.2 *Parts*; #1399: a join keys its members' entries where a reader looks, §2.9; #1419: a read at another position and the relabel per submap, §2.9, §2.11) |
-| `Summary.zig` | 5 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 770 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows) |
+| `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
+| `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
+| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 560 (#1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call) |
+| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 160 (4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
+| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 770 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
-| `Rows.zig` | 6 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Holders.zig` | 6 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
-| `Calls.zig` | 7 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 710 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call) |
-| `Demands.zig` | 7 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 8 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 050 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions) |
-| `Fix.zig` | 8 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Walk.zig` | 9 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 10 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 930 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1) |
-| `Entry.zig` | 10 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Refine.zig` | 10 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
-| `Block.zig` | 11 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
-| `BlockRead.zig` | 12 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 280 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6) |
-| `Hoists.zig` | 11 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
-| `Message.zig` | 11 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
-| `Report.zig` | 11 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 13 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 305 (S3b slice 4a: a group member's walks on its account line) |
-| `Enforce.zig` | 14 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
+| `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
+| `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
+| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 710 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call) |
+| `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
+| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 050 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions) |
+| `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
+| `Walk.zig` | 11 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
+| `Groups.zig` | 12 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 1 930 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1) |
+| `Entry.zig` | 12 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
+| `Refine.zig` | 12 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
+| `Block.zig` | 13 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
+| `BlockRead.zig` | 14 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 280 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6) |
+| `Hoists.zig` | 13 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
+| `Message.zig` | 13 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
+| `Report.zig` | 13 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
+| `Ownership.zig` | 15 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 305 (S3b slice 4a: a group member's walks on its account line) |
+| `Enforce.zig` | 16 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
 **Input adapters.** `Groups` builds `Place.Source` and `Rows.Signature` together, reading
@@ -4752,7 +4757,7 @@ L0  Ids
 A list-of-functions signature gets callback-list behaviour only under explicit `once`, `many` or
 `unused`, preserving v1's rule; a plain/borrowed list is a plain argument. Unknown shapes remain
 pessimistic. Derived methods obtain component classes through the passed-down class resolver.
-These are input adapters at L10, available from S3a even before group solving lands in S3b.
+These are input adapters at L12, available from S3a even before group solving lands in S3b.
 
 **Callback proof interface.** `Cond` does not synchronously call `Calls`. When `apart`/`sep` reaches
 callback labels needing actual-class interpretation, it emits a `Facts.ProofRequest{owner, labels,
@@ -4763,7 +4768,15 @@ same account and one-shot scheduling; a cycle is waiting, never proof. `Cond` kn
 ids/records, not class internals or a `Calls` import. `Demands` and `Walk` explicitly import `Regions` for
 compatibility/continuation points. Passed-down interface contexts are ephemeral, never pointers in an IR.
 
-There are **26 production files plus `rules_test.zig`, on 15 layers (L0–L14)**.
+**The condition table's four files (#1308).** `Cond.Table` is one table in four files, one per layer, in the
+order its code depends: the algebra (`CondAlgebra`, L3), κ storage (`Kappa`, L4), κ reads (`KappaRead`, L5) and
+`Cond` itself (L6: the columns, `propagate` and `widenValue`). Each of the three lower files is `Of(Table)`, a set
+of methods over a table type passed down; `Cond.zig` declares the columns, instantiates the three and binds their
+names into `Table`, so every caller still calls `Cond.Table`'s methods and reads `Cond`'s names. The lower files
+import only below them (the algebra's names, storage's `Kappas`); a part's code calls the parts below it through
+the table and never one above it, which the split checked by script and the gate, reading imports, cannot see.
+
+There are **29 production files plus `rules_test.zig`, on 17 layers (L0–L16)**.
 Targets count production lines before `const testing`, excluding tests; the implemented foundation/S2
 interfaces fix the imports here, including Summary→Facts and Liveness→Place. Tests may import helpers
 under the gate's test rules.
@@ -5225,8 +5238,8 @@ every walk that called h stale, so that walk is walked again (*Validation*). Tha
 walk per member per pass of the stop rule. The rule applies in 4a too.
 
 *What the worklist iterates.* `Fix.worklist(Instance)` (§5) is the driver. `Groups` passes it
-`Instance{ctx, step, join, leq}`, where `step` is one walk of a member, so `Fix` (L8) never imports
-`Walk` (L9).
+`Instance{ctx, step, join, leq}`, where `step` is one walk of a member, so `Fix` (L10) never imports
+`Walk` (L11).
 - **Round 1.** Every port starts at the empty class ⊥: `res` is nothing (`isNothing`), with no
   marks, no κ and `xreq` yes. ⊥ is for inference only (§2.12 *Recursive proofs*): nothing is
   published from a walk that read a port before the group settled.

@@ -1,4 +1,4 @@
-//! L5: classes and summaries (`docs/design/ownership-v2.md` §2.10, §3.5). A
+//! L7: classes and summaries (`docs/design/ownership-v2.md` §2.10, §3.5). A
 //! class describes a function type's behaviour over `π₁…πₙ`, `ρ`; a summary
 //! is a declaration's class. A class names no declaration (#587's room).
 //!

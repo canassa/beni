@@ -1,4 +1,4 @@
-//! L6: the holder index (`docs/design/ownership-v2.md` §2.8 *The holder
+//! L8: the holder index (`docs/design/ownership-v2.md` §2.8 *The holder
 //! index*, #1214): condition 5 of every demand of a frame, answered offline
 //! by one in-order sweep, after the walk has seen every holder, use and
 //! demand.
