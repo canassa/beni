@@ -43,6 +43,7 @@ const Types = @import("Types.zig");
 const SchemaPlan = @import("SchemaPlan.zig");
 const reads = @import("reads.zig");
 const Check = @import("Check.zig");
+const EntrySelection = @import("../entry/Selection.zig");
 const Incremental = @import("Incremental.zig");
 const ModuleCheck = @import("Module.zig");
 const Retained = @import("Retained.zig");
@@ -61,6 +62,7 @@ interfaces: []Interface,
 provenance: []const Interface.Provenance,
 interner: *const InternPool.Global,
 types: *Types,
+entry_selection: *const EntrySelection,
 options: Options,
 per_module: []std.ArrayList(Diagnostics.Item),
 counters: []Check.Counters,
@@ -458,14 +460,16 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         d.tainted[m.int()] = dependency_errors or d.reportedError(m);
     };
     if (m.int() < d.options.cached.len) {
-        if (d.options.cached[m.int()]) |*loaded| {
+        while (d.options.cached[m.int()]) |*loaded| {
+            const origin = loaded.origin;
             const file = d.graph.moduleFile(m);
             const bir = d.artifacts.bir(file);
             const token_count: u32 = @intCast(d.artifacts.spans(file).len());
             if (loaded.hoists.verifyAgainstBir(bir, d.interner, &loaded.sidecar.table) and loaded.plan.verifyAgainstBir(bir, token_count) and
                 loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types) and
                 (try loaded.sidecar.table.continuations.verifyAgainstBir(d.gpa, bir, &loaded.sidecar.table, d.graph, d.types)) and
-                loaded.sidecar.verifyDeclHeads(bir, d.graph, d.types))
+                loaded.sidecar.verifyDeclHeads(bir, d.graph, d.types) and
+                (try loaded.sidecar.prepareEntryCoverage(d.gpa, bir, d.graph, d.types, d.entry_selection)))
                 return d.install(m, loaded);
             // A malformed or stale sidecar is a cache miss. Release the
             // entry here because the normal check below replaces it. The
@@ -478,6 +482,8 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
                 cutoff.hit[m.int()] = false;
                 if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = false;
             }
+            if (origin == .directory) break;
+            try Incremental.loadDirectory(d, m);
         }
     }
     d.counters[m.int()] = try ModuleCheck.check(.{
@@ -496,6 +502,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .profile = d.options.profile,
         .tid = tid,
         .pattern_budget = d.options.pattern_budget,
+        .entry_selection = d.entry_selection,
         .dispatch = &d.dispatch[m.int()],
         .type_keys = &d.type_keys[m.int()],
         .plan = &d.plans[m.int()],

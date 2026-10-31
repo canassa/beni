@@ -510,7 +510,7 @@ pub const Code = enum {
     /// changes a value it is handed, or calls a function that does, at the
     /// write. A language rule; the ownership checker v2's, an error.
     comparison_changes_value,
-    /// Generic entry contracts (workers-entry-implementation.md). Appended so
+    /// Generic entry contracts (workers-entry-implementation.md). Appended after
     /// upstream diagnostics. Cached ordinals are compiler-build-key scoped.
     invalid_entry_kind,
     entry_runtime_suspends,

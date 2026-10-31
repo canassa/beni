@@ -85,6 +85,7 @@ const Var = TypeStore.Var;
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
     gpa: Allocator,
+    entry_selection: *const @import("../entry/Selection.zig") = &.{},
     scratch: *Arena,
     patterns: *Arena,
     graph: *const Graph,
@@ -569,7 +570,34 @@ pub fn check(in: Input) Error!Check.Counters {
         };
         if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
     }
+    in.dispatch.entry_roots.deinit(gpa);
+    if (!quiet and report.errors == 0) {
+        in.dispatch.entry_roots = @import("EntryRoots.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .effects = &effects,
+            .dispatch = in.dispatch,
+            .crossing = if (type_keys) |t| t.crossing else &.{},
+            .decl_scheme = decl_scheme,
+            .decl_body = decl_display,
+            .inst_type = inst_type,
+        }, in.entry_selection) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                const message = try std.fmt.allocPrint(scratch, "this clean module's typed entry roots could not be published ({s})", .{@errorName(err)});
+                try report.internal(@fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    }
     if (report.errors != 0) {
+        in.dispatch.entry_roots.deinit(gpa);
         in.dispatch.continuations.deinit(gpa);
         gpa.free(in.dispatch.decl_heads);
         in.dispatch.decl_heads = &.{};

@@ -51,6 +51,9 @@ const type_keys_bytes = @import("type_keys_bytes.zig");
 /// entry is decoded, so a hit waiting on its dependencies holds only what
 /// it will install.
 pub const Loaded = struct {
+    /// Candidate provenance only, never serialized or inferred from profile flags.
+    pub const Origin = enum(u8) { unknown, embedded, directory };
+    origin: Origin = .unknown,
     /// Owned. The file's bytes, which `diagnostics` borrows from; empty when
     /// there are no diagnostics, because nothing else does.
     bytes: []u8,

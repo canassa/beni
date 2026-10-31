@@ -158,6 +158,7 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
 }
 
 pub const Options = struct {
+    entry_root_requests: []const @import("../entry/Selection.zig").Request = &.{},
     /// Where the per-module `constrain` and `solve` events go (checker.md
     /// §9). The two halves are timed separately because the
     /// constraint/solve split is the architecture (research/02 §1), and a
@@ -333,6 +334,9 @@ pub fn run(
     check.types = try Types.build(gpa, graph, artifacts, interfaces, provenance, interner);
     if (options.profile) |p| p.end(0, types_token.?, .types, Profile.Event.no_file, 0);
 
+    var entry_selection = try @import("../entry/Selection.zig").resolve(gpa, options.entry_root_requests, graph, &check.types, interner);
+    defer entry_selection.deinit(gpa);
+
     const modules = graph.count();
     // One diagnostics list per module rather than one shared list: a shared
     // one would need a lock on the hot path AND would order messages by
@@ -406,6 +410,7 @@ pub fn run(
         .provenance = provenance,
         .interner = interner,
         .types = &check.types,
+        .entry_selection = &entry_selection,
         .options = options,
         .per_module = per_module,
         .counters = counters,

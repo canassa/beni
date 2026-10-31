@@ -1,0 +1,17 @@
+pub type Program
+    = Program
+        { init : (Int, Int → Int)
+        , start : (Int, Int → Int)
+        , handle : (Int, Int, Int → Int)
+        , stream : (Int, Int, Int, Int → Int)
+        }
+
+
+pub make :
+      { init : (Int, Int → Int)
+      , start : (Int, Int → Int)
+      , handle : (Int, Int, Int → Int)
+      , stream : (Int, Int, Int, Int → Int)
+      }
+    → Program
+make callbacks = Program callbacks

@@ -171,6 +171,8 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/build_test.zig", 3 },
     .{ "tests/blackbox/cache_test.zig", 4 },
     .{ "tests/blackbox/continuation_test.zig", 1 },
+    .{ "tests/blackbox/entry_discovery_test.zig", 1 },
+    .{ "tests/blackbox/typed_entry_roots_test.zig", 1 },
     .{ "tests/blackbox/check_test.zig", 1 },
     .{ "tests/blackbox/cutoff_test.zig", 3 },
     .{ "tests/blackbox/devloop_test.zig", 1 },
@@ -1591,6 +1593,24 @@ fn typedBufferSibling(b: *std.Build) std.Build.LazyPath {
 
 var typed_buffer_sibling: ?std.Build.LazyPath = null;
 
+/// Generated actual native fixture sibling; no handwritten JavaScript probe.
+fn entryFixtureAssets(b: *std.Build) *std.Build.Module {
+    if (entry_fixture_assets) |path| return path;
+    const generator = b.addExecutable(.{ .name = "entry_fixture", .root_module = b.createModule(.{
+        .root_source_file = b.path("src/entry_fixture_main.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+    }) });
+    const run = b.addRunArtifact(generator);
+    const sibling = run.addOutputFileArg("Opaque.js");
+    const files = b.addWriteFiles();
+    _ = files.addCopyFile(sibling, "entry-opaque.js");
+    const root = files.add("entry_fixture_assets.zig", "pub const bytes = @embedFile(\"entry-opaque.js\");\n");
+    entry_fixture_assets = b.createModule(.{ .root_source_file = root, .target = b.graph.host });
+    return entry_fixture_assets.?;
+}
+var entry_fixture_assets: ?*std.Build.Module = null;
+
 fn coreDirectory(b: *std.Build, core: Core) std.Build.LazyPath {
     const wf = b.addWriteFiles();
     for (coreFiles(b, core)) |file| switch (file.origin) {
@@ -2477,7 +2497,7 @@ const Blackbox = struct {
 
     /// `artifact` with the harness itself built at `mode`.
     fn artifactAt(bb: Blackbox, root: []const u8, mode: std.lang.Optimize) *std.Build.Step.Compile {
-        return bb.b.addTest(.{
+        const test_artifact = bb.b.addTest(.{
             // `blackbox_test`, not `test`: the step names in a build
             // summary say which suite a run is.
             .name = std.fs.path.stem(root),
@@ -2490,6 +2510,8 @@ const Blackbox = struct {
                 .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
             }),
         });
+        if (std.mem.eql(u8, root, "tests/blackbox/entry_discovery_test.zig")) test_artifact.root_module.addImport("entry_fixture_assets", entryFixtureAssets(bb.b));
+        return test_artifact;
     }
 
     /// One process of `t`, after the compiler it spawns is installed, cwd =
@@ -2507,6 +2529,11 @@ const Blackbox = struct {
         });
         if (env.variant) r.step.dependOn(bb.variant_install);
         r.setEnvironmentVariable("BENI_VARIANT_EXE", if (env.variant) installPath(bb.b, bb.b.fmt("{s}/beni", .{variant_bin_dir})) else "");
+        if (std.mem.eql(u8, t.name, "typed_entry_roots_test")) {
+            const maker_install = bb.b.addInstallArtifact(corePackMaker(bb.b), .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
+            r.step.dependOn(&maker_install.step);
+            r.setEnvironmentVariable("BENI_CORE_PACK_EXE", installPath(bb.b, "tools/core_pack"));
+        } else r.setEnvironmentVariable("BENI_CORE_PACK_EXE", "");
         switch (env.wasm) {
             .none => {},
             .gate => {

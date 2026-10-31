@@ -89,6 +89,7 @@ const Enforce2 = @import("own2/Enforce.zig");
 const Own2Report = @import("own2/Report.zig");
 const stamped = @import("stamped.zig");
 const EntryPlan = @import("entry/Plan.zig");
+const EntryGraph = @import("entry/CompactGraph.zig");
 
 const Session = @This();
 
@@ -118,6 +119,8 @@ resolution: Resolve = .empty,
 checked: Check = .empty,
 /// Resolved entry facts refer only to the current checked store.
 entry_plan: EntryPlan = .{},
+/// Diagnostic-only source discovery; reset before replacing its checked store.
+entry_graph: EntryGraph = .{},
 /// One persistent-cache key per module (`fast-compiler.md` §8), computed
 /// serially between resolution and the check. Empty unless the phases
 /// included the check step.
@@ -225,6 +228,8 @@ pub fn freeOwnershipBlocks(session: *Session) void {
 }
 
 pub const Options = struct {
+    /// Borrowed qualified names for explicit entryKinds callers; live through run.
+    entry_root_requests: []const @import("entry/Selection.zig").Request = &.{},
     /// Worker count, at least 1. `1` runs on the calling thread.
     jobs: u32,
     /// `jobs` is a ceiling rather than a request: it is the machine's CPU
@@ -657,6 +662,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.compare_keys);
     session.freeOwnershipBlocks();
     session.keys.deinit(gpa);
+    session.entry_graph.deinit(gpa);
     session.entry_plan.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
@@ -685,6 +691,7 @@ pub const RunError = error{
 /// `options.jobs` workers, merge, sort, and render diagnostics to `stderr`.
 pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr: *Io.Writer) RunError!Summary {
     // Even an early input failure must not leave facts from an older store.
+    session.entry_graph.reset();
     session.entry_plan.reset();
     const gpa = session.gpa;
 
@@ -2589,7 +2596,12 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     var ins2: Enforce2.Inputs = if (session.options.ownership_v2) try Enforce2.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
     defer if (session.options.ownership_v2) ins2.deinit(session.gpa);
     const ownership2: Enforce2.Context = .{ .session = session, .ins = &ins2 };
+    const chain_requests = try @import("entry/Selection.zig").fromChain(session.gpa, session.options.chain);
+    defer session.gpa.free(chain_requests);
+    const entry_requests = try std.mem.concat(session.gpa, @import("entry/Selection.zig").Request, &.{ chain_requests, session.options.entry_root_requests });
+    defer session.gpa.free(entry_requests);
     const Runner = struct {
+        entry_requests: []const @import("entry/Selection.zig").Request,
         session: *Session,
         quiet: []const bool,
         cached: []?CacheEntry.Loaded,
@@ -2609,6 +2621,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 r.session.resolution.provenance,
                 &r.session.interner,
                 .{
+                    .entry_root_requests = r.entry_requests,
                     .ownership = if (r.session.options.ownership_v2) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
@@ -2628,7 +2641,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    var runner: Runner = .{ .entry_requests = entry_requests, .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

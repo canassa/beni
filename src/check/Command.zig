@@ -34,6 +34,7 @@ const CacheDir = @import("../cache/Dir.zig");
 const Digest = @import("../cache/Digest.zig");
 const TypeKeysDump = @import("../dump/typekeys.zig");
 const ContinuationsDump = @import("../dump/continuations.zig");
+const EntriesDump = @import("../dump/entries.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -144,7 +145,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         _ = session.renderLate(&.{}, stderr) catch return 2;
         return 1;
     }
-    const requested = check.platform orelse return 0;
+    const requested = check.platform orelse {
+        if (check.cache.entries) return fail(stderr, "beni: --entries requires --platform", .{});
+        return 0;
+    };
 
     // The chain's output shape, which `check` needs for the checks of the
     // platform's own declarations and never for `main`: a platform that
@@ -152,7 +156,8 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     const loaded = platform.load(arena, &session, &chain.?, false) catch |err|
         return platform.reportLoad(stderr, requested, err);
 
-    const items = Emit.checkContract(gpa, arena, &session, .{
+    const inspect: *const @TypeOf(Emit.checkContract) = if (check.cache.entries) EntriesDump.inspect else Emit.checkContract;
+    const items = inspect(gpa, arena, &session, .{
         .out_dir = &.{}, // nothing is written; the field is `run`'s
         .platform = loaded.platform,
         .embedded = loaded.embedded,
@@ -173,6 +178,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
     }
     const errors = session.renderLate(late, stderr) catch return 2;
+    if (errors == 0 and check.cache.entries) EntriesDump.write(stdout, &session) catch return 2;
     return if (errors > 0) 1 else 0;
 }
 

@@ -243,7 +243,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
         // With `--platform`, a platform's own modules are lowered as the
         // session that checks them lowers them (the platform's rules).
         .bir => if (dump.platform != null) Session.check_phases else Session.lower_phases,
-        .interface, .raw, .types, .dispatch, .writes, .ownership, .typekeys, .continuations => Session.check_phases,
+        .interface, .raw, .types, .dispatch, .writes, .ownership, .typekeys, .continuations, .entries => Session.check_phases,
         // The graph is what `resolve_phases` builds first, and nothing
         // after it changes an edge (`static-dispatch-spike.md` §6.8), so
         // this dump stops before a single module is checked.
@@ -271,6 +271,25 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     if (dump.stage == .ownership) {
         if (summary.errors > 0) return dumpExit(summary, 0);
         return dumpExit(summary, dumpOwnership(gpa, &session, stdout, stderr, dump));
+    }
+    if (dump.stage == .entries) {
+        if (summary.errors > 0) return dumpExit(summary, 0);
+        const requested = dump.platform orelse return fail(stderr, "beni: --stage=entries requires --platform", .{});
+        const arena = arena_state.allocator();
+        const loaded = beni.platform.load(arena, &session, &chain.?, false) catch |err|
+            return beni.platform.reportLoad(stderr, requested, err);
+        const items = beni.dump.entries.inspect(gpa, arena, &session, .{ .out_dir = &.{}, .platform = loaded.platform, .embedded = loaded.embedded }) catch return fail(stderr, "beni: out of memory", .{});
+        defer {
+            for (items) |item| gpa.free(item.message);
+            gpa.free(items);
+        }
+        const late = gpa.alloc(Session.LateItem, items.len) catch return fail(stderr, "beni: out of memory", .{});
+        defer gpa.free(late);
+        for (items, late) |item, *slot| slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
+        const errors = session.renderLate(late, stderr) catch return 2;
+        if (errors != 0) return 1;
+        beni.dump.entries.write(stdout, &session) catch return 2;
+        return 0;
     }
     // `--stage=interface` takes a directory as well as a file: a project's
     // interfaces in path order are exactly what a `check/good` corpus
@@ -378,6 +397,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
                 &session.interner,
             ) catch return 2;
         },
+        .entries => unreachable, // whole-program branch above
         .continuations => {
             const m = moduleOf(&session, file) orelse return fail(stderr, "beni: '{s}' is not a module", .{dump.file});
             if (m.int() >= session.checked.dispatch.len) return fail(stderr, "beni: '{s}' was not checked", .{dump.file});

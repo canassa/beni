@@ -422,6 +422,7 @@ effect_sites: []const EffectSite = &.{},
 effect_decls: []const EffectDecl = &.{},
 /// Partial symbolic site evidence; never a completed continuation proof.
 continuations: @import("ContinuationPlan.zig").Artifact = .empty,
+entry_roots: @import("EntryRoots.zig").Artifact = .empty,
 /// Alias-expanded OUTERMOST nominal value head, one per declaration.
 decl_heads: []const TypeStore.TypeId = &.{},
 /// Sorted by `decl`, then kind, then the field's text or the type's
@@ -478,6 +479,7 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.effect_sites);
     gpa.free(d.effect_decls);
     d.continuations.deinit(gpa);
+    d.entry_roots.deinit(gpa);
     gpa.free(d.decl_heads);
     gpa.free(d.boundary);
     gpa.free(d.debug);

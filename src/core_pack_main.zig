@@ -102,18 +102,28 @@ pub fn main(init: std.process.Init) u8 {
     var made: []u8 = &.{};
     defer gpa.free(made);
 
-    // Core alone, then each platform's chain over the rows made so far.
-    for (0..table.len + 1) |run| {
+    // Fixed publication coverage for every row this pack can share between
+    // registered chains. Equal module keys must retain equal private metadata.
+    const chains = arena.alloc(platform.Chain, table.len) catch return fail(stderr, "out of memory", .{});
+    var entry_requests: std.ArrayList(beni.entry.Selection.Request) = .empty;
+    for (table, chains) |package, *chain| {
         var chain_failure: ?platform.Failure = null;
-        const chain: ?platform.Chain = if (run == 0) null else platform.resolveChainIn(arena, io, table[run - 1].name, table, &chain_failure) catch |err| switch (err) {
+        chain.* = platform.resolveChainIn(arena, io, package.name, table, &chain_failure) catch |err| switch (err) {
             error.OutOfMemory => return fail(stderr, "out of memory", .{}),
             error.Failed => {
                 _ = platform.report(stderr, chain_failure.?);
-                return fail(stderr, "the platform '{s}' has no chain", .{table[run - 1].name});
+                return fail(stderr, "the platform '{s}' has no chain", .{package.name});
             },
         };
+        const requests = beni.entry.Selection.fromChain(arena, chain) catch return fail(stderr, "out of memory", .{});
+        entry_requests.appendSlice(arena, requests) catch return fail(stderr, "out of memory", .{});
+    }
+
+    // Core alone, then each platform's chain over the rows made so far.
+    for (0..table.len + 1) |run| {
+        const chain: ?*const platform.Chain = if (run == 0) null else &chains[run - 1];
         const what = if (run == 0) "the core" else table[run - 1].name;
-        const blob = check(gpa, io, stderr, core_dir, build_id, &writer, made, if (chain) |*c| c else null, what) catch |err| switch (err) {
+        const blob = check(gpa, io, stderr, core_dir, build_id, &writer, made, chain, what, entry_requests.items) catch |err| switch (err) {
             error.OutOfMemory => return fail(stderr, "out of memory", .{}),
             error.Reported => return 1,
         };
@@ -140,6 +150,7 @@ fn check(
     made: []const u8,
     chain: ?*const platform.Chain,
     what: []const u8,
+    entry_requests: []const beni.entry.Selection.Request,
 ) error{ OutOfMemory, Reported }![]u8 {
     const cpus: u32 = @intCast(@min(std.Thread.getCpuCount() catch 1, 64));
     // `beni check`'s options, every one that is a term of a key
@@ -153,6 +164,7 @@ fn check(
         .informational = true,
         .platform = if (chain) |c| c.top().name else null,
         .chain = chain,
+        .entry_root_requests = entry_requests,
         .pack_out = writer,
         .pack_in = if (made.len == 0) null else made,
         .pack_build_id = build_id,

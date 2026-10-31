@@ -41,6 +41,11 @@ pub const parse = struct {
     pub const Parse = @import("parse/Parse.zig");
     pub const Diagnostics = @import("parse/Diagnostics.zig");
 };
+pub const entry = struct {
+    pub const Selection = @import("entry/Selection.zig");
+    pub const RoleRoots = @import("entry/RoleRoots.zig");
+    pub const TypedInspect = @import("entry/TypedInspect.zig");
+};
 pub const js = struct {
     pub const JsIr = @import("js/JsIr.zig");
     pub const Lower = @import("js/Lower.zig");
@@ -113,6 +118,8 @@ pub const cache = struct {
 pub const check = struct {
     pub const AnnotationReadings = @import("check/AnnotationReadings.zig");
     pub const ContinuationPlan = @import("check/ContinuationPlan.zig");
+    pub const EntryRoots = @import("check/EntryRoots.zig");
+    pub const PrivateTerms = @import("check/PrivateTerms.zig");
     pub const Category = @import("check/Category.zig");
     pub const checker_test = @import("check/checker_test.zig");
     pub const Check = @import("check/Check.zig");
@@ -225,6 +232,7 @@ pub const dump = struct {
     pub const dispatch = @import("dump/dispatch.zig");
     pub const typekeys = @import("dump/typekeys.zig");
     pub const continuations = @import("dump/continuations.zig");
+    pub const entries = @import("dump/entries.zig");
     pub const writes = @import("dump/writes.zig");
     pub const msg_types = @import("dump/msg_types.zig");
     pub const ownership = @import("dump/ownership.zig");
@@ -237,6 +245,9 @@ pub const render = struct {
 
 test {
     std.testing.refAllDecls(@import("entry/Plan.zig"));
+    std.testing.refAllDecls(@import("entry/CompactBuild.zig"));
+    std.testing.refAllDecls(@import("entry/CompactGraph.zig"));
+    std.testing.refAllDecls(@import("entry/CompactDiscover.zig"));
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(lex);
     std.testing.refAllDecls(parse);
@@ -252,6 +263,7 @@ test {
     std.testing.refAllDecls(own2);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);
+    std.testing.refAllDecls(entry);
     std.testing.refAllDecls(build);
     std.testing.refAllDecls(devloop);
     std.testing.refAllDecls(render);

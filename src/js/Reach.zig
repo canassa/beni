@@ -1877,6 +1877,10 @@ pub const Builder = struct {
     /// One edge of the shared stream, as whole-program nodes. Everything
     /// cross-module is resolved here, because this is the pass that has the
     /// tables for it.
+    pub fn resolveCheckedEdge(b: *Builder, m: Graph.Index, edge: Edges.Edge, out: *std.ArrayList(Node)) Allocator.Error!void {
+        return b.resolve(m, edge, out);
+    }
+
     inline fn resolve(b: *Builder, m: Graph.Index, edge: Edges.Edge, out: *std.ArrayList(Node)) Allocator.Error!void {
         switch (edge) {
             .top => |index| try out.append(b.scratch, .{ .module = m, .kind = .decl, .index = index }),

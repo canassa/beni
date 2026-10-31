@@ -673,6 +673,7 @@ pub fn run(
     options: Options,
     io_failure: *?Session.IoFailure,
 ) Error!Result {
+    session.entry_graph.reset();
     session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
@@ -818,6 +819,7 @@ pub fn run(
 /// Diagnostics are owned by the caller, messages included, like `run`'s.
 pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
     var io_failure: ?Session.IoFailure = null;
+    session.entry_graph.reset();
     session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
@@ -837,6 +839,56 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     try e.checkMarkupRuntime();
     try e.checkEntryKinds();
     return e.diagnostics.toOwnedSlice(gpa);
+}
+
+/// Internal entry-discovery bridge. Contract validation may repopulate the
+/// Session Plan. A fresh Emitter then finds main; no elimination, lowering,
+/// output preflight or output file operation is performed here.
+/// Diagnostics/messages are gpa-owned. Reach's arrays and diagnostic `at`
+/// strings borrow caller scratch, which must outlive rendering/discovery.
+pub const EntryInspection = struct {
+    diagnostics: []const Item,
+    reach: ?Reach.Input = null,
+};
+pub fn inspectEntry(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error!EntryInspection {
+    session.entry_graph.reset();
+    const contract = try checkContract(gpa, scratch, session, options);
+    for (contract) |item| if (item.severity == .@"error") return .{ .diagnostics = contract };
+    var io_failure: ?Session.IoFailure = null;
+    var e: Emitter = .{ .gpa = gpa, .scratch = scratch, .session = session, .options = options, .io_failure = &io_failure };
+    errdefer {
+        for (e.diagnostics.items) |item| gpa.free(item.message);
+        e.diagnostics.deinit(gpa);
+    }
+    e.diagnostics = .fromOwnedSlice(@constCast(contract));
+    const found = if (!options.library) try e.findEntry() else null;
+    if (e.hasErrors() or found == null) return .{ .diagnostics = try e.diagnostics.toOwnedSlice(gpa) };
+    const count = session.graph.count();
+    const birs = try scratch.alloc(*const Bir, count);
+    const tables = try scratch.alloc(*const Dispatch, count);
+    for (birs, tables, 0..) |*b, *d, i| {
+        const module: Graph.Index = @fromBackingInt(@intCast(i));
+        b.* = e.bir(module);
+        d.* = e.dispatchOf(module);
+    }
+    const entry = found.?;
+    return .{ .diagnostics = try e.diagnostics.toOwnedSlice(gpa), .reach = .{
+        .graph = &session.graph,
+        .store = &session.store,
+        .birs = birs,
+        .dispatch = tables,
+        .interfaces = session.resolution.interfaces,
+        .provenance = session.resolution.provenance,
+        .types = &session.checked.types,
+        .interner = &session.interner,
+        .entry = .{ .module = entry.module, .kind = .decl, .index = entry.decl.int() },
+        .library = options.library,
+        .release = options.release,
+        .vocabulary = session.graph.markup.vocabulary,
+        .plans = session.checked.plans,
+        .schema_library = options.schema_library,
+        .test_hooks = options.test_hooks,
+    } };
 }
 
 /// Version 1.8 of the program hook (`boundary.md` §9.4.6): each `For` of one

@@ -131,13 +131,21 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
                 &d.interfaces[m.int()],
             );
             dropWithoutBlock(d, cutoff, m);
-            if (d.options.cached[m.int()] != null) {
+            if (d.options.cached[m.int()]) |*loaded| {
+                loaded.origin = .embedded;
                 cutoff.hit[m.int()] = true;
                 if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = true;
                 return;
             }
         }
     }
+    try loadDirectory(d, m);
+}
+
+/// Shared candidate loading for initial directory lookup and rejected pack recovery.
+pub fn loadDirectory(d: *Driver, m: Graph.Index) Error!void {
+    const cutoff = d.options.cutoff orelse return;
+    if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = false;
     const dir = cutoff.dir orelse return;
     d.options.cached[m.int()] = try CacheEntry.loadFinding(
         d.gpa,
@@ -148,6 +156,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     );
     dropWithoutBlock(d, cutoff, m);
     cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
+    if (d.options.cached[m.int()]) |*loaded| loaded.origin = .directory;
 }
 
 /// An enforcing run may reuse a report from another platform only when

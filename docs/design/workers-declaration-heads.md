@@ -35,3 +35,5 @@ alias heads, function/record negatives and cold/warm cache identity preservation
 The hidden continuations inspector prints a separately labeled declaration-heads
 section, including explicit none rows, for black-box identity/negative checks.
 This does not make heads part of the site-only plan or certify entries.
+
+Typed Program declaration and role-root prerequisite: [workers-typed-entry-roots.md](workers-typed-entry-roots.md).

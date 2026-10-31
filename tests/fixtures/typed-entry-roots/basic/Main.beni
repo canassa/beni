@@ -1,0 +1,65 @@
+import Start
+import Worker
+
+
+type alias Packet a =
+    message : List a
+
+
+private = Worker.make { message = [] } λvalue → value
+
+
+sharedValue = private
+
+
+type alias ProgramAlias a b =
+    Worker.Program (Packet a) b
+
+
+aliased : ProgramAlias a (b → b)
+aliased = Worker.make { message = [] } λvalue → value
+
+
+type Secret a
+    = Secret a
+
+
+hiddenPayload = Worker.make { message = Secret [] } ⊤
+
+
+callable = Worker.make { message = λvalue → value } ⊤
+
+
+free : Worker.Program a b
+free = Worker.empty ⊤
+
+
+inferredPhantom = Worker.empty ⊤
+
+
+knownMismatch : Worker.Program Int ⊤
+knownMismatch = Worker.make 1 ⊤
+
+
+rawLocal = Worker.make { message = [] } Worker.raw
+
+
+constrained : Worker.Program { message : List a } ⊤
+    where a.eq : a, a → Bool
+constrained = Worker.make { message = [] } ⊤
+
+
+factory value = Worker.make { message = value } ⊤
+
+
+holder = { program = private }
+
+
+main : Start.Program
+main =
+    Start.make
+        { init = λ_ value → value
+        , start = λ_ value → value
+        , handle = λ_ _ value → value
+        , stream = λ_ _ _ value → value
+        }

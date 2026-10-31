@@ -52,16 +52,14 @@ prerendering, forced run hashes and full gates passed.
 
 Checkpoint eb89c341f preserves partial symbolic continuation metadata and nominal
 declaration heads before checker stores expire, with validated private cache rows.
-It does not yet check generated continuation bodies. The entry-discovery prototype
-remains unlanded: its replacement must use compact summaries and a delta fixed
-point rather than multiplying caller contexts. Complete-handler tail-write facts
-are being validated separately, including shared-work and path-limit fallback.
+It does not yet check generated continuation bodies. The diagnostic entry checkpoint uses compact summaries and a delta fixed point
+rather than multiplying caller contexts. Complete-handler tail-write facts retain
+shared-work and path-limit fallback; runtime selection is still separate.
 The metadata checkpoint passes eight CLI/cache tests, eleven unit/fuzz tests and
 full unfiltered gates. The existing optimized 100k-line benchmark records plain
 and dispatch medians of 308,254 and 296,972 LOC/s; every candidate run exceeds
-250k, with identical source hashes and inference counters. The compact entry
-kernel has passed algorithm-level scaling/capture tests; checked-source
-integration remains under review. Complete-handler tail facts now pass the
+250k, with identical source hashes and inference counters. The compact entry kernel and checked-source integration are described below.
+Complete-handler tail facts now pass the
 manager full gates and bounded-work regression suite; their integration receipt
 is recorded below.
 
@@ -94,7 +92,59 @@ not optimized throughput or UI acceptance. No budget is waived. The source chang
 is in backend write analysis, not the checked-type inference benchmark. Complete
 handler lowering and UI/runtime performance acceptance remain pending.
 
-Compact entry discovery and private typed entry roots have frozen focused-test
-handoffs. They still require independent source review, integration, matching
-cost validation and manager full gates before acceptance. Neither enables public
-worker execution.
+Compact entry discovery and private typed entry roots have now completed the
+independent review, integration and matching cost validation described below.
+Neither enables public worker execution.
+
+## Diagnostic entry evidence checkpoint
+
+Retain source-finite templates with symbolic formal/capture ports, source-call
+substitution and Program declaration seals. A delta fixed point keeps runtime
+bindings alive through late discoveries. Field lookup and metadata indexes,
+shared record-update shapes and structural counters avoid caller-context and
+source-width cross-products. Source control provenance survives captures and
+nested field projection; opaque control remains unproved. Originating Program
+initializer evaluation is retained until paired deferral/emission proofs exist.
+Ordinary declaration liveness remains conservative.
+
+Private dispatch format17 adds complete selected ordinary declaration schemes,
+including private/inferred/polymorphic/aliased Program values, actual quantifiers,
+identities, constraints and effects. Preliminary nominal selection does not
+replace the full runtime contract. One pre-install coverage gate handles source,
+directory, embedded pack and cutoff paths; insufficient embedded evidence retries
+validated directory evidence before a source recheck. Pack generation uses a fixed
+registered-chain selector union. Public interface bytes are unchanged. Owned role
+views retain alias environments and remaining selector words; hidden inspection
+preflights availability before any output and reports an explicit internal
+failure for missing retained evidence.
+
+Manager integration tests pass:29 real discovery CLI cases,14 typed-root cache
+cases and8 existing continuation CLI regressions. Independent review found and
+fixed nested materialization-control loss and partial output on missing evidence;
+permanent before/after regressions cover both. The integrated source passes full
+unfiltered gates:315/315 steps,2152 passed and17 existing skips. The prior isolated
+runtime-alias correction a2ab6b6e3 also passes full gates and fixes #1464.
+
+Matched a2ab6b6e3/candidate measurements on Dagon retain420 Debug command rows,
+42 excluded warm-cache controls,12 optimized checker rows with4 actual CLI checks,
+and64 full cold library builds (16 warmups,48 measured). All processes succeed;
+complete emitted trees, inspector graphs, input hashes and inference counters
+match. Warm controls report zero source checks and unchanged cache bytes. Ordinary
+Debug CPU medians increase0.85–6.28%; candidate-only inspection CPU medians are
+162.589–190.074ms across warm/cold selected and packed inputs. Those absolute
+Debug costs are not optimized inspection or UI performance claims.
+
+Every optimized candidate checker row exceeds250k LOC/s: plain median305332,
+dispatch294135, minimum289971. Every measured candidate100k full cold build is
+below800ms, including development/release and default jobs/jobs1; maximum572.061ms.
+No samples were retried or dropped and no budget is waived. Source bodies and
+public interface bytes remain equal. The real70-entry Debug pack grows2240B
+(1680B complete-empty root headers plus560B column tables); its805036B public
+interface payload is unchanged. The selected directory cache grows11116→13520B,
+including2364B of retained roots in11 rows. These storage costs are explicit.
+
+Discovery remains partial (`discoveryComplete=false`); higher-order/unsupported
+transfers remain residuals. C, EntryHost, Wire, ownership, construction effects and
+execution are unproved. Private nominal payload layouts, generated-continuation
+certification, precise per-entry emission and public launching remain subsequent
+work. No source-language change or callback/ownership exception was introduced.

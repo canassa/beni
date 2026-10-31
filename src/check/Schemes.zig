@@ -267,6 +267,17 @@ pub const Writer = struct {
         return @fromBackingInt(@intCast(index));
     }
 
+    /// Private ordinary single-root publication, without the public depth cap.
+    pub fn addPrivate(w: *Writer, root: Var) ScopedError!Interface.SchemeIndex {
+        const saved = w.scoped_mode;
+        w.scoped_mode = true;
+        w.scoped_invalid = false;
+        defer w.scoped_mode = saved;
+        const index = try w.add(root);
+        if (w.scoped_invalid) return error.BadScope;
+        return index;
+    }
+
     /// The two readings of one annotated owner's parameter. The caller obtains
     /// these from Effects.readings, never from names or coincident store ids.
     pub const RootBinding = struct { scheme: Var, body: Var };
