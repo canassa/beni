@@ -517,7 +517,7 @@ const Grafter = struct {
 
     /// A row's taken result `elem(πᵢ·q·ρ)` (§2.13.6) at this call, null for
     /// any other cell: materialised out of the actual as a list pattern does
-    /// (§2.13.3, `Transfer.bindList`), `elem(c·ι)` per symbolic container
+    /// (§2.13.3, `TransferPattern.bindList`), `elem(c·ι)` per symbolic container
     /// cell `c` under the split this call makes, κ the contents' at `q[*]`,
     /// joined with the other contents' node there, whole, so what a
     /// literal's element or a stored value holds below it is kept (§2.11
@@ -1458,7 +1458,7 @@ pub fn positionsAt(env: Env, n: NodeId, steps: []const Step) Error!?NodeId {
 /// (§2.11 items 3 and 4): a walk of the shape's explicit structure (a leaf's
 /// marks hold below it, so a leaf ends a route) through the subtrees that
 /// hold what is wanted only (`marksBelow`), paired with the argument's value
-/// as `Transfer.positionsAt` reads it. A missing step keeps the value
+/// as `TransferBeside.positionsAt` reads it. A missing step keeps the value
 /// reached; below a `⟲` a route is no single value and pairs with none.
 ///
 /// **One route per path of the pair graph (#1356).** Sibling routes that
@@ -1781,7 +1781,7 @@ pub const Beside = struct {
     }
 
     /// The cells of `reach` of alias key `key`, none if it has none; split by
-    /// key once per reach, since a value is read at its path (`Transfer.reachBeside`).
+    /// key once per reach, since a value is read at its path (`TransferBeside.reachBeside`).
     pub fn keyed(b: *Beside, env: Env, reach: SetId, key: [4]u32) Error!SetId {
         const gpa = env.gpa;
         const cells = env.cells;

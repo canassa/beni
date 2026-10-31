@@ -1,4 +1,4 @@
-//! L11: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
+//! L12: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
 //! a declaration's body walked once by `Transfer`, its uses indexed
 //! (`Liveness`), its demands resolved in evaluation order (`Demands`), and
 //! its class read off. S3a walks declarations one at a time, without groups

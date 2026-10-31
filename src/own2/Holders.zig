@@ -86,7 +86,7 @@ pub const Demand = struct {
 };
 
 /// `other_paths`: the operand is the rest of the written argument itself, the
-/// paths a call's class does not write (`Transfer.otherPaths`), not another
+/// paths a call's class does not write (`TransferBeside.otherPaths`), not another
 /// operand of the operation: what the message says it reaches (#1380).
 pub const Operand = struct { value: Value, inst: u32, other_paths: bool = false };
 
