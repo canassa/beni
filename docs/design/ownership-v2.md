@@ -2263,6 +2263,73 @@ cannot stand in for that multiset. S3a's deep demands (send, `consumed`, focus) 
 `deep` over their cell set. A deep demand does not strengthen every shallow atom into a deep one. All enumeration, union and substitution work uses §4.1. A chain of W single-arrival stores makes O(W)
 outer condition nodes plus O(W log C) persistent group insertion work, not a quadratic sequence of sorts.
 
+**Two positions of one image** [M 2026-10-31, #1472, built in #1473]. Two cells `a ≠ b` of one frame
+can stand for one cell `X` of a coarser frame: the read-off images both to `X` (`ReadOff.relabel`: a
+refinement is its canonical cell), or, in the frame itself, both are parts at one path `q` below two
+sides of one split. Whether the pair is **one object twice** or **two positions of `X`** decides the
+condition. One object twice is a repeat, and a repeat reads `lost`. Two positions of `X` are kept apart
+exactly by `excl X`: that `X`'s positions share nothing. They must not be read as a repeat, which
+claims they may be one object. Two rules use this.
+- **The test** is `Cell.positionsApart(a, b)` (`listSides`). Each cell's side (`Cell.listSide`) is the
+  first cell up its chain past its parts, when that is an `elem` or an `others` of a recorded split. The
+  two sides are two distinct sides of one *list* split: a pattern's head and its rest (`elem`/`others`),
+  or two of its heads (`elem`/`elem` at two positions). A cell under a nested split (a rest's own
+  positions) has that split's side, so two cells under two nested splits are not compared: that only
+  claims less. These are two disjoint index ranges of one list, whatever the list holds. So `a` and `b`
+  are at two positions, never one. The test is about positions, not objects: one object may still sit
+  at both, and the condition is what keeps that from happening. It is the relation `alias` reads as
+  `under ι` for those side pairs. The test does not apply to `level`/`below` sides.
+- **Rule 1, the image** (`KappaRead.apartImage`). When an `apart` group is imaged and a member `c` lands
+  on an image `m` that the group has met already, `c` is a repeat of `m` (`aggAdd`'s multiset), unless
+  every earlier member imaged to `m` is `positionsApart` from `c`. In that case `c` is one more position
+  of `m`, and the image owes `excl m`, which the aggregate's pairs carry. The aggregate keeps, per image,
+  the set of sides that reached it (`Agg.sides`), so the test is one lookup per arrival, not a scan of
+  the group: `c`'s side must be of the set's split and not in it. The flat-per-position family of
+  `build_test.zig` holds.
+- **Rule 2, the frame** (`KappaRead.sep` under `ι`). Two parts `a`, `b` whose sides are `positionsApart`,
+  with one canonical cell `X = E·q` (`Cell.unrefined`, charged, where `E` is both sides' canonical
+  element cell), and with `q` taking no summary step (no `[*]`, no `⟲`). They need `excl X`, not the
+  split's own condition `k`. If `k` is `yes` (a fresh list's elements), the answer stays `yes`; if the
+  split has no condition, `lost`. **`k` implies `excl X`:** `k` is κ of the list's contents read at the
+  summary position (`TransferPattern`), so it keeps every two positions of `E` apart in their whole reach.
+  Each position of `X` is one position of `E` followed by `q`, because `q` takes no summary step, and two
+  positions of `X` therefore lie in two positions of `E`. So the requirement only gets weaker where it is
+  still enough. A `q` with `[*]` breaks this: two positions of `X` inside one element are kept apart by
+  no `k` about elements, so `excl X` would ask for something `k` does not give. That case keeps `k`.
+  `sep` is memoised per pair, and the pair fixes `q`.
+
+*The cases.*
+- *Parts below two heads, and below a head and its rest.* The sides are two disjoint index ranges, and
+  equal `q` puts `a` and `b` at two positions of `X`, which `excl X` keeps apart. `#1472`'s
+  `combineHelp` is the head-and-rest case: `first.Ok` and `rest[*].Ok` both image to `π1[*]#Ok.0`.
+  Under rule 2 they need `excl π1[*]#Ok.0`; under rule 1 the image owes it. Before these rules, the image
+  read `lost`, and the frame needed the whole element's `excl π1[*]`.
+- *Through `⟲`.* Disjointness is not assumed. An image whose path holds a `level` step keeps the
+  multiset (rule 1), and a `q` with `⟲` keeps `k` (rule 2). A fold identifies depths that coexist
+  (*Recursive folds and their read*), so two arrivals at one folded class are a repeat by that rule. The
+  sides `level`/`below` of a recursive split are not list positions, so `positionsApart` is false.
+- *A part under a recast.* A recast changes a node's place, not its cells (§2.13.9), so the pair is the
+  same pair of cells and the rules apply unchanged. A cast that loses facts loses them in the shape,
+  before any read.
+- *The same path reached by two routes.* Cells are interned, so two routes to one position are one cell:
+  `a = b`, which `sep` and `aggAdd` read as before (`shared`, `lost` or a repeat). Two matches of one
+  rest (`case ( rest, rest ) of …`) are two splits of one container, `under_kappa` for `alias`, and
+  never `positionsApart`: they may take one position (`o/CombinePositions` `twoMatches`, refused).
+- *A part whose object is also held outside the list.* The rules change only the condition between `a`
+  and `b`. A third holder is a cell of its own, and the holder check (§2.8) compares it with each of `a`
+  and `b` as before (`o/CombinePositions` `held`, refused `alias`).
+- *Disjointness must not be assumed* for a concrete image, an image or `q` through `⟲` or a summary step,
+  two splits of one container, a part beside its own anchor (`alias` reads its path), or one cell met
+  twice.
+
+*Callers discharge the requirement.* `excl X` is an atom of the class over its parameter cells, published
+like any other (`xreq`). A caller whose list shares a payload (`aliased`: `[ Ok b, Ok b ]`), whose second
+list holds a payload of the first (`mixed`: `combineHelp [ Ok b ] [ b ]`), or that passes one element
+twice (`twice`: `[ r, r ]`) does not meet it, and is refused. *As built (#1473):*
+`o/CombinePositions` and `o/CombinePositionsImported`. `mixed` was accepted on master
+`6c8e43e6a`, unsoundly: the port's `excl` entry was keyed on a projection node that its callers' reads
+never met (§2.3 *A port keeps no round that its last round covers*, *As built, 4d*).
+
 Where κ is relied on (oc §18.4): a callback writing what a destructive read supplies (`List.update`, `map`'s
 element, `Dict.focus`, a `taken` element); the split then a write of the taken part (R-4.5.3); a callee's `xreq`;
 a recursive update of every level (`incAll`, R-4.7.5, R-4.7.8); a `below` written while a `level` of the same split
@@ -5388,14 +5455,14 @@ L0  Ids
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 760 (S3b slice 4a: which copy of the source lanes a walk takes) |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 200 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 200 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1) |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 240 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 820 (#1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
-| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 620 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call) |
+| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 620 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 160 (4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 860 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
@@ -6288,6 +6355,15 @@ RecursiveSummaryGeneration's reorderings).
   `leq`, but the tail call's delivery over it reads `lost` where master's reads `excl`, so it is
   not exact for the fixpoint in the direction that loses precision. No corpus verdict depends on it.
   A caller that edits an element of `combine`'s result is refused (#1472).
+- **The precision restored (#1472).** The cause was not `leq`: the two ports read alike in the class's
+  frame, and each is checked against its own `F`. The tail call's read-off counted `first.Ok` and
+  `rest[*].Ok`, which image to one cell, as a repeat. Master escaped this only because its kept history
+  held the argument's own snapshot and keyed the class's entry where no caller read it, which also let
+  `combineHelp [ Ok b ] [ b ]` through. §2.9 *Two positions of one image* gives both readers the
+  positions rule. With it, no `res` path over the 2 043 roots reads weaker than master, six read
+  stronger (`TwoCallsApart`'s and `Apart`'s `bumpAll`, `bump3` and `bumpLet`: `lost` → `apart …,
+  excl π1[*][*], excl π1[*][*][*]`), the only verdict change is `mergeSort`'s, and the records are
+  6 049 652 (+0.15 % over 4d alone, −5.7 % against master).
 
 4a carries the required fixtures that #1159, #1199 and #1219 owe through real calls: their actuals
 are literals, so they are acyclic, and only the callee recurses. 4c carries #1159's cyclic-source
