@@ -45,8 +45,8 @@
   Its 3·2¹¹ paths are still states, one per path, and the number of extra
   lists sets its growth: 126 000, 65 227 (its print passes the allowance), and
   62 300.
-- `Cond.zig`'s §5 target is now 4 540. It was 4 500 after #1408. The memos and
-  their cross-check take 38 lines.
+- `Cond.zig`'s §5 target is now 4 620. It was 4 560 after #1431. The memos and
+  their cross-check take about 50 lines.
 - Review fix: the cross-check's walk with no memo still read the join memo,
   `memo_prop`. So for many calls it compared the result with itself (288 of
   3 389 re-checks on 150 fixtures were vacuous at the root). It no longer
