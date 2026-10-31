@@ -1,0 +1,68 @@
+-- ownership: §2.9 rule 3's condition (b) below `[*]` (slice 4c, #1195,
+-- the review of #1500). `incAll` is handed one list holding two heads of
+-- the caller's parameter. At the split, `#B.0[*]`, the actual is the
+-- list's elements: two coexisting positions, not one, whether the list is
+-- built by `List.push`, `List.append` or two pushes (a union there) or by
+-- a literal (a positions node). Rule 3 does not apply, and every form is
+-- refused `exclusive (approx)`; v1 accepts them `param`. The head of #1500
+-- before this fix read the union as one position and its own check
+-- panicked on the first three.
+type B
+    = B (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B xs ys →
+            B (incList (List.push xs (B [] []))) (incList ys)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+pub viaPush : List B → B
+viaPush bs =
+    case bs of
+        [ x, y, …_ ] →
+            incAll (B (List.push [ x ] y) [])
+
+        _ →
+            B [] []
+
+
+pub viaAppend : List B → B
+viaAppend bs =
+    case bs of
+        [ x, y, …_ ] →
+            incAll (B (List.append [ x ] [ y ]) [])
+
+        _ →
+            B [] []
+
+
+pub viaPushes : List B → B
+viaPushes bs =
+    case bs of
+        [ x, y, …_ ] →
+            incAll (B (List.push (List.push [] x) y) [])
+
+        _ →
+            B [] []
+
+
+pub viaLiteral : List B → B
+viaLiteral bs =
+    case bs of
+        [ x, y, …_ ] →
+            incAll (B [ x, y ] [])
+
+        _ →
+            B [] []

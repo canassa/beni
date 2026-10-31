@@ -116,6 +116,12 @@ const Pre = struct {
     /// One expansion's own contributions, key → its cells.
     own: std.ArrayList(Own) = .empty,
     own_at: Ids.FixedDict(1) = .{},
+    /// `runtime_safety` only (§2.9 rule 3's check): every `(key, cell, state)`
+    /// an expansion adds, when set.
+    trace: ?*std.ArrayList(Arrival) = null,
+    cur: u32 = 0,
+
+    const Arrival = struct { key: PathId, cell: CellId, state: u32 };
 
     const State = struct { node: NodeId, path: PathId, below: bool, max: bool = false, parts: Ids.Range = .empty, own: Cond.Table.ClassAggs = .{} };
     const Own = struct { key: u32, cells: SetId };
@@ -149,6 +155,7 @@ const Pre = struct {
     /// `c` at `key`, approximate when `approx` (kept approximate if either).
     fn add(w: *Pre, key: PathId, c: CellId, approx: bool) Error!void {
         const gpa = w.env.gpa;
+        if (w.trace) |tr| try tr.append(gpa, .{ .key = key, .cell = c, .state = w.cur });
         const sets = &w.env.cells.sets;
         const got = try w.own_at.getOrPut(gpa, .{key.int()});
         if (!got.found_existing) {
@@ -217,6 +224,7 @@ const Pre = struct {
         const charge = w.env.charge;
         const shapes = w.env.shapes;
         const st = w.states.items[id];
+        w.cur = id;
         const d = shapes.get(st.node);
         w.own.clearRetainingCapacity();
         w.own_at.deinit(gpa);
@@ -1044,82 +1052,150 @@ const Grafter = struct {
     }
 
     /// §2.9 *Two positions of one image*, rule 3: a callee's `apart`/`sep`
-    /// over `πᵢ·P` and `πᵢ·Q`, both through `⟲`, whose images share a cell
-    /// `X`. The pair is two positions of `X` when (a) `P` and `Q` end in
-    /// different named steps, so no route is in both; (b) the actual at
-    /// their common prefix, cut before the first `⟲`, is one position
-    /// (`onePosition`), so its positions below are its cells', route for
-    /// route; (c) `X` is exact, symbolic and at a summary path. Then `X`
-    /// leaves side 1 and the pair owes `exclOf(X)`, which is returned; it is
-    /// `yes`, with the sides unchanged, when the rule does not apply.
-    fn positionsThroughLevels(g: *Grafter, t: *Cond.Table, callee: [2]CellId, sides: *[2]SetId) Error!CondId {
+    /// over cells `πᵢ·P₁ … πᵢ·Pₖ` of one parameter, each through `⟲`, whose
+    /// images share cells. A shared cell `X` is several positions of `X`
+    /// when (a) the paths end in pairwise different named steps, so no
+    /// route is in two of them; (b) the actual is one position at their
+    /// common prefix, cut before the first `⟲` (`onePositionAlong`), so its
+    /// positions below are its cells', route for route. Each shared `X`
+    /// then stays on the first side that holds it and owes `exclOf(X)`, and
+    /// two or more shared images owe `apart` among themselves, so no pair
+    /// across sides is lost. Returns what the sides owe beyond their
+    /// multiset, `yes` with the sides unchanged when the rule does not
+    /// apply. Linear in the sides' cells.
+    fn positionsThroughLevels(g: *Grafter, t: *Cond.Table, callee: []const CellId, sides: []SetId) Error!CondId {
         const cells = g.env.cells;
         const places = g.env.places;
-        const x = cells.get(callee[0]);
-        const y = cells.get(callee[1]);
-        if (x.origin != .param or y.origin != .param or x.a != y.a) return Cond.yes;
-        const p: PathId = .from(x.b);
-        const q: PathId = .from(y.b);
-        if (p == q or firstLevel(places, p) == .none or firstLevel(places, q) == .none) return Cond.yes;
-        // (a) Apart by route.
-        const sp = places.pathStep(p);
-        const sq = places.pathStep(q);
-        if (!mutated("rule3-route") and (!namedStep(sp) or !namedStep(sq) or @as(u32, @bitCast(sp)) == @as(u32, @bitCast(sq)))) return Cond.yes;
+        const gpa_ = g.gpa();
+        if (callee.len < 2 or callee.len != sides.len) return Cond.yes;
+        const i = cells.get(callee[0]).a;
+        // (a) Apart by route: named last steps, pairwise different.
+        var lasts: Ids.FixedDict(1) = .{};
+        defer lasts.deinit(gpa_);
+        for (callee) |c| {
+            try g.env.charge.reserve(gpa_, .inspection, 1);
+            const x = cells.get(c);
+            if (x.origin != .param or x.a != i) return Cond.yes;
+            const p: PathId = .from(x.b);
+            if (firstLevel(places, p) == .none) return Cond.yes;
+            const s = places.pathStep(p);
+            if (!mutated("rule3-route") and !namedStep(s)) return Cond.yes;
+            const got = try lasts.getOrPut(gpa_, .{@as(u32, @bitCast(s))});
+            if (got.found_existing and !mutated("rule3-route")) return Cond.yes;
+            got.value_ptr.* = 0;
+        }
         // (b) One position at the common prefix.
-        var ps: std.ArrayList(Place.Step) = .empty;
-        defer ps.deinit(g.gpa());
-        var qs: std.ArrayList(Place.Step) = .empty;
-        defer qs.deinit(g.gpa());
-        try g.stepsOf(p, &ps);
-        try g.stepsOf(q, &qs);
-        var lcp = p;
-        while (places.pathParent(lcp) != .none) lcp = places.pathParent(lcp);
-        for (ps.items, 0..) |s, k| {
-            if (k >= qs.items.len or s.kind == .level or @as(u32, @bitCast(s)) != @as(u32, @bitCast(qs.items[k]))) break;
-            try g.env.charge.reserve(g.gpa(), .path, 1);
-            lcp = (try places.extend(g.gpa(), g.env.charge, lcp, s)) orelse return Cond.yes;
+        var common: std.ArrayList(Place.Step) = .empty;
+        defer common.deinit(gpa_);
+        try g.stepsOf(.from(cells.get(callee[0]).b), &common);
+        for (common.items, 0..) |s, k| if (s.kind == .level) {
+            common.shrinkRetainingCapacity(k);
+            break;
+        };
+        var other: std.ArrayList(Place.Step) = .empty;
+        defer other.deinit(gpa_);
+        for (callee[1..]) |c| {
+            other.clearRetainingCapacity();
+            try g.stepsOf(.from(cells.get(c).b), &other);
+            var k: usize = 0;
+            while (k < common.items.len and k < other.items.len and @as(u32, @bitCast(common.items[k])) == @as(u32, @bitCast(other.items[k]))) k += 1;
+            common.shrinkRetainingCapacity(k);
         }
-        if (!mutated("rule3-one-position") and !try g.onePosition(try g.prefixArg(x.a, lcp))) return Cond.yes;
-        // (c) The shared images that name positions.
-        var extra: CondId = Cond.yes;
-        var rest: SetId = .none;
-        var shared_images: SetId = .none;
-        var it = cells.sets.iterate(sides[1]);
-        while (it.next()) |e| {
-            try g.env.charge.reserve(g.gpa(), .inspection, 1);
-            const c: CellId = .from(e.key);
-            const o = cells.origin(c);
-            const names = mutated("rule3-exact") or (e.value == 0 and o.isSymbolic() and o != .top and places.isSummary(.from(cells.get(c).b)));
-            const both = if (mutated("rule3-exact")) cells.sets.member(sides[0], e.key) else cells.sets.get(sides[0], e.key) == @as(?u1, 0);
-            if (names and both) {
-                extra = try t.@"and"(g.gpa(), g.env.charge, extra, try t.exclOf(g.gpa(), g.env.charge, cells, c));
-                shared_images = try cells.sets.insert(g.gpa(), g.env.charge, shared_images, e.key, 0);
-                continue;
+        if (!mutated("rule3-one-position") and !try g.onePositionAlong(i, common.items)) return Cond.yes;
+        // The images an earlier side holds exactly, met again: shared.
+        var seen: SetId = .none;
+        var shared: SetId = .none;
+        for (sides) |*side| {
+            var rest: SetId = .none;
+            var dropped = false;
+            var it = cells.sets.iterate(side.*);
+            while (it.next()) |e| {
+                try g.env.charge.reserve(gpa_, .inspection, 1);
+                if (e.value == 0 and cells.sets.get(seen, e.key) == @as(?u1, 0) and g.namesPositions(.from(e.key))) {
+                    shared = try cells.sets.insert(gpa_, g.env.charge, shared, e.key, 0);
+                    dropped = true;
+                    continue;
+                }
+                rest = try cells.sets.insert(gpa_, g.env.charge, rest, e.key, e.value);
             }
-            rest = try cells.sets.insert(g.gpa(), g.env.charge, rest, e.key, e.value);
+            var st = cells.sets.iterate(side.*);
+            while (st.next()) |e| if (e.value == 0) {
+                seen = try cells.sets.insert(gpa_, g.env.charge, seen, e.key, 0);
+            };
+            if (dropped) side.* = rest;
         }
-        if (shared_images == .none) return Cond.yes;
-        sides[1] = rest;
-        if (std.debug.runtime_safety) try g.assertOnePosition(x.a, .{ p, q }, shared_images);
+        if (shared == .none) return Cond.yes;
+        var extra: CondId = Cond.yes;
+        var items: std.ArrayList(Cond.Item) = .empty;
+        defer items.deinit(gpa_);
+        var it = cells.sets.iterate(shared);
+        while (it.next()) |e| {
+            const c: CellId = .from(e.key);
+            extra = try t.@"and"(gpa_, g.env.charge, extra, try t.exclOf(gpa_, g.env.charge, cells, c));
+            try items.append(gpa_, .{ .cell = c, .approx = false });
+        }
+        if (items.items.len >= 2) extra = try t.@"and"(gpa_, g.env.charge, extra, try t.apart(gpa_, g.env.charge, cells, places, items.items, null));
+        if (std.debug.runtime_safety) try g.assertOnePosition(i, callee, shared);
         return extra;
     }
 
     /// Rule 3's check by a reader that shares none of its walk (Lemma R3):
-    /// the call's preimage of the actual at each path's `⟲` prefix, a
-    /// multiset keyed by canonical path, holds each shared image at that
-    /// path's key once, never as a repeat. A representation (b) misjudged as
-    /// one position shows here as a duplicate.
-    fn assertOnePosition(g: *Grafter, i: u32, paths: [2]PathId, shared_images: SetId) Error!void {
+    /// the call's preimage of the whole actual, traced. Every source state
+    /// that brings a shared image to one of the callee's paths stands at one
+    /// path with no summary step, the same for all of them: one position of
+    /// the actual, whose possible contents they are. Two positions of one
+    /// object, or two elements of a list, would show as two paths or as a
+    /// summary path, whether they land at one callee path or at two.
+    fn assertOnePosition(g: *Grafter, i: u32, callee: []const CellId, shared: SetId) Error!void {
+        const gpa_ = g.gpa();
         const places = g.env.places;
         const cells = g.env.cells;
-        for (paths) |path| {
-            const prefix = places.pathParent(firstLevel(places, path));
-            const pre = try preimage(g.env, try g.prefixArg(i, prefix), prefix);
-            const ai = g.env.conds.mapGet(pre.map, path.int()) orelse continue;
-            const dups = g.env.conds.aggs.items[ai].dups;
-            var it = cells.sets.iterate(shared_images);
-            while (it.next()) |e| if (cells.sets.member(dups, e.key))
-                std.debug.panic("ownership v2: §2.9 rule 3 read two positions of one image where the call's preimage holds a repeat", .{});
+        if (i >= g.args.len or g.args[i].node == .none) return;
+        var root: PathId = .from(cells.get(callee[0]).b);
+        while (places.pathParent(root) != .none) root = places.pathParent(root);
+        var trace: std.ArrayList(Pre.Arrival) = .empty;
+        defer trace.deinit(gpa_);
+        var w: Pre = .{ .env = g.env, .trace = &trace };
+        defer w.deinit();
+        _ = try w.run(g.args[i].node, root);
+        var keys: Ids.FixedDict(1) = .{};
+        defer keys.deinit(gpa_);
+        for (callee) |c| (try keys.getOrPut(gpa_, .{cells.get(c).b})).value_ptr.* = 0;
+        var at: ?PathId = null;
+        for (trace.items) |a| {
+            if (keys.get(.{a.key.int()}) == null or !cells.sets.member(shared, a.cell.int())) continue;
+            const p = w.states.items[a.state].path;
+            if (at == null) at = p;
+            if (at.? != p or places.isSummary(p))
+                std.debug.panic("ownership v2: §2.9 rule 3 read two positions of one image that two positions of the actual bring", .{});
+        }
+    }
+
+    /// Rule 3's (b): walking the actual down `steps` (built nodes and deltas
+    /// projected one step at a time, views forced), the first node that is
+    /// not built is one position's possible contents (`onePosition`), and it
+    /// is met before any summary step (`[*]`). Below a summary step a node
+    /// stands for coexisting elements, so a leaf or a union there is not one
+    /// position. Reaching the end still built is not one position either.
+    fn onePositionAlong(g: *Grafter, i: u32, steps: []const Place.Step) Error!bool {
+        const shapes = g.env.shapes;
+        if (i >= g.args.len or g.args[i].node == .none) return false;
+        var n = g.args[i].node;
+        var summary = false;
+        var k: usize = 0;
+        while (true) : (k += 1) {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            n = try shapes.force(g.gpa(), g.account(), n);
+            switch (shapes.kind(n)) {
+                .leaf, .@"union", .choice => return !summary and try g.onePosition(n),
+                .node, .delta => {
+                    if (k == steps.len) return false;
+                    const s = steps[k];
+                    if (s.kind == .elem or s.kind == .level) summary = true;
+                    n = (try shapes.proj(g.gpa(), g.account(), g.env.places, g.env.cells, n, s)) orelse return false;
+                },
+                else => return false,
+            }
         }
     }
 
@@ -1154,6 +1230,18 @@ const Grafter = struct {
             }
         }
         return true;
+    }
+
+    /// Rule 3's (c): a shared image is symbolic and at a summary path, so it
+    /// names positions. Given (b) every shared image is a projection of one
+    /// exact leaf, so this never fails: a `runtime_safety` assert. A release
+    /// build keeps the image a repeat if it ever did.
+    fn namesPositions(g: *Grafter, c: CellId) bool {
+        const cells = g.env.cells;
+        const o = cells.origin(c);
+        const ok = o.isSymbolic() and o != .top and g.env.places.isSummary(.from(cells.get(c).b));
+        if (std.debug.runtime_safety and !ok) std.debug.panic("ownership v2: §2.9 rule 3 shares an image that names no positions", .{});
+        return ok;
     }
 
     /// A field, a tuple index or a constructor argument: a step every route
@@ -1226,18 +1314,19 @@ const Grafter = struct {
                 // (*The derivation*), never a sorted list of them all.
                 var sides: std.ArrayList(SetId) = .empty;
                 defer sides.deinit(gpa_);
-                var callee: [2]CellId = .{ .none, .none };
+                var callee: std.ArrayList(CellId) = .empty;
+                defer callee.deinit(gpa_);
                 if (a.atom == .sep) {
                     for ([_]u32{ a.a, a.b }) |side| {
                         const c: CellId = .from(side);
-                        if (sides.items.len < 2) callee[sides.items.len] = c;
+                        try callee.append(gpa_, c);
                         try sides.append(gpa_, try g.sideCells(c));
                     }
                 } else {
                     var it = g.env.cells.sets.iterate(.from(a.a));
                     while (it.next()) |e| {
                         const c: CellId = .from(e.key);
-                        if (sides.items.len < 2) callee[sides.items.len] = c;
+                        try callee.append(gpa_, c);
                         try sides.append(gpa_, try g.sideCells(c));
                     }
                 }
@@ -1245,7 +1334,7 @@ const Grafter = struct {
                 // tries, memoised per node pair; more, one into the other.
                 // Two positions of one image through `⟲` (§2.9 rule 3).
                 var extra: CondId = Cond.yes;
-                if (sides.items.len == 2) extra = try g.positionsThroughLevels(t, callee, sides.items[0..2]);
+                if (sides.items.len >= 2) extra = try g.positionsThroughLevels(t, callee.items, sides.items);
                 var acc: Cond.Table.Agg = .{};
                 if (sides.items.len == 2) {
                     acc = try t.aggMergeSets(gpa_, g.env.charge, g.env.cells, g.env.places, sides.items[0], sides.items[1]);
