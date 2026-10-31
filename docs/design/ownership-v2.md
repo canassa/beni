@@ -974,6 +974,10 @@ together with the trie descendants of its symbolic cells, so a concrete containe
 3. **Not captured**: `c` is not an `env` cell written outside its once closure's frame (`captured-edit`).
 4. **Disjoint**: no other operand, no other path of the same argument, no cell of the callee's environment aliases
    `c` (R-4.3.2, R-4.3.4, R-5.1.5); for `update`, no new field value holds `c` whole (R-4.8.3).
+   The cause is `disjoint` whether the reach is exact or approximate (an approximate one is `(approx)`, and v1's
+   `call`, `element` and `level` words for it are not v2's). The message says what reaches the base: "another path of
+   the same argument" when it is the rest of the written argument itself (a call's argument beside the paths the callee
+   writes), "another operand of the same operation" otherwise (#1380, #1405).
 5. **Dead**: no pending operand holds `c` at a path its consumer touches (`held-operand`); no live holder of `c` is
    used after `p` compatibly at an overlapping path (`later-use` the base's own variable, `alias` another local,
    `captured` a closure, `element` when the winning holder holds `c` only approximately for every one of the

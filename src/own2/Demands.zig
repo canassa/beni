@@ -71,6 +71,9 @@ pub const Outcome = struct {
     cell: CellId = .none,
     /// The atoms the acceptance relies on (a set in `Cond.atoms`).
     xreq: SetId = .none,
+    /// `disjoint`: the reaching operand is the written argument's own other
+    /// paths, not another operand (the message says so).
+    other_paths: bool = false,
 
     pub const Kind = enum(u8) { accepted, refused };
 };
@@ -283,7 +286,7 @@ const Resolver = struct {
                     try r.env.charge.reserve(r.gpa, .inspection, 1);
                     switch (r.conflict(.from(x.key), .from(e.key), deep)) {
                         .no => {},
-                        .yes => return .{ .verdict = .refused, .cause = .disjoint, .exactness = if (x.value == 1 or e.value == 1) .approximate else .exact },
+                        .yes => return .{ .verdict = .refused, .cause = .disjoint, .exactness = if (x.value == 1 or e.value == 1) .approximate else .exact, .other_paths = op.other_paths },
                         .under => |s| relied.* = try r.env.conds.@"and"(r.gpa, r.env.charge, relied.*, r.splitCond(s)),
                         .under_kappa => relied.* = Cond.lost,
                     }

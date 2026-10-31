@@ -1336,7 +1336,7 @@ pub const Frame = struct {
         var xt = cells.sets.iterate(excl);
         while (xt.next()) |x| dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, try f.env.conds.excl(gpa, f.env.charge, .from(x.key)));
         if (kept == .none) return;
-        try f.operands.append(gpa, .{ .value = .{ .node = try shapes.leaf(gpa, f.account(), shapes.place(arg.node), kept) }, .inst = inst });
+        try f.operands.append(gpa, .{ .value = .{ .node = try shapes.leaf(gpa, f.account(), shapes.place(arg.node), kept) }, .inst = inst, .other_paths = true });
         dm.operands.len += 1;
     }
 
