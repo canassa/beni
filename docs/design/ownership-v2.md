@@ -1719,7 +1719,44 @@ these points, each pinned:
   so a binding holder whose last use is at or before that demand returns before its cover (#1467). The argument
   of a call over an `else if` chain of D arms is used last at the call, and its cover of each arm's target walked
   the chain down to that arm, O(D²): 1 038 / 2 430 / 6 704 demand records at D = 8 / 16 / 32, 235 / 427 / 861
-  now. A holder still used after its demands walks the chain once per target, Θ(D²) for such a chain (#1510).
+  now. A holder still used after its demands read the chain once per target until the join index (next).
+- **The join index (#1510).** A node whose closure walk entered more than 16 records is *deep*. Its later closures,
+  and the holds walk's frames at it, are read from its joins flattened once (`Joins.zig`), not walked down to the
+  candidate. The joins J(n₀) are the records that `sides` reaches from n₀ at n₀'s path: a union's and a choice's
+  sides (with `alt`), a positions node's sides, a delta's base and a recast's inner (with `cast`). Each member m
+  keeps Φ(m), the flag combinations of the paths from n₀ to m: a fixed point over four combinations, so a cycle of
+  joins ends. A node or a delta, and a lazy record, is a leaf of a balanced tree of reach unions. Every other member
+  (an eager join, recast or leaf) is *folded*: its cells go into `plain` when they are one cell and some φ has no
+  `alt`, and into `alt` when they are several or some φ has `alt`. A read of x takes the members whose reach holds
+  x from the tree, O(hits · log |J|), and one lookup in each of `plain` and `alt`. When J holds a view, n₀ has no
+  index and its walk is unchanged. The walk forces each view it enters, and the order of those forces numbers the
+  answers' nodes; also `reach(view)` need not hold the answer's cells (§2.3).
+
+  *Lemma.* Let J(n₀) hold no view. (a) Every edge of J is an explicit child in `Shape.reach`, so the reach of a
+  record holds each side's reach. A path of joins from n₀ to m therefore has x in the reach of each record on it
+  exactly when x ∈ reach(m). The walk stops at a record whose reach lacks x, so it reaches exactly the pairs
+  (m, φ) with φ ∈ Φ(m) and x ∈ reach(m). `bitsUnder` composes, bitsUnder(φ, bitsUnder(ψ, b)) = bitsUnder(φ ∨ ψ, b),
+  so `closure(n₀, x, c)` has the bits ⋁ bitsUnder(φ, own(m)) over those pairs. Its states are (m, φ, the children of
+  m that reach x), for each such m that is a node or a delta with such a child. (b) An eager record that is not a
+  node or a delta has its cells in its reach: `Shape.reach` takes them, or its sides hold them, which runtime safety
+  asserts since #1467. Its own hold of x thus needs only x ∈ cells(m), which `holdAt` reads apart from c. That hold
+  is exact when x's value is exact. It is plain when cells(m) is one cell and φ has no `alt`, and one of several
+  otherwise. The `and` of a union keeps the exact value when one member has it, so a lookup in `plain` and in
+  `alt` gives these members' bits. (c) The holds walk prunes and flags the same records at that path. A hold's
+  exactness at path f is `bitsExact(f, ·)` of the member's bits under the frame's flags (`blur` comes only from
+  outside the frame). So the members' holds at the path are one path, exact when one of them is: the order of
+  paths (§2.8 *Verdicts*) sees only that. The frames that leave the path are the same: the children of each node or
+  delta, with the frame's flags.
+
+  Under runtime safety each indexed closure is compared with the walk on a memo and an account of its own: the same
+  bits, and the same states as a set, by node, flags and children. Each indexed hold listing is compared with the
+  walk's: the same paths, each one exact as often. With the index taken for every node, not only deep ones, the
+  2 113 roots of `bench/ownership-roots.mjs` read 8 426 indexed closures and 4 914 indexed frames. Every check
+  passed, and every verdict and summary is byte-identical with master. Records of the issue's program (the chain
+  passed to `incAll`, then `ignore v`, arms `Rose [ Rose k, Rose [] ]` in turn), demand records at
+  D = 8 / 16 / 32 / 64: 1 676 / 3 994 / 11 099 / 34 837 → 1 704 / 3 299 / 6 748 / 13 914 (×1.94, ×2.05, ×2.06 a
+  doubling). With `chosen`'s arms: 1 146 / 2 610 / 7 028 / 21 647 → 1 214 / 2 265 / 4 544 / 9 337. At D = 8 a
+  flattening is not repaid. A chain whose arms are views (call results) is still walked per target.
 - **A step's work is constant and charged.** A child's uses are found inside its parent's range by its one step
   (`Liveness.childRange`), the descent's buffers and its children's lists are reused from node to node and pair to
   pair, a kept state carries its children from `closure`, and the closure memo is a hash map (it is never
@@ -6059,7 +6096,7 @@ L9  Calls  Demands
 L8  Rows  Holders
 L7  Summary
 L6  Cond
-L5  KappaRead  Liveness  Exits
+L5  KappaRead  Liveness  Exits  Joins
 L4  Regions  Kappa
 L3  Prepass  Shape  CondAlgebra
 L2  Cell  Facts
@@ -6083,9 +6120,10 @@ L0  Ids
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 197 (#1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
+| `Joins.zig` | 5 | the join index (§2.8 *As built*, #1510): a deep node's joins at its path flattened once, with their route-flag combinations, a tree of their reach unions and the folded members' cells by hold | `Index.get`, `Index.hits`, `folded`, `sides` | Ids, Cell, Shape | ≤ 230 |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 070 (#1467: a pair whose holder has no later use walks no cover, §2.8 *As built*; 1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
+| `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions, Exits, Joins | ≤ 2 280 (#1510: closures and hold listings read from the join index, each checked against the walk under runtime safety, §2.8 *As built*; 2 070 since #1467: a pair whose holder has no later use walks no cover, §2.8 *As built*; 1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 080 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `shareImages`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |

@@ -75,6 +75,8 @@ const layers = [_]Entry{
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
     .{ .file = "Exits.zig", .layer = 5, .max_lines = 250 },
+    // 230 since #1510: the join index, a deep node's joins flattened once (§2.8 *As built*).
+    .{ .file = "Joins.zig", .layer = 5, .max_lines = 230 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
@@ -110,8 +112,9 @@ const layers = [_]Entry{
     // it; with the frame types, the naive scan and the fallback hold listing.
     // 2 010 since #1335: the same-path closure by the cycle walk; 2 030 since
     // #1366: a candidate stops at a `◆` barrier; 2 070 since #1467: a pair
-    // whose holder has no later use walks no cover.
-    .{ .file = "Holders.zig", .layer = 8, .max_lines = 2070 },
+    // whose holder has no later use walks no cover; 2 280 since #1510: closures
+    // and hold listings read from the join index, checked against the walk.
+    .{ .file = "Holders.zig", .layer = 8, .max_lines = 2280 },
     // §5 says 450 since #1214 (L7 then, L9 since #1308): condition 5 left for Holders.
     .{ .file = "Demands.zig", .layer = 9, .max_lines = 450 },
     // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
@@ -476,7 +479,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 38), layers.len);
+    try testing.expectEqual(@as(usize, 39), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
