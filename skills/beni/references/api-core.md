@@ -68,6 +68,83 @@ module Basics
   value truncate : Float → Int
   value turns : Float → Float
   value xor : Bool, Bool → Bool
+module Binary
+  type Backing
+    Local
+    Shared
+  type Buffer
+  type Endian
+    Little
+    Big
+  type Error
+    Unsupported
+    InvalidSize
+    InvalidRange
+    Misaligned
+    InvalidInteger
+    Detached
+    ResizableBacking
+    AllocationFailed
+    PrecisionLost
+    WrongViewKind
+  type SharedBuffer
+  type Source
+  alias SourceInfo
+    SourceInfo
+  type View
+  type ViewKind
+    I8
+    U8
+    U8Clamped
+    I16
+    U16
+    I32
+    U32
+    I64
+    U64
+    F16
+    F32
+    F64
+    Data
+  opaque type Word64
+  value allocate : Int → Result Error Buffer  -- impure
+  value bufferSource : Buffer → Result Error Source  -- impure
+  value byteLength : Backing → Result Error Int  -- impure
+  value copy : Source → Result Error Buffer  -- impure
+  value copyInto : View, Int, Source → Result Error ⊤  -- impure
+  value detached : Buffer → Bool  -- impure
+  value elementSize : ViewKind → Int
+  value fromList : List Int → Result Error Buffer  -- impure
+  value readF16 : View, Int, Endian → Result Error Float  -- impure
+  value readF32 : View, Int, Endian → Result Error Float  -- impure
+  value readF64 : View, Int, Endian → Result Error Float  -- impure
+  value readI16 : View, Int, Endian → Result Error Int  -- impure
+  value readI32 : View, Int, Endian → Result Error Int  -- impure
+  value readI8 : View, Int → Result Error Int  -- impure
+  value readU16 : View, Int, Endian → Result Error Int  -- impure
+  value readU32 : View, Int, Endian → Result Error Int  -- impure
+  value readU8 : View, Int → Result Error Int  -- impure
+  value readWord64 : View, Int, Endian → Result Error Word64  -- impure
+  value shared : Int → Result Error SharedBuffer  -- impure
+  value sharedSource : SharedBuffer → Result Error Source  -- impure
+  value sourceInfo : Source → Result Error SourceInfo  -- impure
+  value toList : Source → Result Error (List Int)  -- impure
+  value view : Backing, ViewKind, Int, Maybe Int → Result Error View  -- impure
+  value viewSource : View → Result Error Source  -- impure
+  value word64 : Int, Int → Result Error Word64  -- impure
+  value word64FromInt : Int → Result Error Word64  -- impure
+  value word64ToInt : Word64 → Result Error Int
+  value words : Word64 → { high : Int, low : Int }
+  value writeF16 : View, Int, Endian, Float → Result Error ⊤  -- impure
+  value writeF32 : View, Int, Endian, Float → Result Error ⊤  -- impure
+  value writeF64 : View, Int, Endian, Float → Result Error ⊤  -- impure
+  value writeI16 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeI32 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeI8 : View, Int, Int → Result Error ⊤  -- impure
+  value writeU16 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeU32 : View, Int, Endian, Int → Result Error ⊤  -- impure
+  value writeU8 : View, Int, Int → Result Error ⊤  -- impure
+  value writeWord64 : View, Int, Endian, Word64 → Result Error ⊤  -- impure
 module Char
   type Char
   value fromCode : Int → Char
