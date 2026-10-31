@@ -115,6 +115,10 @@ Projected leaves retain ambient effect blocks rather than fabricate detached one
 
 ## Private nominal payloads: required follow-up, not silently included
 
+The next isolated publication/cache/inspection slice is specified in
+[workers-nominal-layouts.md](workers-nominal-layouts.md). It does not implement
+Wire classification or the cross-artifact cursor.
+
 Secret a roots retain identity/args, NOT ADT constructor payload definitions.
 Public Interface.Ctor omits private/hidden constructors; payload_params is coarse.
 Missing layout never means nullary/safe. Before WireShape classification, publish

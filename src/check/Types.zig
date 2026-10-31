@@ -821,6 +821,9 @@ pub const Builder = struct {
     /// Bounds alias expansion; `recursive_alias` has refused the cyclic
     /// ones already, so this only catches a poisoned tree.
     depth: u32 = 0,
+    /// Private layout publication traverses written nodes without the public cap.
+    private_read: bool = false,
+    private_work: ?*@import("TypeRead.zig").Work = null,
     /// The aliases whose bodies are being expanded around this read,
     /// innermost first (`aliasBody`). An alias met inside its own
     /// expansion is `err`: it is recursive, which resolution reported
@@ -934,56 +937,54 @@ pub const Builder = struct {
         const saved_key_region = b.key_region;
         if (!b.key_external_region) b.key_region = inst;
         defer b.key_region = saved_key_region;
+        if (b.private_read) return @import("TypeRead.zig").read(b, inst, finishRead);
         b.depth += 1;
         defer b.depth -= 1;
         if (b.depth > max_depth) {
             b.too_deep = true;
             return b.store.freshErr(b.varRank());
         }
+        const TypeRead = @import("TypeRead.zig");
+        const children = try b.scratch.alloc(Var, TypeRead.count(b.bir, inst));
+        defer b.scratch.free(children);
+        for (children, 0..) |*v, i| v.* = try b.read(TypeRead.child(b.bir, inst, i));
+        return b.finishRead(inst, children);
+    }
+
+    /// Both reader traversals use these ordinary construction operations.
+    fn finishRead(b: *Builder, inst: Bir.Inst.Index, children: []const Var) Error!Var {
+        const saved = b.key_region;
+        if (!b.key_external_region) b.key_region = inst;
+        defer b.key_region = saved;
         const bir = b.bir;
-        const tag = bir.instTag(inst);
         const data = bir.instData(inst);
-        switch (tag) {
-            .type_var => return b.typeVar(bir.symbol(@fromBackingInt(@intCast(data.lhs))), Bir.TypeVarInfo.unpack(data.rhs)),
+        switch (bir.instTag(inst)) {
+            .type_var => return b.typeVar(bir.symbol(@fromBackingInt(data.lhs)), Bir.TypeVarInfo.unpack(data.rhs)),
             .type_unit => return b.store.fresh(.{ .structure = .unit }, b.varRank()),
             .type_fn => {
-                const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index);
-                const vars = try b.scratch.alloc(Var, params.len);
-                defer b.scratch.free(vars);
-                for (params, vars) |param, *v| v.* = try b.read(param);
-                const range = try b.store.addVars(vars);
-                const result = try b.read(@fromBackingInt(@intCast(data.rhs)));
-                const v = try b.store.fresh(.{ .structure = .{ .func = .{ .params = range, .result = result } } }, b.varRank());
+                const params = try b.store.addVars(children[0 .. children.len - 1]);
+                const v = try b.store.fresh(.{ .structure = .{ .func = .{ .params = params, .result = children[children.len - 1] } } }, b.varRank());
                 if (b.syncs) |list| if (b.sync_bir == bir) {
                     const token = bir.insts.items(.main_token)[inst.int()];
                     if (token < b.sync_tags.len and b.sync_tags[token] == .lower_ident) try list.append(b.scratch, .{ .v = v, .inst = inst.int() });
                 };
                 return v;
             },
-            .type_tuple => {
-                const elements = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
-                const vars = try b.scratch.alloc(Var, elements.len);
-                defer b.scratch.free(vars);
-                for (elements, vars) |el, *v| v.* = try b.read(el);
-                const range = try b.store.addVars(vars);
-                return b.store.fresh(.{ .structure = .{ .tuple = range } }, b.varRank());
+            .type_tuple => return b.store.fresh(.{ .structure = .{ .tuple = try b.store.addVars(children) } }, b.varRank()),
+            .type_record, .type_record_ext => |tag| {
+                const fields = bir.extraSlice(if (tag == .type_record) Bir.inlineRange(data) else bir.subRange(@fromBackingInt(data.rhs)), Bir.Field);
+                const pairs = try b.scratch.alloc(TypeStore.Field, fields.len);
+                defer b.scratch.free(pairs);
+                for (fields, pairs, children[0..fields.len]) |f, *pair, value| pair.* = .{ .name = bir.symbol(f.name), .value = value };
+                const range = try b.store.addFields(pairs);
+                const ext = if (tag == .type_record_ext) children[fields.len] else try b.store.fresh(.{ .structure = .empty_record }, b.varRank());
+                return b.store.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } }, b.varRank());
             },
-            .type_record => return b.record(bir.extraSlice(Bir.inlineRange(data), Bir.Field), null),
-            .type_record_ext => return b.record(
-                bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field),
-                @as(Bir.Inst.Index, @fromBackingInt(@intCast(data.lhs))),
-            ),
-            .type_top, .ext_type, .schema_type_top, .ext_schema_type => return b.named(tag, data, &.{}),
+            .type_top, .ext_type, .schema_type_top, .ext_schema_type => return b.named(bir.instTag(inst), data, &.{}),
             .type_app => {
-                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
-                const vars = try b.scratch.alloc(Var, args.len);
-                defer b.scratch.free(vars);
-                for (args, vars) |arg, *v| v.* = try b.read(arg);
-                const head: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
-                return b.named(bir.instTag(head), bir.instData(head), vars);
+                const head: Bir.Inst.Index = @fromBackingInt(data.lhs);
+                return b.named(bir.instTag(head), bir.instData(head), children);
             },
-            // A type that did not resolve, or a parser placeholder. Poison
-            // it: it has a diagnostic already and must not grow another.
             else => return b.store.freshErr(b.varRank()),
         }
     }
@@ -1015,23 +1016,6 @@ pub const Builder = struct {
         return v;
     }
 
-    fn record(b: *Builder, fields: []const Bir.Field, ext: ?Bir.Inst.Index) Error!Var {
-        const pairs = try b.scratch.alloc(TypeStore.Field, fields.len);
-        defer b.scratch.free(pairs);
-        for (fields, pairs) |f, *p| {
-            p.* = .{ .name = b.bir.symbol(f.name), .value = try b.read(f.value) };
-        }
-        const range = try b.store.addFields(pairs);
-        const ext_var = if (ext) |e|
-            try b.read(e)
-        else
-            try b.store.fresh(.{ .structure = .empty_record }, b.varRank());
-        return b.store.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext_var } } }, b.varRank());
-    }
-
-    /// A named type applied to `args`: an `app` for an ADT or a foreign
-    /// type, an interned `alias` for an alias (checker.md §5 — never
-    /// expanded away, only looked THROUGH).
     fn named(b: *Builder, tag: Bir.Inst.Tag, data: Bir.Inst.Data, args: []const Var) Error!Var {
         // Shallow, a schema endpoint is its identity alone: an `alias` that
         // `apply` leaves unexpanded for a record endpoint, an `app` for a
@@ -1245,6 +1229,7 @@ pub const Builder = struct {
     /// incrementality needs a story for the whole type table, not for alias bodies alone.
     /// The comment is here so nothing claims a firewall that does not exist.
     fn aliasBody(b: *Builder, e: Entry, id: TypeId, args: []const Var) Error!Var {
+        if (b.private_work) |work| work.aliases += 1;
         // The `types_alias_body` read, and one of the two demonstrated
         // miscompiles (`plans/m4-3.md` §6.2): the expansion is in no record, so the digest
         // is what makes it visible.
@@ -1265,6 +1250,8 @@ pub const Builder = struct {
         inner.expanding = &here;
         inner.shared = b.memo();
         inner.shallow = b.shallow;
+        inner.private_read = b.private_read;
+        inner.private_work = b.private_work;
         // A schema endpoint in the body is read as the caller would read
         // it written directly: through the caller's schema lookup
         // when the alias is the checked module's own, and through the

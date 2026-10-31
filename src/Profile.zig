@@ -348,6 +348,17 @@ pub const Counter = enum {
     writes_probe_programs,
     writes_probe_work,
 
+    /// Complete private nominal publication and indexed warm completeness.
+    nominal_owners,
+    nominal_ctors,
+    nominal_args,
+    nominal_source_nodes,
+    nominal_alias_bodies,
+    nominal_cover_headers,
+    nominal_cover_ctors,
+    nominal_cover_refs,
+    nominal_cover_terms,
+
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };
 

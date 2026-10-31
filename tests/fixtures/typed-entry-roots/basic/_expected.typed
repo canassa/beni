@@ -384,3 +384,124 @@ scheme-proof 7 total=true identities=
 scheme-proof 8 total=true identities=
 scheme-proof 9 total=true identities=
 scheme-proof 10 total=true identities=
+nominal-module app:Main schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Secret kind=adt arity=1 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Secret ordinal=0 args=[0]
+module Main
+scheme 0 body=2 quantified=1
+  q 0 kind=0 equatable=false name=a constraints=0
+typeref 0 app Main.Secret
+term 0 var 0 0
+term 1 app 0 0
+term 2 tuple 2 0
+extra 0 1
+extra 1 0
+extra 2 2
+extra 3 1
+extra 4 0
+extra 5 0
+extra 6 3
+extra 7 0
+extra 8 0
+nominal-module platform:Start schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Program kind=adt arity=0 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Program ordinal=0 args=[21]
+module Start
+scheme 0 body=22 quantified=0
+typeref 0 platform Start.Program
+typeref 1 core Basics.Int
+term 0 app 0 0
+term 1 app 1 1
+term 2 app 1 2
+term 3 app 1 3
+term 4 app 1 4
+term 5 func 5 4
+term 6 app 1 9
+term 7 app 1 10
+term 8 app 1 11
+term 9 func 12 8
+term 10 app 1 15
+term 11 app 1 16
+term 12 app 1 17
+term 13 func 18 12
+term 14 app 1 21
+term 15 app 1 22
+term 16 app 1 23
+term 17 app 1 24
+term 18 app 1 25
+term 19 func 26 18
+term 20 empty_record 0 0
+term 21 record 31 20
+  field handle term=5
+  field init term=9
+  field start term=13
+  field stream term=19
+term 22 tuple 40 0
+extra 0 0
+extra 1 0
+extra 2 0
+extra 3 0
+extra 4 0
+extra 5 3
+extra 6 1
+extra 7 2
+extra 8 3
+extra 9 0
+extra 10 0
+extra 11 0
+extra 12 2
+extra 13 6
+extra 14 7
+extra 15 0
+extra 16 0
+extra 17 0
+extra 18 2
+extra 19 10
+extra 20 11
+extra 21 0
+extra 22 0
+extra 23 0
+extra 24 0
+extra 25 0
+extra 26 4
+extra 27 14
+extra 28 15
+extra 29 16
+extra 30 17
+extra 31 8
+extra 32 5
+extra 33 5
+extra 34 6
+extra 35 9
+extra 36 7
+extra 37 13
+extra 38 8
+extra 39 19
+extra 40 2
+extra 41 0
+extra 42 21
+nominal-module platform:Worker schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Program kind=adt arity=2 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Program ordinal=0 args=[]
+module Worker
+scheme 0 body=3 quantified=2
+  q 0 kind=0 equatable=false name=config constraints=0
+  q 1 kind=0 equatable=false name=state constraints=0
+typeref 0 platform Worker.Program
+term 0 var 0 0
+term 1 var 1 0
+term 2 app 0 0
+term 3 tuple 3 0
+extra 0 2
+extra 1 0
+extra 2 1
+extra 3 1
+extra 4 2
+extra 5 0
+extra 6 3
+extra 7 0
+extra 8 0
+extra 9 0
+extra 10 4
+extra 11 0
+extra 12 0

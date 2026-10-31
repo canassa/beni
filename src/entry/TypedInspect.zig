@@ -18,9 +18,9 @@ pub const Input = struct {
     dispatch: []const Dispatch,
     plan: *const Plan,
 };
-pub const Error = Allocator.Error || std.Io.Writer.Error || error{ UnvalidatedPlan, MissingEntryRoots };
+pub const Error = Allocator.Error || std.Io.Writer.Error || error{ UnvalidatedPlan, MissingEntryRoots, MissingNominalLayouts };
 /// Availability only: current checked Plan identity, never source reconstruction.
-pub fn validate(in: Input) error{ UnvalidatedPlan, MissingEntryRoots }!void {
+pub fn validate(in: Input) error{ UnvalidatedPlan, MissingEntryRoots, MissingNominalLayouts }!void {
     if (!in.plan.validated) return error.UnvalidatedPlan;
     for (in.dispatch) |*dispatch| {
         for (dispatch.decl_heads, 0..) |head, di| {
@@ -28,6 +28,9 @@ pub fn validate(in: Input) error{ UnvalidatedPlan, MissingEntryRoots }!void {
             if (!dispatch.entry_roots.present or dispatch.entry_roots.find(@fromBackingInt(@intCast(di))) == null)
                 return error.MissingEntryRoots;
         }
+    }
+    for (in.dispatch, 0..) |*dispatch, mi| {
+        if (inspectNominals(in, @fromBackingInt(@intCast(mi))) and !dispatch.nominal_layouts.present) return error.MissingNominalLayouts;
     }
 }
 /// Call only after the existing complete entry contract validation.
@@ -96,6 +99,17 @@ pub fn write(gpa: Allocator, out: *std.Io.Writer, in: Input) Error!void {
             try out.writeByte('\n');
         }
     }
+    for (in.dispatch, 0..) |*dispatch, mi| {
+        const module: Graph.Index = @fromBackingInt(@intCast(mi));
+        if (inspectNominals(in, module)) try @import("NominalInspect.zig").write(out, in.graph, module, &dispatch.nominal_layouts, in.interner);
+    }
+}
+
+fn inspectNominals(in: Input, module: Graph.Index) bool {
+    if (in.graph.modulePackage(module) == .app) return true;
+    for (in.plan.kinds.items(.module)) |owner| if (owner == module) return true;
+    for (in.dispatch[module.int()].decl_heads) |head| if (in.plan.find(head) != null) return true;
+    return false;
 }
 
 fn quoted(out: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {

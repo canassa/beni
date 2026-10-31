@@ -1,0 +1,20 @@
+import Js
+
+
+pub type Program config state
+    = Program
+
+
+pub make : config, state → Program config state
+make _ _ = Program
+
+
+pub empty : ⊤ → Program config state
+empty _ = Program
+
+
+pub raw : Js.Value
+raw = Js.undefined
+
+
+pub foreign type Native a

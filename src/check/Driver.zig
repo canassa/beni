@@ -455,6 +455,13 @@ fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32
 }
 
 fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, retained: *Retained) Error!void {
+    var nominal_coverage: @import("NominalLayouts.zig").Work = .{};
+    defer {
+        d.counters[m.int()].nominal_cover_headers += nominal_coverage.cover_headers;
+        d.counters[m.int()].nominal_cover_ctors += nominal_coverage.cover_ctors;
+        d.counters[m.int()].nominal_cover_refs += nominal_coverage.cover_refs;
+        d.counters[m.int()].nominal_cover_terms += nominal_coverage.cover_terms;
+    }
     const dependency_errors = d.dependencyErrors(m);
     defer if (m.int() < d.tainted.len) {
         d.tainted[m.int()] = dependency_errors or d.reportedError(m);
@@ -469,7 +476,8 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
                 loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types) and
                 (try loaded.sidecar.table.continuations.verifyAgainstBir(d.gpa, bir, &loaded.sidecar.table, d.graph, d.types)) and
                 loaded.sidecar.verifyDeclHeads(bir, d.graph, d.types) and
-                (try loaded.sidecar.prepareEntryCoverage(d.gpa, bir, d.graph, d.types, d.entry_selection)))
+                (try loaded.sidecar.prepareEntryCoverage(d.gpa, bir, d.graph, d.types, d.entry_selection)) and
+                (try loaded.sidecar.prepareNominalCoverage(d.gpa, bir, d.graph, d.types, m, d.interner, &loaded.record, if (d.options.profile) |p| (if (p.enabled) &nominal_coverage else null) else null)))
                 return d.install(m, loaded);
             // A malformed or stale sidecar is a cache miss. Release the
             // entry here because the normal check below replaces it. The

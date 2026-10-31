@@ -173,6 +173,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/continuation_test.zig", 1 },
     .{ "tests/blackbox/entry_discovery_test.zig", 1 },
     .{ "tests/blackbox/typed_entry_roots_test.zig", 1 },
+    .{ "tests/blackbox/nominal_layouts_test.zig", 1 },
     .{ "tests/blackbox/check_test.zig", 1 },
     .{ "tests/blackbox/cutoff_test.zig", 3 },
     .{ "tests/blackbox/devloop_test.zig", 1 },
@@ -2529,7 +2530,7 @@ const Blackbox = struct {
         });
         if (env.variant) r.step.dependOn(bb.variant_install);
         r.setEnvironmentVariable("BENI_VARIANT_EXE", if (env.variant) installPath(bb.b, bb.b.fmt("{s}/beni", .{variant_bin_dir})) else "");
-        if (std.mem.eql(u8, t.name, "typed_entry_roots_test")) {
+        if (std.mem.eql(u8, t.name, "typed_entry_roots_test") or std.mem.eql(u8, t.name, "nominal_layouts_test")) {
             const maker_install = bb.b.addInstallArtifact(corePackMaker(bb.b), .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
             r.step.dependOn(&maker_install.step);
             r.setEnvironmentVariable("BENI_CORE_PACK_EXE", installPath(bb.b, "tools/core_pack"));

@@ -79,6 +79,7 @@ const Interface = @import("../resolve/Interface.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const ContinuationPlan = @import("../check/ContinuationPlan.zig");
 const EntryRoots = @import("../check/EntryRoots.zig");
+const NominalLayoutBytes = @import("NominalLayoutBytes.zig");
 const Types = @import("../check/Types.zig");
 
 const Symbol = InternPool.Symbol;
@@ -94,7 +95,7 @@ pub const magic = "BENIDSP\x00";
 /// 13 since scalar dictionary keys (#294) carry key domains.
 /// 14 adds checked render identity facts and their local paths.
 /// 15: effect declaration byte 2 carries the totality proof.
-pub const format_version: u32 = 17;
+pub const format_version: u32 = 18;
 
 pub const Column = enum(u32) {
     terms,
@@ -124,6 +125,7 @@ pub const Column = enum(u32) {
     continuations,
     decl_heads,
     entry_roots,
+    nominal_layouts,
 
     pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
@@ -154,7 +156,7 @@ pub const Column = enum(u32) {
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
-            .strings, .continuations, .entry_roots => 1,
+            .strings, .continuations, .entry_roots, .nominal_layouts => 1,
             .decl_heads => 4,
         };
     }
@@ -220,6 +222,9 @@ pub const Loaded = struct {
         }
         return l.table.entry_roots.covers(gpa, bir, graph, types, heads, selection);
     }
+    pub fn prepareNominalCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, types: *const Types, module: Graph.Index, interner: *const InternPool.Global, own_interface: *const Interface, work: ?*@import("../check/NominalLayouts.zig").Work) Allocator.Error!bool {
+        return l.table.nominal_layouts.covers(gpa, bir, graph, types, module, interner, own_interface, work);
+    }
     pub fn deinit(l: *Loaded, gpa: Allocator) void {
         l.table.deinit(gpa);
         gpa.free(l.module_refs);
@@ -252,6 +257,8 @@ pub fn write(
 
     const entry_roots = try EntryRoots.write(gpa, &d.entry_roots, interner);
     defer gpa.free(entry_roots);
+    const nominal_layouts = try NominalLayoutBytes.write(gpa, &d.nominal_layouts, interner);
+    defer gpa.free(nominal_layouts);
 
     const terms = try gpa.alloc(u8, d.terms.len * term_bytes);
     defer gpa.free(terms);
@@ -482,6 +489,7 @@ pub fn write(
         continuations,
         decl_heads,
         entry_roots,
+        nominal_layouts,
     };
     const lengths = [Column.count]u32{
         @intCast(d.terms.len),
@@ -511,6 +519,7 @@ pub fn write(
         @intCast(continuations.len),
         @intCast(d.decl_heads.len),
         @intCast(entry_roots.len),
+        @intCast(nominal_layouts.len),
     };
 
     var offsets: [Column.count]u32 = undefined;
@@ -1059,6 +1068,15 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         error.UnknownSymbol => return error.UnknownSymbol,
         else => return error.BadSidecar,
     };
+    const nominal_bytes = col(bytes, offsets, .nominal_layouts)[0..lengths[@backingInt(Column.nominal_layouts)]];
+    out.table.nominal_layouts = (switch (in.*) {
+        .find => |pool| NominalLayoutBytes.read(gpa, nominal_bytes, pool),
+        .get_or_put => |pool| NominalLayoutBytes.readGrowing(gpa, nominal_bytes, pool.pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownSymbol => return error.UnknownSymbol,
+        else => return error.BadSidecar,
+    };
     if (!verify(&out)) return error.BadSidecar;
     return out;
 }
@@ -1367,6 +1385,11 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     const roots_b = try EntryRoots.write(testing.allocator, &b.entry_roots, interner);
     defer testing.allocator.free(roots_b);
     try testing.expectEqualSlices(u8, roots_a, roots_b);
+    const layouts_a = try NominalLayoutBytes.write(testing.allocator, &a.nominal_layouts, interner);
+    defer testing.allocator.free(layouts_a);
+    const layouts_b = try NominalLayoutBytes.write(testing.allocator, &b.nominal_layouts, interner);
+    defer testing.allocator.free(layouts_b);
+    try testing.expectEqualSlices(u8, layouts_a, layouts_b);
     const plan_a = try ContinuationPlan.write(testing.allocator, &a.continuations, interner);
     defer testing.allocator.free(plan_a);
     const plan_b = try ContinuationPlan.write(testing.allocator, &b.continuations, interner);

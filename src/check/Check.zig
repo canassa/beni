@@ -58,6 +58,16 @@ pub const Counters = struct {
     /// installed from the cache runs none: its rows are read off its record
     /// (§14.3), which is what a warm run's 0 here says.
     derived_context_runs: u64 = 0,
+    /// Actual private layout publication/coverage work; worker-local until join.
+    nominal_owners: u64 = 0,
+    nominal_ctors: u64 = 0,
+    nominal_args: u64 = 0,
+    nominal_source_nodes: u64 = 0,
+    nominal_alias_bodies: u64 = 0,
+    nominal_cover_headers: u64 = 0,
+    nominal_cover_ctors: u64 = 0,
+    nominal_cover_refs: u64 = 0,
+    nominal_cover_terms: u64 = 0,
 
     /// Field-by-field sum. Reflective on purpose: a counter added above and
     /// forgotten here would silently report a per-module figure as if it

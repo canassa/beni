@@ -1,0 +1,392 @@
+nominal-module app:Library schema=1 owners=6 ctors=6 proof=ordinary-types wire=false
+  nominal-owner 0 Secret kind=adt arity=0 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Secret ordinal=0 args=[1]
+  nominal-owner 1 PrivatePayload kind=adt arity=1 scheme=1 ctors=1+1 layout=ordinary-payloads
+    nominal-ctor 1 PrivatePayload ordinal=0 args=[6]
+  nominal-owner 2 Spare kind=adt arity=2 scheme=2 ctors=2+1 layout=ordinary-payloads
+    nominal-ctor 2 Spare ordinal=0 args=[8]
+  nominal-owner 3 Keys kind=adt arity=1 scheme=3 ctors=3+1 layout=ordinary-payloads
+    nominal-ctor 3 Keys ordinal=0 args=[15]
+  nominal-owner 4 PublicKey kind=adt arity=1 scheme=4 ctors=4+1 layout=ordinary-payloads
+    nominal-ctor 4 PublicKey ordinal=0 args=[20]
+  nominal-owner 5 UnusedScalar kind=adt arity=0 scheme=5 ctors=5+1 layout=ordinary-payloads
+    nominal-ctor 5 UnusedScalar ordinal=0 args=[23]
+module Library
+scheme 0 body=2 quantified=0
+scheme 1 body=7 quantified=1
+  q 0 kind=0 equatable=false name=a constraints=0
+scheme 2 body=11 quantified=2
+  q 0 kind=1 equatable=false name=number constraints=0
+  q 1 kind=0 equatable=false name=phantom constraints=0
+scheme 3 body=16 quantified=1
+  q 0 kind=3 equatable=false name=- constraints=0
+scheme 4 body=21 quantified=1
+  q 0 kind=3 equatable=false name=- constraints=0
+scheme 5 body=24 quantified=0
+typeref 0 app Library.Secret
+typeref 1 core Basics.Int
+typeref 2 app Library.PrivatePayload
+typeref 3 app Library.Spare
+typeref 4 app Library.Keys
+typeref 5 core Dict.Dict
+typeref 6 app Library.PublicKey
+typeref 7 app Library.UnusedScalar
+term 0 app 0 0
+term 1 app 1 1
+term 2 tuple 2 0
+term 3 var 0 0
+term 4 app 2 5
+term 5 app 1 7
+term 6 func 8 5
+term 7 tuple 10 0
+term 8 var 0 0
+term 9 var 1 0
+term 10 app 3 17
+term 11 tuple 20 0
+term 12 var 0 0
+term 13 app 4 31
+term 14 app 1 33
+term 15 app 5 34
+term 16 tuple 37 0
+term 17 var 0 0
+term 18 app 6 44
+term 19 app 1 46
+term 20 app 5 47
+term 21 tuple 50 0
+term 22 app 7 57
+term 23 app 1 58
+term 24 tuple 59 0
+extra 0 0
+extra 1 0
+extra 2 2
+extra 3 0
+extra 4 1
+extra 5 1
+extra 6 3
+extra 7 0
+extra 8 1
+extra 9 3
+extra 10 2
+extra 11 4
+extra 12 6
+extra 13 0
+extra 14 8
+extra 15 0
+extra 16 0
+extra 17 2
+extra 18 8
+extra 19 9
+extra 20 2
+extra 21 10
+extra 22 8
+extra 23 1
+extra 24 12
+extra 25 0
+extra 26 0
+extra 27 0
+extra 28 13
+extra 29 0
+extra 30 0
+extra 31 1
+extra 32 12
+extra 33 0
+extra 34 2
+extra 35 12
+extra 36 14
+extra 37 2
+extra 38 13
+extra 39 15
+extra 40 3
+extra 41 4294967295
+extra 42 0
+extra 43 0
+extra 44 1
+extra 45 17
+extra 46 0
+extra 47 2
+extra 48 17
+extra 49 19
+extra 50 2
+extra 51 18
+extra 52 20
+extra 53 3
+extra 54 4294967295
+extra 55 0
+extra 56 0
+extra 57 0
+extra 58 0
+extra 59 2
+extra 60 22
+extra 61 23
+nominal-module app:Main schema=1 owners=9 ctors=8 proof=ordinary-types wire=false
+  nominal-owner 0 Hidden kind=adt arity=2 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Hidden ordinal=0 args=[0]
+  nominal-owner 1 Other kind=adt arity=1 scheme=1 ctors=1+1 layout=ordinary-payloads
+    nominal-ctor 1 Other ordinal=0 args=[4]
+  nominal-owner 2 Recursive kind=adt arity=1 scheme=2 ctors=2+2 layout=ordinary-payloads
+    nominal-ctor 2 Leaf ordinal=0 args=[7]
+    nominal-ctor 3 Next ordinal=1 args=[10]
+  nominal-owner 3 Mine kind=adt arity=0 scheme=3 ctors=4+1 layout=ordinary-payloads
+    nominal-ctor 4 Mine ordinal=0 args=[13]
+  nominal-owner 4 Wrapped.Type kind=schema_type arity=0 scheme=4294967295 ctors=5+0 layout=schema-contract-unavailable
+  nominal-owner 5 Wrapped.Encoded kind=schema_encoded arity=0 scheme=4294967295 ctors=5+0 layout=schema-contract-unavailable
+  nominal-owner 6 UsesSchema kind=adt arity=0 scheme=4 ctors=5+1 layout=ordinary-payloads
+    nominal-ctor 5 UsesSchema ordinal=0 args=[16]
+  nominal-owner 7 Aliased kind=adt arity=2 scheme=5 ctors=6+1 layout=ordinary-payloads
+    nominal-ctor 6 Aliased ordinal=0 args=[24]
+  nominal-owner 8 Another kind=adt arity=2 scheme=6 ctors=7+1 layout=ordinary-payloads
+    nominal-ctor 7 Another ordinal=0 args=[32]
+module Main
+scheme 0 body=3 quantified=2
+  q 0 kind=1 equatable=false name=number constraints=0
+  q 1 kind=0 equatable=false name=phantom constraints=0
+scheme 1 body=6 quantified=1
+  q 0 kind=0 equatable=false name=a constraints=0
+scheme 2 body=11 quantified=1
+  q 0 kind=0 equatable=false name=a constraints=0
+scheme 3 body=14 quantified=0
+scheme 4 body=17 quantified=0
+scheme 5 body=25 quantified=2
+  q 0 kind=1 equatable=false name=number constraints=0
+  q 1 kind=0 equatable=false name=spare constraints=0
+scheme 6 body=33 quantified=2
+  q 0 kind=0 equatable=false name=a constraints=0
+  q 1 kind=0 equatable=false name=b constraints=0
+typeref 0 app Main.Hidden
+typeref 1 app Main.Other
+typeref 2 app Main.Recursive
+typeref 3 core List.List
+typeref 4 app Main.Mine
+typeref 5 core Basics.Int
+typeref 6 app Main.Wrapped.Type body=20
+typeref 7 app Main.Wrapped.Encoded
+typeref 8 app Main.UsesSchema
+typeref 9 app Main.Aliased
+typeref 10 app Main.Neutral body=28
+typeref 11 app Main.Another
+term 0 var 0 0
+term 1 var 1 0
+term 2 app 0 0
+term 3 tuple 3 0
+term 4 var 0 0
+term 5 app 1 14
+term 6 tuple 16 0
+term 7 var 0 0
+term 8 app 2 23
+term 9 app 3 25
+term 10 app 2 27
+term 11 tuple 29 0
+term 12 app 4 37
+term 13 app 5 38
+term 14 tuple 39 0
+term 15 app 8 42
+term 16 alias 6 43
+term 17 tuple 44 0
+term 18 app 4 47
+term 19 empty_record 0 0
+term 20 record 48 19
+  field field term=18
+term 21 var 0 0
+term 22 var 1 0
+term 23 app 9 51
+term 24 alias 10 54
+term 25 tuple 56 0
+term 26 var 0 0
+term 27 empty_record 0 0
+term 28 record 67 27
+  field value term=26
+term 29 var 0 0
+term 30 var 1 0
+term 31 app 11 70
+term 32 alias 10 73
+term 33 tuple 75 0
+extra 0 2
+extra 1 0
+extra 2 1
+extra 3 2
+extra 4 2
+extra 5 0
+extra 6 1
+extra 7 3
+extra 8 0
+extra 9 0
+extra 10 0
+extra 11 4
+extra 12 0
+extra 13 0
+extra 14 1
+extra 15 4
+extra 16 2
+extra 17 5
+extra 18 4
+extra 19 0
+extra 20 8
+extra 21 0
+extra 22 0
+extra 23 1
+extra 24 7
+extra 25 1
+extra 26 7
+extra 27 1
+extra 28 9
+extra 29 3
+extra 30 8
+extra 31 7
+extra 32 10
+extra 33 0
+extra 34 13
+extra 35 0
+extra 36 0
+extra 37 0
+extra 38 0
+extra 39 2
+extra 40 12
+extra 41 13
+extra 42 0
+extra 43 0
+extra 44 2
+extra 45 15
+extra 46 16
+extra 47 0
+extra 48 2
+extra 49 28
+extra 50 18
+extra 51 2
+extra 52 21
+extra 53 22
+extra 54 1
+extra 55 21
+extra 56 2
+extra 57 23
+extra 58 24
+extra 59 1
+extra 60 32
+extra 61 0
+extra 62 0
+extra 63 0
+extra 64 33
+extra 65 0
+extra 66 0
+extra 67 2
+extra 68 36
+extra 69 26
+extra 70 2
+extra 71 29
+extra 72 30
+extra 73 1
+extra 74 30
+extra 75 2
+extra 76 31
+extra 77 32
+extra 78 0
+extra 79 40
+extra 80 0
+extra 81 0
+extra 82 0
+extra 83 41
+extra 84 0
+extra 85 0
+nominal-module platform:Start schema=1 owners=1 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Program kind=adt arity=0 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Program ordinal=0 args=[21]
+module Start
+scheme 0 body=22 quantified=0
+typeref 0 platform Start.Program
+typeref 1 core Basics.Int
+term 0 app 0 0
+term 1 app 1 1
+term 2 app 1 2
+term 3 app 1 3
+term 4 app 1 4
+term 5 func 5 4
+term 6 app 1 9
+term 7 app 1 10
+term 8 app 1 11
+term 9 func 12 8
+term 10 app 1 15
+term 11 app 1 16
+term 12 app 1 17
+term 13 func 18 12
+term 14 app 1 21
+term 15 app 1 22
+term 16 app 1 23
+term 17 app 1 24
+term 18 app 1 25
+term 19 func 26 18
+term 20 empty_record 0 0
+term 21 record 31 20
+  field handle term=5
+  field init term=9
+  field start term=13
+  field stream term=19
+term 22 tuple 40 0
+extra 0 0
+extra 1 0
+extra 2 0
+extra 3 0
+extra 4 0
+extra 5 3
+extra 6 1
+extra 7 2
+extra 8 3
+extra 9 0
+extra 10 0
+extra 11 0
+extra 12 2
+extra 13 6
+extra 14 7
+extra 15 0
+extra 16 0
+extra 17 0
+extra 18 2
+extra 19 10
+extra 20 11
+extra 21 0
+extra 22 0
+extra 23 0
+extra 24 0
+extra 25 0
+extra 26 4
+extra 27 14
+extra 28 15
+extra 29 16
+extra 30 17
+extra 31 8
+extra 32 5
+extra 33 5
+extra 34 6
+extra 35 9
+extra 36 7
+extra 37 13
+extra 38 8
+extra 39 19
+extra 40 2
+extra 41 0
+extra 42 21
+nominal-module platform:Worker schema=1 owners=2 ctors=1 proof=ordinary-types wire=false
+  nominal-owner 0 Program kind=adt arity=2 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Program ordinal=0 args=[]
+  nominal-owner 1 Native kind=native_opaque arity=1 scheme=4294967295 ctors=1+0 layout=native-contract-unavailable
+module Worker
+scheme 0 body=3 quantified=2
+  q 0 kind=0 equatable=false name=config constraints=0
+  q 1 kind=0 equatable=false name=state constraints=0
+typeref 0 platform Worker.Program
+typeref 1 platform Worker.Native
+term 0 var 0 0
+term 1 var 1 0
+term 2 app 0 0
+term 3 tuple 3 0
+extra 0 2
+extra 1 0
+extra 2 1
+extra 3 1
+extra 4 2
+extra 5 0
+extra 6 3
+extra 7 0
+extra 8 0
+extra 9 0
+extra 10 4
+extra 11 0
+extra 12 0
