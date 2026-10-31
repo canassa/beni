@@ -11453,13 +11453,14 @@ fn groupSelfFold(w: *World, n: usize) !world.Result {
     return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
 }
 
-test "the checker v2 solves a self-recursive fold in four walks and no growth at any length (GroupSelfFold)" {
+test "the checker v2 solves a self-recursive fold in two walks and no growth at any length (GroupSelfFold)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §8 S3b slice 4 (4a): round 2 adds `π1[*] A`, round 3 `π1[*] R`, round
-    // 4 settles; the walks past the second are growth the source
-    // continuation covers, so G_f is 0 whatever the body's length.
+    // §8 S3b slice 4b: round 1's facts reach the port along the edges
+    // (the tail call's answer and the argument's marks, `π1[*] A` and `R`),
+    // and round 2, woken by `res` leaving nothing, reads x* and settles. 4a
+    // took four walks. G_f is 0 whatever the body's length.
     for ([_]usize{ 10, 100, 1000 }) |n| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
@@ -11473,7 +11474,7 @@ test "the checker v2 solves a self-recursive fold in four walks and no growth at
         // │ VERIFY OUTPUT                           │
         // └─────────────────────────────────────────┘
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
-        try testing.expectEqual(@as(u64, 4), try accountField(dump.stdout, "go", "walks"));
+        try testing.expectEqual(@as(u64, 2), try accountField(dump.stdout, "go", "walks"));
         try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "go", "growth"));
         try testing.expect(std.mem.indexOf(u8, dump.stdout, "15:17 List.push acc: accepted param") != null or std.mem.indexOf(u8, dump.stdout, "List.push acc: accepted param") != null);
     }
@@ -11505,12 +11506,16 @@ fn groupFieldShift(w: *World, n: usize, mutual: bool) !world.Result {
     return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
 }
 
-test "the checker v2's GroupFieldShift: n = 4 settles in n + 3 walks, n = 16 is loud (GroupFieldShift)" {
+test "the checker v2's GroupFieldShift: n = 4 settles in two walks, n = 16 is loud (GroupFieldShift)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // 4a's figures, not a bound (§8 S3b slice 4, #1372): each round moves the
-    // cells by one field, and a walk costs far more than the facts it adds.
+    // §8 S3b slice 4b: the tail call's result edge, recorded by walk 1 over
+    // ⊥, carries the cells one field a delivery, so walk 2, woken by `res`
+    // leaving nothing, reads x* (4a: n + 3 walks). Each delivery is one
+    // version of the class along the edge, at most n(n + 1)/2 of them. A
+    // delivery reads the whole class, as a walk does (#1372), so n = 16 is
+    // still loud.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
@@ -11526,28 +11531,113 @@ test "the checker v2's GroupFieldShift: n = 4 settles in n + 3 walks, n = 16 is 
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), four.exit_code);
-    try testing.expectEqual(@as(u64, 7), try accountField(four.stdout, "shift", "walks"));
+    try testing.expectEqual(@as(u64, 2), try accountField(four.stdout, "shift", "walks"));
+    try testing.expect(try accountField(four.stdout, "shift", "deliveries") <= 4 * 5 / 2);
     try testing.expect(std.mem.indexOf(u8, four.stdout, "limit shift") == null);
     try testing.expectEqual(@as(u8, 0), sixteen.exit_code);
     try testing.expect(std.mem.indexOf(u8, sixteen.stdout, "limit shift: ownership_summary_size") != null);
+}
+
+/// `rot a₁ … aₙ k`, which pushes onto `a₁` and calls itself with its
+/// lists rotated by one (`GroupRotate`, ownership-v2.md §8 S3b slice 4).
+fn groupRotate(w: *World, n: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "pub rot : ");
+    for (0..n) |_| try src.appendSlice(a, "List Int, ");
+    try src.appendSlice(a, "Int → Int\nrot");
+    for (1..n + 1) |i| try src.print(a, " a{d}", .{i});
+    try src.appendSlice(a, " k =\n    if k == 0 then\n        List.length (List.push a1 0)\n\n    else\n        rot");
+    for (2..n + 1) |i| try src.print(a, " a{d}", .{i});
+    try src.appendSlice(a, " a1 (k - 1)\n");
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 takes two walks for a rotating writer at any width, the marks delivered (GroupRotate)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4b: walk 1 records the n argument edges, and `W` reaches
+    // every parameter backwards along them. A delivered mark wakes no walk:
+    // one inference walk, and the read check's validation. 4a took n + 1.
+    for ([_]usize{ 4, 16, 64 }) |n| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try groupRotate(&w, n);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        try testing.expectEqual(@as(u64, 2), try accountField(dump.stdout, "rot", "walks"));
+        try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "rot", "inference"));
+        try testing.expect(try accountField(dump.stdout, "rot", "deliveries") <= n + 1);
+        var buf: [16]u8 = undefined;
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, try std.fmt.bufPrint(&buf, "π{d} RW", .{n})) != null);
+    }
+}
+
+/// A ring of `k` members, each pushing onto its list and calling the next
+/// (`GroupMutualRing`, ownership-v2.md §8 S3b slice 4).
+fn groupMutualRing(w: *World, k: usize) !world.Result {
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    for (1..k + 1) |i| {
+        if (i > 1) try src.appendSlice(a, "\n\n");
+        try src.print(a, "pub ring{d} : List Int, Int → List Int\nring{d} acc n =\n    if n == 0 then\n        acc\n\n    else\n        ring{d} (List.push acc {d}) (n - 1)\n", .{ i, i, i % k + 1, i });
+    }
+    try w.write("Main.beni", src.items);
+    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+}
+
+test "the checker v2 takes two walks per member of a ring of pushes at any size (GroupMutualRing)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §8 S3b slice 4b: round 2, woken by each callee's `res` leaving
+    // nothing, reads x*, which the tail calls' result edges and the
+    // arguments' marks carried around the ring. 4a took four walks each.
+    for ([_]usize{ 4, 16, 64 }) |k| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try groupMutualRing(&w, k);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        var name: [16]u8 = undefined;
+        for (1..k + 1) |i| try testing.expectEqual(@as(u64, 2), try accountField(dump.stdout, try std.fmt.bufPrint(&name, "ring{d}", .{i}), "walks"));
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ring") == null);
+    }
 }
 
 test "the checker v2 publishes nothing of a recursive group a limit stops, and still serves an earlier group" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 16 fields exhausts in a
-    // round past the second. The group is built whole or not at all: one
-    // member has the limit, the other is unbuilt at its group call, and
-    // neither publishes a class or a line. `before`, an earlier group, still
-    // serves `after`, whose call is checked.
+    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 24 fields exhausts past
+    // the lanes (16 settled once 4b delivered the facts along the edges). The
+    // group is built whole or not at all: one member has the limit, the
+    // other is unbuilt at its group call, and neither publishes a class or a
+    // line. `before`, an earlier group, still serves `after`, whose call is
+    // checked.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try groupFieldShift(&w, 16, true);
+    const dump = try groupFieldShift(&w, 24, true);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │

@@ -96,6 +96,9 @@ pub const Context = struct {
     sharedIndex: *const fn (ctx: *anyopaque, ref: u32) ?u32,
     /// A `++` the checker resolved to `List.append` (`Dispatch`).
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
+    /// Told of every call a class answered, with its arguments: a
+    /// recursive group records its edges (§8 S3b slice 4b).
+    onCall: ?*const fn (ctx: *anyopaque, inst: u32, args: []const Value) Error!void = null,
 };
 
 /// One instruction's value, and the local and path it reads when it is a
@@ -1132,6 +1135,7 @@ pub const Frame = struct {
                     return e;
                 };
                 f.account().leave(graft);
+                if (f.ctx.onCall) |on| try on(f.ctx.ctx, i, argv.items);
                 // The callee's `xreq` is discharged on the call's first write, and
                 // reported there (§2.11 step 7); a call that writes nothing owes
                 // it as the frame's.
@@ -2034,28 +2038,9 @@ pub const Frame = struct {
         return true;
     }
 
-    /// The positions one `⟲` step stands for below `x`: each node reached
-    /// by one step or more whose place is `x`'s (`positionsAt`).
+    /// The positions one `⟲` step stands for below `x` (`Calls.reentries`).
     fn reentries(f: *Frame, x: NodeId, out: *std.ArrayList(NodeId)) Error!void {
-        const shapes = f.env.shapes;
-        const places = f.env.places;
-        const p = shapes.place(x);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(f.gpa);
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(f.gpa);
-        try stack.append(f.gpa, x);
-        while (stack.pop()) |y| {
-            for (places.steps(shapes.place(y)).steps) |c| {
-                try f.env.charge.reserve(f.gpa, .inspection, 1);
-                if (c.kind == .level) continue;
-                const n = (try shapes.proj(f.gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
-                if (seen.contains(n)) continue;
-                try seen.put(f.gpa, n, {});
-                if (shapes.place(n) == p) try out.append(f.gpa, n);
-                try stack.append(f.gpa, n);
-            }
-        }
+        return Calls.reentries(f.env, x, out);
     }
 
     /// How many exact steps of `steps` read `v` before a leaf, when the path meets
@@ -2087,48 +2072,8 @@ pub const Frame = struct {
         var has_level = false;
         for (steps) |s| has_level = has_level or s.kind == .level;
         if (!has_level) return try f.along(v, steps);
-        const task = try f.account().enter(f.gpa, null);
-        defer f.account().leave(task);
-        const shapes = f.env.shapes;
-        const places = f.env.places;
-        var frontier: std.ArrayList(NodeId) = .empty;
-        defer frontier.deinit(f.gpa);
-        var next: std.ArrayList(NodeId) = .empty;
-        defer next.deinit(f.gpa);
-        try frontier.append(f.gpa, v.node);
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(f.gpa);
-        var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(f.gpa);
-        for (steps) |s| {
-            next.clearRetainingCapacity();
-            for (frontier.items) |x| {
-                if (s.kind != .level) {
-                    if (try shapes.proj(f.gpa, f.account(), places, f.env.cells, x, s)) |n| try next.append(f.gpa, n);
-                    continue;
-                }
-                const p = shapes.place(x);
-                seen.deinit(f.gpa);
-                seen = .{};
-                stack.clearRetainingCapacity();
-                try stack.append(f.gpa, x);
-                while (stack.pop()) |y| {
-                    for (places.steps(shapes.place(y)).steps) |c| {
-                        try f.env.charge.reserve(f.gpa, .inspection, 1);
-                        if (c.kind == .level) continue;
-                        const n = (try shapes.proj(f.gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
-                        if (seen.contains(n)) continue;
-                        try seen.put(f.gpa, n, {});
-                        if (shapes.place(n) == p) try next.append(f.gpa, n);
-                        try stack.append(f.gpa, n);
-                    }
-                }
-            }
-            std.mem.swap(std.ArrayList(NodeId), &frontier, &next);
-        }
-        if (frontier.items.len == 0) return null;
-        if (frontier.items.len == 1) return .{ .node = frontier.items[0] };
-        return .{ .node = try shapes.join(f.gpa, f.account(), places, f.env.cells, frontier.items) };
+        const n = (try Calls.positionsAt(f.env, v.node, steps)) orelse return null;
+        return .{ .node = n };
     }
 
     /// Whether a path goes through `[*]` or `⟲`: it names several positions.
