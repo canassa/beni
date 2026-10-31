@@ -442,6 +442,24 @@ pub const Table = struct {
         return try t.part(gpa, account, places, anchor, path);
     }
 
+    /// `projectRefined` by `⟲` where the levels have several canonical paths
+    /// (`Place.levelPaths`): the part at each, appended to `out`. False when
+    /// `projectRefined`'s one cell answers (§2.1, *one position, one name*).
+    pub fn projectRefinedLevels(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, r: CellId, out: *std.ArrayList(CellId)) Error!bool {
+        const x = t.get(r);
+        if (x.origin == .loan) return false;
+        const root = t.get(t.base(r)).origin;
+        if (!root.isSymbolic() or root == .top) return false;
+        var at = r;
+        while (t.origin(at).isRefinement()) : (at = t.parent(at)) if (t.origin(at) == .loan) return false;
+        const anchor: CellId = if (x.origin == .part) .from(x.a) else r;
+        const from: PathId = if (x.origin == .part) .from(x.c) else try places.rootPath(gpa, x.place);
+        const lr = (try places.levelPaths(gpa, .growth(account), from)) orelse return false;
+        var k: u32 = 0;
+        while (k < lr.len) : (k += 1) try out.append(gpa, try t.part(gpa, account, places, anchor, places.foldPath(lr.start + k)));
+        return true;
+    }
+
     /// The bit of an `elem`/`others` refinement's `c` that marks a split of
     /// positions (§2.13.3, a match on a rest): it refines an `others`, not a
     /// list, and adds no step to the canonical position. A flag, not a

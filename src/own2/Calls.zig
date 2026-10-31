@@ -1591,7 +1591,7 @@ pub const Beside = struct {
     heads: Ids.FixedDict(5) = .{},
     /// `(kid, next link)`.
     links: std.ArrayList([2]u32) = .empty,
-    /// `(value node, key)` → its reach's cells of that key (`keyed`).
+    /// `(reach, key)` → that reach's cells of that key (`keyed`).
     sets: Ids.FixedDict(5) = .{},
     keyed_done: Ids.FixedDict(1) = .{},
 
@@ -1681,25 +1681,25 @@ pub const Beside = struct {
         return any;
     }
 
-    /// The cells of `v`'s reach of alias key `key`, none if it has none;
-    /// the reach is split by key once per value node.
-    pub fn keyed(b: *Beside, env: Env, v: NodeId, reach: SetId, key: [4]u32) Error!SetId {
+    /// The cells of `reach` of alias key `key`, none if it has none; split by
+    /// key once per reach, since a value is read at its path (`Transfer.reachBeside`).
+    pub fn keyed(b: *Beside, env: Env, reach: SetId, key: [4]u32) Error!SetId {
         const gpa = env.gpa;
         const cells = env.cells;
         try env.charge.reserve(gpa, .memo, 1);
-        if (!(try b.keyed_done.getOrPut(gpa, .{v.int()})).found_existing) {
+        if (!(try b.keyed_done.getOrPut(gpa, .{reach.int()})).found_existing) {
             var it = cells.sets.iterate(reach);
             while (it.next()) |e| {
                 try env.charge.reserve(gpa, .inspection, 1);
                 const c: CellId = .from(e.key);
                 if (cells.origin(cells.base(c)) == .param) continue;
                 const k = aliasKey(cells, c);
-                const prev: SetId = if (b.sets.get(.{ v.int(), k[0], k[1], k[2], k[3] })) |s| .from(s) else .none;
+                const prev: SetId = if (b.sets.get(.{ reach.int(), k[0], k[1], k[2], k[3] })) |s| .from(s) else .none;
                 const next = try cells.sets.insert(gpa, env.charge, prev, e.key, e.value);
-                (try b.sets.getOrPut(gpa, .{ v.int(), k[0], k[1], k[2], k[3] })).value_ptr.* = next.int();
+                (try b.sets.getOrPut(gpa, .{ reach.int(), k[0], k[1], k[2], k[3] })).value_ptr.* = next.int();
             }
         }
-        return if (b.sets.get(.{ v.int(), key[0], key[1], key[2], key[3] })) |s| .from(s) else .none;
+        return if (b.sets.get(.{ reach.int(), key[0], key[1], key[2], key[3] })) |s| .from(s) else .none;
     }
 };
 
