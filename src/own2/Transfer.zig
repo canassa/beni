@@ -1640,10 +1640,7 @@ pub const Frame = struct {
                     if (cells.base(r) != db) continue;
                     switch (cells.alias(places, d, r)) {
                         .no => {},
-                        // The write's own position, met again where two paths
-                        // fold through one leaf (`a` projected by every
-                        // `#QN.k` is `part a·⟲`): owed as `excl` of the
-                        // canonical cell, as `keepBeside` owes a parameter's.
+                        // Met again in a fold through one leaf: `excl` (§2.2).
                         .yes => if (folded and cp.origin == .param and try f.summaryPath(.from(cp.b))) {
                             excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, cu.int(), 0);
                         } else {
