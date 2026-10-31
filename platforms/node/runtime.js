@@ -4,7 +4,9 @@
 // A platform declares how its artifact is shaped and how `main` is invoked,
 // and the emitter is parameterised by it rather than hardcoding one. For
 // Node that is an entry module that imports `main`, writes what it says to
-// standard output and leaves the exit code behind.
+// standard output and leaves the exit code behind. A `Program` is `{ $c, $o }`,
+// the exit code and the output, built by `Node.beni` (its header says why the
+// keys hold a `$`).
 //
 // `process` is imported rather than taken from the global scope, because
 // boundary.md §4's third check reads this file's own imports to decide what
@@ -14,6 +16,6 @@
 import process from "node:process";
 
 export const run = (program) => {
-  if (program.out.length !== 0) process.stdout.write(program.out);
-  process.exitCode = program.code;
+  if (program.$o.length !== 0) process.stdout.write(program.$o);
+  process.exitCode = program.$c;
 };
