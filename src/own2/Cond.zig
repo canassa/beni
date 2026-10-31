@@ -148,6 +148,10 @@ pub const Table = struct {
     /// met → the snapshot its walk puts at its position. Written only once
     /// a call has finished.
     memo_prop: Ids.FixedDict(3) = .{},
+    /// `leafEntries`' memo (#1399): its key → a span of `leaf_pool`.
+    memo_leaf: Ids.FixedDict(7) = .{},
+    leaf_spans: std.ArrayList([2]u32) = .empty,
+    leaf_pool: std.ArrayList(LeafEntry) = .empty,
     /// The apart aggregates (#1121): reach memo (with tie epoch), group provenance, `anyLost`.
     aggs: std.ArrayList(Agg) = .empty,
     reach_agg: Ids.FixedDict(1) = .{},
@@ -250,6 +254,9 @@ pub const Table = struct {
         t.memo_sep.deinit(gpa);
         t.prop_runs.deinit(gpa);
         t.memo_prop.deinit(gpa);
+        t.memo_leaf.deinit(gpa);
+        t.leaf_spans.deinit(gpa);
+        t.leaf_pool.deinit(gpa);
         t.aggs.deinit(gpa);
         t.reach_agg.deinit(gpa);
         t.reach_epoch.deinit(gpa);
@@ -3781,7 +3788,7 @@ pub const Table = struct {
             // (§2.9 *Keyed where a reader looks*, #1399).
             if (mode == .alternatives and f.len > 0 and isDag(v.shapes.kind(f.node))) {
                 leaf_entries.clearRetainingCapacity();
-                try t.leafEntries(gpa, charge, v, f.node, runs.items[f.first..][0..f.len], run_ctxs.items[f.first..][0..f.len], f.summary, &leaf_entries);
+                try t.leafEntries(gpa, charge, v, f.node, run, runs.items[f.first..][0..f.len], run_ctxs.items[f.first..][0..f.len], f.summary, &leaf_entries);
                 for (leaf_entries.items) |e| {
                     try charge.reserve(gpa, .inspection, 1);
                     try outs.append(gpa, .{ .path = f.path, .node = e.node, .k = e.k });
@@ -3967,9 +3974,29 @@ pub const Table = struct {
     /// store for it at their own positions: a built node a member holds with
     /// no entry `lost` (§2.9), a recast the member's read of it. A node no
     /// member holds is left as it reads (#1406). A leaf's entry no stronger
-    /// than its derivation is left out, as `propagate` leaves it out. A record per
-    /// node walked; each member's read as `kappaOf` charges it.
-    fn leafEntries(t: *Table, gpa: Allocator, charge: Charge, v: View, d: NodeId, members: []const NodeId, ctxs: []const Kappas, summary: bool, out: *std.ArrayList(LeafEntry)) Error!void {
+    /// than its derivation is left out, as `propagate` leaves it out.
+    /// Memoised by what it reads: `d`, the members' run (members and
+    /// positions), the class, and the versions of `fold_cond`, the bases and
+    /// the knots a recast's or a view's read may meet. A record per node
+    /// walked; each member's read as `kappaOf` charges it; a hit a record and
+    /// one per entry.
+    fn leafEntries(t: *Table, gpa: Allocator, charge: Charge, v: View, d: NodeId, run: u32, members: []const NodeId, ctxs: []const Kappas, summary: bool, out: *std.ArrayList(LeafEntry)) Error!void {
+        // A walk that reads no recast reads the snapshots and the nodes alone
+        // (a view's stored chain is memoised by position and node,
+        // `chainStored`), so its entry is keyed without the versions.
+        const plain: [7]u32 = .{ d.int(), run, @intFromBool(summary), 0, 0, 0, 0 };
+        const versioned: [7]u32 = .{ d.int(), run, @intFromBool(summary), 1, t.fold_cond_n, v.shapes.base_epoch, v.shapes.ties };
+        try charge.reserve(gpa, .memo, 1);
+        if (t.memo_leaf.get(plain) orelse t.memo_leaf.get(versioned)) |hit| {
+            const span = t.leaf_spans.items[hit];
+            try charge.reserve(gpa, .inspection, span[1]);
+            try out.appendSlice(gpa, t.leaf_pool.items[span[0]..][0..span[1]]);
+            return;
+        }
+        const first = out.items.len;
+        // Per node: a member holds it, a built node, with no entry.
+        var missing: std.ArrayList(bool) = .empty;
+        defer missing.deinit(gpa);
         // `d`'s DAG below it, in the order it is walked, each node once.
         var at: Ids.FixedDict(1) = .{};
         defer at.deinit(gpa);
@@ -3984,15 +4011,19 @@ pub const Table = struct {
             if (got.found_existing) continue;
             got.value_ptr.* = @intCast(out.items.len);
             try out.append(gpa, .{ .node = x, .k = .none });
+            try missing.append(gpa, false);
             if (isDag(v.shapes.kind(x))) {
                 const n = v.shapes.get(x);
                 try stack.appendSlice(gpa, &.{ .from(n.b), .from(n.a) });
             }
         }
         // What each member stores for those nodes, joined.
+        var reads_versions = false;
         var seen: Ids.FixedDict(2) = .{};
         defer seen.deinit(gpa);
         for (members, ctxs, 0..) |m, c, mi| {
+            // A member with no snapshot stores nothing, and its built nodes
+            // read `lost`: what it adds is only where another stores more.
             try stack.append(gpa, m);
             while (stack.pop()) |x| {
                 try charge.reserve(gpa, .inspection, 1);
@@ -4003,9 +4034,13 @@ pub const Table = struct {
                     try stack.appendSlice(gpa, &.{ .from(n.b), .from(n.a) });
                 }
                 const slot = at.get(.{x.int()}) orelse continue;
+                if (nk == .recast) reads_versions = true;
                 const stored: ?CondId = switch (nk) {
                     .leaf, .@"union", .choice, .positions => t.kappaGet(c, x),
-                    .node, .delta => if (t.isCollapsed(c)) lost else t.kappaGet(c, x) orelse lost,
+                    .node, .delta => if (t.isCollapsed(c)) lost else t.kappaGet(c, x) orelse blk: {
+                        missing.items[slot - first] = true;
+                        break :blk null;
+                    },
                     .recast => try t.kappaOf(gpa, charge, v, c, x, summary),
                     .view => try t.storedAt(gpa, charge, v, c, x),
                 };
@@ -4014,17 +4049,23 @@ pub const Table = struct {
                 e.k = if (e.k == .none) s else try t.join(gpa, charge, e.k, s);
             }
         }
-        // Entries a derivation gives already are dropped. A node no member
-        // holds (an image `widen` made, a set leaf `join` merged) is left as
-        // it reads (#1406).
-        var n: usize = 0;
-        for (out.items) |e| {
+        // Entries a derivation gives already are dropped.
+        var n = first;
+        for (out.items[first..], missing.items) |e0, miss| {
+            var e = e0;
             if (e.k == .none) continue;
+            // Kept `lost` where one member holds it with no entry and another
+            // stores one; with no entry anywhere it reads `lost` as it is.
+            if (miss) e.k = lost;
             if (v.shapes.kind(e.node) == .leaf and try t.leq(gpa, charge, e.k, try t.kappaRead(gpa, charge, v, .none, e.node, summary, null))) continue;
             out.items[n] = e;
             n += 1;
         }
         out.shrinkRetainingCapacity(n);
+        try charge.reserve(gpa, .memo, 1);
+        (try t.memo_leaf.getOrPut(gpa, if (reads_versions) versioned else plain)).value_ptr.* = @intCast(t.leaf_spans.items.len);
+        try t.leaf_spans.append(gpa, .{ @intCast(t.leaf_pool.items.len), @intCast(n - first) });
+        try t.leaf_pool.appendSlice(gpa, out.items[first..n]);
     }
 
     /// `runtime_safety`'s check of §2.9 *Keyed where a reader looks*: at the
