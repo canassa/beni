@@ -1257,10 +1257,10 @@ pub const Frame = struct {
         defer read.deinit(gpa);
         var kept: SetId = .none;
         var excl: SetId = .none;
-        try stack.append(gpa, .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false });
+        try stack.append(gpa, .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false, .held = false });
         while (stack.pop()) |it| {
             try f.env.charge.reserve(gpa, .inspection, 1);
-            const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | (if (it.mode == .spine) it.depth << 5 else 0);
+            const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | @as(u32, @intFromBool(it.held)) << 5 | (if (it.mode == .spine) it.depth << 6 else 0);
             if ((try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state })).found_existing) continue;
             if (try f.unreached(it.v, own)) continue;
             const d = shapes.get(it.u);
@@ -1273,20 +1273,26 @@ pub const Frame = struct {
                 const m = cells.markOf(c);
                 if (m == .a or m == .e) marks |= 2;
             }
-            if (marks & 1 != 0) {
+            // Held on the write's exact path: what the answer holds beside
+            // the written object, never that object itself (rule (a), #1367).
+            var held_below = it.held;
+            if (marks & 1 != 0 or it.held) {
                 const beside, const folded = switch (it.mode) {
-                    .spine => .{ it.depth < ws.len and marks & 2 != 0, leaf != null and leaf.? < it.depth },
+                    .spine => .{ it.depth < ws.len and (marks & 2 != 0 or it.held), leaf != null and leaf.? < it.depth },
                     .below, .off => .{ true, it.folded },
                 };
-                if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
-                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), refs.items, &kept, &excl, &relied);
+                if (beside and it.mode == .spine and exact) {
+                    if (!it.stuck) try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &kept, &excl, &relied);
+                    held_below = true;
+                } else if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
+                    try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), null, refs.items, &kept, &excl, &relied);
             }
             if (d.kind != .node) continue;
             if (it.mode == .spine and it.depth < ws.len) {
                 // On the write's path: its next step, and the children
                 // beside it that may hold a cell of the base (`Beside`).
                 if (shapes.overGet(d.a, ws[it.depth])) |child| {
-                    const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level };
+                    const next: Item = .{ .u = child, .v = it.v, .mode = .spine, .depth = it.depth + 1, .folded = it.folded, .stuck = it.stuck, .level = it.level, .held = held_below };
                     try f.advance(it, ws[it.depth], next, &stack);
                 }
                 const folded = leaf != null and leaf.? <= it.depth;
@@ -1314,6 +1320,7 @@ pub const Frame = struct {
                     // Inside the written object: beside it only when the
                     // write's path stands for several positions.
                     next.mode = .below;
+                    next.held = false;
                     next.folded = leaf != null;
                     next.depth = 0;
                 }
@@ -1332,7 +1339,9 @@ pub const Frame = struct {
     /// One item of `otherPaths`' walk: a use node, the argument's value
     /// there, and how the path it stands for lies to the write's.
     const Mode = enum(u2) { spine, below, off };
-    const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool };
+    /// `held`: on the write's exact path below a value the class answers
+    /// or lets escape (`keepAnswered`).
+    const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool };
 
     /// `next`, a child of `it` at step `s`, with the argument's value there
     /// as `positionsAt` reads a path: a missing step keeps the value
@@ -1385,7 +1394,7 @@ pub const Frame = struct {
     /// A child of a node on the write's path, off it unless at its step.
     fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, out: *std.ArrayList(Item)) Error!void {
         if (k.step.word() == on.word()) return;
-        try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level });
+        try out.append(f.gpa, .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level, .held = false });
     }
 
     /// The cells of `v` beside the base that may be one of its objects,
@@ -1405,7 +1414,12 @@ pub const Frame = struct {
     /// (`Cell.below`: a trie ancestor, or levels through `⟲`). What a callee
     /// relied on when it found two paths of one parameter apart, discharged
     /// here (§2.11 item 3, rule (c), #1383).
-    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool, refs: []const CellId) Error!?u1 {
+    /// With `rest`, `reach` is a leaf on the write's exact path whose
+    /// position is `rest` above the base's (`keepAnswered`): a cell whose
+    /// position `rest` below is `cu` holds the written object as the
+    /// object itself there, and its other paths are distinct objects of
+    /// this frame (rule (c)), so it holds nothing beside the write (#1367).
+    fn holdsCanonical(f: *Frame, reach: SetId, cu: CellId, held: bool, rest: ?[]const Step, refs: []const CellId) Error!?u1 {
         const cells = f.env.cells;
         var it = cells.sets.iterate(reach);
         while (it.next()) |e| {
@@ -1417,9 +1431,56 @@ pub const Frame = struct {
             // (#1386), though its canonical cell is the base's.
             if (try f.otherSide(d, refs)) continue;
             const du = (try cells.unrefined(f.gpa, f.account(), f.env.places, d)) orelse continue;
+            if (rest) |r| if (try f.pathBelow(du, r, cu)) continue;
             if (du == cu or (held and cells.below(f.env.places, cu, du))) return @intCast(e.value);
         }
         return null;
+    }
+
+    /// Whether the symbolic cell `c` is `d`'s position `steps` below it.
+    fn pathBelow(f: *Frame, d: CellId, steps: []const Step, c: CellId) Error!bool {
+        if (steps.len == 0) return false;
+        const cells = f.env.cells;
+        const x = cells.get(d);
+        const y = cells.get(c);
+        if (x.origin != y.origin or !x.origin.isSymbolic() or x.origin == .top or x.a != y.a or x.c != y.c) return false;
+        var p: PathId = .from(x.b);
+        for (steps) |s| p = (try f.env.places.extend(f.gpa, f.env.charge, p, s)) orelse return false;
+        return p == PathId.from(y.b);
+    }
+
+    /// What a value on the write's exact path that the class answers or
+    /// lets escape, or that is below one, holds beside the written object
+    /// (§2.11 item 3, rule (a), #1367). A node: its own cells and its
+    /// children off the path (`rest`'s first step), each wholly; the child
+    /// on the path is read at the path's next node, and the written object
+    /// at its end is the object written, not a second one. A leaf: as
+    /// `holdsCanonical` reads it with `rest`. A choice or a union: each
+    /// arm, its projections being the arms' (§2.3). Any other value whole.
+    fn keepAnswered(f: *Frame, bs: *Beside, want: *const Want, v0: NodeId, rest: []const Step, folded: bool, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
+        const shapes = f.env.shapes;
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(f.gpa);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(f.gpa);
+        try stack.append(f.gpa, v0);
+        while (stack.pop()) |x| {
+            try f.env.charge.reserve(f.gpa, .inspection, 1);
+            const v = try shapes.force(f.gpa, f.account(), x);
+            if ((try seen.getOrPut(f.gpa, .{v.int()})).found_existing) continue;
+            const d = shapes.get(v);
+            switch (d.kind) {
+                .node => {
+                    if (d.cells != .none) try f.keepBeside(bs, want, try shapes.leaf(f.gpa, f.account(), d.place, d.cells), folded, true, null, refs, kept, excl, relied);
+                    var kt = shapes.overEntries(d.a);
+                    while (kt.next()) |k| if (k.step.word() != rest[0].word())
+                        try f.keepBeside(bs, want, k.node, folded, true, null, refs, kept, excl, relied);
+                },
+                .choice, .@"union" => try stack.appendSlice(f.gpa, &.{ .from(d.a), .from(d.b) }),
+                .leaf => try f.keepBeside(bs, want, v, folded, true, rest, refs, kept, excl, relied),
+                else => try f.keepBeside(bs, want, v, folded, true, null, refs, kept, excl, relied),
+            }
+        }
     }
 
     /// `keepBeside`: a refinement of `v` whose canonical position holds
@@ -1430,7 +1491,7 @@ pub const Frame = struct {
     /// `excl` of a parameter's elements — into `relied`, and from the
     /// demand into the class's `xreq` (step 7). The same position holds
     /// the base's object: its cell is kept.
-    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
+    fn keepBeside(f: *Frame, bs: *Beside, want: *const Want, v: NodeId, folded: bool, held: bool, rest: ?[]const Step, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId) Error!void {
         const cells = f.env.cells;
         const reach = try f.env.shapes.reach(f.gpa, f.account(), &cells.sets, v);
         if (refs.len != 0) try f.splitBeside(want, reach, refs, kept, relied);
@@ -1441,7 +1502,7 @@ pub const Frame = struct {
             // above the base's holds it, a symbolic leaf's reach being its own
             // cell (#1383).
             const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
-            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, refs) orelse continue;
+            const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, rest, refs) orelse continue;
             if (folded and cells.origin(c) == .param and try f.summaryPath(.from(cells.get(c).b))) {
                 excl.* = try cells.sets.insert(f.gpa, f.env.charge, excl.*, c.int(), 0);
                 continue;
