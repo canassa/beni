@@ -72,6 +72,9 @@ pub fn Of(comptime Frame: type) type {
                 for (items, lanes) |item, *l| l.* = .{ .atom = item, .role = .transfer_settlement };
                 const task = try f.account().enter(f.gpa, null);
                 defer f.account().leave(task);
+                const merged = elem_k;
+                watchDropped(f, true);
+                defer watchDropped(f, false);
                 const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, root_cells, lanes);
                 elem_k = try f.env.conds.propagateFrom(f.gpa, f.env.charge, f.env.view(), elem_k, elems, members.items, ctxs.items, .together, true, false, null);
                 // Each element at the literal's `[*]`: its own κ there (§2.9: the
@@ -82,11 +85,45 @@ pub fn Of(comptime Frame: type) type {
                     defer f.account().leave(kernel);
                     elem_k = try f.kappaSet(elem_k, m, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), c, m, false));
                 }
+                try checkDropped(f, merged, elem_k);
                 kids = try shapes.overPut(f.gpa, f.account(), kids, Step.elem, elems);
                 kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, kappa, Step.elem, elem_k);
             }
             const node = try shapes.node(f.gpa, f.account(), at, try f.set1(site), kids);
             return .{ .node = node, .kappa = try f.kappaSet(kappa, node, Cond.yes) };
+        }
+
+        /// Under `runtime_safety`: record the positions nodes a rebuild drops
+        /// (§2.3 *Saturation at two*) from here on, or stop.
+        fn watchDropped(f: *Frame, on: bool) void {
+            if (!std.debug.runtime_safety) return;
+            f.env.shapes.record_dropped = on;
+            f.env.shapes.dropped.clearRetainingCapacity();
+        }
+
+        /// §2.3 *Saturation at two*: the κ home of a node a rebuild dropped is
+        /// empty. No entry of the new value's snapshot `final`, at any position,
+        /// is keyed by a dropped node except one its operands' merged snapshot
+        /// `merged` holds there already: what the construction writes, it
+        /// writes on the nodes it returns. A check, under `runtime_safety` only.
+        fn checkDropped(f: *Frame, merged: Cond.Kappas, final: Cond.Kappas) Error!void {
+            if (!std.debug.runtime_safety) return;
+            const dropped = f.env.shapes.dropped.items;
+            if (dropped.len == 0) return;
+            const conds = f.env.conds;
+            var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
+            defer seen.deinit(f.gpa);
+            var stack: std.ArrayList([2]Cond.Kappas) = .empty;
+            defer stack.deinit(f.gpa);
+            try stack.append(f.gpa, .{ final, merged });
+            while (stack.pop()) |pair| {
+                if (pair[0] == .none) continue;
+                if ((try seen.getOrPut(f.gpa, .{ pair[0].int(), pair[1].int() })).found_existing) continue;
+                for (dropped) |d| if (conds.kappaGet(pair[0], d) != conds.kappaGet(pair[1], d))
+                    std.debug.panic("ownership v2: a snapshot keys node {d}, which a positions rebuild dropped", .{d.int()});
+                var it = conds.kappaLinks(pair[0]);
+                while (it.next()) |e| try stack.append(f.gpa, .{ e.child, conds.kappaChild(pair[1], e.step) });
+            }
         }
 
         /// `v` read at place `at`: itself, or a recast when its place differs.
@@ -166,9 +203,13 @@ pub fn Of(comptime Frame: type) type {
             defer f.gpa.free(lanes);
             lanes[0] = .{ .atom = base_atom, .role = .transfer_settlement };
             for (atoms, lanes[1..]) |atom, *l| l.* = .{ .atom = atom, .role = .transfer_settlement };
+            const merged = elem_k;
+            watchDropped(f, true);
+            defer watchDropped(f, false);
             const elems = try shapes.collectRoot(f.gpa, f.account(), &cells.sets, members.items, Shape.Table.lazy_cells, lanes);
             const node = try shapes.put(f.gpa, f.account(), f.env.places, cells, base.node, Step.elem, elems, true, .none);
             elem_k = try f.kappaSet(elem_k, elems, k);
+            try checkDropped(f, merged, elem_k);
             var kappa = try f.env.conds.kappaLink(f.gpa, f.env.charge, base.kappa, Step.elem, elem_k);
             kappa = try f.kappaSet(kappa, node, try f.env.conds.kappaOf(f.gpa, f.env.charge, f.env.view(), base.kappa, base.node, false));
             return .{ .node = node, .kappa = kappa };

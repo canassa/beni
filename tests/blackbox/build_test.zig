@@ -9763,8 +9763,10 @@ fn expectWideRunPerItem(shape: WideRun, per_item: u64) !void {
 }
 
 test "the checker v2 checks 600 spreads of one list in no growth and work bounded per item" {
-    // Measured: 11 records per item.
-    try expectWideRunPerItem(.spreads, 20);
+    // Measured: 22 / 20 records per item at 100 / 600 (18 at 600 before
+    // positions saturate at two: the 600 copies of `xs`'s element rebuild
+    // to one `positions(x, x)`, each rebuild a task of its own, §2.3).
+    try expectWideRunPerItem(.spreads, 32);
 }
 
 test "the checker v2 checks 600 items before a spread in no growth and work bounded per item" {
@@ -10350,7 +10352,7 @@ test "the checker v2's growth over a tower of one-element literals with a new pa
 /// One of §2.9's fixed-place tower families (Appendix B *Counted recursive
 /// families*) at `n` written levels, as `tower` in `Main`, or a push chain
 /// of `n` statements over a parameter, as `chain` (#1419).
-const TowerFamily = enum { one, wide, param, mutual, maybe, wrap, wrap_imported, push_param };
+const TowerFamily = enum { one, wide, twin, param, mutual, maybe, wrap, wrap_imported, push_param };
 
 /// `family`'s program at `n` levels: `Main.beni`, and `Lib.beni` for an
 /// imported helper.
@@ -10359,10 +10361,12 @@ fn towerProgram(w: *World, family: TowerFamily, n: u32) !void {
     var src: std.ArrayList(u8) = .empty;
     const rose = "type Rose =\n    Rose (List Rose)\n\n\n";
     switch (family) {
-        .one, .wide => {
+        .one, .wide, .twin => {
             try src.print(a, "{s}pub tower : ⊤ → Rose\ntower ⊤ =\n    r0 = Rose []\n", .{rose});
             for (1..n + 1) |k| if (family == .one)
                 try src.print(a, "    r{d} = Rose [ r{d} ]\n", .{ k, k - 1 })
+            else if (family == .twin)
+                try src.print(a, "    r{d} = Rose [ r{d}, r{d} ]\n", .{ k, k - 1, k - 1 })
             else
                 try src.print(a, "    r{d} = Rose [ r{d}, Rose [] ]\n", .{ k, k - 1 });
         },
@@ -10456,12 +10460,30 @@ fn expectTowerNLogN(family: TowerFamily, sizes: []const u32, per: u64, bytes: bo
 // walk), so the sizes are what a test budget of 1 s holds: 10 / 40 / 160
 // levels (#1426). Their records per n·log₂(n + 2) fall with n in every
 // family. Two families are not here. K is quadratic again since its joins
-// key every node of the joined DAG (#1428). `Rose [ r, r ]` is still
-// quadratic (#1420).
+// key every node of the joined DAG (#1428). `Rose [ r, r ]` is counted
+// below, but not in n log n (#1420).
 
 test "the checker v2 counts a tower of one-element literals in n log n (Rose [ r ])" {
     // 1 834 / 7 174 / 30 352 records: 51, 33 and 26 per n·log₂(n + 2).
     try expectTowerNLogN(.one, &.{ 10, 40, 160 }, 64, true);
+}
+
+test "the checker v2 counts a tower of repeated literals at the default allowance (Rose [ r, r ])" {
+    // #1420: each level's `[*]` is a positions node of the level below,
+    // twice. Before positions saturated at two (§2.3), projecting the tower
+    // made a node per level at every depth: 14 449 / 215 175 records at 10
+    // / 40, refused at 80. Now 5 728 / 32 495 / 315 927 at 10 / 40 / 160
+    // (160, 151 and 269 per n·log₂(n + 2)): accepted, with no growth, but
+    // still above n log n, which #1420 keeps. The ceilings are a quarter over.
+    const sizes = [_]u32{ 10, 40, 160 };
+    const ceilings = [_]u64{ 7_200, 40_700, 395_000 };
+    for (sizes, ceilings) |n, ceiling| {
+        const work = try towerWork(.twin, n);
+        if (work.total > ceiling) {
+            std.debug.print("Rose [ r, r ] at {d}: {d} records, past {d}\n", .{ n, work.total, ceiling });
+            return error.TestUnexpectedResult;
+        }
+    }
 }
 
 test "the checker v2 counts a tower of two-element literals in n log n (W, Rose [ r, Rose [] ])" {

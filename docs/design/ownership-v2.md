@@ -724,6 +724,21 @@ Operations, memoised on their node arguments:
   on each construction and charged that on the lane broke the `transfer_settlement` lane invariant at
   `LimitSpine` and `WideDeepCondition`.
 
+  **As built** [2026-10-31, #1420]. `Shape.positions` marks each node it makes as *counted*, a bit of the
+  node's record, set at its birth and never later. Only a counted node is read through: a positions node that
+  `map`, a view's expansion or a knot made is one member to every parent, so no count map ever changes once a
+  parent has read it. The count map is made when a parent first asks for it, its counted sides first, and is
+  memoised per node, a record per map. Two sides that are both members alone cannot lose a member, so their
+  test reads nothing and costs nothing. A side that is one member is looked up in the other side's `twice`
+  set. The test and the rebuild are a growth task (`enter(null)`), and the node itself stays on the caller's
+  kernel, so each lane of `collect` still holds its positions node alone. Under `runtime_safety`,
+  `TransferConstruct`'s literal and construction check the empty κ home: at every position of the new value's
+  snapshot, a node a rebuild dropped has the entry the operands' merged snapshot gives it, or none.
+  Measured: the 2 044 roots publish the same verdicts, demands and summaries as master, and seven blocks are
+  smaller (six as above, and `ownership/PositionsSaturate`'s 1 036 → 996). `Rose [ r, r ]` takes 5 728 /
+  32 495 / 315 927 records at 10 / 40 / 160 levels (160, 151 and 269 per n·log₂(n + 2)), so it is still
+  above n log n. The charged rebuilds put 600 spreads of one list at 20 records an item, 18 before.
+
   **Measured** (a prototype that flattens uncharged, ReleaseSafe, self-hosted):
   - **The corpus.** All 2 043 roots of `bench/ownership-roots.mjs` (`allOwnership`) were dumped under
     `--ownership-everywhere --ownership=v2`, on master `f8ec23cbe` and on master with #1459, each with and
@@ -2180,9 +2195,10 @@ Where κ is set, always **at the selected path p**:
   (`build_test.zig`, records per n·log₂(n + 2), never rising): `Rose [r]`, W, T, the mutual pair,
   `Maybe`, and `wrap` same-module and imported, at 10 / 40 / 160 levels, and a push chain over a
   parameter. Debt:
-  - `Rose [r, r]` is still quadratic (#1420): 14 449 / 54 449 / 215 175 records at 10 / 20 / 40,
-    refused at 80. Its together-join and its widen walk the tower's depth. Each projection of a
-    `positions` chain of depth d makes d new nodes, and each read walks them.
+  - `Rose [r, r]` is still above n log n (#1420). It took 14 449 / 54 449 / 215 175 records at 10 / 20 / 40,
+    refused at 80, because each projection of a `positions` chain of depth d made d new nodes. Since
+    positions saturate at two (§2.3) it takes 5 728 / 32 495 / 315 927 at 10 / 40 / 160 (`build_test.zig`
+    counts it). Its together-join and its widen still walk the tower's depth.
   - The block writer, `Summary.Table.add`'s view check and the printer still walk K's entries one
     by one, so their time is quadratic (#1426).
   - T publishes one `apart` group per level, so its block is quadratic (#1427).
@@ -5341,7 +5357,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 200 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 780 (#1420: positions saturate at two, their count maps and the rebuild, §2.3; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
@@ -5357,7 +5373,7 @@ L0  Ids
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
 | `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 960 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
-| `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 350 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`) |
+| `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 390 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: the check that a positions rebuild leaves no κ entry on a node it dropped, §2.3) |
 | `TransferCall.zig` | 10 | call application: a call's class at its instantiation, a demand per write route with its other paths, a group per route that stopped at a parameter's leaf (§2.11) | `Frame`'s methods of this part | Ids, Place, Demands, Calls | ≤ 170 (#1457: split out of `Transfer.zig`, 160 lines: one function, called only by the walk) |
 | `TransferGroups.zig` | 10 | a use below a parameter's leaf, by node (§2.11 item 3, #1412): the groups expanded after the walk into one demand per state (`expandGroups`), and the plain-step `sig` (`Plain`) | `Group`, `CallSnap`, `Plain`, `expandGroups` | Ids, Place, Cell, Cond, Summary, Demands, Calls, Liveness | ≤ 740 (#1457: split out of `Transfer.zig`, 727 lines: it runs after the walk and calls the other paths and the constructions' `demand`) |
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |

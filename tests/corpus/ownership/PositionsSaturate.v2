@@ -1,0 +1,1 @@
+#1368, #1420 (ownership-v2.md §2.3 *Saturation at two*): a rebuild that drops a positions node; v2's ReleaseSafe build checks no snapshot of the new value keys it.
