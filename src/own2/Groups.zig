@@ -631,6 +631,8 @@ pub const Module = struct {
     /// Per (module, `eq` or `compare`): the module's value of that name,
     /// `none` for no such value, `cmp_unseen` before the first look.
     cmp_decl: []u32 = &.{},
+    /// Per declaration, whether its walk is a comparison's (`comparisonWalks`).
+    comparison: []bool = &.{},
 
     pub fn deinit(mod: *Module) void {
         const gpa = mod.gpa;
@@ -649,6 +651,7 @@ pub const Module = struct {
         }
         mod.results.deinit(gpa);
         gpa.free(mod.result_of);
+        gpa.free(mod.comparison);
         mod.prepass_arena.deinit();
         mod.base_account.deinit(gpa);
         for (mod.imported_owned.items) |cs| gpa.free(cs);
@@ -905,6 +908,7 @@ pub const Module = struct {
             }
         };
         // A top-level alias is a call of what it names (R-5.5.6).
+        const named = target;
         if (target) |t| target = mod.aliasTarget(t);
         var args: std.ArrayList(u32) = .empty;
         defer args.deinit(mod.gpa);
@@ -929,6 +933,9 @@ pub const Module = struct {
                 // earlier group, §8 S3b): its class, applied at this call. One
                 // past its limit is not built here.
                 if (t[0] == mod.in.module) if (mod.walkedClass(t[1])) |c| return .{ .class = c };
+                // An imported alias: the class its own module publishes under its
+                // name, which is its target's, a private one too (R-5.5.6).
+                if (named) |n| if (n[0] != mod.in.module and !std.mem.eql(u32, &n, &t)) if (try mod.importedClass(n[0], n[1])) |c| return .{ .class = c };
                 // One of another module (S3b slice 3): the class its block
                 // publishes, applied the same way.
                 if (t[0] != mod.in.module) if (try mod.importedClass(t[0], t[1])) |c| return .{ .class = c };
@@ -960,7 +967,17 @@ pub const Module = struct {
     /// The class of declaration `di`'s walk when it is done, built and within its
     /// limits; null before its walk, or when a limit stopped it.
     pub fn walkedClass(mod: *const Module, di: u32) ?ClassId {
-        if (di >= mod.result_of.len or mod.result_of[di] == none) return null;
+        if (di >= mod.result_of.len) return null;
+        // An alias of a function, not walked: the class of the function of
+        // this module it names (R-5.5.6), which its block publishes under
+        // the alias's name, so an importer need not see that function.
+        if (mod.result_of[di] == none) {
+            const d = mod.in.bir.decls[di];
+            if (!Prepass.isAliasShape(mod.in.bir, d) or !isFunctionScheme(mod.in, di)) return null;
+            const t = mod.aliasTarget(.{ mod.in.module, di });
+            if (t[0] != mod.in.module or t[1] == di or mod.result_of[t[1]] == none) return null;
+            return mod.walkedClass(t[1]);
+        }
         const r = mod.results.items[mod.result_of[di]];
         // An unbuilt walk's class is the pessimistic one: applying it would
         // check the call against a class the callee never earned.
@@ -1173,7 +1190,10 @@ fn isWalked(in: *const Input, di: u32) bool {
     const bir = in.bir;
     const d = bir.decls[di];
     if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) return false;
-    return !(Prepass.isAliasShape(bir, d) and isFunctionScheme(in, di));
+    if (!(Prepass.isAliasShape(bir, d) and isFunctionScheme(in, di))) return true;
+    // A comparison naming another module's function: walked, and unbuilt at
+    // the name, since that module walked it as no comparison (R-5.13.1).
+    return isComparisonDecl(in, di) and Prepass.aliasTarget(in.birs, in.provenance, .{ in.module, di })[0] != in.module;
 }
 
 /// Whether declaration `di`'s scheme is a function's.
@@ -1349,6 +1369,7 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.shapes.trackRelevance();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.result_of, none);
+    mod.comparison = try comparisonWalks(in);
 }
 
 /// `mod` charging `account` from here on.
@@ -1393,20 +1414,60 @@ fn declPlaces(mod: *Module, d: Bir.Decl, di: u32, out: *std.ArrayList(PlaceId)) 
     return Module.placeOfInst(mod, d.body.unwrap().?.int());
 }
 
-/// Whether `d` is a type's `eq` or `compare` (§2.13.13 item 13, R-5.13.1):
-/// the module's value of that name whose first parameter is of a type the
-/// module declares, pub or not (a private one answers dispatch inside its
-/// module, `userComparison`). The type is told by the parameter's place,
-/// as the checker tells it by the scheme's head (`Instances.writtenFor`).
-fn isComparison(mod: *const Module, d: Bir.Decl, param_places: []const PlaceId) bool {
-    if (d.kind != .value or param_places.len == 0) return false;
-    const name = mod.in.bir.symbol(d.name);
-    if (name != InternPool.WellKnown.eq.symbol() and name != InternPool.WellKnown.compare.symbol()) return false;
-    const p = param_places[0];
-    if (mod.places.kind(p) != .ctor or mod.places.head(p) >= mod.in.types.entries.len) return false;
-    return mod.in.types.entries[mod.places.head(p)].module.int() == mod.in.module;
+/// Whether declaration `di` is a type's `eq` or `compare` (§2.13.13 item
+/// 13, R-5.13.1), by the checker's own test of a well-known method
+/// (`Instances.writtenFor`, `fitsWellKnown`): the module's value of that
+/// name, `pub` or not (a private one answers `==` and `<` inside its
+/// module), whose scheme is `T …, T … → Bool` (`Order` for `compare`) for
+/// a type `T` the module declares. An alias of a function is one too.
+fn isComparisonDecl(in: *const Input, di: u32) bool {
+    const d = in.bir.decls[di];
+    if (d.kind != .value or di >= in.decl_scheme.len) return false;
+    const name = in.bir.symbol(d.name);
+    const is_eq = name == InternPool.WellKnown.eq.symbol();
+    if (!is_eq and name != InternPool.WellKnown.compare.symbol()) return false;
+    const f = switch (in.store.resolvedContent(in.decl_scheme[di].unwrap() orelse return false)) {
+        .structure => |s| switch (s) {
+            .func => |f| f,
+            else => return false,
+        },
+        else => return false,
+    };
+    const params = in.store.vars(f.params);
+    if (params.len != 2) return false;
+    const t = (appOf(in, params[0]) orelse return false).type;
+    if ((appOf(in, params[1]) orelse return false).type != t) return false;
+    if (t == .none or t.int() >= in.types.entries.len or in.types.entries[t.int()].module.int() != in.module) return false;
+    const r = appOf(in, f.result) orelse return false;
+    return r.args.len == 0 and r.type == if (is_eq) in.types.well_known.bool else in.types.well_known.order;
 }
 
+fn appOf(in: *const Input, v: Var) ?TypeStore.Structure.App {
+    return switch (in.store.resolvedContent(v)) {
+        .structure => |s| switch (s) {
+            .app => |a| a,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// Per declaration of the module, whether its walk is a comparison's: a
+/// type's `eq` or `compare`, or the declaration of this module a
+/// comparison names through aliases (`compare = helper`: `helper`'s
+/// writes are the comparison's, refused at the write). A comparison
+/// that names another module's function is walked itself, and stays
+/// unbuilt at the name (`isWalked`).
+fn comparisonWalks(in: *const Input) Allocator.Error![]bool {
+    const out = try in.gpa.alloc(bool, in.bir.decls.len);
+    @memset(out, false);
+    for (0..in.bir.decls.len) |di| {
+        if (!isComparisonDecl(in, @intCast(di))) continue;
+        const t = Prepass.aliasTarget(in.birs, in.provenance, .{ in.module, @intCast(di) });
+        if (t[0] == in.module) out[t[1]] = true;
+    }
+    return out;
+}
 fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResult) Error!void {
     const gpa = mod.gpa;
     // S_f (§4.1): the written instructions, the source this owner's
@@ -1424,7 +1485,7 @@ fn walkOne(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclRes
         .prepass = prepass,
         .param_places = param_places.items,
         .result_place = result_place,
-        .comparison = isComparison(mod, d, param_places.items),
+        .comparison = mod.comparison[r.decl],
     });
     r.class = res.class;
     r.unbuilt = res.unbuilt;
@@ -1642,7 +1703,7 @@ fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r:
         .param_places = g.param_places.items[run.start..][0..run.len],
         .result_place = g.result_places.items[k],
         .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
-        .comparison = isComparison(mod, d, g.param_places.items[run.start..][0..run.len]),
+        .comparison = mod.comparison[g.members[k]],
     });
 }
 
@@ -1667,6 +1728,8 @@ pub fn declaredClass(mod: *Module, di: u32) Error!?ClassId {
     const d = mod.in.bir.decls[di];
     if (!d.kind.isValue()) return null;
     for (mod.results.items) |r| if (r.decl == di) return if (r.failure != null) null else r.class;
+    // An alias of a function: its target's class (`Module.walkedClass`).
+    if (mod.result_of[di] == none) if (mod.walkedClass(di)) |c| return c;
     const scheme: Var.Optional = if (di < mod.in.decl_scheme.len) mod.in.decl_scheme[di] else .none;
     const v = scheme.unwrap() orelse return null;
     const store = mod.in.store;

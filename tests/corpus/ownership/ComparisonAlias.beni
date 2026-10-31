@@ -1,0 +1,37 @@
+-- ownership (v2; R-5.13.1 with R-5.5.6, ownership-v2.md §2.13.13 item 13):
+-- a type's `eq` and `compare` written as aliases. `eq = sameLength` and
+-- `compare = byLength` name functions that push onto the list they are
+-- handed: the comparison's writes are theirs, so each push is
+-- `comparison_changes_value`, as it would be in `eq` itself. `same` and
+-- `less` call `==` and `<`, and are judged as any call is. v1 has no such
+-- code and accepts every write.
+pub type T
+    = T (List Int)
+
+
+sameLength : T, T → Bool
+sameLength (T a) (T b) = List.length (List.push a 0) == List.length b
+
+
+byLength : T, T → Order
+byLength (T a) (T b) =
+    if List.length (List.push a 1) < List.length b then
+        LT
+    else
+        GT
+
+
+pub eq : T, T → Bool
+eq = sameLength
+
+
+pub compare : T, T → Order
+compare = byLength
+
+
+pub same : T, T → Bool
+same x y = x == y
+
+
+pub less : T, T → Bool
+less x y = x < y

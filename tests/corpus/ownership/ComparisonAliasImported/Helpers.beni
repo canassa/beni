@@ -1,0 +1,2 @@
+pub always : a, a → Order
+always x y = EQ
