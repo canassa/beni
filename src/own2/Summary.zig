@@ -600,12 +600,7 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        // `b`'s `res` under `a`'s: `a`'s shape and map are the join's. A
-        // group's later rounds often move only `xreq`, and joinRes would
-        // propagate κ over the whole unchanged `res` again (#1423).
-        const res_under = try env.shapes.leq(gpa, env.account(), env.places, env.cells, cb.res, ca.res) and
-            try env.conds.kappaLeq(gpa, env.charge, env.view(), cb.kappas, cb.res, ca.kappas, ca.res, false);
-        const joined: Joined = if (res_under) .{ .node = ca.res, .kappas = ca.kappas } else try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
+        const joined = try joinClassRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
@@ -779,6 +774,117 @@ pub const Table = struct {
         const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
         const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj);
         return .{ .node = w.node, .kappas = w.kappas };
+    }
+
+    /// A class join's `res` and κ (§2.3 *A port keeps no round that its
+    /// last round covers*). `b`'s under `a`'s: `a`'s, as they are, since a
+    /// group's later rounds often move only `xreq` (#1423). In `choice`
+    /// mode also the other way, `b`'s widened; otherwise each arm of a
+    /// side's top choice that the other side covers is dropped, `a`'s
+    /// first, then `b`'s against what is left of `a`, so one value never
+    /// leaves both. Only the class join does this: a shape constructor has
+    /// no κ. Every test is a charged `Shape.leq` and `kappaLeq`.
+    fn joinClassRes(env: Env, a: NodeId, ka: Kappas, b: NodeId, kb: Kappas, mode: Shape.Kind) Error!Joined {
+        if (try resLeq(env, b, kb, a, ka)) return .{ .node = a, .kappas = ka };
+        if (mode != .choice) return joinRes(env, a, ka, b, kb, mode);
+        if (try resLeq(env, a, ka, b, kb)) return widened(env, b, kb);
+        const sa = try dropCovered(env, a, ka, b, kb);
+        if (sa.node == .none) return widened(env, b, kb);
+        const sb = try dropCovered(env, b, kb, sa.node, sa.kappas);
+        if (sb.node == .none) return if (sa.node == a) sa else widened(env, sa.node, sa.kappas);
+        return joinRes(env, sa.node, sa.kappas, sb.node, sb.kappas, mode);
+    }
+
+    fn resLeq(env: Env, x: NodeId, kx: Kappas, y: NodeId, ky: Kappas) Error!bool {
+        return try env.shapes.leq(env.gpa, env.account(), env.places, env.cells, x, y) and
+            try env.conds.kappaLeq(env.gpa, env.charge, env.view(), kx, x, ky, y, false);
+    }
+
+    fn widened(env: Env, x: NodeId, kx: Kappas) Error!Joined {
+        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), x, kx);
+        return .{ .node = w.node, .kappas = w.kappas };
+    }
+
+    /// `s` without the arms of its top choice DAG (the nodes its choice
+    /// edges reach that open no choice) that `o` covers: `s` itself when
+    /// none is, `.none` when all are. The kept arms are a balanced choice
+    /// in the order the walk met them. κ home: the entry `ks` stores at a
+    /// choice node of the DAG is joined into the entry of each arm below
+    /// it, so a read of the kept arms is what it was. A side that is no
+    /// choice, or whose root owes a fold condition, is kept whole.
+    fn dropCovered(env: Env, s: NodeId, ks: Kappas, o: NodeId, ko: Kappas) Error!Joined {
+        const gpa = env.gpa;
+        const shapes = env.shapes;
+        const whole: Joined = .{ .node = s, .kappas = ks };
+        if (!opensChoice(shapes, s) or env.conds.fold_cond.get(s) != null) return whole;
+        // The DAG's choice nodes in post-order and its arms in the order met.
+        var post: std.ArrayList(NodeId) = .empty;
+        defer post.deinit(gpa);
+        var arms: std.ArrayList(NodeId) = .empty;
+        defer arms.deinit(gpa);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = s, .expanded = false });
+        while (stack.pop()) |f| {
+            if (f.expanded) {
+                try post.append(gpa, f.node);
+                continue;
+            }
+            if ((try seen.getOrPut(gpa, .{f.node.int()})).found_existing) continue;
+            try env.charge.reserve(gpa, .inspection, 1);
+            if (!opensChoice(shapes, f.node)) {
+                try arms.append(gpa, f.node);
+                continue;
+            }
+            const d = shapes.get(f.node);
+            try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
+        }
+        var kept: std.ArrayList(NodeId) = .empty;
+        defer kept.deinit(gpa);
+        for (arms.items) |x| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            if (!try resLeq(env, x, ks, o, ko)) try kept.append(gpa, x);
+        }
+        if (kept.items.len == arms.items.len) return whole;
+        if (kept.items.len == 0) return .{ .node = .none, .kappas = .none };
+        // Each choice node's entry, with what is carried to it, carried to
+        // its sides: parents first, in reverse post-order.
+        var acc: Ids.FixedDict(1) = .{};
+        defer acc.deinit(gpa);
+        var i = post.items.len;
+        while (i > 0) {
+            i -= 1;
+            const u = post.items[i];
+            try env.charge.reserve(gpa, .inspection, 1);
+            const here = env.conds.kappaGet(ks, u);
+            const above: ?CondId = if (acc.get(.{u.int()})) |x| .from(x) else null;
+            const give = if (here) |h| (if (above) |x| try env.conds.join(gpa, env.charge, x, h) else h) else above orelse continue;
+            const d = shapes.get(u);
+            for ([_]NodeId{ .from(d.a), .from(d.b) }) |side| {
+                const got = try acc.getOrPut(gpa, .{side.int()});
+                got.value_ptr.* = (if (got.found_existing) try env.conds.join(gpa, env.charge, .from(got.value_ptr.*), give) else give).int();
+            }
+        }
+        var k = ks;
+        for (kept.items) |x| if (acc.get(.{x.int()})) |c| {
+            k = (try env.conds.kappaSet(gpa, env.charge, k, x, .from(c))).ctx;
+        };
+        return .{ .node = try balancedChoice(env, kept.items), .kappas = k };
+    }
+
+    fn opensChoice(shapes: *Shape.Table, n: NodeId) bool {
+        return shapes.kind(n) == .choice and shapes.eagerOf(n) == n;
+    }
+
+    fn balancedChoice(env: Env, arms: []const NodeId) Error!NodeId {
+        if (arms.len == 1) return arms[0];
+        const mid = arms.len / 2;
+        const l = try balancedChoice(env, arms[0..mid]);
+        const r = try balancedChoice(env, arms[mid..]);
+        return env.shapes.choice(env.gpa, env.account(), &env.cells.sets, l, r);
     }
 
     /// `a ⊑ b` pointwise (§2.10): a stronger class below a weaker one.

@@ -539,13 +539,14 @@ tests/corpus/ownership/LevelFresh.beni [node] LevelFresh 46:23 #0 :: List.push x
 tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 31:9 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; `bumpRacily` is checked since S3b slice 4a
 tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 32:9 #0 :: RefUpdateAcrossFibers.bumpRacily cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; `bumpRacily` is checked since S3b slice 4a
 # Slice 4a: known limits.
-tests/corpus/run/TailModConsMerge.beni TailModConsMerge limit mergeSort  #1368: 4 walks, the last about 167 000 growth; v1's verdicts with the allowance raised
 core Dict limit removeMin  #1372: a red-black removal that settles in 7 walks, the later ones about 130 000 growth each
 core Dict limit descend  #1372: the cursor walk settles in 6 walks with 176 480 growth (memo 88 161, inspection 66 653)
 # Slice 4a: core's groups, solved.
 core List 1799:5 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 core List 1813:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 core Result 271:21 #1 :: Result.partitionHelp <literal> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+# Slice 4d: a group solved since its port keeps no round that its last round covers.
+tests/corpus/run/TailModConsMerge.beni TailModConsMerge 27:18 #1 :: TailModConsMerge.split <literal> :: absent :: accepted  v2 finds the second accumulator written too (`split` swaps the two); v1's summary writes only the first
 # WriteOneLevel (R-4.7.8, moved from tests/pending by slice 4a).
 tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 28:10 #0 :: WriteOneLevel.f <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
 tests/corpus/ownership/WriteOneLevel.beni [node] WriteOneLevel 34:5 #0 :: WriteOneLevel.f <Node …>#Node.0⟨Tree⟩#Node.1 :: rejected :: absent  R-4.7.8: f writes one level of the left child and returns the right subtree, so the write is safe (the fixture's point)
