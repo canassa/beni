@@ -2666,11 +2666,21 @@ claims they may be one object. Three rules use this.
   Then each shared `X` stays on the first side that holds it, leaves every later side, and the group owes
   `exclOf(X)` (the repeating split's failed κ in place of `excl X`, as everywhere). When two or more images
   are shared, the group also owes `apart` among them, so that the pair `X₁` on one side and `X₂` on another
-  is not lost when both leave the later sides. Every other cell is read in the multiset as before. The
-  work is one pass over the sides' cells with a persistent set of those seen, linear in them.
+  is not lost when both leave the later sides. And each side that keeps shared images owes `apart`
+  between them and the rest of that side (`shareImages`), so that `X` on a later side against an unshared
+  `Z` on the first side is still required (sides {X, Z} and {X}: the multiset of what is left pairs nothing,
+  since the second side is empty). Every other cell is read in the multiset as before. The work is one
+  pass over the sides' cells with a persistent map from each cell to the first side that holds it, and
+  one merge per side that keeps a shared image, linear in the cells.
   - *Why `excl X` is enough.* By (a) the callee positions on different sides are distinct routes, and by
     (b) they are distinct positions under one object of the actual, so distinct positions of `X`. `excl X`
-    says that no two positions of `X` hold one object, which is what `apart` asks of them. `X`'s own callers
+    says that no two positions of `X` hold one object, which is what `apart` asks of them. That covers
+    `X` against `X`, and only that. A pair of `X` on one side with another image `Z` on another side is
+    what `apart` asks too: where `Z` stays on a side of its own it is in the multiset, two shared images are
+    paired by the `apart` among them, and where `Z` shares the side that keeps `X` (the review of #1500's
+    re-review: sides whose images differ, {X, Z} against {X}) it is paired by that side's own `apart`,
+    which the multiset alone would drop. No corpus input has such sides, since every firing so far has
+    sides with equal images, so this costs no verdict (*As built*) and is pinned by a unit test. `X`'s own callers
     discharge it by the preimage multiset across depths (§2.9 *As built for a call's folded read*), as they
     discharge every `summaryExcl`.
   - *Why each condition is needed.* Without (a), two paths can share a route, and the object at it is on
@@ -6024,7 +6034,7 @@ L0  Ids
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
-| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 050 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
+| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 080 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `shareImages`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
 | `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 160 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines) |
