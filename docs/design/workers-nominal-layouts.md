@@ -231,3 +231,9 @@ it excludes benchmark source and design prose. This reporting-only correction
 changes the benchmark binary/source manifest, not the already frozen compiler
 CLI source identity or behavior. Preserve before/failure receipts and pin the
 new benchmark artifact independently rather than rebuilding an unchanged CLI.
+
+## Owned cross-artifact consumer follow-on
+
+[workers-cross-artifact-cursor.md](workers-cross-artifact-cursor.md) specifies
+the shared owned ordinary-view kernel, declaring payload substitutions and finite
+checked inspector consumer. It does not classify Wire or HostFree.

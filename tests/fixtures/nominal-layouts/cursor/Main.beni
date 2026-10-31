@@ -1,0 +1,88 @@
+import Library
+import Schema exposing (Conversion)
+import Start
+import Worker
+
+
+type Hidden number phantom
+    = Hidden number
+
+
+type Other a
+    = Other a
+
+
+type Recursive a
+    = Leaf a
+    | Next (Recursive (List a))
+
+
+type Mine
+    = Mine Int
+
+
+convert : Conversion Int Mine
+convert = Debug.todo "checker-only conversion"
+
+
+pub schema Wrapped =
+    field : Int via convert
+
+
+type UsesSchema
+    = UsesSchema Wrapped.Type
+
+
+payload = Worker.make { message = Library.seed } λvalue → value
+
+
+keep : Worker.Native a → Worker.Native a
+keep value = value
+
+
+main : Start.Program
+main =
+    Start.make
+        { init = λ_ value → value
+        , start = λ_ value → value
+        , handle = λ_ _ value → value
+        , stream = λ_ _ _ value → value
+        }
+
+
+type alias Neutral a =
+    value : a
+
+
+type Aliased number spare
+    = Aliased (Neutral number)
+
+
+type Another a b
+    = Another (Neutral b)
+
+
+textPayload = Worker.make { message = Library.text } λvalue → value
+
+
+nativePayload = Worker.make { message = Worker.raw } λvalue → value
+
+
+genericPayload = Worker.empty ⊤
+
+
+schemaValue : Wrapped.Type
+schemaValue = Debug.todo "checker-only schema value"
+
+
+encodedValue : Wrapped.Encoded
+encodedValue = Debug.todo "checker-only encoded value"
+
+
+schemaPayload = Worker.make { message = schemaValue } λvalue → value
+
+
+encodedPayload = Worker.make { message = encodedValue } λvalue → value
+
+
+recursivePayload = Worker.make { message = Library.recursive } λvalue → value

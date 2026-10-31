@@ -44,6 +44,8 @@ pub const parse = struct {
 pub const entry = struct {
     pub const Selection = @import("entry/Selection.zig");
     pub const RoleRoots = @import("entry/RoleRoots.zig");
+    pub const CursorInspect = @import("entry/CursorInspect.zig");
+    pub const TypeCursor = @import("entry/TypeCursor.zig");
     pub const TypedInspect = @import("entry/TypedInspect.zig");
     pub const NominalInspect = @import("entry/NominalInspect.zig");
 };

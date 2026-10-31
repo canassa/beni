@@ -1,0 +1,373 @@
+type-cursor schema=1 proof=ordinary-types wire=false hostFree=false symbolicRecursion=true
+  cursor-query 0 app:Main decl=7 role=0 result=5 kind=complete remaining=0 payload=0:adt
+  cursor-query 1 app:Main decl=7 role=1 local-excluded
+  cursor-query 2 app:Main decl=13 role=0 result=14 kind=complete remaining=0 payload=1:adt
+  cursor-query 3 app:Main decl=13 role=1 local-excluded
+  cursor-query 4 app:Main decl=14 role=0 result=23 kind=complete remaining=0 payload=2:native_contract_unavailable
+  cursor-query 5 app:Main decl=14 role=1 local-excluded
+  cursor-query 6 app:Main decl=15 role=0 result=29 kind=obligation remaining=1 payload=3:obligation
+  cursor-query 7 app:Main decl=15 role=1 local-excluded
+  cursor-query 8 app:Main decl=18 role=0 result=36 kind=complete remaining=0 payload=4:schema_type_contract_unavailable
+  cursor-query 9 app:Main decl=18 role=1 local-excluded
+  cursor-query 10 app:Main decl=19 role=0 result=43 kind=complete remaining=0 payload=5:schema_encoded_contract_unavailable
+  cursor-query 11 app:Main decl=19 role=1 local-excluded
+  cursor-query 12 app:Main decl=20 role=0 result=50 kind=complete remaining=0 payload=6:adt
+  cursor-query 13 app:Main decl=20 role=1 local-excluded
+  cursor-artifact 0 entry app:Main refs=10 terms=51
+  cursor-artifact 1 nominal app:Library refs=7 terms=22
+  cursor-artifact 2 nominal core:Js refs=2 terms=0
+  cursor-artifact 3 nominal app:Main refs=12 terms=34
+  cursor-artifact 4 nominal core:Basics refs=5 terms=7
+  cursor-artifact 5 nominal core:String refs=1 terms=0
+  cursor-artifact 6 nominal platform:Worker refs=2 terms=4
+  cursor-artifact 7 nominal platform:Start refs=2 terms=23
+  cursor-artifact 8 nominal core:List refs=2 terms=0
+  cursor-reference artifact=0 ref=0 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=0 ref=1 core:String.String target=5 owner=0
+  cursor-reference artifact=0 ref=2 app:Library.Secret target=1 owner=0
+  cursor-reference artifact=0 ref=3 platform:Worker.Program target=6 owner=0
+  cursor-reference artifact=0 ref=4 platform:Start.Program target=7 owner=0
+  cursor-reference artifact=0 ref=5 core:Js.Value target=2 owner=0
+  cursor-reference artifact=0 ref=6 app:Main.Wrapped.Type target=3 owner=4
+  cursor-reference artifact=0 ref=7 app:Main.Mine target=3 owner=3
+  cursor-reference artifact=0 ref=8 app:Main.Wrapped.Encoded target=3 owner=5
+  cursor-reference artifact=0 ref=9 app:Library.Recursive target=1 owner=2
+  cursor-reference artifact=1 ref=0 app:Library.Secret target=1 owner=0
+  cursor-reference artifact=1 ref=1 app:Library.Neutral target=4294967295 owner=4294967295
+  cursor-reference artifact=1 ref=2 app:Library.Numeric target=1 owner=1
+  cursor-reference artifact=1 ref=3 app:Library.Recursive target=1 owner=2
+  cursor-reference artifact=1 ref=4 core:List.List target=8 owner=0
+  cursor-reference artifact=1 ref=5 app:Library.HiddenFunction target=1 owner=3
+  cursor-reference artifact=1 ref=6 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=2 ref=0 core:Js.Value target=2 owner=0
+  cursor-reference artifact=2 ref=1 core:Js.Ref target=2 owner=1
+  cursor-reference artifact=3 ref=0 app:Main.Hidden target=3 owner=0
+  cursor-reference artifact=3 ref=1 app:Main.Other target=3 owner=1
+  cursor-reference artifact=3 ref=2 app:Main.Recursive target=3 owner=2
+  cursor-reference artifact=3 ref=3 core:List.List target=8 owner=0
+  cursor-reference artifact=3 ref=4 app:Main.Mine target=3 owner=3
+  cursor-reference artifact=3 ref=5 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=3 ref=6 app:Main.Wrapped.Type target=3 owner=4
+  cursor-reference artifact=3 ref=7 app:Main.Wrapped.Encoded target=3 owner=5
+  cursor-reference artifact=3 ref=8 app:Main.UsesSchema target=3 owner=6
+  cursor-reference artifact=3 ref=9 app:Main.Aliased target=3 owner=7
+  cursor-reference artifact=3 ref=10 app:Main.Neutral target=4294967295 owner=4294967295
+  cursor-reference artifact=3 ref=11 app:Main.Another target=3 owner=8
+  cursor-reference artifact=4 ref=0 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=4 ref=1 core:Basics.Float target=4 owner=1
+  cursor-reference artifact=4 ref=2 core:Basics.Bool target=4 owner=2
+  cursor-reference artifact=4 ref=3 core:Basics.Order target=4 owner=3
+  cursor-reference artifact=4 ref=4 core:Basics.Never target=4 owner=4
+  cursor-reference artifact=5 ref=0 core:String.String target=5 owner=0
+  cursor-reference artifact=6 ref=0 platform:Worker.Program target=6 owner=0
+  cursor-reference artifact=6 ref=1 platform:Worker.Native target=6 owner=1
+  cursor-reference artifact=7 ref=0 platform:Start.Program target=7 owner=0
+  cursor-reference artifact=7 ref=1 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=8 ref=0 core:List.List target=8 owner=0
+  cursor-reference artifact=8 ref=1 core:List.Builder target=8 owner=1
+  cursor-scope 0 artifact=0 scheme index=0
+  cursor-scope 1 artifact=1 scheme index=0
+  cursor-scope 2 artifact=1 alias_formals index=1
+  cursor-scope 3 artifact=0 scheme index=2
+  cursor-scope 4 artifact=0 scheme index=3
+  cursor-scope 5 artifact=0 scheme index=4
+  cursor-scope 6 artifact=0 scheme index=5
+  cursor-scope 7 artifact=0 alias_formals index=6
+  cursor-scope 8 artifact=0 scheme index=6
+  cursor-scope 9 artifact=0 alias_formals index=8
+  cursor-scope 10 artifact=0 scheme index=7
+  cursor-scope 11 artifact=1 scheme index=2
+  cursor-view 0 artifact=0 scope=0 term=7 env=4294967295 head=app
+  cursor-view 1 artifact=0 scope=0 term=7 env=4294967295 head=app
+  cursor-view 2 artifact=0 scope=0 term=4 env=4294967295 head=record
+  cursor-view 3 artifact=0 scope=0 term=4 env=4294967295 head=record
+  cursor-view 4 artifact=0 scope=0 term=2 env=4294967295 head=app
+  cursor-view 5 artifact=0 scope=0 term=2 env=4294967295 head=app
+  cursor-view 6 artifact=0 scope=0 term=2 env=4294967295 head=app
+  cursor-view 7 artifact=0 scope=0 term=0 env=4294967295 head=app
+  cursor-view 8 artifact=0 scope=0 term=1 env=4294967295 head=app
+  cursor-view 9 artifact=1 scope=1 term=3 env=0 head=alias
+  cursor-view 10 artifact=1 scope=1 term=0 env=0 head=var
+  cursor-view 11 artifact=1 scope=2 term=7 env=1 head=record
+  cursor-view 12 artifact=0 scope=3 term=16 env=4294967295 head=app
+  cursor-view 13 artifact=0 scope=3 term=16 env=4294967295 head=app
+  cursor-view 14 artifact=0 scope=3 term=13 env=4294967295 head=record
+  cursor-view 15 artifact=0 scope=3 term=13 env=4294967295 head=record
+  cursor-view 16 artifact=0 scope=3 term=11 env=4294967295 head=app
+  cursor-view 17 artifact=0 scope=3 term=11 env=4294967295 head=app
+  cursor-view 18 artifact=0 scope=3 term=11 env=4294967295 head=app
+  cursor-view 19 artifact=0 scope=3 term=9 env=4294967295 head=app
+  cursor-view 20 artifact=0 scope=3 term=10 env=4294967295 head=app
+  cursor-view 21 artifact=1 scope=1 term=3 env=2 head=alias
+  cursor-view 22 artifact=1 scope=1 term=0 env=2 head=var
+  cursor-view 23 artifact=1 scope=2 term=7 env=3 head=record
+  cursor-view 24 artifact=0 scope=4 term=22 env=4294967295 head=app
+  cursor-view 25 artifact=0 scope=4 term=22 env=4294967295 head=app
+  cursor-view 26 artifact=0 scope=4 term=19 env=4294967295 head=record
+  cursor-view 27 artifact=0 scope=4 term=19 env=4294967295 head=record
+  cursor-view 28 artifact=0 scope=4 term=17 env=4294967295 head=app
+  cursor-view 29 artifact=0 scope=4 term=17 env=4294967295 head=app
+  cursor-view 30 artifact=0 scope=4 term=17 env=4294967295 head=app
+  cursor-view 31 artifact=0 scope=5 term=25 env=4294967295 head=app
+  cursor-view 32 artifact=0 scope=5 term=25 env=4294967295 head=app
+  cursor-view 33 artifact=0 scope=5 term=23 env=4294967295 head=var
+  cursor-view 34 artifact=0 scope=5 term=23 env=4294967295 head=var
+  cursor-view 35 artifact=0 scope=5 term=23 env=4294967295 head=var
+  cursor-view 36 artifact=0 scope=6 term=31 env=4294967295 head=app
+  cursor-view 37 artifact=0 scope=6 term=31 env=4294967295 head=app
+  cursor-view 38 artifact=0 scope=6 term=28 env=4294967295 head=record
+  cursor-view 39 artifact=0 scope=6 term=28 env=4294967295 head=record
+  cursor-view 40 artifact=0 scope=6 term=26 env=4294967295 head=alias
+  cursor-view 41 artifact=0 scope=7 term=34 env=4 head=record
+  cursor-view 42 artifact=0 scope=6 term=26 env=4294967295 head=alias
+  cursor-view 43 artifact=0 scope=8 term=40 env=4294967295 head=app
+  cursor-view 44 artifact=0 scope=8 term=40 env=4294967295 head=app
+  cursor-view 45 artifact=0 scope=8 term=37 env=4294967295 head=record
+  cursor-view 46 artifact=0 scope=8 term=37 env=4294967295 head=record
+  cursor-view 47 artifact=0 scope=8 term=35 env=4294967295 head=alias
+  cursor-view 48 artifact=0 scope=9 term=43 env=5 head=record
+  cursor-view 49 artifact=0 scope=8 term=35 env=4294967295 head=alias
+  cursor-view 50 artifact=0 scope=10 term=50 env=4294967295 head=app
+  cursor-view 51 artifact=0 scope=10 term=50 env=4294967295 head=app
+  cursor-view 52 artifact=0 scope=10 term=47 env=4294967295 head=record
+  cursor-view 53 artifact=0 scope=10 term=47 env=4294967295 head=record
+  cursor-view 54 artifact=0 scope=10 term=45 env=4294967295 head=app
+  cursor-view 55 artifact=0 scope=10 term=45 env=4294967295 head=app
+  cursor-view 56 artifact=0 scope=10 term=45 env=4294967295 head=app
+  cursor-view 57 artifact=0 scope=10 term=44 env=4294967295 head=app
+  cursor-view 58 artifact=1 scope=11 term=12 env=6 head=var
+  cursor-view 59 artifact=0 scope=10 term=44 env=4294967295 head=app
+  cursor-view 60 artifact=1 scope=11 term=15 env=6 head=app
+  cursor-view 61 artifact=1 scope=11 term=15 env=6 head=app
+  cursor-view 62 artifact=1 scope=2 term=7 env=1 head=record
+  cursor-view 63 artifact=1 scope=2 term=5 env=1 head=var
+  cursor-view 64 artifact=0 scope=0 term=0 env=4294967295 head=app
+  cursor-view 65 artifact=1 scope=2 term=6 env=1 head=empty_record
+  cursor-view 66 artifact=1 scope=2 term=6 env=1 head=empty_record
+  cursor-view 67 artifact=1 scope=2 term=7 env=3 head=record
+  cursor-view 68 artifact=1 scope=2 term=5 env=3 head=var
+  cursor-view 69 artifact=0 scope=3 term=9 env=4294967295 head=app
+  cursor-view 70 artifact=1 scope=2 term=6 env=3 head=empty_record
+  cursor-view 71 artifact=1 scope=2 term=6 env=3 head=empty_record
+  cursor-view 72 artifact=0 scope=10 term=44 env=4294967295 head=app
+  cursor-view 73 artifact=1 scope=11 term=15 env=6 head=app
+  cursor-view 74 artifact=1 scope=11 term=14 env=6 head=app
+  cursor-view 75 artifact=1 scope=11 term=14 env=6 head=app
+  cursor-frame 0 scope=1 args=7,8
+  cursor-frame 1 scope=2 args=10
+  cursor-frame 2 scope=1 args=19,20
+  cursor-frame 3 scope=2 args=22
+  cursor-frame 4 scope=7 args=
+  cursor-frame 5 scope=9 args=
+  cursor-frame 6 scope=11 args=57
+  cursor-result 0 view=0 identityView=0 origin=0 kind=complete remaining=
+  cursor-result 1 view=1 identityView=0 origin=1 kind=complete remaining=
+  cursor-result 2 view=2 identityView=2 origin=2 kind=complete remaining=
+  cursor-result 3 view=3 identityView=2 origin=3 kind=complete remaining=
+  cursor-result 4 view=4 identityView=4 origin=4 kind=complete remaining=
+  cursor-result 5 view=5 identityView=4 origin=5 kind=complete remaining=
+  cursor-result 6 view=6 identityView=4 origin=6 kind=complete remaining=
+  cursor-result 7 view=9 identityView=9 origin=7 kind=complete remaining=
+  cursor-result 8 view=11 identityView=9 origin=8 kind=complete remaining=
+  cursor-result 9 view=12 identityView=12 origin=9 kind=complete remaining=
+  cursor-result 10 view=13 identityView=12 origin=10 kind=complete remaining=
+  cursor-result 11 view=14 identityView=14 origin=11 kind=complete remaining=
+  cursor-result 12 view=15 identityView=14 origin=12 kind=complete remaining=
+  cursor-result 13 view=16 identityView=16 origin=13 kind=complete remaining=
+  cursor-result 14 view=17 identityView=16 origin=14 kind=complete remaining=
+  cursor-result 15 view=18 identityView=16 origin=15 kind=complete remaining=
+  cursor-result 16 view=21 identityView=21 origin=16 kind=complete remaining=
+  cursor-result 17 view=23 identityView=21 origin=17 kind=complete remaining=
+  cursor-result 18 view=24 identityView=24 origin=18 kind=complete remaining=
+  cursor-result 19 view=25 identityView=24 origin=19 kind=complete remaining=
+  cursor-result 20 view=26 identityView=26 origin=20 kind=complete remaining=
+  cursor-result 21 view=27 identityView=26 origin=21 kind=complete remaining=
+  cursor-result 22 view=28 identityView=28 origin=22 kind=complete remaining=
+  cursor-result 23 view=29 identityView=28 origin=23 kind=complete remaining=
+  cursor-result 24 view=30 identityView=28 origin=24 kind=complete remaining=
+  cursor-result 25 view=31 identityView=31 origin=25 kind=complete remaining=
+  cursor-result 26 view=32 identityView=31 origin=26 kind=complete remaining=
+  cursor-result 27 view=33 identityView=33 origin=27 kind=complete remaining=
+  cursor-result 28 view=34 identityView=33 origin=28 kind=complete remaining=
+  cursor-result 29 view=34 identityView=33 origin=28 kind=obligation remaining=message,
+  cursor-result 30 view=35 identityView=33 origin=29 kind=obligation remaining=message,
+  cursor-result 31 view=36 identityView=36 origin=30 kind=complete remaining=
+  cursor-result 32 view=37 identityView=36 origin=31 kind=complete remaining=
+  cursor-result 33 view=38 identityView=38 origin=32 kind=complete remaining=
+  cursor-result 34 view=39 identityView=38 origin=33 kind=complete remaining=
+  cursor-result 35 view=40 identityView=40 origin=34 kind=complete remaining=
+  cursor-result 36 view=41 identityView=40 origin=35 kind=complete remaining=
+  cursor-result 37 view=42 identityView=40 origin=36 kind=complete remaining=
+  cursor-result 38 view=43 identityView=43 origin=37 kind=complete remaining=
+  cursor-result 39 view=44 identityView=43 origin=38 kind=complete remaining=
+  cursor-result 40 view=45 identityView=45 origin=39 kind=complete remaining=
+  cursor-result 41 view=46 identityView=45 origin=40 kind=complete remaining=
+  cursor-result 42 view=47 identityView=47 origin=41 kind=complete remaining=
+  cursor-result 43 view=48 identityView=47 origin=42 kind=complete remaining=
+  cursor-result 44 view=49 identityView=47 origin=43 kind=complete remaining=
+  cursor-result 45 view=50 identityView=50 origin=44 kind=complete remaining=
+  cursor-result 46 view=51 identityView=50 origin=45 kind=complete remaining=
+  cursor-result 47 view=52 identityView=52 origin=46 kind=complete remaining=
+  cursor-result 48 view=53 identityView=52 origin=47 kind=complete remaining=
+  cursor-result 49 view=54 identityView=54 origin=48 kind=complete remaining=
+  cursor-result 50 view=55 identityView=54 origin=49 kind=complete remaining=
+  cursor-result 51 view=56 identityView=54 origin=50 kind=complete remaining=
+  cursor-result 52 view=58 identityView=58 origin=51 kind=complete remaining=
+  cursor-result 53 view=59 identityView=58 origin=52 kind=complete remaining=
+  cursor-result 54 view=60 identityView=60 origin=53 kind=complete remaining=
+  cursor-result 55 view=61 identityView=60 origin=54 kind=complete remaining=
+  cursor-result 56 view=62 identityView=9 origin=55 kind=complete remaining=
+  cursor-result 57 view=63 identityView=63 origin=56 kind=complete remaining=
+  cursor-result 58 view=64 identityView=63 origin=57 kind=complete remaining=
+  cursor-result 59 view=65 identityView=65 origin=58 kind=complete remaining=
+  cursor-result 60 view=66 identityView=65 origin=59 kind=complete remaining=
+  cursor-result 61 view=67 identityView=21 origin=60 kind=complete remaining=
+  cursor-result 62 view=68 identityView=68 origin=61 kind=complete remaining=
+  cursor-result 63 view=69 identityView=68 origin=62 kind=complete remaining=
+  cursor-result 64 view=70 identityView=70 origin=63 kind=complete remaining=
+  cursor-result 65 view=71 identityView=70 origin=64 kind=complete remaining=
+  cursor-result 66 view=72 identityView=58 origin=65 kind=complete remaining=
+  cursor-result 67 view=73 identityView=60 origin=66 kind=complete remaining=
+  cursor-result 68 view=74 identityView=74 origin=67 kind=complete remaining=
+  cursor-result 69 view=75 identityView=74 origin=68 kind=complete remaining=
+  cursor-origin 0 parent=4294967295 root source=0 target=0 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 1 parent=0 normalize source=0 target=1 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 2 parent=1 parameter source=1 target=2 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 3 parent=2 normalize source=2 target=3 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 4 parent=3 field source=3 target=4 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 5 parent=4 normalize source=4 target=5 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 6 parent=5 payload_head source=4 target=6 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 7 parent=6 payload source=6 target=9 selector=0 owner=0 ctor=0
+  cursor-origin 8 parent=7 normalize source=9 target=11 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 9 parent=4294967295 root source=12 target=12 selector=2 owner=4294967295 ctor=4294967295
+  cursor-origin 10 parent=9 normalize source=12 target=13 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 11 parent=10 parameter source=13 target=14 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 12 parent=11 normalize source=14 target=15 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 13 parent=12 field source=15 target=16 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 14 parent=13 normalize source=16 target=17 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 15 parent=14 payload_head source=16 target=18 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 16 parent=15 payload source=18 target=21 selector=0 owner=0 ctor=0
+  cursor-origin 17 parent=16 normalize source=21 target=23 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 18 parent=4294967295 root source=24 target=24 selector=3 owner=4294967295 ctor=4294967295
+  cursor-origin 19 parent=18 normalize source=24 target=25 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 20 parent=19 parameter source=25 target=26 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 21 parent=20 normalize source=26 target=27 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 22 parent=21 field source=27 target=28 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 23 parent=22 normalize source=28 target=29 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 24 parent=23 payload_head source=28 target=30 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 25 parent=4294967295 root source=31 target=31 selector=4 owner=4294967295 ctor=4294967295
+  cursor-origin 26 parent=25 normalize source=31 target=32 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 27 parent=26 parameter source=32 target=33 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 28 parent=27 normalize source=33 target=34 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 29 parent=28 payload_head source=33 target=35 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 30 parent=4294967295 root source=36 target=36 selector=5 owner=4294967295 ctor=4294967295
+  cursor-origin 31 parent=30 normalize source=36 target=37 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 32 parent=31 parameter source=37 target=38 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 33 parent=32 normalize source=38 target=39 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 34 parent=33 field source=39 target=40 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 35 parent=34 normalize source=40 target=41 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 36 parent=35 payload_head source=40 target=42 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 37 parent=4294967295 root source=43 target=43 selector=6 owner=4294967295 ctor=4294967295
+  cursor-origin 38 parent=37 normalize source=43 target=44 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 39 parent=38 parameter source=44 target=45 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 40 parent=39 normalize source=45 target=46 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 41 parent=40 field source=46 target=47 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 42 parent=41 normalize source=47 target=48 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 43 parent=42 payload_head source=47 target=49 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 44 parent=4294967295 root source=50 target=50 selector=7 owner=4294967295 ctor=4294967295
+  cursor-origin 45 parent=44 normalize source=50 target=51 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 46 parent=45 parameter source=51 target=52 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 47 parent=46 normalize source=52 target=53 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 48 parent=47 field source=53 target=54 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 49 parent=48 normalize source=54 target=55 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 50 parent=49 payload_head source=54 target=56 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 51 parent=50 payload source=56 target=58 selector=0 owner=2 ctor=2
+  cursor-origin 52 parent=51 normalize source=58 target=59 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 53 parent=50 payload source=56 target=60 selector=0 owner=2 ctor=3
+  cursor-origin 54 parent=53 normalize source=60 target=61 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 55 parent=8 normalize source=11 target=62 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 56 parent=55 field source=62 target=63 selector=value owner=4294967295 ctor=4294967295
+  cursor-origin 57 parent=56 normalize source=63 target=64 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 58 parent=55 record_extension source=62 target=65 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 59 parent=58 normalize source=65 target=66 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 60 parent=17 normalize source=23 target=67 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 61 parent=60 field source=67 target=68 selector=value owner=4294967295 ctor=4294967295
+  cursor-origin 62 parent=61 normalize source=68 target=69 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 63 parent=60 record_extension source=67 target=70 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 64 parent=63 normalize source=70 target=71 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 65 parent=52 normalize source=59 target=72 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 66 parent=54 normalize source=61 target=73 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 67 parent=66 type_argument source=73 target=74 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 68 parent=67 normalize source=74 target=75 selector=0 owner=4294967295 ctor=4294967295
+  cursor-payload 0 adt source=6 artifact=1 owner=0 frame=0 ctors=0+1
+    cursor-constructor Secret ordinal=0 args=8
+  cursor-payload 1 adt source=15 artifact=1 owner=0 frame=2 ctors=1+1
+    cursor-constructor Secret ordinal=0 args=17
+  cursor-payload 2 native_contract_unavailable source=24 artifact=2 owner=0 frame=4294967295 ctors=0+0
+  cursor-payload 3 obligation source=30 artifact=4294967295 owner=4294967295 frame=4294967295 ctors=0+0
+  cursor-payload 4 schema_type_contract_unavailable source=37 artifact=3 owner=4 frame=4294967295 ctors=0+0
+  cursor-payload 5 schema_encoded_contract_unavailable source=44 artifact=3 owner=5 frame=4294967295 ctors=0+0
+  cursor-payload 6 adt source=51 artifact=1 owner=2 frame=6 ctors=2+2
+    cursor-constructor Leaf ordinal=0 args=53
+    cursor-constructor Next ordinal=1 args=55
+  cursor-child parent=56 record_field selector=value result=58 head=app nominal=core:Basics.Int
+  cursor-child parent=56 record_extension selector=0 result=60 head=empty_record
+  cursor-child parent=61 record_field selector=value result=63 head=app nominal=core:String.String
+  cursor-child parent=61 record_extension selector=0 result=65 head=empty_record
+  cursor-child parent=67 argument selector=0 result=69 head=app nominal=core:List.List
+nominal-module core:Js schema=1 owners=2 ctors=0 proof=ordinary-types wire=false
+  nominal-owner 0 Value kind=native_opaque arity=0 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+  nominal-owner 1 Ref kind=native_opaque arity=1 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+module Js
+typeref 0 core Js.Value
+typeref 1 core Js.Ref
+nominal-module core:Basics schema=1 owners=5 ctors=6 proof=ordinary-types wire=false
+  nominal-owner 0 Int kind=native_opaque arity=0 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+  nominal-owner 1 Float kind=native_opaque arity=0 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+  nominal-owner 2 Bool kind=adt arity=0 scheme=0 ctors=0+2 layout=ordinary-payloads
+    nominal-ctor 0 True ordinal=0 args=[]
+    nominal-ctor 1 False ordinal=1 args=[]
+  nominal-owner 3 Order kind=adt arity=0 scheme=1 ctors=2+3 layout=ordinary-payloads
+    nominal-ctor 2 LT ordinal=0 args=[]
+    nominal-ctor 3 EQ ordinal=1 args=[]
+    nominal-ctor 4 GT ordinal=2 args=[]
+  nominal-owner 4 Never kind=adt arity=0 scheme=2 ctors=5+1 layout=ordinary-payloads
+    nominal-ctor 5 JustOneMore ordinal=0 args=[5]
+module Basics
+scheme 0 body=1 quantified=0
+scheme 1 body=3 quantified=0
+scheme 2 body=6 quantified=0
+typeref 0 core Basics.Int
+typeref 1 core Basics.Float
+typeref 2 core Basics.Bool
+typeref 3 core Basics.Order
+typeref 4 core Basics.Never
+term 0 app 2 0
+term 1 tuple 1 0
+term 2 app 3 3
+term 3 tuple 4 0
+term 4 app 4 6
+term 5 app 4 7
+term 6 tuple 8 0
+extra 0 0
+extra 1 1
+extra 2 0
+extra 3 0
+extra 4 1
+extra 5 2
+extra 6 0
+extra 7 0
+extra 8 2
+extra 9 4
+extra 10 5
+nominal-module core:String schema=1 owners=1 ctors=0 proof=ordinary-types wire=false
+  nominal-owner 0 String kind=native_opaque arity=0 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+module String
+typeref 0 core String.String
+nominal-module core:List schema=1 owners=2 ctors=0 proof=ordinary-types wire=false
+  nominal-owner 0 List kind=native_opaque arity=1 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+  nominal-owner 1 Builder kind=native_opaque arity=1 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+module List
+typeref 0 core List.List
+typeref 1 core List.Builder
+cursor-work artifacts=9 references=43 projectionNodes=141 normalizeSteps=49 ownerLookups=47 payloadArgs=4 scopes=12 views=76 frames=7 origins=69 results=70

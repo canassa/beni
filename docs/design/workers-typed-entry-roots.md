@@ -411,3 +411,9 @@ beside the original dependency diagnostic. Clear prior worker evidence before
 fallible module setup and on escaping allocation errors. Quiet, poisoned, locally
 erroneous and dependency-tainted modules retain absent evidence. Restoring valid
 source may reuse the original clean cache entry through the ordinary rules.
+
+## Owned cross-artifact consumer follow-on
+
+[workers-cross-artifact-cursor.md](workers-cross-artifact-cursor.md) specifies
+the shared owned ordinary-view kernel, declaring payload substitutions and finite
+checked inspector consumer. It does not classify Wire or HostFree.

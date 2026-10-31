@@ -8,6 +8,8 @@ const Types = @import("../check/Types.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const EntryRoots = @import("../check/EntryRoots.zig");
 const Plan = @import("Plan.zig");
+const CursorInspect = @import("CursorInspect.zig");
+const NominalInspect = @import("NominalInspect.zig");
 const RoleRoots = @import("RoleRoots.zig");
 const interface = @import("../dump/interface.zig");
 pub const Input = struct {
@@ -18,7 +20,12 @@ pub const Input = struct {
     dispatch: []const Dispatch,
     plan: *const Plan,
 };
-pub const Error = Allocator.Error || std.Io.Writer.Error || error{ UnvalidatedPlan, MissingEntryRoots, MissingNominalLayouts };
+pub const Error = @import("TypeCursor.zig").Error || std.Io.Writer.Error || error{UnvalidatedPlan};
+pub const Prepared = CursorInspect;
+pub fn prepare(gpa: Allocator, in: Input) Error!Prepared {
+    try validate(in);
+    return CursorInspect.prepare(gpa, .{ .cursor = .{ .graph = in.graph, .types = in.types, .dispatch = in.dispatch, .interner = in.interner }, .plan = in.plan });
+}
 /// Availability only: current checked Plan identity, never source reconstruction.
 pub fn validate(in: Input) error{ UnvalidatedPlan, MissingEntryRoots, MissingNominalLayouts }!void {
     if (!in.plan.validated) return error.UnvalidatedPlan;
@@ -36,7 +43,11 @@ pub fn validate(in: Input) error{ UnvalidatedPlan, MissingEntryRoots, MissingNom
 /// Call only after the existing complete entry contract validation.
 /// All output references artifact-local indices; no expanded aliases/trees.
 pub fn write(gpa: Allocator, out: *std.Io.Writer, in: Input) Error!void {
-    try validate(in);
+    var prepared = try prepare(gpa, in);
+    defer prepared.deinit(gpa);
+    try writePrepared(gpa, out, in, &prepared);
+}
+pub fn writePrepared(gpa: Allocator, out: *std.Io.Writer, in: Input, prepared: *const Prepared) Error!void {
     try out.writeAll("typed-entry-roots proof=ordinary-types wire=false\n");
     for (in.dispatch, 0..) |*dispatch, mi| {
         const module: Graph.Index = @fromBackingInt(@intCast(mi));
@@ -103,13 +114,11 @@ pub fn write(gpa: Allocator, out: *std.Io.Writer, in: Input) Error!void {
         const module: Graph.Index = @fromBackingInt(@intCast(mi));
         if (inspectNominals(in, module)) try @import("NominalInspect.zig").write(out, in.graph, module, &dispatch.nominal_layouts, in.interner);
     }
+    try prepared.write(out);
 }
 
 fn inspectNominals(in: Input, module: Graph.Index) bool {
-    if (in.graph.modulePackage(module) == .app) return true;
-    for (in.plan.kinds.items(.module)) |owner| if (owner == module) return true;
-    for (in.dispatch[module.int()].decl_heads) |head| if (in.plan.find(head) != null) return true;
-    return false;
+    return NominalInspect.needed(in.graph, module, in.dispatch, in.plan);
 }
 
 fn quoted(out: *std.Io.Writer, text: []const u8) std.Io.Writer.Error!void {

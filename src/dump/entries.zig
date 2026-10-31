@@ -48,12 +48,16 @@ fn typedInput(session: *const Session) TypedInspect.Input {
 }
 fn typedDiagnostic(a: std.mem.Allocator, in: TypedInspect.Input, file: SourceStore.Index, token: u32) std.mem.Allocator.Error!?Emit.Item {
     if (!in.plan.validated or in.plan.selected == .none) return null;
-    TypedInspect.validate(in) catch |err| return .{
-        .code = .internal,
-        .file = file,
-        .token = token,
-        .message = try std.fmt.allocPrint(a, "Entry inspection has unavailable retained typed evidence ({s}). This is a compiler bug, not a mistake in this program. No entry graph was printed.", .{@errorName(err)}),
+    var prepared = TypedInspect.prepare(a, in) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return .{
+            .code = .internal,
+            .file = file,
+            .token = token,
+            .message = try std.fmt.allocPrint(a, "Entry inspection has unavailable retained typed evidence ({s}). This is a compiler bug, not a mistake in this program. No entry graph was printed.", .{@errorName(err)}),
+        },
     };
+    prepared.deinit(a);
     return null;
 }
 fn entry(w: *std.Io.Writer, g: *const Graph, id: Graph.EntryId) std.Io.Writer.Error!void {
@@ -72,7 +76,8 @@ fn site(w: *std.Io.Writer, session: *const Session, id: Ir.SiteId) std.Io.Writer
 pub fn write(w: *std.Io.Writer, session: *const Session) TypedInspect.Error!void {
     // Also protect direct callers: the compact prefix must not escape before
     // the typed boundary has accepted every current selected declaration.
-    if (session.entry_plan.validated and session.entry_plan.selected != .none) try TypedInspect.validate(typedInput(session));
+    var prepared: ?TypedInspect.Prepared = if (session.entry_plan.validated and session.entry_plan.selected != .none) try TypedInspect.prepare(session.gpa, typedInput(session)) else null;
+    defer if (prepared) |*value| value.deinit(session.gpa);
     const g = &session.entry_graph;
     try w.print("entries schema=1 partial=true discoveryComplete={} inputSupported={}\n", .{ g.discovery_complete, g.input_supported });
     try w.writeAll("proofs C=unproved EntryHost=unproved Wire=unproved ownership=unproved constructionEffects=unproved execution=unproved\n");
@@ -176,7 +181,7 @@ pub fn write(w: *std.Io.Writer, session: *const Session) TypedInspect.Error!void
         try entry(w, g, row.entry);
         try w.writeByte('\n');
     }
-    if (session.entry_plan.validated and session.entry_plan.selected != .none) try TypedInspect.write(session.gpa, w, typedInput(session));
+    if (prepared) |*value| try TypedInspect.writePrepared(session.gpa, w, typedInput(session), value);
 }
 
 test "entries writer emits no compact prefix when selected typed roots are unavailable" {

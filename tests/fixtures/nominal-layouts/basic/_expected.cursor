@@ -1,0 +1,219 @@
+type-cursor schema=1 proof=ordinary-types wire=false hostFree=false symbolicRecursion=true
+  cursor-query 0 app:Main decl=7 role=0 result=5 kind=complete remaining=0 payload=0:adt
+  cursor-query 1 app:Main decl=7 role=1 local-excluded
+  cursor-artifact 0 entry app:Main refs=3 terms=7
+  cursor-artifact 1 nominal app:Library refs=8 terms=25
+  cursor-artifact 2 nominal platform:Worker refs=2 terms=4
+  cursor-artifact 3 nominal platform:Start refs=2 terms=23
+  cursor-artifact 4 nominal core:Basics refs=5 terms=7
+  cursor-artifact 5 nominal core:Dict refs=4 terms=19
+  cursor-reference artifact=0 ref=0 app:Library.Secret target=1 owner=0
+  cursor-reference artifact=0 ref=1 platform:Worker.Program target=2 owner=0
+  cursor-reference artifact=0 ref=2 platform:Start.Program target=3 owner=0
+  cursor-reference artifact=1 ref=0 app:Library.Secret target=1 owner=0
+  cursor-reference artifact=1 ref=1 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=1 ref=2 app:Library.PrivatePayload target=1 owner=1
+  cursor-reference artifact=1 ref=3 app:Library.Spare target=1 owner=2
+  cursor-reference artifact=1 ref=4 app:Library.Keys target=1 owner=3
+  cursor-reference artifact=1 ref=5 core:Dict.Dict target=5 owner=0
+  cursor-reference artifact=1 ref=6 app:Library.PublicKey target=1 owner=4
+  cursor-reference artifact=1 ref=7 app:Library.UnusedScalar target=1 owner=5
+  cursor-reference artifact=2 ref=0 platform:Worker.Program target=2 owner=0
+  cursor-reference artifact=2 ref=1 platform:Worker.Native target=2 owner=1
+  cursor-reference artifact=3 ref=0 platform:Start.Program target=3 owner=0
+  cursor-reference artifact=3 ref=1 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=4 ref=0 core:Basics.Int target=4 owner=0
+  cursor-reference artifact=4 ref=1 core:Basics.Float target=4 owner=1
+  cursor-reference artifact=4 ref=2 core:Basics.Bool target=4 owner=2
+  cursor-reference artifact=4 ref=3 core:Basics.Order target=4 owner=3
+  cursor-reference artifact=4 ref=4 core:Basics.Never target=4 owner=4
+  cursor-reference artifact=5 ref=0 core:Dict.Dict target=5 owner=0
+  cursor-reference artifact=5 ref=1 core:Dict.Tree target=5 owner=1
+  cursor-reference artifact=5 ref=2 core:Dict.NColor target=5 owner=2
+  cursor-reference artifact=5 ref=3 core:Dict.Cursor target=5 owner=3
+  cursor-scope 0 artifact=0 scheme index=0
+  cursor-scope 1 artifact=1 scheme index=0
+  cursor-view 0 artifact=0 scope=0 term=5 env=4294967295 head=app
+  cursor-view 1 artifact=0 scope=0 term=5 env=4294967295 head=app
+  cursor-view 2 artifact=0 scope=0 term=2 env=4294967295 head=record
+  cursor-view 3 artifact=0 scope=0 term=2 env=4294967295 head=record
+  cursor-view 4 artifact=0 scope=0 term=0 env=4294967295 head=app
+  cursor-view 5 artifact=0 scope=0 term=0 env=4294967295 head=app
+  cursor-view 6 artifact=0 scope=0 term=0 env=4294967295 head=app
+  cursor-view 7 artifact=1 scope=1 term=1 env=0 head=app
+  cursor-view 8 artifact=1 scope=1 term=1 env=0 head=app
+  cursor-view 9 artifact=1 scope=1 term=1 env=0 head=app
+  cursor-frame 0 scope=1 args=
+  cursor-result 0 view=0 identityView=0 origin=0 kind=complete remaining=
+  cursor-result 1 view=1 identityView=0 origin=1 kind=complete remaining=
+  cursor-result 2 view=2 identityView=2 origin=2 kind=complete remaining=
+  cursor-result 3 view=3 identityView=2 origin=3 kind=complete remaining=
+  cursor-result 4 view=4 identityView=4 origin=4 kind=complete remaining=
+  cursor-result 5 view=5 identityView=4 origin=5 kind=complete remaining=
+  cursor-result 6 view=6 identityView=4 origin=6 kind=complete remaining=
+  cursor-result 7 view=7 identityView=7 origin=7 kind=complete remaining=
+  cursor-result 8 view=8 identityView=7 origin=8 kind=complete remaining=
+  cursor-result 9 view=9 identityView=7 origin=9 kind=complete remaining=
+  cursor-origin 0 parent=4294967295 root source=0 target=0 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 1 parent=0 normalize source=0 target=1 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 2 parent=1 parameter source=1 target=2 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 3 parent=2 normalize source=2 target=3 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 4 parent=3 field source=3 target=4 selector=message owner=4294967295 ctor=4294967295
+  cursor-origin 5 parent=4 normalize source=4 target=5 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 6 parent=5 payload_head source=4 target=6 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 7 parent=6 payload source=6 target=7 selector=0 owner=0 ctor=0
+  cursor-origin 8 parent=7 normalize source=7 target=8 selector=0 owner=4294967295 ctor=4294967295
+  cursor-origin 9 parent=8 normalize source=8 target=9 selector=0 owner=4294967295 ctor=4294967295
+  cursor-payload 0 adt source=6 artifact=1 owner=0 frame=0 ctors=0+1
+    cursor-constructor Secret ordinal=0 args=8
+nominal-module core:Basics schema=1 owners=5 ctors=6 proof=ordinary-types wire=false
+  nominal-owner 0 Int kind=native_opaque arity=0 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+  nominal-owner 1 Float kind=native_opaque arity=0 scheme=4294967295 ctors=0+0 layout=native-contract-unavailable
+  nominal-owner 2 Bool kind=adt arity=0 scheme=0 ctors=0+2 layout=ordinary-payloads
+    nominal-ctor 0 True ordinal=0 args=[]
+    nominal-ctor 1 False ordinal=1 args=[]
+  nominal-owner 3 Order kind=adt arity=0 scheme=1 ctors=2+3 layout=ordinary-payloads
+    nominal-ctor 2 LT ordinal=0 args=[]
+    nominal-ctor 3 EQ ordinal=1 args=[]
+    nominal-ctor 4 GT ordinal=2 args=[]
+  nominal-owner 4 Never kind=adt arity=0 scheme=2 ctors=5+1 layout=ordinary-payloads
+    nominal-ctor 5 JustOneMore ordinal=0 args=[5]
+module Basics
+scheme 0 body=1 quantified=0
+scheme 1 body=3 quantified=0
+scheme 2 body=6 quantified=0
+typeref 0 core Basics.Int
+typeref 1 core Basics.Float
+typeref 2 core Basics.Bool
+typeref 3 core Basics.Order
+typeref 4 core Basics.Never
+term 0 app 2 0
+term 1 tuple 1 0
+term 2 app 3 3
+term 3 tuple 4 0
+term 4 app 4 6
+term 5 app 4 7
+term 6 tuple 8 0
+extra 0 0
+extra 1 1
+extra 2 0
+extra 3 0
+extra 4 1
+extra 5 2
+extra 6 0
+extra 7 0
+extra 8 2
+extra 9 4
+extra 10 5
+nominal-module core:Dict schema=1 owners=4 ctors=7 proof=ordinary-types wire=false
+  nominal-owner 0 Dict kind=adt arity=2 scheme=0 ctors=0+1 layout=ordinary-payloads
+    nominal-ctor 0 Dict ordinal=0 args=[3]
+  nominal-owner 1 Tree kind=adt arity=2 scheme=1 ctors=1+2 layout=ordinary-payloads
+    nominal-ctor 1 Node ordinal=0 args=[8,5,6,9,9]
+    nominal-ctor 2 Leaf ordinal=1 args=[]
+  nominal-owner 2 NColor kind=adt arity=0 scheme=2 ctors=3+2 layout=ordinary-payloads
+    nominal-ctor 3 Red ordinal=0 args=[]
+    nominal-ctor 4 Black ordinal=1 args=[]
+  nominal-owner 3 Cursor kind=adt arity=2 scheme=3 ctors=5+2 layout=ordinary-payloads
+    nominal-ctor 5 Step ordinal=0 args=[13,14,16,17]
+    nominal-ctor 6 End ordinal=1 args=[]
+module Dict
+scheme 0 body=4 quantified=2
+  q 0 kind=3 equatable=false name=- constraints=0
+  q 1 kind=0 equatable=false name=v constraints=0
+scheme 1 body=10 quantified=2
+  q 0 kind=0 equatable=false name=k constraints=0
+  q 1 kind=0 equatable=false name=v constraints=0
+scheme 2 body=12 quantified=0
+scheme 3 body=18 quantified=2
+  q 0 kind=0 equatable=false name=k constraints=0
+  q 1 kind=0 equatable=false name=v constraints=0
+typeref 0 core Dict.Dict
+typeref 1 core Dict.Tree
+typeref 2 core Dict.NColor
+typeref 3 core Dict.Cursor
+term 0 var 0 0
+term 1 var 1 0
+term 2 app 0 0
+term 3 app 1 3
+term 4 tuple 6 0
+term 5 var 0 0
+term 6 var 1 0
+term 7 app 1 17
+term 8 app 2 20
+term 9 app 1 21
+term 10 tuple 24 0
+term 11 app 2 39
+term 12 tuple 40 0
+term 13 var 0 0
+term 14 var 1 0
+term 15 app 3 42
+term 16 app 1 45
+term 17 app 3 48
+term 18 tuple 51 0
+extra 0 2
+extra 1 0
+extra 2 1
+extra 3 2
+extra 4 0
+extra 5 1
+extra 6 2
+extra 7 2
+extra 8 3
+extra 9 3
+extra 10 4294967295
+extra 11 0
+extra 12 0
+extra 13 0
+extra 14 3
+extra 15 0
+extra 16 0
+extra 17 2
+extra 18 5
+extra 19 6
+extra 20 0
+extra 21 2
+extra 22 5
+extra 23 6
+extra 24 6
+extra 25 7
+extra 26 8
+extra 27 5
+extra 28 6
+extra 29 9
+extra 30 9
+extra 31 0
+extra 32 8
+extra 33 0
+extra 34 0
+extra 35 0
+extra 36 9
+extra 37 0
+extra 38 0
+extra 39 0
+extra 40 1
+extra 41 11
+extra 42 2
+extra 43 13
+extra 44 14
+extra 45 2
+extra 46 13
+extra 47 14
+extra 48 2
+extra 49 13
+extra 50 14
+extra 51 5
+extra 52 15
+extra 53 13
+extra 54 14
+extra 55 16
+extra 56 17
+extra 57 0
+extra 58 18
+extra 59 0
+extra 60 0
+extra 61 0
+extra 62 19
+extra 63 0
+extra 64 0
+cursor-work artifacts=6 references=24 projectionNodes=85 normalizeSteps=6 ownerLookups=25 payloadArgs=1 scopes=2 views=10 frames=1 origins=10 results=10

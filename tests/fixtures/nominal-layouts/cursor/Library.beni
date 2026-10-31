@@ -1,0 +1,31 @@
+pub opaque type Secret a phantom
+    = Secret (Neutral a)
+
+
+type alias Neutral a =
+    value : a
+
+
+pub seed : Secret Int String
+seed = Secret { value = 7 }
+
+
+pub text : Secret String Int
+text = Secret { value = "seven" }
+
+
+type Numeric number phantom
+    = Numeric number
+
+
+type Recursive a
+    = Leaf a
+    | Next (Recursive (List a))
+
+
+type HiddenFunction a
+    = HiddenFunction (a → Int)
+
+
+pub recursive : Recursive Int
+recursive = Leaf 1

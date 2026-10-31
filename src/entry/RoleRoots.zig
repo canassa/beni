@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const PrivateTerms = @import("../check/PrivateTerms.zig");
+const Kernel = @import("ViewKernel.zig");
 const RoleRoots = @This();
 pub const ResultIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const Range = struct { start: u32 = 0, len: u32 = 0 };
@@ -29,44 +30,39 @@ pub fn deinit(a: *RoleRoots, gpa: Allocator) void {
     gpa.free(a.projections);
 }
 /// Validated private DAG only. One projection summary per encoded term.
+pub const Error = Allocator.Error;
 pub fn init(gpa: Allocator, types: *const Interface) Allocator.Error!RoleRoots {
-    const heads = try gpa.alloc(u32, types.terms.len);
-    errdefer gpa.free(heads);
-    @memset(heads, PrivateTerms.no_projection);
-    const colors = try gpa.alloc(u8, heads.len);
-    defer gpa.free(colors);
-    @memset(colors, 0);
-    const Pending = struct { node: u32, next: u32 = 0 };
-    var stack: std.ArrayList(Pending) = .empty;
-    defer stack.deinit(gpa);
-    for (0..heads.len) |start| {
-        if (colors[start] != 0) continue;
-        try stack.append(gpa, .{ .node = @intCast(start) });
-        colors[start] = 1;
-        while (stack.items.len != 0) {
-            const top = &stack.items[stack.items.len - 1];
-            if (PrivateTerms.child(types, top.node, top.next, true)) |next| {
-                top.next += 1;
-                if (colors[next] != 0) continue;
-                colors[next] = 1;
-                try stack.append(gpa, .{ .node = next });
-                continue;
-            }
-            const node = top.node;
-            const term = types.terms.get(node);
-            switch (term.tag) {
-                .@"var" => heads[node] = term.lhs,
-                .alias => {
-                    const projection = heads[types.type_refs[term.lhs].body.int()];
-                    if (projection != PrivateTerms.no_projection) heads[node] = heads[types.range(term.rhs)[projection]];
-                },
-                else => {},
-            }
-            colors[node] = 2;
-            _ = stack.pop();
-        }
+    return .{ .types = types, .projections = try Kernel.projections(gpa, types) };
+}
+pub fn noteStep(_: *RoleRoots) void {}
+pub fn getView(a: *const RoleRoots, index: ViewIndex) View {
+    return a.views.get(@backingInt(index));
+}
+pub fn interface(a: *const RoleRoots, _: View) *const Interface {
+    return a.types;
+}
+pub fn actual(a: *const RoleRoots, view: View, parameter: u32) Error!?View {
+    if (view.env == .none) return null;
+    const frame = a.frames.get(@backingInt(view.env));
+    return a.views.get(a.extra.items[frame.start + parameter]);
+}
+pub fn projection(a: *const RoleRoots, _: View, body: Interface.TermIndex) ?u32 {
+    const index = a.projections[body.int()];
+    return if (index == PrivateTerms.no_projection) null else index;
+}
+pub fn alias(a: *RoleRoots, gpa: Allocator, original: View, term: Interface.Term) Error!View {
+    var view = original;
+    const args = a.types.range(term.rhs);
+    const start: u32 = @intCast(a.extra.items.len);
+    for (args) |arg| {
+        const child_view = try a.add(gpa, .{ .scheme = view.scheme, .term = @fromBackingInt(arg), .env = view.env });
+        try a.extra.append(gpa, @backingInt(child_view));
     }
-    return .{ .types = types, .projections = heads };
+    const frame: FrameIndex = @fromBackingInt(@intCast(a.frames.len));
+    try a.frames.append(gpa, .{ .start = start, .len = @intCast(args.len) });
+    view.term = a.types.type_refs[term.lhs].body;
+    view.env = frame;
+    return view;
 }
 pub fn add(a: *RoleRoots, gpa: Allocator, view: View) Allocator.Error!ViewIndex {
     const index: ViewIndex = @fromBackingInt(@intCast(a.views.len));
@@ -74,37 +70,7 @@ pub fn add(a: *RoleRoots, gpa: Allocator, view: View) Allocator.Error!ViewIndex 
     return index;
 }
 pub fn normalize(a: *RoleRoots, gpa: Allocator, original: ViewIndex) Allocator.Error!ViewIndex {
-    var view = a.views.get(@backingInt(original));
-    while (true) {
-        const term = a.types.term(view.term);
-        switch (term.tag) {
-            .@"var" => {
-                if (view.env == .none) break;
-                const frame = a.frames.get(@backingInt(view.env));
-                view = a.views.get(a.extra.items[frame.start + term.lhs]);
-            },
-            .alias => {
-                const args = a.types.range(term.rhs);
-                const body = a.types.type_refs[term.lhs].body;
-                const projection = a.projections[body.int()];
-                if (projection != PrivateTerms.no_projection) {
-                    view.term = @fromBackingInt(args[projection]);
-                    continue;
-                }
-                const start: u32 = @intCast(a.extra.items.len);
-                for (args) |arg| {
-                    const child_view = try a.add(gpa, .{ .scheme = view.scheme, .term = @fromBackingInt(arg), .env = view.env });
-                    try a.extra.append(gpa, @backingInt(child_view));
-                }
-                const frame: FrameIndex = @fromBackingInt(@intCast(a.frames.len));
-                try a.frames.append(gpa, .{ .start = start, .len = @intCast(args.len) });
-                view.term = body;
-                view.env = frame;
-            },
-            else => break,
-        }
-    }
-    return a.add(gpa, view);
+    return Kernel.normalize(RoleRoots, a, gpa, original, false);
 }
 pub fn head(a: *RoleRoots, gpa: Allocator, scheme: Interface.SchemeIndex) Allocator.Error!ViewIndex {
     return a.normalize(gpa, try a.add(gpa, .{ .scheme = scheme, .term = a.types.scheme(scheme).body }));
@@ -122,25 +88,19 @@ pub fn project(a: *RoleRoots, gpa: Allocator, scheme: Interface.SchemeIndex, par
         at = try a.normalize(gpa, at);
         while (true) {
             view = a.views.get(@backingInt(at));
-            const term = a.types.term(view.term);
-            if (term.tag == .@"var") return a.finish(gpa, at, .obligation, @intCast(step), path);
-            if (term.tag != .record) return a.finish(gpa, at, .shape_mismatch, @intCast(step), path);
-            const fields = a.types.range(term.lhs);
-            var found: ?u32 = null;
-            var i: usize = 0;
-            while (i < fields.len) : (i += 2) {
-                if (a.types.symbol(@fromBackingInt(fields[i])) == field) {
-                    found = fields[i + 1];
+            switch (Kernel.field(a.types, view.term, field)) {
+                .generic => return a.finish(gpa, at, .obligation, @intCast(step), path),
+                .mismatch => return a.finish(gpa, at, .shape_mismatch, @intCast(step), path),
+                .child => |child| {
+                    view.term = child;
+                    at = try a.add(gpa, view);
                     break;
-                }
+                },
+                .extension => |extension| {
+                    view.term = extension;
+                    at = try a.normalize(gpa, try a.add(gpa, view));
+                },
             }
-            if (found) |child| {
-                view.term = @fromBackingInt(child);
-                at = try a.add(gpa, view);
-                break;
-            }
-            view.term = @fromBackingInt(term.rhs);
-            at = try a.normalize(gpa, try a.add(gpa, view));
         }
     }
     at = try a.normalize(gpa, at);

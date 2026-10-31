@@ -28,3 +28,10 @@ pub fn write(out: *std.Io.Writer, graph: *const Graph, module: Graph.Index, a: *
     }
     try interface.writeRaw(out, name, &a.types, interner);
 }
+
+pub fn needed(graph: *const Graph, module: Graph.Index, dispatch: []const @import("../check/Dispatch.zig"), plan: *const @import("Plan.zig")) bool {
+    if (graph.modulePackage(module) == .app) return true;
+    for (plan.kinds.items(.module)) |owner| if (owner == module) return true;
+    for (dispatch[module.int()].decl_heads) |head| if (plan.find(head) != null) return true;
+    return false;
+}

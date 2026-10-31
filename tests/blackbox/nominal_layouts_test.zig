@@ -51,7 +51,9 @@ fn run(w: *World, trace: []const u8, extra: []const []const u8) !world.Result {
     return r;
 }
 fn nominal(text: []const u8) ![]const u8 {
-    return text[std.mem.indexOf(u8, text, "nominal-module ") orelse return error.MissingNominalInspector ..];
+    const start = std.mem.indexOf(u8, text, "nominal-module ") orelse return error.MissingNominalInspector;
+    const end = std.mem.indexOfPos(u8, text, start, "type-cursor schema=") orelse text.len;
+    return text[start..end];
 }
 fn canonical(w: *World, trace: []const u8, extra: []const []const u8) !Stats {
     const r = try run(w, trace, extra);
@@ -437,4 +439,185 @@ test "nominal layouts discard dependency-tainted error terms without adding inte
     try testing.expectEqualStrings(first.stdout, restored.stdout);
     try testing.expectEqual(@as(u64, 0), (try stats(&w, "dependency-restored.json")).modules_checked);
     try testing.expectEqualSlices(u8, original, try w.read(try entry(&w, "Main")));
+}
+
+fn cursorSection(text: []const u8) ![]const u8 {
+    return text[std.mem.indexOf(u8, text, "type-cursor schema=") orelse return error.MissingCursorInspector ..];
+}
+test "cross artifact cursor keeps exact nominal prefix and complete owned graph across cache jobs roundtrip relocation" {
+    // PREPARE: golden captured from the real checked basic source; its old A
+    // prefix was independently compared with the accepted fef Debug compiler.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w);
+    const expected = try w.read("_expected.cursor");
+    for ([_][]const []const u8{ &.{"--jobs=1"}, &.{"--jobs=8"}, &.{ "--cache-dir=roundtrip", "--roundtrip-interfaces", "--roundtrip-dispatch" } }, 0..) |extra, pass| {
+        const trace = try std.fmt.allocPrint(w.arena.allocator(), "cursor-{d}.json", .{pass});
+        const r = try run(&w, trace, extra);
+        try testing.expectEqualStrings(try w.read("_expected.nominals"), try nominal(r.stdout));
+        try testing.expectEqualStrings(expected, try cursorSection(r.stdout));
+        const count = (try stats(&w, trace)).modules_checked;
+        if (pass == 1) try testing.expectEqual(@as(u64, 0), count) else try testing.expect(count > 0);
+    }
+    // VERIFY SIDE EFFECTS: relocated checked artifacts keep views, never stores.
+    var moved = try World.init(testing.allocator, testing.io);
+    defer moved.deinit();
+    try prepare(&moved);
+    for (try w.listFiles("cache")) |name| {
+        const path = try std.fmt.allocPrint(w.arena.allocator(), "cache/{s}", .{name});
+        try moved.write(path, try w.read(path));
+    }
+    const relocated = try run(&moved, "relocated.json", &.{"--jobs=8"});
+    try testing.expectEqualStrings(expected, try cursorSection(relocated.stdout));
+    try testing.expectEqual(@as(u64, 0), (try stats(&moved, "relocated.json")).modules_checked);
+    try testing.expect(!w.exists("out"));
+    try testing.expect(!moved.exists("out"));
+}
+
+const CursorState = struct { kind: []const u8, remaining: u32, payload: []const u8 };
+fn cursorWord(line: []const u8, key: []const u8) ![]const u8 {
+    const start = (std.mem.indexOf(u8, line, key) orelse return error.MissingCursorWord) + key.len;
+    const end = std.mem.indexOfScalarPos(u8, line, start, ' ') orelse line.len;
+    return line[start..end];
+}
+fn cursorState(w: *World, text: []const u8, name: []const u8) !CursorState {
+    const marker = try std.fmt.allocPrint(w.arena.allocator(), "typed-candidate {s} decl=", .{name});
+    const candidate = text[(std.mem.indexOf(u8, text, marker) orelse return error.MissingCursorCandidate) + marker.len ..];
+    const declaration = try std.fmt.parseInt(u32, candidate[0 .. std.mem.indexOfScalar(u8, candidate, ' ') orelse return error.MissingCursorCandidate], 10);
+    const query = try std.fmt.allocPrint(w.arena.allocator(), " decl={d} role=0 ", .{declaration});
+    var lines = std.mem.splitScalar(u8, try cursorSection(text), '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "  cursor-query ") or std.mem.indexOf(u8, line, query) == null) continue;
+        const payload = try cursorWord(line, "payload=");
+        return .{ .kind = try cursorWord(line, "kind="), .remaining = try std.fmt.parseInt(u32, try cursorWord(line, "remaining="), 10), .payload = payload[(std.mem.indexOfScalar(u8, payload, ':') orelse return error.MissingCursorPayload) + 1 ..] };
+    }
+    return error.MissingCursorQuery;
+}
+fn cursorFieldHeads(w: *World, text: []const u8) ![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(w.arena.allocator());
+    defer out.deinit();
+    var lines = std.mem.splitScalar(u8, try cursorSection(text), '\n');
+    while (lines.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "  cursor-child ") or std.mem.indexOf(u8, line, " record_field ") == null) continue;
+        try out.writer.print("{s} {s} {s}\n", .{ try cursorWord(line, "selector="), try cursorWord(line, "head="), try cursorWord(line, "nominal=") });
+    }
+    return out.toOwnedSlice();
+}
+test "cross artifact cursor substitutes private phantom aliases independently and retains unavailable schema native and recursive evidence" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w);
+    try w.copyTree("tests/fixtures/nominal-layouts/cursor", "_excluded.");
+    const expected = try w.read("_expected.cursor");
+    const before = try run(&w, "cursor-rich-cold.json", &.{"--jobs=1"});
+    try testing.expectEqualStrings(expected, try cursorSection(before.stdout));
+    try testing.expectEqualStrings("value app core:Basics.Int\nvalue app core:String.String\n", try cursorFieldHeads(&w, before.stdout));
+    const complete = "complete";
+    try testing.expectEqualDeep(CursorState{ .kind = complete, .remaining = 0, .payload = "adt" }, try cursorState(&w, before.stdout, "payload"));
+    try testing.expectEqualDeep(CursorState{ .kind = complete, .remaining = 0, .payload = "adt" }, try cursorState(&w, before.stdout, "textPayload"));
+    try testing.expectEqualDeep(CursorState{ .kind = complete, .remaining = 0, .payload = "adt" }, try cursorState(&w, before.stdout, "recursivePayload"));
+    try testing.expectEqualDeep(CursorState{ .kind = "obligation", .remaining = 1, .payload = "obligation" }, try cursorState(&w, before.stdout, "genericPayload"));
+    try testing.expectEqualDeep(CursorState{ .kind = complete, .remaining = 0, .payload = "native_contract_unavailable" }, try cursorState(&w, before.stdout, "nativePayload"));
+    try testing.expectEqualDeep(CursorState{ .kind = complete, .remaining = 0, .payload = "schema_type_contract_unavailable" }, try cursorState(&w, before.stdout, "schemaPayload"));
+    try testing.expectEqualDeep(CursorState{ .kind = complete, .remaining = 0, .payload = "schema_encoded_contract_unavailable" }, try cursorState(&w, before.stdout, "encodedPayload"));
+    const warm = try run(&w, "cursor-rich-warm.json", &.{"--jobs=8"});
+    try testing.expectEqualStrings(before.stdout, warm.stdout);
+    try testing.expectEqual(@as(u64, 0), (try stats(&w, "cursor-rich-warm.json")).modules_checked);
+    const roundtrip = try run(&w, "cursor-rich-roundtrip.json", &.{ "--cache-dir=roundtrip", "--roundtrip-interfaces", "--roundtrip-dispatch" });
+    try testing.expectEqualStrings(before.stdout, roundtrip.stdout);
+    try testing.expect(!w.exists("out"));
+}
+
+test "cross artifact cursor preserves current schema leaf through aliases actual wrappers and primitive field projection" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w);
+    const a = w.arena.allocator();
+    const source = try std.fmt.allocPrint(a,
+        \\{s}
+        \\
+        \\pub schema Plain =
+        \\    field : Int
+        \\type alias Endpoint = Plain.Type
+        \\type alias Again = Endpoint
+        \\type alias Identity a = a
+        \\type alias Container a = {{ wrapped : a }}
+        \\endpoint : Again
+        \\endpoint = Debug.todo "checked schema endpoint"
+        \\genericEndpoint : Identity Again
+        \\genericEndpoint = endpoint
+        \\wrapped : Container Again
+        \\wrapped = {{ wrapped = endpoint }}
+        \\convertedEndpoint : Wrapped.Type
+        \\convertedEndpoint = Debug.todo "checked converted schema"
+        \\convertedPayload = Worker.make {{ message = convertedEndpoint }} λvalue → value
+        \\aliasPayload = Worker.make {{ message = endpoint }} λvalue → value
+        \\genericSchemaPayload = Worker.make {{ message = genericEndpoint }} λvalue → value
+        \\wrappedSchemaPayload = Worker.make {{ message = wrapped }} λvalue → value
+        \\
+    , .{try w.read("Main.beni")});
+    try w.write("Main.beni", source);
+    const original_manifest = try w.read("platform/beni.json");
+    const paths = [_][]const u8{ "[\"message\"]", "[\"message\",\"wrapped\"]", "[\"message\",\"field\"]" };
+    for (paths, 0..) |path, index| {
+        const at = std.mem.indexOf(u8, original_manifest, paths[0]) orelse return error.MissingWirePath;
+        const manifest = try std.fmt.allocPrint(a, "{s}{s}{s}", .{ original_manifest[0..at], path, original_manifest[at + paths[0].len ..] });
+        try w.write("platform/beni.json", manifest);
+        const trace = try std.fmt.allocPrint(a, "schema-path-{d}.json", .{index});
+        const r = try run(&w, trace, &.{"--jobs=1"});
+        const endpoint: CursorState = if (index == 2) .{ .kind = "complete", .remaining = 0, .payload = "native_contract_unavailable" } else if (index == 1) .{ .kind = "shape_mismatch", .remaining = 1, .payload = "not_nominal" } else .{ .kind = "complete", .remaining = 0, .payload = "schema_type_contract_unavailable" };
+        const converted: CursorState = if (index == 2) .{ .kind = "complete", .remaining = 0, .payload = "adt" } else endpoint;
+        try testing.expectEqualDeep(converted, try cursorState(&w, r.stdout, "convertedPayload"));
+        try testing.expectEqualDeep(endpoint, try cursorState(&w, r.stdout, "aliasPayload"));
+        try testing.expectEqualDeep(endpoint, try cursorState(&w, r.stdout, "genericSchemaPayload"));
+        const wrapped: CursorState = if (index == 1) .{ .kind = "complete", .remaining = 0, .payload = "schema_type_contract_unavailable" } else if (index == 2) .{ .kind = "shape_mismatch", .remaining = 1, .payload = "not_nominal" } else .{ .kind = "complete", .remaining = 0, .payload = "not_nominal" };
+        try testing.expectEqualDeep(wrapped, try cursorState(&w, r.stdout, "wrappedSchemaPayload"));
+        const warm_trace = try std.fmt.allocPrint(a, "schema-path-{d}-warm.json", .{index});
+        const warm = try run(&w, warm_trace, &.{"--jobs=8"});
+        try testing.expectEqualStrings(r.stdout, warm.stdout);
+        try testing.expectEqual(@as(u64, 0), (try stats(&w, warm_trace)).modules_checked);
+    }
+    try testing.expect(!w.exists("out"));
+}
+
+test "cross artifact cursor retains distinct function argument and result origins without certifying callbacks" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w);
+    const a = w.arena.allocator();
+    try w.write("Library.beni", try std.fmt.allocPrint(a,
+        \\{s}
+        \\
+        \\pub functionSeed : PrivatePayload String
+        \\functionSeed = PrivatePayload λ_ → 1
+        \\
+    , .{try w.read("Library.beni")}));
+    try w.write("Main.beni", try std.fmt.allocPrint(a,
+        \\{s}
+        \\
+        \\functionPayload = Worker.make {{ message = Library.functionSeed }} λvalue → value
+        \\
+    , .{try w.read("Main.beni")}));
+    const r = try run(&w, "function-cold.json", &.{});
+    try testing.expectEqualDeep(CursorState{ .kind = "complete", .remaining = 0, .payload = "adt" }, try cursorState(&w, r.stdout, "functionPayload"));
+    var heads: std.Io.Writer.Allocating = .init(a);
+    defer heads.deinit();
+    var origins: std.Io.Writer.Allocating = .init(a);
+    defer origins.deinit();
+    var lines = std.mem.splitScalar(u8, try cursorSection(r.stdout), '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "  cursor-child ")) {
+            const kind = if (std.mem.indexOf(u8, line, " function_result ") != null) "function_result" else if (std.mem.indexOf(u8, line, " argument ") != null) "argument" else continue;
+            try heads.writer.print("{s} {s}\n", .{ kind, try cursorWord(line, "nominal=") });
+        } else if (std.mem.startsWith(u8, line, "  cursor-origin ")) {
+            if (std.mem.indexOf(u8, line, " function_argument ") != null) try origins.writer.writeAll("function_argument\n");
+            if (std.mem.indexOf(u8, line, " function_result ") != null) try origins.writer.writeAll("function_result\n");
+        }
+    }
+    try testing.expectEqualStrings("argument core:String.String\nfunction_result core:Basics.Int\n", heads.written());
+    try testing.expectEqualStrings("function_argument\nfunction_result\n", origins.written());
+    const warm = try run(&w, "function-warm.json", &.{"--jobs=8"});
+    try testing.expectEqualStrings(r.stdout, warm.stdout);
+    try testing.expectEqual(@as(u64, 0), (try stats(&w, "function-warm.json")).modules_checked);
+    try testing.expect(!w.exists("out"));
 }
