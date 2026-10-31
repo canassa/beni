@@ -1388,6 +1388,7 @@ pub const Frame = struct {
         }
         const dm = &f.demands.items[f.demands.items.len - 1];
         dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, relied);
+        excl = try cells.sets.unionWith(gpa, f.env.charge, excl, written.owed);
         var xt = cells.sets.iterate(excl);
         while (xt.next()) |x| dm.relies = try f.env.conds.@"and"(gpa, f.env.charge, dm.relies, try f.env.conds.excl(gpa, f.env.charge, .from(x.key)));
         if (kept == .none) return;
@@ -1412,12 +1413,15 @@ pub const Frame = struct {
     const Written = struct {
         paths: std.ArrayList(PathId) = .empty,
         ends: stamped.Column(NodeId, void) = .{},
+        /// The canonical cells a symbolic value above the base holds at a
+        /// written position of several (`atWritten`): their `excl` is owed.
+        owed: SetId = .none,
         fn holds(w: *const Written, path: PathId, v: NodeId) bool {
             return path != .none and std.mem.indexOfScalar(PathId, w.paths.items, path) != null and w.ends.contains(v);
         }
     };
     /// Where a value beside a write stands (`keepBeside`).
-    const Where = struct { path: PathId, written: *const Written };
+    const Where = struct { path: PathId, written: *Written };
 
     /// `next`, a child of `it` at step `s`, with the argument's value there
     /// as `positionsAt` reads a path: a missing step keeps the value
@@ -1460,49 +1464,188 @@ pub const Frame = struct {
         return (try places.extend(f.gpa, f.env.charge, from, s)) orelse .none;
     }
 
-    /// The argument's nodes at the end of the write's path `steps`, as
-    /// `otherPaths`' walk reaches them along it (`advance`): a `⟲` every
-    /// re-entry below, a missing step the value reached unless past a `⟲`.
+    /// The argument's nodes at the end of the write's path `steps` that
+    /// stand at **one** position there (§2.11 item 3, *the written
+    /// position*), as `otherPaths`' walk reaches them along it (`advance`):
+    /// a `⟲` every re-entry below, a missing step the value reached unless
+    /// past a `⟲`, and the sides of a join there. Each node counts its
+    /// routes from the argument (saturating at two): a node reached by two
+    /// routes, or on a knot, stands at two positions of the path, and an
+    /// arrival there may be its other position, which only the class's
+    /// `excl` would cover, and a callee writing one position of a folded path
+    /// owes none (`writeLL`, `FoldedOnePosition`). Every route to a position
+    /// at the path goes through the path's positions above it, so counting
+    /// along the path counts them all.
     fn frontierAt(f: *Frame, v: NodeId, steps: []const Step, w: *Written) Error!void {
-        const Pos = struct { n: NodeId, level: bool, stuck: bool };
+        const gpa = f.gpa;
         var frontier: std.ArrayList(Pos) = .empty;
-        defer frontier.deinit(f.gpa);
+        defer frontier.deinit(gpa);
         var next: std.ArrayList(Pos) = .empty;
-        defer next.deinit(f.gpa);
-        var lv: std.ArrayList(NodeId) = .empty;
-        defer lv.deinit(f.gpa);
-        try frontier.append(f.gpa, .{ .n = v, .level = false, .stuck = false });
+        defer next.deinit(gpa);
+        var counts: Routes = .{};
+        defer counts.deinit(gpa);
+        try frontier.append(gpa, .{ .n = v, .routes = 1 });
         for (steps) |s| {
             next.clearRetainingCapacity();
+            if (s.kind == .level) {
+                // Every re-entry below the frontier, each node of the value
+                // below it once, its routes summed over all of them.
+                var roots: std.ArrayList(Pos) = .empty;
+                defer roots.deinit(gpa);
+                for (frontier.items) |x| if (!x.stuck) try roots.append(gpa, x);
+                try f.routesBelow(roots.items, .steps, &counts);
+                const p = if (roots.items.len == 0) null else f.env.shapes.place(roots.items[0].n);
+                for (counts.order.items) |i| {
+                    const n = counts.keys.items[i];
+                    if (p == null or f.env.shapes.place(n) != p.?) continue;
+                    if (counts.root.items[i]) continue;
+                    try next.append(gpa, .{ .n = n, .level = true, .routes = counts.get(i) });
+                }
+                std.mem.swap(std.ArrayList(Pos), &frontier, &next);
+                continue;
+            }
             for (frontier.items) |x| {
-                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                try f.env.charge.reserve(gpa, .inspection, 1);
                 if (x.stuck) {
-                    if (s.kind != .level) try next.append(f.gpa, x);
-                } else if (s.kind == .level) {
-                    lv.clearRetainingCapacity();
-                    try f.reentries(x.n, &lv);
-                    for (lv.items) |n| try next.append(f.gpa, .{ .n = n, .level = true, .stuck = false });
-                } else if (try f.env.shapes.proj(f.gpa, f.account(), f.env.places, f.env.cells, x.n, s)) |n| {
-                    try next.append(f.gpa, .{ .n = n, .level = x.level, .stuck = false });
-                } else if (!x.level) try next.append(f.gpa, .{ .n = x.n, .level = false, .stuck = true });
+                    try next.append(gpa, x);
+                } else if (try f.env.shapes.proj(gpa, f.account(), f.env.places, f.env.cells, x.n, s)) |n| {
+                    try next.append(gpa, .{ .n = n, .level = x.level, .routes = x.routes });
+                } else if (!x.level) try next.append(gpa, .{ .n = x.n, .stuck = true, .routes = x.routes });
             }
             std.mem.swap(std.ArrayList(Pos), &frontier, &next);
         }
-        // With the sides of a join there: each is a value at the written
-        // position, as `reachBeside` meets them.
+        // The routes of each node there, a join's sides with their join's.
+        try f.routesBelow(frontier.items, .sides, &counts);
+        for (counts.order.items) |i| if (counts.get(i) == 1) try w.ends.put(gpa, counts.keys.items[i], {});
+    }
+
+    const Pos = struct { n: NodeId, level: bool = false, stuck: bool = false, routes: u8 };
+
+    /// The nodes below some roots, each once, with its routes from them
+    /// (`routesBelow`): the roots' routes carried down every edge (one per
+    /// `(node, step)` or join side), summed where edges meet, two at most.
+    const Routes = struct {
+        index: stamped.Column(NodeId, u32) = .{},
+        keys: std.ArrayList(NodeId) = .empty,
+        order: std.ArrayList(u32) = .empty,
+        runs: std.ArrayList([2]u32) = .empty,
+        kids: std.ArrayList(u32) = .empty,
+        acc: std.ArrayList(u8) = .empty,
+        indeg: std.ArrayList(u32) = .empty,
+        done: std.ArrayList(bool) = .empty,
+        root: std.ArrayList(bool) = .empty,
+        fn deinit(r: *Routes, gpa: Allocator) void {
+            r.index.deinit(gpa);
+            r.keys.deinit(gpa);
+            r.order.deinit(gpa);
+            r.runs.deinit(gpa);
+            r.kids.deinit(gpa);
+            r.acc.deinit(gpa);
+            r.indeg.deinit(gpa);
+            r.done.deinit(gpa);
+            r.root.deinit(gpa);
+        }
+        fn clear(r: *Routes) void {
+            r.index.clear();
+            r.keys.clearRetainingCapacity();
+            r.order.clearRetainingCapacity();
+            r.runs.clearRetainingCapacity();
+            r.kids.clearRetainingCapacity();
+        }
+        fn intern(r: *Routes, gpa: Allocator, n: NodeId) Allocator.Error!struct { index: u32, found_existing: bool } {
+            const got = try r.index.getOrPut(gpa, n);
+            if (!got.found_existing) {
+                got.value_ptr.* = @intCast(r.keys.items.len);
+                try r.keys.append(gpa, n);
+            }
+            return .{ .index = got.value_ptr.*, .found_existing = got.found_existing };
+        }
+        /// A node on a knot of the value is never settled: two.
+        fn get(r: *const Routes, i: u32) u8 {
+            return if (r.done.items[i]) r.acc.items[i] else 2;
+        }
+    };
+
+    /// `out` the nodes below `roots`, by their place's steps (`.steps`, a
+    /// `⟲`'s re-entries) or by a join's sides and a view's answer
+    /// (`.sides`), with their routes: one walk of the value, then one pass in
+    /// topological order (Kahn's). Value-sized, each node and edge once.
+    fn routesBelow(f: *Frame, roots: []const Pos, by: enum { steps, sides }, out: *Routes) Error!void {
+        const shapes = f.env.shapes;
+        const places = f.env.places;
+        const gpa = f.gpa;
+        out.clear();
         var stack: std.ArrayList(NodeId) = .empty;
-        defer stack.deinit(f.gpa);
-        for (frontier.items) |x| try stack.append(f.gpa, x.n);
-        while (stack.pop()) |n| {
-            try f.env.charge.reserve(f.gpa, .inspection, 1);
-            if (w.ends.contains(n)) continue;
-            try w.ends.put(f.gpa, n, {});
-            const shapes = f.env.shapes;
-            const m = try shapes.force(f.gpa, f.account(), n);
-            if (m != n) try stack.append(f.gpa, m);
-            switch (shapes.kind(m)) {
-                .@"union", .choice, .positions => try stack.appendSlice(f.gpa, &.{ .from(shapes.get(m).a), .from(shapes.get(m).b) }),
-                else => {},
+        defer stack.deinit(gpa);
+        for (roots) |x| if (!(try out.intern(gpa, x.n)).found_existing) try stack.append(gpa, x.n);
+        while (stack.pop()) |y| {
+            const yi = out.index.get(y).?;
+            try out.order.append(gpa, yi);
+            const start: u32 = @intCast(out.kids.items.len);
+            switch (by) {
+                .steps => for (places.steps(shapes.place(y)).steps) |c| {
+                    try f.env.charge.reserve(gpa, .inspection, 1);
+                    if (c.kind == .level) continue;
+                    const n = (try shapes.proj(gpa, f.account(), places, f.env.cells, y, c)) orelse continue;
+                    const got = try out.intern(gpa, n);
+                    try out.kids.append(gpa, got.index);
+                    if (!got.found_existing) try stack.append(gpa, n);
+                },
+                .sides => {
+                    try f.env.charge.reserve(gpa, .inspection, 1);
+                    const m = try shapes.force(gpa, f.account(), y);
+                    var buf: [3]NodeId = undefined;
+                    var k: usize = 0;
+                    if (m != y) {
+                        buf[k] = m;
+                        k += 1;
+                    }
+                    switch (shapes.kind(m)) {
+                        .@"union", .choice, .positions => {
+                            buf[k] = .from(shapes.get(m).a);
+                            buf[k + 1] = .from(shapes.get(m).b);
+                            k += 2;
+                        },
+                        else => {},
+                    }
+                    for (buf[0..k]) |n| {
+                        const got = try out.intern(gpa, n);
+                        try out.kids.append(gpa, got.index);
+                        if (!got.found_existing) try stack.append(gpa, n);
+                    }
+                },
+            }
+            while (out.runs.items.len <= yi) try out.runs.append(gpa, .{ 0, 0 });
+            out.runs.items[yi] = .{ start, @as(u32, @intCast(out.kids.items.len)) - start };
+        }
+        const n_nodes = out.keys.items.len;
+        while (out.runs.items.len < n_nodes) try out.runs.append(gpa, .{ 0, 0 });
+        try out.acc.resize(gpa, n_nodes);
+        try out.indeg.resize(gpa, n_nodes);
+        try out.done.resize(gpa, n_nodes);
+        try out.root.resize(gpa, n_nodes);
+        @memset(out.acc.items, 0);
+        @memset(out.indeg.items, 0);
+        @memset(out.done.items, false);
+        @memset(out.root.items, false);
+        for (out.kids.items) |k| out.indeg.items[k] += 1;
+        for (roots) |x| {
+            const i = out.index.get(x.n).?;
+            // A root no edge reaches is no re-entry of another.
+            out.root.items[i] = out.indeg.items[i] == 0;
+            out.acc.items[i] = @min(2, out.acc.items[i] + x.routes);
+        }
+        var queue: std.ArrayList(u32) = .empty;
+        defer queue.deinit(gpa);
+        for (0..n_nodes) |i| if (out.indeg.items[i] == 0) try queue.append(gpa, @intCast(i));
+        while (queue.pop()) |i| {
+            try f.env.charge.reserve(gpa, .inspection, 1);
+            out.done.items[i] = true;
+            const r = out.runs.items[i];
+            for (out.kids.items[r[0]..][0..r[1]]) |k| {
+                out.acc.items[k] = @min(2, out.acc.items[k] + out.acc.items[i]);
+                out.indeg.items[k] -= 1;
+                if (out.indeg.items[k] == 0) try queue.append(gpa, k);
             }
         }
     }
@@ -1799,7 +1942,11 @@ pub const Frame = struct {
             i -= 1;
             p = (try places.extend(f.gpa, f.env.charge, p, steps.items[i])) orelse return false;
         }
-        return std.mem.indexOfScalar(PathId, w.written.paths.items, p) != null;
+        if (std.mem.indexOfScalar(PathId, w.written.paths.items, p) == null) return false;
+        // At a path of several positions the value's object there is the
+        // written one only if they hold distinct objects: owed upward.
+        if (places.isSummary(bottom)) w.written.owed = try cells.sets.insert(f.gpa, f.env.charge, w.written.owed, cu.int(), 0);
+        return true;
     }
     fn splitBeside(f: *Frame, want: *const Want, reach: SetId, refs: []const CellId, folded: bool, kept: *SetId, excl: *SetId, relied: *CondId, where: ?Where) Error!void {
         const cells = f.env.cells;
