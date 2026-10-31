@@ -1058,9 +1058,8 @@ const Grafter = struct {
     /// route is in two of them; (b) the actual is one position at their
     /// common prefix, cut before the first `⟲` (`onePositionAlong`), so its
     /// positions below are its cells', route for route. Each shared `X`
-    /// then stays on the first side that holds it and owes `exclOf(X)`, and
-    /// two or more shared images owe `apart` among themselves, so no pair
-    /// across sides is lost. Returns what the sides owe beyond their
+    /// then stays on the first side that holds it and owes what `shareImages`
+    /// says, so no pair across sides is lost. Returns what the sides owe beyond their
     /// multiset, `yes` with the sides unchanged when the rule does not
     /// apply. Linear in the sides' cells.
     fn positionsThroughLevels(g: *Grafter, t: *Cond.Table, callee: []const CellId, sides: []SetId) Error!CondId {
@@ -1102,41 +1101,10 @@ const Grafter = struct {
             common.shrinkRetainingCapacity(k);
         }
         if (!mutated("rule3-one-position") and !try g.onePositionAlong(i, common.items)) return Cond.yes;
-        // The images an earlier side holds exactly, met again: shared.
-        var seen: SetId = .none;
-        var shared: SetId = .none;
-        for (sides) |*side| {
-            var rest: SetId = .none;
-            var dropped = false;
-            var it = cells.sets.iterate(side.*);
-            while (it.next()) |e| {
-                try g.env.charge.reserve(gpa_, .inspection, 1);
-                if (e.value == 0 and cells.sets.get(seen, e.key) == @as(?u1, 0) and g.namesPositions(.from(e.key))) {
-                    shared = try cells.sets.insert(gpa_, g.env.charge, shared, e.key, 0);
-                    dropped = true;
-                    continue;
-                }
-                rest = try cells.sets.insert(gpa_, g.env.charge, rest, e.key, e.value);
-            }
-            var st = cells.sets.iterate(side.*);
-            while (st.next()) |e| if (e.value == 0) {
-                seen = try cells.sets.insert(gpa_, g.env.charge, seen, e.key, 0);
-            };
-            if (dropped) side.* = rest;
-        }
-        if (shared == .none) return Cond.yes;
-        var extra: CondId = Cond.yes;
-        var items: std.ArrayList(Cond.Item) = .empty;
-        defer items.deinit(gpa_);
-        var it = cells.sets.iterate(shared);
-        while (it.next()) |e| {
-            const c: CellId = .from(e.key);
-            extra = try t.@"and"(gpa_, g.env.charge, extra, try t.exclOf(gpa_, g.env.charge, cells, c));
-            try items.append(gpa_, .{ .cell = c, .approx = false });
-        }
-        if (items.items.len >= 2) extra = try t.@"and"(gpa_, g.env.charge, extra, try t.apart(gpa_, g.env.charge, cells, places, items.items, null));
-        if (std.debug.runtime_safety) try g.assertOnePosition(i, callee, shared);
-        return extra;
+        const got = try shareImages(t, gpa_, g.env.charge, cells, places, sides);
+        if (got.shared == .none) return Cond.yes;
+        if (std.debug.runtime_safety) try g.assertOnePosition(i, callee, got.shared);
+        return got.extra;
     }
 
     /// Rule 3's check by a reader that shares none of its walk (Lemma R3):
@@ -1230,18 +1198,6 @@ const Grafter = struct {
             }
         }
         return true;
-    }
-
-    /// Rule 3's (c): a shared image is symbolic and at a summary path, so it
-    /// names positions. Given (b) every shared image is a projection of one
-    /// exact leaf, so this never fails: a `runtime_safety` assert. A release
-    /// build keeps the image a repeat if it ever did.
-    fn namesPositions(g: *Grafter, c: CellId) bool {
-        const cells = g.env.cells;
-        const o = cells.origin(c);
-        const ok = o.isSymbolic() and o != .top and g.env.places.isSummary(.from(cells.get(c).b));
-        if (std.debug.runtime_safety and !ok) std.debug.panic("ownership v2: §2.9 rule 3 shares an image that names no positions", .{});
-        return ok;
     }
 
     /// A field, a tuple index or a constructor argument: a step every route
@@ -1356,6 +1312,77 @@ const Grafter = struct {
         }
     }
 };
+
+/// §2.9 rule 3's reading of k sides once (a) and (b) hold: an image that an
+/// earlier side holds exactly, met again, is shared. It stays on the first
+/// side that holds it and leaves every later one. What the group owes beyond
+/// the multiset of what is left: `exclOf(X)` for each shared `X`; `apart`
+/// among the shared images when there are two or more; and `apart` between
+/// the shared images a side keeps and the rest of that side, so that `X` on
+/// a later side against `Z` on the first is still required. One pass over the
+/// sides' cells, and one merge per side that keeps a shared image.
+fn shareImages(t: *Cond.Table, gpa: Allocator, charge: Ids.Charge, cells: *Cell.Table, places: *Cell.Places, sides: []SetId) Error!struct { extra: CondId, shared: SetId } {
+    var first: Ids.FixedDict(1) = .{};
+    defer first.deinit(gpa);
+    var shared: SetId = .none;
+    for (sides, 0..) |*side, j| {
+        var rest: SetId = .none;
+        var dropped = false;
+        var it = cells.sets.iterate(side.*);
+        while (it.next()) |e| {
+            try charge.reserve(gpa, .inspection, 1);
+            if (e.value == 0) if (first.get(.{e.key})) |f| if (f != j and namesPositions(cells, places, .from(e.key))) {
+                shared = try cells.sets.insert(gpa, charge, shared, e.key, 0);
+                dropped = true;
+                continue;
+            };
+            rest = try cells.sets.insert(gpa, charge, rest, e.key, e.value);
+        }
+        var st = cells.sets.iterate(side.*);
+        while (st.next()) |e| if (e.value == 0) {
+            const got = try first.getOrPut(gpa, .{e.key});
+            if (!got.found_existing) got.value_ptr.* = @intCast(j);
+        };
+        if (dropped) side.* = rest;
+    }
+    if (shared == .none) return .{ .extra = Cond.yes, .shared = .none };
+    var extra: CondId = Cond.yes;
+    var items: std.ArrayList(Cond.Item) = .empty;
+    defer items.deinit(gpa);
+    var it = cells.sets.iterate(shared);
+    while (it.next()) |e| {
+        const c: CellId = .from(e.key);
+        extra = try t.@"and"(gpa, charge, extra, try t.exclOf(gpa, charge, cells, c));
+        try items.append(gpa, .{ .cell = c, .approx = false });
+    }
+    if (items.items.len >= 2) extra = try t.@"and"(gpa, charge, extra, try t.apart(gpa, charge, cells, places, items.items, null));
+    // Each side's kept shared images against the rest of that side.
+    for (sides, 0..) |side, j| {
+        var kept: SetId = .none;
+        var rest: SetId = .none;
+        var st = cells.sets.iterate(side);
+        while (st.next()) |e| {
+            try charge.reserve(gpa, .inspection, 1);
+            if (cells.sets.member(shared, e.key) and first.get(.{e.key}).? == j) {
+                kept = try cells.sets.insert(gpa, charge, kept, e.key, 0);
+            } else rest = try cells.sets.insert(gpa, charge, rest, e.key, e.value);
+        }
+        if (kept == .none or rest == .none) continue;
+        extra = try t.@"and"(gpa, charge, extra, try t.aggCond(gpa, charge, cells, places, try t.aggMergeSets(gpa, charge, cells, places, kept, rest)));
+    }
+    return .{ .extra = extra, .shared = shared };
+}
+
+/// Rule 3's (c): a shared image is symbolic and at a summary path, so it
+/// names positions. Given (b) every shared image is a projection of one
+/// exact leaf, so this never fails: a `runtime_safety` assert. A release
+/// build keeps the image a repeat if it ever did.
+fn namesPositions(cells: *const Cell.Table, places: *const Cell.Places, c: CellId) bool {
+    const o = cells.origin(c);
+    const ok = o.isSymbolic() and o != .top and places.isSummary(.from(cells.get(c).b));
+    if (std.debug.runtime_safety and !ok) std.debug.panic("ownership v2: §2.9 rule 3 shares an image that names no positions", .{});
+    return ok;
+}
 
 /// A cell set's one exact parameter cell, null when it is anything else:
 /// the template of a re-root view (§2.11 *κ across a call*).
@@ -3849,4 +3876,46 @@ const v2_mutation = @import("ownership_options").v2_mutation;
 /// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
 fn mutated(comptime which: []const u8) bool {
     return std.mem.eql(u8, v2_mutation, which);
+}
+
+test "§2.9 rule 3: a shared image owes apart from the rest of the side it stays on" {
+    // Sides {X, Z} and {X}: X is shared, stays on the first side and leaves
+    // the second, so the multiset no longer pairs X (second side) with Z
+    // (first side). `shareImages` must owe that pair itself; the symmetric
+    // sides {X} and {X} owe only `excl X`.
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const gpa = testing.allocator;
+    const charge = x.env().charge;
+    const elems = (try x.places.extend(gpa, charge, try x.places.rootPath(gpa, x.list), Step.elem)).?;
+    const cx = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, elems, 0);
+    const cz = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 1, elems, 0);
+    const sx = try x.cells.sets.insert(gpa, charge, .none, cx.int(), 0);
+    const sxz = try x.cells.sets.insert(gpa, charge, sx, cz.int(), 0);
+    var asym = [_]SetId{ sxz, sx };
+    const got = try shareImages(&x.conds, gpa, charge, &x.cells, &x.places, &asym);
+    try testing.expect(x.cells.sets.member(got.shared, cx.int()) and !x.cells.sets.member(got.shared, cz.int()));
+    try testing.expectEqual(SetId.none, asym[1]);
+    try testing.expect(try owesApart(&x.conds, charge, &x.cells, got.extra, cx, cz));
+
+    var sym = [_]SetId{ sx, sx };
+    const plain = try shareImages(&x.conds, gpa, charge, &x.cells, &x.places, &sym);
+    try testing.expect(x.cells.sets.member(plain.shared, cx.int()));
+    try testing.expect(!try owesApart(&x.conds, charge, &x.cells, plain.extra, cx, cz));
+}
+
+/// Whether `k` holds an `apart` or a `sep` over both `a` and `b`.
+fn owesApart(t: *Cond.Table, charge: Ids.Charge, cells: *const Cell.Table, k: CondId, a: CellId, b: CellId) !bool {
+    if (k == Cond.yes or k == Cond.lost or k == Cond.shared) return false;
+    var it = t.atoms.iterate(try t.flat(testing.allocator, charge, k));
+    while (it.next()) |e| {
+        const d = t.get(.from(e.key));
+        switch (d.atom) {
+            .apart => if (cells.sets.member(.from(d.a), a.int()) and cells.sets.member(.from(d.a), b.int())) return true,
+            .sep => if ((d.a == a.int() and d.b == b.int()) or (d.a == b.int() and d.b == a.int())) return true,
+            else => {},
+        }
+    }
+    return false;
 }
