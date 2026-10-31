@@ -1,0 +1,16 @@
+-- ownership (project): see Main.beni. The callees.
+pub type alias P =
+    x : List Int
+    y : List Int
+
+
+pub keeper : List Int, List (List Int) → List Int × List (List Int)
+keeper x c = ( List.push x 1, c )
+
+
+pub wrapper : List Int, List (List Int) → List Int × List (List Int)
+wrapper x c = keeper x c
+
+
+pub twoPaths : P → List Int × List Int
+twoPaths p = ( List.push p.x 1, p.y )

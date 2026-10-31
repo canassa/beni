@@ -1,0 +1,93 @@
+-- ownership: a view and its base passed as two arguments of one writer
+-- (ownership-v2.md Appendix B, V×A; R-4.3.5, R-5.1.5). `writeFirst xs
+-- rest` writes `xs` and reads `rest`, a view of it: refused `disjoint` at
+-- the caller. `rest` read before the call only accepts (`readBefore`).
+-- Below a recursive root: a view of a grandchild's list beside that list
+-- (`belowRoot`), refused; a view of the root's own kids beside the root,
+-- passed to a kids writer (`kidsAndView`), refused, and to a writer of the
+-- root's label, which ignores the kids the view covers (`labelAndView`),
+-- accepted by v1; v2 refuses it, a known entry (#1493).
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+writeFirst : List Int, List Int → Int
+writeFirst a b = List.length (List.push a 1) + List.length b
+
+
+writeOnly : List Int → Int
+writeOnly a = List.length (List.push a 1)
+
+
+pub viewAndBase : List Int → Int
+viewAndBase xs =
+    case xs of
+        [ _, …rest ] →
+            writeFirst xs rest
+
+        [] →
+            0
+
+
+pub readBefore : List Int → Int
+readBefore xs =
+    case xs of
+        [ _, …rest ] →
+            n = List.length rest
+            n + writeOnly xs
+
+        [] →
+            0
+
+
+pub belowRoot : Rose → Int
+belowRoot t =
+    case t of
+        Rose _ [ Rose l _, …_ ] →
+            case l of
+                [ _, …lrest ] →
+                    writeFirst l lrest
+
+                [] →
+                    0
+
+        _ →
+            0
+
+
+writeKids : Rose, List Rose → Int
+writeKids t others =
+    case t of
+        Rose _ ks →
+            List.length (List.push ks (Rose [] [])) + List.length others
+
+
+writeLabel : Rose, List Rose → Int
+writeLabel t others =
+    case t of
+        Rose l _ →
+            List.length (List.push l 1) + List.length others
+
+
+pub kidsAndView : Rose → Int
+kidsAndView t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    writeKids t rest
+
+                [] →
+                    0
+
+
+pub labelAndView : Rose → Int
+labelAndView t =
+    case t of
+        Rose _ ks →
+            case ks of
+                [ _, …rest ] →
+                    writeLabel t rest
+
+                [] →
+                    0

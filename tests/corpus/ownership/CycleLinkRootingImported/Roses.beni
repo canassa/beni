@@ -1,0 +1,102 @@
+-- ownership (project): see Main.beni. The callees.
+pub type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub wrap : List Rose → Rose
+wrap xs = Rose [] xs
+
+
+pub wrap2 : List Rose → Rose
+wrap2 xs = Rose [] [ Rose [] xs ]
+
+
+pub incLabels : List Rose → List Rose
+incLabels ks =
+    case ks of
+        [ Rose l k, …rest ] →
+            [ Rose (List.push l 1) k, …incLabels rest ]
+
+        [] →
+            []
+
+
+pub incKids : Rose → Rose
+incKids t =
+    case t of
+        Rose l ks →
+            Rose l (incLabels ks)
+
+
+pub kidsOf : Rose → List Rose
+kidsOf t =
+    case t of
+        Rose _ ks →
+            ks
+
+
+pub innerKids : Rose → List Rose
+innerKids t =
+    case t of
+        Rose _ [ Rose _ ks ] →
+            ks
+
+        _ →
+            []
+
+
+pub type M
+    = M (List Int) (List (Maybe M))
+
+
+pub wrapM : List (Maybe M) → M
+wrapM xs = M [] xs
+
+
+pub incLabelsM : List (Maybe M) → List (Maybe M)
+incLabelsM ks =
+    case ks of
+        [ Just (M l k), …rest ] →
+            [ Just (M (List.push l 1) k), …incLabelsM rest ]
+
+        [ Nothing, …rest ] →
+            [ Nothing, …incLabelsM rest ]
+
+        [] →
+            []
+
+
+pub incKidsM : M → M
+incKidsM t =
+    case t of
+        M l ks →
+            M l (incLabelsM ks)
+
+
+pub type A
+    = A (List Int) (List B)
+
+
+pub type B
+    = B (List Int) (List A)
+
+
+pub wrapA : List B → A
+wrapA xs = A [] xs
+
+
+pub incLabelsB : List B → List B
+incLabelsB ks =
+    case ks of
+        [ B l k, …rest ] →
+            [ B (List.push l 1) k, …incLabelsB rest ]
+
+        [] →
+            []
+
+
+pub incKidsA : A → A
+incKidsA a =
+    case a of
+        A l ks →
+            A l (incLabelsB ks)

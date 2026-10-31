@@ -1,0 +1,23 @@
+module LevelLimitCallers
+  21:23 List.push xs: rejected level: ys may hold it at another level, and is read at 21:39 (approx)
+  34:15 List.push a: rejected level: b may hold it at another level, and is read at 34:13 (approx)
+  41:17 call LevelLimitCallers.inline xs: rejected disjoint: another operand of the same operation reaches it (LevelLimitCallers.inline writes π1)
+  45:24 call LevelLimitCallers.inline xs: accepted param (LevelLimitCallers.inline writes π1)
+  50:16 call LevelLimitCallers.inline xs: rejected later-use: xs is read again at 51:25 (LevelLimitCallers.inline writes π1)
+  56:16 call LevelLimitCallers.inline xs: accepted param (LevelLimitCallers.inline writes π1)
+  63:16 call LevelLimitCallers.two <Node …>#Node.0⟨Tree⟩#Node.1: rejected exclusive: the callee needs the list's elements not to share, and they may (LevelLimitCallers.two writes π1#Node.0⟨Tree⟩#Node.1)
+  69:16 call LevelLimitCallers.two <Node …>#Node.0⟨Tree⟩#Node.1: accepted fresh (LevelLimitCallers.two writes π1#Node.0⟨Tree⟩#Node.1)
+  summary inline: π1 RAW[storage], π1[*] A, π2 R; res .0 condition(fresh1) fresh1 π1{sep π1 π2}, .0[*] ~condition(fresh2) ~π1[*]
+  summary two: π1 R, π1#Node.0⟨Tree⟩#Node.1 RAW[storage], π1#Node.0⟨Tree⟩#Node.1[*] A; res .0 condition(fresh2) fresh2 π1#Node.0⟨Tree⟩#Node.1, .0[*] ~condition(fresh3) ~π1#Node.0⟨Tree⟩#Node.1[*], .1 fresh5 ~condition(fresh4) π1#Node.0⟨Tree⟩#Node.1, condition(fresh1){lost}
+  summary inlineSame: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) ~fresh1 ~π1{shared}, .0[*] ~condition(fresh3) ~π1[*]
+  summary inlineDistinct: π1 RAW[storage], π1[*] RA, π2 R; res .0 condition(fresh2) ~fresh1 ~π1{sep π1 π2}, .0[*] ~condition(fresh3) ~π1[*]
+  summary inlineReadAgain: π1 RW[storage], π1[*] R
+  summary inlineOnce: π1 RW[storage], π1[*] R
+  summary twoShared: unused
+  summary twoDistinct: unused
+  demands 8: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 8: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 1
+cause later-use 1
+cause exclusive 1
+cause level 2

@@ -1,0 +1,141 @@
+-- ownership: a split's element and its container supplied to a call
+-- (ownership-v2.md Appendix B, R×A, the S3b half; R-4.5.3, R-5.2.1).
+-- `keeper` writes its first argument and keeps its second. The whole
+-- container beside the element it holds is refused (`wholeAndElem`), and
+-- so is the rest's view, which shares the container's storage
+-- (`viewAndElem`). The copied remainder beside the element is accepted,
+-- owing `excl` of the elements (`restAndElem`), which callers discharge:
+-- distinct lists accept, one list twice is refused. The same through a
+-- wrapper, so a call's substitution keeps the split's lineage
+-- (`viaWrapper`, `wholeViaWrapper`). v1 refuses `restAndElem` and
+-- `viaWrapper` (a known entry: v2 keeps the copy apart). Two refinements
+-- of distinct positions of one split in a built record are evidence of
+-- distinct positions (#1272): a head and its rest's head (`headAndNext`)
+-- and two heads (`twoHeads`), each accepted with `excl`, which callers
+-- discharge; one head twice (`oneHeadTwice`) is refused.
+type alias P =
+    x : List Int
+    y : List Int
+
+
+keeper : List Int, List (List Int) → List Int × List (List Int)
+keeper x c = ( List.push x 1, c )
+
+
+wrapper : List Int, List (List Int) → List Int × List (List Int)
+wrapper x c = keeper x c
+
+
+pub wholeAndElem : List (List Int) → List Int × List (List Int)
+wholeAndElem xs =
+    case xs of
+        [ x, …_ ] →
+            keeper x xs
+
+        [] →
+            ( [], xs )
+
+
+pub restAndElem : List (List Int) → List Int × List (List Int)
+restAndElem xs =
+    case xs of
+        [ x, …rest ] →
+            keeper x (List.copy rest)
+
+        [] →
+            ( [], xs )
+
+
+pub viewAndElem : List (List Int) → List Int × List (List Int)
+viewAndElem xs =
+    case xs of
+        [ x, …rest ] →
+            keeper x rest
+
+        [] →
+            ( [], xs )
+
+
+pub viaWrapper : List (List Int) → List Int × List (List Int)
+viaWrapper xs =
+    case xs of
+        [ x, …rest ] →
+            wrapper x (List.copy rest)
+
+        [] →
+            ( [], xs )
+
+
+pub wholeViaWrapper : List (List Int) → List Int × List (List Int)
+wholeViaWrapper xs =
+    case xs of
+        [ x, …_ ] →
+            wrapper x xs
+
+        [] →
+            ( [], xs )
+
+
+pub restDistinct : ⊤ → Int
+restDistinct ⊤ =
+    ( l, _ ) = restAndElem [ [ 1 ], [ 2 ] ]
+    List.length l
+
+
+pub restShared : ⊤ → Int
+restShared ⊤ =
+    r = [ 1 ]
+    ( l, _ ) = restAndElem [ r, r ]
+    List.length l
+
+
+twoPaths : P → List Int × List Int
+twoPaths p = ( List.push p.x 1, p.y )
+
+
+pub headAndNext : List (List Int) → List Int × List Int
+headAndNext xs =
+    case xs of
+        [ a, …rest ] →
+            case rest of
+                [ b, …_ ] →
+                    twoPaths { x = a, y = b }
+
+                [] →
+                    ( [], [] )
+
+        [] →
+            ( [], [] )
+
+
+pub twoHeads : List (List Int) → List Int × List Int
+twoHeads xs =
+    case xs of
+        [ a, b, …_ ] →
+            twoPaths { x = a, y = b }
+
+        _ →
+            ( [], [] )
+
+
+pub oneHeadTwice : List (List Int) → List Int × List Int
+oneHeadTwice xs =
+    case xs of
+        [ a, …_ ] →
+            twoPaths { x = a, y = a }
+
+        [] →
+            ( [], [] )
+
+
+pub nextDistinct : ⊤ → Int
+nextDistinct ⊤ =
+    ( l, _ ) = headAndNext [ [ 1 ], [ 2 ] ]
+    List.length l
+
+
+pub nextShared : ⊤ → Int
+nextShared ⊤ =
+    r = [ 1 ]
+    ( l, _ ) = headAndNext [ r, r ]
+    List.length l

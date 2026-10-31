@@ -1,0 +1,25 @@
+-- ownership (project): see Main.beni. The callees.
+pub type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub writeFirst : List Int, List Int → Int
+writeFirst a b = List.length (List.push a 1) + List.length b
+
+
+pub writeOnly : List Int → Int
+writeOnly a = List.length (List.push a 1)
+
+
+pub writeKids : Rose, List Rose → Int
+writeKids t others =
+    case t of
+        Rose _ ks →
+            List.length (List.push ks (Rose [] [])) + List.length others
+
+
+pub writeLabel : Rose, List Rose → Int
+writeLabel t others =
+    case t of
+        Rose l _ →
+            List.length (List.push l 1) + List.length others
