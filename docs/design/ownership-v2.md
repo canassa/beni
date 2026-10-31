@@ -987,19 +987,65 @@ Operations, memoised on their node arguments:
       makes two equal children two ids, or one. The quadtree's `quad` prints its four children in full
       on the stabilised form, with the same conditions at every path. No corpus summary changed.
 
-    **The checks.** Under `runtime_safety`, each move asserts its precondition (`Stable.moveHolds`):
-    each member's record, mapped, equals its target's record, the side words are equal, no target has a
-    side fact, and σ is injective. That is O(members) per move. Under `-Downership-full-cross-check`,
-    `widenValue` reads the raw image before the move and the moved image after it, with no memo, on
-    an account of its own. It renames the raw κ by σ and requires both to read alike on the one moved
-    value (`kappaLeq` both ways). Like against like: the first text compared two copies of one value,
-    and `kappaLeq` between copies is not complete, because a snapshot keys entries at nodes outside the
-    value's records: a member's own positions, and projection images made on demand. The read-off's
-    side is *open* (#1513's review): it publishes twice, pairs the two copies node by node, and
-    compares, but the control, two raw publishes, already disagrees. It is not yet a meaningful check. *Shown to fire:* a build that sends each member to the next class's target panics on the
-    precondition at DerivedDeepPaths' `rose` and the quadtree; a build without step 4a panics on the
-    cross-check at `mPlain`. Unit tests show `moveHolds` refusing a member sent to a node of another
-    record, two members sent to one target, and a graph whose side word differs.
+    **The check: σ is a bisimulation** (as built after #1513's review; the manager's decision). In
+    every `runtime_safety` build, each move of `widen`'s output (`Cond.moveIsBisimulation`) checks that
+    σ is a bisimulation of the raw image onto the moved one. For every member n and σ(n), all of these
+    must agree:
+    - the kind, the place and the form's cells;
+    - the stored cells, where both are set (a lazy record fills them in later from its sides);
+    - `fold_cond`, which is the side word;
+    - every side fact that the precondition reads (`Stable.sideFact`): on n, any; on σ(n), any but bases
+      and projection origins;
+    - the references, paired under σ;
+    - the κ entries keyed at nodes inside the moved value, renamed by σ. Both images are read alone,
+      with no memo and on an account of their own, and compared position by position: the same folds,
+      the same link steps, and at each position, for each key the value reaches, the same condition. An
+      entry keyed outside the value names one node in both reads, and is not compared.
+
+    `map`'s knot moves assert the shape half (`moveHolds`, in `Stable.canon`). Their κ is carried by
+    `memo_map`, which the move updates, so it is σ applied to the raw images' κ by construction.
+
+    **The lemma.** If σ is such a bisimulation, every κ reader gives the same answer on the moved value as
+    on the raw one, with its nodes renamed by σ. Each reader consults only what the check compares:
+    - `Cond.machine`, `kappaOf`, `kappaRead` and the 5f trie: entries by (position, node), and the
+      node's kind, cells and references;
+    - `dagFacts`, `Calls.preimage`, `apartImage` and `KappaRead.sep`: the cells, and cells' images;
+    - `arrivalAggs`: μ, computed on the raw source before the move;
+    - `foldCondOf`: `fold_cond` along union, choice and positions sides;
+    - `propagate`'s fold and link (`routesMax`, `frontierAt`): node identity along routes. σ is
+      injective, its targets avoid the widening's source (step 4a), and a key names its external
+      references by id, so no route meets a moved member and its target both;
+    - BlockRead and the block codec: structure;
+    - `leq` and `widen`: the records.
+
+    Each reader is a function of what the check compares, so a regression in any part that the lemma
+    assumes trips the check.
+
+    *Why the first check was replaced.* The first text's check published the read-off twice, once with
+    nothing moved, and required the two κ to be `kappaLeq`-equal. Its no-op control fails. Two
+    publishes with nothing moved disagree on `ins`, `rose`, `descend`, the quadtree and the
+    accumulator, because a snapshot keys entries at nodes outside the value: a member's own linked
+    positions, and projection images made on demand in each pass. So it compared entries outside the
+    value, and pairing the two copies node by node did not fix that. That `kappaLeq` is not a
+    representation-independent equality is #1521's question for the fixpoint.
+
+    *Shown to fire.* Both mutations send each member of a moved widen knot to the next member's
+    target:
+    - With `canon`'s own assertion off, the check panics on `RefinementFoldMultiplicity`,
+      `LevelsApart` and `LinkedFoldCoverage`. These are 3 of the 16 corpus roots that move a widen
+      knot.
+    - With the shape half also off, the κ half alone panics on the same three.
+
+    The full-cross-check build passes `ins` (a black-box test), `rose`, `descend`, the quadtree, the
+    accumulator and `mPlain`. Unit tests show `moveHolds` refusing three moves:
+    - a member sent to a node of another record;
+    - two members sent to one target;
+    - a graph whose side word differs.
+
+    *`sideFact` and `fold_cond`, kept.* No program found so far makes either clause matter under
+    root-only moves. The review saw no change on the corpus or the sweep with `sideFact` always false,
+    or with `fold_cond` out of the key and the precondition. Both clauses are sound and cheap, so they
+    stay, and both are in the bisimulation check, which a regression trips.
 
   - **Arm sets, withdrawn.** A `choice` or `union` as the canonical tree over its sorted arms was
     prototyped in the constructors: `choiceMake` and `unionMake`, and also in `map`'s images of
@@ -6418,7 +6464,7 @@ L0  Ids
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
-| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 260 (4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and its cross-check; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
+| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 290 (4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Joins.zig` | 5 | the join index (§2.8 *As built*, #1510): a deep node's joins at its path flattened once, with their route-flag combinations, a tree of their reach unions and the folded members' cells by hold | `Index.get`, `Index.hits`, `folded`, `sides` | Ids, Cell, Shape | ≤ 230 |

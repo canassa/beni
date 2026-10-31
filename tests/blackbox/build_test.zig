@@ -10130,6 +10130,51 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: π1 R, π1#Node.0 R, π1#Node.0#Node.1 RA, π1#Node.0⟲ RA, π1#Node.1 RA, π2 RA; res #Node.0 π2, #Node.0#Node.0 π1#Node.0⟲, #Node.0#Node.1 π1#Node.0#Node.1, #Node.0#Node.2 π2, #Node.1 π1#Node.1\n") != null);
 }
 
+test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.3 *The two pieces that (b) adds, prototyped (4e)*, *The check*:
+    // #1513's review found that the read-equality cross-check fired here
+    // with nothing moved, because κ snapshots key entries outside the
+    // value. The check that replaces it, σ a bisimulation of the raw image
+    // onto the moved one, runs in every safety build, and this program
+    // passes it, under `-Downership-full-cross-check` too.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\type T
+        \\    = N Int (List Int) T T
+        \\    | L
+        \\
+        \\
+        \\pub ins : Int, T → T
+        \\ins k t =
+        \\    case t of
+        \\        N k2 v lt rt →
+        \\            if k < k2 then
+        \\                N k2 v (ins k lt) rt
+        \\            else
+        \\                N k2 v lt (ins k rt)
+        \\
+        \\        L →
+        \\            N k [ k ] L L
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Exit 0: no check panicked. At the default allowance `ins` is a
+    // limit (#1489), after the walks that move its knots.
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+}
+
 test "the checker v2 refuses PushedTwiceLevels' writes through a list that holds one element twice" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

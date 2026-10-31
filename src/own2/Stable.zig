@@ -299,9 +299,12 @@ pub fn canon(t: anytype, gpa: Allocator, account: *Account, root: NodeId, lo: u3
     return null;
 }
 
-/// σ's precondition: each member's record, its references mapped by σ
-/// (an external one as it is), is its target's; the side words equal; no
-/// target has a side fact; σ injective on `members`.
+/// σ's precondition, and the shape half of the check that σ is a
+/// bisimulation of the raw graph onto the moved one: each member and its
+/// target have one kind, place and form cells, equal stored cells where
+/// both are set, one side word (`fold_cond`), no side fact on either, and
+/// references that pair under σ (an external one as it is); σ is
+/// injective on `members`.
 pub fn moveHolds(t: anytype, gpa: Allocator, members: []const u32, redir: *const Redirect, extra: ?Extra) Allocator.Error!bool {
     var seen: Redirect = .{};
     defer seen.deinit(gpa);
@@ -317,7 +320,13 @@ pub fn moveHolds(t: anytype, gpa: Allocator, members: []const u32, redir: *const
         const to = redir.get(x) orelse return false;
         if (seen.contains(to)) return false;
         try seen.put(gpa, to, 1);
-        if (sideFact(t, to, false) or word(extra, x) != word(extra, to)) return false;
+        if (sideFact(t, x, true) or sideFact(t, to, false) or word(extra, x) != word(extra, to)) return false;
+        // The stored cells, as well as the form's: a lazy record fills them
+        // in later from its sides, which the form already compares.
+        const lazy = @TypeOf(t.*).lazy_cells;
+        const cx = t.get(.from(x)).cells;
+        const ct = t.get(.from(to)).cells;
+        if (cx != lazy and ct != lazy and cx != ct) return false;
         a.clearRetainingCapacity();
         b.clearRetainingCapacity();
         try head(t, gpa, x, extra, &a);
@@ -452,41 +461,19 @@ pub fn widened(t: anytype, gpa: Allocator, account: *Account, root: NodeId, lo: 
     return redir;
 }
 
-/// Adds to `pair` the renaming of the graph from `a` onto the graph from
-/// `b`, walked in lockstep: each pair of nodes met has one record but for
-/// its references, which pair in turn. False where the two are not one
-/// structure (a node paired with two nodes, or records that differ). The
-/// cross-check's way to read two copies of one value as one (§2.3, 4e).
-pub fn pairOnto(t: anytype, gpa: Allocator, pair: *Redirect, a: NodeId, b: NodeId) Allocator.Error!bool {
-    var stack: std.ArrayList([2]u32) = .empty;
+/// Every node the records from `root` reach, into `out` (the check's
+/// "inside the value").
+pub fn reachable(t: anytype, gpa: Allocator, root: NodeId, out: *Redirect) Allocator.Error!void {
+    var stack: std.ArrayList(u32) = .empty;
     defer stack.deinit(gpa);
-    var ra: std.ArrayList(u32) = .empty;
-    defer ra.deinit(gpa);
-    var rb: std.ArrayList(u32) = .empty;
-    defer rb.deinit(gpa);
-    var ha: std.ArrayList(u32) = .empty;
-    defer ha.deinit(gpa);
-    var hb: std.ArrayList(u32) = .empty;
-    defer hb.deinit(gpa);
-    try stack.append(gpa, .{ a.int(), b.int() });
+    var rf: std.ArrayList(u32) = .empty;
+    defer rf.deinit(gpa);
+    try stack.append(gpa, root.int());
     while (stack.pop()) |x| {
-        if (pair.get(x[0])) |seen| {
-            if (seen != x[1]) return false;
-            continue;
-        }
-        try pair.put(gpa, x[0], x[1]);
-        ha.clearRetainingCapacity();
-        hb.clearRetainingCapacity();
-        try head(t, gpa, x[0], null, &ha);
-        try head(t, gpa, x[1], null, &hb);
-        try refs(t, gpa, x[0], &ra);
-        try refs(t, gpa, x[1], &rb);
-        if (!std.mem.eql(u32, ha.items, hb.items) or ra.items.len != rb.items.len) return false;
+        if (out.contains(x)) continue;
+        try out.put(gpa, x, 1);
+        try refs(t, gpa, x, &rf);
         var j: usize = 0;
-        while (j < ra.items.len) : (j += 2) {
-            if (ra.items[j] != rb.items[j]) return false;
-            try stack.append(gpa, .{ ra.items[j + 1], rb.items[j + 1] });
-        }
+        while (j < rf.items.len) : (j += 2) try stack.append(gpa, rf.items[j + 1]);
     }
-    return true;
 }

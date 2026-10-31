@@ -633,11 +633,6 @@ pub const Table = struct {
         }
         // The image interned by its canonical form, `fold_cond` in the key
         // (§2.3, 4e): a target has the moved node's obligation already.
-        // Under the cross-check, the raw image's κ, read before the move.
-        const check = std.debug.runtime_safety and full_cross_check and !v.shapes.stable.off;
-        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
-        defer scratch.deinit(gpa);
-        const raw_k = if (check) try t.walkAlone(gpa, &scratch, v, raw, x, kx) else .none;
         var avoid: Avoid = .{ .t = t, .fold = &fold };
         var redir = try Stable.widened(v.shapes, gpa, charge.account, raw, lo, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source });
         defer redir.deinit(gpa);
@@ -645,8 +640,8 @@ pub const Table = struct {
         // One member: `propagate` keeps its entries at each position it walks
         // outside a fold (§2.9 *Keyed where a reader looks*).
         const kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null);
-        if (check and redir.count() > 0 and !try t.stableAgrees(gpa, &scratch, v, raw_k, &redir, try t.walkAlone(gpa, &scratch, v, w, x, kx), w))
-            std.debug.panic("ownership v2: a stable image reads other than its raw widening (§2.3, 4e)", .{});
+        if (std.debug.runtime_safety and redir.count() > 0 and !try t.moveIsBisimulation(gpa, v, raw, w, x, kx, &redir, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source }))
+            std.debug.panic("ownership v2: a stable image's move is not a bisimulation of its raw image (§2.3, 4e)", .{});
         return .{ .node = w, .kappas = kappas };
     }
 
@@ -664,34 +659,65 @@ pub const Table = struct {
         }
     };
 
-    /// The image `w` of `x` read as `widenValue` reads it, with no memo,
-    /// on `scratch`: the cross-check's side (§2.3, 4e).
-    fn walkAlone(t: *Table, gpa: Allocator, scratch: *Ids.Account, v: View, w: NodeId, x: NodeId, kx: Kappas) Error!Kappas {
+    /// Whether σ (`redir`) is a bisimulation of the raw image `raw` onto the
+    /// moved one `w` (§2.3, 4e, *The check*): the shape half is
+    /// `Stable.moveHolds` over σ's members, and the κ half is the two
+    /// images read alone (no memo, an account of their own) and compared
+    /// position by position, each entry keyed at a node of the value
+    /// renamed by σ. An entry keyed outside the value (a member's own) is
+    /// not compared: it names the same node in both.
+    fn moveIsBisimulation(t: *Table, gpa: Allocator, v: View, raw: NodeId, w: NodeId, x: NodeId, kx: Kappas, redir: *const Stable.Redirect, extra: Stable.Extra) Error!bool {
+        var members: std.ArrayList(u32) = .empty;
+        defer members.deinit(gpa);
+        for (0..redir.count()) |i| try members.append(gpa, redir.key(@intCast(i)));
+        if (!try Stable.moveHolds(v.shapes, gpa, members.items, redir, extra)) return false;
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
         const was = t.no_memo;
         t.no_memo = true;
         defer t.no_memo = was;
-        return t.propagateWalk(gpa, .growth(scratch), v, .none, w, &.{x}, &.{kx}, .alternatives, false, false, null);
-    }
-
-    /// Whether the raw value's κ, its nodes renamed by the move σ, reads at
-    /// every position of the moved value `w` what the moved value's κ reads
-    /// (`kappaLeq` both ways, over the one value `w`): the cross-check of a
-    /// stable image (§2.3, 4e), like against like.
-    pub fn stableAgrees(t: *Table, gpa: Allocator, scratch: *Ids.Account, v: View, raw_k: Kappas, sigma: *const Stable.Redirect, moved_k: Kappas, w: NodeId) Error!bool {
-        const Sigma = struct {
-            r: *const Stable.Redirect,
-            fn node(ctx: *anyopaque, n: NodeId) Error!?NodeId {
-                const c: *@This() = @ptrCast(@alignCast(ctx));
-                return if (c.r.get(n.int())) |to| .from(to) else n;
+        const rk = try t.propagateWalk(gpa, .growth(&scratch), v, .none, raw, &.{x}, &.{kx}, .alternatives, false, false, null);
+        const mk = try t.propagateWalk(gpa, .growth(&scratch), v, .none, w, &.{x}, &.{kx}, .alternatives, false, false, null);
+        var inside: Stable.Redirect = .{};
+        defer inside.deinit(gpa);
+        try Stable.reachable(v.shapes, gpa, w, &inside);
+        var back: Stable.Redirect = .{};
+        defer back.deinit(gpa);
+        for (0..redir.count()) |i| try back.put(gpa, redir.value(@intCast(i)), redir.key(@intCast(i)));
+        var stack: std.ArrayList([2]Kappas) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ rk, mk });
+        while (stack.pop()) |pair| {
+            if (pair[0] == .none or pair[1] == .none) {
+                if (pair[0] != pair[1]) return false;
+                continue;
             }
-            fn cond(_: *anyopaque, _: *Table, _: Allocator, _: Charge, k: CondId) Error!CondId {
-                return k;
+            const pr = t.position(pair[0]);
+            const pm = t.position(pair[1]);
+            if (pr.fold != pm.fold) return false;
+            var it = t.mapEntries(pr.here);
+            while (it.next()) |e| {
+                const k = redir.get(e.key) orelse e.key;
+                if (!inside.contains(k)) continue;
+                if (t.mapGet(pm.here, k) != e.value) return false;
             }
-        };
-        var sg: Sigma = .{ .r = sigma };
-        const c: Charge = .growth(scratch);
-        const renamed = try t.kappaRelabel(gpa, c, raw_k, .{ .ctx = &sg, .node = Sigma.node, .cond = Sigma.cond });
-        return try t.kappaLeq(gpa, c, v, renamed, w, moved_k, w, false) and try t.kappaLeq(gpa, c, v, moved_k, w, renamed, w, false);
+            var jt = t.mapEntries(pm.here);
+            while (jt.next()) |e| {
+                if (!inside.contains(e.key)) continue;
+                if (t.mapGet(pr.here, back.get(e.key) orelse e.key) != e.value) return false;
+            }
+            var lr = t.mapEntries(pr.links);
+            var n_links: u32 = 0;
+            while (lr.next()) |e| {
+                n_links += 1;
+                const m = t.mapGet(pm.links, e.key) orelse return false;
+                if (pr.fold == 0) try stack.append(gpa, .{ .from(e.value), .from(m) });
+            }
+            var lm = t.mapEntries(pm.links);
+            while (lm.next()) |_| n_links -%= 1;
+            if (n_links != 0) return false;
+        }
+        return true;
     }
 
     /// `out` merged with a snapshot that sets κ at every position of
