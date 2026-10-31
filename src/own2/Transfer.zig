@@ -1273,8 +1273,7 @@ pub const Frame = struct {
                 const m = cells.markOf(c);
                 if (m == .a or m == .e) marks |= 2;
             }
-            // Held on the write's exact path: what the answer holds beside
-            // the written object, never that object itself (rule (a), #1367).
+            // Held on the exact write path: what it holds beside the write (#1367).
             var held_below = it.held;
             if (marks & 1 != 0 or it.held) {
                 const beside, const folded = switch (it.mode) {
@@ -1282,7 +1281,12 @@ pub const Frame = struct {
                     .below, .off => .{ true, it.folded },
                 };
                 if (beside and it.mode == .spine and exact) {
-                    if (!it.stuck) try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &kept, &excl, &relied);
+                    // A stuck value is from above, where `ws[depth..]` is not its
+                    // rest: whole, unless a held item already read it there.
+                    if (!it.stuck)
+                        try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &kept, &excl, &relied)
+                    else if (!it.held and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
+                        try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &kept, &excl, &relied);
                     held_below = true;
                 } else if (beside and !(try read.getOrPut(gpa, .{ it.v.int(), @intFromBool(folded) })).found_existing)
                     try f.keepBeside(bs, &want, it.v, folded, marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells)), null, refs.items, &kept, &excl, &relied);
