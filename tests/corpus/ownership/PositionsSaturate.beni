@@ -1,9 +1,75 @@
 -- ownership: a member met three times or more in one positions tree
 -- (ownership-v2.md §2.3 *Saturation at two*). The constructor rebuilds the
--- tree with each member at most twice, which changes no verdict, and no
--- snapshot of the new value keys a node the rebuild dropped: the
--- ReleaseSafe compiler checks it. `[ x, y, x, x ]` drops `[ x, x ]`'s
--- node, and so does the spread over `[ x, y ]`.
+-- tree with each member at most twice, which changes no verdict. What a
+-- snapshot stores for a node the rebuild dropped is carried onto the node
+-- it returns where a read of that node does not imply it already, and the
+-- ReleaseSafe compiler checks every read of a rebuilt node for it.
+-- `literal` and `spread` drop `[ x, x ]`'s node. `sharedLost` and
+-- `elementShared` drop a node stored `shared` at a prepend, which a read at
+-- a summary position would read `lost`; `prepended` drops one at a prepend
+-- too. `apartRest` drops nodes at `[*][*]`, projected lazily, whose
+-- `apart` pair the three-cell `apart` implies.
+type V
+    = A (List Int)
+    | B
+
+
+rest : List a → List a
+rest xs =
+    case xs of
+        [ _, …r ] →
+            r
+
+        _ →
+            []
+
+
+restOfFirst : List (List V) → List V
+restOfFirst vss =
+    case vss of
+        [ l, …_ ] →
+            rest l
+
+        _ →
+            []
+
+
+pub sharedLost : List Int, List (List Int), List (List (List Int)) → List (List (List Int))
+sharedLost q a m =
+    l1 = [ q, …a ]
+    l4 = [ …a, …l1 ]
+    m5 = [ …m, l4 ]
+    m7 = [ …m5, l1 ]
+    [ l4, l4, …m7 ]
+
+
+pub apartRest : V, V, V → List V
+apartRest y z w =
+    x = B
+    b = [ [ x, y, z ], [ x, w ] ]
+    c = [ …b, [ x ] ]
+    restOfFirst c
+
+
+pub prepended : List Int, List Int, List (List Int) → List (List (List Int))
+prepended p q a =
+    b = [ …a, p, q, p ]
+    [ [ p, p, …b ], b ]
+
+
+pub elementShared : List Int, List (List Int) → List (List Int)
+elementShared q a =
+    l2 = [ q, …a ]
+    m4 = [ a, a ]
+    m5 = [ a, l2, …m4 ]
+    case rest m5 of
+        [ x, …_ ] →
+            x
+
+        [] →
+            a
+
+
 pub literal : List Int, List Int → List (List Int)
 literal x y = [ x, y, x, x ]
 

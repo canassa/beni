@@ -206,6 +206,9 @@ pub const Table = struct {
     memo_inst_latest: Ids.FixedDict(1) = .{},
     no_cross: bool = false,
     no_memo: bool = false,
+    /// Off while a construction tests whether a dropped node's entry needs
+    /// carrying (`TransferConstruct.carryDropped`): its reads are the test.
+    drop_check_off: bool = false,
     crossed_reads: u32 = 0,
     crossed_redos: u32 = 0,
     /// For tests: every position a reader (`deep`, `propagate`,
@@ -457,6 +460,8 @@ pub const Table = struct {
     pub const sortCost = reads.sortCost;
     pub const below = reads.below;
     pub const kappaLeq = reads.kappaLeq;
+    pub const impliedBy = reads.impliedBy;
+    pub const atomsOf = reads.atomsOf;
 
     /// `x` widened (§2.3) with its κ carried onto the image (O15) and each
     /// folded class's obligation from §2.9's one path-multiset primitive:
