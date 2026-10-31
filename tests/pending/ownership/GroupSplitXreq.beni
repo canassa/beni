@@ -1,0 +1,52 @@
+-- ownership: #1409 through a recursive group (#1408's review). `bumpR`
+-- writes its head's elements (`inner ys`) and recurses on the rest: two
+-- calls on split positions of one list. v2 refuses both inside `bumpR` on
+-- the canonical paths and publishes no `xreq`, so `useR`'s doubled literal
+-- is accepted fresh where v1 refuses it `exclusive`. The mutual twin
+-- `evenR`/`oddR` is refused, but only because `oddR`'s forwarding call
+-- accepts and publishes `excl π1[*][*]`. The same loss happens with no recursion (#1409's
+-- `bumpAll`), so this is #1409's, not the group solver's.
+inner : List (List Int) → List (List Int)
+inner ys =
+    case ys of
+        [] →
+            []
+
+        [ l, …rest ] →
+            [ List.push l 1, …inner rest ]
+
+
+bumpR : List (List (List Int)) → List (List (List Int))
+bumpR xs =
+    case xs of
+        [] →
+            []
+
+        [ ys, …rest ] →
+            [ inner ys, …bumpR rest ]
+
+
+evenR : List (List (List Int)) → List (List (List Int))
+evenR xs =
+    case xs of
+        [] →
+            []
+
+        [ ys, …rest ] →
+            [ inner ys, …oddR rest ]
+
+
+oddR : List (List (List Int)) → List (List (List Int))
+oddR xs = evenR xs
+
+
+g : List (List Int), List Int → List (List Int)
+g acc x = List.push (List.push acc x) x
+
+
+pub useR : List (List (List Int))
+useR = bumpR [ g [] [ 3 ] ]
+
+
+pub useE : List (List (List Int))
+useE = evenR [ g [] [ 3 ] ]

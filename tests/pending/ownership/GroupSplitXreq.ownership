@@ -1,0 +1,22 @@
+module GroupSplitXreq
+  15:15 List.push l: accepted param
+  15:31 call GroupSplitXreq.inner rest[*]: accepted param (GroupSplitXreq.inner writes π1[*])
+  25:15 call GroupSplitXreq.inner ys[*]: accepted param (GroupSplitXreq.inner writes π1[*])
+  25:26 call GroupSplitXreq.bumpR rest[*][*]: accepted param (GroupSplitXreq.bumpR writes π1[*][*])
+  35:15 call GroupSplitXreq.inner ys[*]: accepted param (GroupSplitXreq.inner writes π1[*])
+  35:26 call GroupSplitXreq.oddR rest[*][*]: accepted param (GroupSplitXreq.oddR writes π1[*][*])
+  39:11 call GroupSplitXreq.evenR xs[*][*]: accepted param (GroupSplitXreq.evenR writes π1[*][*])
+  43:11 List.push <call List.push>: accepted param
+  43:22 List.push acc: accepted param
+  47:8 call GroupSplitXreq.bumpR <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (GroupSplitXreq.bumpR writes π1[*][*]) (approx)
+  47:16 call GroupSplitXreq.g <literal>: accepted fresh (GroupSplitXreq.g writes π1)
+  51:8 call GroupSplitXreq.evenR <literal>[*][*]: rejected exclusive: the callee needs the list's elements not to share, and they may (GroupSplitXreq.evenR writes π1[*][*]) (approx)
+  51:16 call GroupSplitXreq.g <literal>: accepted fresh (GroupSplitXreq.g writes π1)
+  summary inner: π1 R, π1[*] RAW[storage], π1[*][*] RA; res [*] fresh3{excl π1} ~condition(fresh4) ~fresh4{lost} ~fresh6{lost} ~π1[*]{excl π1}, [*][*] ~condition(fresh5) ~π1[*][*]{excl π1}, fresh1{lost}r{excl π1[*][*]} ~fresh2{excl π1} ~fresh6{lost}; xreq excl π1
+  summary bumpR: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh7{lost} ~condition(fresh2) ~condition(fresh5) ~fresh2{lost} ~fresh5{lost} ~fresh6{lost}, [*][*] ~condition(fresh3) ~condition(fresh5) ~fresh3{lost} ~fresh5{lost} ~fresh6{lost} ~π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh1{lost}r{lost} ~fresh6{lost}; xreq excl π1
+  summary evenR: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] fresh7{lost} ~condition(fresh2) ~condition(fresh5) ~fresh2{lost} ~fresh5{lost} ~fresh6{lost}, [*][*] ~condition(fresh3) ~condition(fresh5) ~fresh3{lost} ~fresh5{lost} ~fresh6{lost} ~π1[*][*]{excl π1}, [*][*][*] ~condition(fresh4) ~π1[*][*][*]{excl π1}, fresh1{lost}r{lost} ~fresh6{lost}; xreq excl π1
+  summary oddR: π1 R, π1[*] R, π1[*][*] RAW[storage], π1[*][*][*] RA; res [*] ~condition(fresh5) ~fresh1{lost} ~fresh4{lost}, [*][*] ~condition(fresh2) ~condition(fresh5) ~fresh1{lost} ~fresh4{lost} ~π1[*][*]{excl π1}, [*][*][*] ~condition(fresh3) ~π1[*][*][*]{excl π1}, fresh1{lost} ~fresh4{lost}; xreq excl π1
+  summary g: π1 RAW[storage], π1[*] A, π2 RA; res [*] ~condition(fresh1) ~π1[*] ~π2, π1{lost}
+  demands 13: accepted 11 (fresh 2, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 13: accepted 11 (fresh 2, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2
