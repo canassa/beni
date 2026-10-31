@@ -587,18 +587,22 @@ const Grafter = struct {
 
     /// `c`, no parameter's, mapped into `into`: a taken element's cells
     /// (`takenCells`), any other cell by `mapCell`.
-    fn mapInto(g: *Grafter, into: SetId, c: CellId, at: PlaceId, approx: u1) Error!SetId {
+    fn mapInto(g: *Grafter, into: SetId, c: CellId, approx: u1) Error!SetId {
         if (try g.takenImage(c)) |t| return g.env.cells.sets.unionWith(g.gpa(), g.env.charge, into, try g.takenCells(t));
-        return g.env.cells.sets.insert(g.gpa(), g.env.charge, into, (try g.mapCell(c, at)).int(), approx);
+        return g.env.cells.sets.insert(g.gpa(), g.env.charge, into, (try g.mapCell(c)).int(), approx);
     }
 
     /// A class cell that is not a parameter's, as the caller sees it: the
     /// class's own fresh cell made at this call, an escaping one too, `⊤`
     /// and `shared` as they are; what S3a does not interpret is `⊤`.
-    fn mapCell(g: *Grafter, c: CellId, at: PlaceId) Error!CellId {
+    /// One object, one cell (§2.2): `result ι·k` is made at the class cell's
+    /// own place, never at the reader's. So a view's own cells and its reach
+    /// (`reachImage`, which has no view in hand) name one cell where the call
+    /// stands the view at another place, a generic callee's (#1350, #1516).
+    fn mapCell(g: *Grafter, c: CellId) Error!CellId {
         const x = g.env.cells.get(c);
         return switch (x.origin) {
-            .result, .esc => g.env.cells.result(g.gpa(), g.account(), x.origin, g.label, x.b, at, Cell.Kind.ofPlace(g.env.places.kind(at))),
+            .result, .esc => g.env.cells.result(g.gpa(), g.account(), x.origin, g.label, x.b, x.place, Cell.Kind.ofPlace(g.env.places.kind(x.place))),
             .top, .shared, .site, .mark => c,
             else => g.env.cells.top(g.gpa(), g.account()),
         };
@@ -902,7 +906,7 @@ const Grafter = struct {
                 c = try g.env.cells.sets.unionWith(g.gpa(), g.env.charge, c, try g.argCells(x.a, .from(x.b), at));
                 continue;
             }
-            c = try g.mapInto(c, cell, at, e.value);
+            c = try g.mapInto(c, cell, e.value);
         }
         return c;
     }
@@ -927,7 +931,7 @@ const Grafter = struct {
                 try out.append(g.gpa(), .{ .node = t, .approx = e.value == 1 });
                 continue;
             }
-            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
+            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell)).int(), e.value);
         }
         if (rest != .none or out.items.len == first) try out.append(g.gpa(), .{ .node = try g.env.shapes.leaf(g.gpa(), g.account(), at, rest), .approx = false });
     }
@@ -969,7 +973,7 @@ const Grafter = struct {
                 try members.append(g.gpa(), if (e.value == 1) try g.env.shapes.recast(g.gpa(), g.account(), at, t) else t);
                 continue;
             }
-            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell, at)).int(), e.value);
+            rest = try g.env.cells.sets.insert(g.gpa(), g.env.charge, rest, (try g.mapCell(cell)).int(), e.value);
         }
         if (rest != .none or members.items.len == first) try members.append(g.gpa(), try g.env.shapes.leaf(g.gpa(), g.account(), at, rest));
         return g.env.shapes.joinRaw(g.gpa(), g.account(), at, members.items[first..]);
@@ -1026,7 +1030,7 @@ const Grafter = struct {
         }
         if (try g.takenImage(c)) |t| return g.takenCells(t);
         if (x.origin.isSymbolic() and x.origin != .top) return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.env.cells.top(g.gpa(), g.account())).int(), 1);
-        return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(c, at)).int(), 0);
+        return g.env.cells.sets.insert(g.gpa(), g.env.charge, .none, (try g.mapCell(c)).int(), 0);
     }
 
     /// The cells at every position of argument `i` that a template path `p`
@@ -1595,7 +1599,7 @@ pub const Views = struct {
         // What the call does not interpret is `⊤`, approximately, as a
         // grafted atom reads it (`Grafter.cellsOf`).
         if (x.origin.isSymbolic() and x.origin != .top) return v.cells.sets.insert(gpa_, .growth(account_), .none, (try v.cells.top(gpa_, account_)).int(), 1);
-        return v.cells.sets.insert(gpa_, .growth(account_), .none, (try g.mapCell(c, g.placeOfCell(c))).int(), approx);
+        return v.cells.sets.insert(gpa_, .growth(account_), .none, (try g.mapCell(c)).int(), approx);
     }
 };
 
@@ -1876,7 +1880,7 @@ pub fn apply(env: Env, sums: *const Summary.Table, class: ClassId, args: []const
         const c: CellId = .from(e.key);
         if (env.cells.origin(c) != .esc) continue;
         const at = g.placeOfCell(c);
-        try s.escaped.append(gpa, try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, (try g.mapCell(c, at)).int(), 0)));
+        try s.escaped.append(gpa, try env.shapes.leaf(gpa, env.account(), at, try env.cells.sets.insert(gpa, env.charge, .none, (try g.mapCell(c)).int(), 0)));
     }
     // 5: the class's κ relabelled onto the result's views, each entry's
     // path unchanged and its condition instantiated, then each argument's

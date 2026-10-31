@@ -1,0 +1,87 @@
+-- ownership (v2, #1516): a local bound to the result of a call of a
+-- generic callee is that result's holder, and a later read of the local
+-- refuses a write of it, as with a monomorphic callee (`mono`). The call
+-- instantiates the callee's type variables, so the result's view stands
+-- at the caller's place (#1350) while the callee's fresh cell has the
+-- template's; the fresh object must be one cell whatever reads it. Before
+-- the fix the view's own cells and its reach named two cells, and the
+-- holder held only the other one: v2 accepted these writes `fresh`. A
+-- push on `wrap b` read again in a tuple (`push`), a construction on
+-- `wrap [ 7 ]` read again (`spread`), through nested generic calls
+-- (`nested`, `nestedPair`), read again in a record (`inRecord`) and in
+-- one arm of a `case` (`inArm`). `pushOnce` reads nothing after the write
+-- and is accepted, as v1 accepts it.
+wrap : a → List a
+wrap x = [ x ]
+
+
+idt : a → a
+idt x = x
+
+
+two : a, a → List a
+two x y = [ x, y ]
+
+
+one : Int → List Int
+one x = [ x ]
+
+
+pub mono : Int → List Int × List Int
+mono b =
+    l0 = one b
+    l3 = List.push l0 5
+    ( l0, l3 )
+
+
+pub push : List Int → List (List Int) × List (List Int)
+push b =
+    l0 = wrap b
+    l3 = List.push l0 [ 5 ]
+    ( l0, l3 )
+
+
+pub spread : List Int → List (List Int) × List (List Int)
+spread b =
+    l0 = wrap [ 7 ]
+    l2 = [ …l0, b ]
+    ( l0, l2 )
+
+
+pub nested : Int → List Int × List Int
+nested b =
+    l0 = idt (wrap b)
+    l3 = List.push l0 5
+    ( l0, l3 )
+
+
+pub nestedPair : List Int → List (List Int) × List (List Int)
+nestedPair b =
+    l0 = two (wrap 7) b
+    l2 = [ …l0, [ 5 ] ]
+    ( l0, l2 )
+
+
+pub inRecord : Int → { a : List Int, c : List Int }
+inRecord b =
+    l0 = wrap b
+    l3 = List.push l0 5
+    { a = l0, c = l3 }
+
+
+pub inArm : Int → Int
+inArm b =
+    l0 = wrap b
+    l3 = List.push l0 5
+    case l3 of
+        [] →
+            0
+
+        _ →
+            List.length l0
+
+
+pub pushOnce : Int → List Int
+pushOnce b =
+    l0 = wrap b
+    List.push l0 5

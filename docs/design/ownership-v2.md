@@ -3522,6 +3522,21 @@ of the same handle still add multiplicity through the path-multiset primitive.
     `(choose True (ans { b = g.x }) g.y).c` and `{ b = ans { b = g.x } }.b.c` lost `g.x.c`, a
     write through `⟲` into a list of a recursive type that held a view was lost, and a block
     publishing `g xs = w1 xs` did not decode.
+
+    *Amended 2026-10-31 (#1516): a view's place is not its cells' place.* A view stands at the
+    instantiated place, but the image of a class cell that is no parameter's (`fresh k ↦ result
+    ι·k`, `esc k ↦ esc ι·k`) is made at that class cell's own place, never at the reader's.
+    §2.2 says a cell labels one object, and the object is one whatever reads it. Before, a
+    forced node made its own cells at the view's place, and the view's reach (`Shape.viewReach`,
+    which maps the template's reach cell by cell and has no view in hand) made them at the
+    template's. At a generic callee these places differ. So `wrap b` with `wrap : a → List a`
+    gave two cells for its one fresh list: the demand of `List.push l0 …` was on the node's
+    own cell, and the holder `l0` was paired through its reach, which named only the other.
+    The later read of `l0` was not seen, and the write was accepted `fresh` where v1 refuses
+    `later-use`. The same was true of a construction `[ …l0, x ]` and of every generic
+    callee that answers a fresh object, nested or imported. A monomorphic callee was right,
+    because there the two places are one. `Grafter.mapCell` takes no place. Fixtures:
+    `ownership/GenericResultHeld`, `ownership/GenericResultHeldImported`.
   - *A step a place does not have* (`TransferPattern.projectAt`): a leaf, or a recast of one, is itself
     there, a place-only recast, its cells exact; a built value is some value inside it, its reach
     read approximately (`recastWhole`), never its own cells, which its parts' are not among.
