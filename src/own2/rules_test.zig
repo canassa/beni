@@ -125,7 +125,9 @@ const layers = [_]Entry{
     // 960 since #1457: a write's other paths and what is beside it
     // (§2.11 item 3), split out of Transfer (§5); 1 140 since #1439: the
     // walk as a graph of items and reads, its runs in `TransferArms`.
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1160 },
+    // 1 240 since #1492: a written position's own contents below it
+    // (`ownContents`, `without`).
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1240 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.

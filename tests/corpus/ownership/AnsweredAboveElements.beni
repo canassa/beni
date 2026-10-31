@@ -8,7 +8,7 @@
 -- literals (`bound`) and its own parameter (`passedOn`). One list twice
 -- is refused (`repeated`), and so is a list read after the edit
 -- (`readAfter`). Lists bound to names first (`named`) are refused by v2
--- only, a known entry (#1492).
+-- only, a known entry (#1508).
 bumpHead : List (List Int) → List (List Int)
 bumpHead rows =
     case rows of

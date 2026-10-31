@@ -3027,15 +3027,33 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      skip still needs the node there to stand at one position (`frontierAt`'s single route), so one list
      twice, `[ r, r ]`, stays refused. Pinned: `AnsweredAboveElements` and its imported twin (two
      literals, two parameters and a bound list accepted, as v1; a repeat and a later read refused). An
-     element bound to a name first (`a = [ 1 ]`, then `[ a, b ]`) is still refused, for another reason:
-     the element's leaf projects at `[*][*]` as a recast whose reach is the element's own cell, so its
-     contents count as itself (#1492, a precision known entry).
+     element bound to a name first (`a = [ 1 ]`, then `[ a, b ]`) was refused for another reason: the
+     element's recast at `[*][*]` reached the element's own cell, so its contents counted as itself.
+     Rule (b)'s amendment (#1492) drops that cell. It is still refused, now `exclusive`: the call's
+     `xreq excl π1[*]` is read through the recast element approximately (#1508, a precision known
+     entry).
    - **(b) A path below `q` counts when `q` goes through `[*]` or `⟲`.** Such a `q` names several
      positions, and a path below it may be below another of them: `f ys = case ys of [ a, b ] → case b
      of [ c ] → ( List.push a [], c )` writes `π1[*]` and answers `π1[*][*]`, and over `[ em, [ em ] ]`
      the `c` it answers is the `a` it writes. Below an exact `q`, the path is inside the written object,
      which a shallow write does not touch (§2.8). `q` itself is never beside itself: the distinctness
      of the positions it names is the class's own `xreq` (step 7).
+     *Amended 2026-10-31 (#1492): a written position's own contents.* An element bound to a name
+     (`a = [ 1 ]`, a `List number`) stands at a `List Int` literal's `[*]` as a place-only recast of
+     the built list, and its projection past a step the inner's place does not share is a whole recast
+     of the list, whose reach holds the list's own cell. So below the written position the walk found
+     the written list itself, and `k [ a ]` (`k` writing `π1[*]` and answering `π1[*][*]`) was refused
+     `disjoint`, where `k [ [ 1 ] ]` and v1 accept. A value has no cycle, so no object inside a written
+     object is that object. At the write's end each side of the value (a join's, each side) that is a
+     written position of one route (`Written`) over a built value gives its own cells; the cells that
+     no side's parts hold are dropped from what the walk keeps below that end
+     (`TransferBeside.ownContents`). A built side's parts are its children's reach; any other side (a
+     leaf, a whole recast, a delta, a side of two routes) counts whole, as its contents are not known
+     apart from it. Everything found below the end other than through that recast is in some side's
+     parts, so no object the parts may hold is dropped, and another position's contents still count:
+     `elems [ em, [ em ] ]` stays refused. Pinned: `LocalElementContents` and its imported twin (a
+     bound element alone and a bound element beside a literal accepted, as v1; one list twice, a list
+     inside another element and a list read after refused).
    - **(c) The caller's own parameters.** Two paths of one parameter of the calling frame are distinct
      objects in that frame, as its own walk takes them. Its class marks both, and its callers check
      them under this item, so such a cell is not beside the write. The base's own cell is the
@@ -6037,7 +6055,7 @@ L0  Ids
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 080 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `shareImages`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
-| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 160 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines) |
+| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`, `ownContents`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 240 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines; 1 240 since #1492: a written position's own contents below it, `ownContents`, 1 231 lines) |
 | `TransferArms.zig` | 10 | the runs of a write's other-paths walk (§2.11 item 3, *a choice's arms*, #1439): the graph's arms and what each node keeps per run (`Arms`), the whole argument's nodes on the write's path (`Synthetic`), the written positions per run (`frontierMax`, `routesMax`), and the reads and re-entries one node at a time (`readStep`, `expandOne`) | `Frame`'s methods and types of this part | Ids, Place, Calls | ≤ 710 (#1439: 704 lines; it and `TransferBeside` call each other, the walk and its runs) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
 | `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
