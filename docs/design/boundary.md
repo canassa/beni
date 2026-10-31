@@ -5655,7 +5655,8 @@ specified, with these findings:
   second 1.5 µs is less than 0.01 % of a frame. A page that renders many rows with a pointer handler
   mounts faster, because no row adds a listener: 1.2 ms less for 1 000 rows. Untrusted events are
   no turn in either beni build, so the table compares the listeners, not the turn. The owner
-  decides whether this cost is accepted (the question of #862).
+  accepted this cost (Cesar, on #862 on 2026-10-23, and on the dashboard question `pointer-q1`:
+  "Accept the walk.").
 - **Size** (`bench/size.mjs --pages-only`, the compiler before and after the change). A page that
   delegates an event carries the longer walk: 131 bytes raw more under `--release`, and 22 to 46
   bytes brotli (TodoMVC 8 966 → 9 008, Conduit 27 910 → 27 949, `ApiAndRoutes` 14 484 → 14 506,
