@@ -843,7 +843,6 @@ tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 50:5 
 tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 56:5 #0 :: CycleJoinRankWriter.incAll <expression>#Rose.0[*]#Rose.0 :: absent :: rejected  #1253: the levels below the first return fold into one `⟲` class, so distinct lists at the third level and below are not told apart (as LevelRecursiveUpdates 64:5); v1 accepts the call
 tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 56:5 #0 :: CycleJoinRankWriter.incAll <expression>#Rose.0[*]#Rose.0⟨Rose⟩ :: absent :: rejected  #1253: the levels below the first return fold into one `⟲` class, so distinct lists at the third level and below are not told apart (as LevelRecursiveUpdates 64:5); v1 accepts the call
 tests/corpus/ownership/CycleJoinRankWriter.beni [node] CycleJoinRankWriter 56:5 #0 :: CycleJoinRankWriter.incAll <expression>⟨Rose⟩⁺#Rose.0 :: accepted :: absent  #1253: the levels below the first return fold into one `⟲` class, so distinct lists at the third level and below are not told apart (as LevelRecursiveUpdates 64:5); v1 accepts the call
-||||||| parent of c5b2aed38 (✨ own2: refuse writing comparisons, call through function aliases)
 #
 # v2 refuses where v1 accepted: a type's `eq` or `compare` that writes what it is handed is
 # `comparison_changes_value` (R-5.13.1, ownership-v2.md §2.13.13 item 13); v1 has no such code.
