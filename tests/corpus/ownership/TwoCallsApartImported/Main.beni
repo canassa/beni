@@ -1,0 +1,68 @@
+-- ownership (project): `TwoCallsApart` with the callees in another module
+-- (ownership-v2.md §2.2 *Parts*, §2.11 step 7, #1409): `Apart.bumpAll`
+-- and its variants publish their reliance on their list's positions being
+-- apart as `xreq excl π1[*]` in their block, and a call here discharges it
+-- exactly as a call of the module's own declaration does. Refused over one
+-- list twice, fresh or a parameter, and over two lists that share an
+-- element; accepted over two distinct parameters, which owe the
+-- requirement in turn, and over lists distinct by construction. As in
+-- `TwoCallsApart`, v2 refuses `rf` `disjoint`, where v1 says `exclusive`.
+import Apart
+
+
+pub r3 : List (List Int) → Int
+r3 x = List.length (Apart.bumpAll [ x, x ])
+
+
+pub r6 : ⊤ → Int
+r6 ⊤ = r3 [ [ 3 ] ]
+
+
+pub rf : ⊤ → Int
+rf ⊤ =
+    x = [ [ 3 ] ]
+    List.length (Apart.bumpAll [ x, x ])
+
+
+pub rs : List Int → Int
+rs l = List.length (Apart.bumpAll [ [ l ], [ l ] ])
+
+
+pub rd : List (List Int), List (List Int) → Int
+rd x y = List.length (Apart.bumpAll [ x, y ])
+
+
+pub rdf : ⊤ → Int
+rdf ⊤ = List.length (Apart.bumpAll [ [ [ 1 ] ], [ [ 2 ] ] ])
+
+
+pub t3 : List (List Int) → Int
+t3 x = List.length (Apart.bump3 [ x, [ [ 1 ] ], x ])
+
+
+pub t3d : ⊤ → Int
+t3d ⊤ = List.length (Apart.bump3 [ [ [ 1 ] ], [ [ 2 ] ], [ [ 3 ] ] ])
+
+
+pub tl : List (List Int) → Int
+tl x = List.length (Apart.bumpLet [ x, x ])
+
+
+pub tld : ⊤ → Int
+tld ⊤ = List.length (Apart.bumpLet [ [ [ 1 ] ], [ [ 2 ] ] ])
+
+
+pub tm : List (List Int) → Int
+tm x = List.length (Apart.bumpMix [ x, x ])
+
+
+pub tmd : ⊤ → Int
+tmd ⊤ = List.length (Apart.bumpMix [ [ [ 1 ] ], [ [ 2 ] ] ])
+
+
+pub th : List (List Int) → Int
+th x = List.length (Apart.headTail [ x, x ])
+
+
+pub thd : ⊤ → Int
+thd ⊤ = List.length (Apart.headTail [ [ [ 1 ] ], [ [ 2 ] ] ])
