@@ -1,0 +1,3 @@
+import Start
+pub run : Start.Program → ⊤
+run _ = ⊤

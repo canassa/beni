@@ -232,6 +232,8 @@ pub fn freeOwnershipBlocks(session: *Session) void {
 pub const Options = struct {
     /// Request source-owned native realm evidence; child Sessions default off.
     native_realms: bool = false,
+    /// Request source evidence before checking only when actual generated input exists.
+    prepare_native_emission: bool = false,
     checked_controls: bool = false,
     /// Borrowed qualified names for explicit entryKinds callers; live through run.
     entry_root_requests: []const @import("entry/Selection.zig").Request = &.{},
@@ -2619,8 +2621,9 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     const control_required_modules: []bool = if (session.options.checked_controls) try session.gpa.alloc(bool, session.graph.count()) else &.{};
     defer if (control_required_modules.len != 0) session.gpa.free(control_required_modules);
     for (control_required_modules, 0..) |*required, mi| required.* = session.graph.modulePackage(@fromBackingInt(@intCast(mi))) == .app;
-    const realm_required_modules: []bool = if (session.options.native_realms) try session.gpa.alloc(bool, session.graph.count()) else &.{};
-    defer if (session.options.native_realms) session.gpa.free(realm_required_modules);
+    const require_realms = session.options.native_realms or nativeEmissionSourceRequired(session);
+    const realm_required_modules: []bool = if (require_realms) try session.gpa.alloc(bool, session.graph.count()) else &.{};
+    defer if (realm_required_modules.len != 0) session.gpa.free(realm_required_modules);
     @memset(realm_required_modules, true);
     const entry_requests = try std.mem.concat(session.gpa, @import("entry/Selection.zig").Request, &.{ chain_requests, session.options.entry_root_requests });
     defer session.gpa.free(entry_requests);
@@ -3578,5 +3581,40 @@ test "resident diagnostic wave replaces old warning error and repaired source me
             try std.testing.expectEqual(@as(usize, 0), session.diagnostics.items.len);
             try std.testing.expectEqualStrings("", output.written());
         }
+    }
+}
+
+/// Winning supplier provenance triggers evidence capture, never native authority.
+fn nativeEmissionSourceRequired(session: *const Session) bool {
+    if (!session.options.prepare_native_emission) return false;
+    for (0..session.graph.count()) |i| {
+        const module: Graph.Index = @fromBackingInt(@as(u32, @intCast(i)));
+        if (session.store.nativeOrigin(session.graph.moduleFile(module)) != .none) return true;
+    }
+    return false;
+}
+
+test "native emission source request follows generated supplier and leaves ordinary inputs disabled" {
+    const a = std.testing.allocator;
+    const native = @import("native/Source.zig");
+    for ([_]enum { generated, ordinary, absent }{ .generated, .ordinary, .absent }) |mode| {
+        var session = try Session.init(a, std.testing.io, .{ .jobs = 1, .prepare_native_emission = true });
+        defer session.deinit();
+        var diagnostics: Io.Writer.Allocating = .init(a);
+        defer diagnostics.deinit();
+        if (mode == .absent) {
+            try session.store.addEmbedded(a, "Main.beni", 0, .app, "pub identity : ⊤ → ⊤\nidentity value = value\n");
+        } else {
+            if (mode == .generated) {
+                try session.store.addGenerated(a, "core/Browser/Host/TextEncoder.beni", 5, .core, native.source, .text_encoder_v1);
+            } else try session.store.addEmbedded(a, "core/Browser/Host/TextEncoder.beni", 5, .core, native.source);
+            try session.store.addEmbedded(a, "Main.beni", 0, .app, "import Browser.Host.TextEncoder as Encoder\n\n\npub make : ⊤ → Encoder.TextEncoder\nmake = Encoder.new\n");
+        }
+        const summary = try session.run(&.{}, check_phases, &diagnostics.writer);
+        try std.testing.expectEqual(@as(u32, 0), summary.errors);
+        try std.testing.expectEqualStrings("", diagnostics.written());
+        try std.testing.expectEqual(mode == .generated, session.native_bindings.text_encoder != null);
+        try std.testing.expect(session.checked.dispatch.len != 0);
+        for (session.checked.dispatch) |table| try std.testing.expectEqual(mode == .generated, table.realm_sources.present);
     }
 }

@@ -582,3 +582,126 @@ test "realm builder native callback escapes are independent of declaration trave
         try testing.expectEqualDeep(Realms.Fact{ .allowed = 31, .incomplete = true }, fact(&result, caller_exec));
     }
 }
+
+test "native exposure exact Unit contract preserves execution and returned value" {
+    const Exposure = @import("../native/Exposure.zig");
+    const Bir = @import("../bir/Bir.zig");
+    var f = try Fixture.initWith(
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\pub make : ⊤ → Encoder.TextEncoder
+        \\make argument = Encoder.new argument
+        \\
+        \\
+        \\pub factory : ⊤ → (⊤ → Encoder.TextEncoder)
+        \\factory _ = Encoder.new
+        \\
+    , true);
+    defer f.deinit();
+    const installed = f.session.native_bindings.text_encoder orelse return error.MissingNativeAttestation;
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(@import("../native/Source.zig").provenance, &digest, .{});
+    const seed: Realms.NativeSeed = .{ .target = .{ .module = installed.module, .declaration = installed.checked.declaration }, .allowed = installed.candidate.realm_mask, .binding_digest = digest, .contract = .unit_to_native };
+    var input = f.input();
+    input.native_seeds = &.{seed};
+    var out = try Build.build(gpa, input);
+    defer out.deinit(gpa);
+    try testing.expectEqual(@as(usize, 1), out.contracts.len);
+    const witness = out.contracts.get(0);
+    try testing.expectEqual(try out.callableAt(seed.target), witness.native_exec);
+    const call = out.calls.get(@backingInt(witness.call));
+    try testing.expectEqual(try f.exec(&out, "make"), call.ambient);
+    var edge_found = false;
+    for (0..out.edges.len) |i| {
+        const edge = out.edges.get(i);
+        if (edge.caller == call.ambient and edge.callee == witness.native_exec) edge_found = true;
+    }
+    try testing.expect(edge_found);
+    for (0..out.uses.len) |i| {
+        const use = out.uses.get(i);
+        try testing.expect(!(use.kind == .escape and use.port == witness.argument and use.call == witness.call));
+    }
+    const birs = try gpa.alloc(*const Bir, out.modules.len);
+    defer gpa.free(birs);
+    for (birs, 0..) |*bir, i| bir.* = f.session.artifacts.bir(f.session.graph.moduleFile(@fromBackingInt(@intCast(i))));
+    const Emission = @import("../native/Emission.zig");
+    var no_plan: @import("../entry/Plan.zig") = .{};
+    defer no_plan.deinit(gpa);
+    var no_entries: @import("../entry/CompactGraph.zig") = .{};
+    defer no_entries.deinit(gpa);
+    const unrelated_live: @import("../js/Reach.zig").Result = .empty;
+    try testing.expectError(error.InvalidNativeAuthority, Emission.prepare(gpa, .{
+        .registry = &f.session.native_bindings,
+        .source = f.input(),
+        .selection = .{ .graph = &f.session.graph, .plan = &no_plan, .entries = &no_entries, .selected = try f.q("Main", "make") },
+        .live = &unrelated_live,
+    }));
+    var exposed = try Exposure.solve(gpa, &out, birs, f.session.resolution.interfaces);
+    defer exposed.deinit(gpa);
+    try testing.expectEqual(Exposure.native, try exposed.exec(call.ambient));
+    try testing.expectEqual(Exposure.native, try exposed.exec(try f.exec(&out, "factory")));
+    try testing.expectEqual(@as(u8, 0), try exposed.port(witness.result));
+    try testing.expect(exposed.work.transitions <= exposed.work.nodes * 2);
+    try testing.expect(exposed.work.deliveries <= exposed.work.edges * 2);
+    try testing.checkAllAllocationFailures(gpa, struct {
+        fn run(a: std.mem.Allocator, built: *const Build.Output, bs: []const *const Bir, interfaces: []const @import("../resolve/Interface.zig")) !void {
+            var result = try Exposure.solve(a, built, bs, interfaces);
+            defer result.deinit(a);
+        }
+    }.run, .{ &out, birs, f.session.resolution.interfaces });
+}
+
+test "native exposure blocked calls and captured origins never gain Unit discharge" {
+    const Exposure = @import("../native/Exposure.zig");
+    const Bir = @import("../bir/Bir.zig");
+    var f = try Fixture.initWith(
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\pub type Flag = Yes | No
+        \\
+        \\
+        \\pub blocked : Flag → Encoder.TextEncoder
+        \\blocked flag =
+        \\    case flag of
+        \\        Yes → Encoder.new ⊤
+        \\        No → Encoder.new ⊤
+        \\
+        \\
+        \\pub capture : ⊤ → (⊤ → Encoder.TextEncoder)
+        \\capture argument = λ_ → Encoder.new argument
+        \\
+    , true);
+    defer f.deinit();
+    const installed = f.session.native_bindings.text_encoder orelse return error.MissingNativeAttestation;
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(@import("../native/Source.zig").provenance, &digest, .{});
+    var seed: Realms.NativeSeed = .{ .target = .{ .module = installed.module, .declaration = installed.checked.declaration }, .allowed = installed.candidate.realm_mask, .binding_digest = digest, .contract = .unit_to_native };
+    var input = f.input();
+    input.native_seeds = &.{seed};
+    var out = try Build.build(gpa, input);
+    defer out.deinit(gpa);
+    const blocked = try f.exec(&out, "blocked");
+    var blocked_calls: usize = 0;
+    for (0..out.calls.len) |i| {
+        const call = out.calls.get(i);
+        if (call.ambient != blocked) continue;
+        try testing.expectEqual(.residual, call.classification);
+        for (0..out.contracts.len) |ci| try testing.expect(@backingInt(out.contracts.get(ci).call) != i);
+        blocked_calls += 1;
+    }
+    try testing.expectEqual(@as(usize, 2), blocked_calls);
+    const birs = try gpa.alloc(*const Bir, out.modules.len);
+    defer gpa.free(birs);
+    for (birs, 0..) |*bir, i| bir.* = f.session.artifacts.bir(f.session.graph.moduleFile(@fromBackingInt(@intCast(i))));
+    var result = try Exposure.solve(gpa, &out, birs, f.session.resolution.interfaces);
+    defer result.deinit(gpa);
+    try testing.expect(try result.exec(blocked) & Exposure.unresolved != 0);
+    try testing.expect(try result.exec(try f.exec(&out, "capture")) & Exposure.unresolved != 0);
+    seed.contract = .unavailable;
+    input.native_seeds = &.{seed};
+    var untrusted = try Build.build(gpa, input);
+    defer untrusted.deinit(gpa);
+    try testing.expectEqual(@as(usize, 0), untrusted.contracts.len);
+}

@@ -363,6 +363,10 @@ pub const Counter = enum {
     /// Count every successful preflight/render construction, never a display bound.
     realm_builder_runs,
     realm_value_field_steps,
+    native_exposure_nodes,
+    native_exposure_edges,
+    native_exposure_transitions,
+    native_exposure_deliveries,
 
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };

@@ -177,6 +177,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/entry_discovery_test.zig", 1 },
     .{ "tests/blackbox/native_realms_test.zig", 1 },
     .{ "tests/blackbox/native_realm_consumer_test.zig", 1 },
+    .{ "tests/blackbox/native_emission_test.zig", 1 },
     .{ "tests/blackbox/typed_entry_roots_test.zig", 1 },
     .{ "tests/blackbox/nominal_layouts_test.zig", 1 },
     .{ "tests/blackbox/check_test.zig", 1 },
@@ -2544,6 +2545,11 @@ const Blackbox = struct {
             }),
         });
         if (std.mem.eql(u8, root, "tests/blackbox/entry_discovery_test.zig")) test_artifact.root_module.addImport("entry_fixture_assets", entryFixtureAssets(bb.b));
+        if (std.mem.eql(u8, root, "tests/blackbox/native_emission_test.zig")) test_artifact.root_module.addImport("native_host_fixture", bb.b.createModule(.{
+            .root_source_file = bb.b.path("src/native_host_fixture.zig"),
+            .target = bb.target,
+            .optimize = mode,
+        }));
         return test_artifact;
     }
 

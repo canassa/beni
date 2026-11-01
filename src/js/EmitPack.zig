@@ -80,7 +80,7 @@ const iface_bytes = @import("../resolve/iface_bytes.zig");
 
 pub const magic = "BENIEMIT";
 /// 1: the first.
-pub const version: u32 = 2;
+pub const version: u32 = 3;
 
 /// The build options a row depends on beyond its module key.
 pub const Options = struct {
@@ -239,13 +239,21 @@ pub const Selector = struct {
 ///   carries anything of THIS module (a lifted piece), which is what
 ///   decides whether its declarations have pieces of their own (`Lower`)
 ///   and whether a whole-declaration unit can be carried over.
+/// - `native_recipe` — `where` the immutable NativeEmission.Abi code,
+///   `module`/`index` the exact callable declaration; never a readiness bit.
 /// - `steps` — whether derived row `index`'s synthesis appended its helper.
+/// Closed TextEncoder strict-Unit constructor ABI (§17 native emission norm).
+pub const native_recipe_abi: u8 = 1;
 pub const Fact = struct {
     question: Question,
     where: u8 = 0,
     module: u32 = 0,
     index: u32 = 0,
     answer: bool,
+
+    pub fn validNativeRecipe(fact: Fact) bool {
+        return fact.where == native_recipe_abi and fact.answer;
+    }
 
     pub const Question = enum(u8) {
         decl = 0,
@@ -274,6 +282,8 @@ pub const Fact = struct {
         schema_shapes = 20,
         /// What `Js.testHooks` is (`Lower.Input.test_hooks`).
         test_hooks = 21,
+        /// Exact attested recipe/ABI for this module/declaration; never readiness.
+        native_recipe = 22,
     };
 
     fn lessThan(a: Fact, b: Fact) bool {
@@ -646,8 +656,12 @@ pub fn decode(arena: Allocator, bytes: []const u8) Allocator.Error!?Row {
                 .where = r.byte() orelse return null,
                 .module = r.word() orelse return null,
                 .index = r.word() orelse return null,
-                .answer = (r.byte() orelse return null) != 0,
+                .answer = false,
             };
+            const raw_answer = r.byte() orelse return null;
+            if (fact.question == .native_recipe and raw_answer > 1) return null;
+            fact.answer = raw_answer != 0;
+            if (fact.question == .native_recipe and !fact.validNativeRecipe()) return null;
             if (fact.module >= module_count + 1) return null;
             if (i != 0 and !Fact.lessThan(facts[i - 1], fact.*)) return null;
         }
@@ -879,4 +893,40 @@ test "a unit that does not cover the text is refused" {
     const text_end = std.mem.indexOf(u8, cut, "ab").? + 2;
     std.mem.writeInt(u32, cut[text_end + 18 ..][0..4], 1, .little);
     try testing.expect((try decode(arena_state.allocator(), cut)) == null);
+}
+
+test "native recipe row rejects old unknown and negative ABI facts before comparison" {
+    for ([_]u8{ 0, native_recipe_abi, 2 }) |abi| {
+        for ([_]bool{ false, true }) |answer| {
+            var b: Builder = .init(testing.allocator);
+            defer b.deinit();
+            try b.addUnit(.{
+                .selector = Selector.declarationPart(0, Selector.direct),
+                .facts = &.{.{ .question = .native_recipe, .where = abi, .index = 0, .answer = answer }},
+            }, "opaque unit bytes");
+            const bytes = try b.encode(testing.allocator);
+            defer testing.allocator.free(bytes);
+            var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+            defer arena.deinit();
+            const row = try decode(arena.allocator(), bytes);
+            try testing.expectEqual(abi == native_recipe_abi and answer, row != null);
+            if (abi == native_recipe_abi and answer) {
+                const fact = [_]u8{ @backingInt(Fact.Question.native_recipe), native_recipe_abi, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+                try testing.expectEqual(@as(usize, 1), std.mem.count(u8, bytes, &fact));
+                const offset = std.mem.indexOf(u8, bytes, &fact).? + fact.len - 1;
+                var accepted: usize = 0;
+                for ([_]u8{ 2, 255 }) |raw| {
+                    bytes[offset] = raw;
+                    const malformed = try decode(arena.allocator(), bytes);
+                    if (malformed != null) {
+                        std.debug.print("noncanonical native fact answer {d} accepted at offset {d}\n", .{ raw, offset });
+                        accepted += 1;
+                    }
+                }
+                bytes[offset] = 1;
+                try testing.expect((try decode(arena.allocator(), bytes)) != null);
+                try testing.expectEqual(@as(usize, 0), accepted);
+            }
+        }
+    }
 }

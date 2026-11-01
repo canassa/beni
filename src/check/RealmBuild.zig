@@ -27,7 +27,7 @@ pub const Input = struct {
 };
 pub const Range = Values.Range;
 pub const Module = struct { scopes: Range, instructions: Range, declarations: Range };
-pub const Scope = struct { source: Realms.Source, original: Source.ScopeId, exec: ExecId, result: PortId };
+pub const Scope = struct { source: Realms.Source, original: Source.ScopeId, exec: ExecId, result: PortId, capture: PortId = .none };
 pub const Declaration = struct { port: PortId, initializer: ExecId = .none };
 pub const Port = struct { source: Realms.Source, scope: ScopeId = .none, origin: Values.Origin = .{} };
 pub const Call = struct {
@@ -39,7 +39,9 @@ pub const Call = struct {
     classification: enum(u8) { direct, residual } = .residual,
 };
 pub const Residual = struct { site: SiteId, port: PortId = .none, reason: Values.Reason };
-pub const NativeValue = struct { target: QualifiedDecl, binding_digest: [32]u8, exec: ExecId, port: PortId };
+pub const NativeValue = struct { target: QualifiedDecl, binding_digest: [32]u8, exec: ExecId, port: PortId, contract: Realms.NativeContract = .unavailable };
+/// Value-only ordinary contract witnesses; never erase argument evaluation.
+pub const ContractUse = struct { call: CallId, argument: PortId, result: PortId, native_exec: ExecId };
 pub const ValueUse = struct {
     kind: enum(u8) { invocation, retention, escape },
     source: Realms.Source,
@@ -69,13 +71,14 @@ pub const Output = struct {
     residuals: std.MultiArrayList(Residual) = .empty,
     native_values: std.MultiArrayList(NativeValue) = .empty,
     uses: std.MultiArrayList(ValueUse) = .empty,
+    contracts: std.MultiArrayList(ContractUse) = .empty,
     execs: std.MultiArrayList(Realms.Exec) = .empty,
     sites: std.MultiArrayList(Realms.Site) = .empty,
     edges: std.MultiArrayList(Realms.Edge) = .empty,
     seeds: std.MultiArrayList(Realms.Seed) = .empty,
     work: Work = .{},
     pub fn deinit(o: *Output, gpa: Allocator) void {
-        inline for (.{ "modules", "scopes", "declarations", "ports", "calls", "residuals", "native_values", "uses", "execs", "sites", "edges", "seeds" }) |f| @field(o, f).deinit(gpa);
+        inline for (.{ "modules", "scopes", "declarations", "ports", "calls", "residuals", "native_values", "uses", "contracts", "execs", "sites", "edges", "seeds" }) |f| @field(o, f).deinit(gpa);
         o.* = .{};
     }
     pub fn input(o: *const Output) Realms.Input {
@@ -237,7 +240,7 @@ const Builder = struct {
             const exec = b.out.scopes.get(module.scopes.start + @backingInt(scope)).exec;
             if (b.native_index[@backingInt(exec)] != none) return error.DuplicateSeed;
             b.native_index[@backingInt(exec)] = @intCast(b.out.native_values.len);
-            try b.out.native_values.append(b.gpa, .{ .target = s.target, .binding_digest = s.binding_digest, .exec = exec, .port = d.port });
+            try b.out.native_values.append(b.gpa, .{ .target = s.target, .binding_digest = s.binding_digest, .exec = exec, .port = d.port, .contract = s.contract });
             try b.out.seeds.append(b.gpa, .{ .target = exec, .allowed = s.allowed, .binding_digest = s.binding_digest });
             var row = b.out.execs.get(@backingInt(exec));
             row.coverage = .native_required;
@@ -292,6 +295,13 @@ const Builder = struct {
                         const owner = source.declarations.get(n.declaration);
                         if (data.lhs >= owner.locals_end - owner.locals_start) return error.InvalidSource;
                         const local = source.locals.get(owner.locals_start + data.lhs);
+                        const defined = source.nodes.get(local.instruction).scope;
+                        if (defined != n.scope) {
+                            const scope_index = module.scopes.start + @backingInt(n.scope);
+                            var captured = b.out.scopes.get(scope_index);
+                            if (captured.capture == .none) captured.capture = p;
+                            b.out.scopes.set(scope_index, captured);
+                        }
                         break :blk if (local.kind == .let)
                             .{ .kind = .forward, .a = @backingInt(try b.port(m, local.instruction)) }
                         else
@@ -419,7 +429,12 @@ const Builder = struct {
                 // Retain each original non-scalar argument obligation regardless
                 // of callee coverage or declaration processing order. Never
                 // expand aggregate/closure contents into per-native use sets.
-                for (b.callArgs(original, n, data)) |arg| try b.escape(id, ci, try b.port(m, arg.int()));
+                const args = b.callArgs(original, n, data);
+                const native_exec = b.native(cp);
+                const contract = if (native_exec == .none) Realms.NativeContract.unavailable else b.out.native_values.get(b.native_index[@backingInt(native_exec)]).contract;
+                if (direct and n.tag == .call and args.len == 1 and contract == .unit_to_native) {
+                    try b.out.contracts.append(b.gpa, .{ .call = ci, .argument = try b.port(m, args[0].int()), .result = p, .native_exec = native_exec });
+                } else for (args) |arg| try b.escape(id, ci, try b.port(m, arg.int()));
                 if (n.tag == .method_call or n.tag == .field_access) try b.escape(id, ci, try b.port(m, data.lhs));
             }
         }

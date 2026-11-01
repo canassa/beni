@@ -14,9 +14,12 @@ pub const Input = struct {
     entries: *const Entries,
     selected: ?Realms.QualifiedDecl,
     library: bool = false,
+    /// Optional current generic-emission witnesses; inspection leaves both empty.
+    emission_retained: []const Realms.QualifiedDecl = &.{},
+    emission_evaluated: []const Realms.QualifiedDecl = &.{},
 };
 pub const Mode = enum(u8) { definite, possible };
-pub const RootKind = enum(u8) { selected_initializer, selected_runtime, runtime_scope, callback, scope_possible, retained_initializer };
+pub const RootKind = enum(u8) { selected_initializer, selected_runtime, runtime_scope, callback, scope_possible, retained_initializer, emitted_initializer };
 pub const State = enum(u8) { covered, violated, unresolved };
 pub const Summary = enum(u8) { missing_selection, open_library, unresolved, violated };
 pub const Root = struct { source: Realms.Source, exec: Realms.ExecId, kind: RootKind, mode: Mode, state: State = .unresolved };
@@ -208,6 +211,20 @@ const Pass = struct {
             if (initializer != .none) try p.root(.{ .module = q.module, .declaration = q.declaration, .instruction = none }, initializer, .retained_initializer, .possible);
         }
     }
+    fn emission(p: *Pass) Error!void {
+        // Evaluation is supplied separately: code retention never promotes it.
+        for (p.in.emission_evaluated) |q| {
+            try p.retain(q);
+            const initializer = try p.built.initializerOf(q);
+            if (initializer == .none) return error.InvalidRoot;
+            if (!p.out.definite[@backingInt(initializer)]) try p.root(.{ .module = q.module, .declaration = q.declaration, .instruction = none }, initializer, .emitted_initializer, .definite);
+        }
+        for (p.in.emission_retained) |q| {
+            try p.retain(q);
+            const initializer = try p.built.initializerOf(q);
+            if (initializer != .none and !p.out.definite[@backingInt(initializer)] and !p.out.possible[@backingInt(initializer)]) try p.root(.{ .module = q.module, .declaration = q.declaration, .instruction = none }, initializer, .retained_initializer, .possible);
+        }
+    }
     fn walk(p: *Pass) Error!void {
         const n = p.built.execs.len;
         p.offsets = try p.gpa.alloc(u32, n + 1);
@@ -337,6 +354,7 @@ pub fn consume(gpa: Allocator, in: Input, built: *const Build.Output) Error!Resu
     defer pass.deinit();
     try pass.nativeRows();
     try pass.select();
+    try pass.emission();
     try pass.walk();
     try pass.uses();
     pass.finish();

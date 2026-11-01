@@ -1,4 +1,4 @@
-//! Phase1 native candidate checking and explicit non-executable boundary.
+//! Native candidate attestation and remaining unresolved projection boundary.
 const std = @import("std");
 const diagnostic = @import("diagnostic");
 const world = @import("world.zig");
@@ -49,7 +49,7 @@ test "native candidate identical physical supplier invalidates own and reverse c
     try testing.expect(!w.exists("out"));
 }
 
-test "native candidate cannot execute through an ordinary sibling before realm proof" {
+test "native unresolved program projection cannot execute through an ordinary sibling" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try prepare(&w);
@@ -65,7 +65,7 @@ test "native candidate cannot execute through an ordinary sibling before realm p
             .severity = .@"error",
             .span = .{ .file = "core/Browser/Host/TextEncoder.beni", .start = .{ .line = 4, .col = 20 }, .end = .{ .line = 4, .col = 23 } },
             .title = "NOT IMPLEMENTED YET",
-            .message = "The generated TextEncoder constructor is awaiting its checked realm and\ndirect-lowering implementation. No native callable was emitted.",
+            .message = "Native emission requires a current generic initializer evaluation witness;\nprogram projections remain unresolved. No native callable was emitted.",
         }};
         try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &expected), result.diagnostics);
         try testing.expect(!w.exists("out"));

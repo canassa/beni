@@ -468,7 +468,8 @@ const Maker = struct {
             const piece = try context.printRange(unit.start, unit.end);
             pieces.appendAssumeCapacity(piece);
             runtime |= record.runtime;
-            try builder.addUnit(try mk.rowUnit(m, &builder, &context, &overlay, &recorder, record, piece, numbered), piece.text);
+            var encoder: beni.EmitPackRecord.Encoder = .{ .scratch = mk.scratch, .graph = &session.graph, .interner = &session.interner };
+            try builder.addUnit(try encoder.rowUnit(m, &builder, &context, &overlay, &recorder, record, piece, numbered), piece.text);
         }
         std.debug.assert(covered == body - lowered.tail_len);
         pieces.appendAssumeCapacity(try context.printRange(body - lowered.tail_len, body));
@@ -493,93 +494,6 @@ const Maker = struct {
         for (EmitPack.every_options) |options| {
             try mk.write.add(mk.gpa, .emit, EmitPack.key(module_key, options), bytes);
         }
-    }
-
-    /// The row's unit for `record` and the piece just printed
-    /// (`backend.md` §9, *What a unit carries*): the selector the funnel
-    /// was opened with, the marks — with the identity behind each name the
-    /// printer numbered — the identities the unit introduced, the imports
-    /// it asked for, the facts it read, the runtime exports it reached and
-    /// its edges.
-    fn rowUnit(
-        mk: *Maker,
-        m: Graph.Index,
-        builder: *EmitPack.Builder,
-        context: *const Print.Context,
-        overlay: *const InternPool.Overlay,
-        recorder: *const Funnel.Recorder,
-        record: *const Funnel.UnitRecord,
-        piece: Join.Piece,
-        numbered: usize,
-    ) Allocator.Error!EmitPack.Unit {
-        const scratch = mk.scratch;
-        // The identities the printer numbered while printing this unit:
-        // `Print.Context.names_src` is `names_out`'s source column, in the
-        // same order.
-        const introduced = try scratch.alloc(u32, context.names_src.items.len - numbered);
-        for (introduced, context.names_src.items[numbered..]) |*slot, index| {
-            slot.* = try mk.ident(builder, context.ir, overlay, index);
-        }
-        const marks = try scratch.alloc(EmitPack.Mark, piece.mappings.len);
-        for (marks, piece.mappings) |*mark, mapping| {
-            mark.* = .{
-                .generated = mapping.generated,
-                .source = mapping.source,
-                .name = if (mapping.name == SourceMap.Mapping.no_name)
-                    EmitPack.no_name
-                else
-                    try mk.ident(builder, context.ir, overlay, context.names_src.items[mapping.name]),
-            };
-        }
-        const needed = try scratch.alloc(EmitPack.Needed, record.asks_end - record.asks_start);
-        for (needed, record.asks(recorder)) |*need, ask| {
-            need.* = .{
-                .module = try mk.moduleRef(builder, m, @fromBackingInt(@intCast(ask.module))),
-                .value = ask.value,
-                .base = if (ask.base.unwrap()) |symbol| try mk.text(builder, overlay.slice(symbol)) else EmitPack.no_string,
-            };
-        }
-        const facts = try scratch.alloc(EmitPack.Fact, record.facts_end - record.facts_start);
-        for (facts, record.facts(recorder)) |*fact, asked| {
-            fact.* = asked;
-            fact.module = try mk.moduleRef(builder, m, @fromBackingInt(@intCast(asked.module)));
-        }
-        return .{
-            .selector = record.selector,
-            .marks = marks,
-            .introduced = introduced,
-            .needed = needed,
-            .facts = facts,
-            .runtime = record.runtime,
-            .edges = record.edges,
-        };
-    }
-
-    /// The row's identity slot for the printer's name `index`
-    /// (`js/JsIr.Name`): its module part, base and tag, with the texts
-    /// interned in the row's string table.
-    fn ident(mk: *Maker, builder: *EmitPack.Builder, ir: *const JsIr, overlay: *const InternPool.Overlay, index: u32) Allocator.Error!u32 {
-        const name = ir.name(@fromBackingInt(@intCast(index)));
-        return builder.internIdent(.{
-            .module = if (name.module.unwrap()) |symbol| try mk.text(builder, overlay.slice(symbol)) else EmitPack.no_string,
-            .base = try mk.text(builder, overlay.slice(name.base)),
-            .tag = name.tag,
-        });
-    }
-
-    /// A row string: a stable copy in this module's scratch, interned in the
-    /// row's table (an interned text must be stable until `encode`).
-    fn text(mk: *Maker, builder: *EmitPack.Builder, bytes: []const u8) Allocator.Error!u32 {
-        return builder.internString(try mk.scratch.dupe(u8, bytes));
-    }
-
-    /// The row's module reference for graph module `other`
-    /// (`EmitPack.Needed.module`): 0 is this module, `k + 1` the slot of
-    /// `modules[k]`.
-    fn moduleRef(mk: *Maker, builder: *EmitPack.Builder, m: Graph.Index, other: Graph.Index) Allocator.Error!u32 {
-        if (other == m) return EmitPack.self_slot;
-        const name = try mk.text(builder, mk.session.interner.slice(mk.session.graph.moduleName(other)));
-        return (try builder.internModule(mk.session.graph.modulePackage(other), name)) + 1;
     }
 
     /// The maker's self-check (`backend.md` §9, *The maker*): decode the row

@@ -1,0 +1,6 @@
+import Browser.Host.TextEncoder as Encoder
+import Start
+main : Start.Program
+main =
+    _ = Encoder.new ⊤
+    Start.Program

@@ -71,7 +71,7 @@ fn realmPrepare(a: std.mem.Allocator, session: *Session, selected: ?@import("../
     if (session.native_bindings.text_encoder) |native| {
         var digest: [32]u8 = undefined;
         std.crypto.hash.sha2.Sha256.hash(@import("../native/Source.zig").provenance, &digest, .{});
-        seeds[0] = .{ .target = .{ .module = native.module, .declaration = native.checked.declaration }, .allowed = native.candidate.realm_mask, .binding_digest = digest };
+        seeds[0] = .{ .target = .{ .module = native.module, .declaration = native.checked.declaration }, .allowed = native.candidate.realm_mask, .binding_digest = digest, .contract = .unit_to_native };
         count = 1;
     }
     return RealmInspect.prepare(a, .{ .graph = &session.graph, .interner = &session.interner, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch, .plan = &session.entry_plan, .entries = &session.entry_graph, .selected = selected, .library = library, .native_seeds = seeds[0..count], .registry_reads = @intCast(count), .profile = &session.profile });
@@ -304,10 +304,13 @@ const RealmFixture = struct {
     main_path: []const u8 = &.{},
     rel_start: u32 = 0,
     fn init() !RealmFixture {
+        return initProfile(null);
+    }
+    fn initProfile(profile_path: ?[]const u8) !RealmFixture {
         const a = std.testing.allocator;
         const session = try a.create(Session);
         errdefer a.destroy(session);
-        session.* = try Session.init(a, std.testing.io, .{ .jobs = 1, .native_realms = true, .diagnostics = .json, .entry_root_requests = &.{.{ .program = "Start.Program" }} });
+        session.* = try Session.init(a, std.testing.io, .{ .jobs = 1, .self_profile = profile_path, .native_realms = true, .diagnostics = .json, .entry_root_requests = &.{.{ .program = "Start.Program" }} });
         return .{ .session = session, .diagnostics = .init(a), .arena = .init(a), .tmp = std.testing.tmpDir(.{}) };
     }
     fn deinit(f: *RealmFixture) void {
@@ -359,7 +362,7 @@ const RealmFixture = struct {
         const native = f.session.native_bindings.text_encoder orelse return error.MissingNative;
         var digest: [32]u8 = undefined;
         std.crypto.hash.sha2.Sha256.hash(@import("../native/Source.zig").provenance, &digest, .{});
-        const seeds = [_]@import("../check/Realms.zig").NativeSeed{.{ .target = .{ .module = native.module, .declaration = native.checked.declaration }, .allowed = native.candidate.realm_mask, .binding_digest = digest }};
+        const seeds = [_]@import("../check/Realms.zig").NativeSeed{.{ .target = .{ .module = native.module, .declaration = native.checked.declaration }, .allowed = native.candidate.realm_mask, .binding_digest = digest, .contract = .unit_to_native }};
         return @import("../check/RealmBuild.zig").build(a, .{ .graph = &f.session.graph, .artifacts = &f.session.artifacts, .interfaces = f.session.resolution.interfaces, .provenance = f.session.resolution.provenance, .dispatch = f.session.checked.dispatch, .native_seeds = &seeds });
     }
     fn consumeInput(f: *RealmFixture) @import("../entry/RealmConsume.zig").Input {
@@ -522,4 +525,378 @@ test "realm consumer selected Window keeps equal ordinary rung functions indepen
     try std.testing.expect(result.definite[@backingInt(execs[0])]);
     try std.testing.expect(!result.definite[@backingInt(execs[1])]);
     try std.testing.expectEqual(@import("../entry/RealmConsume.zig").State.covered, result.roots.get(0).state);
+}
+
+test "native emission authority uses actual selected ordinary Program and Registry" {
+    const a = std.testing.allocator;
+    const Emission = @import("../native/Emission.zig");
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(false, false);
+    const session = f.session;
+    const inspection = try Emit.inspectEntry(a, f.arena.allocator(), session, try f.options(false, false));
+    defer {
+        for (inspection.diagnostics) |item| a.free(item.message);
+        a.free(inspection.diagnostics);
+    }
+    try std.testing.expectEqual(@as(usize, 0), inspection.diagnostics.len);
+    var reach_input = inspection.reach.?;
+    const runtime = session.entry_plan.runtime().?;
+    reach_input.extra_roots = &.{.{ .module = runtime.module, .kind = .decl, .index = runtime.decl }};
+    const live = try @import("../js/Reach.zig").run(f.arena.allocator(), reach_input);
+    try f.query(false, false);
+    const input: Emission.Input = .{
+        .registry = &session.native_bindings,
+        .source = .{ .graph = &session.graph, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch },
+        .selection = f.consumeInput(),
+        .live = &live,
+    };
+    var authority = try Emission.prepare(a, input);
+    defer authority.deinit(a);
+    if (authority.recipe.?.disposition != .ready) std.debug.print("native refusal: {t}\n", .{authority.recipe.?.reason});
+    try std.testing.expectEqual(.ready, authority.recipe.?.disposition);
+    try std.testing.expectEqual(.window, authority.realm.?);
+    const installed = session.native_bindings.text_encoder.?;
+    try std.testing.expect(authority.ready(.{ .module = installed.module, .declaration = installed.checked.declaration }));
+    try std.testing.expectEqual(installed.checked.type_index, authority.recipe.?.native_type);
+    try std.testing.expectEqual(installed.checked.scheme, authority.recipe.?.scheme);
+    var abi_authority = try Emission.prepare(a, input);
+    defer abi_authority.deinit(a);
+    const actual_recipe = abi_authority.recipe.?;
+    try std.testing.expect(abi_authority.recipeMatches(actual_recipe.target, @backingInt(actual_recipe.abi)));
+    try std.testing.expect(!abi_authority.recipeMatches(actual_recipe.target, 0));
+    try std.testing.expect(!abi_authority.recipeMatches(actual_recipe.target, 2));
+    try std.testing.expect(!abi_authority.recipeMatches(.{ .module = actual_recipe.target.module, .declaration = actual_recipe.target.declaration + 1 }, @backingInt(actual_recipe.abi)));
+    for ([_]u8{ 0, 1, 2 }) |abi| for ([_]bool{ false, true }) |answer| {
+        const fact: @import("../js/EmitPack.zig").Fact = .{ .question = .native_recipe, .where = abi, .index = actual_recipe.target.declaration, .answer = answer };
+        try std.testing.expectEqual(abi == @backingInt(actual_recipe.abi) and answer, Emission.matchesRecipeFact(&abi_authority, actual_recipe.target, fact));
+        try std.testing.expect(!Emission.matchesRecipeFact(null, actual_recipe.target, fact));
+    };
+    var incompatible = session.native_bindings;
+    incompatible.text_encoder.?.candidate.adapter_revision += 1;
+    var wrong_abi = input;
+    wrong_abi.registry = &incompatible;
+    try std.testing.expectError(error.InvalidNativeAuthority, Emission.prepare(a, wrong_abi));
+    try std.testing.checkAllAllocationFailures(a, struct {
+        fn run(allocator: std.mem.Allocator, in: Emission.Input) !void {
+            var result = try Emission.prepare(allocator, in);
+            defer result.deinit(allocator);
+            try std.testing.expectEqual(.ready, result.recipe.?.disposition);
+        }
+    }.run, .{input});
+}
+
+test "native emission authority refuses a retained uninvoked native helper from final Reach" {
+    const a = std.testing.allocator;
+    const Emission = @import("../native/Emission.zig");
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(
+        \\import Start
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\deferred : ⊤ → Encoder.TextEncoder
+        \\deferred _ = Encoder.new ⊤
+        \\
+        \\
+        \\main : Start.Program
+        \\main =
+        \\    _ = deferred
+        \\    Start.Program
+        \\
+    ));
+    try f.query(false, false);
+    const session = f.session;
+    const inspection = try Emit.inspectEntry(a, f.arena.allocator(), session, try f.options(false, false));
+    defer {
+        for (inspection.diagnostics) |item| a.free(item.message);
+        a.free(inspection.diagnostics);
+    }
+    try std.testing.expectEqual(@as(usize, 0), inspection.diagnostics.len);
+    var reach_input = inspection.reach.?;
+    const runtime = session.entry_plan.runtime().?;
+    reach_input.extra_roots = &.{.{ .module = runtime.module, .kind = .decl, .index = runtime.decl }};
+    const live = try @import("../js/Reach.zig").run(f.arena.allocator(), reach_input);
+    try f.query(false, false);
+    const input: Emission.Input = .{
+        .registry = &session.native_bindings,
+        .source = .{ .graph = &session.graph, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch },
+        .selection = f.consumeInput(),
+        .live = &live,
+    };
+    var authority = try Emission.prepare(a, input);
+    defer authority.deinit(a);
+    try std.testing.expectEqual(.refused, authority.recipe.?.disposition);
+    try std.testing.expectEqual(.deferred_use, authority.recipe.?.reason);
+    const installed = session.native_bindings.text_encoder.?;
+    try std.testing.expect(live.decl(installed.module, installed.checked.declaration));
+    try std.testing.expect(!authority.ready(.{ .module = installed.module, .declaration = installed.checked.declaration }));
+    try std.testing.expectEqual(@as(usize, 0), session.entry_graph.entries.len);
+}
+
+test "native emission internal pipeline emits strict facade without sibling fallback" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var options = try f.options(false, false);
+    options.out_dir = ".zig-cache/tmp/" ++ temporary.sub_path;
+    var io_failure: ?Session.IoFailure = null;
+    var result = try Emit.run(a, f.arena.allocator(), f.session, options, &io_failure);
+    defer result.deinit(a);
+    for (result.diagnostics) |item| std.debug.print("{t}: {s}\n", .{ item.code, item.message });
+    try std.testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+    try std.testing.expect(result.files_written != 0);
+    const facade = try temporary.dir.readFileAlloc(std.testing.io, "_core/Browser/Host/TextEncoder.mjs", a, .limited(16384));
+    defer a.free(facade);
+    try std.testing.expect(std.mem.indexOf(u8, facade, "new globalThis.TextEncoder()") != null);
+    try std.testing.expect(std.mem.indexOf(u8, facade, "$nativeUnit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, facade, ".foreign.mjs") == null);
+    const checked = try Emit.checkContract(a, f.arena.allocator(), f.session, options);
+    defer {
+        for (checked) |item| a.free(item.message);
+        a.free(checked);
+    }
+    try std.testing.expectEqual(@as(usize, 0), checked.len);
+}
+
+test "native emission authority requires evaluated initializer evidence separately from retention" {
+    const a = std.testing.allocator;
+    const Emission = @import("../native/Emission.zig");
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(
+        \\import Start
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\encoded : Encoder.TextEncoder
+        \\encoded = Encoder.new ⊤
+        \\
+        \\
+        \\main : Start.Program
+        \\main =
+        \\    _ = encoded
+        \\    Start.Program
+        \\
+    ));
+    try f.query(false, false);
+    const session = f.session;
+    const inspection = try Emit.inspectEntry(a, f.arena.allocator(), session, try f.options(false, false));
+    defer {
+        for (inspection.diagnostics) |item| a.free(item.message);
+        a.free(inspection.diagnostics);
+    }
+    try std.testing.expectEqual(@as(usize, 0), inspection.diagnostics.len);
+    var reach_input = inspection.reach.?;
+    const runtime = session.entry_plan.runtime().?;
+    reach_input.extra_roots = &.{.{ .module = runtime.module, .kind = .decl, .index = runtime.decl }};
+    const live = try @import("../js/Reach.zig").run(f.arena.allocator(), reach_input);
+    try f.query(false, false);
+    var input: Emission.Input = .{
+        .registry = &session.native_bindings,
+        .source = .{ .graph = &session.graph, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch },
+        .selection = f.consumeInput(),
+        .live = &live,
+    };
+    var possible = try Emission.prepare(a, input);
+    defer possible.deinit(a);
+    try std.testing.expectEqual(.refused, possible.recipe.?.disposition);
+    try std.testing.expectEqual(.deferred_use, possible.recipe.?.reason);
+    var evaluated: std.ArrayList(@import("../check/Realms.zig").QualifiedDecl) = .empty;
+    defer evaluated.deinit(a);
+    for (0..session.graph.count()) |mi| {
+        const module: @import("../resolve/Graph.zig").Index = @fromBackingInt(@intCast(mi));
+        const bir = session.artifacts.bir(session.graph.moduleFile(module));
+        for (bir.decls, 0..) |decl, di| {
+            if (!live.decl(module, di) or decl.kind != .value) continue;
+            if (@import("../check/Convention.zig").definitionOf(&session.checked.dispatch[mi], bir, @intCast(di)) == .constant) try evaluated.append(a, .{ .module = module, .declaration = @intCast(di) });
+        }
+    }
+    try std.testing.expect(evaluated.items.len >= 2);
+    input.evaluated = evaluated.items;
+    var eager = try Emission.prepare(a, input);
+    defer eager.deinit(a);
+    if (eager.recipe.?.disposition != .ready) std.debug.print("eager refusal: {t}\n", .{eager.recipe.?.reason});
+    try std.testing.expectEqual(.ready, eager.recipe.?.disposition);
+}
+
+test "native emission internal pipeline keeps known returned facade and effectful Unit argument" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(
+        \\import Start
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\factory : ⊤ → (⊤ → Encoder.TextEncoder)
+        \\factory _ = Encoder.new
+        \\
+        \\
+        \\argument : ⊤ → ⊤
+        \\argument _ =
+        \\    _ = Encoder.new ⊤
+        \\    ⊤
+        \\
+        \\
+        \\main : Start.Program
+        \\main =
+        \\    _ = (factory ⊤) (argument ⊤)
+        \\    Start.Program
+        \\
+    ));
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var options = try f.options(false, false);
+    options.out_dir = ".zig-cache/tmp/" ++ temporary.sub_path;
+    var io_failure: ?Session.IoFailure = null;
+    var result = try Emit.run(a, f.arena.allocator(), f.session, options, &io_failure);
+    defer result.deinit(a);
+    for (result.diagnostics) |item| std.debug.print("{t}: {s}\n", .{ item.code, item.message });
+    try std.testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+    try std.testing.expect(result.files_written != 0);
+    const facade = try temporary.dir.readFileAlloc(std.testing.io, "_core/Browser/Host/TextEncoder.mjs", a, .limited(16384));
+    defer a.free(facade);
+    try std.testing.expect(std.mem.indexOf(u8, facade, "new globalThis.TextEncoder()") != null);
+    try std.testing.expect(std.mem.indexOf(u8, facade, "$nativeUnit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, facade, ".foreign.mjs") == null);
+    const main = try temporary.dir.readFileAlloc(std.testing.io, "Main.mjs", a, .limited(16384));
+    defer a.free(main);
+    try std.testing.expect(std.mem.indexOf(u8, main, "argument") != null);
+    try std.testing.expect(std.mem.indexOf(u8, main, "factory") != null);
+    const checked = try Emit.checkContract(a, f.arena.allocator(), f.session, options);
+    defer {
+        for (checked) |item| a.free(item.message);
+        a.free(checked);
+    }
+    try std.testing.expectEqual(@as(usize, 0), checked.len);
+}
+
+test "native emission internal pipeline does not emit an unreachable native declaration" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(
+        \\import Start
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\unused : ⊤ → Encoder.TextEncoder
+        \\unused _ = Encoder.new ⊤
+        \\
+        \\
+        \\main : Start.Program
+        \\main = Start.Program
+        \\
+    ));
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var options = try f.options(false, false);
+    options.out_dir = ".zig-cache/tmp/" ++ temporary.sub_path;
+    var io_failure: ?Session.IoFailure = null;
+    var result = try Emit.run(a, f.arena.allocator(), f.session, options, &io_failure);
+    defer result.deinit(a);
+    for (result.diagnostics) |item| std.debug.print("{t}: {s}\n", .{ item.code, item.message });
+    try std.testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+    try std.testing.expect(result.files_written != 0);
+    const native_file: ?[]u8 = temporary.dir.readFileAlloc(std.testing.io, "_core/Browser/Host/TextEncoder.mjs", a, .limited(16384)) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
+    defer if (native_file) |bytes| a.free(bytes);
+    try std.testing.expect(native_file == null);
+    const checked = try Emit.checkContract(a, f.arena.allocator(), f.session, options);
+    defer {
+        for (checked) |item| a.free(item.message);
+        a.free(checked);
+    }
+    try std.testing.expectEqual(@as(usize, 0), checked.len);
+}
+
+test "native emission actual packed facade adopts only behind fresh readiness" {
+    const a = std.testing.allocator;
+    const Emission = @import("../native/Emission.zig");
+    const Fixture = @import("../native/PackFixture.zig");
+    const Pack = @import("../cache/Pack.zig");
+    const EmitPack = @import("../js/EmitPack.zig");
+    var source = try RealmFixture.init();
+    defer source.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try source.run(realm_good));
+    const session = source.session;
+    const inspection = try Emit.inspectEntry(a, source.arena.allocator(), session, try source.options(false, false));
+    defer {
+        for (inspection.diagnostics) |item| a.free(item.message);
+        a.free(inspection.diagnostics);
+    }
+    try std.testing.expectEqual(@as(usize, 0), inspection.diagnostics.len);
+    var reach_input = inspection.reach.?;
+    const runtime = session.entry_plan.runtime().?;
+    reach_input.extra_roots = &.{.{ .module = runtime.module, .kind = .decl, .index = runtime.decl }};
+    const live = try @import("../js/Reach.zig").run(source.arena.allocator(), reach_input);
+    try source.query(false, false);
+    var authority = try Emission.prepare(a, .{
+        .registry = &session.native_bindings,
+        .source = .{ .graph = &session.graph, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch },
+        .selection = source.consumeInput(),
+        .live = &live,
+    });
+    defer authority.deinit(a);
+    try std.testing.expectEqual(.ready, authority.recipe.?.disposition);
+    for ([_]Fixture.Fault{ .none, .old_false, .unknown_true }) |fault| {
+        const snapshot = try Fixture.make(a, source.arena.allocator(), session, &live, &authority, fault);
+        defer a.free(snapshot.bytes);
+        for ([_]bool{ false, true }) |deferred| {
+            var output = std.testing.tmpDir(.{});
+            defer output.cleanup();
+            const path = ".zig-cache/tmp/" ++ output.sub_path;
+            const profile = try std.fs.path.join(a, &.{ path, "profile.json" });
+            defer a.free(profile);
+            var current = try RealmFixture.initProfile(profile);
+            defer current.deinit();
+            const program = if (deferred)
+                \\import Start
+                \\import Browser.Host.TextEncoder as Encoder
+                \\deferred : ⊤ → Encoder.TextEncoder
+                \\deferred _ = Encoder.new ⊤
+                \\main : Start.Program
+                \\main =
+                \\    _ = deferred
+                \\    Start.Program
+                \\
+            else
+                realm_good;
+            try std.testing.expectEqual(@as(u32, 0), try current.run(program));
+            const installed = current.session.native_bindings.text_encoder.?;
+            try std.testing.expectEqualSlices(u8, &snapshot.key, &current.session.keys.of(installed.module));
+            current.session.pack = Pack.Pack.init(snapshot.bytes);
+            const row = current.session.pack.find(.emit, EmitPack.key(current.session.keys.of(installed.module), .{ .schema_library = false }));
+            try std.testing.expect(row != null);
+            try std.testing.expect(current.session.packCovers(current.session.graph.moduleFile(installed.module)));
+            var options = try current.options(false, false);
+            options.out_dir = path;
+            var io_failure: ?Session.IoFailure = null;
+            var result = try Emit.run(a, current.arena.allocator(), current.session, options, &io_failure);
+            defer result.deinit(a);
+            const embedded = current.session.profile.counter(.emit_units_embedded);
+            if (deferred) {
+                try std.testing.expect(result.diagnostics.len != 0);
+                try std.testing.expectEqual(@as(u32, 0), result.files_written);
+                try std.testing.expectEqual(@as(u64, 0), embedded);
+                try std.testing.expectEqual(@as(u64, 0), current.session.profile.counter(.modules_lowered));
+            } else {
+                for (result.diagnostics) |item| std.debug.print("{t}: {s}\n", .{ item.code, item.message });
+                try std.testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+                try std.testing.expect(result.files_written != 0);
+                if (fault == .none) try std.testing.expect(embedded > 0) else try std.testing.expectEqual(@as(u64, 0), embedded);
+                const facade = try output.dir.readFileAlloc(std.testing.io, "_core/Browser/Host/TextEncoder.mjs", a, .limited(16384));
+                defer a.free(facade);
+                try std.testing.expect(std.mem.indexOf(u8, facade, "new globalThis.TextEncoder()") != null);
+            }
+        }
+    }
 }

@@ -18,7 +18,8 @@ pub const Site = struct { source: Source, scope: ScopeId, kind: enum(u8) { call,
 pub const Edge = struct { callee: ExecId, caller: ExecId, site: SiteId };
 pub const Seed = struct { target: ExecId, allowed: u8, binding_digest: [32]u8, origin: enum(u8) { attested, private_test } = .attested };
 /// Phase1's downward API. Only its completed registry may supply production rows.
-pub const NativeSeed = struct { target: QualifiedDecl, allowed: u8, binding_digest: [32]u8 };
+pub const NativeContract = enum(u8) { unavailable, unit_to_native };
+pub const NativeSeed = struct { target: QualifiedDecl, allowed: u8, binding_digest: [32]u8, contract: NativeContract = .unavailable };
 pub const Input = struct {
     scope_count: u32,
     execs: std.MultiArrayList(Exec).Slice,

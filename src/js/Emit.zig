@@ -687,9 +687,6 @@ pub fn run(
     defer e.diagnostics.deinit(gpa);
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
 
-    try e.refusePendingNative();
-    if (e.hasErrors()) return e.nothingWritten(gpa);
-
     // §2's rule 1, on the one part of the output shape a platform declares
     // (`boundary.md` §5.2). First, and before the entry-point search: a
     // platform whose manifest names an impossible entry file is broken
@@ -752,6 +749,8 @@ pub fn run(
     };
     try e.eliminate(selected_entry);
     try e.shareValidators();
+    try e.prepareNative();
+    if (e.hasErrors()) return e.nothingWritten(gpa);
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
     // runtime of a lowering, and a chain that names none has nothing to
@@ -813,8 +812,10 @@ pub fn run(
 /// `beni check --platform=<name>` runs after the check phases
 /// (`frontend.md` §1).
 ///
-/// It is the front half of `run` and nothing else — no entry-point search,
-/// no elimination, no lowering, no output directory. The entry point is half
+/// Ordinary no-native checks use the front half of `run`: no entry-point
+/// search, elimination, lowering or output directory. An installed native
+/// candidate additionally requires current selection/reach/disposition, still
+/// without lowering or output. The ordinary entry point is half
 /// of a BUILD pair (§5.3) and `check` is handed paths; the four checks are
 /// not, because a `foreign_arity_mismatch` is a defect of the module and its
 /// sibling wherever it is found, and it is exactly what a pre-commit check
@@ -840,8 +841,6 @@ fn checkContractIntent(gpa: Allocator, scratch: Allocator, session: *Session, op
     defer e.projection.deinit(gpa);
     defer e.diagnostics.deinit(gpa);
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
-    if (intent == .execution) try e.refusePendingNative();
-    if (e.hasErrors()) return e.diagnostics.toOwnedSlice(gpa);
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
     try e.checkEntryFileName();
@@ -851,6 +850,37 @@ fn checkContractIntent(gpa: Allocator, scratch: Allocator, session: *Session, op
     try e.checkSiblings();
     try e.checkMarkupRuntime();
     try e.checkEntryKinds();
+    if (intent == .execution and session.native_bindings.text_encoder != null and !e.hasErrors()) {
+        const entry = if (options.library) null else try e.findEntry();
+        if (e.hasErrors() or (entry == null and !options.library)) return e.diagnostics.toOwnedSlice(gpa);
+        const selected_input: Emitter.BuildInput = .{
+            .options = options,
+            .selected = .{
+                .entry = entry,
+                .plan = &session.entry_plan,
+                .runtime_module = e.contract.runtime_module,
+                .entry_program = e.contract.entry_program,
+            },
+        };
+        e.input = &selected_input;
+        var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
+        defer pool.deinit();
+        e.projection.pool = &pool;
+        e.projection.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
+        if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.projection.core_private = Lower.corePrivateDeclared(e.bir(list));
+        const hs = e.session.checked.hoists;
+        const clean = try e.scratch.alloc(bool, hs.len);
+        for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
+        e.projection.clean_modules = clean;
+        if (options.platform.lowering) |name| if (findLowering(name)) |lw| if (lw.program != null) {
+            try e.runWrites();
+            try e.findLifts();
+            try e.cutPrerender();
+        };
+        try e.eliminate(entry);
+        try e.shareValidators();
+        try e.prepareNative();
+    }
     return e.diagnostics.toOwnedSlice(gpa);
 }
 
@@ -1389,6 +1419,7 @@ const Emitter = struct {
         /// Scratch-owned, filled by `eliminate` before the first module is
         /// lowered.
         live: Reach.Result = .empty,
+        native_emission: @import("../native/Emission.zig").Table = .{},
         /// `Lower.Input.core_private`, the same for every module of the build.
         core_private: Lower.CorePrivate = @splat(true),
         /// `Lower.Input.clean_modules`, the same for every module of the build.
@@ -1522,6 +1553,7 @@ const Emitter = struct {
 
         /// Scratch tables die with the caller arena; only these owners use gpa.
         fn deinit(p: *Projection, gpa: Allocator) void {
+            p.native_emission.deinit(gpa);
             if (p.writes) |writes| writes.deinit();
             for (p.owned.items) |text| gpa.free(text);
             p.owned.deinit(gpa);
@@ -1811,13 +1843,55 @@ const Emitter = struct {
     /// `foreign now : Float` — is indistinguishable from `pi` by type
     /// alone. What the check buys is real but narrower than advertised: no
     /// `foreign` may be polymorphic in a way that lets it fabricate a value.
-    /// An attested candidate must never fall through to an arbitrary sibling.
-    /// Phase1 deliberately has no executable native lowering authority.
-    fn refusePendingNative(e: *Emitter) !void {
+    /// No inspector/dump re-entry: consume this emitter's frozen selection and
+    /// the current Reach result before ANY cached adoption or module lowering.
+    fn prepareNative(e: *Emitter) Allocator.Error!void {
+        e.projection.native_emission.deinit(e.gpa);
         const native = e.session.native_bindings.text_encoder orelse return;
-        const file = e.graph().moduleFile(native.module);
-        const decl = e.bir(native.module).decls[native.checked.declaration];
-        try e.report(.not_implemented, file, decl.name_token, "The generated TextEncoder constructor is awaiting its checked realm and direct-lowering implementation. No native callable was emitted.", .{});
+        const chosen = e.input.selected orelse {
+            const decl = e.bir(native.module).decls[native.checked.declaration];
+            try e.report(.internal, e.graph().moduleFile(native.module), decl.name_token, "Native emission is missing its frozen selection. No native callable was emitted.", .{});
+            return;
+        };
+        const entry = chosen.entry;
+        const native_live = e.projection.live.decl(native.module, native.checked.declaration);
+        if (native_live and (e.input.options.platform.lowering != null or e.projection.cuts.len != 0 or e.projection.lifts.len != 0)) {
+            const decl = e.bir(native.module).decls[native.checked.declaration];
+            try e.report(.not_implemented, e.graph().moduleFile(native.module), decl.name_token, "Native emission requires a current generic initializer evaluation witness; program projections remain unresolved. No native callable was emitted.", .{});
+            return;
+        }
+        var evaluated: std.ArrayList(@import("../check/Realms.zig").QualifiedDecl) = .empty;
+        if (native_live) for (0..e.graph().count()) |mi| {
+            const module: Graph.Index = @fromBackingInt(@intCast(mi));
+            const source_bir = e.bir(module);
+            for (source_bir.decls, 0..) |decl, di| {
+                if (!e.projection.live.decl(module, di) or decl.kind != .value) continue;
+                if (Convention.definitionOf(e.dispatchOf(module), source_bir, @intCast(di)) == .constant) try evaluated.append(e.scratch, .{ .module = module, .declaration = @intCast(di) });
+            }
+        };
+        const selected: ?@import("../check/Realms.zig").QualifiedDecl = if (entry) |value| .{ .module = value.module, .declaration = value.decl.int() } else null;
+        // The authority helper first refuses every nonzero callback/role kind.
+        // No fabricated ordinary row and no second CompactDiscover budget.
+        const empty_compact: @import("../entry/CompactGraph.zig") = .{};
+        e.projection.native_emission = @import("../native/Emission.zig").prepare(e.gpa, .{
+            .registry = &e.session.native_bindings,
+            .source = .{ .graph = e.graph(), .artifacts = &e.session.artifacts, .interfaces = e.session.resolution.interfaces, .provenance = e.session.resolution.provenance, .dispatch = e.session.checked.dispatch },
+            .selection = .{ .graph = e.graph(), .plan = chosen.plan, .entries = &empty_compact, .selected = selected, .library = e.input.options.library },
+            .live = &e.projection.live,
+            .evaluated = evaluated.items,
+            .profile = &e.session.profile,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                const decl = e.bir(native.module).decls[native.checked.declaration];
+                try e.report(.internal, e.graph().moduleFile(native.module), decl.name_token, "Native emission has unavailable current source authority ({s}). No native callable was emitted.", .{@errorName(err)});
+                return;
+            },
+        };
+        if (e.projection.native_emission.recipe) |recipe| if (recipe.disposition == .refused) {
+            const decl = e.bir(native.module).decls[native.checked.declaration];
+            try e.report(.not_implemented, e.graph().moduleFile(native.module), decl.name_token, "The generated TextEncoder constructor has an unresolved native emission obligation ({t}). No native callable was emitted.", .{recipe.reason});
+        };
     }
 
     fn checkForeignShapes(e: *Emitter) !void {
@@ -1865,9 +1939,9 @@ const Emitter = struct {
                 if (d.kind != .foreign_value) continue;
                 // Read-only inspection knows this exact checked recipe identity;
                 // no sibling or arbitrary JavaScript grants its future readiness.
-                if (e.input.contract_intent == .inspection) if (e.session.native_bindings.text_encoder) |native| {
+                if (e.session.native_bindings.text_encoder) |native| {
                     if (native.module == m and native.checked.declaration == index) continue;
-                };
+                }
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
                 // so check 4 and the call sites cannot disagree: the arity is
@@ -6184,6 +6258,11 @@ const Emitter = struct {
                 e.projection.extra_roots = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
                 try e.walk();
             }
+            try e.prepareNative();
+            if (e.hasErrors()) {
+                for (slots) |*slot| slot.deinit(e.gpa);
+                return;
+            }
             first_slots = slots;
             reused = try e.reusableLowerings(first_slots, todo.items, &coarse, reshared);
         }
@@ -6665,6 +6744,7 @@ const Emitter = struct {
                 .sanitize_lists = e.input.options.sanitize_lists,
                 .sanitize_runtime = slot.sanitize_runtime,
                 .clean_modules = e.projection.clean_modules,
+                .native_emission = &e.projection.native_emission,
                 .boundary = if (e.projection.boundary) |*b| b else null,
                 .schemas = if (e.projection.schema_graph) |*g| g else null,
                 .schema_library = e.input.options.schema_library,
@@ -7675,7 +7755,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const b = e.bir(m);
             var surviving = false;
-            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.projection.live.decl(m, index));
+            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.projection.live.decl(m, index) and !e.projection.native_emission.ready(.{ .module = m, .declaration = @intCast(index) }));
             if (!surviving) continue;
             const source = try e.siblingPath(e.session.store.path(e.graph().moduleFile(m)));
             const bytes = e.readAsset(source) orelse return null;
@@ -8671,7 +8751,7 @@ const Emitter = struct {
             // sibling is cut to: the module imports exactly those.
             var surviving: std.ArrayList([]const u8) = .empty;
             for (b.decls, 0..) |d, index| {
-                if (d.kind == .foreign_value and e.projection.live.decl(m, index)) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
+                if (d.kind == .foreign_value and e.projection.live.decl(m, index) and !e.projection.native_emission.ready(.{ .module = m, .declaration = @intCast(index) })) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
             }
             if (surviving.items.len == 0) continue;
             const source_path = e.session.store.path(e.graph().moduleFile(m));

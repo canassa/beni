@@ -1334,6 +1334,11 @@ const Printer = struct {
                     if (i != 0) try p.tok(", ", ",");
                     i += 1;
                     try p.name(n, .binding);
+                    const logical = p.ir.name(n);
+                    if (logical.module == .none and (try p.spelling(n)).escapable) {
+                        try p.push(" as ");
+                        try p.name(n, .fixed);
+                    }
                 }
                 try p.tok(" };", "};");
                 try p.endLine(level);

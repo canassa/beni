@@ -42,6 +42,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // and type-checks: all three are part of the input (checker.md §4,
     // boundary.md §5.3).
     options.core_package = true;
+    options.prepare_native_emission = true;
     options.platform = build.platform;
     options.cache_build_id = build.cache.build_id;
     options.manifest_root = build.common.root orelse ".";
@@ -607,6 +608,7 @@ const DataBuild = struct {
 fn buildData(gpa: Allocator, io: Io, arena: Allocator, options_in: Session.Options, build: Cli.Build, app_root: []const u8, config: Manifest.Build.Data, cache: ?*const CacheDir, stderr: *Io.Writer) (Allocator.Error || error{Failed})!DataBuild {
     var options = options_in;
     options.core_package = true;
+    options.prepare_native_emission = true;
     options.platform = "node";
     options.cache_build_id = build.cache.build_id;
     options.manifest_root = app_root;

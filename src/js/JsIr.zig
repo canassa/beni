@@ -263,7 +263,7 @@ pub const Node = struct {
         this_lit,
         /// `f(a, b)`. `lhs` callee, `rhs` extra `SubRange` of arguments.
         call,
-        /// `new C(a, b)`, which only the `Js.construct` intrinsic writes.
+        /// `new C(a, b)`, from `Js.construct` or an attested native facade.
         /// Payload as `call`.
         new_call,
         /// `obj.name`. `lhs` object, `rhs` a `NameIndex`.
@@ -1354,11 +1354,20 @@ pub const Builder = struct {
 
     /// Hand the finished module over. The builder is empty afterwards.
     pub fn toOwned(b: *Builder, body: SubRange) Allocator.Error!JsIr {
+        // Each completed transfer needs an owner while later columns can fail
+        // (#1544). The caller still deinitializes the builder on either path.
+        const extra = try b.extra.toOwnedSlice(b.gpa);
+        errdefer b.gpa.free(extra);
+        const string_bytes = try b.string_bytes.toOwnedSlice(b.gpa);
+        errdefer b.gpa.free(string_bytes);
+        const names = try b.names.toOwnedSlice(b.gpa);
+        // Nodes move infallibly only after all fallible transfers succeeded,
+        // so the builder's cached columns remain valid on failure.
         const ir: JsIr = .{
             .nodes = b.nodes.toOwnedSlice(),
-            .extra = try b.extra.toOwnedSlice(b.gpa),
-            .string_bytes = try b.string_bytes.toOwnedSlice(b.gpa),
-            .names = try b.names.toOwnedSlice(b.gpa),
+            .extra = extra,
+            .string_bytes = string_bytes,
+            .names = names,
             .body = body,
         };
         b.name_index.clearRetainingCapacity();
@@ -2010,4 +2019,23 @@ test "dynamic module import rejects malformed operands and reserved rhs" {
     try std.testing.expectError(error.WrongPosition, ir.verify());
     ir.nodes.items(.data)[imp.int()] = .{ .lhs = std.math.maxInt(u32), .rhs = 0 };
     try std.testing.expectError(error.OutOfBounds, ir.verify());
+}
+
+test "builder toOwned frees every transferred column on allocation failure" {
+    var backing: testing.FailingAllocator = .init(testing.allocator, .{ .resize_fail_index = 0 });
+    try testing.checkAllAllocationFailures(backing.allocator(), struct {
+        fn run(gpa: Allocator) !void {
+            var b: Builder = .init(gpa);
+            defer b.deinit();
+            const binding_name = try b.intern(.local(@fromBackingInt(0)));
+            const string = try b.addString("retained source string");
+            const value = try b.addParts(.string, Node.no_pos, string[0], string[1]);
+            const decl = try b.addParts(.const_decl, Node.no_pos, @backingInt(binding_name), value.int());
+            const body = try b.addRange(&.{decl});
+            var ir = try b.toOwned(body);
+            defer ir.deinit(gpa);
+            try ir.verify();
+            try testing.expect(ir.nodes.len != 0 and ir.extra.len != 0 and ir.string_bytes.len != 0 and ir.names.len != 0);
+        }
+    }.run, .{});
 }

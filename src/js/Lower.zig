@@ -243,6 +243,7 @@ pub const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
+    native_emission: ?*const @import("../native/Emission.zig").Table = null,
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
     token_starts: []const u32,
@@ -2979,6 +2980,7 @@ pub const Lowerer = struct {
             },
             .development => l.in.development,
             .test_hooks => l.in.test_hooks,
+            .native_recipe => return @import("../native/Emission.zig").matchesRecipeFact(l.in.native_emission, .{ .module = m, .declaration = fact.index }, fact),
             .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
             .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
             // All three are asked with a constant `true` when the unit needs
@@ -3453,7 +3455,17 @@ pub const Lowerer = struct {
             // markup lowering, and has no value of its own to emit.
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
             // Bound by the sibling import, not by a declaration here.
-            .foreign_value => return,
+            .foreign_value => {
+                const authority = l.in.native_emission orelse return;
+                const recipe = authority.recipe orelse return;
+                if (recipe.target.module != l.in.module or recipe.target.declaration != index) return;
+                records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+                const ready = authority.ready(.{ .module = l.in.module, .declaration = index });
+                l.askSelf(.native_recipe, true, @backingInt(recipe.abi), index);
+                if (ready and l.liveDecl(index)) try l.nativeFacade(out, index);
+                try l.recEnd(records.direct, index);
+                return;
+            },
             // The parser already reported it and there is no body.
             .annotation_only => return,
         }
@@ -3491,6 +3503,20 @@ pub const Lowerer = struct {
             try l.declarationAs(out, index, .twin);
         }
         try l.recEnd(records.twin, index);
+    }
+
+    /// Keep the checked Unit argument as one ordinary strict JS parameter.
+    /// The global constructor lookup happens inside this facade after arguments.
+    fn nativeFacade(l: *Lowerer, out: *StmtList, index: u32) !void {
+        const d = l.bir.decls[index];
+        const p: u32 = if (d.name_token < l.in.token_starts.len) l.in.token_starts[d.name_token] else 0;
+        const binding_name = try l.name(.{ .module = l.module_name.toOptional(), .base = l.bir.symbol(d.name), .tag = JsIr.Name.no_tag });
+        const argument = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$nativeUnit"), .tag = JsIr.Name.no_tag });
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const constructor = try l.member(global, try l.interner.getOrPut(l.gpa, "TextEncoder"), p);
+        const created = try l.add(.new_call, p, constructor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{}))));
+        const facade = try l.arrowOf(&.{argument}, &.{try l.returnStmt(created, p)}, p);
+        try l.constDecl(out, binding_name, facade, p);
     }
 
     fn declarationAs(l: *Lowerer, out: *StmtList, index: u32, variant: Variant) !void {
@@ -3837,6 +3863,7 @@ pub const Lowerer = struct {
             // it; this loop walks `bir.decls` and would otherwise import
             // every `foreign` whether anything reached it or not.
             if (!l.liveDecl(@intCast(index))) continue;
+            if (l.in.native_emission) |authority| if (authority.ready(.{ .module = l.in.module, .declaration = @intCast(index) })) continue;
             const base = l.bir.symbol(d.name);
             try siblings.append(l.scratch, .{
                 .imported = try l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag }),
