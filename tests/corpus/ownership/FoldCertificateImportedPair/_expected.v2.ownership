@@ -1,0 +1,27 @@
+module Lib
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  16:19 Main.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  16:19 Main.incAll l#Node.2#Node.1: accepted param
+  16:19 Main.incAll l#Node.1: accepted param
+  16:19 Main.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  16:19 Main.incAll l#Node.0#Node.1: accepted param
+  16:30 List.push xs: accepted param
+  16:47 Main.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  16:47 Main.incAll r#Node.2#Node.1: accepted param
+  16:47 Main.incAll r#Node.1: accepted param
+  16:47 Main.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  16:47 Main.incAll r#Node.0#Node.1: accepted param
+  23:13 Main.incAll <call Lib.same>#Node.2⟨Tree⟩#Node.1: accepted param
+  23:13 Main.incAll <call Lib.same>#Node.2#Node.1: accepted param
+  23:13 Main.incAll <call Lib.same>#Node.1: accepted param
+  23:13 Main.incAll <call Lib.same>#Node.0⟨Tree⟩#Node.1: accepted param
+  23:13 Main.incAll <call Lib.same>#Node.0#Node.1: accepted param
+  27:14 Main.incAll <call Lib.unroll>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  27:14 Main.incAll <call Lib.unroll>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  27:14 Main.incAll <call Lib.unroll>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  27:14 Main.incAll <call Lib.unroll>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  27:14 Main.incAll <call Lib.unroll>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 21: accepted 16 (fresh 0, call 0, param 16, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 21: accepted 16 (fresh 0, call 0, param 16, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause disjoint 5
