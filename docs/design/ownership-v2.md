@@ -2986,7 +2986,15 @@ Where κ is set, always **at the selected path p**:
       are built post-order on an explicit stack; an open set met again while it is still open panics,
       since the bits make that impossible. A fold's closure is a breadth-first walk that expands each hit
       it meets, then one resumed pass 2 over what that read. The clean memo is written only for an open
-      set of one state, so no fold writes it: #1537's empty snapshot cannot be recorded.
+      set of one state, so no fold writes it: #1537's empty snapshot cannot be recorded. Nor could the
+      walk before the rule record it: a clean frame's whole route has finite rank of at least 1, so it
+      met no recast's inner (no `via`), and each position on it held one unfolded state. A fold lands only
+      on a position its own lineage passed, so a fold at or above a clean frame would repeat a node of
+      positive finite rank, which projection cannot do. #1537 was latent in the code, never reachable.
+      The kept bit was a real gap: on the walk before the rule, a call of one member wrote a clean entry
+      with the member's `kept` entries, and a call of two whose second member has no child there read it
+      (*a clean entry written by a call of one member is not read by a call of two*, which fails without
+      the bit and on that walk).
     - *The reference and the checks.* `reference` walks frames over the fully read Σ (no memo), with
       §2.3's owners and output built as the walk before the rule built them, and stops at 2²² frames. Under
       `-Downership-full-cross-check` each call compares the memoised rule with the rule without its memo
@@ -2996,7 +3004,11 @@ Where κ is set, always **at the selected path p**:
       error.
     - *Mutations* (`-Downership-v2-mutation`, which `gates` refuses): `propagate-full-read` (pass 1 reads
       below a hit), `propagate-no-fold-first` (the reference stands for the rule), `propagate-no-resumed-pass2`
-      and `propagate-no-merge-reopen`. Each fails the counted test that pins it.
+      and `propagate-no-merge-reopen`. The first fails the shared DAG, the second the doubling record and
+      the sibling (by their records), the third the resumed hit and the two-leaf merge, the fourth the
+      two-leaf merge. The self-loop and the coprime knots pin exactness against the reference, which the
+      second mutation leaves equal. A self-edge also sets its state's own bit here, so the self-loop rule
+      of pass 2 is not what makes that state cyclic.
     - *Counted tests.* In `Cond.zig`: the shared DAG (C = 16 less C = 1 within 10 % at N = 16 and 64), the
       sibling (2d + 7 states and one fold at d = 4, 8, 12, linear records; this fixture's `B` names one
       list, the prototype's two), the period-1 self-loop, the coprime knots (14 states, one fold), the
@@ -3007,8 +3019,10 @@ Where κ is set, always **at the selected path p**:
       1 035 422 under the walk before it; since #1538's atom rule both take 7 603 / 13 392 / 20 468, so
       the doubling record and the sibling fixture are what fail without fold first. That record was the "genuine product" of four tests of §4.1 (the source continuation,
       the summary that is not printed, near-limit acceptance in either order); they use the doubling calls
-      `w_k x = w_{k-1} (w_{k-1} x)` now, which still are one, and the near-limit pair measures its growth
-      and sets the allowance 5 % above it.
+      `w_k x = w_{k-1} (w_{k-1} x)` now, which still are one. The near-limit test measures `h`'s growth in
+      one order and runs both orders under one allowance 5 % above it, each accepted with that growth; its
+      twin runs the other order 5 % below it, which stops at the limit. Both fail under a deliberate
+      charge to whichever declaration meets a shared table's first misses (#1104's kind).
     - *Measured* (self-hosted ReleaseSafe, `dump --stage=ownership --ownership=v2`, against master
       `8faad6453`). Over the 2 125 roots of `allOwnership` under `--ownership-everywhere`: no verdict or
       limit line changes; records rise 0.14 % (9 972 608 → 9 986 751). Four roots' summaries number their fresh labels in another order
