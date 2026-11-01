@@ -182,6 +182,11 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
+## String classes on `browser-inline`
+
+Scalar String `class` values may be constant or change with the model. Empty strings retain
+an empty attribute. Class-list syntax and style lists remain compiler limits on this platform.
+
 ## Helpers on `browser-inline`
 
 On `browser-inline`, a view can call a function of its own module that returns markup. The
