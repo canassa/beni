@@ -1,7 +1,6 @@
 //! The harness of a `workers/` fixture (docs/design/boundary.md §9.12 (k);
 //! tests/corpus/README.md, *A Worker*): where its driver is, how Miniflare
-//! is found, and what a build's record line covers beyond a plain `run/`
-//! one's.
+//! is found, and what a build's digest covers beyond a plain `run/` one's.
 //!
 //! Such a fixture is a Worker. `tests/workers/driver.mjs` starts the build
 //! under Miniflare — the `workerd` that nixpkgs' `wrangler` carries, found
@@ -9,8 +8,8 @@
 //! driver as an argument, since a spawned program gets an empty environment
 //! — sends the script's requests and prints a transcript: each request and
 //! its answer, with what the Worker wrote to its console. The port never
-//! appears in it, so the transcript is the golden. The record line's digest
-//! (`run_hash.lineWith`) covers the driver's bytes, the script and the
+//! appears in it, so the transcript is the golden. The digest
+//! (`run_hash.digestWith`) covers the driver's bytes, the script and the
 //! Wrangler configuration as well as the output tree, the golden and the
 //! Node version, so a change to any of them runs the Worker again.
 
@@ -23,7 +22,7 @@ const Allocator = std.mem.Allocator;
 /// The driver, relative to the repository root.
 pub const driver_path = "tests/workers/driver.mjs";
 
-/// The name on the record line where a `browser/` line has its DOM's.
+/// The host's name in the digest, where a `browser/` digest has its DOM's.
 pub const id = "workers";
 
 /// The harness's files, resolved once per process from the working
@@ -53,10 +52,10 @@ pub fn harness(io: Io) !Harness {
     return harness_value.?;
 }
 
-/// What a Worker build's record line covers besides the output tree and
-/// the golden (`run_hash.lineWith`): the driver, the script and the
+/// What a Worker build's digest covers besides the output tree and the
+/// golden (`run_hash.digestWith`): the driver, the script and the
 /// configuration. Not Miniflare's path: the versions are nixpkgs' pin, and
-/// a path that moves with the store would stale every line for nothing.
+/// a path that moves with the store would stale every digest for nothing.
 pub fn inputs(arena: Allocator, h: Harness, steps: []const u8, config: []const u8) !run_hash.Page {
     return .{ .dom = id, .inputs = try arena.dupe(run_hash.Page.Input, &.{
         .{ .name = "driver", .bytes = h.driver_bytes },
