@@ -1988,7 +1988,7 @@ const Printer = struct {
         var budget: u32 = 64;
         while (budget > 0) : (budget -= 1) {
             switch (p.ir.tag(n)) {
-                .ident, .global_this, .this_lit => return true,
+                .ident, .global_this, .import_meta_url, .this_lit => return true,
                 .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
                 else => return false,
             }
@@ -2502,6 +2502,7 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .import_meta_url => try p.push("import.meta.url"),
             .this_lit => try p.push("this"),
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
@@ -2674,6 +2675,7 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .import_meta_url => try p.push("import.meta.url"),
             .this_lit => try p.push("this"),
             .call => {
                 // callee, then `call_rest`
@@ -2920,7 +2922,7 @@ const Printer = struct {
         var n = p.resolve(node);
         while (true) switch (p.ir.tag(n)) {
             .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return true,
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => return true,
             else => return false,
         };
     }

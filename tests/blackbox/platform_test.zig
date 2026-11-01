@@ -1487,3 +1487,170 @@ test "generic aliased runtime may store a suspending callback without calling it
         }
     }
 }
+
+// Dedicated workers stay on this test platform until realm and Wire checks ship.
+fn writeWorkerPlatform(w: *World) !void {
+    for ([_][]const u8{ "beni.json", "Page.beni", "Page.js", "Worker.beni", "Worker.js", "WorkerRuntime.beni", "runtime.js" }) |name| {
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(w.arena.allocator(), "tests/platforms/worker/{s}", .{name}), w.arena.allocator(), .limited(world.max_stream_bytes));
+        try w.write(try std.fmt.allocPrint(w.arena.allocator(), "platform/{s}", .{name}), bytes);
+    }
+}
+
+test "worker discovery terminates cycles and emits identical entries at jobs 1 and 8" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\a : Worker.Program
+        \\a = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleA, stream = λ_ _ _ _ → ⊤ }
+        \\b : Worker.Program
+        \\b = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleB, stream = λ_ _ _ _ → ⊤ }
+        \\handleA : String, ⊤, ⊤ → String
+        \\handleA message _ _ =
+        \\    if message == "shared" then handleB message ⊤ ⊤
+        \\    else if message == "nested" then
+        \\        _ = Worker.open b
+        \\        message
+        \\    else "a:" ++ message
+        \\handleB : String, ⊤, ⊤ → String
+        \\handleB message _ _ =
+        \\    if message == "nested" then
+        \\        _ = Worker.open a
+        \\        message
+        \\    else "b:" ++ message
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    _ = Worker.open a
+        \\    ⊤
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    for ([_]bool{ false, true }) |release| {
+        // EXECUTE
+        const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
+        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
+        try testing.expectEqual(@as(u8, 0), one.exit_code);
+        try testing.expectEqual(@as(usize, 0), one.diagnostics.len);
+        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
+        try testing.expectEqual(@as(u8, 0), eight.exit_code);
+        try testing.expectEqual(@as(usize, 0), eight.diagnostics.len);
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        const files = try w.listFiles("one");
+        try testing.expectEqualDeep(files, try w.listFiles("eight"));
+        var entries: usize = 0;
+        for (files) |path| {
+            try testing.expectEqualStrings(try w.read(try std.fmt.allocPrint(w.arena.allocator(), "one/{s}", .{path})), try w.read(try std.fmt.allocPrint(w.arena.allocator(), "eight/{s}", .{path})));
+            if (std.mem.startsWith(u8, path, "_workers/") and std.mem.endsWith(u8, path, "/_main.mjs")) entries += 1;
+        }
+        try testing.expectEqual(@as(usize, 2), entries);
+        // Import each projected user module and execute its handler. This
+        // catches an initializer order that still follows a descriptor's
+        // original body and would read a callback before its binding exists.
+        var script: std.ArrayList(u8) = .empty;
+        try script.appendSlice(w.arena.allocator(), "const replies=[];\n");
+        for (files) |path| {
+            if (!std.mem.startsWith(u8, path, "_workers/") or !std.mem.endsWith(u8, path, "/Main.mjs")) continue;
+            try script.print(w.arena.allocator(), "replies.push(Object.values(await import('./one/{s}'))[0].a.handle('plain',null,null));\n", .{path});
+        }
+        try script.appendSlice(w.arena.allocator(), "console.log(replies.sort().join(','));\n");
+        try w.write("probe.mjs", script.items);
+        try w.expectProgram("probe.mjs", .{ .stdout = "a:plain,b:plain\n" });
+    }
+}
+
+test "worker runtime factories are diagnosed before writing any output" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\
+        \\factory : ⊤ → Worker.Program
+        \\factory _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    _ = Worker.open (factory ⊤)
+        \\    ⊤
+        \\
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    // EXECUTE
+    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+    // VERIFY OUTPUT AND SIDE EFFECTS
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .worker_entry_not_static,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 9, .col = 9 }, .end = .{ .line = 9, .col = 20 } },
+        .title = "WORKER ENTRY NOT STATIC",
+        .message = "This launch needs a top-level Program declaration, or a finite choice between\nsuch references. A runtime factory cannot define a worker entry.",
+    }}, result.diagnostics);
+    try testing.expect(!w.exists("out"));
+}
+
+test "worker launch URLs stay relative to their module under release specialization" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Nested/Open.beni",
+        \\import Worker
+        \\worker : Worker.Program
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\pub open : ⊤ → ⊤
+        \\open _ =
+        \\    _ = Worker.open worker
+        \\    ⊤
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\import Nested.Open
+        \\worker : Worker.Program
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    _ = Worker.open worker
+        \\    Nested.Open.open ⊤
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    try w.write("probe.mjs",
+        \\import {existsSync} from 'node:fs';
+        \\import {fileURLToPath} from 'node:url';
+        \\let launches = 0;
+        \\globalThis.Worker = class {
+        \\  constructor(url) {
+        \\    if (!existsSync(fileURLToPath(url))) throw new Error(`launch points outside emitted worker tree: ${url}`);
+        \\    launches++;
+        \\  }
+        \\  addEventListener() {}
+        \\};
+        \\Object.values(await import('./out/Main.mjs'))[0].a(null);
+        \\console.log(`launched ${launches} workers`);
+        \\
+    );
+    for ([_]bool{ false, true }) |release| {
+        // EXECUTE
+        const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
+            &.{ "build", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
+            if (release) &.{"--release"} else &.{},
+        });
+        const result = try w.run(args);
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+        try w.expectProgram("probe.mjs", .{ .stdout = "launched 2 workers\n" });
+    }
+}

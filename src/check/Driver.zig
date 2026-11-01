@@ -502,6 +502,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .plan = &d.plans[m.int()],
         .roundtrip_interfaces = d.options.roundtrip_interfaces,
         .roundtrip_dispatch = d.options.roundtrip_dispatch,
+        .entry_constructors = d.options.entry_constructors,
         .crossing = d.options.crossing,
         .informational = d.options.informational,
         .explain = d.options.explain,

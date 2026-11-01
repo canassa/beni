@@ -1047,7 +1047,7 @@ const Opt = struct {
             const d = o.ir.data(n);
             switch (o.ir.tag(n)) {
                 .ident => return @fromBackingInt(@intCast(d.lhs)),
-                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return .none,
+                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => return .none,
                 .member => n = @fromBackingInt(@intCast(d.lhs)),
                 else => return null,
             }

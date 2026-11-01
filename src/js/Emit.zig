@@ -112,6 +112,7 @@ const beni_markup = @import("beni_markup");
 const Interface = @import("../resolve/Interface.zig");
 const Writes = @import("../writes/Writes.zig");
 const Lift = @import("Lift.zig");
+const WorkerEntry = @import("WorkerEntry.zig");
 
 const Emit = @This();
 
@@ -743,7 +744,10 @@ pub fn run(
         try e.findLifts();
         try e.cutPrerender();
     };
+    try e.workerCandidates();
     try e.eliminate(entry);
+    try e.planWorkers(entry);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     try e.shareValidators();
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -784,6 +788,8 @@ pub fn run(
     // §2's page shell, beside the entry file, in either layout.
     if (entry) |at| try e.emitShell(at);
     try e.emitDirectPlan();
+    try e.emitWorkers();
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.hasErrors()) return e.nothingWritten(gpa);
@@ -1307,6 +1313,11 @@ const Emitter = struct {
     /// Scratch-owned, filled by `eliminate` before the first module is
     /// lowered.
     live: Reach.Result = .empty,
+    worker_candidates: []const WorkerEntry.Descriptor = &.{},
+    deferred: []const Reach.Node = &.{},
+    worker_entries: []const WorkerEntry.Descriptor = &.{},
+    worker_runtime: ?EntryPlan.Value = null,
+    output_prefix: []const u8 = "",
     /// `Lower.Input.core_private`, the same for every module of the build.
     core_private: Lower.CorePrivate = @splat(true),
     /// `Lower.Input.clean_modules`, the same for every module of the build.
@@ -1481,6 +1492,278 @@ const Emitter = struct {
             return d.is_function or d.evidence != 0;
         }
     };
+
+    fn resolvedValue(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index) ?Reach.Node {
+        const b = e.bir(m);
+        const d = b.instData(at);
+        return switch (b.instTag(at)) {
+            .top => .{ .module = m, .kind = .decl, .index = d.lhs },
+            .ext_value => blk: {
+                const other: Graph.Index = @fromBackingInt(d.lhs);
+                if (other.int() >= e.session.resolution.provenance.len) return null;
+                const p = e.session.resolution.provenance[other.int()];
+                if (d.rhs >= p.value_decl.len) return null;
+                break :blk .{ .module = other, .kind = .decl, .index = p.value_decl[d.rhs].int() };
+            },
+            else => null,
+        };
+    }
+
+    fn constructorKind(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index) ?EntryPlan.KindIndex {
+        const b = e.bir(m);
+        if (b.instTag(at) != .call) return null;
+        const callee = e.resolvedValue(m, @fromBackingInt(b.instData(at).lhs)) orelse return null;
+        const plan = &e.session.entry_plan;
+        for (0..plan.kinds.len) |ki| {
+            const k = plan.kinds.get(ki);
+            if (k.launches.len == 0) continue;
+            for (k.constructors.start..k.constructors.start + k.constructors.len) |ci| {
+                const c = plan.constructors.get(ci).value;
+                if (callee.module == c.module and callee.index == c.decl) return @fromBackingInt(@intCast(ki));
+            }
+        }
+        return null;
+    }
+
+    fn workerCandidates(e: *Emitter) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        var out: std.ArrayList(WorkerEntry.Descriptor) = .empty;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |d, di| {
+                if (d.kind != .value or d.params_start != d.params_end) continue;
+                const body = d.body.unwrap() orelse continue;
+                const kind = e.constructorKind(m, body) orelse continue;
+                const identity = try std.fmt.allocPrint(e.scratch, "{s}/{s}/{s}", .{
+                    try e.outputPath(m), e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(d.name)),
+                });
+                // Input-derived identity, independent of discovery order and jobs.
+                const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id });
+            }
+        }
+        std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {
+            fn less(_: void, a: WorkerEntry.Descriptor, b: WorkerEntry.Descriptor) bool {
+                return std.mem.lessThan(u8, a.identity, b.identity);
+            }
+        }.less);
+        e.worker_candidates = out.items;
+        const deferred = try e.scratch.alloc(Reach.Node, out.items.len);
+        for (deferred, out.items) |*n, d| n.* = .{ .module = d.module, .kind = .decl, .index = d.decl };
+        e.deferred = deferred;
+    }
+
+    fn staticPrograms(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index, kind: EntryPlan.KindIndex, found: *std.ArrayList(u32), depth: u32) Allocator.Error!bool {
+        if (depth > max_alias_depth) return false;
+        const b = e.bir(m);
+        if (e.resolvedValue(m, at)) |n| {
+            for (e.worker_candidates, 0..) |candidate, i| {
+                if (candidate.module == n.module and candidate.decl == n.index and candidate.kind == kind) {
+                    if (std.mem.indexOfScalar(u32, found.items, @intCast(i)) == null) try found.append(e.scratch, @intCast(i));
+                    return true;
+                }
+            }
+            const target = e.bir(n.module).decls[n.index];
+            if (target.params_start != target.params_end) return false;
+            return e.staticPrograms(n.module, target.body.unwrap() orelse return false, kind, found, depth + 1);
+        }
+        const d = b.instData(at);
+        switch (b.instTag(at)) {
+            .case => {
+                const branches = b.extraSlice(b.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
+                for (branches) |branch| {
+                    if (!try e.staticPrograms(m, @fromBackingInt(b.instData(branch).rhs), kind, found, depth + 1)) return false;
+                }
+                return branches.len != 0;
+            },
+            else => return false,
+        }
+    }
+
+    fn discoverWorkers(e: *Emitter, selected: ?Entry, found: *std.ArrayList(u32)) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        const plan = &e.session.entry_plan;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di)) continue;
+                const is_deferred = for (e.deferred) |n| {
+                    if (n.module == m and n.index == di) break true;
+                } else false;
+                if (is_deferred and (selected == null or selected.?.module != m or selected.?.decl.int() != di)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    if (b.instTag(at) != .call) continue;
+                    const data = b.instData(at);
+                    const callee = e.resolvedValue(m, @fromBackingInt(data.lhs)) orelse continue;
+                    for (0..plan.kinds.len) |ki| {
+                        const k = plan.kinds.get(ki);
+                        for (k.launches.start..k.launches.start + k.launches.len) |li| {
+                            const launch = plan.launches.get(li);
+                            if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
+                            if (e.options.library) {
+                                try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
+                                continue;
+                            }
+                            const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                            if (launch.parameter >= args.len or !try e.staticPrograms(m, args[launch.parameter], @fromBackingInt(@intCast(ki)), found, 0)) {
+                                try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "This launch needs a top-level Program declaration, or a finite choice between such references. A runtime factory cannot define a worker entry.", .{});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn descriptorsFor(e: *Emitter, module: Graph.Index) ![]const WorkerEntry.Descriptor {
+        if (e.worker_candidates.len == 0) return &.{};
+        const out = try e.scratch.dupe(WorkerEntry.Descriptor, e.worker_candidates);
+        const from = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, try e.outputPath(module) });
+        for (out) |*d| {
+            const to = try std.fmt.allocPrint(e.scratch, "_workers/{s}/_main.mjs", .{d.id});
+            d.url = try relativeSpecifier(e.scratch, from, to);
+        }
+        return out;
+    }
+
+    fn selectedRuntime(e: *const Emitter) ?EntryPlan.Value {
+        return e.worker_runtime orelse e.session.entry_plan.runtime();
+    }
+
+    fn workerBootstrap(e: *Emitter, entry: Entry) !void {
+        const runner = e.worker_runtime.?;
+        const runtime_path = try e.outputPath(runner.module);
+        const main_path = try e.outputPath(entry.module);
+        const run_name = try e.moduleSpelling(runner.module, "run");
+        const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
+        var text: std.ArrayList(u8) = .empty;
+        // These listeners must run before either imported module's initializers.
+        try text.appendSlice(e.scratch,
+            \\globalThis.addEventListener("error", event => { globalThis.console.error(event.error ?? event.message); });
+            \\globalThis.addEventListener("unhandledrejection", event => { globalThis.console.error(event.reason); });
+            \\const pending = [];
+            \\const hold = event => { event.stopImmediatePropagation(); pending.push(event.data); };
+            \\globalThis.addEventListener("message", hold);
+            \\
+        );
+        try text.print(e.scratch,
+            \\const runtime = await import("./{s}");
+            \\const program = await import("./{s}");
+            \\runtime.{s}(program.{s});
+            \\globalThis.removeEventListener("message", hold);
+            \\for (const data of pending) globalThis.dispatchEvent(new MessageEvent("message", {{ data }}));
+            \\
+        , .{ runtime_path, main_path, run_name, main_name });
+        try e.produce(default_entry_file, text.items, e.session.store.path(e.graph().moduleFile(entry.module)));
+    }
+    fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
+        var options = e.options;
+        options.platform.lowering = null;
+        options.platform.markup_runtime = null;
+        options.platform.markup_module = null;
+        options.platform.runtime = null;
+        options.platform.html = null;
+        options.platform.exports = .none;
+        options.platform.entry_exports = &.{};
+        options.platform.entry = default_entry_file;
+        options.fuzz = false;
+        return .{
+            .gpa = e.gpa,
+            .scratch = e.scratch,
+            .session = e.session,
+            .options = options,
+            .io_failure = e.io_failure,
+            .pool = e.pool,
+            .core_private = e.core_private,
+            .clean_modules = e.clean_modules,
+            .v2_whole = e.v2_whole,
+            .forwarding_foreigns = e.forwarding_foreigns,
+            .worker_candidates = e.worker_candidates,
+            .deferred = e.deferred,
+            .worker_entries = e.worker_entries,
+            .worker_runtime = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime,
+            .output_prefix = try std.fmt.allocPrint(e.scratch, "_workers/{s}/", .{descriptor.id}),
+        };
+    }
+
+    fn planWorkers(e: *Emitter, entry: ?Entry) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        var found: std.ArrayList(u32) = .empty;
+        try e.discoverWorkers(entry, &found);
+        if (e.options.library) {
+            for (e.worker_candidates) |d| if (e.live.decl(d.module, d.decl)) {
+                try e.report(.not_implemented, e.graph().moduleFile(d.module), e.bir(d.module).decls[d.decl].name_token, "Worker Program exports in `--library` builds are not implemented yet.", .{});
+            };
+            return;
+        }
+        var at: usize = 0;
+        while (at < found.items.len and !e.hasErrors()) : (at += 1) {
+            const descriptor = e.worker_candidates[found.items[at]];
+            var projection = try e.workerProjection(descriptor);
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
+            try projection.eliminate(root);
+            try projection.discoverWorkers(root, &found);
+            try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
+            projection.diagnostics.deinit(e.gpa);
+        }
+        const selected = try e.scratch.alloc(bool, e.worker_candidates.len);
+        @memset(selected, false);
+        for (found.items) |i| selected[i] = true;
+        var entries: std.ArrayList(WorkerEntry.Descriptor) = .empty;
+        for (e.worker_candidates, selected) |d, keep| if (keep) try entries.append(e.scratch, d);
+        if (e.hasErrors()) return;
+        e.worker_entries = entries.items;
+        for (entries.items) |d| try e.session.entry_plan.entries.append(e.gpa, .{
+            .module = d.module,
+            .decl = d.decl,
+            .kind = d.kind,
+            .id = std.hash.Wyhash.hash(0, d.identity),
+        });
+    }
+
+    fn emitWorkers(e: *Emitter) !void {
+        const plan = &e.session.entry_plan;
+        for (0..plan.entries.len) |i| {
+            const root_entry = plan.entries.get(i);
+            const descriptor: WorkerEntry.Descriptor = .{
+                .module = root_entry.module,
+                .decl = root_entry.decl,
+                .kind = root_entry.kind,
+                .identity = "",
+                .id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{root_entry.id}),
+            };
+            var projection = try e.workerProjection(descriptor);
+            defer {
+                for (projection.owned.items) |bytes| e.gpa.free(bytes);
+                projection.owned.deinit(e.gpa);
+                projection.points_to.deinit(e.gpa);
+                projection.rep_key_text.deinit(e.gpa);
+            }
+            const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            try projection.eliminate(root);
+            try projection.shareValidators();
+            try projection.refuseMarkupWithoutLowering();
+            if (e.options.release and !e.options.allow_debug) try projection.refuseDebug();
+            if (!projection.hasErrors()) {
+                try projection.openDebugContext();
+                try projection.emitModules(root);
+                if (!projection.hasErrors()) {
+                    try projection.copyAssets();
+                    try projection.workerBootstrap(root);
+                }
+            }
+            try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
+            projection.diagnostics.deinit(e.gpa);
+            // Produce copies before freeing this projection's print buffers.
+            for (projection.pending.items) |out| try e.produce(out.path, out.bytes, out.origin);
+            if (e.hasErrors()) return;
+        }
+    }
 
     fn graph(e: *Emitter) *const Graph {
         return &e.session.graph;
@@ -2327,7 +2610,7 @@ const Emitter = struct {
     /// Checked interface view, including alias arguments. No checker inference
     /// runs in emit: this reads the immutable schemes it already proved.
     fn genericRuntimeSelected(e: *const Emitter) bool {
-        if (e.session.entry_plan.validated) return e.session.entry_plan.runtime() != null;
+        if (e.session.entry_plan.validated) return e.selectedRuntime() != null;
         // Before validation this selects the legacy markup export request,
         // not an executable or trusted runtime. Publication follows below.
         const program = e.options.platform.program orelse return false;
@@ -2338,7 +2621,7 @@ const Emitter = struct {
     }
 
     fn entryRun(e: *const Emitter) ?struct { module: Graph.Index, decl: u32 } {
-        if (e.session.entry_plan.runtime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
+        if (e.selectedRuntime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
         const module = e.runtime_module orelse return null;
         const runner = e.suppliedAs("run") orelse return null;
         return .{ .module = module, .decl = runner.decl };
@@ -2823,7 +3106,7 @@ const Emitter = struct {
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
-        if (e.session.entry_plan.runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
         for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
         for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
@@ -2837,7 +3120,7 @@ const Emitter = struct {
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
-        if (e.session.entry_plan.runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
         try names.appendSlice(e.scratch, e.module_uses.items);
@@ -5181,7 +5464,7 @@ const Emitter = struct {
     /// field or gives a type integer tags.
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
-        if (!e.options.release or e.options.library or e.reachesDebug()) return;
+        if (!e.options.release or e.options.library or e.reachesDebug() or e.worker_entries.len != 0) return; // #1296: one build-wide wire naming table will replace this.
         // `--fuzz`: every program's message type, and what its payloads
         // name, is a type JavaScript sees (`browser-direct.md` §8.3, the
         // contract's item 2) — a message a fuzzer builds in the development
@@ -5493,6 +5776,7 @@ const Emitter = struct {
             .release = e.options.release,
             .vocabulary = e.graph().markup.vocabulary,
             .extra_roots = e.extra_roots,
+            .deferred = e.deferred,
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
             .test_hooks = e.options.test_hooks,
@@ -5944,6 +6228,7 @@ const Emitter = struct {
                 const source_path = e.session.store.path(e.graph().moduleFile(m));
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
+                slot.worker_descriptors = try e.descriptorsFor(m);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
                 if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
@@ -6154,6 +6439,7 @@ const Emitter = struct {
     /// One module's way from `Bir` to bytes. Written by the one worker that
     /// took the module, read by the calling thread once every worker is done.
     const ModuleSlot = struct {
+        worker_descriptors: []const WorkerEntry.Descriptor = &.{},
         specifiers: []const []const u8 = &.{},
         sibling: []const u8 = "",
         derived_runtime: []const u8 = "",
@@ -6483,6 +6769,8 @@ const Emitter = struct {
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .worker_descriptors = slot.worker_descriptors,
+                .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
@@ -6515,7 +6803,7 @@ const Emitter = struct {
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,
                 .direct = if (e.direct) |*d| d else null,
-                .inline_once = e.options.release,
+                .inline_once = e.options.release and e.worker_entries.len == 0,
                 .unit_results = e.options.release,
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
@@ -6687,6 +6975,9 @@ const Emitter = struct {
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
     fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry_or_library: ?Entry, one_scope: bool) !void {
+        // #1627: cross-module copies would relocate import.meta.url while
+        // keeping its descriptor path. Local release optimization is safe.
+        if (e.worker_entries.len != 0) return;
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
@@ -6772,7 +7063,7 @@ const Emitter = struct {
             }
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
-        if (e.session.entry_plan.runtime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
+        if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
             const b = e.bir(entry.module);
@@ -7506,6 +7797,7 @@ const Emitter = struct {
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
     fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+        if (e.worker_entries.len != 0) return null; // Descriptor URLs are module-relative.
         const scratch = e.scratch;
         var files: std.ArrayList(HandFile) = .empty;
 
@@ -7610,7 +7902,7 @@ const Emitter = struct {
             (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
         else
             null;
-        if (e.session.entry_plan.runtime()) |runner| {
+        if (e.selectedRuntime()) |runner| {
             if (module_at.get(paths[runner.module.int()]) == null) return null;
             try entry_edges.append(scratch, .{ .module = runner.module.int() });
         } else if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
@@ -8211,7 +8503,7 @@ const Emitter = struct {
                 }
             }
         }
-        if (entry != null) if (e.session.entry_plan.runtime()) |runner| {
+        if (entry != null) if (e.selectedRuntime()) |runner| {
             if (e.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.imported.set(ordinal);
         };
         // What the markup runtime and the entry file import from the
@@ -8609,7 +8901,7 @@ const Emitter = struct {
         // `checkEntryExports` has refused the one chain this cannot serve,
         // a runtime module, so `exportsProgram` here means a runtime file.
         if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
-        if (e.session.entry_plan.runtime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
+        if (e.selectedRuntime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -9343,7 +9635,7 @@ const Emitter = struct {
     fn planMap(e: *Emitter, slot: *ModuleSlot, root: MapRoot, path: []const u8, file: SourceStore.Index) Allocator.Error!void {
         slot.map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{path});
         slot.map_footer = try std.fmt.allocPrint(e.scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(path)});
-        slot.source_url = try e.sourceUrl(root, slot.map_file, file);
+        slot.source_url = try e.sourceUrl(root, try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, slot.map_file }), file);
     }
 
     /// The URL of `file` in the map at `map_file`, a path in the output
@@ -9362,7 +9654,7 @@ const Emitter = struct {
             try e.owned.append(e.gpa, bytes);
         }
         try e.pending.append(e.scratch, .{
-            .path = try e.scratch.dupe(u8, relative_path),
+            .path = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, relative_path }),
             .bytes = bytes,
             .origin = try e.scratch.dupe(u8, origin),
         });
@@ -9370,7 +9662,7 @@ const Emitter = struct {
 
     fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8, origin: []const u8) Allocator.Error!void {
         try e.pending.append(e.scratch, .{
-            .path = try e.scratch.dupe(u8, relative_path),
+            .path = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, relative_path }),
             .bytes = try e.scratch.dupe(u8, bytes),
             .origin = try e.scratch.dupe(u8, origin),
         });

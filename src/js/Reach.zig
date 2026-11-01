@@ -301,6 +301,8 @@ pub const Input = struct {
     /// hand-written runtime or the entry file reads, or that a lowering
     /// imports (`backend.md` §15.1, *The runtime module*).
     extra_roots: []const Node = &.{},
+    // Deferred Program bodies belong only to their selected entry.
+    deferred: []const Node = &.{},
     /// The schema plans, one per module: what a schema member's edges are
     /// read from (`schema.md` §6).
     plans: []const SchemaPlan = &.{},
@@ -538,6 +540,12 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
         if (mark(modules, root)) try stack.append(scratch, root);
     }
     while (stack.pop()) |node| {
+        if (node.kind == .decl and (in.entry == null or !std.meta.eql(node, in.entry.?))) {
+            const deferred = for (in.deferred) |d| {
+                if (std.meta.eql(node, d)) break true;
+            } else false;
+            if (deferred) continue;
+        }
         const module = node.module;
         const out = if (node.kind == .lift) (if (node.index < in.lift_targets.len) in.lift_targets[node.index] else &.{}) else edges[module.int()].targets(node);
         for (out) |next| {

@@ -459,6 +459,7 @@ pub const Keys = struct {
 pub const Asset = struct { path: []const u8, bytes: []const u8 };
 
 pub const Options = struct {
+    entry_constructors: []const []const u8 = &.{},
     build_id: [16]u8,
     informational: bool,
     explain: bool = false,
@@ -559,7 +560,7 @@ fn ownTermsOf(
     const module = graph.module(m);
 
     var options_buffer: [options_buffer_len]u8 = undefined;
-    const option_string = writeOptions(&options_buffer, .{
+    const base_options = writeOptions(&options_buffer, .{
         .core = file.int() < options.lower_core.len and options.lower_core[file.int()],
         .platform = file.int() < options.lower_platform.len and options.lower_platform[file.int()],
         .informational = informationalReaches(options.informational, options.explain, graph.modulePackage(m)),
@@ -567,6 +568,10 @@ fn ownTermsOf(
         .pattern_budget = options.pattern_budget,
         .crossing = options.crossing,
     });
+    const option_string = if (options.entry_constructors.len != 0)
+        try std.fmt.allocPrint(scratch, "{s};entry_constructors={s}", .{ base_options, try std.mem.join(scratch, ",", options.entry_constructors) })
+    else
+        base_options;
     // The markup term (`frontend.md` §9.8): a module that writes markup, and
     // the vocabulary module, are checked against the chain's markup
     // settings, which reach them through no import — why a module has no

@@ -1,0 +1,46 @@
+-- The page-only initializer would crash in a worker (there is no document).
+-- A message reply proves both separate initialization and module loading.
+import Page
+import Worker
+
+
+pageOnly : String
+pageOnly = Page.initializer "page-only"
+
+
+workerOnly : String
+workerOnly = Worker.initializer "reply:"
+
+
+selected : Worker.Program
+selected = worker
+
+
+worker : Worker.Program
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → workerOnly ++ message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ =
+    Page.text pageOnly
+    Page.button launch
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open (if pageOnly == "page-only" then selected else worker) of
+        Ok handle →
+            Worker.receive handle Page.text
+            Worker.send handle "ping"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start
