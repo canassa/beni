@@ -1,2 +1,2 @@
-pub value : ⊤
-value = ⊤
+pub value : Int
+value = 1

@@ -160,7 +160,7 @@ compare_keys: []Key.Key = &.{},
 /// bytes, and hashing that string 634 times would be 634 times too many.
 build_id_bytes: [16]u8 = @splat(0),
 /// Every diagnostic of the last run, in emission order after `run`.
-/// Messages are gpa-owned; file paths point into `store`.
+/// Messages are borrowed from workers; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
 /// Set for the duration of ONE `renderLate` call: the files a late
 /// diagnostic points at that the store does not hold, or must not be asked
