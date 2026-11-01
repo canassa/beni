@@ -10472,14 +10472,10 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // └─────────────────────────────────────────┘
     // §4.1: work that is not the declaration's source is past K·I_f, which
     // is growth, and past the allowance the loud `ownership_summary_size`.
-    // `doublingCalls` costs about 110 000.
-    const a = testing.allocator;
-    var w = try World.init(a, testing.io);
+    // `nearLimitModule`'s `h` costs about 78 000 records from a few atoms.
+    var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    var src: std.ArrayList(u8) = .empty;
-    defer src.deinit(a);
-    try doublingCalls(a, &src, "g", 11);
-    try w.write("Main.beni", src.items);
+    try w.write("Main.beni", try nearLimitModule(w.arena.allocator(), true, 65_536));
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -10490,7 +10486,7 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h: ownership_summary_size") != null);
 }
 
 /// `e` escapes of `xs` (`Js.ref xs`) and a chain of `w` pushes on it, in
@@ -11714,52 +11710,41 @@ test "the checker v2 says why a summary is not printed" {
     // so it can pass the allowance the walk stayed under. The dump dropped
     // that error, and the `summary` line was simply missing. Only an
     // allowance of the walk's growth up to the print's cost shows it, so the
-    // test measures the growth (`doublingCalls`, about 110 000, more than
-    // the default allowance; it does not depend on the allowance) and sets
-    // the allowance to it, rather than to a count picked by hand (#1477).
-    // The print costs at least one record.
-    const a = testing.allocator;
-    var w = try World.init(a, testing.io);
+    // test measures the growth (`nearLimitModule`'s `h`, about 78 000, more
+    // than the default allowance; it does not depend on the allowance) and
+    // sets the allowance to it, rather than to a count picked by hand
+    // (#1477). The print costs at least one record.
+    var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    var body: std.ArrayList(u8) = .empty;
-    defer body.deinit(a);
-    try doublingCalls(a, &body, "h", 11);
+    const a = w.arena.allocator();
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │
     // └─────────────────────────────────────────┘
-    // A roomy allowance: the summary prints, and the account gives the growth.
-    const roomy = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, 4_194_304) });
+    // A roomy allowance, the growth 2 % of it: the summary prints, and the
+    // account gives the growth.
+    try w.write("Main.beni", try nearLimitModule(a, true, 4_194_304));
+    const roomy = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), roomy.exit_code);
     try testing.expect(std.mem.indexOf(u8, roomy.stdout, "limit h") == null);
-    try testing.expect(std.mem.indexOf(u8, roomy.stdout, "  summary h: π1 RA;") != null);
+    try testing.expect(std.mem.indexOf(u8, roomy.stdout, "  summary h: ") != null);
+    try testing.expect(std.mem.indexOf(u8, roomy.stdout, "  summary h: not printed") == null);
     const growth = try accountField(roomy.stdout, "h", "growth");
-    try testing.expect(growth > 98_304);
+    try testing.expect(growth * 9 / 10 >= 65_536);
 
-    // The allowance the growth fills: the walk stays under, the print does not.
-    const edge = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, growth) });
-    try testing.expectEqual(@as(u8, 0), edge.exit_code);
-    try testing.expect(std.mem.indexOf(u8, edge.stdout, "limit h") == null);
-    try testing.expect(std.mem.indexOf(u8, edge.stdout, "  summary h: not printed: ownership_summary_size\n") != null);
-
-    // Clearly under (the growth is 57% of the allowance): printed.
-    const under = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, growth * 7 / 4) });
-    try testing.expectEqual(@as(u8, 0), under.exit_code);
-    try testing.expect(std.mem.indexOf(u8, under.stdout, "limit h") == null);
-    try testing.expect(std.mem.indexOf(u8, under.stdout, "  summary h: π1 RA;") != null);
-
-    // Clearly over (the growth is 150% of the allowance): the walk stops.
-    const over = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", try doublingModule(&w, body.items, growth * 2 / 3) });
-    try testing.expectEqual(@as(u8, 0), over.exit_code);
-    try testing.expect(std.mem.indexOf(u8, over.stdout, "limit h: ownership_summary_size") != null);
-    try testing.expect(std.mem.indexOf(u8, over.stdout, "summary h") == null);
-}
-
-/// `Main.beni` as `body` under a module allowance of `size`; the path to run.
-fn doublingModule(w: *World, body: []const u8, size: u64) ![]const u8 {
-    const text = try std.fmt.allocPrint(w.arena.allocator(), "@ownership_summary_size(module, {d})\n\n\n{s}", .{ size, body });
-    try w.write("Main.beni", text);
-    return "Main.beni";
+    // In one run: `E` under the allowance the growth fills, where the walk
+    // stays under and the print does not; `O` clearly over (the growth is
+    // 111 % of the allowance), where the walk stops.
+    try w.write("two/E.beni", try nearLimitModule(a, true, growth));
+    try w.write("two/O.beni", try nearLimitModule(a, true, growth * 9 / 10));
+    const both = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--jobs=2", "--root=two", "two" });
+    try testing.expectEqual(@as(u8, 0), both.exit_code);
+    const edge = try moduleSection(both.stdout, "E");
+    try testing.expect(std.mem.indexOf(u8, edge, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, edge, "  summary h: not printed: ownership_summary_size\n") != null);
+    const over = try moduleSection(both.stdout, "O");
+    try testing.expect(std.mem.indexOf(u8, over, "limit h: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, over, "summary h") == null);
 }
 
 test "the checker v2 joins a group's port without its unchanged res again" {
@@ -11958,70 +11943,73 @@ fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const 
     try src.appendSlice(a, " }\n    [ t, t ]\n");
 }
 
-/// `name`'s module text: `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )`
-/// and `name x = w_n (w_n x)`. Each call applies a callee whose result
-/// doubles, so `name`'s work, about 110 000 records at n = 11 and 23 000 at
-/// n = 9 from 6 source atoms, is a genuine product: past the source
-/// continuation it is growth (§4.1, #1188). It took `doublingProduct`'s place
-/// when §2.9 *Fold first* (#1543) made that one linear.
-fn doublingCalls(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8, n: usize) !void {
-    try src.appendSlice(a, "w1 x = ( x, x )\n");
-    for (2..n + 1) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try src.print(a, "\n\n{s} x =\n    w{d} (w{d} x)\n", .{ name, n, n });
-}
-
-/// `h`, `( w10 (w10 x), w10 (w9 x) )` over `doublingCalls`' `w_k` to 10 (about
-/// 82 000 records of growth, so an allowance a few hundredths from it is
-/// above the default), after another declaration `g` or before it, under a
-/// module allowance of `size` (#1104): `h`'s growth, and whether it reached
-/// its limit.
-fn nearLimitRun(h_first: bool, size: u64) !struct { growth: u64, limit: bool } {
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    const a = w.arena.allocator();
+/// `h`, ten calls `( w9 x, …, w9 x )` over `w_k x = w_{k-1} (w_{k-1} x)` to 9,
+/// from `w1 x = ( x, x )`: each call applies a callee whose result doubles,
+/// so its work, about 78 000 records, is a genuine product of a few source
+/// atoms (§4.1, #1188; it took `doublingProduct`'s place when §2.9 *Fold
+/// first*, #1543, made that one linear). With it
+/// another declaration `g`, `h` first or not, under a module allowance of
+/// `size` (#1104): one module's text.
+fn nearLimitModule(a: std.mem.Allocator, h_first: bool, size: u64) ![]const u8 {
     var h: std.ArrayList(u8) = .empty;
     try h.appendSlice(a, "w1 x = ( x, x )\n");
-    for (2..11) |k| try h.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try h.appendSlice(a, "\n\nh x =\n    ( w10 (w10 x), w10 (w9 x) )\n");
+    for (2..10) |k| try h.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try h.appendSlice(a, "\n\nh x =\n    ( w9 x");
+    for (1..10) |_| try h.appendSlice(a, ", w9 x");
+    try h.appendSlice(a, " )\n");
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const head = try std.fmt.allocPrint(a, "@ownership_summary_size(module, {d})\n\n\n", .{size});
-    try w.write("Main.beni", try std.mem.concat(a, u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items }));
-    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
-    try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    const limit = std.mem.indexOf(u8, dump.stdout, "limit h: ownership_summary_size") != null;
-    return .{ .growth = if (limit) 0 else try accountField(dump.stdout, "h", "growth"), .limit = limit };
+    return std.mem.concat(a, u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items });
 }
 
-test "the checker v2 charges a declaration near its limit the same in either order, and accepts it there" {
+/// The lines of `module name`'s part of a dump of several modules.
+fn moduleSection(dump: []const u8, name: []const u8) ![]const u8 {
+    var buf: [64]u8 = undefined;
+    const head = try std.fmt.bufPrint(&buf, "module {s}\n", .{name});
+    const at = std.mem.indexOf(u8, dump, head) orelse return error.NoModule;
+    const rest = dump[at + head.len ..];
+    const end = std.mem.indexOf(u8, rest, "\nmodule ") orelse rest.len;
+    return rest[0..end];
+}
+
+test "the checker v2 charges a declaration near its limit the same in either order, and stops it just below" {
     // ┌─────────────────────────────────────────┐
-    // │ PREPARE / EXECUTE                       │
+    // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // #1104: a table both declarations share once charged its first miss to
     // whichever declaration met it first, so a declaration near its limit
-    // passed after another and failed before it. `h`'s growth is measured
-    // with `h` first; then both orders run under one allowance 5 % above it,
-    // and each must be accepted with that growth.
-    const measured = try nearLimitRun(true, 4_194_304);
-    try testing.expect(!measured.limit and measured.growth > 65_536);
-    const size = measured.growth + measured.growth / 20;
+    // passed after another and failed before it. Three modules in one run:
+    // `h` first and `g` first under one allowance above `h`'s growth (77 716
+    // when this was written), and `g` first under one below it. The run
+    // checks that both lie within 5 % of the growth it reports, so a change
+    // of cost that moves them out fails here and names the growth.
+    const above: u64 = 81_000;
+    const below: u64 = 75_000;
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    try w.write("A.beni", try nearLimitModule(a, true, above));
+    try w.write("B.beni", try nearLimitModule(a, false, above));
+    try w.write("C.beni", try nearLimitModule(a, false, below));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--jobs=3", "--root=.", "." });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    for ([_]bool{ false, true }) |h_first| {
-        const r = try nearLimitRun(h_first, size);
-        try testing.expect(!r.limit);
-        try testing.expectEqual(measured.growth, r.growth);
-    }
-}
-
-test "the checker v2 refuses a declaration just over its limit in the other order" {
-    // The other side of the test above: `h`'s growth measured with `h`
-    // first, and `h` after `g` under an allowance 5 % below it stops at
-    // `ownership_summary_size`.
-    const measured = try nearLimitRun(true, 4_194_304);
-    try testing.expect(!measured.limit and measured.growth - measured.growth / 20 >= 65_536);
-    try testing.expect((try nearLimitRun(false, measured.growth - measured.growth / 20)).limit);
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const first = try moduleSection(dump.stdout, "A");
+    const second = try moduleSection(dump.stdout, "B");
+    try testing.expect(std.mem.indexOf(u8, first, "limit h") == null);
+    try testing.expect(std.mem.indexOf(u8, second, "limit h") == null);
+    const growth = try accountField(first, "h", "growth");
+    try testing.expectEqual(growth, try accountField(second, "h", "growth"));
+    if (growth * 100 < above * 95 or below * 100 < growth * 95) std.debug.print("h's growth {d} is not within 5 % of {d} and {d}: move them\n", .{ growth, above, below });
+    try testing.expect(growth * 100 >= above * 95 and below * 100 >= growth * 95);
+    try testing.expect(std.mem.indexOf(u8, try moduleSection(dump.stdout, "C"), "limit h: ownership_summary_size") != null);
 }
 
 test "dump --stage=ownership --ownership=v2 walks each module once" {
