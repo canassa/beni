@@ -197,6 +197,7 @@ pub fn Of(comptime Frame: type) type {
                 else
                     try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.inside.int(), key_tag });
                 if (got.found_existing) {
+                    if (std.debug.runtime_safety) f.certEdgeCheck(it.tag, got.value_ptr.*);
                     try arms.edge(gpa, p.from, got.value_ptr.*, p.arm);
                     continue;
                 }
@@ -265,16 +266,17 @@ pub fn Of(comptime Frame: type) type {
                         // position's reach by class, `K` left out, never its cells.
                         const on: ?Step = if (it.mode == .spine and it.depth < ws.len) ws[it.depth] else null;
                         try f.keepReach(bs, &want, try f.certReach(it.tag, on), folded, true, null, refs.items, &arms.kept.items[idx], &excl, &relied, null);
+                        if (std.debug.runtime_safety) try f.assertCertifiedDrop(it);
                         if (it.mode == .spine) held_below = true;
                     } else if (beside and it.mode == .spine and exact) {
                         // A stuck value is from above, where `ws[depth..]` is not its
                         // rest: whole, unless a held item already read it there.
                         if (!it.stuck)
                             try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &arms.kept.items[idx], &excl, &relied)
-                        else if (!it.held) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx)) |r|
+                        else if (!it.held) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r|
                             try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &arms.kept.items[r], &excl, &relied, null);
                         held_below = true;
-                    } else if (beside) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx)) |r| {
+                    } else if (beside) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
                         const held = marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells));
                         if (!split or it.path == .none) {
                             const w: Where = .{ .path = it.path, .written = &written, .paths = where_paths };
@@ -407,6 +409,8 @@ pub fn Of(comptime Frame: type) type {
             inst: Ids.FixedDict(2) = .{},
             /// Per node of the walk's graph (`Arms`), its tag, for C7.
             node_tags: Ids.FixedDict(1) = .{},
+            /// Per read node of the walk, its tag, for C7 (`runtime_safety`).
+            read_tags: Ids.FixedDict(1) = .{},
             /// `fail`: κ̂(V, K) failed, `shared` (1) or `lost` (2). The items are
             /// still the occurrence's, and each keeps every class, `K` included,
             /// exact or approximate, so the write is refused `disjoint` or
@@ -419,6 +423,7 @@ pub fn Of(comptime Frame: type) type {
                 c.reach.deinit(gpa);
                 c.inst.deinit(gpa);
                 c.node_tags.deinit(gpa);
+                c.read_tags.deinit(gpa);
             }
             fn intern(c: *Cert, gpa: Allocator, occ: u32, cls: NodeId) Allocator.Error!u32 {
                 const got = try c.ids.getOrPut(gpa, .{ occ, cls.int() });
@@ -540,6 +545,69 @@ pub fn Of(comptime Frame: type) type {
             return c.intern(f.gpa, @intCast(c.occs.items.len - 1), root);
         }
 
+
+        /// `Arms.read`, with C7's edge check on the read map (row 17 of
+        /// *The two walls*): a read node an item of one certified view made is
+        /// read again only by an item of the same view, `runtime_safety` only.
+        pub fn certReadNode(f: *Frame, arms: *Arms, read: *Ids.FixedDict(5), key: [5]u32, by: u32, tag: u32) Error!?u32 {
+            const c = certOf(f).?;
+            if (std.debug.runtime_safety) if (read.get(key)) |n| if ((c.read_tags.get(.{n}) orelse none) != tag)
+                std.debug.panic("ownership v2: a read node of one certified view is read by an item of another (C7, #1485)", .{});
+            const r = try arms.read(f.gpa, read, key, by);
+            if (std.debug.runtime_safety) if (r) |x| if (tag != none) {
+                (try c.read_tags.getOrPut(f.gpa, .{x})).value_ptr.* = tag;
+            };
+            return r;
+        }
+
+        /// C7's edge check (§8 slice 4, *Lemmas for the walls*, #1485),
+        /// `runtime_safety` only: an item meets a node of the walk that an
+        /// item of another certified view made only where the walk's key
+        /// lost the tag (`cert-untagged`). The one item a spine node is
+        /// detected at reaches its node untagged too: the same item. The
+        /// check reads no certificate, so a group's rounds need no deferral.
+        pub fn certEdgeCheck(f: *Frame, tag: u32, node: u32) void {
+            const c = certOf(f) orelse return;
+            const at = c.node_tags.get(.{node}) orelse none;
+            if (at == tag) return;
+            if (tag == none and at != none and c.occs.items[c.tags.items[at][0]].spine == node) return;
+            std.debug.panic("ownership v2: a walk node of one certified view is read by an item of another (C7, #1485)", .{});
+        }
+
+        /// C7, the drop (§2.11 item 3 (d), #1485), `runtime_safety` only:
+        /// where an item inside a certified view drops `K`, every exact
+        /// cell the plain reader finds in its forced value (`Shape.reach`)
+        /// is, or may alias, a cell the certificate's read of the
+        /// occurrence names, `K` included. A cell outside both is an object
+        /// the read would miss.
+        pub fn assertCertifiedDrop(f: *Frame, it: Item) Error!void {
+            const c = certOf(f).?;
+            const gpa = f.gpa;
+            const cells = f.env.cells;
+            const t = c.tags.items[it.tag];
+            const occ = c.occs.items[t[0]];
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const covered = try cells.sets.unionWith(gpa, f.env.charge, try f.certReach(it.tag, null), try f.certCells(t[0], occ.k));
+            const plain = try f.env.shapes.reach(gpa, &scratch, &cells.sets, try f.env.shapes.force(gpa, &scratch, it.v));
+            var pt = cells.sets.iterate(plain);
+            while (pt.next()) |x| {
+                if (x.value == 1) continue;
+                const p: CellId = .from(x.key);
+                switch (cells.origin(p)) {
+                    .mark, .top => continue,
+                    else => {},
+                }
+                if (cells.sets.get(covered, x.key) != null) continue;
+                var ok = false;
+                var ct = cells.sets.iterate(covered);
+                while (ct.next()) |y| if (cells.alias(f.env.places, p, .from(y.key)) != .no) {
+                    ok = true;
+                    break;
+                };
+                if (!ok) std.debug.panic("ownership v2: an item inside a certified view drops a cell its certificate does not name (C7, #1485)", .{});
+            }
+        }
         /// The cells of class `cls` under occurrence `occ`'s environment:
         /// the certificate's keys instantiated by §2.9 rule 4, as a set.
         pub fn certCells(f: *Frame, occ: u32, cls: NodeId) Error!SetId {
@@ -553,7 +621,9 @@ pub fn Of(comptime Frame: type) type {
             defer keys.deinit(gpa);
             try h.keys(h.ctx, gpa, f.env.charge, c.occs.items[occ].env, try f.env.shapes.cellsOf(gpa, f.account(), &f.env.cells.sets, cls), &keys);
             var s: SetId = .none;
-            for (keys.items) |key| {
+            for (keys.items, 0..) |key, ki| {
+                // A test-only mutation: the certificate's read misses a key (C7).
+                if (mutated("cert-drop-key") and ki == 0) continue;
                 const old = f.env.cells.sets.get(s, key.image.int()) orelse 0;
                 s = try f.env.cells.sets.insert(gpa, f.env.charge, s, key.image.int(), old | @intFromBool(key.approx));
             }
