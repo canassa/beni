@@ -365,6 +365,8 @@ pub const Build = struct {
     /// a test-only entry point — would move the assertion off the thing
     /// that ships.
     allow_debug: bool = false,
+    /// Hidden test-only gate until realm and Wire checks protect launches.
+    allow_unchecked_workers: bool = false,
     /// `--test-hooks` — **hidden**, for `--allow-debug`'s reason: test-only
     /// surface. `Js.testHooks ()` is `true`, so a platform's test hooks —
     /// the paths a corpus fixture drives a Durable Object's `tick` and
@@ -951,6 +953,8 @@ const BuildSpecific = struct {
     release: bool = false,
     library: bool = false,
     allow_debug: bool = false,
+    /// Hidden test-only gate until realm and Wire checks protect launches.
+    allow_unchecked_workers: bool = false,
     test_hooks: bool = false,
     sanitize_records: bool = false,
     sanitize_lists: bool = false,
@@ -989,6 +993,10 @@ const BuildSpecific = struct {
         } else if (std.mem.eql(u8, name, "--library")) {
             if (value != null) return noValue(name);
             self.library = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--allow-unchecked-workers")) {
+            if (value != null) return noValue(name);
+            self.allow_unchecked_workers = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--allow-debug")) {
             // The third hidden flag (see `Build.allow_debug`). Accepted like
@@ -1120,6 +1128,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .library = s.specific.library,
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
+        .allow_unchecked_workers = s.specific.allow_unchecked_workers,
         .test_hooks = s.specific.test_hooks,
         .sanitize_records = s.specific.sanitize_records,
         .sanitize_lists = s.specific.sanitize_lists,
@@ -1795,6 +1804,14 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try expectUsage("beni: unknown option '--allow-debug'; run 'beni help' for usage", &.{ "check", "--allow-debug", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "--allow-debug") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "allow-debug") == null);
+
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .allow_unchecked_workers = true, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--allow-unchecked-workers", "src" },
+    );
+    try expectUsage("beni: option '--allow-unchecked-workers' does not take a value", &.{ "build", "--platform=node", "--allow-unchecked-workers=1", "src" });
+    try expectUsage("beni: unknown option '--allow-unchecked-workers'; run 'beni help' for usage", &.{ "check", "--allow-unchecked-workers", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "allow-unchecked-workers") == null);
 
     // `--roundtrip-dispatch` is a fourth, and on `Common` for its twin's
     // reason: a round-trip test may pass it to `dump` as well as to
