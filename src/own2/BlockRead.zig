@@ -1200,6 +1200,14 @@ const Reader = struct {
         // into the side's is that read exactly (the side holds its cells).
         // A use shape's positions (marks) carry none.
         const kappa = try r.opt(CondId, .cond);
+        // A folded class's path-multiset obligation, which the fold
+        // certificate's readers read at the class (C4, §8 slice 4, #1485).
+        const fc = try r.opt(CondId, .cond);
+        if (fc != .none) {
+            const conds = r.env.conds;
+            const old = conds.fold_cond.get(id);
+            try conds.fold_cond.put(gpa, id, if (old) |o| try conds.@"and"(gpa, r.env.charge, o, fc) else fc);
+        }
         _ = try r.steps(true, false);
         try r.infos.append(gpa, .{ .node = id, .at_summary = at_summary, .cursor = cursor, .kappa = kappa, .place = at, .first = first, .len = @intCast(r.edges.items.len - first), .absorbed = absorbed });
         return id;
@@ -1208,7 +1216,7 @@ const Reader = struct {
     fn class(r: *Reader) Failure!ClassId {
         const gpa = r.env.gpa;
         const n_params = try r.count();
-        const flags = try r.flag(7);
+        const flags = try r.flag(15);
         const origin = try enumOf(Summary.Origin, try r.get());
         const res_o = try r.posRef();
         const res: NodeId = if (res_o) |o| .from(r.vals.items[o]) else .none;
@@ -1277,7 +1285,7 @@ const Reader = struct {
         i = 0;
         while (i < n) : (i += 1) try once.append(gpa, .from(try r.need(.path)));
         const refs = try r.opt(SetId, .set);
-        return r.sums.add(r.env, .{
+        const c = try r.sums.add(r.env, .{
             .params = params.items,
             .res = res,
             .kappas = kappas,
@@ -1292,6 +1300,10 @@ const Reader = struct {
             .entry = flags & 2 == 2,
             .origin = origin,
         });
+        // The certified mark (Q3, §8 slice 4, #1485): the certificate at each
+        // key is the class's own `res` there, re-interned with it.
+        if (flags & 8 == 8) try r.sums.certify(gpa, c);
+        return c;
     }
 };
 
@@ -1898,11 +1910,11 @@ test "a knot's member may name itself by a child step and by nothing else" {
     // One place, `List` of itself; `yes`; one knot of one member; no class.
     const head = [_]u32{ magic, version, 1, @backingInt(Place.Kind.list), 200, 0, 1, elem, 0, 0, 2, tag(.cond), @backingInt(Cond.Kind.yes), tag(.group), 1, tag(.node) };
     // A node whose `[*]` child is itself: a knot.
-    const by_step = head ++ [_]u32{ @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, elem, 0, 1, 0, 0, 0 };
+    const by_step = head ++ [_]u32{ @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, elem, 0, 1, 0, none, 0, 0 };
     // A recast of itself: no constructor makes it.
-    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 0, 0, 1, 0, 0, 0 };
+    const by_inner = head ++ [_]u32{ @backingInt(Shape.Kind.recast), 0, 0, 0, 0, 1, 0, none, 0, 0 };
     // A union with itself as a side.
-    const by_side = head ++ [_]u32{ @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 1, none, 0, 0 };
+    const by_side = head ++ [_]u32{ @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 1, none, none, 0, 0 };
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     for ([_][]const u32{ &by_step, &by_inner, &by_side }, [_]bool{ true, false, false }) |words, ok| {
@@ -1926,10 +1938,10 @@ test "#1335 review: a knot's member names a later member only on a cycle of them
     const node = @backingInt(Shape.Kind.node);
     // A node whose `[*]` is a recast of it, in the writer's order: the
     // node, then the recast of an earlier member.
-    const ordered = head ++ [_]u32{ tag(.node), node, 0, 0, 0, none, 1, elem, 0, 2, 0, 0, tag(.node), recast, 0, 0, 0, 0, 1, 0, 0, 0 };
+    const ordered = head ++ [_]u32{ tag(.node), node, 0, 0, 0, none, 1, elem, 0, 2, 0, none, 0, tag(.node), recast, 0, 0, 0, 0, 1, 0, none, 0, 0 };
     // The same knot with the recast first, naming the later node: no cycle
     // of raw members, an order no write makes.
-    const forward = head ++ [_]u32{ tag(.node), recast, 0, 0, 0, 0, 2, 0, 0, tag(.node), node, 0, 0, 0, none, 1, elem, 0, 1, 0, 0, 0 };
+    const forward = head ++ [_]u32{ tag(.node), recast, 0, 0, 0, 0, 2, 0, none, 0, tag(.node), node, 0, 0, 0, none, 1, elem, 0, 1, 0, none, 0, 0 };
     var out: std.ArrayList(ClassId) = .empty;
     defer out.deinit(testing.allocator);
     for ([_][]const u32{ &ordered, &forward }, [_]bool{ true, false }) |words, ok| {
@@ -2072,6 +2084,29 @@ fn widenedTree(t: *Tables) !NodeId {
         level = try t.shapes.node(gpa, &t.account, tree, .none, children);
     }
     return t.shapes.widen(gpa, &t.account, &t.places, &t.cells, level);
+}
+
+test "C4: a class's certified mark crosses a block, and an uncertified class stays uncertified" {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    a.account.allowance = std.math.maxInt(u32) - 1;
+    const w = try widenedTree(&a);
+    const k = try a.conds.excl(testing.allocator, a.env().charge, try a.cells.top(testing.allocator, &a.account));
+    const kappas = (try a.conds.kappaSet(testing.allocator, a.env().charge, .none, w, k)).ctx;
+    const plain = try a.sums.add(a.env(), .{ .params = &.{w}, .res = w, .kappas = kappas });
+    const cert = try a.sums.add(a.env(), .{ .params = &.{w}, .res = w, .kappas = kappas });
+    try a.sums.certify(testing.allocator, cert);
+    // The certified class is the stronger: below the plain one, not above.
+    try testing.expect(try a.sums.leq(a.env(), cert, plain));
+    try testing.expect(!try a.sums.leq(a.env(), plain, cert));
+    for ([_]ClassId{ plain, cert }) |c| {
+        var b: Tables = .{};
+        try b.init();
+        defer b.deinit();
+        b.account.allowance = std.math.maxInt(u32) - 1;
+        _ = try roundTripWith(&a, &b, c, false);
+    }
 }
 
 test "a recursive class's widened knot is written once and read back as a knot" {
@@ -2297,6 +2332,8 @@ fn roundTripWith(a: *Tables, b: *Tables, c: ClassId, same_text: bool) !ClassId {
     defer again.deinit(testing.allocator);
     try write(b.env(), &b.sums, back.items, .identity, &again);
     try testing.expectEqualSlices(u32, words.items, again.items);
+    // C4: the certified mark too (§8 slice 4, #1485).
+    try testing.expectEqual(a.sums.certified(c), b.sums.certified(back.items[0]));
     // And it reads what the original reads, its printed class (#1157's
     // review: re-encoding alone cannot see a weakened read).
     if (same_text) {
@@ -2517,7 +2554,7 @@ test "a node no constructor makes is no block: sides at two places, a child at a
     for ([_]u32{ 1, 0 }) |second| {
         // A union of a leaf at `List` and a leaf at place `second`.
         const words = [_]u32{ magic, version, 2, list, 200, 0, 0, ref, 400, 0, 0, 5 } ++ cond_yes ++
-            [_]u32{ tag(.node), leaf, 0, 0, 0, none, 0, 0, tag(.node), leaf, 0, 0, second, none, 0, 0, tag(.node), @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 2, none, 0, tag(.class), 0, 0, 0, 3 } ++ no_class_rest ++ [_]u32{ 1, 4 };
+            [_]u32{ tag(.node), leaf, 0, 0, 0, none, 0, none, 0, tag(.node), leaf, 0, 0, second, none, 0, none, 0, tag(.node), @backingInt(Shape.Kind.@"union"), 0, 0, 0, 2, 1, 2, none, none, 0, tag(.class), 0, 0, 0, 3 } ++ no_class_rest ++ [_]u32{ 1, 4 };
         var t: Tables = .{};
         try t.init();
         defer t.deinit();
@@ -2526,7 +2563,7 @@ test "a node no constructor makes is no block: sides at two places, a child at a
     for ([_]u32{ 2, 1 }) |at| {
         // A `List` whose `[*]` child is a leaf at place `at` (its step's is 1).
         const words = [_]u32{ magic, version, 3, list, 200, 0, 1, @backingInt(Place.StepKind.elem), 0, 1, list, 201, 0, 0, ref, 400, 0, 0, 4 } ++ cond_yes ++
-            [_]u32{ tag(.node), leaf, 1, 0, at, none, 0, 0, tag(.node), @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, @backingInt(Place.StepKind.elem), 0, 1, 0, 0, tag(.class), 0, 0, 0, 2 } ++ no_class_rest ++ [_]u32{ 1, 3 };
+            [_]u32{ tag(.node), leaf, 1, 0, at, none, 0, none, 0, tag(.node), @backingInt(Shape.Kind.node), 0, 0, 0, none, 1, @backingInt(Place.StepKind.elem), 0, 1, 0, none, 0, tag(.class), 0, 0, 0, 2 } ++ no_class_rest ++ [_]u32{ 1, 3 };
         var t: Tables = .{};
         try t.init();
         defer t.deinit();

@@ -62,7 +62,14 @@ pub const Hyp = struct {
     /// The certificate's arrival keys `cells` (a class of the template) at
     /// environment `env`, each key's images by §2.9 rule 4, into `out`.
     keys: *const fn (ctx: *anyopaque, gpa: Allocator, charge: Charge, env: u32, cells: SetId, out: *std.ArrayList(HypKey)) Error!void,
+    /// The `res` and snapshot of the class environment `env` names: its κ at a class
+    /// `K` is the certificate's condition there (§8 slice 4, *What is
+    /// proved*, #1485).
+    class: *const fn (ctx: *anyopaque, env: u32) HypClass,
 };
+
+/// What `Hyp.class` answers: a class's `res` and its snapshot.
+pub const HypClass = struct { res: NodeId, kappas: Kappas };
 
 /// The part of `Cond.Table` this file holds, over the table `Cond.zig` declares.
 pub fn Of(comptime Table: type) type {
@@ -2037,8 +2044,13 @@ pub fn Of(comptime Table: type) type {
         /// κ̂(V, K) (§2.11 item 3 (d), #1485): the certificate of class `k`
         /// read at environment `e`, its keys by §2.9 rule 4 (a repeat `lost`,
         /// distinct arrivals `apart`, a symbolic arrival at a summary path
-        /// `excl`), with the certificate's own condition instantiated there.
-        pub fn certRead(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, k: NodeId) Error!CondId {
+        /// `excl`), with the certificate's own condition instantiated there:
+        /// its fold's obligation at `k` and the class's κ there, read at
+        /// `path` below the template's root (`k`'s class). The keys are a
+        /// set, so a multiplicity of 2+ (one cell at two coexisting positions
+        /// of `K`) is only in that κ (`lost`): a read of the keys alone takes
+        /// it as once (#1485, *As built, part 2*).
+        pub fn certRead(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, k: NodeId, path: []const Step) Error!CondId {
             var keys: std.ArrayList(HypKey) = .empty;
             defer keys.deinit(gpa);
             var merged: Ids.FixedDict(2) = .{};
@@ -2054,6 +2066,34 @@ pub fn Of(comptime Table: type) type {
             }
             if (t.fold_cond.get(k)) |fc| if (t.resolver) |r| {
                 c = try t.@"and"(gpa, charge, c, try r.resolve(r.ctx, t, gpa, charge, fc.int(), e, false));
+            };
+            if (e != identity_env and !mutated("cert-keys-only")) if (t.resolver) |r| {
+                // The class's κ at `path`, as a reader there reads it: at the
+                // class and at the outermost join on the way, projected
+                // (§2.9 *Keyed where a reader looks*), joined.
+                const h = t.hyp.?;
+                const cls = h.class(h.ctx, e);
+                var cur = cls.kappas;
+                var at = cls.res;
+                var dag: NodeId = if (isDag(v.shapes.kind(at)) and v.shapes.kind(at) != .positions) at else .none;
+                var summary = false;
+                for (path) |s| {
+                    // A `⟲` stays in its class (`Fold.classAt`).
+                    if (s.kind == .level) {
+                        summary = true;
+                        continue;
+                    }
+                    cur = t.kappaChild(cur, s);
+                    summary = summary or s.kind == .elem or s.kind == .level;
+                    if (dag != .none) dag = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, dag, s)) orelse .none;
+                    if (at != .none) at = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, at, s)) orelse .none;
+                    if (dag == .none and at != .none and isDag(v.shapes.kind(at)) and v.shapes.kind(at) != .positions) dag = at;
+                }
+                var kk = try t.kappaOf(gpa, charge, v, cur, k, summary);
+                for ([_]NodeId{ at, dag }) |x| if (x != .none and x != k) {
+                    kk = try t.join(gpa, charge, kk, try t.kappaOf(gpa, charge, v, cur, x, summary));
+                };
+                c = try t.@"and"(gpa, charge, c, if (fails(kk)) kk else try r.resolve(r.ctx, t, gpa, charge, kk.int(), e, false));
             };
             return c;
         }
@@ -2912,4 +2952,11 @@ pub fn Of(comptime Table: type) type {
             return true;
         }
     };
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }

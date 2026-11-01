@@ -1,0 +1,76 @@
+-- ownership (project): see Main.beni. The producers of `FoldCertificate`,
+-- each a recursive group of one, in a module of their own: their classes
+-- reach `Main` through this module's block, with the certified mark.
+pub type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+pub same : Tree → Tree
+same t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (same l) xs (same r)
+
+
+pub unroll : Tree → Tree
+unroll t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (Node (unroll l) xs Leaf) xs (unroll r)
+
+
+pub swap : Tree → Tree
+swap t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (swap r) xs (swap l)
+
+
+pub dupL : Tree → Tree
+dupL t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs _ →
+            Node (dupL l) xs (dupL l)
+
+
+pub shareL : Tree → Tree
+shareL t =
+    case t of
+        Node l xs r →
+            case l of
+                Node _ ys _ →
+                    Node (same l) ys (same r)
+
+                Leaf →
+                    Node Leaf xs (same r)
+
+        Leaf →
+            Leaf
+
+
+pub deeper : Tree → Tree
+deeper t =
+    case t of
+        Node l xs r →
+            case l of
+                Node ll ys lr →
+                    Node (deeper ll) xs (Node (deeper lr) ys (deeper r))
+
+                Leaf →
+                    Node Leaf xs (deeper r)
+
+        Leaf →
+            Leaf
