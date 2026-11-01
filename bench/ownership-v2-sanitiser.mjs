@@ -9,9 +9,14 @@
 // directory is kept. The sanitiser is the oracle, so no interpreter is
 // written here; it sees the writes v2 accepted in declarations v2 built.
 //
-// Each program's `t` binds lists in a row from its parameter, literals, a
-// generic `wrap` and `idl` (#1516's shape), writers, spreads, `++` and a
-// pattern's rest (#1530's), and returns some of them; `main` prints them.
+// Each program's `t` is one of two families. Flat: lists of numbers and
+// lists of lists bound in a row from its parameter, literals, a generic
+// `wrap` of a number or a list and `idl` (#1516's shape), an element handed
+// out, writers, spreads and `++`, of which it returns some read whole, by
+// length or by a pattern's shape alone (#1530's). Trees: a deep list a
+// holder keeps, a tree rebuilt over it, a recursive writer of every level
+// or of the top, then a recursive or pattern-only reader of the holder
+// (#1523's). `main` prints the numbers.
 //
 //     node bench/ownership-v2-sanitiser.mjs [--beni=zig-out/safe/bin/beni]
 //         [--work=zig-out/v2-sanitiser] [--programs=200] [--seed=1]
@@ -45,40 +50,95 @@ function rand() {
 }
 const pick = (xs) => xs[Math.floor(rand() * xs.length)];
 
-// One binding's right-hand side over the earlier lists `ls`.
-function expr(ls, k) {
-  const l = pick(ls);
-  return pick([
-    () => `[ ${k} ]`,
-    () => `wrap ${k}`,
-    () => `idl ${l}`,
-    () => `List.push ${l} ${k}`,
-    () => `${l}.push ${k}`,
-    () => `List.set ${l} 0 ${k}`,
-    () => `List.pop ${l}`,
-    () => `[ …${l}, ${k} ]`,
-    () => `[ ${k}, …${l} ]`,
-    () => `${l} ++ [ ${k} ]`,
-    () => `List.append ${l} ${pick(ls)}`,
-    () => `rest ${l} ${k}`,
-    () => `first ( ${l}, ${pick(ls)} )`,
-  ])();
+// The flat family: lists of numbers (`A`) and lists of lists (`B`), each
+// binding over the earlier ones. `wrap` takes a list as well as a number
+// (#1516), `first`/`idl` alias, `headOf` hands out an element.
+function flatExpr(A, B, k) {
+  const a = pick(A);
+  const forms = [
+    () => ["A", `[ ${k} ]`],
+    () => ["A", "[]"],
+    () => ["A", `idl ${a}`],
+    () => ["A", `List.push ${a} ${k}`],
+    () => ["A", `${a}.push ${k}`],
+    () => ["A", `List.set ${a} 0 ${k}`],
+    () => ["A", `List.pop ${a}`],
+    () => ["A", `[ …${a}, ${k} ]`],
+    () => ["A", `[ ${k}, …${a} ]`],
+    () => ["A", `${a} ++ [ ${k} ]`],
+    () => ["A", `List.append ${a} ${pick(A)}`],
+    () => ["A", `rest ${a} ${k}`],
+    () => ["A", `first ( ${a}, ${pick(A)} )`],
+    () => ["B", `wrap ${a}`],
+    () => ["B", `[ ${a}, ${pick(A)} ]`],
+  ];
+  if (B.length) {
+    const bb = pick(B);
+    forms.push(
+      () => ["A", `headOf ${bb}`],
+      () => ["B", `idl ${bb}`],
+      () => ["B", `List.push ${bb} ${a}`],
+      () => ["B", `[ …${bb}, ${a} ]`],
+      () => ["B", `List.set ${bb} 0 ${a}`],
+    );
+  }
+  return pick(forms)();
+}
+
+// What `t` returns of a list: a whole read, or its length or shape alone.
+const readA = (a) => pick([`List.length ${a}`, `total ${a}`, `isEmpty ${a}`]);
+const readB = (bb) => pick([`List.length ${bb}`, `nested ${bb}`, `deep ${bb}`]);
+
+function flat() {
+  const n = 2 + Math.floor(rand() * 6);
+  const A = ["b"];
+  const B = [];
+  const lines = [];
+  const kinds = { b: "A" };
+  for (let i = 0; i < n; i++) {
+    const [kind, e] = flatExpr(A, B, i + 2);
+    const name = `${kind === "A" ? "l" : "m"}${i}`;
+    lines.push(`    ${name} = ${e}`);
+    (kind === "A" ? A : B).push(name);
+    kinds[name] = kind;
+  }
+  // Some of the lists, the last always: the others are dead after their use.
+  const all = Object.keys(kinds);
+  const out = all.filter((x, i) => i === all.length - 1 || rand() < 0.3).map((x) => (kinds[x] === "A" ? readA(x) : readB(x)));
+  return `${lines.join("\n")}\n    [ ${out.join(", ")} ]`;
+}
+
+// The tree family (#1523, #1530): a deep list `k` that `w` still holds, a
+// tree `u` built over it, a write of every list of `u`, then a reader of
+// `w`, recursive and through patterns.
+function rose() {
+  const k = pick(["[ Rose [] ]", "[ Leaf ]", "[ Rose [], Leaf ]", "[]"]);
+  const depth = 1 + Math.floor(rand() * 3);
+  let v = "Rose k";
+  for (let i = 0; i < depth; i++) v = `Rose [ ${v} ]`;
+  const u = pick([
+    "v",
+    "case v of\n            Rose [ Rose [ d, …_ ], …_ ] →\n                Rose [ Rose [ d ] ]\n\n            _ →\n                Leaf",
+    "case v of\n            Rose [ d, …_ ] →\n                Rose [ d ]\n\n            _ →\n                Leaf",
+    "Rose [ v ]",
+  ]);
+  const reader = pick(["size", "sz", "skip2c", "deepLen"]);
+  const write = pick(["incAll", "pushTop"]);
+  const before = rand() < 0.2;
+  const pair = before ? `[ ${reader} w, size (${write} u) ]` : `[ size (${write} u), ${reader} w ]`;
+  return `    k = ${k}\n    v = ${v}\n    w = v\n    u =\n        ${u}\n    ${pair}`;
 }
 
 function program() {
-  const n = 2 + Math.floor(rand() * 5);
-  const ls = ["b"];
-  const lines = [];
-  for (let i = 0; i < n; i++) {
-    const name = `l${i}`;
-    lines.push(`    ${name} = ${expr(ls, i + 2)}`);
-    ls.push(name);
-  }
-  // Some of the lists, the last always: the others are dead after their use.
-  const out = ls.filter((x, i) => i === ls.length - 1 || rand() < 0.25);
+  const body = rand() < 0.6 ? flat() : rose();
   return `import List
 import Node exposing (Program)
 import String
+
+
+type Rose
+    = Rose (List Rose)
+    | Leaf
 
 
 wrap : a → List a
@@ -93,6 +153,16 @@ first : a × b → a
 first ( x, _ ) = x
 
 
+headOf : List (List Int) → List Int
+headOf xss =
+    case xss of
+        [ x, …_ ] →
+            x
+
+        [] →
+            []
+
+
 rest : List Int, Int → List Int
 rest xs k =
     case xs of
@@ -103,18 +173,136 @@ rest xs k =
             [ k ]
 
 
-t : List Int → List (List Int)
+total : List Int → Int
+total xs =
+    case xs of
+        [ x, …r ] →
+            x + total r
+
+        [] →
+            0
+
+
+isEmpty : List Int → Int
+isEmpty xs =
+    case xs of
+        [] →
+            1
+
+        _ →
+            0
+
+
+nested : List (List Int) → Int
+nested xss =
+    case xss of
+        [ [ _, …_ ], …_ ] →
+            7
+
+        _ →
+            0
+
+
+deep : List (List Int) → Int
+deep xss =
+    case xss of
+        [ x, …r ] →
+            List.length x + deep r
+
+        [] →
+            0
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids Leaf))
+
+        Leaf →
+            Leaf
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …more ] →
+            [ incAll s, …incList more ]
+
+        [] →
+            []
+
+
+pushTop : Rose → Rose
+pushTop r =
+    case r of
+        Rose kids →
+            Rose (List.push kids Leaf)
+
+        Leaf →
+            Leaf
+
+
+size : Rose → Int
+size r =
+    case r of
+        Rose kids →
+            1 + sizeList kids
+
+        Leaf →
+            1
+
+
+sizeList : List Rose → Int
+sizeList rs =
+    case rs of
+        [ s, …more ] →
+            size s + sizeList more
+
+        [] →
+            0
+
+
+sz : Rose → Int
+sz r =
+    case r of
+        Rose [ s, …more ] →
+            sz s + sz (Rose more)
+
+        _ →
+            1
+
+
+skip2c : Rose → Int
+skip2c r =
+    case r of
+        Rose [ Rose [ _, …_ ], …_ ] →
+            7
+
+        _ →
+            0
+
+
+deepLen : Rose → Int
+deepLen r =
+    case r of
+        Rose [ s, …_ ] →
+            deepLen s
+
+        Rose [] →
+            100
+
+        Leaf →
+            0
+
+
+t : List Int → List Int
 t b =
-${lines.join("\n")}
-    [ ${out.join(", ")} ]
-
-
-show : List Int → String
-show xs = String.join (List.map xs λx → String.fromInt x) ","
+${body}
 
 
 main : Program
-main = Node.printLines (List.map (t [ 1, 2 ]) λxs → show xs)
+main = Node.printLines (List.map (t [ 1, 2 ]) λx → String.fromInt x)
 `;
 }
 
@@ -169,7 +357,7 @@ async function one(i, text) {
     return;
   }
   tally.unsafe++;
-  const why = got.stderr.match(/a stale read of a list[^\n]*/)?.[0] ?? `output ${JSON.stringify(got.stdout)} vs ${JSON.stringify(want.stdout)}`;
+  const why = got.stderr.match(/Error: beni: (a stale read of a list[^\n]*)/)?.[1] ?? `output ${JSON.stringify(got.stdout)} vs ${JSON.stringify(want.stdout)}`;
   unsafe.push(`${dir}: ${why}`);
 }
 

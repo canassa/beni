@@ -1,0 +1,76 @@
+-- A runtime catch for #1523 under `--ownership=v2` and the list stale-read
+-- sanitiser (`ownership-v2.md` §7.3). `size` and `sizeList` read every
+-- level of a tree, the lists below `⟲` included. In `rebuild` the two
+-- shallow lists are new and the deep one is `k`, which `w` still holds
+-- for `size`, so v2 refuses the push of it inside `incAll`. When the
+-- group's fixpoint stopped a round early (#1523), v2 accepted the whole
+-- call, and the sanitised build's `size w` read the poisoned `k`.
+import List
+import Node exposing (Program)
+import String
+
+
+type Rose
+    = Rose (List Rose)
+    | Leaf
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids Leaf))
+
+        Leaf →
+            Leaf
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+size : Rose → Int
+size r =
+    case r of
+        Rose kids →
+            1 + sizeList kids
+
+        Leaf →
+            1
+
+
+sizeList : List Rose → Int
+sizeList rs =
+    case rs of
+        [ s, …rest ] →
+            size s + sizeList rest
+
+        [] →
+            0
+
+
+rebuild : Int → Rose × Int
+rebuild c =
+    k = [ Rose [] ]
+    v = Rose [ Rose [ Rose k ] ]
+    w = v
+    u =
+        case v of
+            Rose [ Rose [ d, …_ ], …_ ] →
+                Rose [ Rose [ d ] ]
+
+            _ →
+                Leaf
+    ( incAll u, size w )
+
+
+main : Program
+main =
+    ( grown, before ) = rebuild 0
+    Node.printLines [ String.fromInt (size grown), String.fromInt before ]

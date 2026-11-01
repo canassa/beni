@@ -285,6 +285,12 @@ v2's lowering channel lists (`src/own2/Hoists.zig`, `ownership-v2.md` §3.7),
 and the sites are checked against v2's `dump --stage=ownership`. A write in a
 declaration v2 did not build is not wrapped, and v2 makes no
 `value List.<writer>` demand, so a writer handed as a value is not wrapped.
+Each wrapped site says whether its verdict rests on callers v2 may not have
+checked (`ownership-v2.md` §7.3), which a trap's message then repeats. With a
+`<name>.sanitize-lists-v2-refuses` file the fixture is a fixed v2 defect: v2
+must refuse it under the pass's flags, and when it accepts the program instead
+the sanitised build is run anyway and the case fails, its trap or its other
+output the evidence.
 
 Both files hold their reason, are written by hand and never blessed, and their
 passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build

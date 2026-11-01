@@ -7,9 +7,12 @@
 //! Two readers, two questions. The list sanitiser (§7.3, `--sanitize-lists`)
 //! wraps every write the table lists: it judges verdicts, so it follows each
 //! accepted write, in a module whose other declarations v2 has not built as
-//! well. S8b's in-place lowering stores only in a `clean` module (R-1.12:
-//! checked whole, no limit, every write accepted). A refused or exhausted
-//! module publishes no write (§2.8, *Record lowering boundary*).
+//! well, and says whether the verdict rests on callers v2 did not all check.
+//! S8b's in-place lowering stores a write only when its module and every
+//! module that calls it, directly or not, are `clean` (R-1.12: checked
+//! whole, no limit, every write accepted; §7.3, §8 S8b): a `param` verdict
+//! is a condition on the callers. A refused or exhausted module publishes
+//! no write (§2.8, *Record lowering boundary*).
 //!
 //! The record half (written fields, hoisted reads) is S5's; the wire format
 //! (`write`/`read`, its version beside the cache entry's) lands with v2's
@@ -25,12 +28,21 @@ const Facts = @import("Facts.zig");
 /// hash). 2: v1's `Hoists` was 1.
 pub const format_version: u32 = 2;
 
-/// One accepted list write: the demand's instruction and its kind (a
-/// writer call, a construction's spread, a `++`).
+/// One accepted list write: the demand's instruction, its kind (a writer
+/// call, a construction's spread, a `++`), and whether its verdict is a
+/// condition on the declaration's callers (`param` and the other grounds
+/// that are not `fresh` or `call`): then it is sound only where every
+/// caller was checked.
 pub const Write = struct {
     inst: u32,
     kind: Facts.DemandKind,
+    callers: bool = false,
 };
+
+/// Whether a verdict accepted on ground `a` rests on the callers.
+pub fn reliesOnCallers(a: Facts.Verdict.Accepted) bool {
+    return a != .fresh and a != .call;
+}
 
 pub const Table = struct {
     /// R-1.12's clean bit: every declaration checked, no limit, every write
@@ -52,13 +64,18 @@ pub const Table = struct {
 
     /// Whether the write at instruction `inst` is one the checker accepted.
     pub fn accepted(t: Table, inst: u32) bool {
+        return t.find(inst) != null;
+    }
+
+    /// The accepted write at instruction `inst`, or null.
+    pub fn find(t: Table, inst: u32) ?Write {
         var lo: usize = 0;
         var hi = t.writes.len;
         while (lo < hi) {
             const mid = lo + (hi - lo) / 2;
             if (t.writes[mid].inst < inst) lo = mid + 1 else hi = mid;
         }
-        return lo < t.writes.len and t.writes[lo].inst == inst;
+        return if (lo < t.writes.len and t.writes[lo].inst == inst) t.writes[lo] else null;
     }
 };
 
@@ -77,12 +94,12 @@ pub const Builder = struct {
     unchecked: bool = false,
 
     /// A demand's verdict at instruction `inst`.
-    pub fn add(b: *Builder, scratch: Allocator, inst: u32, kind: Facts.DemandKind, refused: bool) Allocator.Error!void {
+    pub fn add(b: *Builder, scratch: Allocator, inst: u32, kind: Facts.DemandKind, refused: bool, callers: bool) Allocator.Error!void {
         if (refused) {
             b.refused = true;
             return;
         }
-        if (isListWrite(kind)) try b.writes.append(scratch, .{ .inst = inst, .kind = kind });
+        if (isListWrite(kind)) try b.writes.append(scratch, .{ .inst = inst, .kind = kind, .callers = callers });
     }
 
     /// The table, in `gpa` (the rows were in `scratch`); `limited` when the
@@ -99,7 +116,10 @@ pub const Builder = struct {
         }.lessThan);
         var n: usize = 0;
         for (items) |w| {
-            if (n != 0 and items[n - 1].inst == w.inst) continue;
+            if (n != 0 and items[n - 1].inst == w.inst) {
+                items[n - 1].callers = items[n - 1].callers or w.callers;
+                continue;
+            }
             items[n] = w;
             n += 1;
         }
@@ -112,32 +132,34 @@ const testing = std.testing;
 test "a refused or limited module publishes no write; an accepted one its writes, each once, by instruction" {
     const gpa = testing.allocator;
     var b: Builder = .{};
-    try b.add(gpa, 9, .writer, false);
-    try b.add(gpa, 3, .append, false);
-    try b.add(gpa, 9, .writer, false);
-    try b.add(gpa, 5, .update, false);
+    try b.add(gpa, 9, .writer, false, false);
+    try b.add(gpa, 3, .append, false, true);
+    try b.add(gpa, 9, .writer, false, true);
+    try b.add(gpa, 5, .update, false, false);
     var t = try b.finish(gpa, gpa, false);
     defer t.deinit(gpa);
     try testing.expect(t.clean);
     try testing.expectEqual(@as(usize, 2), t.writes.len);
     try testing.expect(t.accepted(3) and t.accepted(9));
     try testing.expect(!t.accepted(5) and !t.accepted(4));
+    // One instruction twice: it rests on the callers when either verdict does.
+    try testing.expect(t.find(9).?.callers and t.find(3).?.callers);
 
     var r: Builder = .{};
-    try r.add(gpa, 1, .writer, false);
-    try r.add(gpa, 2, .writer, true);
+    try r.add(gpa, 1, .writer, false, false);
+    try r.add(gpa, 2, .writer, true, false);
     var none = try r.finish(gpa, gpa, false);
     try testing.expect(!none.clean and none.writes.len == 0);
     none.deinit(gpa);
 
     var u: Builder = .{ .unchecked = true };
-    try u.add(gpa, 1, .construction, false);
+    try u.add(gpa, 1, .construction, false, false);
     var partial = try u.finish(gpa, gpa, false);
     defer partial.deinit(gpa);
     try testing.expect(!partial.clean and partial.accepted(1));
 
     var l: Builder = .{};
-    try l.add(gpa, 1, .writer, false);
+    try l.add(gpa, 1, .writer, false, false);
     var limited = try l.finish(gpa, gpa, true);
     try testing.expect(limited.writes.len == 0);
     limited.deinit(gpa);

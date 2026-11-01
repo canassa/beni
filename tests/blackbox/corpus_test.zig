@@ -2126,6 +2126,7 @@ const Case = struct {
     const ListsPass = struct {
         golden: []const u8,
         crash: []const u8,
+        refuses: []const u8,
         out: []const u8,
         flags: []const []const u8,
         mode: Config.InPlace,
@@ -2133,8 +2134,8 @@ const Case = struct {
         checker: []const u8,
     };
     const lists_passes = [_]ListsPass{
-        .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 7, .checker = "v1" },
-        .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 8, .checker = "v2" },
+        .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .refuses = "sanitize-lists-refuses", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 7, .checker = "v1" },
+        .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .refuses = "sanitize-lists-v2-refuses", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 8, .checker = "v2" },
     };
 
     fn ownershipRefuses(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8) !bool {
@@ -2236,7 +2237,8 @@ const Case = struct {
                 const value = std.mem.startsWith(u8, piece[tick + 1 ..], " value in ");
                 const at = std.mem.indexOf(u8, piece, "(at byte ") orelse continue;
                 const digits = piece[at + "(at byte ".len ..];
-                const offset = std.fmt.parseUnsigned(u32, digits[0 .. std.mem.indexOfScalar(u8, digits, ')') orelse continue], 10) catch continue;
+                // v2 notes after the byte whether a caller was checked.
+                const offset = std.fmt.parseUnsigned(u32, digits[0 .. std.mem.indexOfAny(u8, digits, "),") orelse continue], 10) catch continue;
                 // Line and column as a diagnostic counts them: from 1, a
                 // column in code points.
                 var l_no: u32 = 1;
@@ -2536,6 +2538,13 @@ const Case = struct {
             // to wrap (`own2/Hoists.zig`, §3.7).
             for (lists_passes) |lp| if (c.cfg.in_place == lp.mode or c.goldenExists(lp.golden)) lists: {
                 const lists_record = if (c.cfg.in_place == lp.mode) "" else record;
+                // A fixture whose `.sanitize-lists-v2-refuses` says the checker
+                // must refuse it: a fixed soundness defect, whose program the
+                // sanitiser catches when the checker accepts it again. Refused,
+                // the pass is done; accepted, the sanitised run is the evidence,
+                // and the case fails whatever it prints.
+                const refuses = c.goldenExists(lp.refuses);
+                if (refuses and try c.ownershipRefuses(platform_arg, lp.flags, sources)) break :lists;
                 if (c.cfg.in_place == lp.mode and !c.goldenExists(lp.golden)) {
                     if (try c.ownershipRefuses(platform_arg, lp.flags, sources)) break :lists;
                 }
@@ -2546,6 +2555,15 @@ const Case = struct {
                 if (c.cfg.mode == .pending) try lists.append(c.arena, "--diagnostics=json");
                 try lists.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 const crash = if (c.goldenExists(lp.crash)) lp.crash else "crash";
+                if (refuses) {
+                    _ = c.runOnceCrash(lp.out, .dev, lists.items, "expected", false, "", crash) catch |err| {
+                        detail("{s}: {s} accepts a program it must refuse, and the sanitised run above shows the stale read\n", .{ c.fixture.name, lp.checker });
+                        return err;
+                    };
+                    detail("{s}: {s} accepts a program it must refuse ({s}), and the sanitised run prints its golden\n", .{ c.fixture.name, lp.checker, lp.refuses });
+                    because("[{s}] {s} accepts a program it must refuse", .{ lp.out, lp.checker });
+                    return error.SanitisedRefusalAccepted;
+                }
                 verified[lp.slot] = c.runOnceCrash(lp.out, .dev, lists.items, "expected", false, lists_record, crash) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
