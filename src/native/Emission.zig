@@ -3,6 +3,7 @@
 const std = @import("std");
 const Bindings = @import("Bindings.zig");
 const Source = @import("Source.zig");
+const Receiver = @import("Receiver.zig");
 const Exposure = @import("Exposure.zig");
 const Build = @import("../check/RealmBuild.zig");
 const Consume = @import("../entry/RealmConsume.zig");
@@ -12,9 +13,9 @@ const Reach = @import("../js/Reach.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Allocator = std.mem.Allocator;
 /// Immutable lowering ABI codes, recorded in EmitPack.Fact.where (§17).
-pub const Abi = enum(u8) { text_encoder_unit_constructor_v1 = @import("../js/EmitPack.zig").native_recipe_abi };
+pub const Abi = enum(u8) { text_encoder_unit_constructor_v1 = @import("../js/EmitPack.zig").native_recipe_abi, text_encoder_encoding_v1 = 2 };
 pub const Disposition = enum { @"unreachable", ready, refused };
-pub const Reason = enum { none, selection, open_library, callback_contract, missing_root, unresolved_root, realm, escape, deferred_use };
+pub const Reason = enum { none, selection, open_library, callback_contract, missing_root, unresolved_root, realm, escape, deferred_use, receiver };
 pub const Recipe = struct {
     target: Build.QualifiedDecl,
     native_type: Interface.TypeIndex,
@@ -33,21 +34,36 @@ pub const Witness = struct {
 };
 pub const Table = struct {
     recipe: ?Recipe = null,
+    getter: ?Recipe = null,
     selected: ?Build.QualifiedDecl = null,
     kind: Plan.KindIndex = .none,
     realm: ?Plan.Realm = null,
     witnesses: std.MultiArrayList(Witness) = .empty,
     work: Exposure.Work = .{},
+    receiver_work: Receiver.Work = .{},
     pub fn deinit(t: *Table, a: Allocator) void {
         t.witnesses.deinit(a);
         t.* = .{};
     }
+    pub fn forTarget(t: *const Table, target: Build.QualifiedDecl) ?Recipe {
+        if (t.recipe) |r| if (std.meta.eql(r.target, target)) return r;
+        if (t.getter) |r| if (std.meta.eql(r.target, target)) return r;
+        return null;
+    }
+    fn refuse(t: *Table, reason: Reason) void {
+        if (t.recipe) |*r| if (r.disposition != .@"unreachable") {
+            r.reason = reason;
+        };
+        if (t.getter) |*r| if (r.disposition != .@"unreachable") {
+            r.reason = reason;
+        };
+    }
     pub fn recipeMatches(t: *const Table, target: Build.QualifiedDecl, abi: u8) bool {
-        const recipe = t.recipe orelse return false;
+        const recipe = t.forTarget(target) orelse return false;
         return @backingInt(recipe.abi) == abi and std.meta.eql(recipe.target, target);
     }
     pub fn ready(t: *const Table, target: Build.QualifiedDecl) bool {
-        const recipe = t.recipe orelse return false;
+        const recipe = t.forTarget(target) orelse return false;
         return recipe.disposition == .ready and std.meta.eql(recipe.target, target);
     }
 };
@@ -67,28 +83,34 @@ pub const Input = struct {
     evaluated: []const Build.QualifiedDecl = &.{},
     profile: ?*@import("../Profile.zig") = null,
 };
-pub const Error = Consume.Error || Exposure.Error || error{InvalidNativeAuthority};
+pub const Error = Consume.Error || Exposure.Error || Receiver.Error || error{InvalidNativeAuthority};
 pub fn prepare(a: Allocator, in: Input) Error!Table {
     var out: Table = .{ .selected = in.selection.selected, .kind = in.selection.plan.selected };
     errdefer out.deinit(a);
     const installed = in.registry.text_encoder orelse return out;
     if (installed.candidate.schema != 1 or installed.candidate.identity != .text_encoder_v1 or
-        installed.candidate.adapter_revision != 1) return error.InvalidNativeAuthority;
+        installed.candidate.adapter_revision != 2) return error.InvalidNativeAuthority;
     const target: Build.QualifiedDecl = .{ .module = installed.module, .declaration = installed.checked.declaration };
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(Source.provenance, &digest, .{});
     out.recipe = .{ .target = target, .native_type = installed.checked.type_index, .scheme = installed.checked.scheme, .digest = digest, .abi = .text_encoder_unit_constructor_v1 };
+    const getter_target: Build.QualifiedDecl = .{ .module = installed.module, .declaration = installed.checked.getter_declaration };
+    out.getter = .{ .target = getter_target, .native_type = installed.checked.type_index, .scheme = installed.checked.getter_scheme, .digest = digest, .abi = .text_encoder_encoding_v1 };
     if (in.live.modules.len != in.source.graph.count() or in.live.dispatch.len != in.source.dispatch.len or
         in.live.provenance.ptr != in.source.provenance.ptr or in.live.provenance.len != in.source.provenance.len) return error.InvalidNativeAuthority;
     for (in.live.dispatch, 0..) |table, i| if (table != &in.source.dispatch[i]) return error.InvalidNativeAuthority;
     if (!in.live.decl(target.module, target.declaration)) {
         out.recipe.?.disposition = .@"unreachable";
         out.recipe.?.reason = .none;
-        return out;
     }
+    if (!in.live.decl(getter_target.module, getter_target.declaration)) {
+        out.getter.?.disposition = .@"unreachable";
+        out.getter.?.reason = .none;
+    }
+    if (out.recipe.?.disposition == .@"unreachable" and out.getter.?.disposition == .@"unreachable") return out;
     if (in.source.graph != in.selection.graph or in.source.native_seeds.len != 0) return error.InvalidNativeAuthority;
     if (in.selection.library) {
-        out.recipe.?.reason = .open_library;
+        out.refuse(.open_library);
         return out;
     }
     const plan = in.selection.plan;
@@ -97,12 +119,14 @@ pub fn prepare(a: Allocator, in: Input) Error!Table {
     const kind = plan.kinds.get(@backingInt(plan.selected));
     out.realm = kind.realm;
     if (kind.constructors.len != 0 or kind.launches.len != 0 or kind.roles.len != 0 or kind.arity != 0) {
-        out.recipe.?.reason = .callback_contract;
+        out.refuse(.callback_contract);
         return out;
     }
     const seed: Build.Realms.NativeSeed = .{ .target = target, .allowed = installed.candidate.realm_mask, .binding_digest = digest, .contract = .unit_to_native };
     var source = in.source;
-    source.native_seeds = &.{seed};
+    const getter_seed: Build.Realms.NativeSeed = .{ .target = getter_target, .allowed = installed.candidate.realm_mask, .binding_digest = digest, .contract = .text_encoder_to_string };
+    source.native_seeds = &.{ seed, getter_seed };
+    source.receiver_origins = out.getter.?.disposition != .@"unreachable";
     var built = try Build.build(a, source);
     defer built.deinit(a);
     if (in.profile) |profile| {
@@ -132,6 +156,52 @@ pub fn prepare(a: Allocator, in: Input) Error!Table {
     selection.emission_evaluated = in.evaluated;
     var consumed = try Consume.consume(a, selection, &built);
     defer consumed.deinit(a);
+    if (source.receiver_origins) {
+        // Receiver branding is independent of callable exposure and nominal typing.
+        var receivers = try Receiver.solve(a, &built, .{ .target = target, .digest = digest, .nominal_owner = installed.module, .nominal_type = installed.checked.type_index });
+        defer receivers.deinit(a);
+        out.receiver_work = receivers.work;
+
+        // Contract rows are a subset of calls. Never let an omitted implicit
+        // dispatch contract skip the receiver gate for a selected invocation.
+        const arguments = try a.alloc(Build.PortId, built.calls.len);
+        defer a.free(arguments);
+        @memset(arguments, .none);
+        out.receiver_work.invocation_slots = arguments.len;
+        for (0..built.contracts.len) |ci| {
+            const contract = built.contracts.get(ci);
+            out.receiver_work.invocation_contracts += 1;
+            const id = @backingInt(contract.call);
+            if (id >= built.calls.len or @backingInt(contract.argument) >= built.ports.len or @backingInt(contract.result) >= built.ports.len or @backingInt(contract.native_exec) >= built.execs.len or arguments[id] != .none) return error.InvalidNativeAuthority;
+            const call = built.calls.get(id);
+            if (call.argument != contract.argument or call.result != contract.result or call.target != contract.native_exec or call.classification != .direct) return error.InvalidNativeAuthority;
+            arguments[id] = contract.argument;
+        }
+        var missing_receiver = false;
+        for (0..built.calls.len) |ci| {
+            out.receiver_work.invocation_visits += 1;
+            const call = built.calls.get(ci);
+            if (call.target == .none) continue;
+            if (@backingInt(call.target) >= built.execs.len or @backingInt(call.ambient) >= consumed.definite.len) return error.InvalidNativeAuthority;
+            const native = built.execs.get(@backingInt(call.target)).source;
+            if (native.module != getter_target.module or native.declaration != getter_target.declaration) continue;
+            if (!consumed.definite[@backingInt(call.ambient)]) continue;
+            if (arguments[ci] == .none or try receivers.at(arguments[ci]) == null) missing_receiver = true;
+        }
+        if (in.profile) |profile| {
+            profile.addCounter(.native_receiver_ports, receivers.work.ports);
+            profile.addCounter(.native_receiver_contracts, receivers.work.contracts);
+            profile.addCounter(.native_receiver_aliases, receivers.work.aliases);
+            profile.addCounter(.native_receiver_native_rows, receivers.work.native_rows);
+            profile.addCounter(.native_receiver_invocation_slots, out.receiver_work.invocation_slots);
+            profile.addCounter(.native_receiver_invocation_contracts, out.receiver_work.invocation_contracts);
+            profile.addCounter(.native_receiver_invocation_visits, out.receiver_work.invocation_visits);
+        }
+        if (missing_receiver) {
+            out.refuse(.receiver);
+            return out;
+        }
+    }
     var exposure = try Exposure.solve(a, &built, birs, in.source.interfaces);
     defer exposure.deinit(a);
     out.work = exposure.work;
@@ -142,27 +212,27 @@ pub fn prepare(a: Allocator, in: Input) Error!Table {
         profile.addCounter(.native_exposure_deliveries, exposure.work.deliveries);
     }
     if (consumed.work.root_misses != 0 or consumed.roots.len < 2) {
-        out.recipe.?.reason = .missing_root;
+        out.refuse(.missing_root);
         return out;
     }
     for (0..consumed.roots.len) |i| {
         const root = consumed.roots.get(i);
         if (root.exec == .none) {
-            out.recipe.?.reason = .unresolved_root;
+            out.refuse(.unresolved_root);
             return out;
         }
         const root_bits = try exposure.exec(root.exec);
         if (root.mode != .definite and root_bits != 0) {
-            out.recipe.?.reason = .deferred_use;
+            out.refuse(.deferred_use);
             return out;
         }
         if (root_bits & Exposure.unresolved != 0) {
-            out.recipe.?.reason = .unresolved_root;
+            out.refuse(.unresolved_root);
             return out;
         }
         const fact = consumed.facts.facts.get(@backingInt(root.exec));
         if (fact.incomplete or fact.allowed & Consume.realmBit(kind.realm) == 0) {
-            out.recipe.?.reason = .realm;
+            out.refuse(.realm);
             return out;
         }
     }
@@ -190,7 +260,13 @@ pub fn prepare(a: Allocator, in: Input) Error!Table {
         if (use.kind == .invocation and use.native != Build.Realms.none and use.state != .checked) reason = .deferred_use;
         if (use.kind == .invocation and use.state == .unresolved and bits != 0) reason = .deferred_use;
     }
-    out.recipe.?.reason = reason;
-    out.recipe.?.disposition = if (reason == .none) .ready else .refused;
+    if (out.recipe.?.disposition != .@"unreachable") {
+        out.recipe.?.reason = reason;
+        out.recipe.?.disposition = if (reason == .none) .ready else .refused;
+    }
+    if (out.getter.?.disposition != .@"unreachable") {
+        out.getter.?.reason = reason;
+        out.getter.?.disposition = if (reason == .none) .ready else .refused;
+    }
     return out;
 }

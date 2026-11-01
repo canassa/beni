@@ -57,7 +57,7 @@ fn profile(w: *World, trace: []const u8, key: []const u8) !u64 {
 fn native(text: []const u8, state: []const u8) ![]const u8 {
     const row = try line(text, "  realm-native 0 ");
     try testing.expectEqualStrings(state, try word(row, "state="));
-    try testing.expectEqual(@as(u64, 1), try number(row, "decl=")); // IFC value0 is BIR foreign declaration1.
+    try testing.expectEqual(@as(u64, 1), try number(row, "decl=")); // Named export new is IFC value1, independently BIR foreign declaration1.
     try testing.expectEqual(@as(u64, 31), try number(row, "allowed="));
     try testing.expectEqualStrings("false", try word(row, "incomplete="));
     try testing.expectEqual(@as(usize, 64), (try word(row, "digest=")).len);
@@ -87,7 +87,7 @@ test "native realm consumer reads actual packaged roots registry seed and origin
     try testing.expect(try number(b, "scopes=") > 100);
     try testing.expectEqual(@as(u64, 1), try number(b, "seedReads="));
     try testing.expectEqual(@as(u64, 1), try number(try line(r.stdout, "  realm-kernel "), "seedReads="));
-    const reference = try std.fmt.allocPrint(w.arena.allocator(), "kind=external module={d} value=0", .{try number(n, "module=")});
+    const reference = try std.fmt.allocPrint(w.arena.allocator(), "kind=external module={d} value=1", .{try number(n, "module=")});
     try testing.expect(std.mem.indexOf(u8, r.stdout, reference) != null);
     var blocked: usize = 0;
     var rows = std.mem.splitScalar(u8, r.stdout, '\n');
@@ -243,4 +243,24 @@ test "native realm consumer legacy selection and source error repair never reuse
     const repaired = try run(&w, "repaired.json", &.{});
     try testing.expectEqualStrings(good.stdout, repaired.stdout);
     try testing.expectEqual(@as(u64, 0), try profile(&w, "repaired.json", "modules_checked"));
+}
+
+test "native getter external value index stays distinct from original foreign declaration" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w, "first _ value =\n    encoder = Encoder.new ⊤\n    _ = Encoder.encoding encoder\n    value", "");
+    const r = try run(&w, "getter-index.json", &.{"--jobs=1"});
+    const module = try number(try line(r.stdout, "  realm-native 0 "), "module=");
+    // Actual named Interface assertions live in Session.checkedNativeCandidate:
+    // encoding is value0, scheme1, and BIR foreign declaration2. These namespaces
+    // must not be confused even though new now happens to be value1/decl1.
+    const value_index: u32 = 0;
+    const declaration: u32 = 2;
+    try testing.expect(value_index != declaration);
+    const reference = try std.fmt.allocPrint(w.arena.allocator(), "kind=external module={d} value={d}", .{ module, value_index });
+    const scope = try std.fmt.allocPrint(w.arena.allocator(), "  realm-scope {d}:1 decl={d} source=4294967295 kind=foreign", .{ module, declaration });
+    try testing.expect(std.mem.indexOf(u8, r.stdout, reference) != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, scope) != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "source=core:Browser.Host.TextEncoder/encoding@4294967295") != null);
+    try testing.expect(!w.exists("out"));
 }

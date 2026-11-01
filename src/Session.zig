@@ -3477,12 +3477,14 @@ fn checkedNativeCandidate(ordinary_override: bool) !void {
     const gpa = std.testing.allocator;
     const native = @import("native/Source.zig");
     const Bindings = @import("native/Bindings.zig");
-    var session = try Session.init(gpa, std.testing.io, .{ .core_package = true, .jobs = 1, .native_realms = !ordinary_override });
+    var session = try Session.init(gpa, std.testing.io, .{ .jobs = 1 });
     defer session.deinit();
     try session.store.addEmbedded(gpa, "Main.beni", 0, .app, "import Browser.Host.TextEncoder as TextEncoder\n\npub make : ⊤ → TextEncoder.TextEncoder\nmake = TextEncoder.new\n");
     // Another actual ordinary foreign nominal, equal kind/arity but distinct owner.
     try session.store.addEmbedded(gpa, "core/Other.beni", 5, .core, "pub foreign type TextEncoder\n");
     try session.store.addEmbedded(gpa, "OtherUse.beni", 0, .app, "import Other\n\npub identity : Other.TextEncoder → Other.TextEncoder\nidentity value = value\n");
+    try session.store.addEmbedded(gpa, "core/String.beni", 5, .core, "pub equatable foreign type String\n");
+    try session.store.addGenerated(gpa, "core/Browser/Host/TextEncoder.beni", 5, .core, native.source, .text_encoder_v1);
     if (ordinary_override) try session.store.addEmbedded(gpa, "core/Browser/Host/TextEncoder.beni", 5, .app, native.source);
     var diagnostics: Io.Writer.Allocating = .init(gpa);
     defer diagnostics.deinit();
@@ -3497,6 +3499,20 @@ fn checkedNativeCandidate(ordinary_override: bool) !void {
     try std.testing.expectEqualDeep(native.candidate, installed.candidate);
     try std.testing.expectEqual(native.Status.awaiting_realm, installed.checked.status);
     const iface = &session.resolution.interfaces[installed.module.int()];
+    // Public values are name-ordered, unlike BIR declarations/scheme storage.
+    try std.testing.expectEqualStrings("encoding", session.interner.slice(iface.symbol(iface.values[0].name)));
+    try std.testing.expectEqualStrings("new", session.interner.slice(iface.symbol(iface.values[1].name)));
+    try std.testing.expectEqual(installed.checked.scheme, iface.values[1].scheme);
+    try std.testing.expectEqual(installed.checked.getter_scheme, iface.values[0].scheme);
+    try std.testing.expectEqual(@as(u32, 2), installed.checked.getter_declaration);
+    try std.testing.expect(@as(u32, 0) != installed.checked.getter_declaration);
+    for ([_]Interface.SchemeIndex{ installed.checked.scheme, installed.checked.getter_scheme }) |scheme_id| {
+        const original_total = iface.schemes[@backingInt(scheme_id)].total;
+        try std.testing.expect(!original_total);
+        @constCast(iface.schemes)[@backingInt(scheme_id)].total = true;
+        try std.testing.expect(!Bindings.acceptsCached(&session.store, &session.graph, installed.module, session.artifacts.bir(session.graph.moduleFile(installed.module)), iface, &session.interner));
+        @constCast(iface.schemes)[@backingInt(scheme_id)].total = original_total;
+    }
     const scheme = iface.schemes[@backingInt(installed.checked.scheme)];
     const block = iface.effectBlock(scheme).?;
     try std.testing.expectEqualDeep(Interface.EffectBlock.Class{ .rung = 1, .sync = false, .deps = &.{} }, block.class(0));
@@ -3614,6 +3630,7 @@ test "native emission source request follows generated supplier and leaves ordin
         if (mode == .absent) {
             try session.store.addEmbedded(a, "Main.beni", 0, .app, "pub identity : ⊤ → ⊤\nidentity value = value\n");
         } else {
+            try session.store.addEmbedded(a, "core/String.beni", 5, .core, "pub equatable foreign type String\n");
             if (mode == .generated) {
                 try session.store.addGenerated(a, "core/Browser/Host/TextEncoder.beni", 5, .core, native.source, .text_encoder_v1);
             } else try session.store.addEmbedded(a, "core/Browser/Host/TextEncoder.beni", 5, .core, native.source);

@@ -52,6 +52,7 @@ const InternPool = @import("../InternPool.zig");
 const lists = @import("../lists.zig");
 
 const TypeStore = @This();
+const CanonicalIndex = @import("CanonicalIndex.zig");
 
 pub const Symbol = InternPool.Symbol;
 
@@ -354,6 +355,8 @@ proof_voids: u64 = 0,
 /// (`check/Module.zig`); a store nothing checks in (an interface dump's,
 /// a test's) does not prove, and pays one branch per content write.
 tracks_proofs: bool = false,
+/// Demand-only diagnostic adjacency; absent stores allocate/scan nothing.
+canonical: ?*CanonicalIndex = null,
 /// Safety builds only: the nodes `Walk.assertProved` has visited in this store, so
 /// its re-walks of proved graphs stay within a budget linear in the store
 /// Never read outside that assert.
@@ -361,6 +364,14 @@ proof_assert_work: u64 = 0,
 
 pub fn init(backing: Allocator) TypeStore {
     return .{ .arena = .init(backing) };
+}
+
+/// Enable before any Var exists. Index memory shares the store arena/lifetime.
+pub fn enableCanonical(store: *TypeStore) Allocator.Error!void {
+    std.debug.assert(store.count() == 0 and store.canonical == null);
+    const index = try store.gpa().create(CanonicalIndex);
+    index.* = .{};
+    store.canonical = index;
 }
 
 pub fn deinit(store: *TypeStore) void {
@@ -440,6 +451,9 @@ pub inline fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Al
     c.mark[i] = no_mark;
     c.copy[i] = .none;
     c.size[i] = 1;
+    if (store.canonical) |index| index.fresh(store.gpa(), store, v) catch {
+        index.failed = true;
+    };
     return v;
 }
 
@@ -530,6 +544,9 @@ pub fn merge(store: *TypeStore, a: Var, b: Var, survivor: Content) Var {
     // side's before the merge, a proved leaf that stays a leaf gains no edge,
     // and a record's new rows reach it through a bind or an `err` (both void) (§8.2).
     if (carry and store.acyclic_epoch == epoch) store.prove(keep);
+    if (store.canonical) |index| index.merge(store.gpa(), store, a, b, keep) catch {
+        index.failed = true;
+    };
     return keep;
 }
 
@@ -547,6 +564,7 @@ pub fn expandAlias(store: *TypeStore, alias: Var, end: Var) Var {
     store.col.parent[alias.int()] = end;
     sizes[end.int()] += sizes[alias.int()];
     ranks[end.int()] = @min(ranks[alias.int()], ranks[end.int()]);
+    if (store.canonical) |index| index.expandAlias(alias, end);
     return end;
 }
 
@@ -660,6 +678,9 @@ pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
         if (store.proved(v)) store.gains(v, c);
     }
     store.col.content[v.int()] = c;
+    if (store.canonical) |index| index.replace(store.gpa(), store, v) catch {
+        index.failed = true;
+    };
 }
 
 pub inline fn setRank(store: *TypeStore, v: Var, r: u32) void {

@@ -1861,7 +1861,7 @@ const Emitter = struct {
             return;
         };
         const entry = chosen.entry;
-        const native_live = e.projection.live.decl(native.module, native.checked.declaration);
+        const native_live = e.projection.live.decl(native.module, native.checked.declaration) or e.projection.live.decl(native.module, native.checked.getter_declaration);
         if (native_live and (e.input.options.platform.lowering != null or e.projection.cuts.len != 0 or e.projection.lifts.len != 0)) {
             const decl = e.bir(native.module).decls[native.checked.declaration];
             try e.report(.not_implemented, e.graph().moduleFile(native.module), decl.name_token, "Native emission requires a current generic initializer evaluation witness; program projections remain unresolved. No native callable was emitted.", .{});
@@ -1895,9 +1895,9 @@ const Emitter = struct {
                 return;
             },
         };
-        if (e.projection.native_emission.recipe) |recipe| if (recipe.disposition == .refused) {
-            const decl = e.bir(native.module).decls[native.checked.declaration];
-            try e.report(.not_implemented, e.graph().moduleFile(native.module), decl.name_token, "The generated TextEncoder constructor has an unresolved native emission obligation ({t}). No native callable was emitted.", .{recipe.reason});
+        for ([_]?@import("../native/Emission.zig").Recipe{ e.projection.native_emission.recipe, e.projection.native_emission.getter }) |optional| if (optional) |recipe| if (recipe.disposition == .refused) {
+            const decl = e.bir(recipe.target.module).decls[recipe.target.declaration];
+            try e.report(.not_implemented, e.graph().moduleFile(recipe.target.module), decl.name_token, "The generated TextEncoder {s} has an unresolved native emission obligation ({t}). No native callable was emitted.", .{ if (recipe.abi == .text_encoder_unit_constructor_v1) "constructor" else "encoding getter", recipe.reason });
         };
     }
 
@@ -1947,7 +1947,7 @@ const Emitter = struct {
                 // Read-only inspection knows this exact checked recipe identity;
                 // no sibling or arbitrary JavaScript grants its future readiness.
                 if (e.session.native_bindings.text_encoder) |native| {
-                    if (native.module == m and native.checked.declaration == index) continue;
+                    if (native.module == m and (native.checked.declaration == index or native.checked.getter_declaration == index)) continue;
                 }
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),

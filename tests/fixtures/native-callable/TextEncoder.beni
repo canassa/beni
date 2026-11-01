@@ -2,3 +2,5 @@
 pub foreign type TextEncoder
 
 pub foreign impure new : ⊤ → TextEncoder
+
+pub foreign impure encoding : TextEncoder → String

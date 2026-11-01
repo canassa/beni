@@ -3474,12 +3474,12 @@ pub const Lowerer = struct {
             // Bound by the sibling import, not by a declaration here.
             .foreign_value => {
                 const authority = l.in.native_emission orelse return;
-                const recipe = authority.recipe orelse return;
+                const recipe = authority.forTarget(.{ .module = l.in.module, .declaration = index }) orelse return;
                 if (recipe.target.module != l.in.module or recipe.target.declaration != index) return;
                 records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
                 const ready = authority.ready(.{ .module = l.in.module, .declaration = index });
                 l.askSelf(.native_recipe, true, @backingInt(recipe.abi), index);
-                if (ready and l.liveDecl(index)) try l.nativeFacade(out, index);
+                if (ready and l.liveDecl(index)) try l.nativeFacade(out, index, recipe.abi);
                 try l.recEnd(records.direct, index);
                 return;
             },
@@ -3524,14 +3524,17 @@ pub const Lowerer = struct {
 
     /// Keep the checked Unit argument as one ordinary strict JS parameter.
     /// The global constructor lookup happens inside this facade after arguments.
-    fn nativeFacade(l: *Lowerer, out: *StmtList, index: u32) !void {
+    fn nativeFacade(l: *Lowerer, out: *StmtList, index: u32, abi: @import("../native/Emission.zig").Abi) !void {
         const d = l.bir.decls[index];
         const p: u32 = if (d.name_token < l.in.token_starts.len) l.in.token_starts[d.name_token] else 0;
         const binding_name = try l.name(.{ .module = l.module_name.toOptional(), .base = l.bir.symbol(d.name), .tag = JsIr.Name.no_tag });
         const argument = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$nativeUnit"), .tag = JsIr.Name.no_tag });
         const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
         const constructor = try l.member(global, try l.interner.getOrPut(l.gpa, "TextEncoder"), p);
-        const created = try l.add(.new_call, p, constructor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{}))));
+        const created = switch (abi) {
+            .text_encoder_unit_constructor_v1 => try l.add(.new_call, p, constructor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{})))),
+            .text_encoder_encoding_v1 => try l.member(try l.add(.ident, p, @backingInt(argument), Node.Data.unused), try l.interner.getOrPut(l.gpa, "encoding"), p),
+        };
         const facade = try l.arrowOf(&.{argument}, &.{try l.returnStmt(created, p)}, p);
         try l.constDecl(out, binding_name, facade, p);
     }

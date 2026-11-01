@@ -9,6 +9,8 @@ const InternPool = @import("../InternPool.zig");
 
 pub const Checked = struct {
     declaration: u32,
+    getter_declaration: u32,
+    getter_scheme: Interface.SchemeIndex,
     type_index: Interface.TypeIndex,
     scheme: Interface.SchemeIndex,
     status: Source.Status = .awaiting_realm,
@@ -21,9 +23,10 @@ pub fn validate(origin: Source.Origin, bytes: []const u8, module_name: []const u
     if (origin != .text_encoder_v1 or package != .core or
         !std.mem.eql(u8, module_name, Source.module_name) or
         !std.mem.eql(u8, bytes, Source.source)) return null;
-    if (bir.decls.len != 2 or iface.types.len != 1 or iface.values.len != 1 or iface.ctors.len != 0 or iface.schemas.len != 0) return null;
+    if (bir.decls.len != 3 or iface.types.len != 1 or iface.values.len != 2 or iface.ctors.len != 0 or iface.schemas.len != 0) return null;
     var declaration: ?u32 = null;
     var native_type = false;
+    var getter: ?u32 = null;
     for (bir.decls, 0..) |decl, i| {
         const name = interner.slice(bir.symbol(decl.name));
         if (!decl.is_pub) return null;
@@ -33,40 +36,57 @@ pub fn validate(origin: Source.Origin, bytes: []const u8, module_name: []const u
                 native_type = true;
             },
             .foreign_value => {
-                if (!std.mem.eql(u8, name, "new") or decl.params != 1 or decl.rung != .impure) return null;
-                declaration = @intCast(i);
+                if (decl.params != 1 or decl.rung != .impure) return null;
+                if (std.mem.eql(u8, name, "new")) declaration = @intCast(i) else if (std.mem.eql(u8, name, "encoding")) getter = @intCast(i) else return null;
             },
             else => return null,
         }
     }
-    if (!native_type or declaration == null) return null;
+    if (!native_type or declaration == null or getter == null) return null;
     const typ = iface.types[0];
     if (!std.mem.eql(u8, interner.slice(iface.symbol(typ.name)), "TextEncoder") or
         typ.kind != .foreign or typ.arity != 0 or typ.is_equatable or typ.ctors_start != typ.ctors_end) return null;
-    const value = iface.values[0];
-    if (!value.is_foreign or value.is_markup_primitive or
-        !std.mem.eql(u8, interner.slice(iface.symbol(value.name)), "new") or value.scheme == .none or
-        @backingInt(value.scheme) >= iface.schemes.len) return null;
-    const scheme = iface.schemes[@backingInt(value.scheme)];
-    if (scheme.quantified_count != 0) return null;
-    const function = iface.term(scheme.body);
-    if (function.tag != .func) return null;
-    const args = iface.range(function.lhs);
-    if (args.len != 1 or iface.term(@fromBackingInt(@intCast(args[0]))).tag != .unit) return null;
-    const result = iface.term(@fromBackingInt(@intCast(function.rhs)));
-    if (result.tag != .app or result.lhs >= iface.type_refs.len or iface.range(result.rhs).len != 0) return null;
-    const ref = iface.type_refs[result.lhs];
-    if (ref.package != .core or ref.body != .none or
-        !std.mem.eql(u8, interner.slice(iface.symbol(ref.module)), Source.module_name) or
-        !std.mem.eql(u8, interner.slice(iface.symbol(ref.name)), "TextEncoder")) return null;
-    const block = iface.effectBlock(scheme) orelse return null;
-    if (block.classCount() != 1) return null;
-    const class = block.class(0);
-    if (class.rung != 1 or class.deps.len != 0 or class.sync or class.sensitive) return null;
-    var sites = block.sites();
-    const root = sites.next() orelse return null;
-    if (root.class != 0 or root.root != 0 or root.steps.len != 0 or sites.next() != null) return null;
-    return .{ .declaration = declaration.?, .type_index = @fromBackingInt(0), .scheme = value.scheme };
+    var constructor_scheme: Interface.SchemeIndex = .none;
+    var getter_scheme: Interface.SchemeIndex = .none;
+    for (iface.values) |value| {
+        const name = interner.slice(iface.symbol(value.name));
+        const is_new = std.mem.eql(u8, name, "new");
+        if (!is_new and !std.mem.eql(u8, name, "encoding")) return null;
+        if (!value.is_foreign or value.is_markup_primitive or value.scheme == .none or @backingInt(value.scheme) >= iface.schemes.len) return null;
+        const scheme = iface.schemes[@backingInt(value.scheme)];
+        if (scheme.quantified_count != 0 or scheme.total) return null;
+        const function = iface.term(scheme.body);
+        if (function.tag != .func) return null;
+        const args = iface.range(function.lhs);
+        if (args.len != 1) return null;
+        const argument = iface.term(@fromBackingInt(@intCast(args[0])));
+        const result = iface.term(@fromBackingInt(function.rhs));
+        if (is_new) {
+            if (argument.tag != .unit or !isNominal(iface, interner, result, Source.module_name, "TextEncoder")) return null;
+            if (constructor_scheme != .none) return null;
+            constructor_scheme = value.scheme;
+        } else {
+            if (!isNominal(iface, interner, argument, Source.module_name, "TextEncoder") or !isNominal(iface, interner, result, "String", "String")) return null;
+            if (getter_scheme != .none) return null;
+            getter_scheme = value.scheme;
+        }
+        const block = iface.effectBlock(scheme) orelse return null;
+        if (block.classCount() != 1) return null;
+        const class = block.class(0);
+        if (class.rung != 1 or class.deps.len != 0 or class.sync or class.sensitive) return null;
+        var sites = block.sites();
+        const root = sites.next() orelse return null;
+        if (root.class != 0 or root.root != 0 or root.steps.len != 0 or sites.next() != null) return null;
+    }
+    if (constructor_scheme == .none or getter_scheme == .none) return null;
+    return .{ .declaration = declaration.?, .getter_declaration = getter.?, .type_index = @fromBackingInt(0), .scheme = constructor_scheme, .getter_scheme = getter_scheme };
+}
+fn isNominal(iface: *const Interface, interner: *const InternPool.Global, term: Interface.Term, module: []const u8, name: []const u8) bool {
+    if (term.tag != .app or term.lhs >= iface.type_refs.len or iface.range(term.rhs).len != 0) return false;
+    const ref = iface.type_refs[term.lhs];
+    return ref.package == .core and ref.body == .none and
+        std.mem.eql(u8, interner.slice(iface.symbol(ref.module)), module) and
+        std.mem.eql(u8, interner.slice(iface.symbol(ref.name)), name);
 }
 
 const Graph = @import("../resolve/Graph.zig");

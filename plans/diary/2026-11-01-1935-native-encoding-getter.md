@@ -1,0 +1,17 @@
+# Native TextEncoder encoding getter
+
+2026-11-01T19:35:04.517230+00:00. Part of #1295, implementation #1585, PR #1304.
+
+The isolated lane is based on bfa1d9e40ebbe7138d668f6886b4b42c246964b6. The norm was written before implementation. The canonical native module now has its original constructor and an ordinary impure `encoding : TextEncoder → String` getter. Current registry attestation checks both ordinary schemes, effects, exact native nominal identity, winning source supplier and pinned Web IDL mixin/include evidence. Constructor ABI1 remains unchanged; getter ABI2 is independent.
+
+Getter readiness requires the actual current constructor ContractUse/result/argument/callee/native execution joins. Receiver evidence follows only source-owned simple alias edges. Formal, returned, aggregate, cast and cyclic origins remain unavailable; nominal typing is not brand authority. The facade performs one strict receiver evaluation and one member read. Current readiness is checked before emit-pack adoption. No ownership, HostFree, Wire, Task or worker-launch claim is added.
+
+The affected unit run passed 67/67 including infrastructure. Four Receiver semantic tests include valid-index mutations and allocation failure cleanup; their strengthened final replay passed 13/13 including nine infrastructure tests. The two affected CLI suites passed 7+14 cases, and the exact Debug compiler 3e1130856320ab639caa4291f80bf4d9de8540a77cea5190da103c0c26219419 replay passed those 21 cases with no skips, failures or leaks. Cases exercise dev/release actual getter execution, strict evaluation, ordinary-checked Js.to laundering refusal, unsupported returns/formals/aggregates, supplier transitions, cached effects and prior output preservation. The real packed getter control checks positive adoption and refusal before adoption/output for a forged receiver with the same native unit key.
+
+Four ordinary complete emitted-tree pairs (Adt and AliasChainThroughLet, dev/release) matched the accepted bfa self-hosted ReleaseSafe baseline exactly; all eight Node transcripts matched corpus expectations. These are functional byte/runtime controls, not performance or backend-parity measurements. No full gate or LLVM build was run.
+
+Historical setup failures remain in owned scratch: reserved alias fixture name, missing getter sibling, incorrect APP access to Js, wrapped diagnostic substring assertion, unsupported allocator API names, missing String in the empty-core unit fixture, and an ABI2 test locator incorrectly searching ABI1. The hermetic fixtures now supply the exact existing core String foreign declaration and still use ordinary checking and registry installation. The failed logs and used binaries are retained.
+
+A final test-only extension explicitly sweeps the builder with receiver-origin capture both disabled and enabled, and reads owned alias IDs after destroying its Session. This run is pending at this diary timestamp; its result and final source/binary mappings will be recorded in the handoff.
+
+Final builder demand/lifetime follow-up passed: 88/88 steps, 10/10 tests including one semantic case and nine infrastructure tests, unit budget 1000 unchanged. It sweeps every allocation failure with receiver-origin capture disabled and enabled, checks the exact array length, then reads the owned alias IDs after Session destruction. The first attempt had a test-only Zig name-shadowing compile error; that source/log is retained separately. No production change followed the 21-case Debug CLI and ordinary byte/runtime replay.

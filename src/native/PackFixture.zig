@@ -66,13 +66,14 @@ pub fn make(a: A, scratch: A, session: *Session, live: *const Reach.Result, tabl
                     fact.where = 0;
                     fact.answer = false;
                 },
-                .unknown_true => fact.where = 2,
+                .unknown_true => fact.where = 3,
             }
         };
         encoded.facts = facts;
         try builder.addUnit(encoded, piece.text);
     }
-    if (native_facts != 1) return error.MissingRecordedRecipe;
+    const expected_facts: usize = 1 + @as(usize, if (table.getter) |getter| @intFromBool(getter.disposition == .ready) else 0);
+    if (native_facts != expected_facts) return error.MissingRecordedRecipe;
     const row = try builder.encode(a);
     defer a.free(row);
     var writer: Pack.Writer = .{};

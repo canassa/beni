@@ -166,6 +166,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try store.reserve(bir.insts.len * 3 + 64, bir.insts.len * 2 + 64);
     // The acyclicity proofs (§8.2).
     store.tracks_proofs = true;
+    if (in.solved_required) try store.enableCanonical();
     const scratch = in.scratch.allocator();
     var solved_capture: ?@import("SolvedRepresentations.zig").Capture = if (in.solved_required) .{} else null;
     defer if (solved_capture) |*capture| capture.deinit(gpa);
@@ -670,9 +671,21 @@ pub fn check(in: Input) Error!Check.Counters {
         if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
     };
     if (!quiet and !in.dependency_errors and report.errors == 0) if (solved_capture) |*capture| {
-        in.dispatch.solved_representations = try @import("SolvedRepresentationBuild.zig").build(gpa, store, capture);
-        if (in.roundtrip_dispatch) try roundtripTable(in, &report);
+        if (store.canonical) |index| try index.check();
+        var solved = try @import("SolvedRepresentationBuild.zig").build(gpa, store, capture);
+        defer solved.deinit(gpa);
+        if (store.canonical) |index| index.compare(&solved) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.InvalidCanonicalIndex, error.InvalidatedCanonicalCursor => try report.internal(@fromBackingInt(0), "this source store's canonical adjacency differs from its independent ordinary inventory"),
+        };
+        if (report.errors == 0) {
+            in.dispatch.solved_representations.deinit(gpa);
+            in.dispatch.solved_representations = solved;
+            solved = .{};
+            if (in.roundtrip_dispatch) try roundtripTable(in, &report);
+        }
     };
+    if (store.canonical) |index| try index.check();
     if (report.errors != 0 or in.dependency_errors) clearEntryEvidence(gpa, in.dispatch);
 
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
@@ -690,6 +703,7 @@ pub fn check(in: Input) Error!Check.Counters {
         k.effects = effects;
         effects_kept = true;
     }
+    const canonical_work = if (store.canonical) |index| try index.statistics() else @import("CanonicalIndex.zig").Counts{};
     return .{
         .unifications = solver.unifier.unifications,
         .generalisations = solver.generalisations,
@@ -704,6 +718,19 @@ pub fn check(in: Input) Error!Check.Counters {
         .nominal_cover_ctors = nominal_work.cover_ctors,
         .nominal_cover_refs = nominal_work.cover_refs,
         .nominal_cover_terms = nominal_work.cover_terms,
+        .canonical_fresh = canonical_work.canonical_fresh,
+        .canonical_replace = canonical_work.canonical_replace,
+        .canonical_merge = canonical_work.canonical_merge,
+        .canonical_alias = canonical_work.canonical_alias,
+        .canonical_register = canonical_work.canonical_register,
+        .canonical_remove = canonical_work.canonical_remove,
+        .canonical_redirect = canonical_work.canonical_redirect,
+        .canonical_parent_steps = canonical_work.canonical_parent_steps,
+        .canonical_live_edits = canonical_work.canonical_live_edits,
+        .canonical_export_nodes = canonical_work.canonical_export_nodes,
+        .canonical_export_edges = canonical_work.canonical_export_edges,
+        .canonical_oracle_nodes = canonical_work.canonical_oracle_nodes,
+        .canonical_oracle_edges = canonical_work.canonical_oracle_edges,
     };
 }
 

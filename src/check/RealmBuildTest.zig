@@ -20,6 +20,7 @@ const Fixture = struct {
         errdefer f.deinit();
         if (native_mode != .none) {
             const native = @import("../native/Source.zig");
+            try f.session.store.addEmbedded(gpa, "core/String.beni", 5, .core, "pub equatable foreign type String\n");
             // The hermetic builder boundary supplies the canonical generated
             // module, then uses the full ordinary checker and registry install.
             // The full packaged CLI source-builder route is tested separately.
@@ -362,18 +363,27 @@ test "realm builder releases all failed allocations and owns results beyond the 
     var alive = true;
     defer if (alive) f.deinit();
     const q = try f.q("Main", "invoke");
-    try testing.checkAllAllocationFailures(gpa, struct {
-        fn run(a: std.mem.Allocator, input: Build.Input) !void {
-            var output = try Build.build(a, input);
-            defer output.deinit(a);
-            try testing.expectEqual(@as(u64, 1), output.work.calls);
-        }
-    }.run, .{f.input()});
-    var out = try Build.build(gpa, f.input());
+    for ([_]bool{ false, true }) |receiver_origins| {
+        var capture_input = f.input();
+        capture_input.receiver_origins = receiver_origins;
+        try testing.checkAllAllocationFailures(gpa, struct {
+            fn run(a: std.mem.Allocator, input: Build.Input) !void {
+                var output = try Build.build(a, input);
+                defer output.deinit(a);
+                try testing.expectEqual(@as(u64, 1), output.work.calls);
+                try testing.expectEqual(if (input.receiver_origins) output.ports.len else 0, output.receiver_aliases.len);
+            }
+        }.run, .{capture_input});
+    }
+    var owned_input = f.input();
+    owned_input.receiver_origins = true;
+    var out = try Build.build(gpa, owned_input);
     defer out.deinit(gpa);
     const exec = try out.callableAt(q);
     f.deinit();
     alive = false;
+    try testing.expectEqual(out.ports.len, out.receiver_aliases.len);
+    for (out.receiver_aliases) |port| if (port != .none) try testing.expect(@backingInt(port) < out.ports.len);
     var result = try Realms.solve(gpa, out.input());
     defer result.deinit(gpa);
     try testing.expectEqualDeep(Realms.Fact{ .allowed = 31 }, fact(&result, exec));

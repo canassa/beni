@@ -24,6 +24,7 @@ pub const Input = struct {
     provenance: []const Interface.Provenance,
     dispatch: []const Dispatch,
     native_seeds: []const Realms.NativeSeed = &.{},
+    receiver_origins: bool = false,
 };
 pub const Range = Values.Range;
 pub const Module = struct { scopes: Range, instructions: Range, declarations: Range };
@@ -36,6 +37,8 @@ pub const Call = struct {
     callee: PortId,
     result: PortId,
     target: ExecId = .none,
+    /// Exact original unary plain-call argument, not a reconstructed type fact.
+    argument: PortId = .none,
     classification: enum(u8) { direct, residual } = .residual,
 };
 pub const Residual = struct { site: SiteId, port: PortId = .none, reason: Values.Reason };
@@ -72,12 +75,15 @@ pub const Output = struct {
     native_values: std.MultiArrayList(NativeValue) = .empty,
     uses: std.MultiArrayList(ValueUse) = .empty,
     contracts: std.MultiArrayList(ContractUse) = .empty,
+    /// Original simple source forwards only. No call-result, projection or cast.
+    receiver_aliases: []PortId = &.{},
     execs: std.MultiArrayList(Realms.Exec) = .empty,
     sites: std.MultiArrayList(Realms.Site) = .empty,
     edges: std.MultiArrayList(Realms.Edge) = .empty,
     seeds: std.MultiArrayList(Realms.Seed) = .empty,
     work: Work = .{},
     pub fn deinit(o: *Output, gpa: Allocator) void {
+        gpa.free(o.receiver_aliases);
         inline for (.{ "modules", "scopes", "declarations", "ports", "calls", "residuals", "native_values", "uses", "contracts", "execs", "sites", "edges", "seeds" }) |f| @field(o, f).deinit(gpa);
         o.* = .{};
     }
@@ -417,8 +423,17 @@ const Builder = struct {
                 const origin: Values.Origin = if (cp == .none) .{} else try b.out.origin(cp);
                 const target: ExecId = if (origin.kind == .callable) @fromBackingInt(origin.value) else .none;
                 const direct = !n.blocked and target != .none;
+                const args = b.callArgs(original, n, data);
+                const native_exec = b.native(cp);
+                const contract = if (native_exec == .none) Realms.NativeContract.unavailable else b.out.native_values.get(b.native_index[@backingInt(native_exec)]).contract;
+                // Static dispatch passes the original lhs as its first argument.
+                // Only this exact attested unary getter gets implicit normalization.
+                const ref_kind = if (n.ref == none) (Source.Ref{ .kind = .unsupported }).kind else source.refs.get(n.ref).kind;
+                const receiver_dispatch = ref_kind == .top or ref_kind == .external;
+                const implicit_getter = receiver_dispatch and direct and contract == .text_encoder_to_string and args.len == 0 and (n.tag == .field_access or n.tag == .method_call);
+                const argument: PortId = if (implicit_getter) try b.port(m, data.lhs) else if (n.tag == .call and args.len == 1) try b.port(m, args[0].int()) else .none;
                 const ci: CallId = @fromBackingInt(@as(u32, @intCast(b.out.calls.len)));
-                try b.out.calls.append(b.gpa, .{ .site = id, .ambient = ambient, .callee = cp, .result = p, .target = target, .classification = if (direct) .direct else .residual });
+                try b.out.calls.append(b.gpa, .{ .site = id, .ambient = ambient, .callee = cp, .result = p, .target = target, .argument = argument, .classification = if (direct) .direct else .residual });
                 if (direct) {
                     try b.out.edges.append(b.gpa, .{ .callee = target, .caller = ambient, .site = id });
                 } else {
@@ -429,11 +444,8 @@ const Builder = struct {
                 // Retain each original non-scalar argument obligation regardless
                 // of callee coverage or declaration processing order. Never
                 // expand aggregate/closure contents into per-native use sets.
-                const args = b.callArgs(original, n, data);
-                const native_exec = b.native(cp);
-                const contract = if (native_exec == .none) Realms.NativeContract.unavailable else b.out.native_values.get(b.native_index[@backingInt(native_exec)]).contract;
-                if (direct and n.tag == .call and args.len == 1 and contract == .unit_to_native) {
-                    try b.out.contracts.append(b.gpa, .{ .call = ci, .argument = try b.port(m, args[0].int()), .result = p, .native_exec = native_exec });
+                if (implicit_getter or (direct and n.tag == .call and args.len == 1 and (contract == .unit_to_native or contract == .text_encoder_to_string))) {
+                    try b.out.contracts.append(b.gpa, .{ .call = ci, .argument = argument, .result = p, .native_exec = native_exec });
                 } else for (args) |arg| try b.escape(id, ci, try b.port(m, arg.int()));
                 if (n.tag == .method_call or n.tag == .field_access) try b.escape(id, ci, try b.port(m, data.lhs));
             }
@@ -447,6 +459,13 @@ pub fn build(gpa: Allocator, in: Input) Error!Output {
     try b.allocate();
     try b.seed();
     try b.descriptors();
+    if (in.receiver_origins) {
+        b.out.receiver_aliases = try gpa.alloc(PortId, b.ops.len);
+        for (b.out.receiver_aliases, 0..) |*alias, i| {
+            const op = b.ops.get(i);
+            alias.* = if (op.kind == .forward) @fromBackingInt(op.a) else .none;
+        }
+    }
     var values = try Values.solve(gpa, .{ .ops = b.ops.slice(), .results = b.results.items, .tuple_ranges = b.tuple_ranges.items, .tuple_ports = b.tuple_ports.items, .fields = &b.fields });
     defer values.deinit(gpa);
     for (0..b.out.ports.len) |i| {

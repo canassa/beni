@@ -359,6 +359,21 @@ pub const Counter = enum {
     nominal_cover_refs,
     nominal_cover_terms,
 
+    /// Actual demand-only source index construction, export and independent oracle work.
+    canonical_fresh,
+    canonical_replace,
+    canonical_merge,
+    canonical_alias,
+    canonical_register,
+    canonical_remove,
+    canonical_redirect,
+    canonical_parent_steps,
+    canonical_live_edits,
+    canonical_export_nodes,
+    canonical_export_edges,
+    canonical_oracle_nodes,
+    canonical_oracle_edges,
+
     /// Actual source realm builder calls and schedule-dependent trie work.
     /// Count every successful preflight/render construction, never a display bound.
     realm_builder_runs,
@@ -367,6 +382,13 @@ pub const Counter = enum {
     native_exposure_edges,
     native_exposure_transitions,
     native_exposure_deliveries,
+    native_receiver_ports,
+    native_receiver_contracts,
+    native_receiver_aliases,
+    native_receiver_native_rows,
+    native_receiver_invocation_slots,
+    native_receiver_invocation_contracts,
+    native_receiver_invocation_visits,
 
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };

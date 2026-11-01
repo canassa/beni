@@ -351,3 +351,72 @@ test "solved suffix generic reader rejects malformed keys enums identities count
     const truncated = solved_reader_fixture[0 .. solved_reader_fixture.len - reader.end.len];
     if (reader.before(truncated)) |_| return error.TruncatedSolvedAccepted else |_| {}
 }
+
+fn indexCounter(w: *World, path: []const u8, key: []const u8) !u64 {
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, try w.read(path), .{});
+    defer parsed.deinit();
+    for (parsed.value.object.get("traceEvents").?.array.items) |event| {
+        if (!std.mem.eql(u8, event.object.get("name").?.string, key)) continue;
+        return @intCast(event.object.get("args").?.object.get(key).?.integer);
+    }
+    return error.MissingCanonicalCounter;
+}
+test "canonical source index compares same-check inventory and grants no cache or default authority" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w);
+    const initial = try w.run(&.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=default.json", "Main.beni" });
+    try clean(initial);
+    try testing.expectEqualStrings("", initial.stdout);
+    for ([_][]const u8{ "canonical_fresh", "canonical_register", "canonical_export_nodes", "canonical_oracle_nodes" }) |key|
+        try testing.expectEqual(@as(u64, 0), try indexCounter(&w, "default.json", key));
+    const query = try run(&w, "index-source.json", &.{});
+    _ = try inventory(query.stdout);
+    try testing.expect(try indexCounter(&w, "index-source.json", "canonical_fresh") > 0);
+    const nodes = try indexCounter(&w, "index-source.json", "canonical_export_nodes");
+    const edges = try indexCounter(&w, "index-source.json", "canonical_export_edges");
+    try testing.expect(nodes > 0 and edges > 0);
+    try testing.expectEqual(nodes, try indexCounter(&w, "index-source.json", "canonical_oracle_nodes"));
+    try testing.expectEqual(edges, try indexCounter(&w, "index-source.json", "canonical_oracle_edges"));
+    try testing.expect(try indexCounter(&w, "index-source.json", "canonical_register") >= edges);
+    const files = try w.listFiles("cache");
+    const before = try w.arena.allocator().alloc([]const u8, files.len);
+    for (files, before) |name, *bytes| bytes.* = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "cache/{s}", .{name}));
+    const warm = try run(&w, "index-warm.json", &.{"--jobs=8"});
+    try testing.expectEqualStrings(query.stdout, warm.stdout);
+    try testing.expectEqual(@as(u64, 0), try checked(&w, "index-warm.json"));
+    const ordinary = try w.run(&.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=default-after-index.json", "Main.beni" });
+    try clean(ordinary);
+    try testing.expectEqual(@as(u64, 0), try checked(&w, "default-after-index.json"));
+    for ([_][]const u8{ "canonical_fresh", "canonical_export_nodes", "canonical_oracle_nodes" }) |key| {
+        try testing.expectEqual(@as(u64, 0), try indexCounter(&w, "index-warm.json", key));
+        try testing.expectEqual(@as(u64, 0), try indexCounter(&w, "default-after-index.json", key));
+    }
+    const after = try w.listFiles("cache");
+    try testing.expectEqual(files.len, after.len);
+    for (files, after, before) |name, after_name, bytes| {
+        try testing.expectEqualStrings(name, after_name);
+        try testing.expectEqualSlices(u8, bytes, try w.read(try std.fmt.allocPrint(w.arena.allocator(), "cache/{s}", .{name})));
+    }
+}
+
+test "canonical source index does not publish dependency-tainted or erroneous inventory and restores cache source zero" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w);
+    const initial = try run(&w, "before-error.json", &.{});
+    const original = try w.read("Main.beni");
+    try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\nbad : Missing\nbad = ⊤\n", .{original}));
+    const bad = try w.run(&.{ "check", "--entries", "--platform=platform", "--cache-dir=cache", "--self-profile=bad.json", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), bad.exit_code);
+    try testing.expectEqualStrings("", bad.stdout);
+    try testing.expect(std.mem.indexOf(u8, bad.stderr, "UNKNOWN TYPE") != null);
+    try testing.expect(std.mem.indexOf(u8, bad.stderr, "INTERNAL") == null);
+    try testing.expect(try indexCounter(&w, "bad.json", "canonical_fresh") > 0);
+    try testing.expectEqual(@as(u64, 0), try indexCounter(&w, "bad.json", "canonical_oracle_nodes"));
+    try w.write("Main.beni", original);
+    const restored = try run(&w, "restored-index.json", &.{});
+    try testing.expectEqualStrings(initial.stdout, restored.stdout);
+    try testing.expectEqual(@as(u64, 0), try checked(&w, "restored-index.json"));
+    try testing.expectEqual(@as(u64, 0), try indexCounter(&w, "restored-index.json", "canonical_fresh"));
+}

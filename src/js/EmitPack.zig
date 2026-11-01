@@ -252,7 +252,7 @@ pub const Fact = struct {
     answer: bool,
 
     pub fn validNativeRecipe(fact: Fact) bool {
-        return fact.where == native_recipe_abi and fact.answer;
+        return (fact.where == native_recipe_abi or fact.where == 2) and fact.answer;
     }
 
     pub const Question = enum(u8) {
@@ -896,7 +896,7 @@ test "a unit that does not cover the text is refused" {
 }
 
 test "native recipe row rejects old unknown and negative ABI facts before comparison" {
-    for ([_]u8{ 0, native_recipe_abi, 2 }) |abi| {
+    for ([_]u8{ 0, native_recipe_abi, 2, 3 }) |abi| {
         for ([_]bool{ false, true }) |answer| {
             var b: Builder = .init(testing.allocator);
             defer b.deinit();
@@ -909,9 +909,9 @@ test "native recipe row rejects old unknown and negative ABI facts before compar
             var arena: std.heap.ArenaAllocator = .init(testing.allocator);
             defer arena.deinit();
             const row = try decode(arena.allocator(), bytes);
-            try testing.expectEqual(abi == native_recipe_abi and answer, row != null);
-            if (abi == native_recipe_abi and answer) {
-                const fact = [_]u8{ @backingInt(Fact.Question.native_recipe), native_recipe_abi, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+            try testing.expectEqual((abi == native_recipe_abi or abi == 2) and answer, row != null);
+            if ((abi == native_recipe_abi or abi == 2) and answer) {
+                const fact = [_]u8{ @backingInt(Fact.Question.native_recipe), abi, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
                 try testing.expectEqual(@as(usize, 1), std.mem.count(u8, bytes, &fact));
                 const offset = std.mem.indexOf(u8, bytes, &fact).? + fact.len - 1;
                 var accepted: usize = 0;

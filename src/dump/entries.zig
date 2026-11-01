@@ -326,6 +326,7 @@ const RealmFixture = struct {
     tmp: std.testing.TmpDir,
     main_path: []const u8 = &.{},
     rel_start: u32 = 0,
+    forged_receiver: bool = false,
     fn init() !RealmFixture {
         return initProfile(null);
     }
@@ -354,7 +355,15 @@ const RealmFixture = struct {
             try f.session.store.addPending(a, f.main_path, f.rel_start, .app);
             try f.session.store.addEmbedded(a, "platform/Start.beni", 9, .platform, "pub type Program = Program\n");
             try f.session.store.addEmbedded(a, "platform/Rt.beni", 9, .platform, "import Start exposing (Program)\n\n\npub run : Program → ⊤\nrun _ = ⊤\n");
+            // Exact ordinary String declaration from core/String.beni; the
+            // hermetic test pack is empty. Registry validation remains ordinary.
+            try f.session.store.addEmbedded(a, "core/String.beni", 5, .core, "pub equatable foreign type String\n");
             try f.session.store.addGenerated(a, "core/Browser/Host/TextEncoder.beni", 5, .core, @import("../native/Source.zig").source, .text_encoder_v1);
+            if (f.forged_receiver) {
+                const js = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "core/Js.beni", f.arena.allocator(), .limited(1024 * 1024));
+                try f.session.store.addEmbedded(a, "core/Js.beni", 5, .core, try f.arena.allocator().dupeSentinel(u8, js, 0));
+                try f.session.store.addEmbedded(a, "platform/Forged.beni", 9, .platform, "import Js\nimport Browser.Host.TextEncoder as Encoder\npub bad : Encoder.TextEncoder\nbad = Js.to Js.null\n");
+            }
         } else {
             // Resident numbered inputs are retained. Refresh its bytes through
             // the ordinary read API; requeueing sources duplicates module IDs.
@@ -468,10 +477,11 @@ fn consumeAllocation(a: std.mem.Allocator, f: *RealmFixture, built: *const @impo
     var result = try @import("../entry/RealmConsume.zig").consume(a, f.consumeInput(), built);
     defer result.deinit(a);
 }
-fn prepareAllocation(a: std.mem.Allocator, f: *RealmFixture) !void {
+fn prepareAllocation(a: std.mem.Allocator, f: *RealmFixture, expected: []const u8) !void {
     const q = f.consumeInput().selected;
     var prepared = try realmPrepare(a, f.session, q, false);
     defer prepared.deinit(a);
+    try std.testing.expectEqualStrings(expected, prepared.bytes);
 }
 test "realm consumer and prepared inspector release every injected allocation on actual selected source" {
     const a = std.testing.allocator;
@@ -482,7 +492,11 @@ test "realm consumer and prepared inspector release every injected allocation on
     var built = try f.build(a);
     defer built.deinit(a);
     try std.testing.checkAllAllocationFailures(a, consumeAllocation, .{ &f, &built });
-    try std.testing.checkAllAllocationFailures(a, prepareAllocation, .{&f});
+    var expected = try realmPrepare(a, f.session, f.consumeInput().selected, false);
+    defer expected.deinit(a);
+    // Count every relocation allocation independently of backing heap layout.
+    var backing: std.testing.FailingAllocator = .init(a, .{ .resize_fail_index = 0 });
+    try std.testing.checkAllAllocationFailures(backing.allocator(), prepareAllocation, .{ &f, expected.bytes });
 }
 
 test "realm consumer selected Window keeps equal ordinary rung functions independent" {
@@ -940,4 +954,112 @@ test "solved representation direct writer missing requested evidence emits zero 
     output.clearRetainingCapacity();
     try std.testing.expectError(error.MissingRepresentations, write(&output.writer, f.session));
     try std.testing.expectEqual(@as(usize, 0), output.written().len);
+}
+
+test "native getter actual packed facade refuses forged receiver before adoption" {
+    const a = std.testing.allocator;
+    const Emission = @import("../native/Emission.zig");
+    const Fixture = @import("../native/PackFixture.zig");
+    const Pack = @import("../cache/Pack.zig");
+    const EmitPack = @import("../js/EmitPack.zig");
+    const getter_good =
+        \\import Start
+        \\import Browser.Host.TextEncoder as Encoder
+        \\main : Start.Program
+        \\main =
+        \\    receiver = Encoder.new ⊤
+        \\    _ = Encoder.encoding receiver
+        \\    Start.Program
+        \\
+    ;
+    var source = try RealmFixture.init();
+    defer source.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try source.run(getter_good));
+    const session = source.session;
+    const inspection = try Emit.inspectEntry(a, source.arena.allocator(), session, try source.options(false, false));
+    defer {
+        for (inspection.diagnostics) |item| a.free(item.message);
+        a.free(inspection.diagnostics);
+    }
+    try std.testing.expectEqual(@as(usize, 0), inspection.diagnostics.len);
+    var reach_input = inspection.reach.?;
+    const runtime = session.entry_plan.runtime().?;
+    reach_input.extra_roots = &.{.{ .module = runtime.module, .kind = .decl, .index = runtime.decl }};
+    const live = try @import("../js/Reach.zig").run(source.arena.allocator(), reach_input);
+    try source.query(false, false);
+    const authority_input: Emission.Input = .{
+        .registry = &session.native_bindings,
+        .source = .{ .graph = &session.graph, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch },
+        .selection = source.consumeInput(),
+        .live = &live,
+    };
+    var authority = try Emission.prepare(a, authority_input);
+    defer authority.deinit(a);
+    try std.testing.expectEqual(.ready, authority.recipe.?.disposition);
+    try std.testing.expectEqual(.ready, authority.getter.?.disposition);
+    try std.testing.expect(authority.receiver_work.invocation_slots > 0);
+    try std.testing.expectEqual(authority.receiver_work.invocation_slots, authority.receiver_work.invocation_visits);
+    try std.testing.checkAllAllocationFailures(a, struct {
+        fn run(allocator: std.mem.Allocator, input: Emission.Input) !void {
+            var table = try Emission.prepare(allocator, input);
+            defer table.deinit(allocator);
+            try std.testing.expectEqual(.ready, table.getter.?.disposition);
+        }
+    }.run, .{authority_input});
+    for ([_]Fixture.Fault{.none}) |fault| {
+        const snapshot = try Fixture.make(a, source.arena.allocator(), session, &live, &authority, fault);
+        defer a.free(snapshot.bytes);
+        for (0..6) |mode| {
+            const deferred = mode != 0 and mode != 4;
+            var output = std.testing.tmpDir(.{});
+            defer output.cleanup();
+            const path = ".zig-cache/tmp/" ++ output.sub_path;
+            const profile = try std.fs.path.join(a, &.{ path, "profile.json" });
+            defer a.free(profile);
+            var current = try RealmFixture.initProfile(profile);
+            defer current.deinit();
+            current.forged_receiver = mode == 1 or mode == 3;
+            const program = switch (mode) {
+                0 => getter_good,
+                1 => "import Start\nimport Browser.Host.TextEncoder as Encoder\nimport Forged\nmain : Start.Program\nmain =\n    _ = Encoder.encoding Forged.bad\n    Start.Program\n",
+                2 => "import Start\nimport Browser.Host.TextEncoder as Encoder\nmain : Start.Program\nmain =\n    pair = { encoder = Encoder.new ⊤ }\n    _ = pair.encoder.encoding\n    Start.Program\n",
+                3 => "import Start\nimport Browser.Host.TextEncoder as Encoder\nimport Forged\nmain : Start.Program\nmain =\n    _ = Forged.bad.encoding\n    Start.Program\n",
+                4 => "import Start\nimport Browser.Host.TextEncoder as Encoder\nmain : Start.Program\nmain =\n    receiver = Encoder.new ⊤\n    _ = receiver.encoding\n    Start.Program\n",
+                else => "import Start\nimport Browser.Host.TextEncoder as Encoder\nmake _ = Encoder.new ⊤\nmain : Start.Program\nmain =\n    _ = (make ⊤).encoding\n    Start.Program\n",
+            };
+            try std.testing.expectEqual(@as(u32, 0), try current.run(program));
+            const installed = current.session.native_bindings.text_encoder.?;
+            try std.testing.expectEqualSlices(u8, &snapshot.key, &current.session.keys.of(installed.module));
+            current.session.pack = Pack.Pack.init(snapshot.bytes);
+            const row = current.session.pack.find(.emit, EmitPack.key(current.session.keys.of(installed.module), .{ .schema_library = false }));
+            try std.testing.expect(row != null);
+            try std.testing.expect(current.session.packCovers(current.session.graph.moduleFile(installed.module)));
+            var options = try current.options(false, false);
+            options.out_dir = path;
+            var io_failure: ?Session.IoFailure = null;
+            var result = try Emit.run(a, current.arena.allocator(), current.session, options, &io_failure);
+            defer result.deinit(a);
+            const embedded = current.session.profile.counter(.emit_units_embedded);
+            if (deferred) {
+                try std.testing.expect(result.diagnostics.len != 0);
+                var receiver_refusal = false;
+                for (result.diagnostics) |item| {
+                    if (item.code == .not_implemented and std.mem.indexOf(u8, item.message, "(receiver)") != null) receiver_refusal = true;
+                }
+                try std.testing.expect(receiver_refusal);
+                try std.testing.expectEqual(@as(u32, 0), result.files_written);
+                try std.testing.expectEqual(@as(u64, 0), embedded);
+                try std.testing.expectEqual(@as(u64, 0), current.session.profile.counter(.modules_lowered));
+            } else {
+                for (result.diagnostics) |item| std.debug.print("{t}: {s}\n", .{ item.code, item.message });
+                try std.testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+                try std.testing.expect(result.files_written != 0);
+                if (fault == .none) try std.testing.expect(embedded > 0) else try std.testing.expectEqual(@as(u64, 0), embedded);
+                const facade = try output.dir.readFileAlloc(std.testing.io, "_core/Browser/Host/TextEncoder.mjs", a, .limited(16384));
+                defer a.free(facade);
+                try std.testing.expect(std.mem.indexOf(u8, facade, "new globalThis.TextEncoder()") != null);
+                try std.testing.expect(std.mem.indexOf(u8, facade, ".encoding") != null);
+            }
+        }
+    }
 }

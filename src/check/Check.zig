@@ -68,6 +68,19 @@ pub const Counters = struct {
     nominal_cover_ctors: u64 = 0,
     nominal_cover_refs: u64 = 0,
     nominal_cover_terms: u64 = 0,
+    canonical_fresh: u64 = 0,
+    canonical_replace: u64 = 0,
+    canonical_merge: u64 = 0,
+    canonical_alias: u64 = 0,
+    canonical_register: u64 = 0,
+    canonical_remove: u64 = 0,
+    canonical_redirect: u64 = 0,
+    canonical_parent_steps: u64 = 0,
+    canonical_live_edits: u64 = 0,
+    canonical_export_nodes: u64 = 0,
+    canonical_export_edges: u64 = 0,
+    canonical_oracle_nodes: u64 = 0,
+    canonical_oracle_edges: u64 = 0,
 
     /// Field-by-field sum. Reflective on purpose: a counter added above and
     /// forgotten here would silently report a per-module figure as if it

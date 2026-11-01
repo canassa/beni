@@ -119,3 +119,51 @@ test "native host ordinary sibling preserves reserved logical export names" {
         try std.testing.expect(std.mem.indexOf(u8, bytes, expected) != null);
     }
 }
+
+/// Observe the REAL native getter through its original accessor; this is not a
+/// replacement brand validator and preserves native receiver checks/defects.
+pub fn getterObservation(a: A) ![]u8 {
+    var m: Maker = .{ .a = a, .b = .init(a), .names = try .init(a) };
+    defer m.b.deinit();
+    defer m.names.deinit(a);
+    var scratch: std.heap.ArenaAllocator = .init(a);
+    defer scratch.deinit();
+    const global = try m.node(.global_this, Node.Data.unused, Node.Data.unused);
+    const object = try m.member(global, "Object");
+    const prototype = try m.node(.const_decl, @backingInt(try m.name("encoderPrototype")), (try m.member(try m.member(global, "TextEncoder"), "prototype")).int());
+    const descriptor = try m.call(.call, try m.member(object, "getOwnPropertyDescriptor"), &.{ try m.ident("encoderPrototype"), try m.string("encoding") });
+    const original = try m.node(.const_decl, @backingInt(try m.name("encodingGetter")), (try m.member(descriptor, "get")).int());
+    const actual = try m.call(.call, try m.member(try m.ident("encodingGetter"), "call"), &.{try m.node(.this_lit, Node.Data.unused, Node.Data.unused)});
+    const value = try m.node(.const_decl, @backingInt(try m.name("encodingValue")), actual.int());
+    const log = try m.node(.expr_stmt, (try m.call(.call, try m.member(try m.member(global, "console"), "log"), &.{try m.ident("encodingValue")})).int(), Node.Data.unused);
+    const method = try m.arrow(&.{}, &.{ value, log, try m.node(.return_stmt, @backingInt((try m.ident("encodingValue")).toOptional()), Node.Data.unused) });
+    m.b.nodes.items(.data)[method.int()].rhs = Node.arrow_method;
+    const replacement = try m.object(&.{ try m.property("configurable", try m.node(.true_lit, Node.Data.unused, Node.Data.unused)), try m.property("get", method) });
+    const install = try m.node(.expr_stmt, (try m.call(.call, try m.member(object, "defineProperty"), &.{ try m.ident("encoderPrototype"), try m.string("encoding"), replacement })).int(), Node.Data.unused);
+    var ir = try m.b.toOwned(try m.b.addRange(&.{ prototype, original, install }));
+    defer ir.deinit(a);
+    try ir.verify();
+    return Print.print(a, scratch.allocator(), &ir, .fromLocal(&m.names), .{});
+}
+
+pub fn completeSibling(a: A) ![]u8 {
+    const constructor = try sibling(a, "new");
+    defer a.free(constructor);
+    var m: Maker = .{ .a = a, .b = .init(a), .names = try .init(a) };
+    defer m.b.deinit();
+    defer m.names.deinit(a);
+    var scratch: std.heap.ArenaAllocator = .init(a);
+    defer scratch.deinit();
+    const value = try m.member(try m.ident("receiver"), "encoding");
+    const body = try m.arrow(&.{try m.name("receiver")}, &.{try m.node(.return_stmt, @backingInt(value.toOptional()), Node.Data.unused)});
+    const name = try m.name("encoding");
+    const declaration = try m.node(.const_decl, @backingInt(name), body.int());
+    const range = try m.b.addNames(&.{name});
+    const exports = try m.node(.export_stmt, @backingInt(range.start), @backingInt(range.end));
+    var ir = try m.b.toOwned(try m.b.addRange(&.{ declaration, exports }));
+    defer ir.deinit(a);
+    try ir.verify();
+    const getter = try Print.print(a, scratch.allocator(), &ir, .fromLocal(&m.names), .{});
+    defer a.free(getter);
+    return std.mem.concat(a, u8, &.{ constructor, getter });
+}

@@ -82,6 +82,20 @@ pub fn generate(arena: Allocator, archive: []const u8) Allocator.Error!Result {
         if (!std.mem.eql(u8, file.path, "encoding.idl")) return .{ .failure = .{ .code = .unresolved_reference, .detail = "TextEncoder source identity" } };
         for (c.members[decl.members_start..decl.members_end]) |member| {
             if (!std.mem.eql(u8, member.source_span.text(file.source), "constructor();")) continue;
+            // The getter is owned by the exact TextEncoderCommon include, not
+            // guessed from an equal member spelling on another interface.
+            var getter_found = false;
+            for (c.includes) |include| {
+                if (include.target >= c.native_types.len or !std.mem.eql(u8, c.native_types[include.target].idl_name, "TextEncoder")) continue;
+                const mixin = c.declarations[include.mixin_declaration];
+                if (mixin.kind != .mixin or !std.mem.eql(u8, mixin.name, "TextEncoderCommon") or mixin.file != decl.file) continue;
+                for (c.members[mixin.members_start..mixin.members_end]) |getter| {
+                    if (getter.source_span.start == CallableSource.candidate.getter_start and getter.source_span.end == CallableSource.candidate.getter_end and std.mem.eql(u8, getter.source_span.text(file.source), "readonly attribute DOMString encoding;")) getter_found = true;
+                }
+            }
+            const include_text = "TextEncoder includes TextEncoderCommon;";
+            const at = CallableSource.candidate.includes_start;
+            if (!getter_found or at > file.source.len or include_text.len > file.source.len - at or !std.mem.eql(u8, file.source[at..][0..include_text.len], include_text)) return .{ .failure = .{ .code = .unresolved_reference, .detail = "TextEncoder encoding mixin identity" } };
             const rows = try arena.alloc(CallableSource.Row, 1);
             rows[0] = CallableSource.row(decl.file, member.source_span.start, member.source_span.end);
             c.callable_candidates = rows;

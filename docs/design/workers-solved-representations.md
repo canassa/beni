@@ -45,3 +45,11 @@ Structural controls assert each descriptor is canonicalized once, each parent ed
 ## 6. Later work
 
 HostFree's native/callable exclusion, exact generic obligations, symbolic nominal gate solver, Wire representation table/selective normalization, backing moves and launch certificates remain unimplemented by A. No owning-storage claim follows from this artifact. The distinct proof obligations in the parent planning proposal remain: canonical end-to-end classifier accounting and concrete generic/parametric plan discharge. Neither is waived.
+
+## Canonical construction follow-up
+
+The optional live identity/adjacency diagnostic index is specified separately in
+[workers-canonical-index.md](workers-canonical-index.md). It preserves this
+artifact and private format 22. Its final visitor avoids D scans, while this
+artifact remains an independent O(D+E) verification oracle; neither is a
+HostFree/Wire certificate.

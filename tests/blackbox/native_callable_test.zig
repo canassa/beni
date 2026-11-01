@@ -76,7 +76,7 @@ fn word(bytes: []const u8, at: usize) u32 {
     return std.mem.readInt(u32, bytes[at..][0..4], .little);
 }
 
-fn cachedEffectMismatch(replacement: u32) !void {
+fn cachedContractMismatch(replacement: u32, scheme_index: u32, total: bool) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try prepare(&w);
@@ -100,18 +100,19 @@ fn cachedEffectMismatch(replacement: u32) !void {
     // Public IFC18 directory: schemes column3, extra column7, scheme row20B.
     // Locate the root class through its actual scheme's effect-block offset.
     const schemes_at = word(record, 16 + 3 * 8);
-    try testing.expectEqual(@as(u32, 1), word(record, 16 + 3 * 8 + 4));
+    try testing.expectEqual(@as(u32, 2), word(record, 16 + 3 * 8 + 4));
     const extra_at = word(record, 16 + 7 * 8);
-    const effect = word(record, schemes_at + 12);
+    const effect = word(record, schemes_at + scheme_index * 20 + 12);
     try testing.expectEqual(@as(u32, 1), word(record, extra_at + effect * 4));
-    const rung_at = record_at + extra_at + (effect + 1) * 4;
-    try testing.expectEqual(@as(u32, 1), word(original, rung_at));
+    const word_at = if (total) record_at + schemes_at + scheme_index * 20 + 16 else record_at + extra_at + (effect + 1) * 4;
+    try testing.expectEqual(@as(u32, if (total) 0 else 1), word(original, word_at));
     const mutated = try w.arena.allocator().dupe(u8, original);
-    std.mem.writeInt(u32, mutated[rung_at..][0..4], replacement, .little);
+    std.mem.writeInt(u32, mutated[word_at..][0..4], replacement, .little);
     // Outer key/envelope, other interface words, and EVERY unrelated section
-    // remain byte-identical. Both rung2 and rung1+sync are valid class words.
-    try testing.expectEqualSlices(u8, original[0..rung_at], mutated[0..rung_at]);
-    try testing.expectEqualSlices(u8, original[rung_at + 4 ..], mutated[rung_at + 4 ..]);
+    // remain byte-identical. Rung2/rung1+sync are valid class words; total=1
+    // is a canonical boolean that contradicts the native impure contract.
+    try testing.expectEqualSlices(u8, original[0..word_at], mutated[0..word_at]);
+    try testing.expectEqualSlices(u8, original[word_at + 4 ..], mutated[word_at + 4 ..]);
     try w.write(path, mutated);
     try clean(try w.run(&.{ "check", "--cache-dir=cache", "--self-profile=repair.json", "Main.beni" }));
     try testing.expectEqual(@as(u64, 1), try checked(&w, "repair.json"));
@@ -122,9 +123,23 @@ fn cachedEffectMismatch(replacement: u32) !void {
 }
 
 test "native candidate repairs a structurally valid cached effect mismatch before installation" {
-    try cachedEffectMismatch(2);
+    try cachedContractMismatch(2, 0, false);
 }
 
 test "native candidate repairs cached root sync contract before installation" {
-    try cachedEffectMismatch(1 | (1 << 8));
+    try cachedContractMismatch(1 | (1 << 8), 0, false);
+}
+
+test "native getter repairs cached effect mismatch before installation" {
+    try cachedContractMismatch(2, 1, false);
+}
+test "native getter repairs cached root sync contract before installation" {
+    try cachedContractMismatch(1 | (1 << 8), 1, false);
+}
+
+test "native constructor repairs contradictory valid pure total cache metadata" {
+    try cachedContractMismatch(1, 0, true);
+}
+test "native getter repairs contradictory valid pure total cache metadata" {
+    try cachedContractMismatch(1, 1, true);
 }

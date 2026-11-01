@@ -243,3 +243,20 @@ sibling cannot enable the compiler-owned candidate. This denial is removed only
 when the complete checked realm/lowering pipeline is accepted, not when a fixture
 happens to contain a global constructor. Ordinary untrusted source remains under
 ordinary existing foreign rules and acquires no native identity through them.
+
+### 2026-11-01: reproducible allocation coverage and isolated attestation setup
+
+The prepared-inspector allocation sweep exercises every relocation allocation
+with in-place resize/remap disabled in its test backing allocator. Ordinary-GPA
+preparation still runs and its exact bytes are compared with every successful
+sweep invocation. The pinned standard allocator sweep counts allocations, while
+backing layout can replace one allocation with a successful resize; such layout
+variation must not skip a failure position or be mistaken for a resource leak.
+No production allocator, allocation ownership, or test budget changes.
+
+The attestation unit fixture checks the canonical generated native supplier in
+an ordinary Session with the exact ordinary String foreign declaration and its
+separate Other nominal. It does not load unrelated core modules or request a
+realm graph merely to validate registry metadata. All supplier, nominal,
+namespace, effect, totality and cache-admission assertions remain. Packaged CLI
+coverage separately exercises the complete core installation.

@@ -204,7 +204,7 @@ test "native emission same byte physical sibling and generated supplier transiti
     defer w.deinit();
     try prepare(&w, null);
     const source = try std.Io.Dir.cwd().readFileAlloc(w.io, "tests/fixtures/native-callable/TextEncoder.beni", w.arena.allocator(), .limited(65536));
-    const sibling = try Host.sibling(testing.allocator, "new");
+    const sibling = try Host.completeSibling(testing.allocator);
     defer testing.allocator.free(sibling);
     const physical = "core/Browser/Host/TextEncoder.beni";
     const js = "core/Browser/Host/TextEncoder.js";
@@ -223,4 +223,173 @@ test "native emission same byte physical sibling and generated supplier transiti
     try clean(try build(&w, false, &.{ physical, "--self-profile=physical-again.json" }));
     try testing.expectEqual(@as(u64, 0), try counter(&w, "physical-again.json", "realm_builder_runs"));
     try runtime(&w, "sibling\nget\nconstruct\n");
+}
+
+test "native getter direct and simple aliases execute real encoding access in dev and release" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w,
+        \\main : Start.Program
+        \\main =
+        \\    encoder = Encoder.new ⊤
+        \\    copy = encoder
+        \\    getter = Encoder.encoding
+        \\    _ = getter copy
+        \\    Start.Program
+        \\
+    );
+    const getter = try Host.getterObservation(testing.allocator);
+    defer testing.allocator.free(getter);
+    const constructor = try Host.generate(testing.allocator, false);
+    defer testing.allocator.free(constructor);
+    // Install real prototype getter observation before observing global lookup.
+    try w.write("observe.mjs", try std.mem.concat(w.arena.allocator(), u8, &.{ getter, constructor }));
+    for ([_]bool{ false, true }) |release| {
+        try clean(try build(&w, release, &.{}));
+        try runtime(&w, "get\nconstruct\nutf-8\n");
+    }
+}
+test "native getter rejects ordinary checked Js to laundering before emission" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w,
+        \\import Forged
+        \\main : Start.Program
+        \\main =
+        \\    _ = Encoder.new ⊤
+        \\    _ = Encoder.encoding Forged.bad
+        \\    Start.Program
+        \\
+    );
+    try w.write("platform/Forged.beni",
+        \\import Js
+        \\import Browser.Host.TextEncoder as Encoder
+        \\pub bad : Encoder.TextEncoder
+        \\bad = Js.to Js.null
+        \\
+    );
+    // The privileged platform cast is ordinarily checked, not rejected by the
+    // APP Js fence. Inspection performs that check without granting emission.
+    try clean(try w.run(&.{ "check", "--platform=platform", "--entries", "--cache-dir=cache", "Main.beni" }));
+    for (0..3) |mode| {
+        const result = try build(&w, mode == 2, if (mode == 0) &.{"--no-cache"} else &.{});
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqualStrings("", result.stdout);
+        try testing.expect(result.diagnostics.len != 0);
+        for (result.diagnostics) |item| {
+            try testing.expectEqual(.not_implemented, item.code);
+            try testing.expect(std.mem.indexOf(u8, item.message, "(receiver)") != null);
+        }
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "native getter unknown returns formal forwarding and aggregate projections remain refused" {
+    for ([_][]const u8{
+        "make _ = Encoder.new ⊤\nmain : Start.Program\nmain =\n    _ = Encoder.encoding (make ⊤)\n    Start.Program\n",
+        "identity x = x\nmain : Start.Program\nmain =\n    _ = Encoder.encoding (identity (Encoder.new ⊤))\n    Start.Program\n",
+        "main : Start.Program\nmain =\n    pair = { encoder = Encoder.new ⊤ }\n    _ = Encoder.encoding pair.encoder\n    Start.Program\n",
+    }) |body| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try prepare(&w, body);
+        try clean(try w.run(&.{ "check", "--platform=platform", "--entries", "Main.beni" }));
+        const result = try build(&w, false, &.{});
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqualStrings("", result.stdout);
+        try testing.expect(!w.exists("out"));
+        try testing.expect(result.diagnostics.len != 0);
+        for (result.diagnostics) |item| try testing.expectEqual(.not_implemented, item.code);
+    }
+}
+test "native getter previously valid output cannot authorize a forged receiver" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w, "main : Start.Program\nmain =\n    _ = Encoder.encoding (Encoder.new ⊤)\n    Start.Program\n");
+    try clean(try build(&w, false, &.{}));
+    const files = try w.listFiles("out");
+    const a = w.arena.allocator();
+    const saved = try a.alloc([]const u8, files.len);
+    for (files, saved) |name, *bytes| bytes.* = try w.read(try std.fmt.allocPrint(a, "out/{s}", .{name}));
+    try w.write("platform/Forged.beni", "import Js\nimport Browser.Host.TextEncoder as Encoder\npub bad : Encoder.TextEncoder\nbad = Js.to Js.null\n");
+    try w.write("Main.beni", "import Browser.Host.TextEncoder as Encoder\nimport Start\nimport Forged\nmain : Start.Program\nmain =\n    _ = Encoder.encoding Forged.bad\n    Start.Program\n");
+    try clean(try w.run(&.{ "check", "--platform=platform", "--entries", "Main.beni" }));
+    const result = try build(&w, false, &.{"--self-profile=refused.json"});
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualStrings("", result.stdout);
+    try testing.expectEqual(@as(u64, 0), try counter(&w, "refused.json", "emit_units_embedded"));
+    try testing.expectEqual(@as(u64, 0), try counter(&w, "refused.json", "modules_lowered"));
+    for (files, saved) |name, bytes| try testing.expectEqualStrings(bytes, try w.read(try std.fmt.allocPrint(a, "out/{s}", .{name})));
+    try testing.expectEqual(files.len, (try w.listFiles("out")).len);
+}
+
+test "native getter effectful receiver block evaluates once before member access" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try prepare(&w,
+        \\main : Start.Program
+        \\main =
+        \\    receiver =
+        \\        _ = Encoder.new ⊤
+        \\        Encoder.new ⊤
+        \\    getter = Encoder.encoding
+        \\    _ = getter receiver
+        \\    Start.Program
+        \\
+    );
+    const getter = try Host.getterObservation(testing.allocator);
+    defer testing.allocator.free(getter);
+    const constructor = try Host.generate(testing.allocator, false);
+    defer testing.allocator.free(constructor);
+    try w.write("observe.mjs", try std.mem.concat(w.arena.allocator(), u8, &.{ getter, constructor }));
+    for ([_]bool{ false, true }) |release| {
+        try clean(try build(&w, release, &.{}));
+        try runtime(&w, "get\nconstruct\nget\nconstruct\nutf-8\n");
+    }
+}
+
+test "native getter implicit dispatch cannot omit receiver evidence in cold warm or release builds" {
+    for ([_][]const u8{
+        "main : Start.Program\nmain =\n    holder = { read = Encoder.encoding }\n    _ = holder.read (Encoder.new ⊤)\n    Start.Program\n",
+        "make _ = Encoder.new ⊤\nmain : Start.Program\nmain =\n    _ = (make ⊤).encoding\n    Start.Program\n",
+        "main : Start.Program\nmain =\n    pair = { encoder = Encoder.new ⊤ }\n    _ = pair.encoder.encoding\n    Start.Program\n",
+        "import Forged\nmain : Start.Program\nmain =\n    _ = Forged.bad.encoding\n    Start.Program\n",
+    }) |body| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try prepare(&w, body);
+        try w.write("platform/Forged.beni", "import Js\nimport Browser.Host.TextEncoder as Encoder\npub bad : Encoder.TextEncoder\nbad = Js.to Js.null\n");
+        try clean(try w.run(&.{ "check", "--platform=platform", "--entries", "Main.beni" }));
+        for (0..3) |mode| {
+            const r = try build(&w, mode == 2, if (mode == 0) &.{"--no-cache"} else &.{});
+            try testing.expectEqual(@as(u8, 1), r.exit_code);
+            try testing.expectEqualStrings("", r.stdout);
+            try testing.expect(!w.exists("out"));
+            var receiver_refusal = false;
+            for (r.diagnostics) |item| {
+                if (item.code == .not_implemented and std.mem.indexOf(u8, item.message, "(receiver)") != null) receiver_refusal = true;
+            }
+            try testing.expect(receiver_refusal);
+        }
+    }
+}
+
+test "native getter implicit direct and alias receivers use the same construction witness" {
+    for ([_][]const u8{
+        "main : Start.Program\nmain =\n    _ = (Encoder.new ⊤).encoding\n    Start.Program\n",
+        "main : Start.Program\nmain =\n    receiver = Encoder.new ⊤\n    copy = receiver\n    _ = copy.encoding\n    Start.Program\n",
+    }) |body| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try prepare(&w, body);
+        const getter = try Host.getterObservation(testing.allocator);
+        defer testing.allocator.free(getter);
+        const constructor = try Host.generate(testing.allocator, false);
+        defer testing.allocator.free(constructor);
+        try w.write("observe.mjs", try std.mem.concat(w.arena.allocator(), u8, &.{ getter, constructor }));
+        for ([_]bool{ false, true }) |release| {
+            try clean(try build(&w, release, &.{}));
+            try runtime(&w, "get\nconstruct\nutf-8\n");
+        }
+    }
 }
