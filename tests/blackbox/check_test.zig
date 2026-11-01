@@ -869,11 +869,33 @@ const surface_list = "tests/corpus/ownership/trusted-surface.txt";
 /// a fixture that exists and names it; and every line listed under the
 /// package must be one the dump prints. One test per package, so that each
 /// uses one dump per platform.
+/// `dump --stage=ownership core` in the repository, which two tests read:
+/// run once per process, the same command on the same tree, its exit code
+/// and stdout kept for the second (#1577).
+const core_dump_args = [_][]const u8{ "dump", "--stage=ownership", "core" };
+const Dumped = struct { exit_code: u8, stdout: []const u8 };
+var core_dump: ?Dumped = null;
+
+fn coreOwnershipDump(w: *World) !Dumped {
+    if (core_dump == null) {
+        const r = try w.runWith(&core_dump_args, .{ .raw_diagnostics = true, .cwd = .inherit });
+        // Kept for the process: no test allocator owns it.
+        core_dump = .{ .exit_code = r.exit_code, .stdout = try std.heap.page_allocator.dupe(u8, r.stdout) };
+    }
+    return core_dump.?;
+}
+
 fn expectSurface(package: []const u8, args: []const []const u8) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
-    const r = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+    const core = args.len == core_dump_args.len and for (args, core_dump_args) |a, b| {
+        if (!std.mem.eql(u8, a, b)) break false;
+    } else true;
+    const r: Dumped = if (core) try coreOwnershipDump(&w) else blk: {
+        const run = try w.runWith(args, .{ .raw_diagnostics = true, .cwd = .inherit });
+        break :blk .{ .exit_code = run.exit_code, .stdout = run.stdout };
+    };
     try testing.expectEqual(@as(u8, 0), r.exit_code);
 
     // What the dump prints: `Module.name` per worded declaration.
@@ -1613,7 +1635,7 @@ test "ownership words: a taken result is followed through every form that forwar
 }
 
 fn expectCoreSurface() !void {
-    try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
+    try expectSurface("core", &core_dump_args);
 }
 
 test "ownership words: core's are catalogued" {
@@ -2093,7 +2115,7 @@ test "ownership: only List's eight writers are pub core functions that write a p
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
-    const r = try w.runWith(&.{ "dump", "--stage=ownership", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    const r = try coreOwnershipDump(&w);
     try testing.expectEqual(@as(u8, 0), r.exit_code);
 
     var found: usize = 0;
