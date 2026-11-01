@@ -625,9 +625,10 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     if (options.ownership_v2) session.options.cache = null;
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
-    if (options.ownership) if (options.chain) |c| {
-        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or c.inPlace();
-    };
+    if (options.ownership) {
+        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or
+            (if (options.chain) |c| c.inPlace() else false);
+    }
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
