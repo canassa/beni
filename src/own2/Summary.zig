@@ -310,7 +310,7 @@ pub const Table = struct {
     /// group's classes, each folded class of its `res` certified at its key
     /// with its cells there as the arrival keys and its κ there as the
     /// condition. A view of one is a hypothesis node for every reader.
-    certs: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    certs: std.ArrayList(bool) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.certs.deinit(gpa);
@@ -326,11 +326,12 @@ pub const Table = struct {
     }
 
     pub fn certified(t: *const Table, c: ClassId) bool {
-        return c != .none and t.certs.contains(c.int());
+        return c != .none and c.int() < t.certs.items.len and t.certs.items[c.int()];
     }
 
     pub fn certify(t: *Table, gpa: Allocator, c: ClassId) Allocator.Error!void {
-        try t.certs.put(gpa, c.int(), {});
+        if (t.certs.items.len <= c.int()) try t.certs.appendNTimes(gpa, false, c.int() + 1 - t.certs.items.len);
+        t.certs.items[c.int()] = true;
     }
 
     pub fn count(t: *const Table) u32 {
