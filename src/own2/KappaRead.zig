@@ -2116,7 +2116,7 @@ pub fn Of(comptime Table: type) type {
             for ([_]NodeId{ p.at, p.dag }) |x| if (x != .none and x != k) {
                 kk = try t.join(gpa, charge, kk, try t.kappaOf(gpa, charge, v, p.cur, x, p.summary));
             };
-            if (fails(kk)) return kk;
+            if (fails(kk) or kk == yes) return kk;
             const got = try r.resolve(r.ctx, t, gpa, charge, kk.int(), e, false);
             if (t.hyp_image) |hi| if (hi.cond) |relabel| return relabel(hi.ctx, got);
             return got;
