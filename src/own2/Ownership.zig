@@ -15,6 +15,7 @@ const Walk = @import("Walk.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
 const Block = @import("Block.zig");
+const Hoists = @import("Hoists.zig");
 
 pub const Names = Message.Names;
 pub const ModuleReport = Report.Module;
@@ -26,6 +27,8 @@ pub const Input = struct {
     format_summaries: bool = false,
     /// Write each module's block (`publish`) into its report.
     publish: bool = false,
+    /// Per module, its lowering channel (`Hoists`, §3.7), in `gpa`.
+    channels: ?[]Hoists.Table = null,
 };
 
 const SummaryNames = struct {
@@ -55,7 +58,7 @@ const SummaryNames = struct {
 /// everything the reports hold lives in `arena`.
 pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report.Module {
     const out = try arena.alloc(Report.Module, in.modules.len);
-    for (in.modules, out) |*mi, *r| {
+    for (in.modules, out, 0..) |*mi, *r, at| {
         const mod = try gpa.create(Groups.Module);
         defer gpa.destroy(mod);
         try Groups.checkModule(mi, mod, in.format_summaries);
@@ -63,6 +66,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;
         var others: std.ArrayList([]const u8) = .empty;
         var limits: u32 = 0;
+        // A worded declaration's body is its pins' to check, not this run's.
+        var channel: Hoists.Builder = .{ .unchecked = for (mi.bir.decls) |d| {
+            if (d.kind == .value and d.body != .none and mi.bir.ownSlotsV2(d).len != 0) break true;
+        } else false };
         const frame_base: Message.Frame = .{
             .names = in.names,
             .module = mi.module,
@@ -104,9 +111,11 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 });
                 continue;
             }
+            if (dr.unbuilt != Ids.none_int) channel.unchecked = true;
             var frame = frame_base;
             frame.decl = d;
             for (dr.lines) |l| {
+                try channel.add(arena, l.demand.point, l.demand.kind, l.outcome.verdict == .refused);
                 const op = if (l.demand.callee_inst != Ids.none_int) (try Message.calleeName(frame, arena, l.demand.callee_inst)) orelse "call" else "";
                 try lines.append(arena, try Message.line(frame, arena, l, op));
             }
@@ -186,6 +195,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         };
         const word_errors = try arena.alloc([3]u32, errs.items.len);
         for (errs.items, word_errors) |e, *w| w.* = .{ e.decl, e.slot, @backingInt(e.word) };
+        if (in.channels) |c| c[at] = try channel.finish(arena, gpa, limits != 0);
         r.* = .{ .module = mi.module, .lines = lines.items, .others = others.items, .limits = limits, .block = block, .word_errors = word_errors };
     }
     return out;

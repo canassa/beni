@@ -22,6 +22,7 @@ const Groups = @import("Groups.zig");
 const Ownership = @import("Ownership.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
+const Hoists = @import("Hoists.zig");
 const BlockRead = @import("BlockRead.zig");
 const Interface = @import("../resolve/Interface.zig");
 
@@ -437,7 +438,12 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     var nc: NameCtx = .{ .session = session, .ins = ctx.ins, .types = d.types, .arena = arena };
     const one = [_]Groups.Input{mi};
     const kept = session.options.ownership_v2_dump;
-    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false });
+    // §3.7's lowering channel, the module's slot, for an application
+    // module alone: core and the platforms authorise no write (§7.3).
+    var channel = [1]Hoists.Table{.empty};
+    const app = session.graph.modulePackage(m) == .app;
+    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .channels = &channel });
+    if (app and m.int() < d.channels.len) d.channels[m.int()] = channel[0] else channel[0].deinit(gpa);
     // The dump's report, from this run (#1193): one slot per module, written
     // by the worker that checked it.
     if (kept != null and m.int() < session.ownership2_reports.len) session.ownership2_reports[m.int()] = try Report.Kept.of(gpa, reports[0]);

@@ -6898,10 +6898,10 @@ L0  Ids
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
 | `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 300 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
-| `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
+| `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 (#1547: the list half, `Table` and `Builder`, 108 lines; `write`/`read` land with v2's cache) |
 | `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 330 (S3b slice 4a: a group member's walks on its account line; #1459: a block not published for a limit is that limit, said) |
+| `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 340 (S3b slice 4a: a group member's walks on its account line; #1459: a block not published for a limit is that limit, said; #1547: the lowering channel from the verdicts) |
 | `Enforce.zig` | 17 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
@@ -7081,6 +7081,29 @@ are identical and nothing is written (R-7.11).
      is not caught (#1035). S8b's array/view representation must remove this coverage gap and add the
      corresponding trapping twin. A whole-trie recursive poison is forbidden: it makes long push loops
      quadratic. The existing hidden-holder/trie-holder fixtures must trap on covered storage.
+
+   **As built under v2 (#1547).** Under `--ownership=v2` the sanitiser follows v2's verdicts through the
+   list half of §3.7's lowering channel, `src/own2/Hoists.zig` (format 2), whose producer is
+   `Ownership.run` and whose consumer S8b will be. Per application module the channel holds R-1.12's clean
+   bit (every declaration built, no limit, no refusal) and each accepted `writer`, `construction` and
+   `append` demand by its instruction; a refused or limited module publishes no write. The Driver keeps
+   one table per module (`Check.channels`) and `Emit` hands it to the lowering in a build that enforces.
+   There `sanitize_lists` wraps a writer call or a `++` whose instruction the channel lists, and a spread's
+   `List.append` whose chain root it lists (§2.13.2: a chain's demand is at its root, which is the `cons`
+   of its leading items when it has some). The sanitiser judges verdicts, not stores, so it reads the
+   writes and not the clean bit: a write v2 accepted in a module where another declaration is not built
+   yet is wrapped, and a write in a declaration v2 did not build is not (no one judged it). v2 makes no
+   `value` demand, so a writer handed as a value is not wrapped under v2: a limit of this instrument
+   until v2 builds callback writes. v1's path is unchanged. Fixtures carry `.sanitize-lists-v2` (and
+   `-crash`); `checkSanitisedSites` compares the wrapped sites with v2's dump.
+   `ListSanitiserHiddenHolderV2` traps, `ListSanitiserV2Writes` runs clean, and
+   `zig build test-lists-in-place-v2` runs every `run/` program and `browser/inline/` page so. Measured at
+   #1547: all 652 `run/` cases and the browser pages run clean (one wiring defect, the spread root above,
+   found and fixed). The coverage is v2's: of the 491 single-file `run/` programs, v2 accepts 34 list
+   writes (33 emitted and wrapped, in 9 programs) where v1 accepts 164; the rest sit in declarations v2
+   does not build yet (their `.v2.unchecked`). `bench/ownership-v2-sanitiser.mjs` is the generated sweep (#1516's generic `wrap`
+   and `idl`, #1530's pattern rest, writers, spreads, `++`): 6,000 programs over two seeds, 1,158
+   accepted, 1,268 writes wrapped, no trap.
 4. **Differential fuzzing.** The Lean bridge's generator (`proofs/ownership/BRIDGE.md`, recorded seeds) extended to
    records, `Dict`, patterns and callbacks: each program checked by v1 and v2, run under the sanitiser where both
    accept, judged by Lean where modelled; v2 accepts ∧ sanitiser traps is a stop. `zig build fuzz` grows an `own`
