@@ -58,7 +58,8 @@ const layers = [_]Entry{
     // rebuild and the nodes it dropped (§2.3). 3 925 since #1467: a join's
     // reach leaves out its own cells, checked under runtime safety (§2.3).
     // 3 990 since 4e: `map`'s trail and its knot's move (§2.3, stable images).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 3990 },
+    // 4 025 since #1483: the atom rule, `isAtom` and `settle` (§2.3).
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4025 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },

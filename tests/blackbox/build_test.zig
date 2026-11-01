@@ -11896,7 +11896,7 @@ test "the checker v2 keeps no round of a group's port that its last round covers
     try testing.expect(try accountField(dump.stdout, "mergeSort", "total") < 45_000);
 }
 
-test "the checker v2 settles an accumulator of two equal subtrees in four walks" {
+test "the checker v2 settles an accumulator of two equal subtrees in three walks" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -11904,10 +11904,13 @@ test "the checker v2 settles an accumulator of two equal subtrees in four walks"
     // twice under a new node each round, and widen emits the same images
     // every round. Interned by their canonical form (never onto a node of
     // the widening's own source), they are the nodes an earlier round
-    // made, so the group settles in 4 walks: growth 661 881 with one list
-    // (1 157 586 with two), against 1 053 726 in 5 walks without (Debug,
-    // self-hosted). The bound is that figure and 10 %. One list only: the
-    // walk itself costs about 5 s here, past the 1 s test budget (#1512).
+    // made. Since the atom rule (§2.3, #1483) the group settles in 3
+    // walks: growth 143 275 with one list (275 570 with two), against
+    // 147 621 with stable images off. The 4 walks and 661 866 records
+    // before it, and 5 walks without stable images, came from the `L`
+    // atom, one interned value under every level, which united the
+    // root's class with each subtree's (Debug, self-hosted). The bound is
+    // that figure and 10 %.
     var growth: [1]u64 = undefined;
     for ([_]u32{1}, &growth) |k, *g| {
         var w = try World.init(testing.allocator, testing.io);
@@ -11931,10 +11934,10 @@ test "the checker v2 settles an accumulator of two equal subtrees in four walks"
         // └─────────────────────────────────────────┘
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
         try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit acc") == null);
-        try testing.expectEqual(@as(u64, 4), try accountField(dump.stdout, "acc", "walks"));
+        try testing.expectEqual(@as(u64, 3), try accountField(dump.stdout, "acc", "walks"));
         g.* = try accountField(dump.stdout, "acc", "growth");
     }
-    try testing.expect(growth[0] <= 730_000);
+    try testing.expect(growth[0] <= 158_000);
 }
 
 /// `name`'s module text: a record that doubles at each of 11 levels, three
@@ -12486,14 +12489,20 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
     // R-7.4: "K shape changes affecting N transfer nodes can require Θ(NK)
     // tasks". The ring takes K `res.shape` versions, and each one walks
     // `m0`'s N statements again (the owner's Q1 decision, §8 slice 4's
-    // plan). Measured: `m0` walks 5 times at k = 2 and 8 at k = 3 (10 at 4),
-    // whatever n is; its records are 25 080 at (n, k) = (10, 2) and 52 128
-    // at (10, 3) (57 929 at (40, 2)). A small member's walks pass its two
-    // lanes at k = 3, and the rest is growth (11 276 records of `m1`), so a
+    // plan). Measured: `m0` walks 6 times at k = 2 and 8 at k = 3 (10 at 4),
+    // whatever n is; its records are 28 766 at (n, k) = (10, 2) and 45 907
+    // at (10, 3) (68 494 at (40, 2)). A small member's walks pass its two
+    // lanes at k = 3, and the rest is growth (5 042 records of `m1`), so a
     // larger k exhausts R_f loudly (k = 8 is `ownership_summary_size`).
+    // k = 2 walked 5 times while the empty value at the kids' `[*]`, one
+    // interned atom at every level, united the levels' classes, so the
+    // round that first closed the ring read `lost` at the root. Under the
+    // atom rule (§2.3) that round keeps the root's lists `yes`, and the
+    // next delivery brings the ring's fold to them: one more class
+    // version, the same fixpoint.
     const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
-    const walks = [_]u64{ 5, 8 };
-    // About 1.7 times the measured records: a doubled cost per walk fails.
+    const walks = [_]u64{ 6, 8 };
+    // 1.5 and 1.9 times the measured records: a doubled cost per walk fails.
     const ceilings = [_]u64{ 42_000, 88_000 };
     var total: [cases.len]u64 = undefined;
     for (cases, walks, ceilings, 0..) |c, want, ceiling, i| {
@@ -12527,8 +12536,8 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
             try testing.expect(try accountField(dump.stdout, "m1", "growth") > 0);
         }
     }
-    // More versions, more walks, each over a larger class: 2.08 times the
-    // records from k = 2 to 3 (1.6 times the walks). A cost per walk that
+    // More versions, more walks, each over a larger class: 1.6 times the
+    // records from k = 2 to 3 (1.33 times the walks). A cost per walk that
     // grows with K² (2.25 times the class, 3.6 times the records) fails.
     try testing.expect(total[1] * 2 >= 3 * total[0]);
     try testing.expect(total[1] <= 3 * total[0]);
