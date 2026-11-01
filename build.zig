@@ -237,8 +237,14 @@ pub fn build(b: *std.Build) void {
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     // The v2 checker broken one way on purpose, to show that a `runtime_safety`
     // check fires (ownership-v2.md §2.9 rule 3). Hidden; never given to the gates.
-    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position); `gates` refuses it") orelse "none";
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, cert-rule4-sum, cert-view-cells, cert-untagged); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
+    // The v2 checker's order reversed on purpose, to show that a verdict does
+    // not depend on it (ownership-v2.md §2.9 rule 4 (a′), §2.11 item 3 (d)):
+    // `otherPaths-spine-first`, `cert-params-reversed`, comma-separated.
+    // Hidden; never given to the gates.
+    const own2_switch = b.option([]const u8, "ownership-v2-switch", "Test-only: reverse an order of the v2 checker (otherPaths-spine-first, cert-params-reversed; comma-separated); `gates` refuses it") orelse "none";
+    own_opts.addOption([]const u8, "v2_switch", own2_switch);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the
     // narrower runtime roots leaves every answer its lowering read as it
@@ -1257,6 +1263,7 @@ fn gatesRefusal(b: *std.Build, filtered: bool) ?[]const u8 {
     if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to a test step";
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` requires the intended checker: drop -Downership-record-mutation, which breaks it on purpose; use test-record-mutations";
     if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose";
+    if (b.user_input_options.contains("ownership-v2-switch")) return "`gates` requires the intended checker: drop -Downership-v2-switch, which reverses one of its orders on purpose";
     return null;
 }
 
@@ -2397,7 +2404,12 @@ const Blackbox = struct {
                 .root_source_file = bb.b.path(root),
                 .target = bb.target,
                 .optimize = mode,
-                .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
+                .imports = &.{
+                    .{ .name = "diagnostic", .module = bb.diagnostic },
+                    // The checker's test-only switches, which a black-box test
+                    // reads to know which order the compiler it spawns runs.
+                    .{ .name = "ownership_options", .module = ownership_options.? },
+                },
             }),
         });
     }

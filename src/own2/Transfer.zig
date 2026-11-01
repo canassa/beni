@@ -250,6 +250,7 @@ pub const Frame = struct {
     pub const spineOf = beside_part.spineOf;
     pub const pushOff = beside_part.pushOff;
     pub const holdsCanonical = beside_part.holdsCanonical;
+    pub const holdsCanonicalIn = beside_part.holdsCanonicalIn;
     pub const pathBelow = beside_part.pathBelow;
     pub const keepAnswered = beside_part.keepAnswered;
     pub const keepBeside = beside_part.keepBeside;

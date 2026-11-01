@@ -583,21 +583,31 @@ const Grafter = struct {
     /// sides in no group, keep their images, which the multiset then reads.
     fn ruleFourSides(g: *Grafter, t: *Cond.Table, callee: []const CellId, gids: []const u32, sides: []SetId) Error!CondId {
         const cells = g.env.cells;
+        // (a′) first, in every build: a group whose keys overlap is no group,
+        // and all its sides keep their images, which the multiset then reads
+        // as repeats (`Cell.keysOverlap`, memoised by the key set).
+        var group_keys: Ids.FixedDict(1) = .{};
+        defer group_keys.deinit(g.gpa());
+        for (callee, gids) |c, gid| if (gid != Ids.none_int) {
+            const got = try group_keys.getOrPut(g.gpa(), .{gid});
+            if (!got.found_existing) got.value_ptr.* = SetId.none.int();
+            got.value_ptr.* = (try cells.sets.insert(g.gpa(), g.env.charge, .from(got.value_ptr.*), c.int(), 0)).int();
+        };
+        for (group_keys.values.items) |*s| s.* = @intFromBool(try cells.keysOverlap(g.gpa(), g.env.charge, g.env.places, .from(s.*)));
         var first: Ids.FixedDict(2) = .{};
         defer first.deinit(g.gpa());
         var extra: CondId = Cond.yes;
         for (sides, gids, 0..) |*side, gid, j| {
-            if (gid == Ids.none_int) continue;
+            if (gid == Ids.none_int or group_keys.get(.{gid}).? == 1) continue;
             var kept: SetId = .none;
             var it = cells.sets.iterate(side.*);
             while (it.next()) |e| {
                 try g.env.charge.reserve(g.gpa(), .inspection, 1);
                 const got = try first.getOrPut(g.gpa(), .{ gid, e.key });
                 if (!got.found_existing) got.value_ptr.* = @intCast(j);
-                // Two positions of the image only for alias-apart keys: route
-                // separation, tested in every build. Else both sides keep it,
-                // and the multiset reads a repeat.
-                if (got.value_ptr.* != j and cells.alias(g.env.places, callee[got.value_ptr.*], callee[j]) == .no) {
+                // Another side of the group at the image: one more position
+                // of it, since the group's keys are alias-apart.
+                if (got.value_ptr.* != j and callee[got.value_ptr.*] != callee[j]) {
                     extra = try t.@"and"(g.gpa(), g.env.charge, extra, try t.exclOf(g.gpa(), g.env.charge, cells, .from(e.key)));
                     continue;
                 }
@@ -1514,6 +1524,7 @@ const Grafter = struct {
                     var it = g.env.cells.sets.iterate(.from(a.a));
                     while (it.next()) |e| try callee.append(gpa_, .from(e.key));
                 }
+                if (switched("cert-params-reversed")) std.mem.reverse(CellId, callee.items);
                 // §2.9 rule 4 (#1485): a side in a group stands at its images
                 // there; two sides of one group whose images meet at `X` are two
                 // disjoint sets of positions of `X`, apart under `exclOf(X)`.
@@ -1839,13 +1850,19 @@ pub const Views = struct {
         defer g.deinit();
         var groups: Ids.FixedDict(3) = .{};
         defer groups.deinit(gpa_);
+        var keys: std.ArrayList([2]u32) = .empty;
+        defer keys.deinit(gpa_);
         var it = v.cells.sets.iterate(cells);
         while (it.next()) |x| {
             try charge.reserve(gpa_, .inspection, 1);
-            const c: CellId = .from(x.key);
-            if (v.cells.origin(c) == .mark) continue;
-            try g.ruleFourKey(c, x.value == 1, &groups, out);
+            if (v.cells.origin(.from(x.key)) == .mark) continue;
+            try keys.append(gpa_, .{ x.key, x.value });
         }
+        // The test-only switch instantiates the keys, and so the parameters'
+        // groups, in the other order: rule 4's verdict is the same (§2.9 (a′),
+        // near-miss row 19).
+        if (switched("cert-params-reversed")) std.mem.reverse([2]u32, keys.items);
+        for (keys.items) |x| try g.ruleFourKey(.from(x[0]), x[1] == 1, &groups, out);
     }
 
     /// The resolver of the `inst` atoms calls make (§2.11 *κ across a call*,
@@ -2422,6 +2439,15 @@ const TestGraph = struct {
                 return .{ .kind = .list, .head = 200 };
             },
             13 => return .{ .kind = .cross },
+            // #1485's rule 4: `Tree = Node Tree (List Int) Tree | Leaf` (14, 15).
+            14 => {
+                for (0..3) |i| try out.append(g.gpa, .{ .step = (g.table.ctorStep(g.gpa, g.account, 6, @intCast(i)) catch unreachable), .@"var" = if (i == 1) 15 else 14 });
+                return .{ .kind = .ctor, .head = 314 };
+            },
+            15 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 13 });
+                return .{ .kind = .list, .head = 200 };
+            },
             // #1157's probes: `A = A (List C)`, `C = C (List A)` (2–5), and
             // `R2 = R2 (List T)` (6–7).
             2, 4, 6 => {
@@ -4181,6 +4207,89 @@ const v2_mutation = @import("ownership_options").v2_mutation;
 /// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
 fn mutated(comptime which: []const u8) bool {
     return std.mem.eql(u8, v2_mutation, which);
+}
+
+const v2_switch = @import("ownership_options").v2_switch;
+
+/// A test-only switch (`-Downership-v2-switch`, comma-separated, which
+/// `gates` refuses): an order of the checker reversed on purpose.
+fn switched(comptime which: []const u8) bool {
+    return comptime blk: {
+        var it = std.mem.splitScalar(u8, v2_switch, ',');
+        while (it.next()) |s| if (std.mem.eql(u8, s, which)) break :blk true;
+        break :blk false;
+    };
+}
+
+test "§2.9 rule 4 (a′): row 19's certificate reads the same in either order of its parameters" {
+    // Near-miss row 19 (#1485), its certificate built directly: four keys
+    // over two parameters of type `Tree`, a condition that is not `lost`.
+    // `π1`'s keys `π1#Node.1` and `π1#Node.0#Node.1` are apart and image
+    // through `s` to two cells; `π2`'s `π2#Node.0#Node.1` and `π2⟲#Node.1`
+    // overlap and image through `l` (the caller's `π3#Node.0`) to one cell
+    // `X`. Both groups have the root as their prefix, so an overlap memo
+    // keyed by the prefix alone would hand one group's answer to the
+    // other. Keyed by the key set, `π2`'s group is no group in either
+    // order: `X` arrives twice, and the read fails.
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const gpa = testing.allocator;
+    const charge = x.env().charge;
+    const src: Place.Source = .{ .ctx = &x.graph, .describe = TestGraph.describe };
+    const tree = try x.places.of(gpa, &x.account, src, 14);
+    const n0 = try x.places.ctorStep(gpa, &x.account, 6, 0);
+    const n1 = try x.places.ctorStep(gpa, &x.account, 6, 1);
+    const Keys = struct {
+        x: *KnotFixture,
+        tree: PlaceId,
+        fn cell(k: @This(), i: u32, steps: []const Step) !CellId {
+            var at = try k.x.places.rootPath(testing.allocator, k.tree);
+            for (steps) |s| at = (try k.x.places.extend(testing.allocator, k.x.env().charge, at, s)).?;
+            return k.x.cells.symbolic(testing.allocator, &k.x.account, &k.x.places, .param, i, at, 0);
+        }
+    };
+    const k: Keys = .{ .x = &x, .tree = tree };
+    const lv = Step.level;
+    const ks = [_]Cond.Table.HypKey{
+        .{ .key = try k.cell(0, &.{n1}), .image = try k.cell(5, &.{n1}), .approx = false, .group = 0 },
+        .{ .key = try k.cell(0, &.{ n0, n1 }), .image = try k.cell(5, &.{ n0, n1 }), .approx = false, .group = 0 },
+        .{ .key = try k.cell(1, &.{ n0, n1 }), .image = try k.cell(6, &.{ n0, n0, n1 }), .approx = false, .group = 1 },
+        .{ .key = try k.cell(1, &.{ lv, n1 }), .image = try k.cell(6, &.{ n0, n0, n1 }), .approx = false, .group = 1 },
+    };
+    try testing.expectEqual(ks[2].image, ks[3].image);
+    const Fake = struct {
+        keys: []const Cond.Table.HypKey,
+        reversed: bool,
+        fn envOf(_: *anyopaque, _: *Shape.Table, _: NodeId) ?u32 {
+            return null;
+        }
+        fn keysOf(ctx: *anyopaque, gpa_: Allocator, _: Ids.Charge, _: u32, _: SetId, out: *std.ArrayList(Cond.Table.HypKey)) Error!void {
+            const f: *@This() = @ptrCast(@alignCast(ctx));
+            for (0..f.keys.len) |i| try out.append(gpa_, f.keys[if (f.reversed) f.keys.len - 1 - i else i]);
+        }
+    };
+    var own: SetId = .none;
+    for (ks) |h| own = try x.cells.sets.insert(gpa, charge, own, h.key.int(), 0);
+    const tn = try x.shapes.leaf(gpa, &x.account, tree, own);
+    var reads: [2]CondId = undefined;
+    for (0..2) |order| {
+        var fake: Fake = .{ .keys = &ks, .reversed = order == 1 };
+        x.conds.hyp = .{ .ctx = &fake, .envOf = Fake.envOf, .keys = Fake.keysOf };
+        defer x.conds.hyp = null;
+        var keys: std.ArrayList(Cond.Table.HypKey) = .empty;
+        defer keys.deinit(gpa);
+        var merged: Ids.FixedDict(2) = .{};
+        defer merged.deinit(gpa);
+        const a = try x.conds.certClassAgg(gpa, charge, x.env().view(), 0, tn, &keys, &merged);
+        // `X` is a repeat, and the images through `s` are not.
+        try testing.expect(x.cells.sets.member(a.dups, ks[2].image.int()));
+        try testing.expect(!x.cells.sets.member(a.dups, ks[0].image.int()));
+        try testing.expect(!x.cells.sets.member(a.dups, ks[1].image.int()));
+        reads[order] = try x.conds.canonical(gpa, charge, try x.conds.certRead(gpa, charge, x.env().view(), 0, tn));
+    }
+    try testing.expectEqual(reads[0], reads[1]);
+    try testing.expect(Cond.Table.fails(reads[0]));
 }
 
 test "§2.9 rule 3: a shared image owes apart from the rest of the side it stays on" {
