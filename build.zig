@@ -349,24 +349,6 @@ pub fn build(b: *std.Build) void {
     }
     b.installArtifact(exe);
 
-    // Exercise the public resident API without adding a production CLI flag.
-    const session_driver = b.addExecutable(.{
-        .name = "beni-session-driver",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/session_driver.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "beni", .module = exe_beni },
-                .{ .name = "diagnostic", .module = diagnostic_mod },
-            },
-        }),
-    });
-    for ([_]Stable{ default_id.stable, default_pack, default_core, default_platforms }) |made| {
-        if (made.step) |s| session_driver.step.dependOn(s);
-    }
-    const session_driver_install = b.addInstallArtifact(session_driver, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
-
     // The skill for coding agents (`docs/design/frontend.md` §12.2): the
     // folder `skills/beni/` goes beside the binary, under
     // `<prefix>/share/beni/skills/`, byte for byte, and never into it.
@@ -525,6 +507,21 @@ pub fn build(b: *std.Build) void {
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
     const safe = compiler(b, target, .safe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
+    // The public resident API uses the same checked library and backend as
+    // the black-box compiler. Its heap checker remains active in ReleaseSafe.
+    const session_driver = b.addExecutable(.{
+        .name = "beni-session-driver",
+        .use_llvm = safe.exe.use_llvm,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/session_driver.zig"),
+            .target = target,
+            .optimize = .safe,
+            .strip = safe.exe.root_module.strip,
+            .imports = &.{.{ .name = "beni", .module = safe.beni }},
+        }),
+    });
+    session_driver.step.dependOn(&safe.exe.step);
+    const session_driver_install = b.addInstallArtifact(session_driver, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
     // The same compiler with `tests/platforms/toy` compiled in, exactly as
     // `-Dplatform=tests/platforms/toy` would compile it
     // (`docs/design/boundary.md` §9.5), at `zig-out/toy/bin/beni`: the

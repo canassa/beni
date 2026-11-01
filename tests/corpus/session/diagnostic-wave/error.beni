@@ -1,2 +1,2 @@
-pub value : ⊤
-value = λx → x
+pub value : Int
+value = ⊤
