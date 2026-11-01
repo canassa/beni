@@ -1,0 +1,1 @@
+v2 pins #1546: a call that passes one tree at both children of its argument is accepted where the callee writes one child and never reads the other; the alias the callee makes in its own result is refused in the callee. v1 prints the paths folded and gives other causes.
