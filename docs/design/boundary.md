@@ -5665,7 +5665,7 @@ specified, with these findings:
   the same lines: the outer handler of a `press` or of a trusted move reads the count that the
   inner handler made (`the handler saw n=1, the model has n=1`), and the handler on the disabled
   button runs. With the change, the outer handler reads the count of before the event
-  (`n=0`, `n=1`), and the disabled button's handler does not run. The untrusted steps give the
+  (`n=0` and `n=1` for the `press`, `n=2` for the trusted move), and the disabled button's handler does not run. The untrusted steps give the
   same lines before and after.
 - **The trusted move.** Chrome dispatches a mouse move at a frame, not when
   `Input.dispatchMouseEvent` returns, so the step waits for the move's `mousemove` on the window,
