@@ -533,7 +533,7 @@ pub fn Of(comptime Frame: type) type {
             const root: NodeId = .from(shapes.get(it.v).a);
             var k = root;
             for (rest) |s| k = try f.certKid(k, s) orelse return none;
-            const kh = try f.env.conds.certRead(f.gpa, f.env.charge, f.env.view(), e, k);
+            const kh = try f.env.conds.certRead(f.gpa, f.env.charge, f.env.view(), e, k, rest);
             const fail: u2 = if (kh == Cond.shared) 1 else if (kh == Cond.lost) 2 else 0;
             if (fail == 0) relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, kh);
             try c.occs.append(f.gpa, .{ .env = e, .k = k, .spine = idx, .fail = fail });
