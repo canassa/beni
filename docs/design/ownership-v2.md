@@ -1176,6 +1176,73 @@ Operations, memoised on their node arguments:
       or an accumulator `acc (n − 1) (N [ n ] t L)`. A type with one recursive child almost always passes.
       Core's `Dict`, #1489 and the quadtree have this shape.
 
+  **A quotient of a port's arms that no reader tells apart, measured (#1372)** [M 2026-11-01, master
+  `47e697672`, self-hosted Debug, `dump --stage=ownership --ownership=v2 --jobs=1`; scratch instrumentation
+  dumped `removeMin`'s class (a copy of core's `Dict.removeMin`, `balance` and `moveRedLeft`) after every walk,
+  join and delivery; scratch analysers read the dumps; nothing built]. This is a new question about the port.
+  It is not §2.3's question (b) above, which is decided (§2.9 *Fold first*). **No quotient was found that is
+  exact and bounds `removeMin`.** It is the owner's decision (§8 Q8).
+  - **What grows.** At 10⁸ the group runs six rounds and stops in its seventh walk. That run took 7 min 36 s.
+    The port's `res` after rounds 1 to 6 is 25 / 107 / 292 / 752 / 1 798 / 4 308 nodes, with 0 / 4 / 16 / 37 /
+    67 / 124 choice nodes and 35 / 445 / 1 804 / 4 774 / 11 302 / 25 951 κ entries. So choices are not most of
+    the class. Most of it is unions at the key and value places (`k`, `v`: 8 → 54 → 167 nodes in rounds 1 to 3)
+    and widened knots: 1 / 2 / 5 / 13 / 32 / 83 of them, each a `node` and its `union`. The root knot reaches
+    the earlier rounds' knot images through `recast` and `union` nodes that lie on no cycle, so no widen folds
+    them (#1368's *rounds nest in place*, here through a recast). The cells settle by round 3 (one cell is new
+    in round 3). From round 2, every path that the summary prints reads `{lost}`, and the key, value and
+    subtree paths hold `~⊤`.
+  - **The relation.** Two values v and w at one place are *indistinguishable* when every reader gives the
+    same answer on both, and on every value that is built from them later: a bisimulation over what each
+    reader reads, as *The check: σ is a bisimulation* is for stable images. The readers fall into three
+    groups:
+    1. *Readers of a path alone*: `cellsAt` with the approximate bits, `reach`, `leq`'s γ, `Calls.preimage`
+       and the printer's provenance. They read the function from a path to `(cell, approx)`.
+    2. *Readers of co-occurrence*: the path multiset (§2.9, the maximum over a choice's arms and the sum over
+       coexisting occurrences), `Holders`' `alt` and `cast` route bits, a write's other-path check per leaf
+       arm (`TransferArms`, #1439), `apartImage` and *Two positions of one image*, §2.9 *The repeating split*,
+       and the fold certificate's witnesses (rule 4). Each of them reads which cells occur together in one
+       arm or one coexisting value, across paths. A pointwise join of two arms loses that. For example, arm A
+       holds `c` at `.2` and arm B holds `c` at `.3.2`. Per arm, a write at `.2` meets no other path to `c`.
+       In the pointwise join both paths hold `c` in one value, and the write is refused (#1587's review).
+    3. *Readers of node identity*: `propagate`'s routes, folds and links, `widen`'s `occurs`, and the memos
+       keyed by node. They are exact under a move that is a bisimulation for groups 1 and 2, by the
+       stable-images lemma.
+
+    So a quotient q is exact when, for every v, q(v) and v agree on groups 1 and 2, and q is injective on a
+    knot's members (group 3). Agreement on group 1 alone is not enough.
+  - **Three quotients, measured on the dumps** (nodes of the minimal form after rounds 1 to 6):
+
+    | quotient | keeps co-occurrence | rounds 1 … 6 |
+    |---|---|---|
+    | raw (master) | yes | 25 / 107 / 292 / 752 / 1 798 / 4 308 |
+    | arm sets and union sets, knots by identity (4e's analyser) | yes | 17 / 45 / 95 / 194 / 387 / 816 |
+    | bisimulation, arm sets and union sets (content nodes only) | yes | 14 / 31 / 47 / 77 / 140 / 263 |
+    | unions pointwise, choices kept as sets of arms | across a choice's arms, yes | 4 / 10 / 25 / 39 / 62 / 93 |
+    | pointwise at every path (unions and choices) | no | 4 / 4 / 12 / 15 / 21 / 22 |
+
+    Each quotient that keeps the co-occurrence of a choice's arms still grows by 1.5 to 2.5 times a round to
+    round 6. So the arms are different to the co-occurrence readers: they are not copies of one arm. Only
+    the pointwise form, which drops co-occurrence, approaches a bound. The analysers read a recast's inner
+    as if it stood at the recast's position, so these counts are an approximation of the readers, not a
+    proof.
+  - **When the pointwise form would be exact.** Only when every co-occurrence reader is already at its
+    weakest answer on v, at every position of v and at every position that holds v later. For κ that
+    condition is "κ reads `lost` at every position of v", because `lost` absorbs every join and
+    instantiation, and a position above v conjoins v's read. That holds for `removeMin` at every path that
+    the summary prints. It does not cover the readers that are not κ: the other-path check and `Holders`
+    can refuse or keep a holder where the per-arm reading does not (the example above), and their answer
+    reaches a caller's verdict. No lemma shows that `lost` at v makes them unable to tell. Without one, the
+    pointwise form is a silent merge, and the owner's rule refuses it.
+  - **Not done, because the rule is not exact:** a prototype, the corpus run and the oracle sweep. Each would
+    test a rule that this text cannot call exact. If the owner wants the pointwise form under the condition
+    above, the next step is to prove the condition for groups 2 and 3, or to write a check. Under
+    `runtime_safety`, the check reads every group-2 reader on the raw value and on the quotient, on a scratch
+    account. Then build it, and run the oracle sweep (copy against in-place over Dict-like insert and remove
+    programs, shown to report UNSAFE with every verdict forced to accepted).
+  - **Other ways out, for the decision** (not measured here): a widen that folds a knot image held under a
+    recast into the knot of its canonical path, where #1368's *A widen that folds no-cycle nesting* changes
+    κ and this one may not, because every κ here is `lost`; or core's `Dict` as a known limit (Q8).
+
   **Options not taken.**
   - *A widen that folds no-cycle nesting into a knot.* Round k + 1's `res[*]` holds round k's `res[*]`
     through `positions` (`merge`'s `[ x, …merge xt ys ]`). Folding that occurrence into a cycle through a
@@ -8930,7 +8997,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    calls. A record that doubles at 11 levels costs 2 670 records, where the walk before it is a limit.
    #1289's chain is linear (since #1538 under that walk too). `descend` costs 122 867 records
    (137 891 before) and is still over the default allowance. `removeMin` is still a limit at 10⁸: its largest
-   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*).
+   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*). *Measured (2026-11-01, a quotient of the port's arms):* no quotient that keeps which cells occur together in one arm bounds `removeMin` (its minimal forms still grow 1.5 to 2.5 times a round to round 6), and the pointwise form that does approach a bound is not shown exact for `Holders` and the other-path check (§2.3, *A quotient of a port's arms that no reader tells apart*). So this is the owner's decision: a proof or check that makes the pointwise form exact when every κ is `lost`, a widen that folds a knot image held under a recast, or `Dict` as a known limit.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
