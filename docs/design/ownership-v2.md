@@ -3481,7 +3481,11 @@ claims they may be one object. Four rules use this.
   - *Built as rule 1 is.* `Agg.sides` keeps, per image, the group and the keys of it that reached the
     image. An arrival of the same group with another key is one more position of the image. An arrival
     of another group, or with the same key, is a repeat. This holds across the classes of one
-    certificate (below): the same key from a second class is a repeat.
+    certificate (below): the same key from a second class is a repeat. The one exception is inside one
+    class: one key that reaches one image through two member cells of a union or a choice arrives
+    once, because those members are alternatives, taken one at a time (*The read*). So the skip of
+    "the same key again" is per class, keyed by `(group, image, key, class)`, and the sum over
+    classes comes after it.
   - **Across the classes of one certificate** [specified 2026-11-01, #1559; prototyped on #1529 merged
     with master `3460de8d3`, self-hosted Debug; not built]. The atom rule (§2.3, #1483) splits a
     knot's class. `same`'s `res` was one class, `K = #Node.1`, because the shared `Leaf` put the root on
@@ -3515,7 +3519,8 @@ claims they may be one object. Four rules use this.
     - *A key's multiplicity at `C′`* is the sum, saturated at two, of its multiplicities in the
       certificates `A(f, K)` of the classes `K` that land at `C′`. A class's keys are a set, so a key
       counts one for each landing class that holds it, and a repeat inside one class is that class's
-      condition, as before.
+      condition, as before. Within one class, the same key at the same image again (through another
+      member of a union or a choice, an alternative) adds nothing. Only a second class adds.
     - *An image* takes the maximum of those multiplicities over the distinct keys of its group that
       land on it. It enters `C′`'s multiset once with that maximum, and twice when it is 2+. Each further
       distinct key of the group at the image owes `exclOf(X)`, whatever class it comes from.
@@ -3533,7 +3538,7 @@ claims they may be one object. Four rules use this.
          key, whichever class that key's certificate is for. The maximum is therefore taken over distinct
          keys, of their summed multiplicities. Two distinct keys at one image stand at two disjoint sets
          of its positions, and `exclOf(X)` keeps those positions apart.
-    - *Why each part is needed.* Unit cases (i)–(iv) build each certificate directly. Each program in
+    - *Why each part is needed.* Unit cases (i)–(vi) build each certificate directly. Each program in
       §8's near-miss rows 20–22 is also refused by its own frame's κ, which reads the repeat through
       the eager graft. So the rows pin the verdicts, and only the unit cases pin the rule. Each mutation
       below fails exactly its case:
@@ -3549,17 +3554,27 @@ claims they may be one object. Four rules use this.
         one image (row 22). A trie run for each class alone finds no overlap and merges them.
       - (iv) **The precision.** The four apart keys of `same l` lie over two classes. They give one
         image `X`, once, with `exclOf(X)`.
+      - (v) **(i) with (iv).** `k1` is in two classes, and a distinct `k2` that is apart from it is in
+        one of them, all at one image `X`. `X` is a repeat, from `k1`'s sum, and `exclOf(X)` is owed
+        for `k2`. Both orders of arrival must give the same read: `[k1, k2, k1]` and `[k2, k1, k1]`.
+        A recount through `certClassAgg`'s skip would read `X` once here.
+      - (vi) **The skip inside a class.** One key reaches `X` through two members of a union in one
+        class: `X` once.
     - *Lemma R4′ (the representation change: the quotient).* The read at `C′` is a function of two
-      things: the actual, and the sum `Σ_{K→C′} A(f, K)` of the certificates that land there, which is
-      a multiset of keys with the conditions joined.
+      things: the actual, and the certificates that land there, each a key set with its condition.
       - The groups and (a′) are functions of the keys and of the actual.
       - The sum for each key is associative and commutative, and it agrees with saturation at two (C1).
       - The maximum is as in R4.
   
       So a quotient that splits a class `K` into classes `K₁ … Kₙ`, all landing at `C′`, reads at `C′`
-      what `K` read, when `A(f, K) = Σ A(f, Kⱼ)`. That equation holds, because a certificate counts the
-      source occurrences that the fold maps into its class, and the occurrences of `K` are those of
-      the `Kⱼ`. The conditions agree too. An `apart` between keys of two `Kⱼ`, which `K`'s condition
+      what `K` read. This is a statement about the reads, not an equation between certificates. A
+      class's keys are a set, so `A(f, K)` is not the sum of the `A(f, Kⱼ)`. A key that `K` held at
+      two positions appears once in `K`'s key set, with the repeat in `K`'s condition (`lost`). After
+      the split, it appears once in each of two `Kⱼ`, and the sum for each key makes it a repeat. The two
+      reads agree, because both count the source occurrences that the fold maps into the class, and
+      the occurrences of `K` are those of the `Kⱼ`. Before the split, `K`'s in-class repeat comes from
+      its condition. After it, a repeat across classes comes from the sum, and a repeat inside one
+      `Kⱼ` from that class's condition. The conditions agree too. An `apart` between keys of two `Kⱼ`, which `K`'s condition
       held, is what the multiset owes for two distinct images; for one image of one group it is
       `exclOf(X)`. Where the `Kⱼ` land at different caller classes, each caller class reads exactly its
       own occurrences, which is more precise and sound. #1538 is this case. At `same l` the read under
@@ -3576,10 +3591,22 @@ claims they may be one object. Four rules use this.
       `Cond.assertClassesSum`). These run where a group merges keys that come from two or more classes.
       - The merged keys are pairwise distinct cells. `Cell.alias` is `no` for every pair of distinct
         keys of the group across all its classes, computed again from their paths.
-      - The read at `C′` is computed again from the sum certificate as one class. The keys of all the
-        landing classes go in one list, and a key that two classes hold goes in twice. They are read by
-        the one-class read, with multiplicities, through `certClassAgg`'s code and not the per-class
-        walk. The two reads must be equal. That is R4′ as a check.
+      - The read at `C′` is recounted, sharing no code with the rule's aggregate. `certClassAgg` is
+        not the recount: its skip of "the same key again" is keyed by `(group, image, key)`, so over the
+        list of every landing class's keys it reads a key that two classes hold once. That is the
+        rejected `cert-rule4-no-key-sum`. The recount works from the landing classes' key sets. For each
+        image `X` of a group, it computes:
+        - the multiplicity of each distinct key, as the number of landing classes whose key set holds
+          that key and whose instantiation images it to `X`. Members of a union or a choice inside one
+          class count once;
+        - the maximum of those multiplicities, saturated at two;
+        - the number of distinct keys at `X`.
+
+        `X`'s occurrences are the sum, over the groups at `X`, of each group's maximum, plus one for
+        each image occurrence of a key in no group. The check requires that `X` is a repeat in the
+        rule's multiset exactly when this count is two or more. It also requires that `exclOf(X)` is in
+        the rule's condition when two or more distinct keys of one group land at `X`. That is R4′ as a
+        check.
     - *Cost.* The keys are instantiated once for each `(class, caller class)` pair that the walk
       visits, as before, so M counts the same image occurrences. One sort of the visited pairs brings
       together the classes at one caller class: O(P log P), with P at most M plus the number of classes.
@@ -8249,8 +8276,11 @@ not share its walk.
   where a group merges keys from two or more classes:
   - the merged keys are pairwise distinct cells;
   - `Cell.alias` is `no` over the group's distinct keys across all the landing classes;
-  - `Cond.assertClassesSum` computes the read at the caller class again, from the sum certificate
-    as one class, and requires it to be equal.
+  - `Cond.assertClassesSum` recounts the read at the caller class from the landing classes' key
+    sets, with no code shared with the rule's aggregate or with `certClassAgg`. The multiplicity of
+    a key is the number of landing classes that hold it, and members of a union or a choice inside
+    one class count once. The recount must agree with the rule on which images are repeats and on
+    which owe `exclOf`.
 - **C7, Disjoint by certificate.** The read of §2.11 item 3 (d). *Check:*
   `TransferBeside.assertCertifiedDrop` wherever the rule drops `K` at an item. Inside a group being
   solved the check is deferred to publication, and it runs only if the verdict it covers is final.
@@ -8297,9 +8327,14 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   - It is built in readers 1 and 2, with the group's id kept for each `(environment, i, L, node)`
     across the classes of one instantiation, and (a′)'s memo keyed by the key set.
   - Rows 20–22 go in `o/FoldCertificate`.
-  - A unit test in `Calls.zig` builds a certificate of two classes directly, for cases (i)–(iv): a
-    repeat for (i)–(iii), and one image with `exclOf` for (iv). A unit test of the group ids covers
-    `L`.
+  - A unit test in `Calls.zig` builds a certificate of two classes directly, for cases (i)–(vi):
+    - a repeat for (i)–(iii);
+    - one image with `exclOf` for (iv);
+    - a repeat and `exclOf` for (v), in both orders of arrival;
+    - one image for (vi).
+
+    The test runs with `runtime_safety` on, as the gates' tests do, so `Cond.assertClassesSum` runs
+    on every case and must not panic. A unit test of the group ids covers `L`.
   - Three mutations:
     - `cert-rule4-per-class` reads class by class, as #1529 built it. It must turn the accepted
       witnesses and rows 1, 6, 8 and 9 red.
