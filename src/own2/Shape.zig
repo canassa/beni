@@ -1503,7 +1503,8 @@ pub const Table = struct {
             break :blk try t.losesOne(gpa, account, l, r);
         };
         if (lost) {
-            const out = try t.saturate(gpa, account, cellsets, l, r);
+            const out = if (mutated("cert-saturate-side")) l else try t.saturate(gpa, account, cellsets, l, r);
+            if (std.debug.runtime_safety) try t.assertSaturation(gpa, cellsets, l, r, out);
             try t.joinBases(gpa, account, out, &.{ l, r }, before);
             return out;
         }
@@ -1521,6 +1522,47 @@ pub const Table = struct {
         return out;
     }
 
+
+    /// C1 (§8 slice 4, *Lemmas*, #1485), `runtime_safety` only: a positions
+    /// node `saturate` made has the aggregate of the two sides it saw, each
+    /// cell's multiplicity capped at 2, counted by a reader that keeps no
+    /// count map: the sides walked down to their members, every member's
+    /// cells once per occurrence.
+    fn assertSaturation(t: *Table, gpa: Allocator, cellsets: *Cell.Radix, l: NodeId, r: NodeId, out: NodeId) Error!void {
+        var scratch: Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        var raw: std.AutoHashMapUnmanaged(u32, u2) = .empty;
+        defer raw.deinit(gpa);
+        var sat: std.AutoHashMapUnmanaged(u32, u2) = .empty;
+        defer sat.deinit(gpa);
+        try t.cellCounts(gpa, &scratch, cellsets, l, &raw);
+        try t.cellCounts(gpa, &scratch, cellsets, r, &raw);
+        try t.cellCounts(gpa, &scratch, cellsets, out, &sat);
+        var ok = raw.count() == sat.count();
+        var it = raw.iterator();
+        while (it.next()) |e| if ((sat.get(e.key_ptr.*) orelse 0) != e.value_ptr.*) {
+            ok = false;
+        };
+        if (!ok) std.debug.panic("ownership v2: a saturated positions node changes its aggregate (C1, #1485)", .{});
+    }
+
+    fn cellCounts(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, out: *std.AutoHashMapUnmanaged(u32, u2)) Error!void {
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            const d = t.get(x);
+            if (d.kind == .positions) {
+                try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+                continue;
+            }
+            var it = cellsets.iterate(try t.cellsOf(gpa, account, cellsets, x));
+            while (it.next()) |e| {
+                const got = try out.getOrPut(gpa, e.key);
+                got.value_ptr.* = if (got.found_existing) 2 else 1;
+            }
+        }
+    }
     /// Whether `positions` made `n`: a node whose members a parent counts
     /// (§2.3 *Saturation at two*). Every other node is one member.
     fn isCounted(t: *const Table, n: NodeId) bool {
@@ -5524,4 +5566,11 @@ test "#1279 review: a view's delta over a parameter whose actual is a delta comp
     try testing.expect(f.shapes.kind(.from(f.shapes.get(m).a)) != .delta);
     const eager = try f.shapes.delta(gpa, &f.account, base, try f.shapes.overPut(gpa, &f.account, try f.one(fb, xb), fa, xa));
     try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m, eager));
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }
