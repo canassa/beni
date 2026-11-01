@@ -19,6 +19,7 @@ const Place = @import("Place.zig");
 const Cond = @import("Cond.zig");
 const Demands = @import("Demands.zig");
 const Calls = @import("Calls.zig");
+const Cell = @import("Cell.zig");
 const NodeId = Ids.NodeId;
 const CellId = Ids.CellId;
 const SetId = Ids.SetId;
@@ -236,6 +237,10 @@ pub fn Of(comptime Frame: type) type {
                 defer for (stack.items[mark..]) |*x| {
                     if (x.it.mode != .read) x.from = idx;
                 };
+                // The test-only switch: this item's pushes in reverse, so the
+                // spine's next item is met before any sibling off it (§8 slice
+                // 4, the tag's unit tests, #1485).
+                defer if (switched("otherPaths-spine-first")) std.mem.reverse(Push, stack.items[mark..]);
                 if (it.mode != .spine and written.holds(where_paths, it.path, it.v)) continue;
                 if (try f.unreached(it.v, own)) continue;
                 const d = shapes.get(it.u);
@@ -1137,6 +1142,79 @@ pub fn Of(comptime Frame: type) type {
             return null;
         }
 
+        /// `holdsCanonical`'s scan of one reach, built once per `keepReach`
+        /// and read per parameter cell (#1485): the reach's cells whose base
+        /// is a parameter, not another side of a split the write met, each
+        /// with its canonical cell, kept in the reach's order and bucketed by
+        /// that cell's `(origin, index, c)`. A cell `cu` can be only `du`
+        /// itself or strictly below it (`Cell.below`) when both have one
+        /// `(origin, index, c)`, so a read scans its own bucket, and a frame
+        /// whose reach holds many parameters pays for each once, not once per
+        /// parameter cell of the base (`same (if c1 then t1 else … tN)`).
+        pub const Canon = struct {
+            built: bool = false,
+            /// `(origin, index, c)` → its bucket, `[head, tail]` in `entries`.
+            buckets: Ids.FixedDict(3) = .{},
+            ends: std.ArrayList([2]u32) = .empty,
+            /// `[du, value, next]`.
+            entries: std.ArrayList([3]u32) = .empty,
+
+            pub fn deinit(c: *Canon, gpa: Allocator) void {
+                c.buckets.deinit(gpa);
+                c.ends.deinit(gpa);
+                c.entries.deinit(gpa);
+            }
+
+            fn keyOf(cells: *const Cell.Table, x: CellId) ?[3]u32 {
+                const d = cells.get(x);
+                if (!d.origin.isSymbolic() or d.origin == .top) return null;
+                return .{ @backingInt(d.origin), d.a, d.c };
+            }
+        };
+
+        /// `holdsCanonical` through `canon`, built on its first use: the same
+        /// answer, the first cell in the reach's order that holds `cu`.
+        pub fn holdsCanonicalIn(f: *Frame, canon: *Canon, reach: SetId, cu: CellId, held: bool, rest: ?[]const Step, refs: []const CellId, where: ?Where) Error!?u1 {
+            const cells = f.env.cells;
+            // Only a parameter base's cells can hold `cu`; a `cu` of another
+            // kind reads the reach whole, as before.
+            const key = Canon.keyOf(cells, cells.base(cu)) orelse return f.holdsCanonical(reach, cu, held, rest, refs, where);
+            if (!canon.built) {
+                canon.built = true;
+                var it = cells.sets.iterate(reach);
+                while (it.next()) |e| {
+                    try f.env.charge.reserve(f.gpa, .inspection, 1);
+                    const d: CellId = .from(e.key);
+                    if (cells.origin(cells.base(d)) != .param) continue;
+                    if (try f.otherSide(d, refs)) continue;
+                    const du = (try cells.unrefined(f.gpa, f.account(), f.env.places, d)) orelse continue;
+                    const k = Canon.keyOf(cells, du) orelse continue;
+                    const at: u32 = @intCast(canon.entries.items.len);
+                    try canon.entries.append(f.gpa, .{ du.int(), e.value, Ids.none_int });
+                    const got = try canon.buckets.getOrPut(f.gpa, k);
+                    if (got.found_existing) {
+                        const ends = &canon.ends.items[got.value_ptr.*];
+                        canon.entries.items[ends[1]][2] = at;
+                        ends[1] = at;
+                    } else {
+                        got.value_ptr.* = @intCast(canon.ends.items.len);
+                        try canon.ends.append(f.gpa, .{ at, at });
+                    }
+                }
+            }
+            const b = canon.buckets.get(key) orelse return null;
+            var at = canon.ends.items[b][0];
+            while (at != Ids.none_int) : (at = canon.entries.items[at][2]) {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                const x = canon.entries.items[at];
+                const du: CellId = .from(x[0]);
+                if (rest) |r| if (try f.pathBelow(du, r, cu)) continue;
+                if (du == cu) return @intCast(x[1]);
+                if (held and cells.below(f.env.places, cu, du) and !(try f.atWritten(where, du, cu))) return @intCast(x[1]);
+            }
+            return null;
+        }
+
         /// Whether the symbolic cell `c` is `d`'s position `steps` below it.
         pub fn pathBelow(f: *Frame, d: CellId, steps: []const Step, c: CellId) Error!bool {
             if (steps.len == 0) return false;
@@ -1201,6 +1279,8 @@ pub fn Of(comptime Frame: type) type {
         pub fn keepReach(f: *Frame, bs: *Beside, want: *const Want, reach: SetId, folded: bool, held: bool, rest: ?[]const Step, refs: []const CellId, kept: *SetId, excl: *SetId, relied: *CondId, where: ?Where) Error!void {
             const cells = f.env.cells;
             if (refs.len != 0) try f.splitBeside(want, reach, refs, folded, kept, excl, relied, where);
+            var canon: Canon = .{};
+            defer canon.deinit(f.gpa);
             for (want.params.items) |c| {
                 try f.env.charge.reserve(f.gpa, .inspection, 1);
                 // The base's cell, or its canonical cell when a pattern refined it
@@ -1208,7 +1288,7 @@ pub fn Of(comptime Frame: type) type {
                 // above the base's holds it, a symbolic leaf's reach being its own
                 // cell (#1383).
                 const cu = (try cells.unrefined(f.gpa, f.account(), f.env.places, c)) orelse c;
-                const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonical(reach, cu, held, rest, refs, where) orelse continue;
+                const value = cells.sets.get(reach, c.int()) orelse cells.sets.get(reach, cu.int()) orelse try f.holdsCanonicalIn(&canon, reach, cu, held, rest, refs, where) orelse continue;
                 // Two paths folding through one leaf at a summary path: the
                 // parameter's, or a part's canonical one (§2.2 *Parts*), owed as
                 // `excl` of the canonical cell.
@@ -1495,4 +1575,16 @@ const v2_mutation = @import("ownership_options").v2_mutation;
 /// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
 fn mutated(comptime which: []const u8) bool {
     return std.mem.eql(u8, v2_mutation, which);
+}
+
+const v2_switch = @import("ownership_options").v2_switch;
+
+/// A test-only switch (`-Downership-v2-switch`, comma-separated, which
+/// `gates` refuses): an order of the checker reversed on purpose.
+fn switched(comptime which: []const u8) bool {
+    return comptime blk: {
+        var it = std.mem.splitScalar(u8, v2_switch, ',');
+        while (it.next()) |s| if (std.mem.eql(u8, s, which)) break :blk true;
+        break :blk false;
+    };
 }

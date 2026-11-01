@@ -46,7 +46,8 @@ const layers = [_]Entry{
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
     // 1 200 since #1253: a refinement's parts at each level path.
     // 1 240 since #1473: `listSide` and `positionsApart` (§2.9 *Two positions of one image*).
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1290 },
+    // 1 390 since #1485: `keysOverlap`, rule 4's overlap trie (§2.9 rule 4 (a′)).
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1390 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     // 4e: stable images, below the shape table it is given as `anytype`.
@@ -149,7 +150,7 @@ const layers = [_]Entry{
     // 1 240 since #1492: a written position's own contents below it
     // (`ownContents`, `without`).
     // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1540 },
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1600 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.
