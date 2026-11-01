@@ -2327,7 +2327,7 @@ Where κ is set, always **at the selected path p**:
   this memo: *The cyclic join memo* below is that key. Rank is a proof of route independence, never an
   exclusivity proof.
 
-  **The cyclic join memo** [M 2026-10-31, #1372; specified, not built]. A state on or above a knot
+  **The cyclic join memo** [M 2026-10-31, #1372; specified, not built; *superseded 2026-11-01* by *Fold first* below, whose class memo is this memo with no fold signature]. A state on or above a knot
   `widen` tied has no finite rank, so the memo above never takes it, and its subwalk is walked again on
   every path that reaches it. Measured on master `88512a2c9` (Debug, the module allowance raised to
   4 194 304): the `case` join of walk 2 of `Dict.removeMin`, copied into a user module, walks 75 868
@@ -2531,7 +2531,10 @@ Where κ is set, always **at the selected path p**:
 
   **Fold first: the walk builds no position a fold collapses** [M 2026-11-01, #1372, #1368, #1289;
   specified and prototyped, not built; it needs #1526 first]. This is the manager's (b) of §2.3 *What 4e
-  measured*. The measurements are on master `46ede32b6` with 4e (#1513), Debug and self-hosted.
+  measured*. *Revised 2026-11-01 after #1535's review:* the first draft walked regions keyed by the route
+  restricted to a strongly connected component. That key named a graph it did not define, missed folds
+  longer than one step and was exponential in the component's width. The rule below has no route in any
+  key. It reads a graph of states, which it builds as the walk builds its frames.
   - **The finding.** Almost every position that `propagate` builds is one that a fold collapses into an
     owner. `owner` (above) gives each position below a fold target to the highest target on its way, so
     those positions are never output. The depth-first walk builds them anyway: it walks a frame's first
@@ -2543,97 +2546,138 @@ Where κ is set, always **at the selected path p**:
 
     #1289's exponential is exactly this. Its joined DAG grows by 11 nodes a call, and each call adds a
     knot whose position collapses everything the walk built below it.
-  - **The rule.** A frame that is not folded first looks up every child of its frontier in its route.
-    Each child that the route holds marks its fold target (`fold_at`), as the walk would when it pushed
-    that child. The frame then finds the highest fold target on its way, itself included. If there is
-    one, `T`, every other child is walked **in `T`'s region**:
-    - its position is `T`, and the step it takes is a step that `T`'s fold saw (`fold_steps`);
-    - its route is extended with the child at `T`, so a later return to a node inside the region folds
-      at `T`, and a return to a node above `T` still marks that node's position;
-    - it is deduplicated by `(node, bits, run, T, s)`, where `s` is its route restricted to the
-      strongly connected component of its node in the joined graph;
-    - it is never a memo candidate and keeps no entries (`kept`).
-    A frame that is already in a region does the same with its region.
-  - **It is exact.** The owner of a position below `T` is `T` or a target above it, in the walk and in the
-    rule alike. That owner gets the same entries (`outs` join per node at their owner), the same steps
-    (each of the walk's sub-positions gave its step to its owner; the region gives the same steps through
-    `fold_steps`), and the same links. Folds onto ancestors are found from the same routes.
-    - *Why `s` is the right key.* A frame can fold only onto a route node that it can reach again, and
-      that node is in its own component. Two frames whose routes agree there meet the same folds.
-    - *Measured exact.* A scratch build ran each `propagate` call twice with `no_memo`, once as the
-      depth-first walk and once with the rule, and compared the two results' ids:
-      - 0 differences over every call of DerivedDeepPaths' `rose`, the quadtree, `wa`/`wb`, `descend`,
-        the accumulator, #1489's insert and #1289's chain at 4, 6 and 8 calls;
-      - two calls of `removeMin`'s walk 3 that differ in both directions (`kappaLeq` either way).
-        Pinned down below: the cause is a defect of the walk itself, not of the rule.
-    - *The two differing calls, pinned down (#1526).* The depth-first walk on its own is not a function
-      of its input. Walked again with every frame's frontier in reverse order, it gives a snapshot that
-      is not comparable with the forward one. This happens on `removeMin`'s call 18, and on smaller
-      calls of #1513's `ins`, `wa`/`wb` and #1489's insert.
-      - *Not the cause:* first-arrival deduplication by position. Keying states by their whole route,
-        and keying folded arrivals apart from delivered ones, still gives the reversed walk a
-        different snapshot.
-      - *The cause:* `slice_at` keys a frame's slice by `f.first` alone, the index where its member run
-        starts in `runs`. A below run with no members appends nothing, so the next below run starts at
-        the same index. The first frame of the two to arrive fixes, for both, the slice's interned run,
-        its cached `k` and its cursor words. In `ins`, the same parent `(node 777, run 216)` gives
-        its child `node 800` run 217 in one order and the empty run in the other, at a shared
-        `first 283`.
-      - *The effect.* A frame with members can read `k = lost` (weaker), and a frame with none can take
-        its neighbour's `k` (stronger). So the walk is order-dependent and, in the second case, can
-        be unsound.
-      - *With the slice keyed by `(first, len)`:*
-        - the reversed walk equals the forward one on every call of `ins`, `wa`/`wb`, #1489, the
-          quadtree and `rose`, and so does the rule;
-        - over the corpus, no line changes (records +0.03 %);
-        - #1497's *a memoised propagation differs from its walk* panic on `wa`/`wb` goes away.
-        - on `removeMin`'s cold re-run, the call that differed (walk 3's first join, about 2 000
-          states) now agrees, and so do the calls before it. The check stopped at 3 500 s inside the next
-          join (39 504 states), which a check that walks every call twice without the memo cannot finish.
-    - **The reference semantics** (decided here). `propagate`'s result is the closure of the states
-      under transitions. A state is `(node, bits, run, position, s)`, where `s` is the state's route
-      restricted to its node's strongly connected component in the joined graph. A position's
-      snapshot is the join of what every state reaching it contributes. Each fold target owns the
-      positions below it, as `owner` says. A slice is a function of its run's content, which is
-      #1526's fix: keyed by `(first, len)`, or by the interned run.
-      - *It is order-independent by construction.* The states are a set closed under transitions,
-        and each transition is a function of the state. The outputs are joins, which are commutative
-        and idempotent. Fold marks and fold steps are sets. Nothing depends on which arrival came
-        first.
-      - *It is sound.* Every run of the value through a position is the run of some state that
-        reaches it:
-        - the closure walks every lineage that the route can tell apart;
-        - `s` is all of a route that can matter, because a fold returns only to a node that reaches
-          the frame again, and that node is in the frame's component;
-        - so every fold that some lineage makes is made.
+  - **Terms.**
+    - A *state* is `(node, bits, run)`: the joined node, the class and mode bits of `visited`'s key, and
+      the interned run of the members with their positions. A state's *children* are what one frame of
+      today's walk pushes: for each entry `(c, step, via)` of `frontierWith`, the state of `c` with the
+      run one step below, along `step`. A state whose run links (*Exact links*) has no children. It
+      *links* its member's snapshot. Each child is a function of the state. #1526 makes the slice one,
+      and it is the precondition of everything below.
+    - The *state graph* `Σ` of one call holds the states reachable from the root state
+      `(joined, bits, members)`, with one edge for each child. Its edges are the ones `frontierWith` and
+      the runs below make. So `Σ` holds every node that `proj` makes on demand: the unions, positions
+      nodes, choices, recasts and views of a joined value. A cycle that exists only through derived
+      nodes, such as the product of two knots, is a cycle of `Σ` (*Measured*, the coprime knots).
+    - A state is *cyclic* when a state that it reaches in one step or more has its node.
+  - **The reference semantics** (decided here). The reference walk's frames are
+    `(state, position, folded, route)`. The route maps each node that the frame's lineage passed
+    unfolded to the position where it passed it. For each child `σ'` of a frame's state, along step `s`,
+    where `c` is the node of `σ'`:
+    1. An unfolded frame at `p` with route `R`: if `R(c) = q`, the child frame is `(σ', q, folded, R)`
+       and `q` is marked a fold. Otherwise it is `(σ', p·s, unfolded, R[c ↦ p·s])`.
+    2. A folded frame at `q` with route `R`: if `R(c) = q'` and `q'` is above `q`, the child frame is
+       `(σ', q', folded, R)` and `q'` is marked a fold. Otherwise it is `(σ', q, folded, R)`. A folded
+       frame looks its children up as an unfolded one does. Today's walk does not.
+    3. A frame whose state links takes no transition. Its member's snapshot is merged at the owner of its
+       position. In a fold, that owner is the fold.
 
-        A position's entry is therefore the join over every state that reaches it, which is above
-        each one. A fold owner's entry is the join over every position it collapses, which is above
-        each of those.
-      - *Today's walk against it.*
-        - The depth-first walk keys a state without `s`: the first arrival at a position decides the
-          route of the states equal to it there. That drops a fold only when two arrivals' `s`
-          differ. On every call measured, `s` is empty for every state outside the knots, so the two
-          keys walk the same states.
-        - With #1526 fixed, reversing every frontier changes no snapshot. So the walk without `s`
-          equals the reference on everything measured. Where `s` is not empty, the reference keys by
-          it, and the walk without it may be less precise or less sound, depending on which arrival
-          came first.
-        - #1526 itself is not a precision trade-off but a defect. A frame with members can read the
-          empty run's `k = lost` (weaker), and a frame with none can take a full run's `k`
-          (stronger, unsound).
-      - *The rule and the memos are exact against the reference.*
-        - The rule keeps every state and changes only where the collapsed ones are recorded.
-        - F2's memo by run and the region memo replay a function of their key, the run and `s`.
-        - The check below compares each with the reference walk.
-    - *The corpus and the sweep.* Over the 2 107 corpus roots, no verdict, condition, summary or block
-      line changes, and records fall 0.19 %. Over the 400 random programs, no verdict changes except 5
-      limits that become checked, no set of conditions changes in any other summary, and the limits go
-      from 171 to 169.
-    - *Memo against no memo.* An earlier comparison ran the rule with the memo and the walk without it.
-      It differed in 4 calls of `wa`/`wb` (equal under `kappaLeq` both ways) and in 14 of #1489's (not
-      comparable). Both walks without the memo agree. The memo's differences go with #1526's: a slice
-      shared by an empty and a full run is a different slice in another order.
+    A frame is met once, and the key that deduplicates it is the whole frame. The output is built as
+    today: `owner` gives each position the highest fold on its way, an owner's entry for a node is the
+    join of the entries of every frame under it, a fold's links are the steps of every transition under
+    it, linked snapshots are merged into their owner, and a lone member's `kept` entries stay only at a
+    position that is its own owner and no fold.
+    - *It is order-independent by construction.* The frames are a set, closed under transitions that are
+      functions of the frame. No frame is dropped because another arrived first, so no arrival order
+      chooses a route. The outputs are joins, sets of steps and merges, which are commutative and
+      idempotent on interned ids (*What exactness relies on*, above).
+    - *It is a specification, not an algorithm.* Its routes make it exponential (*Measured*, the sibling
+      witness). The rule computes it.
+  - **The rule.** One call makes three passes.
+    1. *The state graph.* Each state of `Σ` is read once: its slice, its entry, its `kept` entry, its
+       link and its children, exactly as one frame of today's walk reads them. #1425's memos by run stay.
+       The pass records the edges. It builds no position.
+    2. *The cycle bit.* The pass computes Tarjan's components of `Σ`, and the components of its node
+       graph, which has one vertex per joined node and an edge for each edge of `Σ`. A state whose node
+       is on no cycle of the node graph is not cyclic. A state in a nontrivial component of `Σ` is
+       cyclic. For every other state, one bit for each node on a node-graph cycle is propagated bottom up
+       over the components of `Σ`, and the state is cyclic when its node's bit is set below it.
+    3. *Positions by their set of states.* The root's set is `{root state}`. A set that holds a cyclic
+       state is a *fold*. Its position is an exact fold:
+       - its entries are the join per node of the entries of every state in the set's closure in `Σ`;
+       - its links are the steps of every edge of that closure;
+       - every linked snapshot in the closure is merged into it.
+
+       A set with no cyclic state is *open*:
+       - its entries are its states' `kept` entries and then their entries, joined per node;
+       - its links lead to the sets one step down, which hold, for each step, the children of its states
+         along that step;
+       - its states' linked snapshots are merged into it.
+
+       Each set is interned and built once per call (*The two memos*, below). A clean set of one state
+       reads and writes the clean memo as today. A fold reads and writes neither, which also closes
+       #1537.
+
+    The rule never builds a position that a fold collapses. It finds folds of every length before it
+    builds anything below them, because the cycle bit is a fact about `Σ` and is known before the first
+    position is built.
+  - **It is exact: the rule computes the reference.** Call a position *open* when no fold is on its way,
+    itself included, and let `D(p)` be the set of states of the unfolded frames at `p`.
+    1. *A fold is marked only where a cyclic state stands.* A route maps `c` to `q` only when an unfolded
+       frame of node `c` stood at `q`. So a mark on `q` by a frame of that lineage means that the state
+       at `q` reaches a state of its own node: it is cyclic.
+    2. *Where a cyclic state stands, that position or one above it is marked.* Let `σ` be at `p` on a
+       lineage with route `R`, `R(node σ) = p`, and let `σ` reach a state of its node. Follow that walk
+       on the lineage. When the child with `σ`'s node comes, the frame is unfolded below `p` and finds
+       `p` in its route, or it is folded at `q`. If `q` is below `p`, it finds `p` above `q` (rule 2). If
+       `q` is `p` or above `p`, that position is marked already.
+    3. *By induction from the root, the reference's open positions are the rule's open sets, and its
+       highest folds are the rule's fold sets.* Let every position above `p` hold no cyclic state. By 1,
+       none of them is marked, so every child frame that the parent's frames make at `p` is unfolded,
+       and `D(p)` is the set of the children of `D(parent)` along `p`'s step. That is the rule's set. If `D(p)` holds a cyclic state, then by 2
+       `p` or a position above it is marked, and by 1 none above is, so `p` is the highest fold on its
+       way. Otherwise `p` is open.
+    4. *A fold's content is its closure.* Under a highest fold `p`, the frames are unfolded below `p` or
+       folded at `p` or below it. By 1, none is folded above `p`. Their states are the closure of `D(p)`
+       in `Σ`, because every lineage goes on and only an equal frame is dropped. Each edge of a
+       non-linking state in the closure is taken by some frame, as a path below `p` or as a fold step,
+       and either way its step is one of `p`'s fold links.
+    5. *So the snapshot is the same id.* The entries, links and merges of each open position and each
+       fold are the ones above. Positions and maps are interned by content, and `join` and `kappaMerge`
+       are commutative and idempotent. The rule's snapshot is therefore the reference's.
+  - **Today's walk against the reference: precision only.** Today's walk differs in two ways:
+    - it keys a frame by `(state, position)`, so the first arrival's route stands for every equal state
+      at that position;
+    - its folded frames never look their children up.
+
+    By 1, every mark that today's walk makes stands on a cyclic state, and by 2 the reference collapses
+    that position. So today's walk makes the reference's folds or fewer. Where it makes fewer, it keeps
+    apart positions that the reference collapses, and its snapshot is finer.
+    - *Every choice of folds is sound.* Let a concrete path be a sequence of steps from the root. Every
+      one of these walks, in any order, puts each state reachable along a path `w` at `w` itself or at a
+      fold on `w`'s way. A reader at `w` reads the owner of `w`, which is the highest fold on its way, so
+      what it reads joins every state at `w`. This holds for every set of marks. So where today's walk
+      leaves a fold out, it costs no soundness. This answers #1535's finding 7: the hazard is precision,
+      and it needs no issue. #1526 is another matter. It is not a choice of folds: a slice shared by two
+      runs gives a state another run's `k`, and that is unsound.
+    - *Where the two differ.* Only where a lineage meets another node again before it returns to the
+      node of the cyclic state, and every way back passes that repeat. Measured, this never happens (below).
+  - **The two memos** (what (b) adds to the rule).
+    - *The class memo, which is F2's memo of a position.* The subtree of an open set is a function of the
+      set alone. By 1, no fold below it lands above it, so it needs no fold signature. Two positions with
+      one set share one built position, the same interned id.
+    - *The region memo.* A fold's content is a function of its set. The set is complete before the fold
+      is built, because the parent's set is complete before its children's sets are formed. No upward
+      fold marks exist to replay (by 1). The content also splits per state: a set's closure is the union
+      of its states' closures, and joins, step sets and merges are commutative and idempotent. So a memo
+      per entering state is exact too. The prototype keys by set.
+
+    Both memos belong to one call. They are exact by 3 and 4, and the cross-check below compares them
+    with the reference.
+  - **Cost.** For one call, every unit below is a charged record:
+    - pass 1: `O(|Σ| + |E_Σ|)` state and edge reads, each as one frame of today's walk reads it;
+    - pass 2: `O(|Σ| + |E_Σ|)` for the two component passes, and `O(|E_Σ| · ⌈|Q|/64⌉)` words for the
+      bits, where `Q` holds the nodes on node-graph cycles;
+    - pass 3: for each distinct open set, its size and its edges; for each distinct fold set, its
+      closure and the closure's edges.
+
+    In §4.1's terms this is within the row of joins and shape comparisons, `O(N_f log(N_f + 2))`
+    relative to the records it charges. A polynomial bound in `|Σ|` fails at exactly one place: the
+    number of distinct open sets. Along one path, the open sets have disjoint nodes (a node met twice
+    makes the first set's state cyclic), so a path has at most `|nodes|` open sets. But their number
+    across paths is a subset construction over `Σ`. It can be exponential in `|Σ|` when a state has two
+    children along one step (a recast and its inner, `via`) and two sets share states in many
+    combinations. No such program is known. The largest measured count is 185 sets in one call. Today's
+    walk has no bound there either: its positions are a path count (the sibling witness).
   - **Where an unfolded position is semantically needed: nowhere outside `propagate`.** Every reader
     that the coordinator's list names reads the snapshot that `propagate` returns, never its walk:
     - route counting by canonical path (#1438);
@@ -2641,54 +2685,81 @@ Where κ is set, always **at the selected path p**:
     - the 5f trie;
     - `apartImage`'s per-image sides.
 
-    The rule returns the same snapshot id, so each of them reads the same thing. Inside `propagate`,
-    only two things need positions: the output positions themselves (the survivors, which the rule
-    builds as before) and the route's map from a node to a position. In a region, every node maps to
-    `T`, and `T` is the owner of every position the walk would have made there.
-  - **The `runtime_safety` check.** Under `-Downership-full-cross-check`, `propagateFrom` already walks
-    each call again with `no_memo` and compares ids. With the rule, it also walks once with the rule
-    off, with `no_memo`, on its own account, and compares that id with the id the rule gives with
-    `no_memo`. The two must be equal. A third walk with every frontier reversed must give the same id
-    too. That is the order-independence that #1526 restores, and the check pins it.
-  - **Measured.** Growth, or total records where marked:
+    The rule returns the reference's snapshot id, so each of them reads the same thing.
+  - **`proj`'s side effects.** `proj` records origins (`addOrigin`), constructions (`addConstruction`) and
+    its memo. Pass 1 makes the projections that today's walk makes, because today's walk expands every
+    reachable state at least once and pass 1 expands each exactly once. Below a clean-memo hit, today's
+    walk projects nothing, and pass 1 meets only `memo_proj` hits there: the call that wrote the clean
+    entry made those projections. Only the order differs. That can change the order of a node's origins
+    and which projection made a node first (`fresh`, `base_epoch`), as any change of the walk's order can.
+    The corpus shows no change from it.
+  - **The `runtime_safety` check.** Under `-Downership-full-cross-check`, `propagateFrom` walks each
+    call again, with `no_memo` and on its own account:
+    - the reference walk, with every frontier in its order and again in reverse;
+    - the rule, in both orders.
 
-    | case | depth-first | fold first |
+    The four ids must equal the memoised rule's. This is the representation-change lemma of the rule:
+    rule = reference, not rule = today's walk, which is neither the reference nor a function of its
+    input before #1526. The reference walk is exponential in its routes. A call whose reference walk
+    passes 2²² frames is not compared, and the check prints a line that names the call. On every case
+    measured and on the corpus, no call reached that cap.
+  - **Measured.** A prototype in scratch on master `169bab548`, which has #1526's fix and no 4e. It is
+    Debug, self-hosted, with `dump --stage=ownership --ownership=v2 --jobs=1` and the module allowance at
+    10⁸. Today's walk (with #1526's fix) against the rule, total records of the declaration, with growth
+    in parentheses:
+
+    | case | today's walk | the rule |
     |---|---|---|
-    | #1289's chain, published, 4 / 6 / 8 calls (total) | 18 443 / 91 114 / 1 035 528 | 15 776 / 31 448 / 53 498 |
-    | `removeMin`, walk 2's joins (each) | 2 686 592, 2 723 720, 599 493, 867 662, 387 412 | 141 259, 141 718, 95 331, 68 927, 52 915 |
-    | `descend` (total) | 137 924 | 127 073 |
-    | the accumulator, one list (total) | 691 681 | 650 530 |
-    | `wa` / `wb` (total) | 81 087 / 90 066 | 75 693 / 90 336 |
-    | quadtree (total) | 239 870 | 235 201 |
-    | #1489 at 1 048 576 | limit | limit; its last join 175 504 → 155 378 |
+    | #1289's chain, published, 4 / 6 / 8 calls (`chain`) | 18 381 / 90 949 (53 997) / 1 036 652 (989 421) | 15 851 / 31 414 / 53 147 (5 916) |
+    | `removeMin`, walk 2's five joins (records of each call) | 2 685 956, 2 723 128, 601 196, 867 613, 432 985 | 113 311, 112 855, 55 166, 66 897, 43 141 |
+    | `removeMin`, the two largest joins of walk 3 | not reached | 1 975 982, 2 412 005 |
+    | `descend` | 137 801 (98 583) | 123 533 (84 315) |
+    | the accumulator `acc` | 1 744 585 (1 712 707) | 1 543 058 (1 511 180) |
+    | `wa` / `wb` | 81 292 (54 371) / 92 444 (70 806) | 75 983 (49 062) / 91 641 (70 003) |
+    | quadtree `quad` | 241 992 (203 680) | 239 743 (201 431) |
+    | coprime knots (unit fixture, one call) | 846: 24 frames over 12 positions | 354: 14 states, one fold |
+    | a period-2 knot whose top has a sibling with 2^d paths (unit fixture), d = 4 / 8 / 12 | 2 637 / 30 493 / 468 255: 66 / 1 026 / 16 386 positions | 547 / 839 / 1 131: 17 / 25 / 33 states |
 
-    `removeMin` now reaches walk 3, where its two joins cost 1 304 826 and 1 509 279 records (21 562
-    states, 1 706 positions). It is still a limit at 4 194 304.
-  - **What is left, and what subsumes F2.** After the rule, almost every position the walk builds is
-    a survivor: an output position (walk 3 of `removeMin`, 1 626 of 1 706). The work repeats in two ways:
-    - Over survivors: walk 3's join holds **105 distinct sets of states at a position** over its 1 706
-      positions. Walk 2's holds 57 over 186, `descend`'s 28 over 177, the accumulator's 101 over 237,
-      and #1489's 49 over 125.
-    - Over regions: the join has 1 626 regions, but only **23 distinct region contents**. Walk 2 has
-      11 over 186, `descend` 4, the accumulator 18, and #1489 12. A region's content is a function of the
-      frames that enter it. Each such frame is a `(node, bits, run, s)`, and the region does not depend
-      on `T`'s position, because the rule keys the region by `T` only for its route lookups.
+    The two unit fixtures are #1535's counterexamples, built as tied knots in `Cond.zig`'s fixture.
+    - *Coprime knots.* Knots of periods 2 and 3 over `Rose`, joined. The joined value's cycle runs
+      through 12 unions that only `proj` makes. Today's walk unfolds all 12. The rule finds them as one
+      component of `Σ`, so the root is a fold.
+    - *The sibling.* `type T = N (List T) (List T)`, with a knot of period 2 through the first list,
+      and a DAG with 2^d paths in the top's second list. Two copies are joined. The fold is two levels
+      long. Today's walk builds the DAG's paths in both frontier orders. #1535's first draft would build
+      them when it popped the sibling first, because it found only one-step folds before expanding. The
+      rule reads 2d + 9 states.
 
-    So (b) is two memos on top of the rule:
-    - F2's memo of a survivor position by its run. Its fold signature reduces to `s`, because a fold can
-      only land in the frame's own component, and the measured `s` is empty for every state outside the
-      knots. On the cases above, `s` never split a run.
-    - A memo of a region by the set of frames that enter it, which replays its entries, steps, and the
-      upward fold marks it found (as route nodes, resolved in the entering frame's route).
+    *Exact.* Over the 2 119 roots of `bench/ownership-roots.mjs` (`allOwnership`,
+    `--ownership-everywhere`), no verdict, summary or block line changes. Records go from 10 280 857 to
+    10 303 162 (+0.22 %): a small call pays for the passes. Each of the corpus's 30 373 `propagate` calls
+    was walked seven ways:
+    - today's walk and the rule, each with the memo;
+    - today's walk, the reference and the rule, each without the memo and in both frontier orders.
 
-    *Projection, not measured:* walk 3's joins then walk about 105 positions and 23 regions, not 1 706
-    and 1 626. Scaled by the states they hold, they would cost about 40 000 records each, and walk 2's
-    about 20 000. That leaves `removeMin` within a factor of about 2 of the default allowance over its
-    walks. So it still needs the measurement once the memos are built.
-  - **Not taken.** A walk keyed per DAG node alone. It is not exact: the states at one position are
-    merged (`outs` join per node at the owner), so a position's result is a function of its set of states,
-    not of each state (F2's finding). The rule above keeps that set and only stops building collapsed
-    positions.
+    Every call gave one id seven times, and no reference walk reached its cap (3·10⁶ frames in the
+    prototype). The seven cases and the two fixtures give the same: one id in every call. On `removeMin`,
+    the check ran without the reference, on its first 23 calls, which hold walk 2's five joins.
+
+    *What is left.* The rule removes repetition, and very little repetition is left. In `removeMin`,
+    walk 2's joins fall from 7.3 M records to 391 k, so the group goes on to walks 3, 4 and 5. Their
+    largest joins hold 1 354, 2 918, 6 638 and 14 670 states of `Σ`, with up to 495 673 edges, and cost
+    up to 27.8 M records. Pass 1 is about 80 % of each of those calls: one read of each distinct state,
+    which today's walk also makes. They have at most 142 open sets and 43 folds. So `removeMin` is still
+    a limit at 10⁸. What grows is the number of distinct states, and it grows with the port (§2.3,
+    #1372), not with the walk. `descend`'s growth falls by 14 %, and it is still over the default
+    allowance of 65 536. `propagate` takes 135 600 of its records, against 163 260 before.
+  - **Not taken.**
+    - *A walk keyed per DAG node alone.* It is not exact: the states at one position are merged (`outs`
+      join per node at the owner), so a position's result is a function of its set of states, not of each
+      state (F2's finding). The rule keys positions by that set.
+    - *#1535's first draft: regions keyed by `(node, bits, run, T, s)`, with `s` the route restricted to
+      the node's strongly connected component.* The component was of a graph that `proj` builds on
+      demand, the key left out `folded`, folds longer than one step were found only after the walk had
+      built below them, and `s` can take 2^|component| values.
+    - *Today's first-repeat rule, kept exactly.* A folded frame that never looks up makes the result
+      depend on which repeat a lineage meets first. Kept exactly, that needs the whole route in the key,
+      which is the reference's exponential. The reference instead lets a folded frame look up.
 
   `kappaMerge` uses `(operator, unordered cursor pair, map/correlation context)` as its key;
   `operator` is choice or coexistence. Cursor identity includes its immutable per-class arrival and
@@ -5984,7 +6055,12 @@ contexts and derived indexes is not hidden in E. An input string/name is interne
 These are bounds for the specified completed algorithms, not measurements proving all S2 kernels meet
 them. `Cond.lower` must index arrivals by original base so W distinct-base insertions do not rescan W
 members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
-need the observable frontier and exact states of §2.9 (#1063/#1064). Block refinement and shared place
+need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
+(2026-11-01). Per call, it is linear in its state graph `Σ` and its edges, plus `⌈|Q|/64⌉` words an edge for
+the cycle bit, plus the size and edges of each distinct open set and the closure of each distinct fold set.
+Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
+polynomial bound in `|Σ|` fails only at the number of distinct open sets, which a subset construction over
+`Σ` can make exponential (§2.9 *Fold first*, *Cost*). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
 
 **Read-off and run-wide reads: the source continuation** (the owner's decision, 2026-10-29, §4.4's *Source work
@@ -8164,7 +8240,14 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    (2026-10-31, 4e):* arm sets and stable knot images change neither function's joined DAGs nor their
    states. F2 probably makes `descend` pass. It does not make `removeMin` pass: walk 2 has 741
    distinct sets of states at a position, about 180 000 records even with no signature split. So core
-   needs F2 and a decision on §2.3's question (b), *What 4e measured*. *Decided (b), 2026-11-01:* §2.9 *Fold first*, then F2's memo and a region memo; #1526 first, which makes the walk order-independent.
+   needs F2 and a decision on §2.3's question (b), *What 4e measured*. *Decided (b), 2026-11-01:* §2.9 *Fold first*, with #1526 first. *Revised the same day after #1535's review:*
+   `propagate` reads its state graph once, finds every fold from a cycle bit before it builds a position,
+   and builds each set of states once. The class memo (F2's) and the region memo are part of the rule. Both
+   are keyed by the set, which is complete when it is used. *Measured (prototype):* the corpus does not
+   change, every corpus call gives the reference's id, #1289's chain at 8 calls falls from 1 036 652 to
+   53 147 records, and walk 2's joins of `removeMin` fall from 7.3 M to 391 k. But `removeMin` and
+   `descend` stay limits. What is left is one read for each distinct state, and `removeMin`'s states grow
+   with its port (§2.3, #1372). So (b) alone does not make core checked, and S3b still cannot close on it.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
