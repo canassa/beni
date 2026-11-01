@@ -1937,7 +1937,8 @@ pub fn Of(comptime Table: type) type {
             var out: ClassAggs = .{};
             var seen: Ids.FixedDict(2) = .{};
             defer seen.deinit(gpa);
-            var stack: std.ArrayList([2]NodeId) = .empty;
+            const Entry = struct { tn: NodeId, img: NodeId, pos: ClassPos };
+            var stack: std.ArrayList(Entry) = .empty;
             defer stack.deinit(gpa);
             var keys: std.ArrayList(HypKey) = .empty;
             defer keys.deinit(gpa);
@@ -1945,13 +1946,16 @@ pub fn Of(comptime Table: type) type {
             defer merged.deinit(gpa);
             var sides: std.ArrayList(NodeId) = .empty;
             defer sides.deinit(gpa);
-            try stack.append(gpa, .{ template, img0 });
+            const pos0: ClassPos = if (e == identity_env) undefined else t.classPos(v, e);
+            try stack.append(gpa, .{ .tn = template, .img = img0, .pos = pos0 });
             while (stack.pop()) |x| {
                 try charge.reserve(gpa, .inspection, 1);
-                if ((try seen.getOrPut(gpa, .{ x[0].int(), x[1].int() })).found_existing) continue;
-                const tn = x[0];
-                const img = x[1];
-                const a = try t.certClassAgg(gpa, charge, v, e, tn, &keys, &merged);
+                if ((try seen.getOrPut(gpa, .{ x.tn.int(), x.img.int() })).found_existing) continue;
+                const tn = x.tn;
+                const img = x.img;
+                var a = try t.certClassAgg(gpa, charge, v, e, tn, &keys, &merged);
+                // The certificate's condition at the class, its κ (#1485).
+                if (e != identity_env and !mutated("cert-keys-only-reader1")) a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.classCond(gpa, charge, v, x.pos, tn, e));
                 if (a.all_len > 0 or a.pairs != yes) out = try t.classesMerge(gpa, charge, v, out, .{ .map = try t.mapPut(gpa, charge, Ids.none_int, img.int(), try t.agg(gpa, a)), .len = 1 }, true);
                 // The class's children, each another class.
                 sides.clearRetainingCapacity();
@@ -1969,7 +1973,7 @@ pub fn Of(comptime Table: type) type {
                                 const ci = fold.steps.get(.{ img.int(), c.step.word() }) orelse {
                                     return null;
                                 };
-                                try stack.append(gpa, .{ c.node, .from(ci) });
+                                try stack.append(gpa, .{ .tn = c.node, .img = .from(ci), .pos = if (e == identity_env) undefined else try t.classStep(gpa, charge, v, x.pos, c.step) });
                             }
                         },
                         .view => return null, // a class is stored forced
@@ -2067,35 +2071,55 @@ pub fn Of(comptime Table: type) type {
             if (t.fold_cond.get(k)) |fc| if (t.resolver) |r| {
                 c = try t.@"and"(gpa, charge, c, try r.resolve(r.ctx, t, gpa, charge, fc.int(), e, false));
             };
-            if (e != identity_env and !mutated("cert-keys-only")) if (t.resolver) |r| {
-                // The class's κ at `path`, as a reader there reads it: at the
-                // class and at the outermost join on the way, projected
-                // (§2.9 *Keyed where a reader looks*), joined.
-                const h = t.hyp.?;
-                const cls = h.class(h.ctx, e);
-                var cur = cls.kappas;
-                var at = cls.res;
-                var dag: NodeId = if (isDag(v.shapes.kind(at)) and v.shapes.kind(at) != .positions) at else .none;
-                var summary = false;
-                for (path) |s| {
-                    // A `⟲` stays in its class (`Fold.classAt`).
-                    if (s.kind == .level) {
-                        summary = true;
-                        continue;
-                    }
-                    cur = t.kappaChild(cur, s);
-                    summary = summary or s.kind == .elem or s.kind == .level;
-                    if (dag != .none) dag = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, dag, s)) orelse .none;
-                    if (at != .none) at = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, at, s)) orelse .none;
-                    if (dag == .none and at != .none and isDag(v.shapes.kind(at)) and v.shapes.kind(at) != .positions) dag = at;
-                }
-                var kk = try t.kappaOf(gpa, charge, v, cur, k, summary);
-                for ([_]NodeId{ at, dag }) |x| if (x != .none and x != k) {
-                    kk = try t.join(gpa, charge, kk, try t.kappaOf(gpa, charge, v, cur, x, summary));
-                };
-                c = try t.@"and"(gpa, charge, c, if (fails(kk)) kk else try r.resolve(r.ctx, t, gpa, charge, kk.int(), e, false));
-            };
+            if (e != identity_env and !mutated("cert-keys-only")) {
+                var p = t.classPos(v, e);
+                for (path) |s| p = try t.classStep(gpa, charge, v, p, s);
+                c = try t.@"and"(gpa, charge, c, try t.classCond(gpa, charge, v, p, k, e));
+            }
             return c;
+        }
+
+        /// A position in a certificate's class, as a reader there reads its
+        /// κ (§2.9 *Keyed where a reader looks*): the class's snapshot
+        /// cursor, the projection of the class's `res` along the steps, the
+        /// outermost join on the way projected, and whether a step crossed a
+        /// summary. A `⟲` stays in its class (`Fold.classAt`).
+        pub const ClassPos = struct { cur: Kappas, at: NodeId, dag: NodeId, summary: bool };
+
+        /// The root of the class at environment `e`.
+        pub fn classPos(t: *Table, v: View, e: u32) ClassPos {
+            const h = t.hyp.?;
+            const cls = h.class(h.ctx, e);
+            const k = v.shapes.kind(cls.res);
+            return .{ .cur = cls.kappas, .at = cls.res, .dag = if (isDag(k) and k != .positions) cls.res else .none, .summary = false };
+        }
+
+        pub fn classStep(t: *Table, gpa: Allocator, charge: Charge, v: View, p0: ClassPos, s: Step) Error!ClassPos {
+            var p = p0;
+            p.summary = p.summary or s.kind == .elem or s.kind == .level;
+            if (s.kind == .level) return p;
+            p.cur = t.kappaChild(p.cur, s);
+            if (p.dag != .none) p.dag = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, p.dag, s)) orelse .none;
+            if (p.at != .none) p.at = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, p.at, s)) orelse .none;
+            if (p.dag == .none and p.at != .none and isDag(v.shapes.kind(p.at)) and v.shapes.kind(p.at) != .positions) p.dag = p.at;
+            return p;
+        }
+
+        /// The certificate's condition at class `k` read at `p` (#1485): the
+        /// class's κ there, at the class and at the join on the way, joined,
+        /// instantiated at environment `e`, and in a read-off relabelled as
+        /// its keys' images are (`hyp_image`). A key met at two coexisting
+        /// positions of `K` is one key of the set and only this κ's `lost`.
+        pub fn classCond(t: *Table, gpa: Allocator, charge: Charge, v: View, p: ClassPos, k: NodeId, e: u32) Error!CondId {
+            const r = t.resolver orelse return yes;
+            var kk = try t.kappaOf(gpa, charge, v, p.cur, k, p.summary);
+            for ([_]NodeId{ p.at, p.dag }) |x| if (x != .none and x != k) {
+                kk = try t.join(gpa, charge, kk, try t.kappaOf(gpa, charge, v, p.cur, x, p.summary));
+            };
+            if (fails(kk)) return kk;
+            const got = try r.resolve(r.ctx, t, gpa, charge, kk.int(), e, false);
+            if (t.hyp_image) |hi| if (hi.cond) |relabel| return relabel(hi.ctx, got);
+            return got;
         }
 
         /// The parts of source node `n` the widen walked: its explicit

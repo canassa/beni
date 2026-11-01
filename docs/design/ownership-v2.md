@@ -7172,7 +7172,7 @@ L0  Ids
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
-| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 980 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 730 before #1485 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
+| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 3 020 (#1485 part 2: a certificate's class κ read at a position, `ClassPos`, §8 slice 4 *As built, part 2*); 2 980 for part 1 (the fold certificate's readers, rule 4 and (d), *As built, part 1*); 2 730 before #1485 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the four parts' methods to one `Table` (`Propagate`'s `propagate` among them) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the four parts | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead, Propagate | ≤ 975 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 830 before #1485 (#1543: `propagate` moved to `Propagate.zig`; #1526: `propagate`'s order check, §2.9; 4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 980 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 1 925 before #1485 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
@@ -8124,7 +8124,7 @@ lemma and a `runtime_safety` check that tests it through a reader that does not 
 - **C1, saturation.** The aggregate of a `positions` DAG depends only on each member's multiplicity
   capped at 2. *Check:* for a positions node that #1471's constructor saturated, the aggregate is
   computed again over the unsaturated sides that the constructor saw, and must be equal.
-- **C2, forcing and flattening.** The aggregate of a view equals the aggregate of its answer, and a
+- **C2, forcing and flattening** (*withdrawn* by *As built, part 2*, for review). The aggregate of a view equals the aggregate of its answer, and a
   choice gives the same aggregate whether or not `joinAlternatives` flattened it, because `arrivalAggs`
   is defined on the denotation (choice: maximum; union: a set at one position; parts: sum). *Check:* on
   each proved goal, the step aggregate is computed a second time with every view forced and every
@@ -8584,9 +8584,18 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
      covers each branch it can take without a group call, so the activation is covered by `F(x*)`. For
      depth d, every group call is strictly inside, of depth < d, so x* covers it by hypothesis. The
      walk reads x* there, so the activation is covered by `F(x*) ⊑ x*`.
-  4. So no base alternative is needed at `K`. The base is the depth-1 case of the same step, and
-     `base ⊑ F(A)` follows from monotonicity. A component with no activation of finite depth has no
-     result to cover. *Waiting*, and the `lost` it read, are withdrawn: they made sound claims weaker
+  4. So no base alternative is needed at `K`. The base is the depth-1 case of the same step. A
+     component with no activation of finite depth has no result to cover.
+  4a. *What the argument needs, and what it does not.* Each step of items 3 and 4 uses three facts.
+     First, the walk is sound for the activations it abstracts, given hypotheses that cover the inner
+     calls. Second, `Summary.leq` is sound for coverage: whatever `a` covers, `b` covers when
+     `a ⊑ b`. Third, `⊑` is transitive. The argument does **not** need F to be monotone, and F is not
+     claimed to be. `widen` is not monotone in its argument: a larger source can fold differently.
+     `Summary.join` is monotone, and `dropCovered` keeps it so by `leq` (C3). Monotonicity is what
+     the loop's termination needs (*Termination*), not its soundness. The base is covered directly:
+     a depth-1 activation takes a branch with no group call, and the walk abstracts every branch.
+     No step derives `base ⊑ F(A)` from monotonicity. So the base needs no check of its own, and
+     none is run (*Check*, below). *Waiting*, and the `lost` it read, are withdrawn: they made sound claims weaker
      and refused nothing more.
   5. The may-facts of the rounds never reach a verdict. The lines a group publishes are those of the
      last walk of each member, which read x* (`runGroup`). So no provisional Disjoint verdict of (d)
@@ -8622,10 +8631,27 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   write at `#Node.2#Node.1` meets the view at the empty prefix with its rest in `K`, and κ̂(V, K) is
   `lost`. So that line, and `#Node.1`, are refused by (d) whatever the `xreq` does. They were accepted
   only because κ̂ missed the class's κ (above). Every line of row 2 is now refused
-  `disjoint (approx)`, as the table says, in one module and across a block. Readers 1 and 2
-  (`hypAggs`, `Calls.certView`) still read the key multiset alone. That is sound only while (d) or
-  the read-off's `propagate` carries the class's κ, as it does in every row measured. That reader
-  still owes the same conjunct (#1485's follow-up).
+  `disjoint (approx)`, as the table says, in one module and across a block.
+- **Readers 1 and 2 read the class's κ too.** Both read each class of a certified view's template
+  (`hypAggs`, `Calls.certView`). Each class now conjoins the class's κ there into its aggregate's
+  condition, as κ̂ does (`Cond.Table.ClassPos`, `classStep`, `classCond`). In a read-off the
+  condition is relabelled as the keys' images are (`HypImage.cond`). Mutations:
+  `cert-keys-only-reader1` and `cert-keys-only-reader2`.
+  - *Reader 1.* The conjunct changes `row14List`: with it, `#Node.2#Node.1` is refused; with the
+    keys alone, it is accepted. That program is safe. Its class's `lost` is #1533's, so this witness
+    pins the read but is no unsafe acceptance. The κ is otherwise implied where reader 1's result is
+    read. `Cond.Table.widenValueOf` keys the widened value by `propagate` over its members. A member
+    that is a hypothesis view is read there through the view, so it reads the class's κ, crossed at
+    its environment. The class's published κ at a fold is that `propagate` and the fold obligation,
+    conjoined (`Block`'s writer and every reader conjoin them). The keys-only fold obligation
+    therefore never stands alone at a published position.
+  - *Reader 2.* No witness was found. The search covered the four fold fixtures and 12 probes:
+    certified views of `dupL` and `unroll` under `[*]`, inside a group's result, inside another
+    certified view (`same (dupL t)`, `swap (unroll t)`), and under `incBelow`. In every probe,
+    `cert-keys-only-reader2` gives the same verdicts as the fix. No implication is proved either.
+    `Calls.Grafter`'s `excl` read returns the folded read (`foldedArg`) alone, so nothing else
+    conjoins the class's κ there. Each probe was refused by (d), or by the cell comparison where (d)
+    does not apply. The conjunct is built, and nothing is assumed of it.
 - **Row 14 is a finding, not S4's.** `wrapR` is refused for the reason the spec allows: its `[]` reaches
   `K` as two fresh labels, and its class reads `#Node.0#Node.1 fresh1 … {lost}`. The parameter-list twin
   `wrapL` fails too, so rule 4 is not what refuses it. The smallest reproduction is `wrapS n t = if
@@ -8649,10 +8675,15 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
     The edge checks read no certificate, so a group's rounds need no deferral. `cert-untagged` fires
     the edge check on `o/FoldCertificate` even without `otherPaths-spine-first`. `cert-drop-key` fires
     the drop check.
-  - C2 is not built. Its check forces every view. A hypothesis view that is forced enters its cycle,
-    and so it saturates. The forced aggregate is then never equal to the certificate's. The lemma
-    needs to say "every view but a hypothesis node", and so it repeats the walk it would test. Open
-    on #1485.
+  - C2 is withdrawn [amendment, *marked for review*]. Its check forces every view. A hypothesis view
+    that is forced enters its cycle, so it saturates, and its aggregate is then never equal to the
+    certificate's. The variant that keeps hypothesis views unforced, the representation the
+    certificate reads, forces only the other views. `arrivalAggs` already reads those at their answers
+    (`sourceParts` forces each part that is not a hypothesis node). Its other half is a choice
+    flattened. `arrivalAggs` already takes an opened choice's arms by the maximum, arm by arm, at any
+    nesting (`classMerge` with `!arms`). So the variant runs the same code on the same
+    representation, and it can only agree. That is no test. The lemma's content is kept by C1 (a
+    `positions` node's sum), C3 (a dropped arm) and C5 (the step, walked again).
   - C6 belongs to rule 4's trie (part B). The pairwise `Cell.alias` test that the trie replaces is the
     check.
 - **Fixtures.** `o/FoldCertificateImported`: the producers in `Lib`, the witnesses and rows 1–6 in
