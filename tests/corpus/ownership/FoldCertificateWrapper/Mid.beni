@@ -1,0 +1,7 @@
+-- ownership (project): see Main.beni. A wrapper of `Lib.same`, which no
+-- group certifies.
+import Lib exposing (Tree)
+
+
+pub wsame : Tree → Tree
+wsame t = Lib.same t

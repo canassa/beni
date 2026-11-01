@@ -190,6 +190,7 @@ pub fn Of(comptime Frame: type) type {
                     const local = try f.readStep(it, &written, where_paths, &stack);
                     for (stack.items[mark..]) |*x| x.from = ri;
                     if (local != .none) try f.keepReach(bs, &want, try f.without(local, it.inside), it.folded, it.held, null, refs.items, &arms.kept.items[ri], &excl, &relied, .{ .path = it.top, .written = &written, .paths = where_paths });
+                    if (f.foldTag(it.tag)) try f.approxAll(&arms.kept.items[ri]);
                     continue;
                 }
                 const got = if (it.expand != none)
@@ -205,8 +206,14 @@ pub fn Of(comptime Frame: type) type {
                 got.value_ptr.* = idx;
                 try arms.edge(gpa, p.from, idx, p.arm);
                 // (d2): the spine meets a certified view at an exact prefix.
-                if (it.tag == none and it.mode == .spine and !it.stuck and !it.level and it.expand == none and it.depth <= exact_to)
-                    it.tag = try f.certDetect(it, idx, ws[it.depth..], &relied);
+                // Or a view of a knot that (d) does not read: compared by cells,
+                // not exactly (`foldedView`). Off the spine, only an uncertified
+                // one: a certificate names its arrivals.
+                if ((it.tag == none or f.foldTag(it.tag)) and it.mode == .spine and !it.stuck and !it.level and it.expand == none) {
+                    const t = if (it.depth <= exact_to) try f.certDetect(it, idx, ws[it.depth..], &relied) else none;
+                    if (t != none) it.tag = t else if (it.tag == none and try f.foldedView(it.v)) it.tag = try f.foldOcc(idx, it.v);
+                } else if (it.tag == none and it.mode != .spine and it.expand == none and shapes.kind(it.v) == .view and f.env.conds.hypEnv(f.env.view(), it.v) == null and try f.foldedView(it.v))
+                    it.tag = try f.foldOcc(idx, it.v);
                 if (it.tag != none) (try cert.node_tags.getOrPut(gpa, .{idx})).value_ptr.* = it.tag;
                 if (it.expand != none) {
                     // The re-entries below a value below a split (`advance`),
@@ -261,7 +268,8 @@ pub fn Of(comptime Frame: type) type {
                         .spine => .{ it.depth < ws.len and (marks & 2 != 0 or it.held), leaf != null and leaf.? < it.depth },
                         .below, .off, .read => .{ true, it.folded },
                     };
-                    if (beside and it.tag != none) {
+                    const fold = f.foldTag(it.tag);
+                    if (beside and it.tag != none and !fold) {
                         // Inside a certified view (§2.11 item 3 (d), #1485): a
                         // position's reach by class, `K` left out, never its cells.
                         const on: ?Step = if (it.mode == .spine and it.depth < ws.len) ws[it.depth] else null;
@@ -271,20 +279,24 @@ pub fn Of(comptime Frame: type) type {
                     } else if (beside and it.mode == .spine and exact) {
                         // A stuck value is from above, where `ws[depth..]` is not its
                         // rest: whole, unless a held item already read it there.
-                        if (!it.stuck)
-                            try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &arms.kept.items[idx], &excl, &relied)
-                        else if (!it.held) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r|
+                        if (!it.stuck) {
+                            try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &arms.kept.items[idx], &excl, &relied);
+                            if (fold) try f.approxAll(&arms.kept.items[idx]);
+                        } else if (!it.held) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
                             try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &arms.kept.items[r], &excl, &relied, null);
+                            if (fold) try f.approxAll(&arms.kept.items[r]);
+                        };
                         held_below = true;
                     } else if (beside) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
                         const held = marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells));
                         if (!split or it.path == .none) {
                             const w: Where = .{ .path = it.path, .written = &written, .paths = where_paths };
                             try f.keepReach(bs, &want, try f.without(try f.reachBeside(it.v, w), it.inside), folded, held, null, refs.items, &arms.kept.items[r], &excl, &relied, w);
+                            if (fold) try f.approxAll(&arms.kept.items[r]);
                         } else {
                             // By position, one state at a time (`reachBeside`): a
                             // part arms share is read once.
-                            try stack.append(gpa, .{ .it = .{ .u = .none, .v = it.v, .mode = .read, .depth = 0, .folded = folded, .stuck = false, .level = false, .held = held, .path = it.path, .top = it.path, .inside = it.inside }, .from = r });
+                            try stack.append(gpa, .{ .it = .{ .u = .none, .v = it.v, .mode = .read, .depth = 0, .folded = folded, .stuck = false, .level = false, .held = held, .path = it.path, .top = it.path, .inside = it.inside, .tag = it.tag }, .from = r });
                         }
                     };
                 }
@@ -376,6 +388,78 @@ pub fn Of(comptime Frame: type) type {
             dm.operands.len += 1;
         }
 
+        /// Whether `v` is a view whose template has a cycle (a knot). Its
+        /// positions are folded, so one cell stands at several of them, and
+        /// a conflict the walk finds by cells inside it is not exact (§8
+        /// slice 4, *As built, part 3*, #1485). Two paths that share a node
+        /// without a cycle are two positions of one object: not folded.
+        pub fn foldedView(f: *Frame, v: NodeId) Error!bool {
+            const shapes = f.env.shapes;
+            if (shapes.kind(v) != .view) return false;
+            // 1 on the DFS path, 2 done.
+            var state: Ids.FixedDict(1) = .{};
+            defer state.deinit(f.gpa);
+            // A node, then its exit (the high bit).
+            var stack: std.ArrayList(u32) = .empty;
+            defer stack.deinit(f.gpa);
+            var kids: std.ArrayList(NodeId) = .empty;
+            defer kids.deinit(f.gpa);
+            const exit: u32 = 1 << 31;
+            try stack.append(f.gpa, shapes.get(v).a);
+            while (stack.pop()) |w| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if (w & exit != 0) {
+                    (try state.getOrPut(f.gpa, .{w & ~exit})).value_ptr.* = 2;
+                    continue;
+                }
+                const got = try state.getOrPut(f.gpa, .{w});
+                if (got.found_existing) {
+                    if (got.value_ptr.* == 1) return true;
+                    continue;
+                }
+                got.value_ptr.* = 1;
+                try stack.append(f.gpa, w | exit);
+                const d = shapes.get(.from(w));
+                kids.clearRetainingCapacity();
+                // A join's sides are steps of no path: members of its class.
+                switch (d.kind) {
+                    .@"union", .choice, .positions => try kids.appendSlice(f.gpa, &.{ .from(d.a), .from(d.b) }),
+                    .node, .delta => try f.certKidsAll(.from(w), &kids),
+                    else => {},
+                }
+                for (kids.items) |k| try stack.append(f.gpa, k.int());
+            }
+            return false;
+        }
+
+        /// The occurrence of a knot's view `v` that (d) does not read, at the
+        /// spine's item `idx`: its items compare cells, each kept cell
+        /// approximate (`Cert.Occ.fail` 3), and they are other items than
+        /// those outside it.
+        pub fn foldOcc(f: *Frame, idx: u32, v: NodeId) Error!u32 {
+            const c = certOf(f) orelse return none;
+            try c.occs.append(f.gpa, .{ .env = 0, .k = .none, .spine = idx, .fail = 3 });
+            return c.intern(f.gpa, @intCast(c.occs.items.len - 1), .from(f.env.shapes.get(v).a));
+        }
+
+        /// Whether `tag` is inside a knot's view that (d) does not read.
+        pub fn foldTag(f: *Frame, tag: u32) bool {
+            if (tag == none) return false;
+            const c = certOf(f) orelse return false;
+            return c.occs.items[c.tags.items[tag][0]].fail == 3;
+        }
+
+        /// `s` with every cell approximate: what a knot's item keeps (`foldOcc`).
+        /// It drops nothing, so it accepts nothing more.
+        pub fn approxAll(f: *Frame, s: *SetId) Error!void {
+            const sets = &f.env.cells.sets;
+            // Built again: `insert` joins a present key's value by `and`.
+            var out: SetId = .none;
+            var it = sets.iterate(s.*);
+            while (it.next()) |e| out = try sets.insert(f.gpa, f.env.charge, out, e.key, 1);
+            s.* = out;
+        }
+
         /// One item of `otherPaths`' walk: a use node, the argument's value
         /// there, and how the path it stands for lies to the write's.
         pub const Mode = enum(u2) { spine, below, off, read };
@@ -445,6 +529,7 @@ pub fn Of(comptime Frame: type) type {
             if (tag == none) return none;
             const c = certOf(f) orelse return none;
             const t = c.tags.items[tag];
+            if (c.occs.items[t[0]].fail == 3) return tag;
             const kid = try f.certKid(.from(t[1]), s) orelse return none;
             return c.intern(f.gpa, t[0], kid);
         }
@@ -452,7 +537,11 @@ pub fn Of(comptime Frame: type) type {
         /// The class of `C`'s fold one step `s` below class `cls` (a node of
         /// the callee's widened `res`, a join's sides one class with it), null
         /// for none or several. A `⟲` is every return of the place's cycle
-        /// below `cls`: one class, or none.
+        /// below `cls`: one class, or none. A member that may hold an object
+        /// below it and has no child there (a leaf with cells, a view, a
+        /// recast: `heldBelow`) puts the positions below it in no class of
+        /// the fold, so the answer is none (§2.11 item 3 (d3)): the class
+        /// `a | Node (wrapN …) [] Leaf` holds `a`'s lists below its root.
         pub fn certKid(f: *Frame, cls: NodeId, s: Step) Error!?NodeId {
             const shapes = f.env.shapes;
             var got: ?NodeId = null;
@@ -467,6 +556,7 @@ pub fn Of(comptime Frame: type) type {
                 while (stack.pop()) |x| {
                     try f.env.charge.reserve(f.gpa, .inspection, 1);
                     if ((try seen.getOrPut(f.gpa, .{x.int()})).found_existing) continue;
+                    if (heldBelow(shapes, x) and f.env.places.sccOf(shapes.place(x)) == f.env.places.sccOf(at)) return null;
                     if (shapes.place(x) == at) {
                         if (got != null and got.? != x) return null;
                         got = x;
@@ -490,7 +580,7 @@ pub fn Of(comptime Frame: type) type {
                         try stack.append(f.gpa, .from(d.a));
                         break :blk null;
                     },
-                    else => null,
+                    else => if (heldBelow(shapes, x)) return null else null,
                 };
                 if (kid) |k| {
                     if (got != null and got.? != k) return null;
@@ -498,6 +588,17 @@ pub fn Of(comptime Frame: type) type {
                 }
             }
             return got;
+        }
+
+        /// Whether `x`, a class member with no child map of its own, may hold
+        /// an object at a position below it: anything but an empty leaf.
+        fn heldBelow(shapes: anytype, x: NodeId) bool {
+            const d = shapes.get(x);
+            return switch (d.kind) {
+                .leaf => d.cells != .none,
+                .view, .recast => true,
+                else => false,
+            };
         }
 
         /// The classes one step below `cls`, each step's, a join's sides'.
