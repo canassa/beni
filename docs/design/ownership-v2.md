@@ -3293,6 +3293,20 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      accepted, as v1 accepts it. Through `[*]` or `⟲`, `q` stands for several positions, and the
      answered path is read whole as before: their distinctness is the class's `xreq` (step 7).
      Pinned: `AnsweredHolder` and `AnsweredHolderImported`, every line v1's.
+     *Decided 2026-11-01 (#1546): one tree at two paths of the actual, one of them unmarked.*
+     `dup t = case t of N v l _ → N (List.push v 1) (dup l) l` answers `l` beside the call `dup l`,
+     which writes `l`'s list, so `dup l` is refused `later-use` in `dup`. A caller
+     `dup (N [] t t)` is accepted at `<N …>#N.1#N.0`: `t` also stands at `#N.2`, but the class marks no
+     path at `π1#N.2`, so that position is not a path beside the write, and the answered `π1#N.1` holds
+     the written object only through the write's own steps. Both are sound by this amendment: the alias
+     in the result is the callee's, refused there. Checked by execution: with copies, and with every
+     write in place where its verdict is accepted (refused sites copying), `drive (N [ 5 ] (N [ 6 ] L L)
+     L)` gives `N [1] (N [5,1] (N [6,1] L L) (N [6] L L)) (N [5] (N [6] L L) L)` both times; only the
+     refused writes in `dup` change it, to `… (N [5,1] (N [6,1] L L) L)` at `#N.2`. A callee that reads
+     `π1#N.2` (`N (List.push v 1) (other l) r`) makes it a path beside the write, refused `disjoint`.
+     `bench/ownership-dup-oracle.mjs` runs this family (the child beside the call at pattern depths 1
+     to 3, local and imported, ten callers): 0 differing runs, 1 010 with every write in place.
+     Pinned: `ChildBesideOwnCall`.
      *Amended 2026-10-31 (#1253's item 2, slice 5c): an answer above a write through `[*]`.* The answered
      path is read by position as a value beside the write (`reachBeside`, #1438), so the written positions
      themselves are skipped: they are the objects written, and their distinctness is the class's `xreq`.

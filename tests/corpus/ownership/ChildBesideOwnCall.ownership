@@ -1,0 +1,27 @@
+module ChildBesideOwnCall
+  22:16 List.push v: accepted param
+  22:32 call ChildBesideOwnCall.dup l#N.0: rejected later-use: l⟨T⟩#N.0 is read again at 22:13 (ChildBesideOwnCall.dup writes π1#N.0)
+  22:32 call ChildBesideOwnCall.dup l#N.1⟨T⟩#N.0: rejected later-use: l⟨T⟩#N.0 is read again at 22:13 (ChildBesideOwnCall.dup writes π1#N.1⟨T⟩#N.0)
+  29:11 call ChildBesideOwnCall.dup <N …>#N.0: accepted fresh (ChildBesideOwnCall.dup writes π1#N.0)
+  29:11 call ChildBesideOwnCall.dup <N …>#N.1⟨T⟩#N.0: accepted param (ChildBesideOwnCall.dup writes π1#N.1⟨T⟩#N.0)
+  34:10 call ChildBesideOwnCall.dup <N …>#N.0: accepted fresh (ChildBesideOwnCall.dup writes π1#N.0)
+  34:10 call ChildBesideOwnCall.dup <N …>#N.1⟨T⟩#N.0: accepted param (ChildBesideOwnCall.dup writes π1#N.1⟨T⟩#N.0)
+  36:13 List.push b: accepted param
+  43:12 call ChildBesideOwnCall.dup <N …>#N.0: accepted fresh (ChildBesideOwnCall.dup writes π1#N.0)
+  43:12 call ChildBesideOwnCall.dup <N …>#N.1⟨T⟩#N.0: rejected element: t⟨T⟩#N.0 holds it and is read at 43:10 (ChildBesideOwnCall.dup writes π1#N.1⟨T⟩#N.0) (approx)
+  50:16 List.push v: accepted param
+  50:32 call ChildBesideOwnCall.other l#N.0: accepted param (ChildBesideOwnCall.other writes π1#N.0)
+  50:32 call ChildBesideOwnCall.other l#N.1⟨T⟩#N.0: accepted param (ChildBesideOwnCall.other writes π1#N.1⟨T⟩#N.0)
+  57:16 call ChildBesideOwnCall.other <N …>#N.0: accepted fresh (ChildBesideOwnCall.other writes π1#N.0)
+  57:16 call ChildBesideOwnCall.other <N …>#N.1⟨T⟩#N.0: rejected disjoint: another operand of the same operation reaches it (ChildBesideOwnCall.other writes π1#N.1⟨T⟩#N.0)
+  summary dup: π1 R, π1#N.0 RAW[storage], π1#N.0[*] A, π1#N.1 RA, π1#N.1⟨T⟩#N.0 RAW[storage], π1#N.1⟨T⟩#N.0[*] RA, π1#N.1⟨T⟩#N.1 RA; res #N.0 condition(fresh2) ~condition(fresh9) π1#N.0, #N.0[*] ~condition(fresh4) ~π1#N.0[*], #N.1 condition(fresh11){lost}r{lost} condition(fresh5){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh6) ~condition(fresh10) π1#N.1⟨T⟩#N.0{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh8) ~π1#N.1⟨T⟩#N.0[*]{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh11){lost}r{lost}, #N.1⟨T⟩#N.2 ~condition(fresh7) π1#N.1⟨T⟩#N.1{excl π1#N.1}r{lost}, #N.2 ~condition(fresh3) π1#N.1, condition(fresh1){lost}r{lost}; xreq excl π1#N.1
+  summary drive: π1 RA, π1⟨T⟩#N.0 AW[storage], π1⟨T⟩#N.0[*] A, π1⟨T⟩#N.1 A; res #N.0 condition(fresh1) fresh1 ~condition(fresh10), #N.0[*] ~condition(fresh5), #N.1 ~condition(fresh12){lost}r{lost} ~condition(fresh6){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh7) ~condition(fresh11) π1⟨T⟩#N.0{excl π1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh9) ~π1⟨T⟩#N.0[*]{excl π1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh12){lost}r{lost}, #N.1⟨T⟩#N.2 ~condition(fresh8) π1⟨T⟩#N.1{excl π1}r{lost}, #N.2 condition(fresh2) ~condition(fresh4) π1, condition(fresh3){lost}r{lost}; xreq excl π1
+  summary second: π1 R, π1⟨T⟩#N.0 RAW[storage], π1⟨T⟩#N.0[*] RA; res [*] ~condition(fresh1) ~π1⟨T⟩#N.0[*]{excl π1}r{lost}, fresh2 ~π1⟨T⟩#N.0{excl π1}r{lost}; xreq excl π1
+  summary kept: π1 RA, π1⟨T⟩#N.0 AW[storage], π1⟨T⟩#N.0[*] A, π1⟨T⟩#N.1 A; res .0 condition(fresh3){lost}r{lost}, .0#N.0 condition(fresh1) fresh1 ~condition(fresh10), .0#N.0[*] ~condition(fresh5), .0#N.1 ~condition(fresh12){lost}r{lost} ~condition(fresh6){lost}r{lost}, .0#N.1⟨T⟩#N.0 condition(fresh7) ~condition(fresh11) π1⟨T⟩#N.0{excl π1}r{lost}, .0#N.1⟨T⟩#N.0[*] ~condition(fresh9) ~π1⟨T⟩#N.0[*]{excl π1}r{lost}, .0#N.1⟨T⟩#N.1 condition(fresh12){lost}r{lost}, .0#N.1⟨T⟩#N.2 condition(fresh14) ~condition(fresh8) π1⟨T⟩#N.1{excl π1}r{lost}, .0#N.2 condition(fresh2) ~condition(fresh4) π1, .1 ~condition(fresh15) π1, condition(fresh13){shared}r{shared}; xreq excl π1
+  summary other: π1 R, π1#N.0 RAW[storage], π1#N.0[*] A, π1#N.1 R, π1#N.1⟨T⟩#N.0 RAW[storage], π1#N.1⟨T⟩#N.0[*] RA, π1#N.1⟨T⟩#N.1 R, π1#N.1⟨T⟩#N.2 RA, π1#N.2 RA; res #N.0 condition(fresh2) ~condition(fresh9) π1#N.0, #N.0[*] ~condition(fresh4) ~π1#N.0[*], #N.1 condition(fresh11){lost}r{lost} condition(fresh5){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh6) ~condition(fresh10) π1#N.1⟨T⟩#N.0{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh8) ~π1#N.1⟨T⟩#N.0[*]{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh11){lost}r{lost}, #N.1⟨T⟩#N.2 ~condition(fresh7) π1#N.1⟨T⟩#N.2{excl π1#N.1}r{lost}, #N.2 ~condition(fresh3) π1#N.2, condition(fresh1){apart [π1#N.0 π1#N.0[*]] [π1#N.1⟨T⟩#N.0 π1#N.1⟨T⟩#N.0[*] π1#N.1⟨T⟩#N.2] [π1#N.2], sep π1#N.0 π1#N.2, sep π1#N.2 π1#N.0[*]}r{apart [π1#N.0[*]] [π1#N.1⟨T⟩#N.0 π1#N.1⟨T⟩#N.0[*] π1#N.1⟨T⟩#N.2] [π1#N.2], sep π1#N.2 π1#N.0[*]}; xreq excl π1#N.1
+  summary otherDrive: π1 RA, π1⟨T⟩#N.0 AW[storage], π1⟨T⟩#N.0[*] A, π1⟨T⟩#N.2 A; res #N.0 condition(fresh1) fresh1 ~condition(fresh11), #N.0[*] ~condition(fresh7), #N.1 ~condition(fresh13){lost}r{lost} ~condition(fresh8){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh3){excl π1}r{lost} ~condition(fresh12) π1⟨T⟩#N.0{excl π1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh10) ~π1⟨T⟩#N.0[*]{excl π1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh13){lost}r{lost}, #N.1⟨T⟩#N.2 condition(fresh4){excl π1}r{lost} ~condition(fresh9) π1⟨T⟩#N.2{excl π1}r{lost}, #N.2 condition(fresh2) ~condition(fresh6) π1, condition(fresh5){lost}r{lost}; xreq excl π1
+  demands 15: accepted 11 (fresh 4, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 15: accepted 11 (fresh 4, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause disjoint 1
+cause later-use 2
+cause element 1

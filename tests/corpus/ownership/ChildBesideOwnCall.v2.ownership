@@ -1,0 +1,42 @@
+module ChildBesideOwnCall
+  22:16 List.push v: accepted param
+  22:32 ChildBesideOwnCall.dup l#N.1⟨T⟩#N.0: rejected element: l#N.1⟨T⟩#N.0 holds it and is read at 22:13 (approx)
+  22:32 ChildBesideOwnCall.dup l#N.1#N.0: rejected later-use: l is read again at 22:13
+  22:32 ChildBesideOwnCall.dup l#N.0: rejected later-use: l is read again at 22:13
+  29:11 ChildBesideOwnCall.dup <N …>#N.1⟨T⟩#N.0: accepted param
+  29:11 ChildBesideOwnCall.dup <N …>#N.1#N.0: accepted param
+  29:11 ChildBesideOwnCall.dup <N …>#N.0: accepted fresh
+  34:10 ChildBesideOwnCall.dup <N …>#N.1⟨T⟩#N.0: accepted param
+  34:10 ChildBesideOwnCall.dup <N …>#N.1#N.0: accepted param
+  34:10 ChildBesideOwnCall.dup <N …>#N.0: accepted fresh
+  36:13 List.push b: accepted param
+  43:12 ChildBesideOwnCall.dup <N …>#N.1⟨T⟩#N.0: rejected alias: t#N.1#N.0 holds it and is read at 43:10 (approx)
+  43:12 ChildBesideOwnCall.dup <N …>#N.1#N.0: rejected alias: t#N.0 holds it and is read at 43:10
+  43:12 ChildBesideOwnCall.dup <N …>#N.0: accepted fresh
+  50:16 List.push v: accepted param
+  50:32 ChildBesideOwnCall.other l#N.1⟨T⟩#N.0: accepted param
+  50:32 ChildBesideOwnCall.other l#N.1#N.0: accepted param
+  50:32 ChildBesideOwnCall.other l#N.0: accepted param
+  57:16 ChildBesideOwnCall.other <N …>#N.1⟨T⟩#N.0: rejected disjoint: another path of the same argument reaches it
+  57:16 ChildBesideOwnCall.other <N …>#N.1#N.0: rejected disjoint: another path of the same argument reaches it
+  57:16 ChildBesideOwnCall.other <N …>#N.0: accepted fresh
+  account dup: source 26, baseline 22451, growth 0 of 65536, total 22451, continuation 22154 of 26624, demands 866, walks 4, inference 3, deliveries 5, direct_data lanes 2, liveness_index lanes 8, direct_demand_query lanes 2, call_view lanes 6, transfer_settlement lanes 58
+  crossing: reads 0, redone 0, base moves 19
+  summary dup: π1 R, π1#N.0 RAW, π1#N.0[*] A, π1#N.1 RA, π1#N.1#N.0 RAW, π1#N.1#N.0[*] RA, π1#N.1⟲ RA, π1#N.1⟲#N.0 RAW, π1#N.1⟲#N.0[*] RA; res #N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, #N.1 ~π1#N.1⟲ π1#N.1 π1#N.1 π1#N.1⟲ π1#N.1⟲{lost}, #N.1#N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.1#N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, #N.2 ~π1#N.1⟲ π1#N.1 π1#N.1 π1#N.1⟲ π1#N.1⟲{lost}, #N.2#N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.2#N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, ~π1#N.1⟲ π1#N.1 π1#N.1 π1#N.1⟲ π1#N.1⟲{lost}
+  account drive: source 11, baseline 3711, growth 0 of 65536, total 3711, continuation 3689 of 11264, demands 123, direct_data lanes 1, liveness_index lanes 2, call_view lanes 2, transfer_settlement lanes 12
+  summary drive: π1 RA, π1#N.0 RAW, π1#N.0[*] RA, π1#N.1 R, π1#N.1#N.0 RW, π1#N.1#N.0[*] R, π1#N.1⟲ R, π1#N.1⟲#N.0 RW, π1#N.1⟲#N.0[*] R, π1#N.2 R, π1#N.2#N.0 RW, π1#N.2#N.0[*] R, π1#N.2⟲ R, π1#N.2⟲#N.0 RW, π1#N.2⟲#N.0[*] R; res #N.0 fresh1 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0 π1#N.2#N.0 π1#N.2⟲#N.0{lost}, #N.0[*] ~π1 π1#N.0[*]{lost}, ~π1 π1 π1 π1#N.1 π1#N.1⟲ π1#N.2 π1#N.2⟲{lost}; xreq excl π1#N.1⟲#N.0, excl π1#N.2⟲#N.0
+  account second: source 31, baseline 10502, growth 0 of 65536, total 10502, continuation 10407 of 31744, demands 677, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 34
+  summary second: π1 RAW, π1#N.0 RAW, π1#N.0[*] RA, π1#N.1 R, π1#N.1#N.0 RAW, π1#N.1#N.0[*] RA, π1#N.1⟲ R, π1#N.1⟲#N.0 RAW, π1#N.1⟲#N.0[*] RA, π1#N.2 R, π1#N.2#N.0 RAW, π1#N.2#N.0[*] RA, π1#N.2⟲ R, π1#N.2⟲#N.0 RAW, π1#N.2⟲#N.0[*] RA; res [*] ~π1 π1#N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*] π1#N.2#N.0[*] π1#N.2⟲#N.0[*]{lost}, fresh1 fresh2 ~π1 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0 π1#N.2#N.0 π1#N.2⟲#N.0{lost}; xreq excl π1#N.1⟲#N.0, excl π1#N.2⟲#N.0
+  account kept: source 15, baseline 3845, growth 0 of 65536, total 3845, continuation 3810 of 15360, demands 224, direct_data lanes 1, liveness_index lanes 3, call_view lanes 2, transfer_settlement lanes 16
+  summary kept: π1 RA, π1#N.0 RAW, π1#N.0[*] RA, π1#N.1 R, π1#N.1#N.0 RW, π1#N.1#N.0[*] R, π1#N.1⟲ R, π1#N.1⟲#N.0 RW, π1#N.1⟲#N.0[*] R, π1#N.2 R, π1#N.2#N.0 RW, π1#N.2#N.0[*] R, π1#N.2⟲ R, π1#N.2⟲#N.0 RW, π1#N.2⟲#N.0[*] R; res .0 ~π1 π1 π1 π1#N.1 π1#N.1⟲ π1#N.2 π1#N.2⟲{lost}, .0#N.0 fresh1 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0 π1#N.2#N.0 π1#N.2⟲#N.0{lost}, .0#N.0[*] ~π1 π1#N.0[*]{lost}, .1 π1
+  account other: source 26, baseline 23951, growth 0 of 65536, total 23951, continuation 23654 of 26624, demands 609, walks 4, inference 3, deliveries 5, direct_data lanes 2, liveness_index lanes 8, direct_demand_query lanes 2, call_view lanes 6, transfer_settlement lanes 58
+  summary other: π1 R, π1#N.0 RAW, π1#N.0[*] A, π1#N.1 R, π1#N.1#N.0 RAW, π1#N.1#N.0[*] RA, π1#N.1⟲ RA, π1#N.1⟲#N.0 RAW, π1#N.1⟲#N.0[*] RA, π1#N.2 RA; res #N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, #N.1 ~π1#N.1⟲ π1#N.1⟲ π1#N.1⟲ π1#N.2 π1#N.2{lost}, #N.1#N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.1#N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, #N.2 ~π1#N.1⟲ π1#N.1⟲ π1#N.1⟲ π1#N.2 π1#N.2{lost}, #N.2#N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.2#N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, ~π1#N.1⟲ π1#N.1⟲ π1#N.1⟲ π1#N.2 π1#N.2{lost}; xreq excl π1#N.1⟲, excl π1#N.1⟲#N.0
+  account otherDrive: source 11, baseline 3777, growth 0 of 65536, total 3777, continuation 3755 of 11264, demands 51, direct_data lanes 1, liveness_index lanes 2, call_view lanes 2, transfer_settlement lanes 12
+  summary otherDrive: π1 RA, π1#N.0 RAW, π1#N.0[*] RA, π1#N.1 R, π1#N.1#N.0 RW, π1#N.1#N.0[*] R, π1#N.1⟲ R, π1#N.1⟲#N.0 RW, π1#N.1⟲#N.0[*] R, π1#N.2 R, π1#N.2#N.0 RW, π1#N.2#N.0[*] R, π1#N.2⟲ R, π1#N.2⟲#N.0 RW, π1#N.2⟲#N.0[*] R; res #N.0 fresh1 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0 π1#N.2#N.0 π1#N.2⟲#N.0{lost}, #N.0[*] ~π1 π1#N.0[*]{lost}, ~π1 π1 π1 π1#N.1 π1#N.1⟲ π1#N.2 π1#N.2⟲{lost}
+  block: 3676 bytes, hash 04c5d07b5b2064d3
+  demands 21: accepted 14 (fresh 4, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 21: accepted 14 (fresh 4, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause disjoint 2
+cause later-use 2
+cause alias 2
+cause element 1
