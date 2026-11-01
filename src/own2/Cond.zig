@@ -206,6 +206,10 @@ pub const Table = struct {
     memo_inst_latest: Ids.FixedDict(1) = .{},
     no_cross: bool = false,
     no_memo: bool = false,
+    /// `--ownership-order-check`: `propagateFrom` walks each call again with
+    /// every frontier reversed (`reverse_front`), for the same snapshot.
+    order_check: bool = false,
+    reverse_front: bool = false,
     /// Off while a construction tests whether a dropped node's entry needs
     /// carrying (`TransferConstruct.carryDropped`): its reads are the test.
     drop_check_off: bool = false,
@@ -741,14 +745,20 @@ pub const Table = struct {
     /// `propagate`, the members read at their own class (a literal's `vᵢ`, §2.9).
     pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
         const r = try t.propagateWalk(gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal);
-        if (!(std.debug.runtime_safety and full_cross_check and !t.no_memo)) return r;
-        // Walked again with no memo (*Cross-check*), on an account of its own
-        // so that the check moves no limit: the same snapshot.
+        const cross = std.debug.runtime_safety and full_cross_check;
+        if (t.no_memo or !(cross or t.order_check)) return r;
+        // Walked again with no memo, on an account of its own so that the
+        // check moves no limit (*Cross-check*, and §2.9's order check, #1526).
+        // Both intern in the module's tables, so they may move its records.
         var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
         defer scratch.deinit(gpa);
         t.no_memo = true;
         defer t.no_memo = false;
-        if (r != try t.propagateWalk(gpa, .growth(&scratch), v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal)) std.debug.panic("ownership v2: a memoised propagation differs from its walk", .{});
+        defer t.reverse_front = false;
+        if (cross and r != try t.propagateWalk(gpa, .growth(&scratch), v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal)) std.debug.panic("ownership v2: a memoised propagation differs from its walk", .{});
+        t.reverse_front = true;
+        const back = try t.propagateWalk(gpa, .growth(&scratch), v, out, joined, members, member_ctxs, mode, at_summary, member_summary, traversal);
+        if (back != r and !(try t.kappaLeq(gpa, .growth(&scratch), v, r, joined, back, joined, at_summary) and try t.kappaLeq(gpa, .growth(&scratch), v, back, joined, r, joined, at_summary))) std.debug.panic("ownership v2: a propagation depends on its frontier's order", .{});
         return r;
     }
 
@@ -825,11 +835,11 @@ pub const Table = struct {
         const Slice = struct { run: u32, m0: NodeId, c0: Kappas, one: bool, k: [4]u32, words: u32, words_len: u32, fold: bool, front: [3]u32 = .{ Ids.none_int, 0, 0 } };
         var slices: std.ArrayList(Slice) = .empty;
         defer slices.deinit(gpa);
-        var slice_at: Ids.FixedDict(1) = .{};
+        var slice_at: Ids.FixedDict(2) = .{};
         defer slice_at.deinit(gpa);
         var words: std.ArrayList(u64) = .empty;
         defer words.deinit(gpa);
-        var below_at: Ids.FixedDict(4) = .{};
+        var below_at: Ids.FixedDict(5) = .{};
         defer below_at.deinit(gpa);
         var belows: std.ArrayList([2]u32) = .empty;
         defer belows.deinit(gpa);
@@ -844,7 +854,8 @@ pub const Table = struct {
         while (stack.pop()) |f| {
             try charge.reserve(gpa, .memo, 1);
             var fresh: ?u32 = null;
-            const sg = try slice_at.getOrPut(gpa, .{f.first});
+            // By `(first, len)`: an empty run appends nothing (#1526).
+            const sg = try slice_at.getOrPut(gpa, .{ f.first, f.len });
             if (!sg.found_existing) {
                 var run: u32 = Ids.none_int;
                 var r = f.len;
@@ -1021,15 +1032,18 @@ pub const Table = struct {
                 try fronts.appendSlice(gpa, next.items);
                 try fronts.append(gpa, .{ .node = .none, .summary = false, .step = Ids.none_int });
             }
-            for (fronts.items[at.?..]) |e| {
-                if (e.node == .none) break;
+            var end = at.?;
+            while (fronts.items[end].node != .none) end += 1;
+            const front = fronts.items[at.?..end];
+            for (0..front.len) |fi| {
+                const e = front[if (t.reverse_front) front.len - 1 - fi else fi];
                 const s = Step.fromWord(e.step);
                 const child = e.node;
                 // The run one step below, made once per (run, step, inner
                 // place, class).
                 try charge.reserve(gpa, .memo, 1);
                 const place: u32 = if (e.via == .none) Ids.none_int else v.shapes.place(e.via).int();
-                const bg = try below_at.getOrPut(gpa, .{ if (memo) run else f.first, e.step, place, @intFromBool(e.summary) });
+                const bg = try below_at.getOrPut(gpa, .{ if (memo) run else f.first, if (memo) 0 else f.len, e.step, place, @intFromBool(e.summary) });
                 if (!bg.found_existing) {
                     bg.value_ptr.* = @intCast(belows.items.len);
                     const first: u32 = @intCast(runs.items.len);
@@ -1147,7 +1161,7 @@ pub const Table = struct {
         // The call has finished: each clean state walked here, alone at its
         // position, is that position's snapshot wherever it is met again.
         for (candidates.items) |c| {
-            if (path_states.items[c.path] != 1) continue;
+            if (!memo or path_states.items[c.path] != 1) continue;
             try charge.reserve(gpa, .memo, 1);
             (try t.memo_prop.getOrPut(gpa, c.key)).value_ptr.* = pos[c.path].int();
         }

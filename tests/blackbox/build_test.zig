@@ -12752,6 +12752,89 @@ test "the checker v2 charges a recursive group the same in either declaration or
     try testing.expectEqual(growth[0], growth[1]);
 }
 
+/// `dump --stage=ownership --ownership=v2 --ownership-order-check` of `path`
+/// (a corpus file when `source` is null, else `Main.beni` holding `source`):
+/// every `propagate` call is walked again with each frontier's children in
+/// reverse, and the run stops when the two snapshots differ (§2.9, #1526).
+fn orderChecked(path: []const u8, source: ?[]const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    if (source) |s| try w.write(path, s);
+    const argv: []const []const u8 = &.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-order-check", path };
+    const dump = if (source == null) try w.runWith(argv, .{ .cwd = .inherit }) else try w.run(argv);
+    try testing.expect(std.mem.indexOf(u8, dump.stderr, "frontier's order") == null);
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+}
+
+/// #1513's two-branch insert, whose recursive calls each walk a run with
+/// no members beside one with members (#1526).
+const order_ins =
+    \\type T
+    \\    = N Int (List Int) T T
+    \\    | L
+    \\
+    \\
+    \\pub ins : Int, T → T
+    \\ins k t =
+    \\    case t of
+    \\        N k2 v lt rt →
+    \\            if k < k2 then
+    \\                N k2 v (ins k lt) rt
+    \\
+    \\            else
+    \\                N k2 v lt (ins k rt)
+    \\
+    \\        L →
+    \\            N k [ k ] L L
+    \\
+;
+
+test "the checker v2 walks a run with no members apart from the run beside it, in either frontier order" {
+    // #1526: a run with no members appends nothing, so the next run starts
+    // at its index. Keyed by that index alone, the two frames shared one
+    // slice, and the frame walked first fixed both its κ and its children.
+    try orderChecked("tests/corpus/ownership/EmptyRunFrontierOrder.beni", null);
+}
+
+test "the checker v2 walks #1513's two-branch insert the same in either frontier order" {
+    try orderChecked("Main.beni", order_ins);
+}
+
+test "the checker v2 walks #1489's two-branch insert the same in either frontier order" {
+    try orderChecked("Main.beni",
+        \\type Tree
+        \\    = Leaf
+        \\    | Node Tree Int (List Int) Tree
+        \\
+        \\
+        \\pub insert : Tree, Int → Tree
+        \\insert t k =
+        \\    case t of
+        \\        Leaf →
+        \\            Node Leaf k [] Leaf
+        \\
+        \\        Node l key xs r →
+        \\            if k < key then
+        \\                Node (insert l k) key xs r
+        \\
+        \\            else
+        \\                Node l key xs (insert r k)
+        \\
+    );
+}
+
+test "the checker v2 walks the mutual group wa and wb the same in either frontier order" {
+    // The group of *charges a recursive group the same in either
+    // declaration order*, whose memoised walks differed from their plain
+    // walks under `-Downership-full-cross-check` until #1526 (#1497).
+    try orderChecked("Main.beni", "@ownership_summary_size(module, 151100)\n\ntype A\n    = A (List Int) B B\n    | AL\n\n\ntype B\n    = B (List Int) A\n    | BL\n\n\npub wa : A → A\nwa a =\n    case a of\n        A xs b1 b2 →\n            A (List.push xs 1) (wb b1) b2\n\n        AL →\n            AL\n\n\npub wb : B → B\nwb b =\n    case b of\n        B ys a →\n            B ys (wa a)\n\n        BL →\n            BL\n");
+}
+
+test "the checker v2 walks the quadtree and the rose tree the same in either frontier order" {
+    try orderChecked("tests/corpus/ownership/QuadChildren.beni", null);
+    try orderChecked("tests/corpus/ownership/RoseAlias.beni", null);
+}
+
 /// The `{…}` conditions of `summary <name>:`'s line in `dump`, in order:
 /// what a reader of the class reads, its fresh labels' numbering aside.
 fn summaryConds(a: std.mem.Allocator, dump: []const u8, name: []const u8) ![]const u8 {

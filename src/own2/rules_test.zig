@@ -106,7 +106,8 @@ const layers = [_]Entry{
     // projection correspondence (§2.9 *Keyed where a reader looks*).
     // 1 290 since 4e: `widenValue` interns its image by canonical form,
     // and its cross-check (§2.3, stable images).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1290 },
+    // 1 300 since #1526: `propagate`'s order check (§2.9).
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1300 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
