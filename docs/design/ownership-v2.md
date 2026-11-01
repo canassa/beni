@@ -7139,7 +7139,7 @@ L0  Ids
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Stable.zig` | 2 | stable images (§2.3 *The two pieces that (b) adds, prototyped (4e)*): a graph's canonical form by partition refinement, the move onto an equal graph made before and its precondition, `map`'s knot and `widen`'s components; the shape table is given as `anytype` | `Store`, `Redirect`, `canon`, `moveHolds`, `mapKnot`, `widened`, `sideFact` | Ids | ≤ 500 (4e) |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing`, `isAtom` | Ids, Place, Cell, Stable | ≤ 4 025 (#1483: the atom rule, `isAtom` and `settle`, §2.3; 4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing`, `isAtom` | Ids, Place, Cell, Stable | ≤ 4 075 (#1485 part 2: C1, a saturated positions node keeps its aggregate, §8 slice 4 *As built, part 2*); 4 025 before #1485 (#1483: the atom rule, `isAtom` and `settle`, §2.3; 4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
@@ -7164,11 +7164,11 @@ L0  Ids
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferArms, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 660 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 640 before #1485 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 270 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 220 before #1485 (#1566: a block read's re-interning memo, outside the first call's lane; S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; #1543: `--ownership-propagate`'s two lines) |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 310 (#1485 part 2: C5, the induction walked again under `runtime_safety`, §8 slice 4 *As built, part 2*); 2 270 for part 1 (the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 220 before #1485 (#1566: a block read's re-interning memo, outside the first call's lane; S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; #1543: `--ownership-propagate`'s two lines) |
 | `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
-| `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 300 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
+| `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 320 (#1485 part 2: the certified mark and a position's fold obligation, read back; 1 300 before: S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
 | `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 (#1547: the list half, `Table` and `Builder`, 108 lines; `write`/`read` land with v2's cache) |
 | `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
@@ -8527,6 +8527,108 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
     So, with the tag or without it, the kept cells are the same. The tag stays, because it costs
     nothing and it carries the item identity that (d) relies on. The test pins all three
     configurations. C7's edge check (part A) has no failing case to panic on from these rows.
+
+*As built, part 2 (#1485, part A: the proof, publication, checks).* Self-hosted Debug and ReleaseSafe,
+`dump --stage=ownership --ownership=v2 --jobs=1`.
+- **The proof is the stop rule's** [amendment, *marked for review*]. The Prover's `fold` claim is not
+  built: the settled post-fixpoint already discharges the induction. The argument:
+  1. A certificate is not a separate object. `A(f, K)` is `f`'s class read at `K`: its cells there are
+     the arrival keys, and its κ there is the condition. A key at two coexisting positions is not in the
+     key set twice. It is in the κ (`lost`, *κ̂ reads the class's κ*, below). Each hypothesis node of a
+     walk reads the member's port this way (`Calls.Views.hypEnvOf`).
+  2. F is one walk of a member. It reads its own sources and each group call through the port's class.
+     The stop rule ends only when every member's last walk read the ports as they stand (the read
+     check), and its read-off is under its port (`Summary.leq`, which compares `res`, κ at every
+     position and so each `A(f, K)`). That is `F(x*) ⊑ x*`.
+  3. Induction on activation depth d. An activation of depth 1 makes no group call. The walk's value
+     covers each branch it can take without a group call, so the activation is covered by `F(x*)`. For
+     depth d, every group call is strictly inside, of depth < d, so x* covers it by hypothesis. The
+     walk reads x* there, so the activation is covered by `F(x*) ⊑ x*`.
+  4. So no base alternative is needed at `K`. The base is the depth-1 case of the same step, and
+     `base ⊑ F(A)` follows from monotonicity. A component with no activation of finite depth has no
+     result to cover. *Waiting*, and the `lost` it read, are withdrawn: they made sound claims weaker
+     and refused nothing more.
+  5. The may-facts of the rounds never reach a verdict. The lines a group publishes are those of the
+     last walk of each member, which read x* (`runGroup`). So no provisional Disjoint verdict of (d)
+     survives a round, and none needs to be computed again.
+
+  *Check* (C5, `runtime_safety`, `Groups.checkInduction`): after the loop, each member is walked
+  once more against x*, on a scratch account, with its walk counts and edges untouched. Its read-off
+  must be under its port (the step). No ownership fixture fires it. The base is not walked on its own.
+  It is the depth-1 case of the step (item 3). A walk over ports at ⊥ also makes views that a later walk
+  of the module meets, and that moves the later walk's records: the counted test of a call over a chain
+  of nested choices went from 1 225 to 2 242 records at D = 32. The test-only mutation
+  `cert-stop-early` stops the loop after its first pass, and the step check panics on
+  `o/FoldCertificate`.
+- **Publication.** A certified class prints `cert` after its `res`. Each `res` line of such a class is
+  its entry `K {keys} κ`, so the line is not printed twice. `Summary.leq` takes a certified class as the
+  stronger. The block's format is version 15. A class record's flags carry the certified mark (bit 3),
+  and each position carries its fold obligation (`fold_cond`) next to its stored κ. The block stored
+  that obligation merged into the κ, so an importer had no `fold_cond`. The readers of a certificate
+  read the obligation at the class (`certRead`), so an imported certificate lost its repeats: with the
+  mark alone, `incRoot (Lib.unroll t)` and two lines of `incAll (Lib.unroll t)` were **accepted**, and
+  the program writes one list twice. `BlockRead` puts the obligation back into the importer's
+  `fold_cond`. A key that does not re-intern exactly reads as the class's `res` reads it.
+  *C4:* the block round trip (`roundTripWith`) compares the mark, and a unit test round-trips a
+  certified and an uncertified knot. Mutations: `cert-unmarked` drops the mark, and
+  `o/FoldCertificateImported` then refuses every witness.
+- **κ̂ reads the class's κ at `K`.** `certRead` read the keys by rule 4 and `fold_cond`, but not the
+  κ that the class stores at `K`. The keys are a set, so a cell at two coexisting positions (`dupL`'s
+  `π1#Node.0#Node.1`, at `#Node.0` and at `#Node.2`) was read once. Its repeat was only in the
+  class's κ there (`{lost}`). κ̂ now conjoins that κ. It reads it as a reader at the path reads it: at
+  the class and at the outermost join on the way, projected, and joined. A `⟲` stays in its class.
+  The mutation `cert-keys-only` restores the old read.
+- **Row 2 (`dupL`) was not the documented `xreq` case.** On its own terms (§2.11 item 3 (d)), the
+  write at `#Node.2#Node.1` meets the view at the empty prefix with its rest in `K`, and κ̂(V, K) is
+  `lost`. So that line, and `#Node.1`, are refused by (d) whatever the `xreq` does. They were accepted
+  only because κ̂ missed the class's κ (above). Every line of row 2 is now refused
+  `disjoint (approx)`, as the table says, in one module and across a block. Readers 1 and 2
+  (`hypAggs`, `Calls.certView`) still read the key multiset alone. That is sound only while (d) or
+  the read-off's `propagate` carries the class's κ, as it does in every row measured. That reader
+  still owes the same conjunct (#1485's follow-up).
+- **Row 14 is a finding, not S4's.** `wrapR` is refused for the reason the spec allows: its `[]` reaches
+  `K` as two fresh labels, and its class reads `#Node.0#Node.1 fresh1 … {lost}`. The parameter-list twin
+  `wrapL` fails too, so rule 4 is not what refuses it. The smallest reproduction is `wrapS n t = if
+  n == 0 then same t else wrapS (n - 1) t`. Its class reads `#Node.0 {lost}` and a root `{lost}`, and
+  its folds move (`#Node.1 = #Node.0#Node.1`, `#Node.2 = #Node.0`). `incAll (wrapS n t)` is refused,
+  `#Node.1` as a plain `disjoint`, which is a definite conflict, on a safe program. So a recursive
+  group whose arms are views of certified classes (the base arm's view and the port's view) widens to a
+  knot whose root and subtree class read `lost`. A second, non-recursive, case is a certified view whose
+  actual holds a built nullary constructor: `same (Node t ys Leaf)` reads a root `lost`, and
+  `same (Node t ys u)` does not. Both are #1533. The rows stay refused in the fixture.
+- **Checks.** Each is `runtime_safety` only, and each has a test-only mutation that makes it fire:
+  - C1 (`Shape.assertSaturation`): a node that `saturate` makes counts every cell as its two sides
+    do, capped at 2, by a walk that keeps no count map. `cert-saturate-side` fires it on
+    `o/PatternWideCall`, `o/PatternWideShared` and `o/PositionsSaturate`.
+  - C3 (`Summary.assertDropKeeps`): an arm that `dropCovered` drops reaches no exact cell that its cover
+    does not reach, and its frontier read (`deep`) is no weaker. `cert-drop-any` fires it.
+  - C4 and C5, above.
+  - C7 (`TransferBeside.certEdgeCheck`, `certReadNode`, `assertCertifiedDrop`). An item meets a walk
+    node, or a read node, that an item of another certified view made, only where the key lost the
+    tag. An item that drops `K` names every exact cell that the plain reader finds in its forced value.
+    The edge checks read no certificate, so a group's rounds need no deferral. `cert-untagged` fires
+    the edge check on `o/FoldCertificate` even without `otherPaths-spine-first`. `cert-drop-key` fires
+    the drop check.
+  - C2 is not built. Its check forces every view. A hypothesis view that is forced enters its cycle,
+    and so it saturates. The forced aggregate is then never equal to the certificate's. The lemma
+    needs to say "every view but a hypothesis node", and so it repeats the walk it would test. Open
+    on #1485.
+  - C6 belongs to rule 4's trie (part B). The pairwise `Cell.alias` test that the trie replaces is the
+    check.
+- **Fixtures.** `o/FoldCertificateImported`: the producers in `Lib`, the witnesses and rows 1–6 in
+  `Main`. Each verdict is the same-module fixture's, line for line. `o/FoldedKnotCall` covers reader
+  2. `incAll` and `incBelow`, which writes only below the root, are called over `same`, `unroll` and
+  `dupL`. One view is accepted, and every write of the other two is refused.
+- **The oracle sweep.** A Node model of 31 programs: the witnesses; rows 1–10, 14 and its twin, 15,
+  17, 18 and 19; `mix` over `T2`; `P w w` over `swap`; `P w (same u)`; `P w (swap t)`; `swap (same t)`;
+  `same (unroll t)`; a choice of `same` and `unroll`; and `incRoot (swap t)`. Rows 1–6 are run again
+  with the producers imported. Each program runs on every tree of height 3 or less whose lists are
+  distinct (26 trees, or 676 pairs), with both values of the `Bool` and of `n`. The model runs copy
+  semantics against in-place semantics where the dump accepts every line of the call. Results: 0
+  unsafe in 25 376 runs. 10 accepted programs, plus 5 imported. With every verdict forced to accepted,
+  the model reports UNSAFE: 13 of 23, 4 of 8 and 7 of 13 programs. Five refused programs are safe on
+  every input, and are precision gaps: row 4 and row 14 with its twin (known), row 4 imported, and
+  `swap (same t)`, two certified views nested, refused as a plain `disjoint`.
 
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it
