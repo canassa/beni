@@ -692,6 +692,17 @@ pub const Table = struct {
         t.widen_sides = true;
         defer t.widen_sides = saved;
         const kappas = try t.propagate(gpa, charge, v, .none, w, members, member_ctxs, .alternatives, false, null);
+        // O15 on the widened knot (#1485): every member's κ at its root is
+        // under the widened value's, so keying the knot's sides and reading
+        // the members apart drops no member's constraint.
+        if (std.debug.runtime_safety) {
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const ch: Charge = .growth(&scratch);
+            const at_w = try t.kappaOf(gpa, ch, v, kappas, w, false);
+            for (members, member_ctxs) |m, c| if (!try t.leq(gpa, ch, try t.kappaOf(gpa, ch, v, c, m, false), at_w))
+                std.debug.panic("ownership v2: a widened knot's κ is not above its member's (O15, #1485)", .{});
+        }
         if (std.debug.runtime_safety and redir.count() > 0 and !try t.moveIsBisimulation(gpa, v, raw, w, members, member_ctxs, &redir, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source }))
             std.debug.panic("ownership v2: a stable image's move is not a bisimulation of its raw image (§2.3, 4e)", .{});
         return .{ .node = w, .kappas = kappas };
