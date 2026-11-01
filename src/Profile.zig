@@ -359,6 +359,11 @@ pub const Counter = enum {
     nominal_cover_refs,
     nominal_cover_terms,
 
+    /// Actual source realm builder calls and schedule-dependent trie work.
+    /// Count every successful preflight/render construction, never a display bound.
+    realm_builder_runs,
+    realm_value_field_steps,
+
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };
 

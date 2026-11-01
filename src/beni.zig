@@ -42,6 +42,7 @@ pub const parse = struct {
     pub const Diagnostics = @import("parse/Diagnostics.zig");
 };
 pub const entry = struct {
+    pub const RealmConsume = @import("entry/RealmConsume.zig");
     pub const Selection = @import("entry/Selection.zig");
     pub const RoleRoots = @import("entry/RoleRoots.zig");
     pub const CursorInspect = @import("entry/CursorInspect.zig");
@@ -124,6 +125,9 @@ pub const check = struct {
     pub const AnnotationReadings = @import("check/AnnotationReadings.zig");
     pub const ContinuationPlan = @import("check/ContinuationPlan.zig");
     pub const ControlSourcePlan = @import("check/ControlSourcePlan.zig");
+    pub const RealmBuild = @import("check/RealmBuild.zig");
+    pub const RealmValues = @import("check/RealmValues.zig");
+    pub const RealmBuildTest = @import("check/RealmBuildTest.zig");
     pub const RealmRecord = @import("check/RealmRecord.zig");
     pub const RealmSource = @import("check/RealmSource.zig");
     pub const Realms = @import("check/Realms.zig");

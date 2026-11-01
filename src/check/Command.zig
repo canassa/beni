@@ -183,7 +183,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .out_dir = &.{}, // nothing is written; the field is `run`'s
         .platform = loaded.platform,
         .embedded = loaded.embedded,
-    }) catch return fail(stderr, "beni: out of memory", .{});
+    }) catch {
+        if (check.cache.entries) _ = EntriesDump.flushProfile(&session, stderr);
+        return fail(stderr, "beni: out of memory", .{});
+    };
     defer {
         for (items) |item| gpa.free(item.message);
         gpa.free(items);
@@ -193,15 +196,29 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // `run` held back, sorted together into one array. Called even when the
     // checks said nothing, because the held-back wave still has to reach the
     // author.
-    const late = gpa.alloc(Session.LateItem, items.len) catch
+    const late = gpa.alloc(Session.LateItem, items.len) catch {
+        if (check.cache.entries) _ = EntriesDump.flushProfile(&session, stderr);
         return fail(stderr, "beni: out of memory", .{});
+    };
     defer gpa.free(late);
     for (items, late) |item, *slot| {
         slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
     }
-    const errors = session.renderLate(late, stderr) catch return 2;
-    if (errors != 0) return 1;
-    if (check.cache.entries) EntriesDump.write(stdout, &session) catch return 2;
+    const errors = session.renderLate(late, stderr) catch {
+        if (check.cache.entries) _ = EntriesDump.flushProfile(&session, stderr);
+        return 2;
+    };
+    if (errors != 0) {
+        if (check.cache.entries and !EntriesDump.flushProfile(&session, stderr)) return 2;
+        return 1;
+    }
+    if (check.cache.entries) {
+        EntriesDump.write(stdout, &session) catch {
+            _ = EntriesDump.flushProfile(&session, stderr);
+            return 2;
+        };
+        if (!EntriesDump.flushProfile(&session, stderr)) return 2;
+    }
     if (prepared) |product| stdout.writeAll(product.bytes) catch return 2;
     return 0;
 }

@@ -166,6 +166,7 @@ const fuzz_sweep_seeds = blk: {
 /// records them and `coverage` measures them.
 const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/blackbox_test.zig", 6 },
+    .{ "tests/blackbox/session_api_test.zig", 1 },
     .{ "tests/blackbox/abuse_test.zig", 3 },
     .{ "tests/blackbox/abuse_wide_test.zig", 3 },
     .{ "tests/blackbox/build_test.zig", 3 },
@@ -175,6 +176,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/native_callable_test.zig", 1 },
     .{ "tests/blackbox/entry_discovery_test.zig", 1 },
     .{ "tests/blackbox/native_realms_test.zig", 1 },
+    .{ "tests/blackbox/native_realm_consumer_test.zig", 1 },
     .{ "tests/blackbox/typed_entry_roots_test.zig", 1 },
     .{ "tests/blackbox/nominal_layouts_test.zig", 1 },
     .{ "tests/blackbox/check_test.zig", 1 },
@@ -338,6 +340,26 @@ pub fn build(b: *std.Build) void {
         if (made.step) |s| exe.step.dependOn(s);
     }
     b.installArtifact(exe);
+
+    // Closed-box corpus driver for the existing public resident library API.
+    // It shares the ordinary compiler module; no production CLI feature.
+    const session_driver = b.addExecutable(.{
+        .name = "beni-session-driver",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/session_driver.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "beni", .module = exe_beni },
+                .{ .name = "diagnostic", .module = diagnostic_mod },
+            },
+        }),
+    });
+    for ([_]Stable{ default_id.stable, default_pack, default_core, default_platforms }) |made| {
+        if (made.step) |s| session_driver.step.dependOn(s);
+    }
+    const session_driver_install = b.addInstallArtifact(session_driver, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
+    b.step("session-driver", "Build the ordinary public Session corpus driver").dependOn(&session_driver_install.step);
 
     // The skill for coding agents (`docs/design/frontend.md` §12.2): the
     // folder `skills/beni/` goes beside the binary, under
@@ -617,6 +639,7 @@ pub fn build(b: *std.Build) void {
     node_probe.has_side_effects = true;
     const bb: Blackbox = .{
         .node_version = node_probe.captureStdOut(.{}),
+        .session_driver_install = &session_driver_install.step,
         .b = b,
         .target = target,
         .optimize = optimize,
@@ -2451,6 +2474,7 @@ const HarnessEnvironment = struct {
 /// The black-box test roots, compiled against the build's target and
 /// optimize mode and run from the repo root.
 const Blackbox = struct {
+    session_driver_install: *std.Build.Step,
     b: *std.Build,
     /// What `node --version` printed, asked once per build; every process
     /// gets it as `--node-version=` (`tests/test_runner.zig`).
@@ -2526,6 +2550,10 @@ const Blackbox = struct {
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = runTests(bb.b, t);
         r.addPrefixedFileContentArg("--node-version=", bb.node_version);
+        if (std.mem.eql(u8, t.name, "session_api_test")) {
+            r.step.dependOn(bb.session_driver_install);
+            r.setEnvironmentVariable("BENI_SESSION_DRIVER", installPath(bb.b, "tools/beni-session-driver"));
+        } else r.setEnvironmentVariable("BENI_SESSION_DRIVER", "");
         r.step.dependOn(switch (env.exe) {
             .safe => bb.safe_install,
             .fast => bb.perf_install,

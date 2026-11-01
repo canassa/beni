@@ -821,11 +821,15 @@ pub fn run(
 /// exists to catch. `options.out_dir` is unused here and nothing is written.
 ///
 /// Diagnostics are owned by the caller, messages included, like `run`'s.
+const ContractIntent = enum { inspection, execution };
 pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
+    return checkContractIntent(gpa, scratch, session, options, .execution);
+}
+fn checkContractIntent(gpa: Allocator, scratch: Allocator, session: *Session, options: Options, intent: ContractIntent) Allocator.Error![]const Item {
     var io_failure: ?Session.IoFailure = null;
     session.entry_graph.reset();
     session.entry_plan.reset();
-    const input: Emitter.BuildInput = .{ .options = options };
+    const input: Emitter.BuildInput = .{ .options = options, .contract_intent = intent };
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -836,7 +840,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     defer e.projection.deinit(gpa);
     defer e.diagnostics.deinit(gpa);
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
-    try e.refusePendingNative();
+    if (intent == .execution) try e.refusePendingNative();
     if (e.hasErrors()) return e.diagnostics.toOwnedSlice(gpa);
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
@@ -861,7 +865,7 @@ pub const EntryInspection = struct {
 };
 pub fn inspectEntry(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error!EntryInspection {
     session.entry_graph.reset();
-    const contract = try checkContract(gpa, scratch, session, options);
+    const contract = try checkContractIntent(gpa, scratch, session, options, .inspection);
     for (contract) |item| if (item.severity == .@"error") return .{ .diagnostics = contract };
     var io_failure: ?Session.IoFailure = null;
     const input: Emitter.BuildInput = .{ .options = options };
@@ -1377,6 +1381,7 @@ const Emitter = struct {
     /// Immutable options/selection; Session remains an explicit mutable service.
     const BuildInput = struct {
         options: Options,
+        contract_intent: ContractIntent = .execution,
         selected: ?Selected = null,
     };
     const Projection = struct {
@@ -1858,6 +1863,11 @@ const Emitter = struct {
             var declared: std.ArrayList(Declared) = .empty;
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
+                // Read-only inspection knows this exact checked recipe identity;
+                // no sibling or arbitrary JavaScript grants its future readiness.
+                if (e.input.contract_intent == .inspection) if (e.session.native_bindings.text_encoder) |native| {
+                    if (native.module == m and native.checked.declaration == index) continue;
+                };
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
                 // so check 4 and the call sites cannot disagree: the arity is

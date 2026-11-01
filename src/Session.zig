@@ -700,6 +700,10 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     session.entry_graph.reset();
     session.entry_plan.reset();
     session.native_bindings = .{};
+    // The aggregate borrows worker messages: drop those views before freeing
+    // the previous run's owned errors/warnings. Current waves append afresh.
+    session.diagnostics.clearRetainingCapacity();
+    for (session.workers) |*worker| worker.truncateDiagnostics(session.gpa, 0);
     const gpa = session.gpa;
 
     // 1. Enumerate — serial, sorted, numbered.
@@ -3528,4 +3532,51 @@ test "native candidate attests actual ordinary nominal and impure class before i
 
 test "native candidate ordinary identical embedded supplier has no attestation" {
     try checkedNativeCandidate(true);
+}
+
+test "resident diagnostic wave replaces old warning error and repaired source messages" {
+    const a = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const len = try tmp.dir.realPath(std.testing.io, &path_buf);
+    const path = try std.fs.path.join(a, &.{ path_buf[0..len], "Main.beni" });
+    defer a.free(path);
+    const cache_path = try std.fs.path.join(a, &.{ path_buf[0..len], "cache" });
+    defer a.free(cache_path);
+    const profile_path = try std.fs.path.join(a, &.{ path_buf[0..len], "profile.json" });
+    defer a.free(profile_path);
+    var cache_failure: ?CacheDir.Failure = null;
+    var cache = try CacheDir.open(std.testing.io, cache_path, &cache_failure);
+    defer cache.close();
+    var session = try Session.init(a, std.testing.io, .{ .jobs = 1, .diagnostics = .json, .informational = true, .cache = &cache, .self_profile = profile_path });
+    defer session.deinit();
+    try session.store.addPending(a, path, @intCast(len + 1), .app);
+    var output: Io.Writer.Allocating = .init(a);
+    defer output.deinit();
+    const sources = [_][]const u8{
+        "pub value : ⊤\nvalue =\n    _ = ⊤\n    ⊤\n",
+        "pub value : ⊤\nvalue =\n    _ = ⊤\n    ⊤\n",
+        "pub value : ⊤\nvalue = λx → x\n",
+        "pub value : ⊤\nvalue = ⊤\n",
+    };
+    for (sources, 0..) |source, i| {
+        try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "Main.beni", .data = source });
+        if (i != 0) try session.store.read(a, std.testing.io, session.store.find(path).?);
+        output.clearRetainingCapacity();
+        const summary = try session.run(&.{}, check_phases, &output.writer);
+        if (i == 1) {
+            try std.testing.expect(session.profile.counter(.frontend_hits) > 0);
+            try std.testing.expect(session.profile.counter(.cache_hits) > 0);
+        }
+        try std.testing.expectEqual(@as(u32, if (i == 2) 1 else 0), summary.errors);
+        try std.testing.expectEqual(@as(u32, if (i < 2) 1 else 0), summary.warnings);
+        if (i < 3) {
+            try std.testing.expectEqual(@as(usize, 1), session.diagnostics.items.len);
+            try std.testing.expectEqual(if (i < 2) diagnostic.Code.unit_discarded else diagnostic.Code.type_mismatch, session.diagnostics.items[0].code);
+        } else {
+            try std.testing.expectEqual(@as(usize, 0), session.diagnostics.items.len);
+            try std.testing.expectEqualStrings("", output.written());
+        }
+    }
 }

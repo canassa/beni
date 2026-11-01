@@ -1,0 +1,15 @@
+## 2026-11-01 13:22 UTC — Select native realm execution evidence
+
+### What I did
+
+Connected the owned source execution graph to the actual selected ordinary entry/runtime Plan and an appended private inspector section. Definite execution, possible initializer/code retention and deferred callable uses remain distinct. Current registry qualified declarations and binding digests supply native seeds; ordinary type/effect equality never supplies callable identity. Mixed unresolved uses dominate each native aggregate, while unattributed aggregate escapes retain global partial coverage. Public native execution remains refused. Inspection alone may omit the exact currently attested native declaration from sibling requirements; physical shadows and unrelated foreign declarations retain ordinary checks.
+
+Nine registered consumer blackbox scenarios and all affected suites pass against the frozen Debug compiler: typed entry roots14, nominal layouts15, native source3 and native callable5, for46 distinct registered scenarios. Five semantic unit cases plus2 import roots pass under the unchanged1000ms guard. They cover actual single-Session repair/reset, selected Window refusal for a private narrow seed, distinct equal-rung function identities, allocator failure cleanup, and ordinary cached warning/error replacement. The packaged-core native source fixture executes the real builder, registry adapter and selected consumer. Parent independent replay, full gates and performance acceptance remain pending.
+
+### What I learned
+
+Cold/warm actual field radix work differs227/240 because source symbol identities can change directory topology. The normal deterministic artifact now explicitly labels the proven fieldStepsBound; actual field_steps remain unchanged and self-profile records both successful builder runs. Final profile flushing after late inspector work preserves actual counters, with best-effort failure-path traces and no broken-writer output promise.
+
+Initial missing Evidence input, malformed field-call syntax, dump multiple-input invocation and a direct-test-filter spelling were fixture/setup failures, retained separately. The first profile assertions correctly failed because Session's early flush preceded inspector counters; check and dump now perform one final late flush. An initial reused-Session fixture incorrectly re-added embedded sources, creating duplicate modules; the registry correctly refused that setup. Correct resident SourceStore updates exposed real stale diagnostics: repaired source still reported the preceding type_mismatch while a fresh Session was clean. Issue #1539 records this independently reproduced bug. Run-start cleanup clears the borrowed aggregate before owned worker diagnostics; unchanged cached warning replay still reports exactly one current warning, a new error exactly once, and repair none.
+
+The frozen checkpoint does not enable native lowering or certify whole-entry completeness, discovery completeness, C/runtime storage, ownership-v2, launch, Wire or EntryHost. Later facade work is a separate reviewed implementation.

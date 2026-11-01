@@ -69,6 +69,9 @@ failures: std.MultiArrayList(Failure) = .empty,
 bytes: std.ArrayList(u8) = .empty,
 counts: Counts = .{},
 proofs: Proofs = .{},
+/// One successful hidden realm inspection, invalidated with this checked store.
+realm_request: enum { unprepared, selected, selection_missing, open_library } = .unprepared,
+selected_source: ?Ir.Site = null,
 /// This partial kernel never sets whole-worker discovery complete.
 discovery_complete: bool = false,
 input_supported: bool = true,
@@ -79,6 +82,8 @@ pub fn reset(g: *Graph) void {
     g.declaration_liveness = .absent;
     g.counts = .{};
     g.proofs = .{};
+    g.realm_request = .unprepared;
+    g.selected_source = null;
     g.discovery_complete = false;
     g.input_supported = true;
 }

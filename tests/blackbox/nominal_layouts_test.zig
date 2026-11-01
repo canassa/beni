@@ -442,22 +442,71 @@ test "nominal layouts discard dependency-tainted error terms without adding inte
 }
 
 const source_header = "native-realm-source schema=1 proof=source-records realmProved=false entryComplete=false\n";
-/// The old evidence remains exact. A known, uniquely delimited new source
-/// section is checked separately; an unknown suffix is never silently dropped.
+const execution_header = "native-realm-execution schema=1 proof=source-execution entryComplete=false nativeLowering=false\n";
+fn executionMetric(line: []const u8, key: []const u8) !u64 {
+    const at = (std.mem.indexOf(u8, line, key) orelse return error.MissingExecutionMetric) + key.len;
+    const end = std.mem.indexOfScalarPos(u8, line, at, ' ') orelse line.len;
+    return std.fmt.parseInt(u64, line[at..end], 10);
+}
+/// Preserve every old byte; accept only the two explicitly versioned new
+/// sections with their known row grammar and complete declared row counts.
 fn beforeSource(text: []const u8) ![]const u8 {
     const at = std.mem.indexOf(u8, text, source_header) orelse return error.MissingRealmSource;
     try testing.expect(at == 0 or text[at - 1] == '\n');
     try testing.expect(std.mem.indexOfPos(u8, text, at + source_header.len, "native-realm-source ") == null);
+    const exec_at = std.mem.indexOfPos(u8, text, at + source_header.len, execution_header) orelse return error.MissingRealmExecution;
+    try testing.expect(std.mem.indexOfPos(u8, text, exec_at + execution_header.len, "native-realm-execution ") == null);
     try testing.expect(std.mem.endsWith(u8, text, "\n"));
     var modules: usize = 0;
-    var lines = std.mem.splitScalar(u8, text[at + source_header.len ..], '\n');
-    while (lines.next()) |line| {
-        if (line.len == 0) continue;
-        const module = std.mem.startsWith(u8, line, "  realm-module ");
-        try testing.expect(module or std.mem.startsWith(u8, line, "  realm-scope ") or std.mem.startsWith(u8, line, "  realm-literal ") or std.mem.startsWith(u8, line, "  realm-call ") or std.mem.startsWith(u8, line, "  realm-reference "));
+    var source_lines = std.mem.splitScalar(u8, text[at + source_header.len .. exec_at], '\n');
+    while (source_lines.next()) |line_| {
+        if (line_.len == 0) continue;
+        const module = std.mem.startsWith(u8, line_, "  realm-module ");
+        try testing.expect(module or std.mem.startsWith(u8, line_, "  realm-scope ") or std.mem.startsWith(u8, line_, "  realm-literal ") or std.mem.startsWith(u8, line_, "  realm-call ") or std.mem.startsWith(u8, line_, "  realm-reference "));
         modules += @intFromBool(module);
     }
     try testing.expect(modules > 0);
+    const prefixes = [_][]const u8{ "  realm-selection ", "  realm-consumer ", "  realm-builder ", "  realm-kernel ", "  realm-exec ", "  realm-root ", "  realm-invocation ", "  realm-native ", "  realm-native-use ", "  realm-residual " };
+    var counts: [prefixes.len]u64 = @splat(0);
+    var expected_exec: u64 = 0;
+    var expected_roots: u64 = 0;
+    var expected_calls: u64 = 0;
+    var expected_native: u64 = 0;
+    var expected_residual: u64 = 0;
+    var source_uses: u64 = 0;
+    var lines = std.mem.splitScalar(u8, text[exec_at + execution_header.len ..], '\n');
+    while (lines.next()) |line_| {
+        if (line_.len == 0) continue;
+        const kind = for (prefixes, 0..) |prefix, i| {
+            if (std.mem.startsWith(u8, line_, prefix)) break i;
+        } else return error.UnknownRealmExecutionRow;
+        counts[kind] += 1;
+        if (kind >= 4) {
+            const rest = line_[prefixes[kind].len..];
+            _ = try std.fmt.parseInt(u64, rest[0 .. std.mem.indexOfScalar(u8, rest, ' ') orelse return error.MissingExecutionIndex], 10);
+            try testing.expect(std.mem.indexOf(u8, line_, " source=") != null);
+        }
+        switch (kind) {
+            1 => {
+                expected_roots = try executionMetric(line_, "roots=");
+                expected_native = try executionMetric(line_, "nativeRows=");
+                source_uses = try executionMetric(line_, "sourceUses=");
+            },
+            2 => {
+                expected_calls = try executionMetric(line_, "calls=");
+                expected_residual = try executionMetric(line_, "residuals=");
+            },
+            3 => expected_exec = try executionMetric(line_, "nodes="),
+            else => {},
+        }
+    }
+    for (counts[0..4]) |count_| try testing.expectEqual(@as(u64, 1), count_);
+    try testing.expectEqual(expected_exec, counts[4]);
+    try testing.expectEqual(expected_roots, counts[5]);
+    try testing.expectEqual(expected_calls, counts[6]);
+    try testing.expectEqual(expected_native, counts[7]);
+    try testing.expect(counts[8] <= source_uses);
+    try testing.expectEqual(expected_residual, counts[9]);
     return text[0..at];
 }
 

@@ -18,24 +18,6 @@ pub fn inspect(a: std.mem.Allocator, scratch: std.mem.Allocator, session: *Sessi
         a.free(inspection.diagnostics);
     }
     if (inspection.reach) |reach| {
-        if (session.options.native_realms) {
-            var source = RealmInspect.prepare(a, .{ .graph = &session.graph, .interner = &session.interner, .dispatch = session.checked.dispatch }) catch |err| switch (err) {
-                error.OutOfMemory => return error.OutOfMemory,
-                else => {
-                    const root = reach.entry.?;
-                    const file = session.graph.moduleFile(root.module);
-                    const token = session.artifacts.bir(file).decls[root.index].name_token;
-                    const message = try std.fmt.allocPrint(a, "Native realm inspection has unavailable retained original source events ({s}). No entry graph was printed.", .{@errorName(err)});
-                    errdefer a.free(message);
-                    const items = try a.alloc(Emit.Item, inspection.diagnostics.len + 1);
-                    @memcpy(items[0..inspection.diagnostics.len], inspection.diagnostics);
-                    items[inspection.diagnostics.len] = .{ .code = .internal, .file = file, .token = token, .message = message };
-                    a.free(inspection.diagnostics);
-                    return items;
-                },
-            };
-            source.deinit(a);
-        }
         if (session.entry_plan.validated and session.entry_plan.selected != .none) {
             const root = reach.entry.?;
             const file = session.graph.moduleFile(root.module);
@@ -53,7 +35,59 @@ pub fn inspect(a: std.mem.Allocator, scratch: std.mem.Allocator, session: *Sessi
             try Discover.run(a, scratch, .{ .metadata = &session.entry_plan, .reach = reach, .entry = root }, &session.entry_graph);
         } else session.entry_graph.input_supported = false;
     } else session.entry_graph.input_supported = false;
+    for (inspection.diagnostics) |item| if (item.severity == .@"error") return inspection.diagnostics;
+    if (session.options.native_realms) {
+        const selected: ?@import("../check/Realms.zig").QualifiedDecl = if (inspection.reach) |reach| .{ .module = reach.entry.?.module, .declaration = reach.entry.?.index } else null;
+        var prepared = realmPrepare(a, session, selected, options.library) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                const message = try std.fmt.allocPrint(a, "Native realm inspection has unavailable original source/root evidence ({s}). No entry graph was printed.", .{@errorName(err)});
+                errdefer a.free(message);
+                var item: Emit.Item = .{ .code = .internal, .file = @fromBackingInt(0), .token = 0, .message = message, .at = .{ .path = "<native-realms>" } };
+                if (selected) |root| {
+                    item.file = session.graph.moduleFile(root.module);
+                    item.token = session.artifacts.bir(item.file).decls[root.declaration].name_token;
+                    item.at = null;
+                }
+                const items = try a.alloc(Emit.Item, inspection.diagnostics.len + 1);
+                @memcpy(items[0..inspection.diagnostics.len], inspection.diagnostics);
+                items[inspection.diagnostics.len] = item;
+                a.free(inspection.diagnostics);
+                return items;
+            },
+        };
+        prepared.deinit(a);
+        session.entry_graph.realm_request = if (options.library) .open_library else if (selected != null) .selected else .selection_missing;
+        session.entry_graph.selected_source = if (selected) |root| .{ .module = @fromBackingInt(root.module.int()), .declaration = @fromBackingInt(root.declaration), .instruction = .none } else null;
+    }
     return inspection.diagnostics;
+}
+/// The registry is the only production seed supplier. The small array follows
+/// its current indexed one-recipe domain; no source spelling grants authority.
+fn realmPrepare(a: std.mem.Allocator, session: *Session, selected: ?@import("../check/Realms.zig").QualifiedDecl, library: bool) RealmInspect.Error!RealmInspect.Prepared {
+    const Realms = @import("../check/Realms.zig");
+    var seeds: [1]Realms.NativeSeed = undefined;
+    var count: usize = 0;
+    if (session.native_bindings.text_encoder) |native| {
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(@import("../native/Source.zig").provenance, &digest, .{});
+        seeds[0] = .{ .target = .{ .module = native.module, .declaration = native.checked.declaration }, .allowed = native.candidate.realm_mask, .binding_digest = digest };
+        count = 1;
+    }
+    return RealmInspect.prepare(a, .{ .graph = &session.graph, .interner = &session.interner, .artifacts = &session.artifacts, .interfaces = session.resolution.interfaces, .provenance = session.resolution.provenance, .dispatch = session.checked.dispatch, .plan = &session.entry_plan, .entries = &session.entry_graph, .selected = selected, .library = library, .native_seeds = seeds[0..count], .registry_reads = @intCast(count), .profile = &session.profile });
+}
+/// The frontend has already flushed. Include actual post-check inspector work
+/// on every completed late path; keep the command's existing resource convention.
+pub fn flushProfile(session: *Session, stderr: *std.Io.Writer) bool {
+    const path = session.options.self_profile orelse return true;
+    session.writeProfile(path) catch |err| {
+        if (err == error.InputPath) {
+            const failure = session.io_failure.?;
+            stderr.print("beni: cannot read '{s}': {t}\n", .{ failure.path, failure.err }) catch {};
+        } else stderr.print("beni: {t}\n", .{err}) catch {};
+        return false;
+    };
+    return true;
 }
 fn typedInput(session: *const Session) TypedInspect.Input {
     return .{
@@ -92,12 +126,14 @@ fn site(w: *std.Io.Writer, session: *const Session, id: Ir.SiteId) std.Io.Writer
     try w.print("{s}.{s}", .{ session.store.moduleName(file), session.interner.slice(b.symbol(b.decls[@backingInt(row.declaration)].name)) });
     if (row.instruction != .none) try w.print("@{d}", .{@backingInt(row.instruction)});
 }
-pub fn write(w: *std.Io.Writer, session: *const Session) (TypedInspect.Error || RealmInspect.Error)!void {
+pub fn write(w: *std.Io.Writer, session: *Session) (TypedInspect.Error || RealmInspect.Error)!void {
     // Also protect direct callers: the compact prefix must not escape before
     // the typed boundary has accepted every current selected declaration.
     var prepared: ?TypedInspect.Prepared = if (session.entry_plan.validated and session.entry_plan.selected != .none) try TypedInspect.prepare(session.gpa, typedInput(session)) else null;
     defer if (prepared) |*value| value.deinit(session.gpa);
-    var realm: ?RealmInspect.Prepared = if (session.options.native_realms) try RealmInspect.prepare(session.gpa, .{ .graph = &session.graph, .interner = &session.interner, .dispatch = session.checked.dispatch }) else null;
+    if (session.options.native_realms and session.entry_graph.realm_request == .unprepared) return error.UnpreparedRealmRequest;
+    const selected: ?@import("../check/Realms.zig").QualifiedDecl = if (session.entry_graph.selected_source) |root| .{ .module = @fromBackingInt(@backingInt(root.module)), .declaration = @backingInt(root.declaration) } else null;
+    var realm: ?RealmInspect.Prepared = if (session.options.native_realms) try realmPrepare(session.gpa, session, selected, session.entry_graph.realm_request == .open_library) else null;
     defer if (realm) |*value| value.deinit(session.gpa);
     const g = &session.entry_graph;
     try w.print("entries schema=1 partial=true discoveryComplete={} inputSupported={}\n", .{ g.discovery_complete, g.input_supported });
@@ -258,4 +294,232 @@ test "entries writer retains partial output for a validated legacy plan without 
         \\
     , output.written());
     try std.testing.expectEqual(@as(?Emit.Item, null), try typedDiagnostic(a, typedInput(&session), @fromBackingInt(0), 0));
+}
+
+const RealmFixture = struct {
+    session: *Session,
+    diagnostics: std.Io.Writer.Allocating,
+    arena: std.heap.ArenaAllocator,
+    tmp: std.testing.TmpDir,
+    main_path: []const u8 = &.{},
+    rel_start: u32 = 0,
+    fn init() !RealmFixture {
+        const a = std.testing.allocator;
+        const session = try a.create(Session);
+        errdefer a.destroy(session);
+        session.* = try Session.init(a, std.testing.io, .{ .jobs = 1, .native_realms = true, .diagnostics = .json, .entry_root_requests = &.{.{ .program = "Start.Program" }} });
+        return .{ .session = session, .diagnostics = .init(a), .arena = .init(a), .tmp = std.testing.tmpDir(.{}) };
+    }
+    fn deinit(f: *RealmFixture) void {
+        f.session.deinit();
+        std.testing.allocator.destroy(f.session);
+        f.diagnostics.deinit();
+        f.arena.deinit();
+        f.tmp.cleanup();
+    }
+    fn run(f: *RealmFixture, body: [:0]const u8) !u32 {
+        const a = std.testing.allocator;
+        try f.tmp.dir.writeFile(std.testing.io, .{ .sub_path = "Main.beni", .data = body });
+        if (f.session.store.count() == 0) {
+            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const len = try f.tmp.dir.realPath(std.testing.io, &path_buf);
+            f.main_path = try std.fs.path.join(f.arena.allocator(), &.{ path_buf[0..len], "Main.beni" });
+            f.rel_start = @intCast(len + 1);
+            try f.session.store.addPending(a, f.main_path, f.rel_start, .app);
+            try f.session.store.addEmbedded(a, "platform/Start.beni", 9, .platform, "pub type Program = Program\n");
+            try f.session.store.addEmbedded(a, "platform/Rt.beni", 9, .platform, "import Start exposing (Program)\n\n\npub run : Program → ⊤\nrun _ = ⊤\n");
+            try f.session.store.addGenerated(a, "core/Browser/Host/TextEncoder.beni", 5, .core, @import("../native/Source.zig").source, .text_encoder_v1);
+        } else {
+            // Resident numbered inputs are retained. Refresh its bytes through
+            // the ordinary read API; requeueing sources duplicates module IDs.
+            try f.session.store.read(a, std.testing.io, f.session.store.find(f.main_path).?);
+        }
+        f.diagnostics.clearRetainingCapacity();
+        return (try f.session.run(&.{}, Session.check_phases, &f.diagnostics.writer)).errors;
+    }
+    fn options(f: *RealmFixture, library: bool, legacy: bool) !Emit.Options {
+        const a = f.arena.allocator();
+        const manifest = try @import("../js/Manifest.zig").parse(a,
+            \\{"platform":true,"program":"Start.Program","entryKinds":[{"programType":"Start.Program","realm":"window","runtime":"Rt","constructors":[],"launches":[],"parameters":[]}]}
+        );
+        const kinds = try a.alloc(Emit.EntryKind, if (legacy) 0 else 1);
+        if (!legacy) kinds[0] = .{ .definition = manifest.entryKinds[0], .root = "platform", .layer = 0 };
+        return .{ .out_dir = &.{}, .embedded = &.{}, .library = library, .platform = .{ .root = "platform", .program = manifest.program, .entry_kinds = kinds } };
+    }
+    fn query(f: *RealmFixture, library: bool, legacy: bool) !void {
+        const items = try inspect(std.testing.allocator, f.arena.allocator(), f.session, try f.options(library, legacy));
+        defer {
+            for (items) |item| std.testing.allocator.free(item.message);
+            std.testing.allocator.free(items);
+        }
+        if (items.len != 0) for (items) |item| std.debug.print("{t}: {s}\n", .{ item.code, item.message });
+        try std.testing.expectEqual(@as(usize, 0), items.len);
+    }
+    fn build(f: *RealmFixture, a: std.mem.Allocator) !@import("../check/RealmBuild.zig").Output {
+        const native = f.session.native_bindings.text_encoder orelse return error.MissingNative;
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(@import("../native/Source.zig").provenance, &digest, .{});
+        const seeds = [_]@import("../check/Realms.zig").NativeSeed{.{ .target = .{ .module = native.module, .declaration = native.checked.declaration }, .allowed = native.candidate.realm_mask, .binding_digest = digest }};
+        return @import("../check/RealmBuild.zig").build(a, .{ .graph = &f.session.graph, .artifacts = &f.session.artifacts, .interfaces = f.session.resolution.interfaces, .provenance = f.session.resolution.provenance, .dispatch = f.session.checked.dispatch, .native_seeds = &seeds });
+    }
+    fn consumeInput(f: *RealmFixture) @import("../entry/RealmConsume.zig").Input {
+        const selected_site = f.session.entry_graph.selected_source;
+        return .{ .graph = &f.session.graph, .plan = &f.session.entry_plan, .entries = &f.session.entry_graph, .selected = if (selected_site) |s| .{ .module = @fromBackingInt(@backingInt(s.module)), .declaration = @backingInt(s.declaration) } else null };
+    }
+};
+const realm_good =
+    \\import Start
+    \\import Browser.Host.TextEncoder as Encoder
+    \\
+    \\
+    \\main : Start.Program
+    \\main =
+    \\    _ = Encoder.new ⊤
+    \\    Start.Program
+    \\
+;
+
+test "realm consumer actual selected Window refuses a private narrow native mask" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(false, false);
+    try std.testing.expectEqual(@import("../entry/Plan.zig").Realm.window, f.session.entry_plan.kinds.get(@backingInt(f.session.entry_plan.selected)).realm);
+    var built = try f.build(a);
+    defer built.deinit(a);
+    try std.testing.expectEqual(@as(usize, 1), built.seeds.len);
+    // Private TEST evidence only, after the real ordinary/registry producer.
+    // Kernel rejects this tagged origin in production binaries.
+    built.seeds.items(.origin)[0] = .private_test;
+    built.seeds.items(.allowed)[0] = 2;
+    var result = try @import("../entry/RealmConsume.zig").consume(a, f.consumeInput(), &built);
+    defer result.deinit(a);
+    try std.testing.expectEqual(@import("../entry/RealmConsume.zig").Summary.violated, result.state);
+    try std.testing.expectEqual(@as(u64, 1), result.work.selected_kind_reads);
+    try std.testing.expectEqual(@as(u64, 1), result.work.selected_runtime_reads);
+    try std.testing.expectEqual(@import("../entry/RealmConsume.zig").NativeState.unresolved, result.natives.get(0).state);
+    try std.testing.expectEqual(@as(u32, 0), result.natives.get(0).checked_invocations);
+}
+
+test "realm consumer single Session source failure repair library and preparation failures clear selected authority" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(false, false);
+    try std.testing.expect(f.session.entry_graph.selected_source != null);
+    try std.testing.expectEqual(@as(u32, 1), try f.run("pub broken : ⊤\nbroken = λx → x\n"));
+    try std.testing.expect(f.session.entry_graph.selected_source == null);
+    try std.testing.expectEqual(.unprepared, f.session.entry_graph.realm_request);
+    var out: std.Io.Writer.Allocating = .init(a);
+    defer out.deinit();
+    try std.testing.expectError(error.UnpreparedRealmRequest, write(&out.writer, f.session));
+    try std.testing.expectEqualStrings("", out.written());
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(false, false);
+    // Real installed source authority removed only for this negative boundary.
+    f.session.checked.dispatch[0].realm_sources.deinit(a);
+    const bad_items = try inspect(a, f.arena.allocator(), f.session, try f.options(false, false));
+    defer {
+        for (bad_items) |item| a.free(item.message);
+        a.free(bad_items);
+    }
+    try std.testing.expectEqual(@as(usize, 1), bad_items.len);
+    try std.testing.expectEqual(@import("diagnostic").Code.internal, bad_items[0].code);
+    try std.testing.expect(f.session.entry_graph.selected_source == null);
+    try std.testing.expectEqual(.unprepared, f.session.entry_graph.realm_request);
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(true, false);
+    try std.testing.expectEqual(.open_library, f.session.entry_graph.realm_request);
+    try std.testing.expect(f.session.entry_graph.selected_source == null);
+    try f.query(false, true);
+    try std.testing.expectEqual(.selected, f.session.entry_graph.realm_request);
+    try std.testing.expectEqual(@import("../entry/Plan.zig").KindIndex.none, f.session.entry_plan.selected);
+}
+
+fn consumeAllocation(a: std.mem.Allocator, f: *RealmFixture, built: *const @import("../check/RealmBuild.zig").Output) !void {
+    var result = try @import("../entry/RealmConsume.zig").consume(a, f.consumeInput(), built);
+    defer result.deinit(a);
+}
+fn prepareAllocation(a: std.mem.Allocator, f: *RealmFixture) !void {
+    const q = f.consumeInput().selected;
+    var prepared = try realmPrepare(a, f.session, q, false);
+    defer prepared.deinit(a);
+}
+test "realm consumer and prepared inspector release every injected allocation on actual selected source" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(false, false);
+    var built = try f.build(a);
+    defer built.deinit(a);
+    try std.testing.checkAllAllocationFailures(a, consumeAllocation, .{ &f, &built });
+    try std.testing.checkAllAllocationFailures(a, prepareAllocation, .{&f});
+}
+
+test "realm consumer selected Window keeps equal ordinary rung functions independent" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    try std.testing.expectEqual(@as(u32, 0), try f.run(
+        \\import Start
+        \\import Browser.Host.TextEncoder as Encoder
+        \\
+        \\
+        \\pub left : ⊤ → Encoder.TextEncoder
+        \\left x = Encoder.new x
+        \\
+        \\
+        \\pub right : ⊤ → Encoder.TextEncoder
+        \\right x = Encoder.new x
+        \\
+        \\
+        \\holder = ( left, right )
+        \\
+        \\
+        \\main : Start.Program
+        \\main =
+        \\    _ = left ⊤
+        \\    _ = holder
+        \\    Start.Program
+        \\
+    ));
+    try f.query(false, false);
+    const m = f.session.graph.lookup(.app, f.session.interner.find("Main").?).?;
+    const iface = &f.session.resolution.interfaces[m.int()];
+    var checked: usize = 0;
+    for (iface.values) |value| {
+        const name = f.session.interner.slice(iface.symbol(value.name));
+        if (!std.mem.eql(u8, name, "left") and !std.mem.eql(u8, name, "right")) continue;
+        const block = iface.effectBlock(iface.scheme(value.scheme)).?;
+        var paths = block.sites();
+        var found = false;
+        while (paths.next()) |path| if (path.root == 0 and path.steps.len == 0) {
+            try std.testing.expectEqual(@as(u2, 1), block.class(path.class).rung);
+            found = true;
+        };
+        try std.testing.expect(found);
+        checked += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), checked);
+    var built = try f.build(a);
+    defer built.deinit(a);
+    const bir = f.session.artifacts.bir(f.session.graph.moduleFile(m));
+    var execs: [2]@import("../check/Realms.zig").ExecId = @splat(.none);
+    for (bir.decls, 0..) |decl, di| {
+        const name = f.session.interner.slice(bir.symbol(decl.name));
+        const index: usize = if (std.mem.eql(u8, name, "left")) 0 else if (std.mem.eql(u8, name, "right")) 1 else continue;
+        execs[index] = try built.callableAt(.{ .module = m, .declaration = @intCast(di) });
+        try built.seeds.append(a, .{ .target = execs[index], .allowed = @as(u8, 1) << @intCast(index), .binding_digest = @splat(0), .origin = .private_test });
+    }
+    try std.testing.expect(execs[0] != .none and execs[1] != .none and execs[0] != execs[1]);
+    var result = try @import("../entry/RealmConsume.zig").consume(a, f.consumeInput(), &built);
+    defer result.deinit(a);
+    try std.testing.expectEqual(@as(u8, 1), result.facts.facts.get(@backingInt(execs[0])).allowed);
+    try std.testing.expectEqual(@as(u8, 2), result.facts.facts.get(@backingInt(execs[1])).allowed);
+    try std.testing.expect(result.definite[@backingInt(execs[0])]);
+    try std.testing.expect(!result.definite[@backingInt(execs[1])]);
+    try std.testing.expectEqual(@import("../entry/RealmConsume.zig").State.covered, result.roots.get(0).state);
 }

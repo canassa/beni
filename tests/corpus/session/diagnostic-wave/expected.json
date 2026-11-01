@@ -1,0 +1,6 @@
+[
+{"run":0,"errors":0,"warnings":1,"cached":false,"diagnostics":[{"code":"unit_discarded","severity":"warning","span":{"file":"Main.beni","start":{"line":3,"col":5},"end":{"line":3,"col":8}},"title":"UNIT DISCARDED","message":"This `_ =` throws away a `⊤`, which a statement line does already. Write the\nline without it."}]},
+{"run":1,"errors":0,"warnings":1,"cached":true,"diagnostics":[{"code":"unit_discarded","severity":"warning","span":{"file":"Main.beni","start":{"line":3,"col":5},"end":{"line":3,"col":8}},"title":"UNIT DISCARDED","message":"This `_ =` throws away a `⊤`, which a statement line does already. Write the\nline without it."}]},
+{"run":2,"errors":1,"warnings":0,"cached":false,"diagnostics":[{"code":"type_mismatch","severity":"error","span":{"file":"Main.beni","start":{"line":2,"col":9},"end":{"line":2,"col":10}},"title":"TYPE MISMATCH","message":"Something is off with the body of this definition:\n\nThe body is:\n\n    a → b\n\nBut the type annotation says it should be:\n\n    ⊤\n\nHint: beni does not implicitly convert `Int` to `Float`. Use `toFloat` to go\none way and `round`, `floor`, `ceiling` or `truncate` to go the other.\n"}]},
+{"run":3,"errors":0,"warnings":0,"cached":false,"diagnostics":[]}
+]

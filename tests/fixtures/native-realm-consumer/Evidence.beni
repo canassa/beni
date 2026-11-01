@@ -1,0 +1,27 @@
+import Browser.Host.TextEncoder as TextEncoder
+
+
+type Flag = Yes | No
+
+
+pub left : ⊤ → TextEncoder.TextEncoder
+left x = TextEncoder.new x
+
+
+pub right : ⊤ → TextEncoder.TextEncoder
+right x = TextEncoder.new x
+
+
+pub run : ⊤ → TextEncoder.TextEncoder
+run x = left x
+
+
+pub retained : ⊤ → TextEncoder.TextEncoder
+retained = TextEncoder.new
+
+
+pub blocked : Flag → TextEncoder.TextEncoder
+blocked flag =
+    case flag of
+        Yes → TextEncoder.new ⊤
+        No → TextEncoder.new ⊤
