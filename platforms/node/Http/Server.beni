@@ -204,28 +204,29 @@ loop handle scope handler upgrade =
 
 answer : Js.Value, (Request → Response), Maybe (Request → Upgrade) → ⊤
 answer incoming handler upgrade =
+    request = requestOf incoming
     case upgrade of
         Just upgradeHandler →
             if isUpgrade incoming then
-                upgradeWith incoming (upgradeHandler (requestOf incoming))
+                upgradeWith incoming request (upgradeHandler request)
             else
-                write incoming (handler (requestOf incoming))
+                write incoming (handler request)
 
         Nothing →
-            write incoming (handler (requestOf incoming))
+            write incoming (handler request)
 
 
 -- §9.11 (e): a refusal is written as an HTTP response; an acceptance
 -- opens the connection and runs the session in this fiber, unless the
 -- subprotocol is not one the client offered, or the client went away.
-upgradeWith : Js.Value, Upgrade → ⊤
-upgradeWith incoming upgrade =
+upgradeWith : Js.Value, Request, Upgrade → ⊤
+upgradeWith incoming request upgrade =
     case upgrade of
         Refuse response →
             refuseUpgrade incoming response
 
         Accept chosen limit session →
-            if chosen ≠ "" && not (List.member (protocols (requestOf incoming)) chosen) then
+            if chosen ≠ "" && not (List.member (protocols request) chosen) then
                 notOffered incoming chosen
             else
                 case WebSocket.upgraded incoming chosen limit of
@@ -306,31 +307,733 @@ find name headers =
                 find name rest
 
 
-foreign impure startListen : Address, Bool, Resume (Result ListenError Handle) → (⊤ → ⊤)
+-- The former sibling `Server.js`, in beni over `Js` (`boundary.md` §9.10,
+-- *The sibling, moved*). A handle is a host object `{ server, address,
+-- queue, waiter, closing, closed, waiters, sockets, upgrades }`: the
+-- `http.Server`, the address it bound, the requests that arrived whole and
+-- wait for the accept loop, the loop's `Resume` while it waits, the fibers
+-- waiting in `wait`, the sockets a WebSocket upgrade took from Node, and
+-- those upgrades (§9.11 (e), (g)). Node's `closeAllConnections` does not
+-- reach an upgraded socket, so the platform destroys them itself. Each
+-- primitive starts one host operation, resumes the waiting fiber once,
+-- and returns what cancels it. Every failure Node documents is caught by
+-- its code, and nothing else is caught (`CLAUDE.md` rule 9): anything
+-- else is thrown again, and Node reports it and exits 1
+-- (transparent-effects-proposal.md §16.5).
+-- The host modules, opened once when the module loads, as the sibling's
+-- imports were: a request's loops read them as bindings, not by a call.
+builtin : String → Js.Value
+builtin name = Js.call (Js.global "process") "getBuiltinModule" [ Js.from name ]
 
 
-foreign impure nextRequest : Handle, Resume Js.Value → (⊤ → ⊤)
+http : Js.Value
+http = builtin "node:http"
 
 
-foreign pure requestOf : Js.Value → Request
+buffer : Js.Value
+buffer = Js.get (builtin "node:buffer") "Buffer"
 
 
-foreign pure isUpgrade : Js.Value → Bool
+-- `ENETRESET`'s number, negated as libuv reports it (macOS and the BSDs;
+-- `NaN` where the platform has none, which matches nothing, as the
+-- sibling's `-undefined` did).
+enetreset : Int
+enetreset = 0 - Js.to (Js.get (Js.get (Js.get (builtin "node:os") "constants") "errno") "ENETRESET")
 
 
-foreign impure refuseUpgrade : Js.Value, Response → ⊤
+emptyBuffer : ⊤ → Js.Value
+emptyBuffer ⊤ = Js.call buffer "alloc" [ Js.from 0 ]
 
 
-foreign impure notOffered : Js.Value, String → ⊤
+push : Js.Value, Js.Value → ⊤
+push array value =
+    _ = Js.call array "push" [ value ]
+    ⊤
 
 
-foreign impure write : Js.Value, Response → ⊤
+hasOwn : Js.Value, Js.Value → Bool
+hasOwn object key = Js.to (Js.call (Js.global "Object") "hasOwn" [ object, key ])
 
 
-foreign impure awaitClosed : Handle, Resume ⊤ → (⊤ → ⊤)
+quote : String → String
+quote raw = Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from raw ])
 
 
-foreign impure beginClose : Handle → ⊤
+stderrLine : String → ⊤
+stderrLine line =
+    _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from (line ++ "\n") ]
+    ⊤
 
 
-foreign pure boundAddress : Handle → Address
+-- `ListenError`'s constructor for each failure Node documents for
+-- `server.listen`, by the error's `code` (§9.10 (e)).
+listenErrors : Js.Value
+listenErrors =
+    Js.object
+        [ ( "EADDRINUSE", Js.from AddressInUse )
+        , ( "EACCES", Js.from PermissionDenied )
+        , ( "EADDRNOTAVAIL", Js.from AddressNotAvailable ) -- The address's family (IPv6, say) is off on this machine.
+        , ( "EAFNOSUPPORT", Js.from AddressNotAvailable ) -- `getaddrinfo` could not answer the host's name, or not now.
+        , ( "ENOTFOUND", Js.from HostNotFound )
+        , ( "EAI_AGAIN", Js.from HostNotFound )
+        , ( "EAI_FAIL", Js.from HostNotFound )
+        , ( "EMFILE", Js.from TooManyOpenFiles )
+        , ( "ENFILE", Js.from TooManyOpenFiles )
+        ]
+
+
+-- A header value as a comma list matched without case (§9.11, amendment
+-- item 22): `upgrade`, `connection`.
+tokens : Js.Value → List String
+tokens value =
+    if Js.typeIs value "string" then
+        List.map (String.split (Js.to value) ",") λt → String.toLower (String.trim t)
+    else
+        []
+
+
+-- A request whose `upgrade` header is `websocket` goes to the `upgrade`
+-- event, and every other one, with another `upgrade` header too, to
+-- `request` (Node 24's `shouldUpgradeCallback`).
+asksForWebSocket : Js.Value → Bool
+asksForWebSocket req = List.member (tokens (Js.get (Js.get req "headers") "upgrade")) "websocket"
+
+
+startListen : Address, Bool, Resume (Result ListenError Handle) → (⊤ → ⊤)
+startListen at upgrades resume =
+    server =
+        if upgrades then
+            Js.call http "createServer"
+                [ Js.object [ ( "shouldUpgradeCallback", Js.from λreq → asksForWebSocket req ) ] ]
+        else
+            Js.call http "createServer" []
+    handle =
+        Js.object
+            [ ( "server", server )
+            , ( "address", Js.null )
+            , ( "queue", Js.array [] )
+            , ( "waiter", Js.null )
+            , ( "closing", Js.from False )
+            , ( "closed", Js.from False )
+            , ( "waiters", Js.array [] )
+            , ( "sockets", Js.construct (Js.global "Set") [] )
+            , ( "upgrades", Js.construct (Js.global "Set") [] )
+            ]
+    -- Set once the wait is over, or cancelled: the fiber is answered at
+    -- most once, and a cancelled one not at all.
+    settled = Js.ref False
+    refused = Js.from λerror →
+        -- An unnamed code is a defect whether or not anyone still waits.
+        code =
+            if Js.instanceOf error (Js.global "Error") then
+                Js.get error "code"
+            else
+                Js.undefined
+        if not (Js.typeIs code "string") || not (hasOwn listenErrors code) then
+            Js.throw error
+        else if Js.read settled then
+            -- Cancelled while binding: no one waits for the answer.
+            ⊤
+        else
+            Js.write settled True
+            Task.resume
+                resume
+                (Err (Js.to (Js.call (Js.global "Reflect") "get" [ listenErrors, code ])))
+    _ = Js.call server "once" [ Js.from "error", refused ]
+    _ =
+        Js.call server "once"
+            [ Js.from "listening"
+            , Js.from λ_ →
+                _ = Js.call server "off" [ Js.from "error", refused ]
+                bound = Js.call server "address" []
+                Js.set handle
+                    "address"
+                    (Js.from
+                        { host = Js.to (Js.get bound "address")
+                        , port = Js.to (Js.get bound "port")
+                        }
+                    )
+                if Js.read settled then
+                    -- Cancelled while binding: nothing waits, so the server
+                    -- closes now.
+                    _ = Js.call server "close" []
+                    ⊤
+                else
+                    Js.write settled True
+                    _ =
+                        Js.call server "on"
+                            [ Js.from "request", Js.from λreq res → receive handle req res ]
+                    if upgrades then
+                        _ =
+                            Js.call server "on"
+                                [ Js.from "upgrade"
+                                , Js.from λreq socket head → takeUpgrade handle req socket head
+                                ]
+                        ⊤
+                    _ =
+                        Js.call server "on"
+                            [ Js.from "close"
+                            , Js.from λ_ →
+                                Js.set handle "closed" (Js.from True)
+                                deliver handle
+                                waiters = Js.get handle "waiters"
+                                Js.set handle "waiters" (Js.array [])
+                                Js.each waiters λwaiter → Task.resume (Js.to waiter) ⊤
+                            ]
+                    Task.resume resume (Ok (Js.to handle))
+            ]
+    _ =
+        Js.call server "listen"
+            [ Js.object [ ( "host", Js.from at.host ), ( "port", Js.from at.port ) ] ]
+    λ⊤ → Js.write settled True
+
+
+-- A request as it arrives: its body collected whole, then queued for the
+-- accept loop. A client that closes the connection before the body is
+-- whole is `req`'s `error` with `ECONNRESET`, and the request is dropped:
+-- there is no one to answer. A connection that fails while the response
+-- is written is the socket's error, which Node routes to `clientError`
+-- and handles by default, and `res` emits none (measured): no listener is
+-- needed on it.
+receive : Js.Value, Js.Value, Js.Value → ⊤
+receive handle req res =
+    chunks = Js.array []
+    _ = Js.call req "on" [ Js.from "data", Js.from λchunk → push chunks chunk ]
+    _ =
+        Js.call req "on"
+            [ Js.from "error"
+            , Js.from λerror →
+                if
+                    Js.instanceOf error (Js.global "Error")
+                        && Js.same (Js.get error "code") (Js.from "ECONNRESET")
+                then
+                    ⊤
+                else
+                    Js.throw error
+            ]
+    _ =
+        Js.call req "on"
+            [ Js.from "end"
+            , Js.from λ_ →
+                body =
+                    Js.to
+                        (Js.call (Js.construct (Js.global "TextDecoder") []) "decode"
+                            [ Js.call buffer "concat" [ chunks ] ]
+                        )
+                push (Js.get handle "queue")
+                    (Js.object
+                        [ ( "handle", handle )
+                        , ( "req", req )
+                        , ( "res", res )
+                        , ( "body", Js.from body )
+                        ]
+                    )
+                deliver handle
+            ]
+    ⊤
+
+
+-- The codes of `error` on a socket that mean one client is gone (§9.11,
+-- amendment item 15): the same list as `WebSocket.js`'s, since the two
+-- cannot share a file.
+gone : Js.Value
+gone =
+    Js.object
+        [ ( "ECONNRESET", Js.from True )
+        , ( "EPIPE", Js.from True )
+        , ( "ETIMEDOUT", Js.from True )
+        , ( "ENETUNREACH", Js.from True )
+        , ( "EHOSTUNREACH", Js.from True )
+        , ( "EHOSTDOWN", Js.from True )
+        , ( "ENONET", Js.from True )
+        , ( "ENOPROTOOPT", Js.from True )
+        , ( "ECONNREFUSED", Js.from True )
+        , ( "ENOTSUP", Js.from True )
+        , ( "EPROTO", Js.from True )
+        , ( "EACCES", Js.from True )
+        , ( "ECONNABORTED", Js.from True )
+        , ( "ENETDOWN", Js.from True )
+        ]
+
+
+-- One client's connection is gone: an `error` whose `code` is in `gone`,
+-- or whose number is `ENETRESET` (macOS and the BSDs), which libuv does
+-- not name, so its `code` is not `ENETRESET` (§9.11, amendment item 15).
+isGone : Js.Value → Bool
+isGone error =
+    Js.instanceOf error (Js.global "Error")
+        && (hasOwn gone (Js.get error "code") || Js.same (Js.get error "errno") (Js.from enetreset))
+
+
+-- A request for a WebSocket (§9.11 (e)): its handshake is checked, then
+-- it waits for the accept loop with no body. A client that goes away
+-- while the program decides is the socket's `error` with a code of
+-- `gone`, which ends nothing else; `WebSocket.js` takes the socket over
+-- on accept, through the record of eight names item 26 gives (the body
+-- is the empty string: an upgrade carries none).
+takeUpgrade : Js.Value, Js.Value, Js.Value, Js.Value → ⊤
+takeUpgrade handle req socket head =
+    sockets = Js.get handle "sockets"
+    _ = Js.call sockets "add" [ socket ]
+    _ =
+        Js.call socket "on"
+            [ Js.from "close"
+            , Js.from λ_ →
+                _ = Js.call sockets "delete" [ socket ]
+                ⊤
+            ]
+    waiting = Js.from λerror →
+        if isGone error then
+            ⊤
+        else
+            Js.throw error
+    _ = Js.call socket "on" [ Js.from "error", waiting ]
+    case handshakeFault req of
+        Just fault →
+            writeRaw socket fault.status fault.headers (emptyBuffer ⊤)
+
+        Nothing →
+            upgrades = Js.get handle "upgrades"
+            incoming =
+                Js.object
+                    [ ( "handle", handle )
+                    , ( "req", req )
+                    , ( "res", Js.null )
+                    , ( "socket", socket )
+                    , ( "head", head )
+                    , ( "waiting", waiting )
+                    , ( "goAway", Js.null )
+                    , ( "body", Js.from "" )
+                    ]
+            _ = Js.call upgrades "add" [ incoming ]
+            _ =
+                Js.call socket "on"
+                    [ Js.from "close"
+                    , Js.from λ_ →
+                        _ = Js.call upgrades "delete" [ incoming ]
+                        ⊤
+                    ]
+            push (Js.get handle "queue") incoming
+            deliver handle
+
+
+-- RFC 6455 §4.2.1: what the server checks of a client's handshake, and
+-- the answer to one that fails: 426 for another version, 400 otherwise.
+-- Node checks only that `connection` holds `upgrade` and that an
+-- `upgrade` header exists; the method, the HTTP version and `host` are
+-- checked here (amendment item 22).
+handshakeFault : Js.Value → Maybe { status : Int, headers : List String }
+handshakeFault req =
+    bad = Just { status = 400, headers = [] }
+    headers = Js.get req "headers"
+    major = Js.to (Js.get req "httpVersionMajor")
+    minor = Js.to (Js.get req "httpVersionMinor")
+    if not (Js.same (Js.get req "method") (Js.from "GET")) then
+        bad
+    else if major < 1 || (major == 1 && minor < 1) then
+        bad
+    else if not (Js.typeIs (Js.get headers "host") "string") then
+        bad
+    else if not (List.member (tokens (Js.get headers "connection")) "upgrade") then
+        bad
+    else if not (Js.same (Js.get headers "sec-websocket-version") (Js.from "13")) then
+        Just { status = 426, headers = [ "sec-websocket-version", "13" ] }
+    else
+        key = Js.get headers "sec-websocket-key"
+        if
+            not (Js.typeIs key "string")
+                || not
+                    (Js.to
+                        (Js.call (Js.regExp "^[A-Za-z0-9+/]{21}[AQgw]==$" "") "test"
+                            [ Js.call key "trim" [] ]
+                        )
+                    )
+        then
+            bad
+        else
+            Nothing
+
+
+-- An HTTP/1.1 response written on a socket that Node gave up, then the
+-- end of the connection: a refused or a failed upgrade. `headers` is flat,
+-- name then value.
+writeRaw : Js.Value, Int, List String, Js.Value → ⊤
+writeRaw socket status headers body =
+    if Js.to (Js.get socket "destroyed") || not (Js.to (Js.get socket "writable")) then
+        ⊤
+    else
+        reason = Js.at (Js.get http "STATUS_CODES") status
+        lines = Js.array []
+        push lines
+            (Js.from
+                ("HTTP/1.1 "
+                    ++ String.fromInt status
+                    ++ " "
+                    ++ (if Js.isUndefined reason then "" else Js.to reason)
+                )
+            )
+        push lines
+            (Js.from
+                ("date: " ++ Js.to (Js.call (Js.construct (Js.global "Date") []) "toUTCString" []))
+            )
+        pairLines lines headers
+        if status ≠ 204 && status ≠ 304 then
+            push
+                lines
+                (Js.from ("content-length: " ++ String.fromInt (Js.to (Js.get body "length"))))
+        push lines (Js.from "connection: close")
+        head =
+            Js.call buffer "from"
+                [ Js.from (Js.to (Js.call lines "join" [ Js.from "\r\n" ]) ++ "\r\n\r\n")
+                , Js.from "latin1"
+                ]
+        _ = Js.call socket "end" [ Js.call buffer "concat" [ Js.array [ head, body ] ] ]
+        _ = Js.call socket "destroySoon" []
+        ⊤
+
+
+-- The header lines of a raw response, from a flat list: name then value.
+-- The lines go onto a host array, and the list is read by its pattern:
+-- neither needs the core list's push, whose trie-ready form the upgrade
+-- path would otherwise drag into every program that serves a WebSocket.
+pairLines : Js.Value, List String → ⊤
+pairLines lines headers =
+    case headers of
+        [ name, value, …rest ] →
+            push lines (Js.from (name ++ ": " ++ value))
+            pairLines lines rest
+
+        _ →
+            ⊤
+
+
+-- The request a handler is given, from Node's `IncomingMessage` and its
+-- body: the raw headers as pairs, each name in lower case. The pairs are
+-- pushed onto a host array, which is a `List` by representation
+-- (`backend.md` §4), in the sibling's own loop: this runs once per
+-- request, and the step's bar is master's speed.
+requestFrom : Js.Value, String → Request
+requestFrom req body =
+    raw = Js.get req "rawHeaders"
+    pairs = Js.array []
+    rawPairs raw pairs 0 (Js.to (Js.get raw "length"))
+    { method = Js.to (Js.get req "method")
+    , path = Js.to (Js.get req "url")
+    , headers = Js.to pairs
+    , body = body
+    }
+
+
+rawPairs : Js.Value, Js.Value, Int, Int → ⊤
+rawPairs raw pairs i n =
+    if i ≥ n then
+        ⊤
+    else
+        push
+            pairs
+            (Js.from ( Js.to (Js.call (Js.at raw i) "toLowerCase" []), Js.to (Js.at raw (i + 1)) ))
+        rawPairs raw pairs (i + 2) n
+
+
+-- Hand the accept loop the next request, or null once the server has
+-- closed, when it waits for one.
+deliver : Js.Value → ⊤
+deliver handle =
+    waiter = Js.get handle "waiter"
+    if Js.isNull waiter then
+        ⊤
+    else
+        queue = Js.get handle "queue"
+        if not (Js.same (Js.get queue "length") (Js.from 0)) then
+            Js.set handle "waiter" Js.null
+            Task.resume (Js.to waiter) (Js.call queue "shift" [])
+        else if Js.to (Js.get handle "closed") then
+            Js.set handle "waiter" Js.null
+            Task.resume (Js.to waiter) Js.null
+
+
+nextRequest : Handle, Resume Js.Value → (⊤ → ⊤)
+nextRequest handle resume =
+    h = Js.from handle
+    Js.set h "waiter" (Js.from resume)
+    deliver h
+    λ⊤ →
+        -- The loop's fiber was cancelled, with the fiber that owns the
+        -- server: every connection is destroyed and the server closes at
+        -- once.
+        Js.set h "waiter" Js.null
+        Js.set h "closing" (Js.from True)
+        server = Js.get h "server"
+        _ = Js.call server "closeAllConnections" []
+        Js.each (Js.get h "sockets") λsocket →
+            _ = Js.call socket "destroy" []
+            ⊤
+        _ = Js.call server "close" []
+        ⊤
+
+
+-- The request a handler is given, built once per request from the host's
+-- `IncomingMessage` and the body `receive` collected (`answer` binds it).
+requestOf : Js.Value → Request
+requestOf incoming = requestFrom (Js.get incoming "req") (Js.to (Js.get incoming "body"))
+
+
+isUpgrade : Js.Value → Bool
+isUpgrade incoming = Js.isNull (Js.get incoming "res")
+
+
+-- `acceptWith` named a protocol the client did not offer. The protocol is
+-- the program's text, so the line quotes it: a newline in it cannot forge
+-- another line.
+notOffered : Js.Value, String → ⊤
+notOffered incoming protocol =
+    invalidUpgrade incoming ("the protocol " ++ quote protocol ++ " is not one the client offered")
+
+
+-- A refused upgrade: the program's response, checked as `write` checks
+-- one, written on the socket, and the connection ended.
+refuseUpgrade : Js.Value, Response → ⊤
+refuseUpgrade incoming response =
+    case invalid response of
+        Just fault →
+            invalidUpgrade incoming ("the response is invalid: " ++ fault)
+
+        Nothing →
+            body =
+                if response.status == 204 || response.status == 304 then
+                    emptyBuffer ⊤
+                else
+                    Js.call buffer "from" [ Js.from response.body, Js.from "utf8" ]
+            flat = Js.array []
+            flatHeaders response.headers flat
+            writeRaw (Js.get incoming "socket") response.status (Js.to flat) body
+
+
+-- A response's headers flat, name then value, without `connection`, on a
+-- host array (a `List String` by representation).
+flatHeaders : List (String × String), Js.Value → ⊤
+flatHeaders headers flat =
+    case headers of
+        [] →
+            ⊤
+
+        [ ( name, value ), …rest ] →
+            if String.toLower name ≠ "connection" then
+                push flat (Js.from name)
+                push flat (Js.from value)
+            flatHeaders rest flat
+
+
+-- An answer to an upgrade that the platform cannot give: 500, and a line
+-- on standard error, as for an invalid response (§9.10 (d)).
+invalidUpgrade : Js.Value, String → ⊤
+invalidUpgrade incoming fault =
+    req = Js.get incoming "req"
+    stderrLine
+        ("beni: Http.Server: the answer to the WebSocket request "
+            ++ Js.to (Js.get req "method")
+            ++ " "
+            ++ Js.to (Js.get req "url")
+            ++ " is invalid: "
+            ++ fault
+        )
+    writeRaw (Js.get incoming "socket") 500 [] (emptyBuffer ⊤)
+
+
+-- Why a `Response` cannot be written as it is, or `Nothing`. The checks
+-- are Node's own, run before any header is set and before the first byte
+-- is sent, so a fault leaves nothing behind: the status rule of
+-- `writeHead` less the interim statuses (a handler answers once, and Node
+-- resets the connection on a final 100), the two statuses that carry no
+-- body, `validateHeaderName` and `validateHeaderValue` — caught from
+-- those two calls alone — and the two headers the transport owns.
+invalid : Response → Maybe String
+invalid response =
+    status = response.status
+    if
+        not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from status ]))
+            || status < 200
+            || status > 999
+    then
+        Just ("status " ++ String.fromInt status ++ " is not an integer from 200 to 999")
+    else if (status == 204 || status == 205 || status == 304) && response.body ≠ "" then
+        Just ("status " ++ String.fromInt status ++ " carries no body, and the body is not empty")
+    else
+        headerFault response.headers
+
+
+headerFault : List (String × String) → Maybe String
+headerFault headers =
+    case headers of
+        [] →
+            Nothing
+
+        [ ( name, value ), …rest ] →
+            -- `http.validateHeaderName`, whose `TypeError` with the code
+            -- `ERR_INVALID_HTTP_TOKEN` is the one failure it documents, and
+            -- `validateHeaderValue`, whose two are `ERR_INVALID_CHAR` and
+            -- `ERR_HTTP_INVALID_HEADER_VALUE`: each `Js.catchIf` names its
+            -- codes and throws anything else again (`CLAUDE.md` rule 9).
+            -- Both are written in this loop, not called, so the development
+            -- build runs the sibling's loop too.
+            nameFault =
+                Js.catchIf
+                    (λ⊤ →
+                        _ = Js.call http "validateHeaderName" [ Js.from name ]
+                        Nothing
+                    )
+                    (λerror →
+                        Js.instanceOf error (Js.global "TypeError")
+                            && Js.same (Js.get error "code") (Js.from "ERR_INVALID_HTTP_TOKEN")
+                    )
+                    λ_ → Just ("the header name " ++ quote name ++ " is not a token")
+            case nameFault of
+                Just fault →
+                    Just fault
+
+                Nothing →
+                    valueFault =
+                        Js.catchIf
+                            (λ⊤ →
+                                _ =
+                                    Js.call http "validateHeaderValue"
+                                        [ Js.from name, Js.from value ]
+                                Nothing
+                            )
+                            (λerror →
+                                Js.instanceOf error (Js.global "TypeError")
+                                    && (Js.same (Js.get error "code") (Js.from "ERR_INVALID_CHAR")
+                                           || Js.same
+                                               (Js.get error "code")
+                                               (Js.from "ERR_HTTP_INVALID_HEADER_VALUE")
+                                       )
+                            )
+                            λerror →
+                                if Js.same (Js.get error "code") (Js.from "ERR_INVALID_CHAR") then
+                                    Just
+                                        ("the header "
+                                            ++ quote name
+                                            ++ " has a character its value cannot hold"
+                                        )
+                                else
+                                    Just ("the header " ++ quote name ++ " has no value")
+                    case valueFault of
+                        Just fault →
+                            Just fault
+
+                        Nothing →
+                            lower = Js.to (Js.call (Js.from name) "toLowerCase" [])
+                            if lower == "content-length" || lower == "transfer-encoding" then
+                                Just ("the header " ++ quote name ++ " belongs to the platform")
+                            else
+                                headerFault rest
+
+
+write : Js.Value, Response → ⊤
+write incoming response =
+    handle = Js.get incoming "handle"
+    req = Js.get incoming "req"
+    res = Js.get incoming "res"
+    -- The client is gone: Node drops the write, and so does the platform.
+    if Js.to (Js.get res "destroyed") then
+        ⊤
+    else
+        closing = Js.to (Js.get handle "closing")
+        case invalid response of
+            Just fault →
+                stderrLine
+                    ("beni: Http.Server: the response to "
+                        ++ Js.to (Js.get req "method")
+                        ++ " "
+                        ++ Js.to (Js.get req "url")
+                        ++ " is invalid: "
+                        ++ fault
+                    )
+                -- After `close`, the 500 ends its connection as every
+                -- response does.
+                raw = Js.array [ Js.from "content-length", Js.from "0" ]
+                if closing then
+                    push raw (Js.from "connection")
+                    push raw (Js.from "close")
+                _ = Js.call res "writeHead" [ Js.from 500, raw ]
+                _ = Js.call res "end" []
+                ⊤
+
+            Nothing →
+                -- The headers go as one flat array, so a name given twice is
+                -- written twice, in order (`setHeader` would keep one value
+                -- per name). After `close`, the connection ends with this
+                -- response, whatever the program said: Node leaves a busy
+                -- keep-alive connection open otherwise.
+                raw = Js.array []
+                pushHeaders raw response.headers closing
+                if closing then
+                    push raw (Js.from "connection")
+                    push raw (Js.from "close")
+                body = Js.call buffer "from" [ Js.from response.body, Js.from "utf8" ]
+                -- 204, 205 and 304 carry no body: Node drops one for 204 and
+                -- 304 and writes it for 205 (measured), so the body is empty
+                -- here. 204 and 304 get no `content-length`; 205 gets
+                -- `content-length: 0`, since Node would otherwise send a
+                -- chunked empty body.
+                if response.status ≠ 204 && response.status ≠ 304 then
+                    push raw (Js.from "content-length")
+                    push raw (Js.from (String.fromInt (Js.to (Js.get body "length"))))
+                _ = Js.call res "writeHead" [ Js.from response.status, raw ]
+                _ = Js.call res "end" [ body ]
+                ⊤
+
+
+pushHeaders : Js.Value, List (String × String), Bool → ⊤
+pushHeaders raw headers closing =
+    case headers of
+        [] →
+            ⊤
+
+        [ ( name, value ), …rest ] →
+            if closing && String.toLower name == "connection" then
+                ⊤
+            else
+                push raw (Js.from name)
+                push raw (Js.from value)
+            pushHeaders raw rest closing
+
+
+awaitClosed : Handle, Resume ⊤ → (⊤ → ⊤)
+awaitClosed handle resume =
+    h = Js.from handle
+    if Js.to (Js.get h "closed") then
+        Task.resume resume ⊤
+        λ⊤ → ⊤
+    else
+        waiters = Js.get h "waiters"
+        waiter = Js.from resume
+        push waiters waiter
+        λ⊤ →
+            i = Js.to (Js.call waiters "indexOf" [ waiter ])
+            if i ≥ 0 then
+                _ = Js.call waiters "splice" [ Js.from i, Js.from 1 ]
+                ⊤
+
+
+beginClose : Handle → ⊤
+beginClose handle =
+    h = Js.from handle
+    if Js.to (Js.get h "closing") then
+        ⊤
+    else
+        Js.set h "closing" (Js.from True)
+        server = Js.get h "server"
+        _ = Js.call server "close" []
+        _ = Js.call server "closeIdleConnections" []
+        -- Each open WebSocket connection is closed with 1001 (§9.11 (g));
+        -- one that opens later is closed as it opens.
+        Js.each (Js.get h "upgrades") λincoming →
+            goAway = Js.get incoming "goAway"
+            if not (Js.isNull goAway) then
+                _ = Js.apply goAway []
+                ⊤
+
+
+boundAddress : Handle → Address
+boundAddress handle = Js.to (Js.get (Js.from handle) "address")

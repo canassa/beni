@@ -29,7 +29,7 @@ module Http.Server
   opaque type Upgrade
   value accept : (Socket → ⊤) → Upgrade
   value acceptWith : { maxMessage : Int, protocol : Maybe String }, (Socket → ⊤) → Upgrade
-  value address : Server → Address
+  value address : Server → Address  -- impure
   value close : Server → ⊤  -- impure
   value header : Request, String → Maybe String
   value listen : Address, (Request → Response) → Result ListenError Server  -- suspends

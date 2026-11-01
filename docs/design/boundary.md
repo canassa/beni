@@ -6197,7 +6197,10 @@ prints what it printed. What the move fixes in place:
   (§4). The handle is a `Js.object` the callbacks write with `Js.set`.
 - **`Request` and `Response` cross no `foreign` any more**, so a release build may rename their
   fields (`backend.md` §9 item 4); `WebSocket.js` reads none of them, only the upgrade record's
-  `waiting` and `goAway` (item 26 as amended).
+  `waiting` and `goAway` (item 26 as amended). For that the `Request` is built in `requestOf`,
+  once per request, from the host's `IncomingMessage` and the body the record holds as a string:
+  a beni record stored through `Js.from` would keep its field names (§4, *What JavaScript may
+  read of a beni value*).
 - **The host door** is `process.getBuiltinModule` for `node:http`, `node:buffer` and `node:os`,
   as `Io.beni` opens `node:fs/promises`; `TextDecoder`, `Date`, `JSON`, `Number` and `Set` are
   globals, and the handshake key's pattern is `Js.regExp`.
@@ -6962,7 +6965,7 @@ renumbered.
     carries the socket, the `head` bytes and the functions each side gives the other, as
     `Browser.js` reaches the render loop (§9.8.7). *Amended 2026-11-01*: `Server.js` is
     beni now (§9.10 *The sibling, moved*), and the record is a `Js.object` of the same eight
-    names — `handle`, `req`, `res`, `socket`, `head`, `waiting`, `goAway`, `request` — which
+    names — `handle`, `req`, `res`, `socket`, `head`, `waiting`, `goAway`, `body` — which
     `Js.object` never renames (§4.2), so `WebSocket.js` reads and writes it as before: it
     takes `req`, `socket`, `head` and `handle`, reads `waiting` and writes `goAway`.
 27. **One state, one encoding.** A server frame is not masked, so one state sent to every player
