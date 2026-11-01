@@ -27,8 +27,61 @@ const Cli = beni.Cli;
 const Session = beni.Session;
 const SourceStore = beni.SourceStore;
 const Manifest = beni.js.Manifest;
+const alloc_options = @import("alloc_options");
 
-pub fn main(init: std.process.Init) u8 {
+/// `-Dsafe-allocator` (owner, 2026-11-01): the safety allocator, which finds
+/// leaks, double frees and use-after-free, costs 15-20% of CPU, so it is off
+/// unless a memory problem is being debugged. Without it a build uses the
+/// allocator `std/start.zig` picks for ReleaseFast.
+const is_wasm = builtin.cpu.arch.isWasm();
+/// A build with no threads and no libc has no fast allocator to fall back to;
+/// std uses the safety allocator there as well.
+const use_safe_allocator = !is_wasm and (alloc_options.safe_allocator or (!builtin.link_libc and builtin.single_threaded));
+var safe_allocator: std.heap.SafeAllocator = .init(std.heap.page_allocator, .{});
+
+/// What `std/start.zig` does for `main(std.process.Init)`, with the allocator
+/// chosen by `-Dsafe-allocator` and not by the build mode.
+pub fn main(minimal: std.process.Init.Minimal) u8 {
+    const gpa = if (use_safe_allocator)
+        safe_allocator.allocator()
+    else if (builtin.link_libc)
+        std.heap.c_allocator
+    else if (is_wasm)
+        std.heap.wasm_allocator
+    else
+        std.heap.smp_allocator;
+    defer if (use_safe_allocator) {
+        _ = safe_allocator.deinit(); // Leaks do not affect the exit code.
+    };
+
+    const arena_backing = if (is_wasm) gpa else std.heap.page_allocator;
+    var arena_allocator: std.heap.ArenaAllocator = .init(arena_backing);
+    defer arena_allocator.deinit();
+
+    var threaded: std.Io.Threaded = .init(gpa, .{
+        .argv0 = .init(minimal.args),
+        .environ = minimal.environ,
+    });
+    defer threaded.deinit();
+
+    var environ_map = std.process.Environ.createMap(minimal.environ, gpa) catch |err|
+        std.process.fatal("failed to parse environment variables: {t}", .{err});
+    defer environ_map.deinit();
+
+    const preopens = std.process.Preopens.init(arena_allocator.allocator()) catch |err|
+        std.process.fatal("failed to init preopens: {t}", .{err});
+
+    return run(.{
+        .minimal = minimal,
+        .arena = &arena_allocator,
+        .gpa = gpa,
+        .io = threaded.io(),
+        .environ_map = &environ_map,
+        .preopens = preopens,
+    });
+}
+
+fn run(init: std.process.Init) u8 {
     const gpa = init.gpa;
     const io = init.io;
     const arena = init.arena.allocator();
