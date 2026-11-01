@@ -86,6 +86,7 @@ const Var = TypeStore.Var;
 pub const Input = struct {
     realm_required: bool = false,
     control_required: bool = false,
+    solved_required: bool = false,
     gpa: Allocator,
     entry_selection: *const @import("../entry/Selection.zig") = &.{},
     scratch: *Arena,
@@ -133,6 +134,7 @@ fn clearEntryEvidence(gpa: Allocator, table: *Dispatch) void {
     table.realm_sources.deinit(gpa);
     table.entry_roots.deinit(gpa);
     table.nominal_layouts.deinit(gpa);
+    table.solved_representations.deinit(gpa);
 }
 
 pub fn check(in: Input) Error!Check.Counters {
@@ -165,6 +167,8 @@ pub fn check(in: Input) Error!Check.Counters {
     // The acyclicity proofs (§8.2).
     store.tracks_proofs = true;
     const scratch = in.scratch.allocator();
+    var solved_capture: ?@import("SolvedRepresentations.zig").Capture = if (in.solved_required) .{} else null;
+    defer if (solved_capture) |*capture| capture.deinit(gpa);
 
     const decl_scheme = try newTable(gpa, bir.decls.len);
     var tables_kept = false;
@@ -595,6 +599,7 @@ pub fn check(in: Input) Error!Check.Counters {
         in.dispatch.nominal_layouts = @import("NominalLayouts.zig").build(.{
             .cx = &cx,
             .parameters = nominal_parameters,
+            .solved_capture = if (solved_capture) |*capture| capture else null,
             .work = if (in.profile) |p| (if (p.enabled) &nominal_work else null) else null,
             .crossing = if (type_keys) |t| t.crossing else &.{},
         }) catch |err| switch (err) {
@@ -610,6 +615,7 @@ pub fn check(in: Input) Error!Check.Counters {
     in.dispatch.entry_roots.deinit(gpa);
     if (!quiet and !in.dependency_errors and report.errors == 0) {
         in.dispatch.entry_roots = @import("EntryRoots.zig").build(.{
+            .solved_capture = if (solved_capture) |*capture| capture else null,
             .cx = &cx,
             .gpa = gpa,
             .scratch = scratch,
@@ -662,6 +668,10 @@ pub fn check(in: Input) Error!Check.Counters {
             },
         };
         if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    };
+    if (!quiet and !in.dependency_errors and report.errors == 0) if (solved_capture) |*capture| {
+        in.dispatch.solved_representations = try @import("SolvedRepresentationBuild.zig").build(gpa, store, capture);
+        if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     };
     if (report.errors != 0 or in.dependency_errors) clearEntryEvidence(gpa, in.dispatch);
 

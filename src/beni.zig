@@ -47,6 +47,7 @@ pub const parse = struct {
     pub const Diagnostics = @import("parse/Diagnostics.zig");
 };
 pub const entry = struct {
+    pub const SolvedInspect = @import("entry/SolvedInspect.zig");
     pub const RealmConsume = @import("entry/RealmConsume.zig");
     pub const Selection = @import("entry/Selection.zig");
     pub const RoleRoots = @import("entry/RoleRoots.zig");
@@ -118,6 +119,7 @@ pub const cache = struct {
     pub const type_body = @import("cache/type_body.zig");
     pub const realm_source_bytes = @import("cache/realm_source_bytes.zig");
     pub const dispatch_bytes = @import("cache/dispatch_bytes.zig");
+    pub const SolvedRepresentationBytes = @import("cache/SolvedRepresentationBytes.zig");
     pub const NominalLayoutBytes = @import("cache/NominalLayoutBytes.zig");
     pub const type_keys_bytes = @import("cache/type_keys_bytes.zig");
     pub const Dir = @import("cache/Dir.zig");
@@ -140,6 +142,10 @@ pub const check = struct {
     pub const ControlProof = @import("check/ControlProof.zig");
     pub const GeneratedUnit = @import("check/GeneratedUnit.zig");
     pub const EntryRoots = @import("check/EntryRoots.zig");
+    pub const SolvedRepresentationTest = @import("check/SolvedRepresentationTest.zig");
+    pub const SolvedCoverage = @import("check/SolvedCoverage.zig");
+    pub const SolvedRepresentations = @import("check/SolvedRepresentations.zig");
+    pub const SolvedRepresentationBuild = @import("check/SolvedRepresentationBuild.zig");
     pub const NominalLayouts = @import("check/NominalLayouts.zig");
     pub const CtorTypes = @import("check/CtorTypes.zig");
     pub const TypeRead = @import("check/TypeRead.zig");
@@ -270,6 +276,10 @@ pub const render = struct {
 test {
     std.testing.refAllDecls(@import("entry/Plan.zig"));
     std.testing.refAllDecls(@import("entry/CompactBuild.zig"));
+    std.testing.refAllDecls(@import("entry/RoleInspect.zig"));
+    std.testing.refAllDecls(@import("entry/CompactEvidence.zig"));
+    std.testing.refAllDecls(@import("entry/CompactEvidenceTest.zig"));
+    std.testing.refAllDecls(@import("entry/RolePairTest.zig"));
     std.testing.refAllDecls(@import("entry/CompactGraph.zig"));
     std.testing.refAllDecls(@import("entry/CompactDiscover.zig"));
     std.testing.refAllDecls(@This());

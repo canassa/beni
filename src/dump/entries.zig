@@ -8,6 +8,7 @@ const Discover = @import("../entry/CompactDiscover.zig");
 const Emit = @import("../js/Emit.zig");
 const hashes = @import("../resolve/iface_bytes.zig");
 const RealmInspect = @import("../entry/RealmInspect.zig");
+const RoleInspect = @import("../entry/RoleInspect.zig");
 const TypedInspect = @import("../entry/TypedInspect.zig");
 const SourceStore = @import("../SourceStore.zig");
 
@@ -36,6 +37,19 @@ pub fn inspect(a: std.mem.Allocator, scratch: std.mem.Allocator, session: *Sessi
         } else session.entry_graph.input_supported = false;
     } else session.entry_graph.input_supported = false;
     for (inspection.diagnostics) |item| if (item.severity == .@"error") return inspection.diagnostics;
+    var roles = RoleInspect.prepare(a, &session.entry_graph, session) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            const message = try std.fmt.allocPrint(a, "Entry role producer has unavailable structural source evidence ({s}). No entry graph was printed.", .{@errorName(err)});
+            errdefer a.free(message);
+            const items = try a.alloc(Emit.Item, inspection.diagnostics.len + 1);
+            @memcpy(items[0..inspection.diagnostics.len], inspection.diagnostics);
+            items[inspection.diagnostics.len] = .{ .code = .internal, .file = @fromBackingInt(0), .token = 0, .message = message, .at = .{ .path = "<entry-role-transfers>" } };
+            a.free(inspection.diagnostics);
+            return items;
+        },
+    };
+    roles.deinit();
     if (session.options.native_realms) {
         const selected: ?@import("../check/Realms.zig").QualifiedDecl = if (inspection.reach) |reach| .{ .module = reach.entry.?.module, .declaration = reach.entry.?.index } else null;
         var prepared = realmPrepare(a, session, selected, options.library) catch |err| switch (err) {
@@ -126,7 +140,8 @@ fn site(w: *std.Io.Writer, session: *const Session, id: Ir.SiteId) std.Io.Writer
     try w.print("{s}.{s}", .{ session.store.moduleName(file), session.interner.slice(b.symbol(b.decls[@backingInt(row.declaration)].name)) });
     if (row.instruction != .none) try w.print("@{d}", .{@backingInt(row.instruction)});
 }
-pub fn write(w: *std.Io.Writer, session: *Session) (TypedInspect.Error || RealmInspect.Error)!void {
+pub fn write(w: *std.Io.Writer, session: *Session) (TypedInspect.Error || RealmInspect.Error || RoleInspect.Error || @import("../entry/SolvedInspect.zig").Error)!void {
+    if (session.options.solved_representations) try @import("../entry/SolvedInspect.zig").validate(session);
     // Also protect direct callers: the compact prefix must not escape before
     // the typed boundary has accepted every current selected declaration.
     var prepared: ?TypedInspect.Prepared = if (session.entry_plan.validated and session.entry_plan.selected != .none) try TypedInspect.prepare(session.gpa, typedInput(session)) else null;
@@ -135,6 +150,8 @@ pub fn write(w: *std.Io.Writer, session: *Session) (TypedInspect.Error || RealmI
     const selected: ?@import("../check/Realms.zig").QualifiedDecl = if (session.entry_graph.selected_source) |root| .{ .module = @fromBackingInt(@backingInt(root.module)), .declaration = @backingInt(root.declaration) } else null;
     var realm: ?RealmInspect.Prepared = if (session.options.native_realms) try realmPrepare(session.gpa, session, selected, session.entry_graph.realm_request == .open_library) else null;
     defer if (realm) |*value| value.deinit(session.gpa);
+    var roles = try RoleInspect.prepare(session.gpa, &session.entry_graph, session);
+    defer roles.deinit();
     const g = &session.entry_graph;
     try w.print("entries schema=1 partial=true discoveryComplete={} inputSupported={}\n", .{ g.discovery_complete, g.input_supported });
     try w.writeAll("proofs C=unproved EntryHost=unproved Wire=unproved ownership=unproved constructionEffects=unproved execution=unproved\n");
@@ -240,6 +257,8 @@ pub fn write(w: *std.Io.Writer, session: *Session) (TypedInspect.Error || RealmI
     }
     if (prepared) |*value| try TypedInspect.writePrepared(session.gpa, w, typedInput(session), value);
     if (realm) |*value| try value.write(w);
+    if (session.options.solved_representations) try @import("../entry/SolvedInspect.zig").write(session.gpa, w, session);
+    try w.writeAll(roles.written());
 }
 
 test "entries writer emits no compact prefix when selected typed roots are unavailable" {
@@ -291,6 +310,10 @@ test "entries writer retains partial output for a validated legacy plan without 
         \\counts templates=0 calls=0 ports=0 launchExports=0 queries=0 facts=0 subscriptions=0 expansions=0 deliveries=0 peakQueue=0
         \\field-work indexRows=0 lookups=0 edges=0 localWalk=0
         \\builder-work shapePorts=0 shapeEdges=0 shapeSelectors=0 metadataRows=0 metadataIndexWork=0 metadataLookups=0 metadataMatches=0
+        \\entry-role-transfers schema=1 evidence=owned-source answerValidation=structural entryComplete=false invocationComplete=false
+        \\  role-counts transfers=0 captures=0 ports=0 calls=0 inputs=0 fields=0 allocations=0 queries=0 facts=0 edges=0 derivations=0 transports=0 sourceRows=0 sourceWords=0 solverRows=0
+        \\  role-directory-counts modules=0 declarations=0 templates=0 sites=0 origins=0 selectors=0 anchors=0 seals=0 observations=0 answers=0 seeds=0 bindings=0 obligations=0 constructors=0 layouts=0 execution=0 exports=0
+        \\  role-extra words=0
         \\
     , output.written());
     try std.testing.expectEqual(@as(?Emit.Item, null), try typedDiagnostic(a, typedInput(&session), @fromBackingInt(0), 0));
@@ -899,4 +922,22 @@ test "native emission actual packed facade adopts only behind fresh readiness" {
             }
         }
     }
+}
+
+test "solved representation direct writer missing requested evidence emits zero old prefix bytes" {
+    const a = std.testing.allocator;
+    var f = try RealmFixture.init();
+    defer f.deinit();
+    f.session.options.solved_representations = true;
+    try std.testing.expectEqual(@as(u32, 0), try f.run(realm_good));
+    try f.query(false, false);
+    var output: std.Io.Writer.Allocating = .init(a);
+    defer output.deinit();
+    try write(&output.writer, f.session);
+    try std.testing.expect(output.written().len > 0);
+    const module = f.session.graph.find(.app, f.session.interner.find("Main").?).?;
+    f.session.checked.dispatch[module.int()].solved_representations.deinit(a);
+    output.clearRetainingCapacity();
+    try std.testing.expectError(error.MissingRepresentations, write(&output.writer, f.session));
+    try std.testing.expectEqual(@as(usize, 0), output.written().len);
 }

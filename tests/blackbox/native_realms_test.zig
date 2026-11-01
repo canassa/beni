@@ -125,8 +125,8 @@ test "realm source semantic cache literal role and blocked downgrades repair bef
     const path = try entry(&w);
     const good = try w.read(path);
     const side: usize = word(good, 40);
-    try testing.expectEqual(@as(u32, 21), word(good, side + 8));
-    const column = side + 16 + (word(good, side + 12) - 1) * 8;
+    try testing.expectEqual(@as(u32, 22), word(good, side + 8));
+    const column = side + 16 + (word(good, side + 12) - 2) * 8;
     const source = side + word(good, column);
     try testing.expectEqualStrings("BENIRLM\x00", good[source..][0..8]);
     try testing.expectEqual(@as(u32, 1), word(good, source + 8));

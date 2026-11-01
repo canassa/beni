@@ -95,7 +95,7 @@ pub const magic = "BENIDSP\x00";
 /// 13 since scalar dictionary keys (#294) carry key domains.
 /// 14 adds checked render identity facts and their local paths.
 /// 15: effect declaration byte 2 carries the totality proof.
-pub const format_version: u32 = 21;
+pub const format_version: u32 = 22;
 
 pub const Column = enum(u32) {
     terms,
@@ -128,6 +128,7 @@ pub const Column = enum(u32) {
     nominal_layouts,
     control_sources,
     realm_sources,
+    solved_representations,
 
     pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
@@ -158,7 +159,7 @@ pub const Column = enum(u32) {
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
-            .strings, .continuations, .entry_roots, .nominal_layouts, .control_sources, .realm_sources => 1,
+            .strings, .continuations, .entry_roots, .nominal_layouts, .control_sources, .realm_sources, .solved_representations => 1,
             .decl_heads => 4,
         };
     }
@@ -198,6 +199,8 @@ pub const Loaded = struct {
     table: Dispatch,
     module_refs: []ModuleRef,
     type_refs: []TypeRef,
+    /// Requested-only artifact-local ref memo; never global TypeId sized.
+    solved_ref_ids: []Types.TypeId = &.{},
 
     pub const empty: Loaded = .{ .table = .empty, .module_refs = &.{}, .type_refs = &.{} };
 
@@ -224,6 +227,18 @@ pub const Loaded = struct {
         }
         return l.table.entry_roots.covers(gpa, bir, graph, types, heads, selection);
     }
+    pub fn prepareSolvedCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, types: *const Types) Allocator.Error!bool {
+        if (!l.table.solved_representations.present) return false;
+        const ids = l.solved_ref_ids;
+        for (ids, 0..) |*id, i| id.* = l.headId(graph, types, @fromBackingInt(@intCast(i)));
+        const Resolver = struct {
+            ids: []const Types.TypeId,
+            pub fn id(r: @This(), raw: Types.TypeId) Types.TypeId {
+                return if (raw != .none and raw.int() < r.ids.len) r.ids[raw.int()] else .none;
+            }
+        };
+        return @import("../check/SolvedCoverage.zig").check(gpa, &l.table, bir, types, graph, Resolver{ .ids = ids });
+    }
     pub fn prepareNominalCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, types: *const Types, module: Graph.Index, interner: *const InternPool.Global, own_interface: *const Interface, work: ?*@import("../check/NominalLayouts.zig").Work) Allocator.Error!bool {
         return l.table.nominal_layouts.covers(gpa, bir, graph, types, module, interner, own_interface, work);
     }
@@ -248,6 +263,7 @@ pub const Loaded = struct {
         l.table.deinit(gpa);
         gpa.free(l.module_refs);
         gpa.free(l.type_refs);
+        gpa.free(l.solved_ref_ids);
         l.* = empty;
     }
 };
@@ -472,6 +488,24 @@ pub fn write(
 
     // The two reference tables are complete only now, because writing a
     // term or a shape is what appends to them.
+    // Append diagnostic-only identities AFTER every legacy interning call.
+    // Old numeric type-ref ordinals and string offsets remain byte-exact.
+    const solved = &d.solved_representations;
+    const solved_nodes = try gpa.alloc(u32, solved.nodes.len);
+    defer gpa.free(solved_nodes);
+    for (solved_nodes, 0..) |*ref, i| ref.* = if (solved.nodes.get(i).nominal != .none) try w.typeRef(solved.nodes.get(i).nominal) else no_ref;
+    const solved_roots = try gpa.alloc(u32, solved.roots.len);
+    defer gpa.free(solved_roots);
+    for (solved_roots, 0..) |*ref, i| ref.* = if (solved.roots.get(i).nominal != .none) try w.typeRef(solved.roots.get(i).nominal) else no_ref;
+    const solved_labels = try gpa.alloc(u32, solved.edges.len);
+    defer gpa.free(solved_labels);
+    for (solved_labels, 0..) |*label, i| {
+        const edge = solved.edges.get(i);
+        label.* = if (edge.kind == .record_field) try w.string(@fromBackingInt(edge.selector)) else edge.selector;
+    }
+    const solved_bytes = try @import("SolvedRepresentationBytes.zig").write(gpa, solved, solved_nodes, solved_roots, solved_labels);
+    defer gpa.free(solved_bytes);
+
     const module_refs = try gpa.alloc(u8, w.module_refs.items.len * Column.module_refs.width());
     defer gpa.free(module_refs);
     @memset(module_refs, 0);
@@ -521,6 +555,7 @@ pub fn write(
         nominal_layouts,
         control_sources,
         realm_sources,
+        solved_bytes,
     };
     const lengths = [Column.count]u32{
         @intCast(d.terms.len),
@@ -553,6 +588,7 @@ pub fn write(
         @intCast(nominal_layouts.len),
         @intCast(control_sources.len),
         @intCast(realm_sources.len),
+        @intCast(solved_bytes.len),
     };
 
     var offsets: [Column.count]u32 = undefined;
@@ -713,6 +749,16 @@ fn pad4(n: usize) usize {
 // Reading
 // ---------------------------------------------------------------------------
 
+/// Production demand-aware reads do not allocate unrequested diagnostic graphs.
+pub fn readSelected(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Global, include_solved: bool) ReadError!Loaded {
+    var in: Interning = .{ .find = interner };
+    return decode(gpa, bytes, &in, include_solved);
+}
+pub fn readGrowingSelected(gpa: Allocator, bytes: []const u8, interner: *InternPool.Global, include_solved: bool) ReadError!Loaded {
+    var in: Interning = .{ .get_or_put = .{ .pool = interner, .gpa = gpa } };
+    return decode(gpa, bytes, &in, include_solved);
+}
+
 /// The sidecar `bytes` describes, re-interned through the NON-MUTATING
 /// `InternPool.Global.find`.
 ///
@@ -723,7 +769,7 @@ fn pad4(n: usize) usize {
 /// `UnknownSymbol` and the caller reports `internal`.
 pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Global) ReadError!Loaded {
     var in: Interning = .{ .find = interner };
-    return decode(gpa, bytes, &in);
+    return decode(gpa, bytes, &in, true);
 }
 
 /// `read`, through `getOrPut`. The cache's cross-process load is the case that
@@ -732,7 +778,7 @@ pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Globa
 /// belongs.
 pub fn readGrowing(gpa: Allocator, bytes: []const u8, interner: *InternPool.Global) ReadError!Loaded {
     var in: Interning = .{ .get_or_put = .{ .pool = interner, .gpa = gpa } };
-    return decode(gpa, bytes, &in);
+    return decode(gpa, bytes, &in, true);
 }
 
 const Interning = union(enum) {
@@ -747,7 +793,7 @@ const Interning = union(enum) {
     }
 };
 
-fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
+fn decode(gpa: Allocator, bytes: []const u8, in: *Interning, include_solved: bool) ReadError!Loaded {
     if (bytes.len < body_start) return error.BadSidecar;
     if (!std.mem.eql(u8, bytes[0..8], magic)) return error.BadSidecar;
     if (std.mem.readInt(u32, bytes[8..12], .little) != format_version) return error.BadSidecar;
@@ -1116,6 +1162,26 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         if (ref.kind == .external and ref.module.int() >= out.module_refs.len) return error.BadSidecar;
     }
 
+    if (include_solved) {
+        const solved_bytes = col(bytes, offsets, .solved_representations)[0..lengths[@backingInt(Column.solved_representations)]];
+        out.table.solved_representations = @import("SolvedRepresentationBytes.zig").read(gpa, solved_bytes) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.BadSidecar,
+        };
+        for (0..out.table.solved_representations.edges.len) |i| {
+            var edge = out.table.solved_representations.edges.get(i);
+            if (edge.kind == .record_field) {
+                edge.selector = @backingInt((try symbolAt(blob, edge.selector, in)) orelse return error.BadSidecar);
+                out.table.solved_representations.edges.set(i, edge);
+            }
+        }
+        if (out.table.solved_representations.present) {
+            out.solved_ref_ids = try gpa.alloc(Types.TypeId, out.type_refs.len);
+            @memset(out.solved_ref_ids, .none);
+        }
+        for (out.table.solved_representations.nodes.items(.nominal)) |id| if (id != .none and id.int() >= out.type_refs.len) return error.BadSidecar;
+        for (out.table.solved_representations.roots.items(.nominal)) |id| if (id != .none and id.int() >= out.type_refs.len) return error.BadSidecar;
+    }
     const root_bytes = col(bytes, offsets, .entry_roots)[0..lengths[@backingInt(Column.entry_roots)]];
     out.table.entry_roots = (switch (in.*) {
         .find => |pool| EntryRoots.read(gpa, root_bytes, pool),
@@ -1366,6 +1432,17 @@ pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
 
     const modules = @as(u32, @intCast(l.module_refs.len));
     const type_count = @as(u32, @intCast(l.type_refs.len));
+    if (l.table.solved_representations.present) {
+        for (l.solved_ref_ids, 0..) |*id, i| if (id.* == .none) {
+            id.* = l.headId(graph, types, @fromBackingInt(@intCast(i)));
+        };
+        for (l.table.solved_representations.nodes.items(.nominal)) |*id| if (id.* != .none) {
+            id.* = l.solved_ref_ids[id.int()];
+        };
+        for (l.table.solved_representations.roots.items(.nominal)) |*id| if (id.* != .none) {
+            id.* = l.solved_ref_ids[id.int()];
+        };
+    }
     for (@constCast(l.table.decl_heads)) |*head| head.* = l.headId(graph, types, head.*);
     for (@constCast(l.table.terms)) |*t| resolveTerm(t, l, graph, types, modules, type_count);
     for (@constCast(l.table.derived)) |*row| {
@@ -2169,4 +2246,38 @@ test "realm source outer codec resolves actual checked module identity before ad
             defer item.deinit(a);
         }
     }.run, .{ bytes, &p.session.interner });
+}
+
+test "solved representation unrequested reader skips graph allocations and invalid payload while keeping outer envelope strict" {
+    const gpa = testing.allocator;
+    var pool = try InternPool.Global.init(gpa);
+    defer pool.deinit(gpa);
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    var store: @import("../check/TypeStore.zig") = .init(gpa);
+    defer store.deinit();
+    _ = try store.fresh(.{ .structure = .unit }, 0);
+    const capture: @import("../check/SolvedRepresentations.zig").Capture = .{};
+    var table: Dispatch = .{};
+    defer table.deinit(gpa);
+    table.solved_representations = try @import("../check/SolvedRepresentationBuild.zig").build(gpa, &store, &capture);
+    const bytes = try write(gpa, &table, &graph, &types, &pool);
+    defer gpa.free(bytes);
+    var all = try readSelected(gpa, bytes, &pool, true);
+    defer all.deinit(gpa);
+    try testing.expectEqual(@as(usize, 1), all.table.solved_representations.nodes.len);
+    var skipped = try readSelected(gpa, bytes, &pool, false);
+    defer skipped.deinit(gpa);
+    try testing.expect(!skipped.table.solved_representations.present);
+    try testing.expectEqual(@as(usize, 0), skipped.table.solved_representations.nodes.len);
+    try testing.expectEqual(@as(usize, 0), skipped.table.solved_representations.descriptor_nodes.len);
+    const column = header_bytes + @backingInt(Column.solved_representations) * 8;
+    const at = std.mem.readInt(u32, bytes[column..][0..4], .little);
+    bytes[at] ^= 1;
+    try testing.expectError(error.BadSidecar, readSelected(gpa, bytes, &pool, true));
+    var unaffected = try readSelected(gpa, bytes, &pool, false);
+    defer unaffected.deinit(gpa);
+    try testing.expect(!unaffected.table.solved_representations.present);
+    std.mem.writeInt(u32, bytes[column..][0..4], std.math.maxInt(u32), .little);
+    try testing.expectError(error.BadSidecar, readSelected(gpa, bytes, &pool, false));
 }

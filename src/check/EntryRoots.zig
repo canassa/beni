@@ -114,6 +114,7 @@ pub fn build(in: ContinuationPlan.Input, selection: *const Selection) Error!Arti
     bodies.shallow = true;
     writer.bodies = &bodies;
     writer.crossing = in.crossing;
+    writer.solved_capture = in.solved_capture;
     for (in.bir.decls, 0..) |decl, di| {
         if (!decl.kind.isValue() or !selection.contains(in.dispatch.decl_heads[di])) continue;
         const root = in.decl_scheme[di].unwrap() orelse return error.MissingEvidence;
@@ -127,6 +128,7 @@ pub fn build(in: ContinuationPlan.Input, selection: *const Selection) Error!Arti
         }
         writer.identities = quantified;
         writer.effects = .{ .effects = in.effects, .decl = @intCast(di) };
+        writer.solved_entry = @intCast(di);
         const scheme = try writer.addPrivate(root);
         try rows.append(in.gpa, .{ .decl = @fromBackingInt(@intCast(di)), .scheme = scheme });
     }

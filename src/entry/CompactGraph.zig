@@ -3,6 +3,7 @@
 const std = @import("std");
 const Ir = @import("Compact.zig");
 const Solve = @import("CompactSolve.zig");
+const Evidence = @import("CompactEvidence.zig");
 const hashes = @import("../resolve/iface_bytes.zig");
 const Allocator = std.mem.Allocator;
 const Graph = @This();
@@ -11,6 +12,7 @@ pub const NodeId = enum(u32) { _ };
 pub const LiveTag = enum(u8) { decl, derived, twin, ctor, schema, lift };
 pub const LiveNode = struct { entry: EntryId, module: Ir.ModuleId, tag: LiveTag, index: NodeId };
 pub const EntryId = enum(u32) { none = sentinel, _ };
+pub const RoleTransferId = enum(u32) { none = sentinel, _ };
 pub const ProofState = enum { unproved };
 pub const Proofs = struct {
     capability: ProofState = .unproved,
@@ -31,7 +33,22 @@ pub const Scope = struct {
     tag: enum(u8) { initializer, callback, runtime, callable, evaluated },
 };
 pub const Callback = struct { entry: EntryId, constructor: Ir.OriginId, role: u32, origin: Ir.OriginId, status: Solve.StaticStatus };
-pub const Capture = struct { entry: EntryId, constructor: Ir.OriginId, role: u32, closure: Ir.OriginId, input: Ir.InputId, status: Solve.StaticStatus };
+pub const Capture = struct { binding: Solve.BindingId = .none, transfer: RoleTransferId = .none, W: Solve.QueryId = .none, S: Solve.QueryId = .none, entry: EntryId, constructor: Ir.OriginId, role: u32, closure: Ir.OriginId, input: Ir.InputId, status: Solve.StaticStatus };
+pub const RoleTransfer = struct {
+    entry: EntryId,
+    anchor: Ir.AnchorId,
+    constructor: Ir.OriginId,
+    role: u32,
+    origin: Ir.OriginId,
+    template: Ir.TemplateId,
+    seed: Solve.SeedId,
+    source: Ir.PortId,
+    W: Solve.QueryId,
+    S: Solve.QueryId = .none,
+    captures: Ir.Range = .{},
+    kind: enum(u8) { callback, runtime },
+    status: Solve.StaticStatus = .unproved,
+};
 pub const CaptureFact = struct { capture: u32, mode: Solve.Mode, answer: Solve.AnswerId };
 pub const Launch = struct { from: EntryId, to: EntryId, site: Ir.SiteId };
 pub const Residual = struct { entry: EntryId, site: Ir.SiteId, reason: Solve.Reason };
@@ -47,6 +64,8 @@ pub const Counts = struct {
     builder: Ir.BuilderCounters = .{},
 };
 
+evidence: Evidence = .{},
+role_transfers: std.MultiArrayList(RoleTransfer) = .empty,
 live_nodes: std.MultiArrayList(LiveNode) = .empty,
 declaration_liveness: enum { absent, conservative } = .absent,
 sites: std.MultiArrayList(Ir.Site) = .empty,
@@ -76,8 +95,9 @@ selected_source: ?Ir.Site = null,
 discovery_complete: bool = false,
 input_supported: bool = true,
 
-const containers = .{ "live_nodes", "sites", "templates", "inputs", "origins", "anchors", "selectors", "observations", "answers", "entries", "constructions", "scopes", "callbacks", "captures", "capture_facts", "launches", "residuals", "failures", "bytes" };
+const containers = .{ "role_transfers", "live_nodes", "sites", "templates", "inputs", "origins", "anchors", "selectors", "observations", "answers", "entries", "constructions", "scopes", "callbacks", "captures", "capture_facts", "launches", "residuals", "failures", "bytes" };
 pub fn reset(g: *Graph) void {
+    g.evidence.reset();
     inline for (containers) |name| @field(g, name).clearRetainingCapacity();
     g.declaration_liveness = .absent;
     g.counts = .{};
@@ -88,6 +108,7 @@ pub fn reset(g: *Graph) void {
     g.input_supported = true;
 }
 pub fn deinit(g: *Graph, a: Allocator) void {
+    g.evidence.deinit(a);
     inline for (containers) |name| @field(g, name).deinit(a);
     g.* = .{};
 }
@@ -96,9 +117,9 @@ pub fn text(g: *const Graph, range: Ir.Range) []const u8 {
 }
 
 /// Copy index-addressed source/proof descriptors before discarding phase arenas.
-/// Allocations/calls/ports are intentionally NOT retained: none is referenced by
-/// an inspection row. Origins retain only stable checked-source sites.
-pub fn snapshot(g: *Graph, a: Allocator, ir: *const Ir, solver: *const Solve) !void {
+/// The separate evidence owner also retains original value/capture/substitution
+/// directories; legacy inspection rows preserve their original compact layout.
+pub fn snapshot(g: *Graph, a: Allocator, ir: *const Ir, solver: *const Solve, statuses: []const Solve.StaticStatus) !void {
     for (0..ir.sites.len) |i| try g.sites.append(a, ir.sites.get(i));
     for (0..ir.templates.len) |i| try g.templates.append(a, .{ .site = ir.templates.get(i).site });
     for (0..ir.inputs.len) |i| {
@@ -113,6 +134,9 @@ pub fn snapshot(g: *Graph, a: Allocator, ir: *const Ir, solver: *const Solve) !v
     for (0..ir.selectors.len) |i| try g.selectors.append(a, ir.selectors.get(i));
     for (0..solver.observations.len) |i| try g.observations.append(a, solver.observations.get(i));
     for (0..solver.answers.len) |i| try g.answers.append(a, solver.answers.get(i));
+    const evidence = try Evidence.init(a, ir, solver, statuses);
+    g.evidence.deinit(a);
+    g.evidence = evidence;
     g.counts = .{ .templates = ir.templates.len, .source_calls = ir.calls.len, .source_ports = ir.ports.len, .launch_exports = ir.exports.len, .solver = solver.counts, .builder = ir.counts };
 }
 
@@ -134,7 +158,7 @@ pub fn finish(g: *Graph, a: Allocator, scratch: Allocator) !void {
     }
     g.entries.deinit(a);
     g.entries = sorted;
-    inline for (.{ "live_nodes", "constructions", "scopes", "callbacks", "captures", "residuals", "failures" }) |name|
+    inline for (.{ "role_transfers", "live_nodes", "constructions", "scopes", "callbacks", "captures", "residuals", "failures" }) |name|
         for (@field(g, name).items(.entry)) |*entry| {
             if (entry.* != .none) entry.* = remap[@backingInt(entry.*)];
         };
@@ -144,4 +168,59 @@ pub fn finish(g: *Graph, a: Allocator, scratch: Allocator) !void {
     for (g.launches.items(.to)) |*entry| {
         if (entry.* != .none) entry.* = remap[@backingInt(entry.*)];
     }
+}
+
+/// Structural owner/incidence checks only, never a semantic proof receipt.
+pub fn validateTransfers(g: *const Graph) Evidence.Error!void {
+    try g.evidence.validate(&g.observations, &g.answers);
+    const ir = &g.evidence.source;
+    var capture_cursor: usize = 0;
+    for (0..g.role_transfers.len) |i| {
+        const row = g.role_transfers.get(i);
+        if (@backingInt(row.entry) >= g.entries.len or @backingInt(row.anchor) >= ir.anchors.len or @backingInt(row.origin) >= ir.origins.len or @backingInt(row.template) >= ir.templates.len or @backingInt(row.seed) >= g.evidence.seeds.len or @backingInt(row.W) >= g.evidence.queries.len) return error.InvalidEvidence;
+        const callable = ir.origins.get(@backingInt(row.origin));
+        if ((callable.tag != .function and callable.tag != .closure) or g.entries.get(@backingInt(row.entry)).anchor != row.anchor or callable.target != @backingInt(row.template)) return error.InvalidEvidence;
+        const seed = g.evidence.seeds.get(@backingInt(row.seed));
+        if (seed.template != row.template or seed.entry != row.anchor or seed.role != row.role) return error.InvalidEvidence;
+        const W = g.evidence.queries.get(@backingInt(row.W));
+        const W_observation = g.observations.get(@backingInt(W.observation));
+        if (W.port != row.source or W.seed != .none or W_observation.mode != .W) return error.InvalidEvidence;
+        if (row.S == .none) {
+            if (row.kind != .runtime or row.status != .unproved) return error.InvalidEvidence;
+        } else {
+            if (@backingInt(row.S) >= g.evidence.queries.len) return error.InvalidEvidence;
+            const S = g.evidence.queries.get(@backingInt(row.S));
+            var expected = W_observation;
+            expected.mode = .S;
+            if (S.port != row.source or S.seed != .none or !std.meta.eql(expected, g.observations.get(@backingInt(S.observation))) or g.evidence.statuses.items[@backingInt(row.S)] != row.status) return error.InvalidEvidence;
+        }
+        if (row.kind == .callback) {
+            if (@backingInt(row.constructor) >= ir.origins.len) return error.InvalidEvidence;
+            const constructor_origin = ir.origins.get(@backingInt(row.constructor));
+            if (constructor_origin.tag != .constructor or constructor_origin.target >= ir.constructors.len) return error.InvalidEvidence;
+            const constructor = ir.constructors.get(constructor_origin.target);
+            if (constructor.origin != row.constructor or constructor.kind != ir.anchors.get(@backingInt(row.anchor)).kind or constructor.kind != g.entries.get(@backingInt(row.entry)).kind or constructor.roles.start > ir.roles.len or constructor.roles.len > ir.roles.len - constructor.roles.start or row.role >= constructor.roles.len or ir.roles.get(constructor.roles.start + row.role).position != row.role) return error.InvalidEvidence;
+            const observation = g.observations.get(@backingInt(W.observation));
+            if (observation.kind != constructor.kind or observation.prefix != .role or observation.anchor != row.anchor or observation.constructor != row.constructor or observation.role != row.role) return error.InvalidEvidence;
+        }
+        if (row.captures.start != capture_cursor or row.captures.len > g.captures.len - capture_cursor) return error.InvalidEvidence;
+        for (capture_cursor..capture_cursor + row.captures.len) |ci| {
+            const capture = g.captures.get(ci);
+            if (@backingInt(capture.transfer) != i or capture.entry != row.entry or capture.constructor != row.constructor or capture.role != row.role or capture.closure != row.origin or @backingInt(capture.input) >= ir.inputs.len) return error.InvalidEvidence;
+            const input = ir.inputs.get(@backingInt(capture.input));
+            if (!input.capture or input.owner != row.template or @backingInt(capture.W) >= g.evidence.queries.len or @backingInt(capture.S) >= g.evidence.queries.len) return error.InvalidEvidence;
+            const CW = g.evidence.queries.get(@backingInt(capture.W));
+            const CS = g.evidence.queries.get(@backingInt(capture.S));
+            var expected_W = W_observation;
+            expected_W.capture = capture.input;
+            var expected_S = expected_W;
+            expected_S.mode = .S;
+            if (CW.port != row.source or CS.port != row.source or CW.seed != .none or CS.seed != .none or !std.meta.eql(expected_W, g.observations.get(@backingInt(CW.observation))) or !std.meta.eql(expected_S, g.observations.get(@backingInt(CS.observation))) or capture.status != g.evidence.statuses.items[@backingInt(capture.S)]) return error.InvalidEvidence;
+            if (@backingInt(capture.binding) >= g.evidence.bindings.len) return error.InvalidEvidence;
+            const binding = g.evidence.bindings.get(@backingInt(capture.binding));
+            if (binding.runtime or binding.seed != row.seed or binding.input != capture.input or binding.W != capture.W or binding.S != capture.S) return error.InvalidEvidence;
+        }
+        capture_cursor += row.captures.len;
+    }
+    if (capture_cursor != g.captures.len) return error.InvalidEvidence;
 }

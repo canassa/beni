@@ -174,6 +174,7 @@ pub const Options = struct {
     native_sources: ?*const @import("../SourceStore.zig") = null,
     control_required_modules: []const bool = &.{},
     entry_root_requests: []const @import("../entry/Selection.zig").Request = &.{},
+    solved_representations: bool = false,
     /// Where the per-module `constrain` and `solve` events go (checker.md
     /// §9). The two halves are timed separately because the
     /// constraint/solve split is the architecture (research/02 §1), and a

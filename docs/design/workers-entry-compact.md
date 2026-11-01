@@ -774,3 +774,7 @@ interface constructor row named by BIR.ext_ctor; do not infer it from spelling o
 repeat import/provenance resolution. Constructors requiring arguments remain an
 explicit unsupported callable-value transfer. This lets a static `False` actual
 discharge its control obligation instead of manufacturing an analysis gap.
+
+## Owned role-transfer producer
+
+[workers-entry-role-transfers.md](workers-entry-role-transfers.md) specifies the bounded Session-owned publication of this algebra's exact Entry/Anchor/role/capture queries, original source sidecars and shared substitution derivations. Its structural validation does not certify local answer equations or authorize callback execution/native lowering; existing static statuses remain producer observations.

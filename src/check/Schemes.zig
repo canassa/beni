@@ -124,6 +124,9 @@ pub const Writer = struct {
     /// (`Types.Builder.canonical`). Null only in unit tests that name no
     /// alias; a body it cannot give is `err`.
     bodies: ?*Types.Builder = null,
+    solved_capture: ?*@import("SolvedRepresentations.zig").Capture = null,
+    solved_entry: ?u32 = null,
+    solved_origin: @import("SolvedRepresentations.zig").Origin = .entry,
     /// Every alias the record's terms name, in the order first named: its
     /// `type_refs` row carries the body, written once (`writeRows`).
     rows: std.ArrayList(Row) = .empty,
@@ -263,6 +266,7 @@ pub const Writer = struct {
             .effects = effects,
             .total = if (w.effects) |p| p.decl < p.effects.total.len and p.effects.total[p.decl] else false,
         });
+        if (w.solved_capture) |capture| if (w.solved_entry) |decl| try capture.add(w.gpa, .entry, .entry, decl, .none, index, v, w.pending_roots.items);
         try w.finish(mark);
         return @fromBackingInt(@intCast(index));
     }
@@ -467,7 +471,7 @@ pub const Writer = struct {
             const app = if (w.bodies) |b| try b.canonical(w.rows.items[i].id) else null;
             _ = try w.begin();
             w.rows.items[i].uses_start = @intCast(w.uses.items.len);
-            const body = if (app) |v| try w.writeBody(v) else try w.term(.err, 0, 0);
+            const body = if (app) |v| try w.writeBody(v, w.rows.items[i].ref, w.rows.items[i].id) else try w.term(.err, 0, 0);
             const row = &w.rows.items[i];
             row.uses_end = @intCast(w.uses.items.len);
             row.peak = if (w.too_deep) max_depth + 1 else w.peak;
@@ -479,7 +483,7 @@ pub const Writer = struct {
     /// parameter variables: its expansion, with parameter `i` written as
     /// `var(i)`. Anything else — not an alias, a parameter repeated or not
     /// a variable — is `err` (`Types.Builder.canonical` says when).
-    fn writeBody(w: *Writer, app: Var) Error!Interface.TermIndex {
+    fn writeBody(w: *Writer, app: Var, ref: Interface.TypeRefIndex, requested: TypeStore.TypeId) Error!Interface.TermIndex {
         const a = switch (w.store.content(w.store.find(app))) {
             .alias => |a| a,
             else => return w.term(.err, 0, 0),
@@ -496,6 +500,7 @@ pub const Writer = struct {
             if (!w.claim(root)) return w.term(.err, 0, 0);
             w.quantified[root.int()] = @intCast(i);
         }
+        if (w.solved_capture) |capture| if (!w.types.entry(requested).schema_endpoint) try capture.add(w.gpa, .alias_template, w.solved_origin, std.math.maxInt(u32), requested, ref.int(), a.actual, params);
         w.in_body = true;
         defer w.in_body = false;
         return w.writeVar(a.actual);

@@ -426,6 +426,7 @@ control_sources: @import("ControlSourcePlan.zig").Artifact = .empty,
 realm_sources: @import("RealmSource.zig").Artifact = .empty,
 entry_roots: @import("EntryRoots.zig").Artifact = .empty,
 nominal_layouts: @import("NominalLayouts.zig").Artifact = .empty,
+solved_representations: @import("SolvedRepresentations.zig").Artifact = .empty,
 /// Alias-expanded OUTERMOST nominal value head, one per declaration.
 decl_heads: []const TypeStore.TypeId = &.{},
 /// Sorted by `decl`, then kind, then the field's text or the type's
@@ -486,6 +487,7 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     d.realm_sources.deinit(gpa);
     d.entry_roots.deinit(gpa);
     d.nominal_layouts.deinit(gpa);
+    d.solved_representations.deinit(gpa);
     gpa.free(d.decl_heads);
     gpa.free(d.boundary);
     gpa.free(d.debug);

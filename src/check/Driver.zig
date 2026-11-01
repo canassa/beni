@@ -475,6 +475,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             const realms_required = d.options.realm_required_modules.len != 0 and d.options.realm_required_modules[m.int()];
             const controls_required = d.options.control_required_modules.len != 0 and d.options.control_required_modules[m.int()];
             if (@import("../native/Bindings.zig").acceptsCached(d.options.native_sources, d.graph, m, bir, &loaded.record, d.interner) and
+                (!d.options.solved_representations or (try loaded.sidecar.prepareSolvedCoverage(d.gpa, bir, d.graph, d.types))) and
                 (!realms_required or loaded.sidecar.table.realm_sources.present) and
                 (try loaded.sidecar.prepareRealmCoverageWithIntrinsics(d.gpa, bir, d.graph, .{ .graph = d.graph, .interner = d.interner, .interfaces = d.interfaces })) and
                 (!controls_required or loaded.sidecar.table.control_sources.present) and
@@ -503,6 +504,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
     d.counters[m.int()] = try ModuleCheck.check(.{
         .realm_required = d.options.realm_required_modules.len != 0 and d.options.realm_required_modules[m.int()],
         .control_required = d.options.control_required_modules.len != 0 and d.options.control_required_modules[m.int()],
+        .solved_required = d.options.solved_representations,
         .gpa = d.gpa,
         .scratch = scratch,
         .patterns = patterns,

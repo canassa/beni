@@ -96,7 +96,11 @@ pub fn run(a: Allocator, scratch: Allocator, in: Input, graph: *Graph) Allocator
             }
         }
     }
-    try graph.snapshot(a, &ir, &solver);
+    for (0..graph.role_transfers.len) |i| {
+        const q = graph.role_transfers.get(i).S;
+        if (q != .none) graph.role_transfers.items(.status)[i] = static.status[@backingInt(q)];
+    }
+    try graph.snapshot(a, &ir, &solver, static.status);
     try Live.append(a, scratch, in.reach, in.metadata, &ir, graph);
     try graph.finish(a, scratch);
 }
@@ -304,6 +308,21 @@ const Pass = struct {
         const template: Ir.TemplateId = @fromBackingInt(origin.target);
         const anchor = p.g.entries.get(@backingInt(watch_row.entry)).anchor;
         const seed = try p.s.addSeed(.{ .template = template, .entry = anchor, .role = watch_row.role });
+        const transfer: Graph.RoleTransferId = @fromBackingInt(@intCast(p.g.role_transfers.len));
+        const capture_start: u32 = @intCast(p.g.captures.len);
+        try p.g.role_transfers.append(p.a, .{
+            .entry = watch_row.entry,
+            .anchor = anchor,
+            .constructor = watch_row.constructor,
+            .role = watch_row.role,
+            .origin = origin_id,
+            .template = template,
+            .seed = seed,
+            .source = watch_row.source,
+            .W = watch_row.query,
+            .S = watch_row.static_query,
+            .kind = if (runtime) .runtime else .callback,
+        });
         if (!runtime) {
             const row: u32 = @intCast(p.g.callbacks.len);
             try p.g.callbacks.append(p.a, .{ .entry = watch_row.entry, .constructor = watch_row.constructor, .role = watch_row.role, .origin = origin_id, .status = .unproved });
@@ -320,7 +339,7 @@ const Pass = struct {
                 const S = try p.s.ask(watch_row.source, try p.s.observe(observation), .none);
                 try p.s.bind(.{ .seed = seed, .input = input_id, .W = W, .S = S });
                 const row: u32 = @intCast(p.g.captures.len);
-                try p.g.captures.append(p.a, .{ .entry = watch_row.entry, .constructor = watch_row.constructor, .role = watch_row.role, .closure = origin_id, .input = input_id, .status = .unproved });
+                try p.g.captures.append(p.a, .{ .binding = p.s.bindingId(seed, input_id).?, .transfer = transfer, .W = W, .S = S, .entry = watch_row.entry, .constructor = watch_row.constructor, .role = watch_row.role, .closure = origin_id, .input = input_id, .status = .unproved });
                 try p.capture_queries.append(p.scratch, .{ .row = row, .W = W, .S = S });
             } else if (runtime and input.position == 0) {
                 const source = p.programPort(anchor);
@@ -329,6 +348,7 @@ const Pass = struct {
                 try p.s.bind(.{ .seed = seed, .input = input_id, .W = W, .S = S });
             } else try p.s.bind(.{ .seed = seed, .input = input_id, .runtime = true });
         }
+        p.g.role_transfers.items(.captures)[@backingInt(transfer)] = .{ .start = capture_start, .len = @as(u32, @intCast(p.g.captures.len)) - capture_start };
         try p.root(watch_row.entry, template, seed, if (runtime) .runtime else .callback);
     }
     fn recordScope(p: *Pass, value: Graph.Scope) !void {

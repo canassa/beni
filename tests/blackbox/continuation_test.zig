@@ -950,10 +950,10 @@ test "malformed or stale continuation cache evidence is rebuilt before use" {
     try testing.expectEqualStrings("BENICAC\x00", good[0..8]);
     const sidecar = word(good, 40);
     try testing.expectEqualStrings("BENIDSP\x00", good[sidecar..][0..8]);
-    try testing.expectEqual(@as(u32, 21), word(good, sidecar + 8));
+    try testing.expectEqual(@as(u32, 22), word(good, sidecar + 8));
     const columns = word(good, sidecar + 12);
     // Format19 appends control sources after nominal layouts, typed roots and heads.
-    const plan = sidecar + word(good, sidecar + 16 + (columns - 6) * 8);
+    const plan = sidecar + word(good, sidecar + 16 + (columns - 7) * 8);
     try testing.expectEqualStrings("BENICNT\x00", good[plan..][0..8]);
     try testing.expectEqual(@as(u32, 1), word(good, plan + 8));
     const scopes = word(good, plan + 12);
@@ -1068,7 +1068,7 @@ test "cached declaration heads reject wrong row counts invalid references and no
     const sidecar = word(good, 40);
     const columns = word(good, sidecar + 12);
     // Format19 keeps declaration heads before typed roots, nominal layouts and control sources.
-    const header = sidecar + 16 + (columns - 5) * 8;
+    const header = sidecar + 16 + (columns - 6) * 8;
     const heads = sidecar + word(good, header);
     try testing.expectEqual(@as(u32, 6), word(good, header + 4));
     try testing.expectEqual(std.math.maxInt(u32), word(good, heads)); // alias declaration, not a value
@@ -1142,7 +1142,7 @@ test "private nominal cache evidence rejects wrong arity and alias kind before i
     const good = try w.read(entry);
     const sidecar = word(good, 40);
     const columns = word(good, sidecar + 12);
-    const plan = sidecar + word(good, sidecar + 16 + (columns - 6) * 8);
+    const plan = sidecar + word(good, sidecar + 16 + (columns - 7) * 8);
     const record = plan + 24 + word(good, plan + 12) * 16 + word(good, plan + 16) * 16;
     try testing.expectEqualStrings("BENIIFC\x00", good[record..][0..8]);
     try testing.expectEqual(@as(u32, 18), word(good, record + 8));

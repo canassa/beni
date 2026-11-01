@@ -71,7 +71,7 @@ fn record(bytes: []const u8) []const u8 {
 }
 fn layoutBytes(bytes: []const u8) []const u8 {
     const side = word(bytes, 40);
-    const column = side + 16 + (word(bytes, side + 12) - 3) * 8;
+    const column = side + 16 + (word(bytes, side + 12) - 4) * 8;
     return bytes[side + word(bytes, column) ..][0..word(bytes, column + 4)];
 }
 fn layoutRecord(bytes: []const u8) []const u8 {
@@ -172,8 +172,8 @@ test "nominal layouts refuse missing malformed private owners constructors scope
     const path = try entry(&w, "Main");
     const good = try w.read(path);
     const side = word(good, 40);
-    try testing.expectEqual(@as(u32, 21), word(good, side + 8));
-    const column = side + 16 + (word(good, side + 12) - 3) * 8;
+    try testing.expectEqual(@as(u32, 22), word(good, side + 8));
+    const column = side + 16 + (word(good, side + 12) - 4) * 8;
     const layout = side + word(good, column);
     try testing.expectEqualStrings("BENINOM\x00", good[layout..][0..8]);
     const ctors = layout + 32 + word(good, layout + 12) * 24;
@@ -212,7 +212,7 @@ test "nominal layouts reject private kind metadata contradicting a present ordin
     const path = try entry(&w, "Library");
     const good = try w.read(path);
     const side = word(good, 40);
-    const column = side + 16 + (word(good, side + 12) - 3) * 8;
+    const column = side + 16 + (word(good, side + 12) - 4) * 8;
     const layout = side + word(good, column);
     try testing.expectEqual(@as(u32, 6), word(good, layout + 12));
     // PublicKey is the fifth declaring owner; its exact public fact says dict_key.
@@ -374,7 +374,7 @@ test "nominal layouts in an actual generated pack include unused private constru
         try testing.expectEqual(@as(u32, 3), word(layout, 16));
         // Same normal sidecar also proves there were no selected entry schemes.
         const side = word(bytes, 40);
-        const roots_column = side + 16 + (word(bytes, side + 12) - 4) * 8;
+        const roots_column = side + 16 + (word(bytes, side + 12) - 5) * 8;
         const roots = side + word(bytes, roots_column);
         try testing.expectEqualStrings("BENIENT\x00", bytes[roots..][0..8]);
         try testing.expectEqual(@as(u32, 0), word(bytes, roots + 12));
@@ -450,7 +450,9 @@ fn executionMetric(line: []const u8, key: []const u8) !u64 {
 }
 /// Preserve every old byte; accept only the two explicitly versioned new
 /// sections with their known row grammar and complete declared row counts.
-fn beforeSource(text: []const u8) ![]const u8 {
+fn beforeSource(full_text: []const u8) ![]const u8 {
+    const before_roles = try @import("entry_roles.zig").before(full_text);
+    const text = try @import("entry_solved.zig").before(before_roles);
     const at = std.mem.indexOf(u8, text, source_header) orelse return error.MissingRealmSource;
     try testing.expect(at == 0 or text[at - 1] == '\n');
     try testing.expect(std.mem.indexOfPos(u8, text, at + source_header.len, "native-realm-source ") == null);

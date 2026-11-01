@@ -109,7 +109,7 @@ pub fn load(
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
     const bytes = dir.load(gpa, key) orelse return null;
-    return decode(gpa, bytes, key, .{ .grow = interner }, shell);
+    return decode(gpa, bytes, key, .{ .grow = interner }, shell, false);
 }
 
 /// `load`, on a WORKER, re-interning through the non-mutating
@@ -135,8 +135,19 @@ pub fn loadFinding(
     interner: *const InternPool.Global,
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
+    return loadFindingWithSolved(gpa, dir, key, interner, shell, false);
+}
+
+pub fn loadFindingWithSolved(
+    gpa: Allocator,
+    dir: *const Dir,
+    key: Key.Key,
+    interner: *const InternPool.Global,
+    shell: *const Interface,
+    include_solved: bool,
+) Allocator.Error!?Loaded {
     const bytes = dir.load(gpa, key) orelse return null;
-    return decode(gpa, bytes, key, .{ .find = interner }, shell);
+    return decode(gpa, bytes, key, .{ .find = interner }, shell, include_solved);
 }
 
 /// `loadFinding` over bytes already in memory — the checked core's
@@ -150,7 +161,18 @@ pub fn loadFindingBytes(
     interner: *const InternPool.Global,
     shell: *const Interface,
 ) Allocator.Error!?Loaded {
-    return decode(gpa, try gpa.dupe(u8, bytes), key, .{ .find = interner }, shell);
+    return loadFindingBytesWithSolved(gpa, bytes, key, interner, shell, false);
+}
+
+pub fn loadFindingBytesWithSolved(
+    gpa: Allocator,
+    bytes: []const u8,
+    key: Key.Key,
+    interner: *const InternPool.Global,
+    shell: *const Interface,
+    include_solved: bool,
+) Allocator.Error!?Loaded {
+    return decode(gpa, try gpa.dupe(u8, bytes), key, .{ .find = interner }, shell, include_solved);
 }
 
 /// Which of the two interning postures a load takes. `iface_bytes`' own
@@ -168,6 +190,7 @@ fn decode(
     key: Key.Key,
     interning: Interning,
     shell: *const Interface,
+    include_solved: bool,
 ) Allocator.Error!?Loaded {
     var out: Loaded = .{ .bytes = bytes, .record = .empty, .sidecar = .empty, .plan = .empty, .diagnostics = &.{} };
     errdefer out.deinit(gpa);
@@ -193,8 +216,8 @@ fn decode(
         },
     };
     out.sidecar = (switch (interning) {
-        .grow => |pool| dispatch_bytes.readGrowing(gpa, entry.dispatch, pool),
-        .find => |pool| dispatch_bytes.read(gpa, entry.dispatch, pool),
+        .grow => |pool| dispatch_bytes.readGrowingSelected(gpa, entry.dispatch, pool, include_solved),
+        .find => |pool| dispatch_bytes.readSelected(gpa, entry.dispatch, pool, include_solved),
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.BadSidecar, error.UnknownSymbol => {

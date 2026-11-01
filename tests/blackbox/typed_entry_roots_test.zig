@@ -27,7 +27,9 @@ fn executionMetric(line: []const u8, key: []const u8) !u64 {
 }
 /// Preserve every old byte; accept only the two explicitly versioned new
 /// sections with their known row grammar and complete declared row counts.
-fn beforeSource(text: []const u8) ![]const u8 {
+fn beforeSource(full_text: []const u8) ![]const u8 {
+    const before_roles = try @import("entry_roles.zig").before(full_text);
+    const text = try @import("entry_solved.zig").before(before_roles);
     const at = std.mem.indexOf(u8, text, source_header) orelse return error.MissingRealmSource;
     try testing.expect(at == 0 or text[at - 1] == '\n');
     try testing.expect(std.mem.indexOfPos(u8, text, at + source_header.len, "native-realm-source ") == null);
@@ -197,9 +199,9 @@ test "typed entry roots reject stale malformed absent and wrong-owner private ca
     const key = try entryFor(&w);
     const good = try w.read(key);
     const sidecar = word(good, 40);
-    try testing.expectEqual(@as(u32, 21), word(good, sidecar + 8));
+    try testing.expectEqual(@as(u32, 22), word(good, sidecar + 8));
     const columns = word(good, sidecar + 12);
-    const column = sidecar + 16 + (columns - 4) * 8;
+    const column = sidecar + 16 + (columns - 5) * 8;
     const roots = sidecar + word(good, column);
     try testing.expectEqualStrings("BENIENT\x00", good[roots..][0..8]);
     try testing.expect(word(good, roots + 12) > 1);
@@ -365,7 +367,7 @@ test "typed entry roots distinguish complete empty cached selection from absent 
     const before = try w.read(key);
     const sidecar = word(before, 40);
     const columns = word(before, sidecar + 12);
-    const column = sidecar + 16 + (columns - 4) * 8;
+    const column = sidecar + 16 + (columns - 5) * 8;
     const roots = sidecar + word(before, column);
     // VERIFY OUTPUT: an explicit complete-empty header was installed, not 0 bytes.
     try testing.expectEqual(@as(u32, 24), word(before, column + 4));
@@ -505,9 +507,9 @@ fn packWitness(bytes: []const u8) !PackWitness {
         const entry = bytes[word(bytes, at + 20)..][0..word(bytes, at + 24)];
         try testing.expectEqualStrings("BENICAC\x00", entry[0..8]);
         const sidecar = word(entry, 40);
-        try testing.expectEqual(@as(u32, 21), word(entry, sidecar + 8));
+        try testing.expectEqual(@as(u32, 22), word(entry, sidecar + 8));
         const columns = word(entry, sidecar + 12);
-        const column = sidecar + 16 + (columns - 4) * 8;
+        const column = sidecar + 16 + (columns - 5) * 8;
         const root_bytes = entry[sidecar + word(entry, column) ..][0..word(entry, column + 4)];
         try testing.expectEqualStrings("BENIENT\x00", root_bytes[0..8]);
         if (word(root_bytes, 12) == 0) continue;

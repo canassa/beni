@@ -237,6 +237,7 @@ pub const Options = struct {
     checked_controls: bool = false,
     /// Borrowed qualified names for explicit entryKinds callers; live through run.
     entry_root_requests: []const @import("entry/Selection.zig").Request = &.{},
+    solved_representations: bool = false,
     /// Worker count, at least 1. `1` runs on the calling thread.
     jobs: u32,
     /// `jobs` is a ceiling rather than a request: it is the machine's CPU
@@ -2651,6 +2652,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 &r.session.interner,
                 .{
                     .entry_root_requests = r.entry_requests,
+                    .solved_representations = r.session.options.solved_representations,
                     .control_required_modules = r.control_required_modules,
                     .realm_required_modules = r.realm_required_modules,
                     .native_sources = &r.session.store,

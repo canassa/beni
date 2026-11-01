@@ -49,6 +49,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     options.checked_controls = check.cache.checked_controls;
     options.native_realms = check.cache.entries;
     options.prepare_native_emission = check.platform != null;
+    options.solved_representations = check.cache.entries;
     if (options.checked_controls) {
         options.ownership = true;
         options.ownership_everywhere = true;

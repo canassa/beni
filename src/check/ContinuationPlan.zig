@@ -143,6 +143,7 @@ fn emptyTypes(types: *const Interface) bool {
 }
 
 pub const Input = struct {
+    solved_capture: ?*@import("SolvedRepresentations.zig").Capture = null,
     cx: *const Context,
     gpa: Allocator,
     scratch: Allocator,

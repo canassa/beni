@@ -1,0 +1,3 @@
+# Anchored shared callback captures (#1295)
+
+Main uses the existing entry-discovery test platform. One make/relay/wrap source path produces foo and bar at the same record/lambda sites. Their direct capture InputId is shared; their Program anchors and outer actual callback values differ. The external role_transfer_test drives ordinary --entries, reads the complete owned source tables, and checks foo's paired static query names Main.first while bar's names Main.second. It also checks exact source-call/formal/actual edges, capture field payload, aliases/mixed U+B profiles, cache/jobs/roundtrip/relocation and source-error repair. No new native mask, user CLI flag or callback execution proof is enabled.

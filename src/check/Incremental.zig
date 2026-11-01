@@ -123,12 +123,13 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     // bytes are in the binary instead of in a file.
     if (cutoff.pack.count != 0 and m.int() < cutoff.packable.len and cutoff.packable[m.int()]) {
         if (cutoff.pack.find(.entry, cutoff.keys.of(m))) |bytes| {
-            d.options.cached[m.int()] = try CacheEntry.loadFindingBytes(
+            d.options.cached[m.int()] = try CacheEntry.loadFindingBytesWithSolved(
                 d.gpa,
                 bytes,
                 cutoff.keys.of(m),
                 cutoff.interner,
                 &d.interfaces[m.int()],
+                d.options.solved_representations,
             );
             dropWithoutBlock(d, cutoff, m);
             if (d.options.cached[m.int()]) |*loaded| {
@@ -147,12 +148,13 @@ pub fn loadDirectory(d: *Driver, m: Graph.Index) Error!void {
     const cutoff = d.options.cutoff orelse return;
     if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = false;
     const dir = cutoff.dir orelse return;
-    d.options.cached[m.int()] = try CacheEntry.loadFinding(
+    d.options.cached[m.int()] = try CacheEntry.loadFindingWithSolved(
         d.gpa,
         dir,
         cutoff.keys.of(m),
         cutoff.interner,
         &d.interfaces[m.int()],
+        d.options.solved_representations,
     );
     dropWithoutBlock(d, cutoff, m);
     cutoff.hit[m.int()] = d.options.cached[m.int()] != null;

@@ -167,7 +167,7 @@ pub const Artifact = struct {
         return count == a.owners.len;
     }
 };
-pub const Input = struct { cx: *const Context, parameters: []const ?[]const TypeStore.Var, crossing: []const bool = &.{}, work: ?*Work = null };
+pub const Input = struct { cx: *const Context, parameters: []const ?[]const TypeStore.Var, crossing: []const bool = &.{}, work: ?*Work = null, solved_capture: ?*@import("SolvedRepresentations.zig").Capture = null };
 pub const Error = Allocator.Error || error{ MissingParameters, BadOwnerArity, ParameterKindMismatch, UnexpectedBinder, InvalidLayout, IncompleteLayout, BadScope };
 fn layoutKind(types: *const Types, id: Types.TypeId) Kind {
     const e = types.entry(id);
@@ -194,6 +194,8 @@ pub fn build(in: Input) Error!Artifact {
     bodies.private_work = if (in.work) |w| &w.reader else null;
     writer.bodies = &bodies;
     writer.crossing = in.crossing;
+    writer.solved_capture = in.solved_capture;
+    writer.solved_origin = .nominal;
     const first = cx.types.entry_offsets[cx.module.int()];
     const last = cx.types.entry_offsets[cx.module.int() + 1];
     for (first..last) |i| {
@@ -230,6 +232,7 @@ pub fn build(in: Input) Error!Artifact {
             }
             const bundle = try cx.store.fresh(.{ .structure = .{ .tuple = try cx.store.addVars(roots.items) } }, TypeStore.generalized);
             row.scheme = try writer.addPrivate(bundle);
+            if (in.solved_capture) |capture| try capture.add(gpa, .nominal_template, .nominal, e.decl.int(), id, @backingInt(row.scheme), bundle, params);
             const body = writer.terms.get(writer.schemes.items[@backingInt(row.scheme)].body.int());
             const range = writer.extra.items[body.lhs];
             const children = writer.extra.items[body.lhs + 1 ..][0..range];

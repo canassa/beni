@@ -8,8 +8,9 @@ const Solver = @This();
 pub const QueryId = enum(u32) { none = sentinel, _ };
 pub const ObservationId = enum(u32) { none = sentinel, _ };
 pub const AnswerId = enum(u32) { none = sentinel, _ };
-const FactId = enum(u32) { none = sentinel, _ };
-const EdgeId = enum(u32) { none = sentinel, _ };
+pub const FactId = enum(u32) { none = sentinel, _ };
+pub const EdgeId = enum(u32) { none = sentinel, _ };
+pub const BindingId = enum(u32) { none = sentinel, _ };
 pub const SeedId = enum(u32) { none = sentinel, _ };
 pub const Mode = enum(u8) { W, S };
 pub const Reason = Ir.Reason;
@@ -44,8 +45,8 @@ pub const Query = struct {
     obligations: u32 = sentinel,
     binding_next: QueryId = .none,
 };
-const Fact = struct { query: QueryId, answer: AnswerId, next: FactId };
-const Edge = struct {
+pub const Fact = struct { query: QueryId, answer: AnswerId, next: FactId };
+pub const Edge = struct {
     source: QueryId,
     target: QueryId,
     tag: enum(u8) { copy, substitute, seal },
@@ -53,7 +54,21 @@ const Edge = struct {
     seal: Ir.SealId = .none,
     next: EdgeId = .none,
 };
-const Obligation = struct { query: QueryId, needs: QueryId, next: u32 };
+pub const Obligation = struct { query: QueryId, needs: QueryId, next: u32 };
+pub const DerivationId = enum(u32) { none = sentinel, _ };
+/// All alternatives for one fact, without enumerating witness paths.
+pub const Derivation = struct { target: FactId, source: FactId = .none, via: EdgeId = .none };
+/// Metadata about an EXISTING semantic copy edge; never changes its key.
+pub const Transport = struct {
+    edge: EdgeId,
+    via: EdgeId = .none,
+    kind: enum(u8) { actual, binding },
+    call: Ir.CallId = .none,
+    input: Ir.InputId = .none,
+    formal: FactId = .none,
+    actual: Ir.PortId = .none,
+    binding: u32 = sentinel,
+};
 const Work = struct { tag: enum(u8) { expand, deliver }, index: u32, fact: FactId = .none };
 pub const Seed = struct { template: Ir.TemplateId, entry: Ir.AnchorId, role: u32 };
 pub const Binding = struct {
@@ -92,6 +107,10 @@ facts: std.MultiArrayList(Fact) = .empty,
 edges: std.MultiArrayList(Edge) = .empty,
 obligations: std.MultiArrayList(Obligation) = .empty,
 work: std.MultiArrayList(Work) = .empty,
+derivations: std.MultiArrayList(Derivation) = .empty,
+transports: std.MultiArrayList(Transport) = .empty,
+derivation_index: std.AutoHashMapUnmanaged(Derivation, void) = .empty,
+transport_index: std.AutoHashMapUnmanaged(Transport, void) = .empty,
 seeds: std.MultiArrayList(Seed) = .empty,
 bindings: std.MultiArrayList(Binding) = .empty,
 observation_index: std.AutoHashMapUnmanaged(Observation, ObservationId) = .empty,
@@ -114,7 +133,7 @@ cursor: usize = 0,
 counts: Counters = .{},
 
 pub fn deinit(s: *Solver) void {
-    inline for (.{ "observations", "answers", "queries", "facts", "edges", "obligations", "work", "seeds", "bindings", "observation_index", "answer_index", "query_index", "fact_index", "edge_index", "delivery_index", "obligation_index", "binding_index", "pending_bindings", "field_index", "local_stack", "local_results", "local_controls", "local_seen" }) |name| @field(s, name).deinit(s.a);
+    inline for (.{ "derivations", "transports", "derivation_index", "transport_index", "observations", "answers", "queries", "facts", "edges", "obligations", "work", "seeds", "bindings", "observation_index", "answer_index", "query_index", "fact_index", "edge_index", "delivery_index", "obligation_index", "binding_index", "pending_bindings", "field_index", "local_stack", "local_results", "local_controls", "local_seen" }) |name| @field(s, name).deinit(s.a);
 }
 
 pub fn observe(s: *Solver, value: Observation) Allocator.Error!ObservationId {
@@ -155,6 +174,20 @@ fn internAnswer(s: *Solver, value: Answer) Allocator.Error!AnswerId {
 }
 
 pub fn publish(s: *Solver, target: QueryId, value: Answer) Allocator.Error!void {
+    return s.publishFrom(target, value, .none, .none);
+}
+fn derive(s: *Solver, value: Derivation) Allocator.Error!void {
+    const found = try s.derivation_index.getOrPut(s.a, value);
+    if (!found.found_existing) try s.derivations.append(s.a, value);
+}
+fn transport(s: *Solver, value: Transport) Allocator.Error!void {
+    const found = try s.transport_index.getOrPut(s.a, value);
+    if (!found.found_existing) try s.transports.append(s.a, value);
+}
+fn copyEdge(s: *const Solver, target: QueryId, source: QueryId) EdgeId {
+    return s.edge_index.get(.{ .source = source, .target = target, .tag = .copy, .call = .none, .seal = .none }).?;
+}
+fn publishFrom(s: *Solver, target: QueryId, value: Answer, source: FactId, via: EdgeId) Allocator.Error!void {
     var normalized = value;
     const request = s.observations.get(@backingInt(s.queries.get(@backingInt(target)).observation));
     if (request.control) switch (value.tag) {
@@ -168,11 +201,15 @@ pub fn publish(s: *Solver, target: QueryId, value: Answer) Allocator.Error!void 
     };
     const answer = try s.internAnswer(normalized);
     const found = try s.fact_index.getOrPut(s.a, .{ .query = target, .answer = answer });
-    if (found.found_existing) return;
+    if (found.found_existing) {
+        try s.derive(.{ .target = found.value_ptr.*, .source = source, .via = via });
+        return;
+    }
     const index: FactId = @fromBackingInt(@intCast(s.facts.len));
     try s.facts.append(s.a, .{ .query = target, .answer = answer, .next = s.queries.items(.facts)[@backingInt(target)] });
     s.queries.items(.facts)[@backingInt(target)] = index;
     found.value_ptr.* = index;
+    try s.derive(.{ .target = index, .source = source, .via = via });
     s.counts.facts += 1;
     var edge = s.queries.items(.consumers)[@backingInt(target)];
     while (edge != .none) : (edge = s.edges.items(.next)[@backingInt(edge)]) try s.enqueueDelivery(edge, index);
@@ -248,6 +285,11 @@ pub fn bind(s: *Solver, value: Binding) Allocator.Error!void {
     }
 }
 
+/// Exact original binding directory identity, not a reconstructed source name.
+pub fn bindingId(s: *const Solver, seed: SeedId, input: Ir.InputId) ?BindingId {
+    return if (s.binding_index.get(.{ .seed = seed, .input = input })) |i| @fromBackingInt(i) else null;
+}
+
 pub fn drain(s: *Solver) Allocator.Error!void {
     while (s.cursor < s.work.len) {
         const item = s.work.get(s.cursor);
@@ -271,10 +313,10 @@ fn deliver(s: *Solver, edge_id: EdgeId, fact_id: FactId) Allocator.Error!void {
     const edge = s.edges.get(@backingInt(edge_id));
     const value = s.answers.get(@backingInt(s.facts.get(@backingInt(fact_id)).answer));
     switch (edge.tag) {
-        .copy => try s.publish(edge.target, value),
+        .copy => try s.publishFrom(edge.target, value, fact_id, edge_id),
         .substitute => {
             if (value.tag != .input) {
-                try s.publish(edge.target, value);
+                try s.publishFrom(edge.target, value, fact_id, edge_id);
                 return;
             }
             const call = s.ir.calls.get(@backingInt(edge.call));
@@ -291,6 +333,7 @@ fn deliver(s: *Solver, edge_id: EdgeId, fact_id: FactId) Allocator.Error!void {
             const target = s.queries.get(@backingInt(edge.target));
             const source = try s.ask(arguments[input.position], value.observation, target.seed);
             try s.copyFrom(edge.target, source);
+            try s.transport(.{ .edge = s.copyEdge(edge.target, source), .kind = .actual, .via = edge_id, .call = edge.call, .input = value.input, .formal = fact_id, .actual = arguments[input.position] });
         },
         .seal => {
             var forwarded = value;
@@ -301,7 +344,7 @@ fn deliver(s: *Solver, edge_id: EdgeId, fact_id: FactId) Allocator.Error!void {
                     if (s.ir.constructors.get(origin.target).kind == boundary.kind) forwarded.anchor = boundary.anchor;
                 }
             }
-            try s.publish(edge.target, forwarded);
+            try s.publishFrom(edge.target, forwarded, fact_id, edge_id);
         },
     }
 }
@@ -349,6 +392,7 @@ fn expand(s: *Solver, query_id: QueryId) Allocator.Error!void {
                 return;
             }
             try s.copyFrom(query_id, source);
+            try s.transport(.{ .edge = s.copyEdge(query_id, source), .kind = .binding, .input = input_id, .binding = binding_id });
         },
         .alias => try s.follow(query_id, @fromBackingInt(port.lhs), observation, query.seed),
         .alternatives => {
