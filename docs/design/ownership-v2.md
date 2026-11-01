@@ -8169,7 +8169,9 @@ lemma and a `runtime_safety` check that tests it through a reader that does not 
   where one does not. *Check:* the existing block round trip (§3.6) compares the certified marks too.
 - **C5, the proof.** On each published certificate, `F(A) ⊑ A` is evaluated again from the published
   class alone, without the Prover's memo, and must hold. This is the post-fixpoint check of #1195's
-  second comment, run where the class is used, not only where it is made.
+  second comment. It runs where the class is made, and only under the hidden `--ownership-rewalk-check`
+  flag or in the `-Downership-full-cross-check` build, never as an always-on `runtime_safety` check
+  (*As built, part 2*, *Where it runs*).
 
 **The fork (the manager's decision).** The certificate as planned is not what the 4c-owned entries need,
 and it does not turn any witness green without reader 3.
@@ -8401,7 +8403,8 @@ added after the review of #1519 (`incRoot`, `wrapR`) were checked concretely by 
 tree of height 4 or less, and derived on paper for the item form of (d) and the alias form of (a′).
 
 **What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
-instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
+instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as checks (C5 under `--ownership-rewalk-check` and `-Downership-full-cross-check`, not always
+on; *As built, part 2*, *Where it runs*).
 - `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17–22 in one module, and the counted test with N alternatives in
   `build_test.zig`.
 - `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
@@ -8706,7 +8709,8 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   knot whose root and subtree class read `lost`. A second, non-recursive, case is a certified view whose
   actual holds a built nullary constructor: `same (Node t ys Leaf)` reads a root `lost`, and
   `same (Node t ys u)` does not. Both are #1533. The rows stay refused in the fixture.
-- **Checks.** Each is `runtime_safety` only, and each has a test-only mutation that makes it fire:
+- **Checks.** Each is `runtime_safety` only, except C5, which runs under `--ownership-rewalk-check` or in the
+  `-Downership-full-cross-check` build (*Where it runs*, above). Each has a test-only mutation that makes it fire:
   - C1 (`Shape.assertSaturation`): a node that `saturate` makes counts every cell as its two sides
     do, capped at 2, by a walk that keeps no count map. `cert-saturate-side` fires it on
     `o/PatternWideCall`, `o/PatternWideShared` and `o/PositionsSaturate`.
