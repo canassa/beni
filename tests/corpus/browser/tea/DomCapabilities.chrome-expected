@@ -1,0 +1,63 @@
+-- load
+<body>
+  <main>
+    <button id="focus">"focus"</button>
+    <button id="blur">"blur"</button>
+    <button id="box">"box"</button>
+    <button id="scroll">"scroll"</button>
+    <button id="into">"into view"</button>
+    <button id="viewport">"viewport"</button>
+    <button id="missing">"missing"</button>
+    <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" .value="">
+    <div id="pane"></div>
+  </main>
+</body>
+-- click #focus
+console.log: focus: ok: ⊤
+<body>
+  <main>
+    <button id="focus">"focus"</button>
+    <button id="blur">"blur"</button>
+    <button id="box">"box"</button>
+    <button id="scroll">"scroll"</button>
+    <button id="into">"into view"</button>
+    <button id="viewport">"viewport"</button>
+    <button id="missing">"missing"</button>
+    <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" .value="" :focus>
+    <div id="pane"></div>
+  </main>
+</body>
+-- click #blur
+console.log: blur: ok: ⊤
+<body>
+  <main>
+    <button id="focus">"focus"</button>
+    <button id="blur">"blur"</button>
+    <button id="box">"box"</button>
+    <button id="scroll">"scroll"</button>
+    <button id="into">"into view"</button>
+    <button id="viewport">"viewport"</button>
+    <button id="missing">"missing"</button>
+    <input id="field" style="position:absolute;left:10px;top:20px;width:120px;height:30px" .value="">
+    <div id="pane"></div>
+  </main>
+</body>
+-- click #box
+console.log: box: { height = 36, width = 128, x = 10, y = 20 }
+(the DOM did not change)
+-- click #scroll
+console.log: scrollTo: ok: ⊤
+(the DOM did not change)
+-- click #into
+console.log: scrollIntoView: ok: ⊤
+(the DOM did not change)
+-- click #viewport
+console.log: viewport: { height = 493, width = 780, x = 0, y = 0 }
+(the DOM did not change)
+-- click #missing
+console.log: focus: not found: "nowhere"
+console.log: blur: not found: "nowhere"
+console.log: box: not found: "nowhere"
+console.log: scrollTo: not found: "nowhere"
+console.log: scrollIntoView: not found: "nowhere"
+(the DOM did not change)

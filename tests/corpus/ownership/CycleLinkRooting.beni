@@ -1,0 +1,183 @@
+-- ownership: a list linked under recursive constructors, read through calls
+-- (ownership-v2.md Appendix B, C×L, the S3b half; R-4.7.3, R-4.6.4).
+-- `wrap` and `wrap2` build `Rose`s around a kids list, one level and two.
+-- `incLabels` writes each kid's label, `incKids` the kids' labels of its
+-- argument. Over `[ r, r ]` each write is refused `exclusive`, whether the
+-- list is passed alone (`alone`), read back under one link (`underOne`),
+-- under two (`underTwo`) or written by `incKids` under its parent
+-- (`kidsOfWrapped`); over separately built kids each accepts. The same
+-- through `Maybe` children and a mutual pair `A`/`B`. Known entries: v1
+-- refuses `underOneApart` at its level limit; v2 refuses `underTwoApart`,
+-- a list answered from below the first return (#1495). Under
+-- `wrap2 [ r, r ]` the top's one kid is exclusive though the kids below
+-- it share, but both checkers read the top's kids with the levels below
+-- them and refuse `siblingsApart` (#1495).
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+wrap : List Rose → Rose
+wrap xs = Rose [] xs
+
+
+wrap2 : List Rose → Rose
+wrap2 xs = Rose [] [ Rose [] xs ]
+
+
+incLabels : List Rose → List Rose
+incLabels ks =
+    case ks of
+        [ Rose l k, …rest ] →
+            [ Rose (List.push l 1) k, …incLabels rest ]
+
+        [] →
+            []
+
+
+incKids : Rose → Rose
+incKids t =
+    case t of
+        Rose l ks →
+            Rose l (incLabels ks)
+
+
+pub alone : ⊤ → Int
+alone ⊤ =
+    r = Rose [] []
+    List.length (incLabels [ r, r ])
+
+
+pub aloneApart : ⊤ → Int
+aloneApart ⊤ = List.length (incLabels [ Rose [] [], Rose [] [] ])
+
+
+kidsOf : Rose → List Rose
+kidsOf t =
+    case t of
+        Rose _ ks →
+            ks
+
+
+pub underOne : ⊤ → Int
+underOne ⊤ =
+    r = Rose [] []
+    List.length (incLabels (kidsOf (wrap [ r, r ])))
+
+
+pub underOneApart : ⊤ → Int
+underOneApart ⊤ = List.length (incLabels (kidsOf (wrap [ Rose [] [], Rose [] [] ])))
+
+
+innerKids : Rose → List Rose
+innerKids t =
+    case t of
+        Rose _ [ Rose _ ks ] →
+            ks
+
+        _ →
+            []
+
+
+pub underTwo : ⊤ → Int
+underTwo ⊤ =
+    r = Rose [] []
+    List.length (incLabels (innerKids (wrap2 [ r, r ])))
+
+
+pub underTwoApart : ⊤ → Int
+underTwoApart ⊤ = List.length (incLabels (innerKids (wrap2 [ Rose [] [], Rose [] [] ])))
+
+
+pub kidsOfWrapped : ⊤ → Rose
+kidsOfWrapped ⊤ =
+    r = Rose [] []
+    incKids (wrap [ r, r ])
+
+
+pub kidsOfWrappedApart : ⊤ → Rose
+kidsOfWrappedApart ⊤ = incKids (wrap [ Rose [] [], Rose [] [] ])
+
+
+pub siblingsApart : ⊤ → Rose
+siblingsApart ⊤ =
+    r = Rose [] []
+    incKids (wrap2 [ r, r ])
+
+
+-- `Maybe` children.
+type M
+    = M (List Int) (List (Maybe M))
+
+
+wrapM : List (Maybe M) → M
+wrapM xs = M [] xs
+
+
+incLabelsM : List (Maybe M) → List (Maybe M)
+incLabelsM ks =
+    case ks of
+        [ Just (M l k), …rest ] →
+            [ Just (M (List.push l 1) k), …incLabelsM rest ]
+
+        [ Nothing, …rest ] →
+            [ Nothing, …incLabelsM rest ]
+
+        [] →
+            []
+
+
+incKidsM : M → M
+incKidsM t =
+    case t of
+        M l ks →
+            M l (incLabelsM ks)
+
+
+pub maybeShared : ⊤ → M
+maybeShared ⊤ =
+    r = Just (M [] [])
+    incKidsM (wrapM [ r, r ])
+
+
+pub maybeApart : ⊤ → M
+maybeApart ⊤ = incKidsM (wrapM [ Just (M [] []), Just (M [] []) ])
+
+
+-- A mutual pair.
+type A
+    = A (List Int) (List B)
+
+
+type B
+    = B (List Int) (List A)
+
+
+wrapA : List B → A
+wrapA xs = A [] xs
+
+
+incLabelsB : List B → List B
+incLabelsB ks =
+    case ks of
+        [ B l k, …rest ] →
+            [ B (List.push l 1) k, …incLabelsB rest ]
+
+        [] →
+            []
+
+
+incKidsA : A → A
+incKidsA a =
+    case a of
+        A l ks →
+            A l (incLabelsB ks)
+
+
+pub mutualShared : ⊤ → A
+mutualShared ⊤ =
+    r = B [] []
+    incKidsA (wrapA [ r, r ])
+
+
+pub mutualApart : ⊤ → A
+mutualApart ⊤ = incKidsA (wrapA [ B [] [], B [] [] ])

@@ -1,4 +1,4 @@
-//! L12: canonical ranks and partition refinement for `Block`
+//! L13: canonical ranks and partition refinement for `Block`
 //! (`docs/design/ownership-v2.md` §3.6), each step reserved first on the
 //! codec's lane (§4.1): baseline, bounded by `codecBound` of the block's
 //! size, never the owner's growth. A record is one task of O(1) words: a

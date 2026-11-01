@@ -1,0 +1,28 @@
+module ChoiceArmsParams
+  14:17 List.push a: accepted param
+  18:17 List.push a: accepted param
+  23:5 call ChoiceArmsParams.t2 <expression>.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.t2 writes π1.0)
+  33:5 call ChoiceArmsParams.t2 <expression>.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.t2 writes π1.0)
+  43:5 call ChoiceArmsParams.t2 <expression>.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.t2 writes π1.0)
+  53:5 call ChoiceArmsParams.t3 <expression>.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.t3 writes π1.0)
+  62:26 List.push a: accepted param
+  66:29 List.push a: accepted param
+  71:5 call ChoiceArmsParams.w2 <expression>.0.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.w2 writes π1.0.0)
+  82:5 call ChoiceArmsParams.w2 <expression>.0.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.w2 writes π1.0.0)
+  92:5 call ChoiceArmsParams.u2 <expression>.1.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.u2 writes π1.1.0)
+  103:5 call ChoiceArmsParams.u2 <expression>.1.0: rejected disjoint: another operand of the same operation reaches it (ChoiceArmsParams.u2 writes π1.1.0)
+  summary t2: π1.0 RAW[storage], π1.0[*] A, π1.1 RA; res .0 condition(fresh2) π1.0, .0[*] ~condition(fresh4) ~π1.0[*], .1 ~condition(fresh3) π1.1, condition(fresh1){sep π1.0 π1.1, sep π1.1 π1.0[*]}
+  summary t3: π1.0 RAW[storage], π1.0[*] A, π1.1 RA; res .0 condition(fresh2) π1.0, .0[*] ~condition(fresh4) ~π1.0[*], .1 ~condition(fresh3) π1.1, condition(fresh1){sep π1.0 π1.1, sep π1.1 π1.0[*]}
+  summary swap: π2 RAW[storage], π2[*] A, π3 RAW[storage], π3[*] A; res .0 condition(fresh1) π2 π3, .0[*] ~condition(fresh5) ~π2[*] ~π3[*], .1 condition(fresh2) ~condition(fresh4) π2 π3, condition(fresh3){shared}
+  summary same: π2 RAW[storage], π2[*] A; res .0 condition(fresh2) fresh2 π2, .0[*] ~condition(fresh5) ~π2[*], .1 fresh1 ~condition(fresh4) π2, condition(fresh3){shared}
+  summary both: π2 RAW[storage], π2[*] A; res .0 condition(fresh1) fresh1 π2, .0[*] ~condition(fresh5) ~π2[*], .1 condition(fresh2) fresh2 ~condition(fresh4) π2, condition(fresh3){shared}
+  summary nestp: π2 RAW[storage], π2[*] A; res .0 condition(fresh3) fresh3 π2, .0[*] ~condition(fresh7) ~π2[*], .1 ~condition(fresh5), .1.0 fresh1 ~condition(fresh6) π2, .1.1 fresh2, condition(fresh4){shared}
+  summary w2: π1.0.0 RAW[storage], π1.0.0[*] A, π1.0.1 RA, π1.1 RA; res .0 condition(fresh1){sep π1.0.0 π1.0.1, sep π1.0.1 π1.0.0[*]}, .0.0 condition(fresh2) π1.0.0, .0.0[*] ~condition(fresh4) ~π1.0.0[*], .0.1 condition(fresh7) ~condition(fresh3) π1.0.1, .1 ~condition(fresh6) π1.1, condition(fresh5){sep π1.1 π1.0.0, sep π1.1 π1.0.0[*], sep π1.1 π1.0.1}
+  summary u2: π1.0 RA, π1.1.0 RAW[storage], π1.1.0[*] A, π1.1.1 RA; res .0 ~condition(fresh6) π1.0, .1 condition(fresh1){sep π1.1.0 π1.1.1, sep π1.1.1 π1.1.0[*]}, .1.0 condition(fresh2) π1.1.0, .1.0[*] ~condition(fresh4) ~π1.1.0[*], .1.1 condition(fresh7) ~condition(fresh3) π1.1.1, condition(fresh5){sep π1.0 π1.1.0, sep π1.0 π1.1.0[*], sep π1.0 π1.1.1}
+  summary swapPairs: π2 RA, π2.0 AW[storage], π2.0[*] A, π2.1 A, π3 RA, π3.0 AW[storage], π3.0[*] A, π3.1 A; res .0 condition(fresh4){sep π2.0 π2.1, sep π2.0 π3.1, sep π2.0[*] π3.1, sep π2.1 π2.0[*], sep π2.1 π3.0, sep π2.1 π3.0[*], sep π3.0 π3.1, sep π3.1 π3.0[*]}, .0.0 condition(fresh2) π2.0 π3.0, .0.0[*] ~condition(fresh6) ~π2.0[*] ~π3.0[*], .0.1 condition(fresh3) ~condition(fresh5) π2.1 π3.1, .1 condition(fresh1) ~condition(fresh8) π2 π3, condition(fresh7){shared}
+  summary fromP: π2 R, π2.0 RAW[storage], π2.0[*] A, π2.1 A; res .0 condition(fresh5){sep π2.0 π2.1, sep π2.1 π2.0[*]}, .0.0 condition(fresh3) fresh3 π2.0, .0.0[*] ~condition(fresh7) ~π2.0[*], .0.1 condition(fresh4) fresh4 ~condition(fresh6) π2.1, .1 ~condition(fresh9), .1.0 fresh1 ~condition(fresh10) π2.0, .1.1 fresh2, condition(fresh8){shared}
+  summary swapU: π2 RA, π2.0 AW[storage], π2.0[*] A, π2.1 A, π3 RA, π3.0 AW[storage], π3.0[*] A, π3.1 A; res .0 condition(fresh1) ~condition(fresh8) π2 π3, .1 condition(fresh4){sep π2.0 π2.1, sep π2.0 π3.1, sep π2.0[*] π3.1, sep π2.1 π2.0[*], sep π2.1 π3.0, sep π2.1 π3.0[*], sep π3.0 π3.1, sep π3.1 π3.0[*]}, .1.0 condition(fresh2) π2.0 π3.0, .1.0[*] ~condition(fresh6) ~π2.0[*] ~π3.0[*], .1.1 condition(fresh3) ~condition(fresh5) π2.1 π3.1, condition(fresh7){shared}
+  summary fromPU: π2 RA, π2.0 RAW[storage], π2.0[*] A; res .0 ~condition(fresh9) π2, .0.0 fresh3, .0.1 fresh4, .1 condition(fresh5), .1.0 condition(fresh1) fresh1 π2.0, .1.0[*] ~condition(fresh7) ~π2.0[*], .1.1 condition(fresh2) fresh2 ~condition(fresh6), condition(fresh8){shared}
+  demands 12: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 12: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause disjoint 8

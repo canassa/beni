@@ -1,0 +1,121 @@
+-- ownership: a view kept in a linked singleton that a call returns
+-- (ownership-v2.md Appendix B, V×L; R-4.5.1, R-4.6.4). `box` wraps a list
+-- in a singleton through the identity `ident`, so the singleton's element
+-- is the argument by reference. With `rest`, a view of `xs`, boxed and
+-- read after, a write of `xs` is refused (`readAfter`); with the box read
+-- before the write only, it is accepted (`deadView`), and so it is with a
+-- copy of the view boxed (`copiedView`). `cursors` puts one view at two
+-- cursors, the box's element and the pair's second: a write of `xs` is
+-- refused while either is read after (`firstCursor`, `secondCursor`), and
+-- accepted with neither (`noCursor`). `orEmpty` joins the box with an
+-- empty list, an empty projection at the element: the view is kept there
+-- too (`emptyJoin`), and a copy is accepted (`emptyJoinCopy`).
+ident : List (List Int) → List (List Int)
+ident v = v
+
+
+box : List Int → List (List Int)
+box v = ident [ v ]
+
+
+cursors : List Int → List (List Int) × List Int
+cursors v = ( ident [ v ], v )
+
+
+orEmpty : Bool, List Int → List (List Int)
+orEmpty c v =
+    if c then
+        box v
+    else
+        []
+
+
+pub readAfter : List Int → List Int × List (List Int)
+readAfter xs =
+    case xs of
+        [ _, …rest ] →
+            b = box rest
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub deadView : List Int → List Int
+deadView xs =
+    case xs of
+        [ _, …rest ] →
+            b = box rest
+            List.push xs (List.length b)
+
+        [] →
+            xs
+
+
+pub copiedView : List Int → List Int × List (List Int)
+copiedView xs =
+    case xs of
+        [ _, …rest ] →
+            b = box (List.copy rest)
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub firstCursor : List Int → List Int × List (List Int)
+firstCursor xs =
+    case xs of
+        [ _, …rest ] →
+            case cursors rest of
+                ( b, _ ) →
+                    ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub secondCursor : List Int → List Int × List Int
+secondCursor xs =
+    case xs of
+        [ _, …rest ] →
+            case cursors rest of
+                ( _, v ) →
+                    ( List.push xs 1, v )
+
+        [] →
+            ( xs, [] )
+
+
+pub noCursor : List Int → List Int
+noCursor xs =
+    case xs of
+        [ _, …rest ] →
+            case cursors rest of
+                ( b, v ) →
+                    List.push xs (List.length b + List.length v)
+
+        [] →
+            xs
+
+
+pub emptyJoin : Bool, List Int → List Int × List (List Int)
+emptyJoin c xs =
+    case xs of
+        [ _, …rest ] →
+            b = orEmpty c rest
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )
+
+
+pub emptyJoinCopy : Bool, List Int → List Int × List (List Int)
+emptyJoinCopy c xs =
+    case xs of
+        [ _, …rest ] →
+            b = orEmpty c (List.copy rest)
+            ( List.push xs 1, b )
+
+        [] →
+            ( xs, [] )

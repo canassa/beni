@@ -1,0 +1,99 @@
+-- ownership: parameters' recursive values linked under one new node and
+-- written by a recursive writer (ownership-v2.md Appendix B, L×F, the S3b
+-- half with a group writer; R-3.1, R-5.7.4). `incAll` pushes onto the kids
+-- list of every `Rose` at every depth, and `incList` walks a list of
+-- `Rose`; they are one group. `withKids t ks` links a whole tree `t` and a
+-- kids list `ks` built into one child: the write owes the caller `t`'s and
+-- `ks`'s lists apart, so `ks` taken from `t` is refused (`kidsOfItself`)
+-- and two fresh values are accepted (`kidsApart`). `twoTrees t u` links two
+-- whole trees: one tree twice is refused (`sameTree`), two trees accepted
+-- (`twoFresh`), and with `t` read after refused (`treeReadAfter`): v1
+-- accepts it, since its `twoTrees` reads `t` and `u` only, a known entry
+-- for v1 (a `--sanitize-lists` run shows the stale read). Through the
+-- identity `ident` the obligations are the same (`sameTreeIdent`,
+-- refused; `twoFreshIdent`, accepted).
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids (Rose [])))
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+ident : Rose → Rose
+ident r = r
+
+
+withKids : Rose, List Rose → Rose
+withKids t ks = incAll (Rose [ t, Rose ks ])
+
+
+kidsOf : Rose → List Rose
+kidsOf t =
+    case t of
+        Rose ks →
+            ks
+
+
+pub kidsOfItself : ⊤ → Rose
+kidsOfItself ⊤ =
+    t = Rose [ Rose [] ]
+    withKids t (kidsOf t)
+
+
+pub kidsApart : ⊤ → Rose
+kidsApart ⊤ = withKids (Rose [ Rose [] ]) [ Rose [] ]
+
+
+twoTrees : Rose, Rose → Rose
+twoTrees t u = incAll (Rose [ t, u ])
+
+
+pub sameTree : ⊤ → Rose
+sameTree ⊤ =
+    t = Rose [ Rose [] ]
+    twoTrees t t
+
+
+pub twoFresh : ⊤ → Rose
+twoFresh ⊤ =
+    t = Rose [ Rose [] ]
+    u = Rose [ Rose [] ]
+    twoTrees t u
+
+
+pub treeReadAfter : ⊤ → Rose × Rose
+treeReadAfter ⊤ =
+    t = Rose [ Rose [] ]
+    u = Rose [ Rose [] ]
+    ( twoTrees t u, t )
+
+
+twoTreesIdent : Rose, Rose → Rose
+twoTreesIdent t u = incAll (ident (Rose [ t, u ]))
+
+
+pub sameTreeIdent : ⊤ → Rose
+sameTreeIdent ⊤ =
+    t = Rose [ Rose [] ]
+    twoTreesIdent t t
+
+
+pub twoFreshIdent : ⊤ → Rose
+twoFreshIdent ⊤ =
+    t = Rose [ Rose [] ]
+    u = Rose [ Rose [] ]
+    twoTreesIdent t u

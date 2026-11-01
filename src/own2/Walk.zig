@@ -1,4 +1,4 @@
-//! L11: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
+//! L12: one frame (`docs/design/ownership-v2.md` §2.4–§2.8, §2.10's read-off):
 //! a declaration's body walked once by `Transfer`, its uses indexed
 //! (`Liveness`), its demands resolved in evaluation order (`Demands`), and
 //! its class read off. S3a walks declarations one at a time, without groups
@@ -229,7 +229,10 @@ const ReadOff = struct {
         const r: *ReadOff = @ptrCast(@alignCast(ctx));
         const cells = r.env.cells;
         switch (a.atom) {
-            .excl => return t.excl(gpa, charge, try r.image(.from(a.a))),
+            // A refinement of a split whose list repeats a position stands for
+            // no position of its canonical cell (§2.9 *Two positions of one
+            // image*): the split's failed κ, never `excl` of the image.
+            .excl => return if (Cond.Table.repeatingSplit(cells, .from(a.a))) |k| k else t.excl(gpa, charge, try r.image(.from(a.a))),
             .sep => return t.sep(gpa, charge, cells, r.env.places, try r.image(.from(a.a)), try r.image(.from(a.b)), false, null),
             // Each group from its predecessor's image (§2.9, #1121): a tower's
             // groups share their cells, and so do their images.
@@ -904,6 +907,12 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     // Published as the eager graft made it (§2.11 *κ at a view*): each
     // view, and each node holding one, as its eager image.
     _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
+    return publish(env, ro, result);
+}
+
+/// The eager value relabelled (`ReadOff`), its κ carried, widened.
+fn publish(env: Env, ro: *ReadOff, result: Value) Error!Summary.Table.Joined {
+    const gpa = env.gpa;
     const mapped = try env.shapes.map(gpa, env.account(), result.node, ro, ReadOff.relabel);
     // The value's κ, carried over the relabelling: each entry's node
     // relabelled, its path unchanged (§2.9).
@@ -911,9 +920,15 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     defer presence.deinit(gpa);
     if (env.shapes.map_shared) try presence.run(env, result.node, result.kappa);
     var carry: Carry = .{ .ro = ro, .presence = &presence };
+    defer carry.projected_memo.deinit(gpa);
     // A map that interned no two sources into one image needs no presence
     // count: the relabel then maps each shared submap once (§2.9).
-    const kappa = try env.conds.kappaRelabel(gpa, env.charge, result.kappa, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
+    // A recursive group's read-off carries no implied join entry onto a new
+    // projection: each round's class would carry it into the next (#1466).
+    // Its reads are growth, which the limit sees: a function of the
+    // snapshot it publishes (#1459's review).
+    const carried = if (ro.labels != null) try env.conds.withoutImpliedJoins(gpa, env.charge, env.view(), result.kappa, &carry, Carry.imageless) else result.kappa;
+    const kappa = try env.conds.kappaRelabel(gpa, env.charge, carried, .{ .ctx = &carry, .node = Carry.node, .cond = Carry.cond, .projected = Carry.projected, .source = if (env.shapes.map_shared) Carry.source else null, .present = if (env.shapes.map_shared) Carry.present else null });
     // Widened, its κ carried onto the image with each folded class's
     // path-multiset obligation (§2.9, #1128).
     const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
@@ -926,6 +941,21 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
 const Carry = struct {
     ro: *ReadOff,
     presence: *Presence,
+    projected_memo: Ids.FixedDict(1) = .{},
+    /// The image of a DAG a projection made: the projection of its origin's
+    /// image (§2.9 *Keyed where a reader looks*), as a reader of the
+    /// published value meets it.
+    fn projected(ctx: *anyopaque, x: NodeId) Error!?NodeId {
+        const c: *@This() = @ptrCast(@alignCast(ctx));
+        const env = c.ro.env;
+        // A recursive group's read-off follows own origins only: a round's
+        // view of a joined node is the previous round's, whose entries the
+        // port join keeps; carried again, every round grows (#1466).
+        return Cond.projectedImage(env.shapes, env.gpa, env.account(), env.places, env.cells, x, &c.projected_memo, ctx, node, c.ro.labels == null);
+    }
+    fn imageless(c: *@This(), x: NodeId) Error!bool {
+        return (try node(c, x)) == null;
+    }
     fn node(ctx: *anyopaque, x: NodeId) Error!?NodeId {
         const c: *@This() = @ptrCast(@alignCast(ctx));
         const shapes = c.ro.env.shapes;

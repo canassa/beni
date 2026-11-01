@@ -1,0 +1,54 @@
+-- ownership (project): see Main.beni. `incT` writes the kids list of every
+-- `T` at every depth, and `incTs` walks a list of `T`; `midA p k` builds
+-- `T [ p, T k ]` and `midB p q` builds `T [ T p, T q ]` and writes it;
+-- `deepThenShallow` writes the lists below each element of an `R2` and
+-- then reads the element's own kids list.
+pub type T
+    = T (List T)
+
+
+pub type R2
+    = R2 (List T)
+
+
+pub incT : T → T
+incT t =
+    case t of
+        T kids →
+            T (incTs (List.push kids (T [])))
+
+
+pub incTs : List T → List T
+incTs ts =
+    case ts of
+        [ t, …rest ] →
+            [ incT t, …incTs rest ]
+
+        [] →
+            []
+
+
+pub midA : T, List T → T
+midA p k = incT (T [ p, T k ])
+
+
+pub midB : List T, List T → T
+midB p q = incT (T [ T p, T q ])
+
+
+pub deepThenShallow : R2 → Int
+deepThenShallow r =
+    case r of
+        R2 ts →
+            lengths ts
+
+
+pub lengths : List T → Int
+lengths ts =
+    case ts of
+        [ T kids, …rest ] →
+            n = List.length (incTs kids)
+            n + List.length kids + lengths rest
+
+        [] →
+            0

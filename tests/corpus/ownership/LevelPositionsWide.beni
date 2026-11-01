@@ -1,0 +1,31 @@
+-- ownership: §2.9 rule 3 over three list fields (slice 4c, the review of
+-- #1500). `incAll` publishes `apart` groups of three level paths, and
+-- `incList`'s own `incAll b` images them to shared cells: the group is
+-- one set of distinct positions, accepted `param` as in v1. `shared` puts
+-- one list `k` below two fields: refused. The class
+-- passes the default allowance, so the module raises it.
+@ownership_summary_size(module, 4194304)
+
+type B
+    = B (List B) (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B x1 x2 x3 →
+            B (incList (List.push x1 (B [] [] []))) (incList x2) (incList x3)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+pub shared : List B → B
+shared k = incAll (B [ B k [] [] ] [ B [] k [] ] [])

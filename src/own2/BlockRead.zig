@@ -1,4 +1,4 @@
-//! L14: reading the ownership block (`docs/design/ownership-v2.md` §3.6)
+//! L15: reading the ownership block (`docs/design/ownership-v2.md` §3.6)
 //! that `Block` writes, and the block's tests.
 //!
 //! `read` decodes into tables of its own first, on the codec's lane: its
@@ -832,7 +832,10 @@ const Reader = struct {
                         if (places.child(p.place, e.step) != r.env.shapes.place(child)) return error.Malformed;
                     } else if (pass == 1 and e.made) {
                         const made = (try r.env.shapes.proj(r.env.gpa, r.env.account(), places, r.env.cells, p.node, e.step)) orelse return error.Malformed;
-                        if (made == child) continue;
+                        if (made == child) {
+                            try r.env.shapes.noteOrigin(r.env.gpa, r.env.account(), p.node, e.step, child);
+                            continue;
+                        }
                         // A projection below a union, choice or positions node
                         // is that kind's DAG over its sides' projections, and the
                         // block's order of a DAG's two sides need not be the
@@ -849,33 +852,52 @@ const Reader = struct {
     }
 
     /// Whether `a` and `b` are one union, choice and positions DAG over the
-    /// same other nodes, each such node's two sides in either order. A
-    /// record per pair compared.
+    /// same other nodes, each such node's two sides in either order, at every
+    /// level (a block's group of two sides keeps no order, so a projection the
+    /// writer made of a mirrored DAG decodes mirrored). Each DAG node of either
+    /// gets a canonical id, its kind, place and its sides' ids unordered, so
+    /// the test is linear in the two DAGs. A record per node.
     fn sameDag(r: *Reader, a: NodeId, b: NodeId) Failure!bool {
+        if (a == b) return true;
         const shapes = r.env.shapes;
         const gpa = r.env.gpa;
-        const Pair = struct { a: NodeId, b: NodeId };
-        var stack: std.ArrayList(Pair) = .empty;
+        const isDagNode = struct {
+            fn of(s: *const Shape.Table, n: NodeId) bool {
+                const k = s.kind(n);
+                return k == .@"union" or k == .choice or k == .positions;
+            }
+        }.of;
+        // Canonical ids: a node no DAG node is its own id; a DAG node's is
+        // `base + i` for the i-th distinct `(kind, place, low, high)`.
+        const base: u32 = 1 << 31;
+        var canon: Ids.FixedDict(1) = .{};
+        defer canon.deinit(gpa);
+        var keys: Ids.FixedDict(4) = .{};
+        defer keys.deinit(gpa);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
-        try stack.append(gpa, .{ .a = a, .b = b });
-        while (stack.pop()) |x| {
+        try stack.appendSlice(gpa, &.{ .{ .node = a, .expanded = false }, .{ .node = b, .expanded = false } });
+        while (stack.pop()) |f| {
             try r.env.charge.reserve(gpa, .inspection, 1);
-            if (x.a == x.b) continue;
-            const da = shapes.get(x.a);
-            const db = shapes.get(x.b);
-            if (da.kind != db.kind or da.place != db.place) return false;
-            if (da.kind != .@"union" and da.kind != .choice and da.kind != .positions) return false;
-            const aa: NodeId = .from(da.a);
-            const ab: NodeId = .from(da.b);
-            const ba: NodeId = .from(db.a);
-            const bb: NodeId = .from(db.b);
-            // A side equal to one of the other's first, so the order is chosen
-            // by what is equal, never searched.
-            if (aa == bb or ab == ba) {
-                try stack.appendSlice(gpa, &.{ .{ .a = aa, .b = bb }, .{ .a = ab, .b = ba } });
-            } else try stack.appendSlice(gpa, &.{ .{ .a = aa, .b = ba }, .{ .a = ab, .b = bb } });
+            if (canon.get(.{f.node.int()}) != null) continue;
+            if (!isDagNode(shapes, f.node)) {
+                (try canon.getOrPut(gpa, .{f.node.int()})).value_ptr.* = f.node.int();
+                continue;
+            }
+            const d = shapes.get(f.node);
+            if (!f.expanded) {
+                try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } });
+                continue;
+            }
+            // A side still open is a cycle: no DAG `proj` makes holds one.
+            const x = canon.get(.{d.a}) orelse return false;
+            const y = canon.get(.{d.b}) orelse return false;
+            const got = try keys.getOrPut(gpa, .{ @backingInt(d.kind), d.place.int(), @min(x, y), @max(x, y) });
+            if (!got.found_existing) got.value_ptr.* = base + @as(u32, @intCast(keys.count() - 1));
+            (try canon.getOrPut(gpa, .{f.node.int()})).value_ptr.* = got.value_ptr.*;
         }
-        return true;
+        return canon.get(.{a.int()}).? == canon.get(.{b.int()}).?;
     }
 
     fn record(r: *Reader, kind: Kind) Failure!u32 {
@@ -3948,20 +3970,27 @@ test "#1128: a folded class's path-multiset obligation crosses the block" {
     try testing.expectEqualStrings(before, try b.text(arena, try roundTrip(&a, &b, c)));
 }
 
-test "#1128: a #1125 repeat, one kids list at two depths, reads lost through the block" {
+test "#1128: a #1125 repeat, one kids list at two depths of a fold, reads lost through the block" {
     const gpa = testing.allocator;
     var a: Tables = .{};
     try a.init();
     defer a.deinit();
     a.account.allowance = std.math.maxInt(u32) - 1;
     const env = a.env();
-    // `k = [ … ]` at `.1` of the root and of its `.0` child (#1125's
-    // minimal): no path holds `k` twice, the folded class does.
+    // `T (T (T _ k _) k _) j _`: `k = [ … ]` at `.1` of the first return
+    // `.0` and of the level below it, which the fold identifies with it
+    // (#1253; the root keeps `j`): no path holds `k` twice, the folded
+    // class does. A `Leaf` is no member of any class (§2.3 *The atom
+    // rule*), so the fold is the re-entry's, not the atom's.
     const tree = try a.place(8);
     const list = try a.place(0);
     const s = [_]Step{ try a.places.ctorStep(gpa, &a.account, 0, 0), try a.places.ctorStep(gpa, &a.account, 0, 1), try a.places.ctorStep(gpa, &a.account, 0, 2) };
-    const site = try a.cells.site(gpa, &a.account, 1, list, .list);
-    const k = try a.shapes.node(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), Ids.none_int);
+    var ls: [2]NodeId = undefined;
+    for (&ls, 0..) |*l, i| {
+        const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), list, .list);
+        l.* = try a.shapes.node(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), Ids.none_int);
+    }
+    const k, const j = ls;
     const empty = try a.shapes.nothing(gpa, &a.account, tree);
     const node = struct {
         fn of(t: *Tables, ss: [3]Step, l: NodeId, e: NodeId, sub: NodeId) !NodeId {
@@ -3971,12 +4000,15 @@ test "#1128: a #1125 repeat, one kids list at two depths, reads lost through the
             return t.shapes.node(testing.allocator, &t.account, try t.place(8), .none, m);
         }
     }.of;
-    const inner = try node(&a, s, k, empty, empty);
-    const outer = try node(&a, s, k, empty, inner);
+    const deeper = try node(&a, s, k, empty, empty);
+    const inner = try node(&a, s, k, empty, deeper);
+    const outer = try node(&a, s, j, empty, inner);
     var kk = (try a.conds.kappaSet(gpa, env.charge, .none, outer, Cond.yes)).ctx;
     kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[0]}, inner, Cond.yes);
-    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[1]}, k, Cond.yes);
+    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[0] }, deeper, Cond.yes);
+    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[1]}, j, Cond.yes);
     kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[1] }, k, Cond.yes);
+    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[0], s[1] }, k, Cond.yes);
     const w = try a.conds.widenValue(gpa, env.charge, env.view(), outer, kk);
     const c = try a.sums.add(env, .{ .params = &.{}, .res = w.node, .kappas = w.kappas });
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
@@ -4034,9 +4066,37 @@ test "#1157 review: a widened class's lost stays lost through the block, a choic
         var b: Tables = .{};
         try b.init();
         defer b.deinit();
-        // `roundTrip` compares the printed class before and after.
-        _ = try roundTrip(&a, &b, c);
+        var arena_state: std.heap.ArenaAllocator = .init(gpa);
+        defer arena_state.deinit();
+        const before = try a.text(arena_state.allocator(), c);
+        if (variant == 0) {
+            // No fold: a `Leaf` is no member of any class (§2.3 *The atom
+            // rule*), so the root and its `.0` child keep their own lists.
+            try testing.expectEqualStrings("summary f: res #Just.0#Just.1 site2, #Just.1 site1", before);
+            _ = try roundTrip(&a, &b, c);
+            continue;
+        }
+        // `k` stands at `.1` and in the fold's other arm at `.0.1`: one
+        // class, `lost` at both.
+        try testing.expectEqualStrings("summary f: res #Just.0#Just.1 site1 site2{lost}, #Just.1 site1 site2{lost}", before);
+        // The block shares the two positions the original keeps apart only
+        // by entries keyed at the widening's source nodes, which it never
+        // writes; so it is compared read by read, not by text.
+        const bc = try roundTripWith(&a, &b, c, false);
+        const back = b.sums.get(bc);
+        try testing.expectEqualStrings("summary f: res #Just.0#Just.1 site1 site2{lost}, #Just.1 = #Just.0#Just.1", try b.text(arena_state.allocator(), bc));
+        for ([_][]const Step{ &.{}, &.{s[0]}, &.{s[1]}, &.{s[2]}, &.{ s[0], s[0] }, &.{ s[0], s[1] }, &.{ s[0], s[2] } }) |path| {
+            try testing.expectEqual(try kappaAt(&a, w.kappas, w.node, path), try kappaAt(&b, back.kappas, back.res, path));
+            try testing.expectEqual(try cellCountAt(&a, w.node, path), try cellCountAt(&b, back.res, path));
+        }
     }
+}
+
+/// How many cells `n` holds at `steps` below it.
+fn cellCountAt(t: *Tables, n: NodeId, steps: []const Step) !u32 {
+    var at = n;
+    for (steps) |s| at = (try t.shapes.proj(testing.allocator, &t.account, &t.places, &t.cells, at, s)).?;
+    return t.cells.sets.count(try t.shapes.cellsOf(testing.allocator, &t.account, &t.cells.sets, at));
 }
 
 /// #1314's knot over `List` (place 0): `U = union(leaf{π0}, D)`,
@@ -4216,4 +4276,52 @@ test "#1399: a block keeps a κ keyed on the projection of a positions node, its
         const back = b.sums.get(try roundTrip(&a, &b, c));
         try testing.expectEqual(Cond.shared, try kappaAt(&b, back.kappas, back.res, &.{ Step.elem, Step.elem }));
     };
+}
+
+test "a join's κ on its DAG node round-trips: the block writes the projection where a reader looks (#1082)" {
+    var a: Tables = .{};
+    try a.init();
+    defer a.deinit();
+    const env = a.env();
+    const gpa = testing.allocator;
+    const lists = try a.place(2);
+    const list = try a.place(0);
+    const root = try a.places.rootPath(gpa, lists);
+    const elem = (try a.places.extend(gpa, env.charge, root, Step.elem)).?;
+    const set1 = struct {
+        fn of(t: *Tables, c: CellId) !SetId {
+            return t.cells.sets.insert(testing.allocator, t.env().charge, .none, c.int(), 0);
+        }
+    }.of;
+    // `choice(a, b)`: `a`'s element a parameter's, `b`'s a fresh list. The
+    // join's κ is keyed on `d = proj(choice, [*])` alone, which no part of
+    // the class names (§2.9 *Keyed where a reader looks*).
+    const held = try a.shapes.leaf(gpa, &a.account, list, try set1(&a, try a.cells.symbolic(gpa, &a.account, &a.places, .param, 0, elem, 0)));
+    const fresh = try a.shapes.leaf(gpa, &a.account, list, try set1(&a, try a.cells.site(gpa, &a.account, 7, list, .list)));
+    const na = try a.shapes.node(gpa, &a.account, lists, try set1(&a, try a.cells.site(gpa, &a.account, 8, lists, .list)), try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, held));
+    const nb = try a.shapes.node(gpa, &a.account, lists, try set1(&a, try a.cells.site(gpa, &a.account, 9, lists, .list)), try a.shapes.overPut(gpa, &a.account, Ids.none_int, Step.elem, fresh));
+    const res = try a.shapes.choice(gpa, &a.account, &a.cells.sets, na, nb);
+    const d = (try a.shapes.proj(gpa, &a.account, &a.places, &a.cells, res, Step.elem)).?;
+    const kappas = try a.conds.kappaSetAt(gpa, env.charge, .none, &.{Step.elem}, d, Cond.shared);
+    const c = try a.sums.add(env, .{ .params = &.{.none}, .res = res, .kappas = kappas });
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(gpa);
+    try write(env, &a.sums, &.{c}, .identity, &words);
+    var b: Tables = .{};
+    try b.init();
+    defer b.deinit();
+    var back: std.ArrayList(ClassId) = .empty;
+    defer back.deinit(gpa);
+    try testing.expect(try read(b.env(), &b.sums, words.items, .identity, &back) != null);
+    // A reader that projects the decoded `res` meets the node the entry is
+    // keyed on, and that node is a projection the transport can follow.
+    const cb = b.sums.get(back.items[0]);
+    const db = (try b.shapes.proj(gpa, &b.account, &b.places, &b.cells, cb.res, Step.elem)).?;
+    try testing.expectEqual(Cond.shared, b.conds.kappaGet(b.conds.kappaAlong(cb.kappas, &.{Step.elem}), db).?);
+    try testing.expect(b.shapes.hasOrigin(db));
+    try testing.expectEqual(Cond.shared, try b.conds.kappaOf(gpa, b.env().charge, b.env().view(), b.conds.kappaAlong(cb.kappas, &.{Step.elem}), db, true));
+    var again: std.ArrayList(u32) = .empty;
+    defer again.deinit(gpa);
+    try write(b.env(), &b.sums, back.items, .identity, &again);
+    try testing.expectEqualSlices(u32, words.items, again.items);
 }

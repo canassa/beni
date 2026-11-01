@@ -1,1 +1,1 @@
-import process from"node:process";const c=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};const d=b=>(Array.isArray(b)?b:b.$plain());const a=e=>{let c=d(e);return{code:0,out:c.length===0?"":`${c.join("\n")}\n`}};const b=a([String(2)]);c(b);
+import process from"node:process";const c=a=>{if(a.$o.length!==0)process.stdout.write(a.$o);process.exitCode=a.$c};const a=b=>({$c:0,$o:b.length===0?"":(Array.isArray(b)?b:b.$plain()).join("\n")+"\n"});const b=a([String(2)]);c(b);

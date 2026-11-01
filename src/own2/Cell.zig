@@ -565,22 +565,10 @@ pub const Table = struct {
         const base_b = t.base(b);
         if (!t.basesMayAlias(places, base_a, base_b)) return .no;
         if (base_a != base_b) return .yes;
-        // One base: the first cells below the two chains' deepest common
-        // cell, found by climbing both to one depth, then together (§2.2).
-        var ra = a;
-        var rb = b;
-        var da = t.refinementDepth(a);
-        var db = t.refinementDepth(b);
-        while (da > db) : (da -= 1) ra = t.parent(ra);
-        while (db > da) : (db -= 1) rb = t.parent(rb);
         // One chain is a prefix of the other: an object and one below it.
-        if (ra == rb) return .yes;
-        while (t.parent(ra) != t.parent(rb)) {
-            ra = t.parent(ra);
-            rb = t.parent(rb);
-        }
-        const xa = t.get(ra);
-        const xb = t.get(rb);
+        const r = t.splitSides(a, b) orelse return .yes;
+        const xa = t.get(r[0]);
+        const xb = t.get(r[1]);
         // Two parts of one anchor (§2.2 *Parts*): their paths, as two
         // symbolic cells'; a part beside a split of one cell may be in it.
         if (xa.origin == .part and xb.origin == .part) return if (pathsMayAlias(places, .from(xa.c), .from(xb.c))) .yes else .no;
@@ -600,6 +588,54 @@ pub const Table = struct {
         // Two splits of one container.
         if (xa.origin == .elem and xb.origin == .elem) return .{ .under_kappa = xa.parent };
         return .yes;
+    }
+
+    /// Of two cells over one base, the first cells below their chains'
+    /// deepest common cell, found by climbing both to one depth, then
+    /// together (§2.2); null when one chain is a prefix of the other.
+    fn splitSides(t: *const Table, a: CellId, b: CellId) ?[2]CellId {
+        var ra = a;
+        var rb = b;
+        var da = t.refinementDepth(a);
+        var db = t.refinementDepth(b);
+        while (da > db) : (da -= 1) ra = t.parent(ra);
+        while (db > da) : (db -= 1) rb = t.parent(rb);
+        if (ra == rb) return null;
+        while (t.parent(ra) != t.parent(rb)) {
+            ra = t.parent(ra);
+            rb = t.parent(rb);
+        }
+        return .{ ra, rb };
+    }
+
+    /// The side of a recorded list split that `c` is, or is a part below:
+    /// the first cell up its chain past its parts, when that is an `elem`
+    /// (one position a pattern takes) or an `others` (its rest). Null for
+    /// any other cell. One split's sides are disjoint index ranges of its
+    /// list, one cell each (cells are interned).
+    pub fn listSide(t: *const Table, c: CellId) ?CellId {
+        var at = c;
+        while (t.origin(at) == .part) at = t.parent(at);
+        const o = t.origin(at);
+        if (o != .elem and o != .others) return null;
+        const x = t.get(at);
+        return if (t.findSplit(x.parent, .from(x.b)) != .none) at else null;
+    }
+
+    /// Whether two sides (`listSide`) are of one split.
+    pub fn sameSplit(t: *const Table, x: CellId, y: CellId) bool {
+        return t.get(x).parent == t.get(y).parent and t.get(x).b == t.get(y).b;
+    }
+
+    /// Whether `a` and `b` are below two disjoint positions of one list:
+    /// two sides of one list split, a pattern's head and its rest or two of
+    /// its heads, which `alias` reads `under ι` (§2.9 *Two positions of
+    /// one image*). Positions, not objects: one object may sit at both.
+    /// The sides, or null.
+    pub fn listSides(t: *const Table, a: CellId, b: CellId) ?[2]CellId {
+        const x = t.listSide(a) orelse return null;
+        const y = t.listSide(b) orelse return null;
+        return if (x != y and t.sameSplit(x, y)) .{ x, y } else null;
     }
 
     /// How many refinements, parts included, lie between `c` and its base.

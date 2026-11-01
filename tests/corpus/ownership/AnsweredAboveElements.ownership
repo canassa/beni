@@ -1,0 +1,22 @@
+module AnsweredAboveElements
+  19:17 construction r: accepted param
+  23:27 call AnsweredAboveElements.bumpHead <literal>[*]: accepted fresh (AnsweredAboveElements.bumpHead writes π1[*])
+  27:27 call AnsweredAboveElements.bumpHead <literal>[*]: accepted param (AnsweredAboveElements.bumpHead writes π1[*])
+  33:18 call AnsweredAboveElements.bumpHead rows[*]: accepted fresh (AnsweredAboveElements.bumpHead writes π1[*])
+  37:28 call AnsweredAboveElements.bumpHead xs[*]: accepted param (AnsweredAboveElements.bumpHead writes π1[*])
+  43:18 call AnsweredAboveElements.bumpHead <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (AnsweredAboveElements.bumpHead writes π1[*])
+  59:18 call AnsweredAboveElements.bumpHead rows[*]: rejected later-use: rows[*] is read again at 59:35 (AnsweredAboveElements.bumpHead writes π1[*])
+  66:18 call AnsweredAboveElements.bumpHead <literal>[*]: accepted fresh (AnsweredAboveElements.bumpHead writes π1[*])
+  summary bumpHead: π1 RA, π1[*] RAW; res [*] ~condition(fresh2) π1[*]{excl π1}, fresh1{excl π1} ~π1; xreq excl π1
+  summary literals: unused
+  summary params: π1 RW, π2 RW; xreq excl π1, excl π2, sep π1 π2
+  summary bound: unused
+  summary passedOn: π1 R, π1[*] RW; xreq excl π1
+  summary repeated: unused
+  summary firstLength: π1 R, π1[*] R
+  summary readAfter: unused
+  summary named: unused
+  demands 8: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 8: accepted 6 (fresh 3, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 1
+cause exclusive 1

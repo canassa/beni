@@ -1,0 +1,35 @@
+-- ownership (project): see Main.beni. `pushAll` pushes onto each list of a
+-- list; `one x` builds `[ x ]`, `two x` builds `[ x, x ]`; `choose` and
+-- `chooseOne` join them, and `[ x ]` with an empty list.
+pub pushAll : List (List Int) → List (List Int)
+pushAll xss =
+    case xss of
+        [ xs, …rest ] →
+            [ List.push xs 1, …pushAll rest ]
+
+        [] →
+            []
+
+
+pub one : List Int → List (List Int)
+one x = [ x ]
+
+
+pub two : List Int → List (List Int)
+two x = [ x, x ]
+
+
+pub choose : Bool, List Int → List (List Int)
+choose c x =
+    if c then
+        one x
+    else
+        two x
+
+
+pub chooseOne : Bool, List Int → List (List Int)
+chooseOne c x =
+    if c then
+        one x
+    else
+        []

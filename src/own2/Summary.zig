@@ -600,12 +600,7 @@ pub const Table = struct {
         var params: std.ArrayList(NodeId) = .empty;
         defer params.deinit(gpa);
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| try params.append(gpa, try joinUse(env, ua, ub));
-        // `b`'s `res` under `a`'s: `a`'s shape and map are the join's. A
-        // group's later rounds often move only `xreq`, and joinRes would
-        // propagate κ over the whole unchanged `res` again (#1423).
-        const res_under = try env.shapes.leq(gpa, env.account(), env.places, env.cells, cb.res, ca.res) and
-            try env.conds.kappaLeq(gpa, env.charge, env.view(), cb.kappas, cb.res, ca.kappas, ca.res, false);
-        const joined: Joined = if (res_under) .{ .node = ca.res, .kappas = ca.kappas } else try joinRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
+        const joined = try joinClassRes(env, ca.res, ca.kappas, cb.res, cb.kappas, mode);
         const xreq = try env.conds.atoms.unionWith(gpa, env.charge, ca.xreq, cb.xreq);
         var funs: std.ArrayList(DraftFun) = .empty;
         defer funs.deinit(gpa);
@@ -708,7 +703,9 @@ pub const Table = struct {
                 var s = sa.?;
                 s.owned = s.owned and sb.?.owned;
                 // The two snapshots of one handed value joined into a new one.
-                s.kappa = try env.conds.propagate(gpa, env.charge, env.view(), .none, s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
+                const merged = try env.conds.kappaMerge(gpa, env.charge, sa.?.kappa, sb.?.kappa);
+                const joined = env.conds.propagate(gpa, env.charge, env.view(), merged, s.node, &.{ s.node, s.node }, &.{ sa.?.kappa, sb.?.kappa }, .alternatives, false, null);
+                s.kappa = try joined;
                 try sup.append(gpa, s);
                 i += 1;
                 j += 1;
@@ -776,9 +773,182 @@ pub const Table = struct {
         if (a == b and ka == kb) return .{ .node = a, .kappas = ka };
         var members = [_]NodeId{ a, b };
         const j = if (mode == .choice) try env.shapes.joinAlternatives(env.gpa, env.account(), env.places, env.cells, &members) else try env.shapes.join(env.gpa, env.account(), env.places, env.cells, &members);
-        const mj = try env.conds.propagate(env.gpa, env.charge, env.view(), .none, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
-        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj);
+        // The members' snapshots first, as a branch join merges its arms': each
+        // side of the joined DAG keeps its own entries (§2.9 *Keyed where a
+        // reader looks*, #1093).
+        const both = try env.conds.kappaMerge(env.gpa, env.charge, ka, kb);
+        const mj = env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
+        const mj_ok = try mj;
+        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj_ok);
         return .{ .node = w.node, .kappas = w.kappas };
+    }
+
+    /// A class join's `res` and κ (§2.3 *A port keeps no round that its
+    /// last round covers*). `b`'s under `a`'s: `a`'s, as they are, since a
+    /// group's later rounds often move only `xreq` (#1423). In `choice`
+    /// mode also the other way, `b`'s widened; otherwise each arm of a
+    /// side's top choice that the other side covers is dropped, `a`'s
+    /// first, then `b`'s against what is left of `a`, so one value never
+    /// leaves both. Only the class join does this: a shape constructor has
+    /// no κ. Every test is a charged `Shape.leq` and `kappaLeq`.
+    fn joinClassRes(env: Env, a: NodeId, ka: Kappas, b: NodeId, kb: Kappas, mode: Shape.Kind) Error!Joined {
+        if (try resLeq(env, b, kb, a, ka)) return .{ .node = a, .kappas = ka };
+        if (mode != .choice) return joinRes(env, a, ka, b, kb, mode);
+        if (try resLeq(env, a, ka, b, kb)) return widened(env, b, kb);
+        const sa = try dropCovered(env, a, ka, b, kb);
+        if (sa.node == .none) return widened(env, b, kb);
+        const sb = try dropCovered(env, b, kb, sa.node, sa.kappas);
+        if (sb.node == .none) return if (sa.node == a) sa else widened(env, sa.node, sa.kappas);
+        return joinRes(env, sa.node, sa.kappas, sb.node, sb.kappas, mode);
+    }
+
+    fn resLeq(env: Env, x: NodeId, kx: Kappas, y: NodeId, ky: Kappas) Error!bool {
+        return try env.shapes.leq(env.gpa, env.account(), env.places, env.cells, x, y) and
+            try env.conds.kappaLeq(env.gpa, env.charge, env.view(), kx, x, ky, y, false);
+    }
+
+    fn widened(env: Env, x: NodeId, kx: Kappas) Error!Joined {
+        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), x, kx);
+        return .{ .node = w.node, .kappas = w.kappas };
+    }
+
+    /// `s` without the arms of its top choice DAG (the nodes its choice
+    /// edges reach that open no choice) that `o` covers: `s` itself when
+    /// none is, `.none` when all are. The kept arms are a balanced choice
+    /// in the order the walk met them. κ home: the entry `ks` stores at a
+    /// choice node of the DAG is joined into the entry of each arm below
+    /// it, so a read of the kept arms is what it was. A side that is no
+    /// choice, or one of whose choice nodes owes a fold condition, is kept whole.
+    fn dropCovered(env: Env, s: NodeId, ks: Kappas, o: NodeId, ko: Kappas) Error!Joined {
+        const gpa = env.gpa;
+        const shapes = env.shapes;
+        const whole: Joined = .{ .node = s, .kappas = ks };
+        if (!opensChoice(shapes, s) or env.conds.fold_cond.get(s) != null) return whole;
+        // The DAG's choice nodes in post-order and its arms in the order met.
+        var post: std.ArrayList(NodeId) = .empty;
+        defer post.deinit(gpa);
+        var arms: std.ArrayList(NodeId) = .empty;
+        defer arms.deinit(gpa);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = s, .expanded = false });
+        while (stack.pop()) |f| {
+            if (f.expanded) {
+                try post.append(gpa, f.node);
+                continue;
+            }
+            if ((try seen.getOrPut(gpa, .{f.node.int()})).found_existing) continue;
+            try env.charge.reserve(gpa, .inspection, 1);
+            if (!opensChoice(shapes, f.node)) {
+                try arms.append(gpa, f.node);
+                continue;
+            }
+            // A choice node's fold condition rides on every read through it
+            // (`foldCondOf`); no entry stores it, so a side holding one is
+            // kept whole.
+            if (env.conds.fold_cond.get(f.node) != null) return whole;
+            const d = shapes.get(f.node);
+            try stack.appendSlice(gpa, &.{ .{ .node = f.node, .expanded = true }, .{ .node = .from(d.b), .expanded = false }, .{ .node = .from(d.a), .expanded = false } });
+        }
+        // Each choice node's entry, with what is carried to it, carried to
+        // its sides: parents first, in reverse post-order.
+        var acc: Ids.FixedDict(1) = .{};
+        defer acc.deinit(gpa);
+        var i = post.items.len;
+        while (i > 0) {
+            i -= 1;
+            const u = post.items[i];
+            try env.charge.reserve(gpa, .inspection, 1);
+            const here = env.conds.kappaGet(ks, u);
+            const above: ?CondId = if (acc.get(.{u.int()})) |x| .from(x) else null;
+            const give = if (here) |h| (if (above) |x| try env.conds.join(gpa, env.charge, x, h) else h) else above orelse continue;
+            const d = shapes.get(u);
+            for ([_]NodeId{ .from(d.a), .from(d.b) }) |side| {
+                const got = try acc.getOrPut(gpa, .{side.int()});
+                got.value_ptr.* = (if (got.found_existing) try env.conds.join(gpa, env.charge, .from(got.value_ptr.*), give) else give).int();
+            }
+        }
+        // Each arm's cover test reads the arm as its readers will once the
+        // others are dropped: its own κ with the choice's entries carried
+        // to it, at the root and below (`DropCarry`). Read under the merged
+        // snapshot alone it would skip the join's entry and borrow another
+        // arm's certificate (#1459's review).
+        var kept: std.ArrayList(NodeId) = .empty;
+        defer kept.deinit(gpa);
+        for (arms.items) |x| {
+            try env.charge.reserve(gpa, .inspection, 1);
+            var kx = ks;
+            if (acc.get(.{x.int()})) |c| kx = (try env.conds.kappaSet(gpa, env.charge, kx, x, .from(c))).ctx;
+            kx = try carryTo(env, kx, post.items, x);
+            if (!try resLeq(env, x, kx, o, ko)) try kept.append(gpa, x);
+        }
+        if (kept.items.len == arms.items.len) return whole;
+        if (kept.items.len == 0) return .{ .node = .none, .kappas = .none };
+        var k = ks;
+        for (kept.items) |x| if (acc.get(.{x.int()})) |c| {
+            k = (try env.conds.kappaSet(gpa, env.charge, k, x, .from(c))).ctx;
+        };
+        const root = try balancedChoice(env, kept.items);
+        k = try carryTo(env, k, post.items, root);
+        return .{ .node = root, .kappas = k };
+    }
+
+    /// `dropCovered`'s transport: every entry kept where it is, and a joined
+    /// DAG's entry also on the kept root's projection.
+    const DropCarry = struct {
+        env: Env,
+        root: NodeId,
+        choices: Ids.FixedDict(1) = .{},
+        memo: Ids.FixedDict(1) = .{},
+
+        fn deinit(c: *DropCarry) void {
+            c.choices.deinit(c.env.gpa);
+            c.memo.deinit(c.env.gpa);
+        }
+        fn node(_: *anyopaque, x: NodeId) Error!?NodeId {
+            return x;
+        }
+        fn cond(_: *anyopaque, _: *Cond.Table, _: Allocator, _: Ids.Charge, k: CondId) Error!CondId {
+            return k;
+        }
+        fn image(ctx: *anyopaque, x: NodeId) Error!?NodeId {
+            const c: *DropCarry = @ptrCast(@alignCast(ctx));
+            return if (c.choices.get(.{x.int()}) != null) c.root else null;
+        }
+        fn projected(ctx: *anyopaque, x: NodeId) Error!?NodeId {
+            const c: *DropCarry = @ptrCast(@alignCast(ctx));
+            const e = c.env;
+            return Cond.projectedImage(e.shapes, e.gpa, e.account(), e.places, e.cells, x, &c.memo, ctx, image, true);
+        }
+    };
+
+    /// `ks` transported through the projection correspondence with every
+    /// choice node in `choices` mapped to `root`: each entry kept where it
+    /// is, and each joined DAG's entry also on `proj(root, q)`. Below the
+    /// root, the join's entry is keyed on `proj(choice, q)`, which `root`'s
+    /// readers never meet; so they read it there, as the choice's did, never
+    /// a certificate merged in from another arm alone (§2.9 *A covered arm's
+    /// drop keeps the join below the root*, #1459's review).
+    fn carryTo(env: Env, ks: Kappas, choices: []const NodeId, root: NodeId) Error!Kappas {
+        var carry: DropCarry = .{ .env = env, .root = root };
+        defer carry.deinit();
+        for (choices) |u| (try carry.choices.getOrPut(env.gpa, .{u.int()})).value_ptr.* = 1;
+        return env.conds.kappaRelabel(env.gpa, env.charge, ks, .{ .ctx = &carry, .node = DropCarry.node, .cond = DropCarry.cond, .projected = DropCarry.projected });
+    }
+
+    fn opensChoice(shapes: *Shape.Table, n: NodeId) bool {
+        return shapes.kind(n) == .choice and shapes.eagerOf(n) == n;
+    }
+
+    fn balancedChoice(env: Env, arms: []const NodeId) Error!NodeId {
+        if (arms.len == 1) return arms[0];
+        const mid = arms.len / 2;
+        const l = try balancedChoice(env, arms[0..mid]);
+        const r = try balancedChoice(env, arms[mid..]);
+        return env.shapes.choice(env.gpa, env.account(), &env.cells.sets, l, r);
     }
 
     /// `a ⊑ b` pointwise (§2.10): a stronger class below a weaker one.
@@ -866,16 +1036,13 @@ pub const Table = struct {
         try n.class(c);
     }
 
-    /// Byte equality of the normal forms (§3.5).
+    /// Equality as `leq` both ways (§2.10, #1094): what every reader observes
+    /// of the two classes is the same. A walk over parts (the normal form)
+    /// would miss a κ stored past the parts, which `leq` compares along the
+    /// observable frontier (§2.9).
     pub fn eq(t: *Table, env: Env, a: ClassId, b: ClassId) Error!bool {
         if (a == b) return true;
-        var wa: std.ArrayList(u32) = .empty;
-        defer wa.deinit(env.gpa);
-        var wb: std.ArrayList(u32) = .empty;
-        defer wb.deinit(env.gpa);
-        try t.normalize(env, a, &wa);
-        try t.normalize(env, b, &wb);
-        return std.mem.eql(u32, wa.items, wb.items);
+        return try t.leq(env, a, b) and try t.leq(env, b, a);
     }
 
     const Normalizer = struct {
@@ -1437,7 +1604,10 @@ pub const Table = struct {
             // In the recursion's order on an explicit stack (#1138: a value is
             // as deep as the source): a node's line, then the lines below it,
             // a union's sides in turn, a node's steps in order.
-            const Act = struct { line: bool, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas };
+            // `dag`: the outermost union, choice or positions node on the way,
+            // projected along the steps since (§2.9 *Keyed where a reader
+            // looks*): what a join keyed at this path, read with each node.
+            const Act = struct { line: bool, n: NodeId, prefix: []const u8, at_summary: bool, cur: Kappas, dag: NodeId = .none };
             var stack: std.ArrayList(Act) = .empty;
             defer stack.deinit(env.gpa);
             var below: std.ArrayList(Act) = .empty;
@@ -1469,10 +1639,13 @@ pub const Table = struct {
                     const w = &buf.writer;
                     if (a.prefix.len > 0) try w.print("{s} ", .{a.prefix});
                     try w.writeAll(try std.mem.join(p.arena, " ", texts.items));
-                    const k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, n, a.at_summary);
+                    var k = try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, n, a.at_summary);
+                    // A reader at this path reads the outermost join on the way,
+                    // which joins every side and every join nested in it (§2.9).
+                    if (a.dag != .none and a.dag != n) k = try env.conds.join(env.gpa, env.charge, k, try env.conds.kappaOf(env.gpa, env.charge, env.view(), a.cur, a.dag, a.at_summary));
                     try p.cond(w, k);
                     if (texts.items.len > 0 or k != Cond.yes) try out.append(p.arena, buf.toOwnedSlice() catch return error.OutOfMemory);
-                    try stack.append(env.gpa, .{ .line = false, .n = n, .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                    try stack.append(env.gpa, .{ .line = false, .n = n, .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = a.dag });
                     continue;
                 }
                 // The children of the explicit structure under `n`: a node's
@@ -1492,8 +1665,9 @@ pub const Table = struct {
                         try stack.append(env.gpa, b);
                     },
                     .@"union", .choice, .positions => {
-                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
-                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur });
+                        const dag = if (a.dag != .none or d.kind == .positions) a.dag else n;
+                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.b), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = dag });
+                        try stack.append(env.gpa, .{ .line = false, .n = .from(d.a), .prefix = a.prefix, .at_summary = a.at_summary, .cur = a.cur, .dag = dag });
                     },
                     .node, .delta => {
                         below.clearRetainingCapacity();
@@ -1504,7 +1678,8 @@ pub const Table = struct {
                             var sb: std.Io.Writer.Allocating = .init(p.arena);
                             try sb.writer.writeAll(a.prefix);
                             try p.step(&sb.writer, d.place, s);
-                            try below.append(env.gpa, .{ .line = true, .n = c, .prefix = sb.toOwnedSlice() catch return error.OutOfMemory, .at_summary = a.at_summary or s.kind == .elem or s.kind == .level, .cur = env.conds.kappaChild(a.cur, s) });
+                            const dag = if (a.dag == .none) NodeId.none else (try env.shapes.proj(env.gpa, env.account(), env.places, env.cells, a.dag, s)) orelse NodeId.none;
+                            try below.append(env.gpa, .{ .line = true, .n = c, .prefix = sb.toOwnedSlice() catch return error.OutOfMemory, .at_summary = a.at_summary or s.kind == .elem or s.kind == .level, .cur = env.conds.kappaChild(a.cur, s), .dag = dag });
                         }
                         var i = below.items.len;
                         while (i > 0) {
@@ -2251,4 +2426,119 @@ fn deepSummary() !void {
     var buf: std.Io.Writer.Allocating = .init(f.arena.allocator());
     try f.sums.print(env, f.arena.allocator(), &buf.writer, c, "deep", test_names);
     try testing.expect(std.mem.count(u8, buf.written(), "[*]") > depth);
+}
+
+test "#1094: two classes that differ only in a κ stored below a leaf `res` are not equal" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const gpa = testing.allocator;
+    // Q7: `res` a leaf at `List (List Int)`, one class storing `shared` at
+    // `res[*]`, the other nothing. Their parts are the same; the stored κ is
+    // observable at the projection (§2.9), so `eq` (`leq` both ways) tells
+    // them apart.
+    const p1 = try f.param(0, 3, &.{});
+    const u = try Table.markUse(env, .none, try f.placeOf(3), &.{}, .{ .r = true }, &.{});
+    const r = try f.leaf(3, &.{p1});
+    const below = (try f.shapes.proj(gpa, env.account(), &f.places, &f.cells, r, Place.Step.elem)).?;
+    const k = try f.conds.kappaSetAt(gpa, env.charge, .none, &.{Place.Step.elem}, below, Cond.shared);
+    const stored = try f.sums.add(env, .{ .params = &.{u}, .res = r, .kappas = k });
+    const plain = try f.sums.add(env, .{ .params = &.{u}, .res = r, .kappas = .none });
+    try testing.expect(try f.sums.leq(env, plain, stored));
+    try testing.expect(!try f.sums.leq(env, stored, plain));
+    try testing.expect(!try f.sums.eq(env, stored, plain));
+    try testing.expect(try f.sums.eq(env, stored, stored));
+}
+
+test "a port join that drops a covered arm keeps the joined entries below the root (#1459's review)" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lol = try f.placeOf(3);
+    const elem = &[_]Step{Place.Step.elem};
+    const built = struct {
+        fn of(fx: *Fixture, place: PlaceId, k: u32, child: ?NodeId) !NodeId {
+            const over: u32 = if (child) |c| try fx.shapes.overPut(testing.allocator, &fx.account, Ids.none_int, Place.Step.elem, c) else Ids.none_int;
+            return fx.shapes.node(testing.allocator, &fx.account, place, try fx.set(&.{try fx.cells.site(testing.allocator, &fx.account, k, place, .list)}), over);
+        }
+    }.of;
+    // Three built lists, and three lists of them: `x = [a]`, `u = [a | b]`
+    // (an element either list), `big = [a | c]`.
+    const a = try built(&f, list, 1, null);
+    const b = try built(&f, list, 2, null);
+    const c = try built(&f, list, 3, null);
+    const x = try built(&f, lol, 4, a);
+    // One allocation site, as a group's rounds have.
+    const u = try built(&f, lol, 4, try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, a, b));
+    const big = try built(&f, lol, 4, try f.shapes.@"union"(gpa, &f.account, &f.cells.sets, a, c));
+    // `x` certifies `a` at `[*]`; `u` only `b`, so its `[*]` reads `lost`;
+    // `big` certifies both of its.
+    var kx = try f.setK(.none, x, Cond.yes);
+    kx = try f.conds.kappaSetAt(gpa, env.charge, kx, elem, a, Cond.yes);
+    var ku = try f.setK(.none, u, Cond.yes);
+    ku = try f.conds.kappaSetAt(gpa, env.charge, ku, elem, b, Cond.yes);
+    var kb = try f.setK(.none, big, Cond.yes);
+    kb = try f.conds.kappaSetAt(gpa, env.charge, kb, elem, a, Cond.yes);
+    kb = try f.conds.kappaSetAt(gpa, env.charge, kb, elem, c, Cond.yes);
+    const p = try Table.joinRes(env, x, kx, u, ku, .choice);
+    const q = try Table.joinClassRes(env, p.node, p.kappas, big, kb, .choice);
+    // A round that covers one arm drops it; the kept arm's `[*]` still reads
+    // as the join did, never the certificate merged in from the dropped arm.
+    const at = f.conds.kappaAlong(q.kappas, elem);
+    const k = try env.conds.kappaOf(gpa, env.charge, env.view(), at, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, q.node, Place.Step.elem)).?, true);
+    try testing.expect(Cond.Table.fails(k));
+}
+
+test "a port join's cover test reads an arm with the join's entries carried to it (#1459's review)" {
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const env = f.env();
+    const gpa = testing.allocator;
+    const list = try f.placeOf(1);
+    const lol = try f.placeOf(3);
+    const elem = &[_]Step{Place.Step.elem};
+    const built = struct {
+        fn of(fx: *Fixture, place: PlaceId, k: u32, child: ?NodeId) !NodeId {
+            const over: u32 = if (child) |c| try fx.shapes.overPut(testing.allocator, &fx.account, Ids.none_int, Place.Step.elem, c) else Ids.none_int;
+            return fx.shapes.node(testing.allocator, &fx.account, place, try fx.set(&.{try fx.cells.site(testing.allocator, &fx.account, k, place, .list)}), over);
+        }
+    }.of;
+    const un = struct {
+        fn of(fx: *Fixture, xs: []const NodeId) !NodeId {
+            var out = xs[0];
+            for (xs[1..]) |x| out = try fx.shapes.@"union"(testing.allocator, &fx.account, &fx.cells.sets, out, x);
+            return out;
+        }
+    }.of;
+    const a = try built(&f, list, 1, null);
+    const b = try built(&f, list, 2, null);
+    const c = try built(&f, list, 3, null);
+    const d = try built(&f, list, 5, null);
+    // `x = [a]` certifies `a`; `u = [a | b]` only `b`; `big = [a | c | d]`
+    // all; `v = [b]`. One outer allocation site.
+    const x = try built(&f, lol, 4, a);
+    const u = try built(&f, lol, 4, try un(&f, &.{ a, b }));
+    const big = try built(&f, lol, 4, try un(&f, &.{ a, c, d }));
+    const v = try built(&f, lol, 4, b);
+    const cert = struct {
+        fn of(fx: *Fixture, outer: NodeId, inner: []const NodeId) !Kappas {
+            var k = try fx.setK(.none, outer, Cond.yes);
+            for (inner) |n| k = try fx.conds.kappaSetAt(testing.allocator, fx.env().charge, k, &.{Place.Step.elem}, n, Cond.yes);
+            return k;
+        }
+    }.of;
+    const p1 = try Table.joinRes(env, x, try cert(&f, x, &.{a}), u, try cert(&f, u, &.{b}), .choice);
+    const bb = try Table.joinRes(env, big, try cert(&f, big, &.{ a, c, d }), v, try cert(&f, v, &.{b}), .choice);
+    const q3 = try Table.joinClassRes(env, p1.node, p1.kappas, bb.node, bb.kappas, .choice);
+    // `u` read under `p1`'s merged snapshot alone borrows `a`'s certificate
+    // from `x` and reads `yes`; the join's `[*]` reads `lost`. So `u` is no
+    // arm `bb` covers, and `q3`'s `[*]` keeps that `lost`.
+    const at = f.conds.kappaAlong(q3.kappas, elem);
+    const k = try env.conds.kappaOf(gpa, env.charge, env.view(), at, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, q3.node, Place.Step.elem)).?, true);
+    try testing.expect(Cond.Table.fails(k));
 }

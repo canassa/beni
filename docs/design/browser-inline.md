@@ -2219,4 +2219,6 @@ more: the runtime's `address`, `navigationKey` and `title`, and the module `Brow
 are reached only from the mount of such a program or from a call of one of its values. `document`
 and `application` are beni declarations whose body is never reached (the lowering compiles each
 call), not `foreign` ones, since a development build copies a sibling file whole. And
-`bench/size.mjs`'s `page` lines and the `emit/inline/` goldens did not move.
+`bench/size.mjs`'s `page` lines and the `emit/inline/` goldens did not move. *Amended 2026-10-29
+(`plans/runtime-in-beni.md` step 9):* `sandbox` and `element` are such declarations too, and
+`Tea.js` is gone, so the platform has no sibling and a development build copies none.

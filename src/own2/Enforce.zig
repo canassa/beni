@@ -1,4 +1,4 @@
-//! L16: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
+//! L17: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
 //! §3.7, §8 S3a): the per-module inputs built from the session, the
 //! `dump --stage=ownership --ownership=v2` report, and the Driver's hook,
 //! all behind the hidden `--ownership=v2`.

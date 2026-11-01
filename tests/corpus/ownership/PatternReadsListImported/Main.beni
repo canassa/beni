@@ -1,0 +1,85 @@
+-- ownership (project): `PatternReadsList` with its readers in another
+-- module (ownership-v2.md §2.13.3, *A list pattern reads its list*,
+-- #1530). An imported reader's summary is `R` at every list its patterns
+-- test, read from its block as the module's own is, so a push in place of
+-- a list that `w` still holds, before the imported reader reads `w`, is
+-- refused, as v1 refuses it; a push no later reader reaches is accepted.
+import Readers exposing (Leaf, Rose)
+
+
+pub skipped : ⊤ → List Rose × Int
+skipped _ =
+    k = [ Rose [] ]
+    v = Rose k
+    w = v
+    kids = Readers.firstKids v
+    ( List.push kids Leaf, Readers.skip2c w )
+
+
+pub deep : ⊤ → List Rose × Int
+deep _ =
+    k = [ Rose [ Rose [ Rose [ Rose [ Leaf ] ] ] ] ]
+    v = Rose k
+    w = v
+    kids = Readers.firstKids v
+    ( List.push kids Leaf, Readers.deepLen w )
+
+
+pub three : ⊤ → List Rose × Int
+three _ =
+    k = [ Rose [ Rose [ Rose [] ] ] ]
+    v = Rose k
+    w = v
+    kids =
+        case v of
+            Rose [ Rose [ Rose ks ] ] →
+                ks
+
+            _ →
+                []
+    ( List.push kids Leaf, Readers.d3 w )
+
+
+pub mutual : ⊤ → List Rose × Int
+mutual _ =
+    k = [ Rose [ Rose [] ] ]
+    v = Rose k
+    w = v
+    kids = Readers.firstKids v
+    ( List.push kids Leaf, Readers.evenR w )
+
+
+pub nestedList : ⊤ → List Int × Int
+nestedList _ =
+    inner = []
+    xs = [ inner ]
+    ( List.push inner 1, Readers.nested xs )
+
+
+pub tupled : ⊤ → List Int × Int
+tupled _ =
+    inner = []
+    p = ( 0, [ inner ] )
+    ( List.push inner 1, Readers.inTuple p )
+
+
+pub maybe : ⊤ → List Int × Int
+maybe _ =
+    inner = [ 1 ]
+    m = Just [ inner ]
+    ( List.push inner 2, Readers.inMaybe m )
+
+
+pub rebuilt : ⊤ → List Rose × Int
+rebuilt _ =
+    k = [ Rose [] ]
+    kids = Readers.firstKids (Rose k)
+    ( List.push kids Leaf, Readers.skip2c (Rose k) )
+
+
+pub unread : ⊤ → List Rose × Int
+unread _ =
+    k = [ Rose [], Rose [] ]
+    v = Rose k
+    kids = Readers.firstKids v
+    ( List.push kids Leaf, 0 )

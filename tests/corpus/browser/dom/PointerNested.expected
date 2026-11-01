@@ -1,0 +1,160 @@
+-- load
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol></ol>
+  </main>
+</body>
+-- press #inner
+(a later listener ran)
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol>
+      <li>"inner pointerdown: n=1"</li>
+      <li>"outer pointerdown: the handler saw n=0, the model has n=1"</li>
+      <li>"outer mousedown: the handler saw n=1, the model has n=1"</li>
+      <li>"inner pointerup: n=2"</li>
+      <li>"outer pointerup: the handler saw n=1, the model has n=2"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #knob pointermove 2 3 trusted
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol>
+      <li>"inner pointerdown: n=1"</li>
+      <li>"outer pointerdown: the handler saw n=0, the model has n=1"</li>
+      <li>"outer mousedown: the handler saw n=1, the model has n=1"</li>
+      <li>"inner pointerup: n=2"</li>
+      <li>"outer pointerup: the handler saw n=1, the model has n=2"</li>
+      <li>"inner pointermove: n=3"</li>
+      <li>"outer pointermove: the handler saw n=2, the model has n=3"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #inner pointerdown 2 3
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol>
+      <li>"inner pointerdown: n=1"</li>
+      <li>"outer pointerdown: the handler saw n=0, the model has n=1"</li>
+      <li>"outer mousedown: the handler saw n=1, the model has n=1"</li>
+      <li>"inner pointerup: n=2"</li>
+      <li>"outer pointerup: the handler saw n=1, the model has n=2"</li>
+      <li>"inner pointermove: n=3"</li>
+      <li>"outer pointermove: the handler saw n=2, the model has n=3"</li>
+      <li>"inner pointerdown: n=4"</li>
+      <li>"outer pointerdown: the handler saw n=3, the model has n=4"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #inner pointerup 2 3
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol>
+      <li>"inner pointerdown: n=1"</li>
+      <li>"outer pointerdown: the handler saw n=0, the model has n=1"</li>
+      <li>"outer mousedown: the handler saw n=1, the model has n=1"</li>
+      <li>"inner pointerup: n=2"</li>
+      <li>"outer pointerup: the handler saw n=1, the model has n=2"</li>
+      <li>"inner pointermove: n=3"</li>
+      <li>"outer pointermove: the handler saw n=2, the model has n=3"</li>
+      <li>"inner pointerdown: n=4"</li>
+      <li>"outer pointerdown: the handler saw n=3, the model has n=4"</li>
+      <li>"inner pointerup: n=5"</li>
+      <li>"outer pointerup: the handler saw n=4, the model has n=5"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #knob pointermove 2 3
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol>
+      <li>"inner pointerdown: n=1"</li>
+      <li>"outer pointerdown: the handler saw n=0, the model has n=1"</li>
+      <li>"outer mousedown: the handler saw n=1, the model has n=1"</li>
+      <li>"inner pointerup: n=2"</li>
+      <li>"outer pointerup: the handler saw n=1, the model has n=2"</li>
+      <li>"inner pointermove: n=3"</li>
+      <li>"outer pointermove: the handler saw n=2, the model has n=3"</li>
+      <li>"inner pointerdown: n=4"</li>
+      <li>"outer pointerdown: the handler saw n=3, the model has n=4"</li>
+      <li>"inner pointerup: n=5"</li>
+      <li>"outer pointerup: the handler saw n=4, the model has n=5"</li>
+      <li>"inner pointermove: n=6"</li>
+      <li>"outer pointermove: the handler saw n=5, the model has n=6"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #knob pointercancel 2 3
+<body>
+  <main>
+    <div id="outer">
+      <div id="inner">"inner"</div>
+    </div>
+    <div id="pad">
+      <div id="knob">"knob"</div>
+    </div>
+    <button id="off" disabled="">"off"</button>
+    <ol>
+      <li>"inner pointerdown: n=1"</li>
+      <li>"outer pointerdown: the handler saw n=0, the model has n=1"</li>
+      <li>"outer mousedown: the handler saw n=1, the model has n=1"</li>
+      <li>"inner pointerup: n=2"</li>
+      <li>"outer pointerup: the handler saw n=1, the model has n=2"</li>
+      <li>"inner pointermove: n=3"</li>
+      <li>"outer pointermove: the handler saw n=2, the model has n=3"</li>
+      <li>"inner pointerdown: n=4"</li>
+      <li>"outer pointerdown: the handler saw n=3, the model has n=4"</li>
+      <li>"inner pointerup: n=5"</li>
+      <li>"outer pointerup: the handler saw n=4, the model has n=5"</li>
+      <li>"inner pointermove: n=6"</li>
+      <li>"outer pointermove: the handler saw n=5, the model has n=6"</li>
+      <li>"inner pointercancel: n=7"</li>
+      <li>"outer pointercancel: the handler saw n=6, the model has n=7"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #off pointerdown 2 3
+(the DOM did not change)

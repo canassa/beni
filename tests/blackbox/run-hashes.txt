@@ -1,167 +1,171 @@
-abuse_test.test.a pathologically nested expression is EMITTED without a stack overflow, and RUNS #0 36fa2883ca1e18f3b4ace18838df76a277a41c90598798570ad78983b917ff1e
-abuse_test.test.a recursive type of 256 parameters compares past the derived depth limit, positional #0 84249a7973870b50d7167306e4705506705b6711f6b0842fd6be45c4460de525
-abuse_test.test.a recursive type of 4 097 parameters compares with < past the derived depth limit, wide #0 6a947a0f02f0b925a35f3b22284a4565eb43e2ff0c45546473c5dd50f7e59ba7
-abuse_test.test.a recursive type of 4 097 parameters compares with == past the derived depth limit, wide #0 f4739db32bf227eda0fa1c765b34b4ab8d10d2622ff02e4501aa21607f1cff6e
-abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 2c4ade95d47cd699a819618c30d3d6ec60c9067b79fed911d2a02d96c4921da1
-abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 073db2815e4a14a295900d57134af3dbc1839c8a7210405f0ca42339ff81bd56
-abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 66413481137b54abd4792fe08d5bf82080c71035776811f1a5669fbde0bd0f0d
-abuse_wide_test.test.== on a record builds and runs at the widest positional evidence #0 9593069da91ac9a0aa62d1c7b753c2dd33978a6f3e821ac9978cc59f2b5a5a3d
-abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 0d8ded624009a8ce583848b0cdbc1101056c8b896fdc17e4a6f7617cd7a00394
-abuse_wide_test.test.a 2 000-element list builds and runs #0 ba50779a261026383fa423535f751fb209189417fef821cb0f941f0b1c43c0c5
-abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 723094c5c3ec622daaa082ecd324f24d6469e145d6eaeb1233f323ab942818b5
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 0e31472c77f2764cf791a8193ad9562ccf69ac7af0fb3ed696beeabaac554042
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 cd2746f4e87ae13522415e97b68b185878e992fd5efb1ca1f72a92df390aa5d8
-abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 6e1bd695a51abb44c38a5c7b4101a2b46bba16b84eff8e7d3a27b52b1de9a3ba
-abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
-abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 1f57fb827821018806ec0673468561ff3a4ff2b7adc7fa2d510bdf286b838dc5
-abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 ee5166bebaea330c503edfcbbfcc645d81f8476f0a331d23dea7954562586219
-abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 a4f1cc32a2080fce814189b5d7081d1f760e526e7f48d4304b14e215722967eb
-abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 9040ae2b07870ac86fb10eb19f113a60d7762ed30bdf70722f9e6eabcf4a880e
-blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 fef6a697cb3793f905588595145fc810e956dc325471c5d66854e23448904b99
-blackbox_test.test.a constrained value in a part position is handed its own evidence #0 32106ac46475bda8dd3c77f5490610f47f25f303f36f41f479e99898210a5b2a
-blackbox_test.test.a derived compare compiles, and so does List's #0 bac47feb4525016c2b0957b879bcaac1d0adce3526ce79baff2fdb09142bef87
-blackbox_test.test.a derived compare compiles, and so does List's #1 fbd34a628062877d3dec9c55b2d83afcbe8eca4873bcc142594337ee44fa7fc6
-blackbox_test.test.a derived eq calls the user's own eq, across a module boundary #0 4ed9f62164c57dfea7cd7897cbb19f5a6d199cf975f035015315ca86e4eb8e8d
-blackbox_test.test.a derived eq calls the user's own eq, across a module boundary #1 834e3e332761dbb10988397e0db150d83499134a583d214c860fc6a0ef7c2fa9
-blackbox_test.test.a derived method of a submodule's namesake type does not collide with its values #0 c8ec12e5bf2d03729a3b8b53c7cafb688bd3a78ea0742da8e2f6968ff1979ed7
-blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #0 24035f9f7f701bc5469ffba3aa62532a9c5cafb37624dbabddbcafec37acbc42
-blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #1 7a69b70bf776f5c21f994fb41716d7e7c566275889b42f1934f3a53ddd5fd8d7
-blackbox_test.test.a private eq wins inside its module and is private_method from every other #0 42f46ed6d83604f224eda97598146bd4da71411d969b92c7c29be1a2e2d610a8
+abuse_test.test.a pathologically nested expression is EMITTED without a stack overflow, and RUNS #0 48c4bf88f1db3b7aa311b64a85ffed84cf93d6c0b8be77aa7ad70857c9a709bb
+abuse_test.test.a recursive type of 256 parameters compares past the derived depth limit, positional #0 73523db8577c36bfcfbf21f6c90a643e174124f4db8f22057d525f3bb09f2540
+abuse_test.test.a recursive type of 4 097 parameters compares with < past the derived depth limit, wide #0 3d2de6a4efad85ac424c5476a7007f6ce26bb9938908406f565ebcfee4e22b41
+abuse_test.test.a recursive type of 4 097 parameters compares with == past the derived depth limit, wide #0 f88967e2df0cb2a3788a3bb0d2b1297bbd339494100315666a717810efa01d10
+abuse_test.test.functions nested past what Firefox parses are one nesting_too_deep from build, and 119 run #0 23cb9e9b0d26237ee326b60170fd10f42e7a2b167023a061f0246683ae38eb71
+abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #0 8722d0025ff267ff62e8c399fa00d9a29065bfaee8c0ec44087da7a019fb52b1
+abuse_test.test.recursion THROUGH a hand-written parametric method still grows the native stack, the stated exclusion #1 b46d63bfba3ba4ed60dedf06ad2570675c3eba4f4827e901395912a73a20c7f6
+abuse_wide_test.test.== on a record builds and runs at the widest positional evidence #0 c8d8db50a3c876d0e8d240e3e8774a5efb289af9770d4fac67221374f36feee8
+abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 542106204b9f79b66d0b91b075b559d951fdc7fac3e1678ead91993f309cc7e2
+abuse_wide_test.test.a 2 000-element list builds and runs #0 d38f7a5e7760088322ba9ff606b8b68e8f83047fd61d4d2410fe765e52cf25dc
+abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 fd8b843a51668974f2645113c15add8411911d0e0ff3129429c71c5a00d354c1
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 b519d73fed8641a599787747eabc147197eec24d2721a4d8a834f8b3e5ad0278
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 cf81728bfc878130031ad15f2cd295d9649f6a1665065aefe58ba51a5cf0bbc2
+abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 c9db511894ea27f5437010eb4af6cf57fba9c8bf7f1bdb1598d1dad322051ade
+abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 9d3d4b10e134f71fe9b193f317d35f670afab897e1931069565abc24baa0b3dc
+abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 bd15baba794e6756937a47570351df16a3006fb96e98ac32a64a4fd1ff54a972
+abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 ff850d4bc61092f0c70ee37d3b01cae8fe18a98904888685ab8d57e3131d41f4
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 9b9e602f4be0b209b9f8dd23ffcdcd71097d25129df0f2cfb3fe58e715a3bd20
+abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 9c7c55a5a27136b36df80bf44e3b6dbf38cca888622307d0b647b02fac6ba4d0
+blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 f3f579a2b0d6f2bac310e22807fb304b17cc0ac5b8d305d33c201b4aac9766d8
+blackbox_test.test.a constrained value in a part position is handed its own evidence #0 ec55ac7c8ee773f498d1b9412673c93274f737827596f06195790436ef434d35
+blackbox_test.test.a derived compare compiles, and so does List's #0 32c9450eb0088c6fe1b1d2b5de4764e58b0d378887828c64a0d0f927bf58f54c
+blackbox_test.test.a derived compare compiles, and so does List's #1 5d186ce7f4b2559d2381d2d5385e9ae556f6e113ed5028fc3a8580e012ccac90
+blackbox_test.test.a derived eq calls the user's own eq, across a module boundary #0 c81a520394ea7f85191e7dc3f46b51603e1a0b39a89ea5e291926a5c4c76b3a4
+blackbox_test.test.a derived eq calls the user's own eq, across a module boundary #1 ad9f152ca82198c59f0df4382d1c8537c5fdb3896bfc1d4e157c283b121256a8
+blackbox_test.test.a derived method of a submodule's namesake type does not collide with its values #0 b1d6c6c70622ad70f49766e55a1fc4b915c700670e296d2e9342293cf1982dad
+blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #0 5a3850be2cec15a1955a328c7b47e40e3433d343b6f8feb62512eb6ac184eb21
+blackbox_test.test.a list whose elements have an eq of their own calls it, across a module boundary #1 4c621882a81bba4d871ca580fda7c03dc01f32df2c752331f217d4db7aea878a
+blackbox_test.test.a private eq wins inside its module and is private_method from every other #0 b9d38ab93afdf12a10d52c9f0db540e257fe1c32714b8841ffe676af54fbbffa
 blackbox_test.test.a pub foreign with a where clause takes its evidence in front of its own arguments #0 49366a06b0c50940f956412512a691fdf1bd2086ef8d50aa6dc709517292c9e4
-blackbox_test.test.a type that is not pub still exports the method another module derives for it #0 47afc1772fd33fbcee8344ef7666be7ddbc6d603e47d8eed1b7d4632416671d8
-blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 9b1c61212a1874fc38cf686b449b84dd2f6701902aca051397c3f2a25651a35c
-blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 dd9f15b7e68e5afd390126e1defacb2f4f3fa9dc1af97f99d4798e751bd49553
-build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 7365df6432673f375e29307632443276ec994e404c9b1a57fd124d3faf19504c
-build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 3e768e26873f7a028adfe3e676f41a913aec0f371bd1806819237888c52dba0c
-build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a3692dda89a021c229b843a0e0ea6ca2e1f8d1ef1d5ed68a466daacb9a327e37
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 ea6196bc81cf12e521206c1665e17390821dd840749a69757292ef1eb3e5601e
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 fec6776c295e175a35fbb53664c5fbaa9ad4dfc4c2aeaf175716614a24d114f3
-build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
-build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 06add9ce22502fa63b40f567ce142e8211097666ce3e8f3e56aae0e27684e4bf
-build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 10dd656abb5b1a1eee4acb1463eaabdf4bb058199a92893c2eef23b24e13a952
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 a4ca55fe9dbb275e41ae8e5143172dd5b6d363ab55169d5af698dac2c2138d4a
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 7164b50c43b702f82e5208a7eb5ef6f79a83b7cd18469fe6c2ca2be889e4f9ab
-build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 e3076f318a1e33717a08e458dc096ac5b7405c5d8c8b9c65940423229a2d4978
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dccd75722fdcfd94e1ee3c64ddcd74498245760fa1a7a3aee4f1f5ef05b7403d
-build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
-build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
-build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 a8056e025b8071846133906119b1e74ac8cfc27b38868de144734eafcd5bdc9d
+blackbox_test.test.a type that is not pub still exports the method another module derives for it #0 7ba97fbed48da93ac2a4295d5a31dd65823f44045bb1aa38f3234f1f9528eaa3
+blackbox_test.test.core/Basics carries the derived rows §3.2's table asks it for #0 7e6cd9b10d23ddd44f5ee489b5a801a97a7d52b2b6631ed5bb6b454fe9bd8d58
+blackbox_test.test.evidence nested past a thousand levels is the user's eq at the bottom, never a structural guess #0 2d2c1f1fafdbac8bdd874ffb0214652ec2a352d1fb1b394b4790a56361425d72
+build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 1b4bcd76bf493b0674aec7241508f5ef7c0eedcc28794ddcfb1b1f815b47d8fe
+build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 f61e65edf59d7e0612bcf41005f5eb1a5aeafd7d7feab3ae48b309e006101025
+build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a37f4e2ca958d8af44fb2661e8b0e48ad2f66c7ce214366af2eff60389e09409
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 087e5513f462ed111b5856738d7b09b16c07bddbf9ecae89ba85480449a4d034
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 cec6e63a32e208402a025e7c3f40c0cc6e4264a4b5a89645c06fade0786ecbd4
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 dd0bea7b0b9fffe8a8f90c0aef6b2e1035ecc7600e7ee74583af413e1956ce54
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 9e5d5b94ebf8911ff07562860928ff86f5323deaffa33f61c65d044fde06c5d0
+build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 ebbdd61691f82e43d7d11ea8296ddb4e617bf55023a2355bc5b8f7022aac0bd6
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 5b30ab7edbefcf149e08ce2ecf02ba1d1454e92c2fa768754aa1507bea8c7f9d
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 9db2665deea8f4dad621feb3c151a804ae3ededde97a387ca8aab29ef71d3f11
+build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 0fd8e45ccfd565d1f2ac7d89726e73550bd70ccd06fc54968e043298de7bf764
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 44ecc7a339cbef9425b78b03aed04d6203b6ea2021a3b2fe69739a212938d496
+build_test.test.a Debug call that reachability drops does not refuse the release build #0 3a684eb60c6507bc2b67c62bb4fb634cb9822a0238a847593a6a5b971afefc94
+build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 d9bfc69170760b92d0a952ac5e66e873a4c76b699fe9c1d39234967dca06934b
+build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 6edb5a9d410c5494b87a8c293dcc238f06be50678f7d5d43eb08f40eda3fc27f
 build_test.test.a concrete foreign constant is allowed, because core's own `pi` is one #0 e79d3775847cdf07c28226af41526f3048a0fd6aa9fef6f7ed90a3c74c42d594
 build_test.test.a constrained `foreign` in value position inside its own module keeps its declared arity #0 2f4ca501cdb361eb0022b9d69401458373e35f75649a9dea223d061cd70924b9
-build_test.test.a core-private List value the emitter calls is exported when it has a beni body #0 6577cb75fc32ccf9643e62711a0fd58cf47fac1125b29ab7bf1193f34771cc09
-build_test.test.a core-private List value the emitter calls keeps its result under --release #0 620f455eb3bdb7e8356f33f19d8da214146f0da36c67b10f84b56fb45affd0e1
+build_test.test.a core-private List value the emitter calls is exported when it has a beni body #0 78e56d48379aab107414228e6993ae4425589ea79b5314eeb52580a773e483de
+build_test.test.a core-private List value the emitter calls keeps its result under --release #0 4880f197ef12832100179883c35465b3b8b1a32482de8f18be0d1211cfcc8cff
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 3514abd3d42607a978ece9e63fcbdcf353e6582f851ee0f42b23b26d1c585b4e
-build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 2f95b3c4275e673205374ba208d776f269004fcd6357175a0a01a02b1baf4384
-build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 bdb45053d72c73e435c747cb7c315a1b8a2ece431f710ce4e072bf78c1a68343
-build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 59a5ac1b935ed06bdba429056cb3f74b0428deff5f03c3dc2add9ff544adc240
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 29f9924c141d4dd3ad78f7478d587a15f3fa1e3374aba734b0a6f3911437e435
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 7e72c78745b14b0967f5e7cee65ec7a4b851b7d2cb8c08e73e44433969c88152
-build_test.test.a non-zero exit code from the platform reaches the process #0 7839e111324769dcb8ed2c068542fbc64385245f63347934c3db4ec28682263b
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 da4f95bb5fbddf9783fac2d8b054be1b9c3e4defe1abf0b63251c18e9360ba6c
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 585ac960a23b92bdb637da0b69b4cf404adb14a189fe4e88a8d985afebb18594
+build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 9f4abf3e47f5f2593e5857b78320e126dfea8c8ed00f8c9baf97b2e66ee48155
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 a1789223490c001286ea4afc6d935697347f0996b88f685929067e6ec7b8a2ed
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 e8a93fbdde9ed9627dff14b5398aae9e20af0f81457d7c3bade46e94a97924a8
+build_test.test.a non-zero exit code from the platform reaches the process #0 79dc1058f7ce57adae9e9ff9fdc290ff29f9c9bb2546fa8f10fbbddada2f1b0b
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
 build_test.test.a platform that declares exports and a project that lists none exports only default #0 0284b5778bd1232abc8e765e86ede82e26a4f80b6cdd625a4727fac7ff69e6d7
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #0 338e871ac84b43a21cbd3cc19af1cd2b934991d511061d8375a05abe51986002
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #1 3ba1fe19ce10eb75bf1245700c570da39147951bfcd5dc77667060fd8a65262c
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #2 c0a4c377b0770e255b520ef57b83968cbc7866c69e7b781adbfcd89b968cefe1
-build_test.test.a program computes something and prints the right answer #0 e8567c4615453a4ee166a7858b41b281335202a6f9ee5dcf9e2f1555ff505f17
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 23f2e85d67d4c63f6d0acfdaf29ae357ed4f1c5c75465c03f21b5c2cb7a5fe2d
+build_test.test.a program computes something and prints the right answer #0 f3e0231f20bfd7aeec04a3abc4adbeae7db7a1d20270c6dcbd9102be4e2d3686
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 634946bbe4ba220353da0d4343fc437d165545075d8772889ca06e1eed34ead8
 build_test.test.a project that lists exports for a platform without the key gets a warning and a build #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
-build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 b7350c41206ccdd903daa449a4dc8f1fed403e6d4a468542c737f0df96cc0529
-build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
+build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 265af6e8ab60960da933835356ac1f9958054dd56a15e3ba6d1d6644ac5288bd
+build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 b3d11a735033774d93cd1586051419fb5bbc4fd647cd18a54053da5bc90639e5
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
-build_test.test.a saturated n-ary call emits a direct JavaScript call #0 14e07af2e77af1735c74705b48dadaf49fa3dada181c657da8995a52318b55df
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 ec22783406d764f0896bae0e049de093fa9ebaa8826ec9f0a80768ce6f95faac
+build_test.test.a saturated n-ary call emits a direct JavaScript call #0 9e3fba43279096e3a6b1bb3bd177a0715ae403bb131da6ef937479457939e8f9
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 eca19d72a413e99e2f7d39cf38e09e39501864f44ce15aa0ae5dd448148518cd
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675
 build_test.test.a sibling whose names cannot move keeps its own module in a release application #0 f64c0724e0387ddcad17f6f61df152b1b0b91716f072618fc53d621f9ed3f00f
-build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 cee83b0f6b6940933946c1575f06d36fd7bee0c1f1a87dd55759be3e62019c4c
-build_test.test.a view formatted renders the page the view rendered #0 36e794df28d770e5c45c3e9f98e06cab6fa4fba1b9455dc6127524591f06dfc6
-build_test.test.a view formatted renders the page the view rendered #1 518e086afe99542b0a6fff8304ae1eb206cbfe9acd28e081e4289abb31c80a84
-build_test.test.an unannotated pub function constant with a constraint builds and runs #0 a5a18c52bb643564199ff2a361ae2cf259e4c09759cfb22c5f5a467dc7f1b3d9
+build_test.test.a user module may be called `Core.List` or `Platform.Node`, because the reserved directories begin with `_` #0 70d04ada24d38b31312244a2523949eae39945d29da2c718c83ee2686088bb43
+build_test.test.a view formatted renders the page the view rendered #0 c1dad1d96eb2004904eb7fe195a4cae3540bb01824e8a529841741e8d807ea31
+build_test.test.a view formatted renders the page the view rendered #1 8dbf7040c6e89c1dd1a961c5cf0f93e6a053d0fac570a384e6b8f93f07f043fc
+build_test.test.an unannotated pub function constant with a constraint builds and runs #0 6a64078b986dd6ff95f9de2e0ac1ae61fc05377ee28de186b7da676fcff06e80
 build_test.test.an unconstrained `foreign` in value position inside its own module is the bare name #0 f72fae897e9b7d3ffb9d25fd96b61d9818a85df4adc7d48f22fea6195a25175b
 build_test.test.check 4: a foreign typed through an alias counts the alias's parameters, as its calls do #0 a8aad3826e5fc11782b53cbd0f9fffa9b08333789303fcda929c98b02ce190a8
 build_test.test.check 4: every export form a sibling may use, at the right arity, builds and runs #0 54602ccd730c552d11f8b83f8f64b3445636c6ebe79c3cafd2477450a8656719
-build_test.test.core List's loops read and write their arrays in place #0 74d422ed602a3165579254f3dc523dff5831d2935ddcd7cc97d7017d61159fc0
+build_test.test.core List's loops read and write their arrays in place #0 e4fdce9d2842b045cf8776604a625c4cd6c11a2fa329ce06bdb4443ee9d6666f
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 73169a438ba8507c7bf138408dd13d33f7d0ad30b30436f96958487fe45b4f49
-build_test.test.modules import each other through ESM, and the program runs #0 5b4c8b8fee4e4f78904dd1db7605a6b63205a8c2b68d09d72bf748d57671f932
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 4b6e4be2b17a2073ad109b9ab8dd51297adfbafeeffe7ee82f8b8e0c811af282
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 f01fc9e73f1cab2c65c6f99d1e116aa799282ae3e86b594f7768a1f406b68ed6
-build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #0 1d0690888c8a1bc7310a156540ca97923b7ea0b277e57dc4e7e0676d873fef94
-build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #1 4114f66aa8d1e28678d781e0c88b33dde188923ec0cc3e31bba301720df994b4
-build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #2 325bdc0108f5c60fe5f440cac6fa669ea7aa6a6a4c8ec8bffb46f4f227065ca3
-build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #3 8b023a5925f48aea9c49b8781f1b4cd2bf2ddee182fa633836922dfacb5f6489
-build_test.test.the list sanitiser runs only where ownership is enforced, and writes its runtime only there #0 f80259f2a7772a8fb602bdcc3ea79e406f912d3e691ba88c236f1bb2e694739f
-cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 080f4865249b5953a840ccc2ef9fde6d6908791fe3193c6a74c8941047e70a4a
-cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 008eedfb3674e259b46e30be49fa395731a5a9e4683e358a7574c54bec2ccf60
-cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 ad9a1d792faaae88b2bd8d2644bfbca242699b83b128c47e5c229a2aee5bf426
-cache_test.test.a constrained function constant rewritten as a lambda invalidates its importer through ownership #0 a7e7cc54c7306bf94d741a0e2f31cc26c1729c813e1902b78f8407c1812082a8
-cache_test.test.a constrained function constant rewritten with parameters invalidates its importer through ownership #0 2de875b77e22196d89d93f732768bb3ef90af2569890325c016bd57ab60df3bb
-cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 bc24c0955dde779ab2d8434c59e7eff2ca6edcedecac59c949539b3760f15040
-cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #0 84de944f55ea5d6f7a0783242c92e872c64e948aa2e1f3cd6c4b84bf28fc972b
-cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #1 c5f59da03cee806a3971ca9afe308f8a131b485c63d030c8161b63f087b2f71f
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 c687a28d9096e5e7a6d042771e7fbd719a129df9d96928b6f7581eec3961fee9
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 3773ddf68c644cefb0579fbd53286bfc4c356303d77bf9721682714ef416f19b
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 a7aedf736affb8d44f11c7e073442dc3ccae6f6ea7cf9afbfb5377605ea07cba
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #1 b919469d4656a8aaa35b8a91209f150278384ea108665452265113fd1bf949f7
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 b2798c9ff302c30d4b4719e90967bc5a4c70d8d4be28967123958de28cd33bdc
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 83fd6a41d8f7dec9ee13e22b28555e7b65a44dc5dfea42cb6707418058ae7dbf
-cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 a5a1c46beb44bb94060eecae96b3ab41f429fda266f0eb31e9d3ce0c305b3331
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 9b976aa78ed36ea467722eb4091a1c28a2094a79a9ddd01d5c9e3030ae803df2
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 680000718c2c73e947d2c0655390a4e22eb151ac900801f69ebd387764e58e35
-cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 5b9a520193e4195cbb2ed7f0e5ebe57d1fdb8fea726867d9563525f28d5f5b39
-cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 cf135f9ef9cbe847f57f757e042a9d6acb5f04e5d254820d593158f71b57db2d
-cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 acb7f42dd9d63f835f1b1f642d1a3b9dc5eda59098ef359b9aad3f58b1cfb9d0
-cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #0 d6c3c545b6673511506b3fdf9b8e1ea2683972b073f677502dfc833338a9daae
-cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #1 abdb239b402d3b1f7609854a4a6cb189129002eaa62baf53036fe833d1f677bf
-cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #0 0ca628ad94484c7023cadd39e840b8ce480d3a90e31e7199cf5b65c42b3ba141
-cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #1 ad497d5d32130144a07192c3f59fe9ce8960e63603b1fbc54849e8b089727632
-cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #0 1d1df13777c6e12ef145d4d0c48485ec3beaf6c78a80dc1c1d4ee090f2ee92dd
-cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #1 4a3acd4995a51efb2732efca0f23fa85ac6b72d757613bc7fdf44c9c2f5c0931
-cache_test.test.a warm rebuild is a cold build: a field added to a record alias #0 39bf4cecf5f61ab5e309d3858397c0c6c2ee81146020cbbcedaf0c7894af4bc8
-cache_test.test.a warm rebuild is a cold build: a function payload makes the type non-equatable #0 4e2423d23fe5b3671784b8342612a82fbb9d0248eb52b328223454ef88076a83
-cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #0 08ed7f6ad52886831237b7f6bf4ba323b43841ba969f0fc598d502b7ef16e5a8
-cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #1 a212810ca91bd3c6997f46ae567a5dbd22a2f268bb4f6b8ecdd535fe5f77df7b
-cache_test.test.a warm rebuild is a cold build: an error in a dependency fixed #0 3bf216f44c7b9f676e3d251abc9de9877f42038650e995e0a7ee4214a7368759
-cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #0 93f8dad47a411392d45e0991d7d3cd5f724985381140ae296b915d0e0aef8251
-cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #1 6988768bad2d2f286453a728875311b713ff7f9155e9e99c094109fa1d6059f8
-cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 9e4f007e1a652dd3e61dab2ed2709a0bf1f48a3ec2ee8c6e2bdf9c29ca14e4fd
-cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 75b4e0aee98ac1c14e668136dff846abc56d121bf092a9ec18193cb94876d510
-cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache #0 00d8ab382e14b426689a488cf9a63c2ab10911d49fcc77af44cab8bd4a5529e6
-cache_test.test.an imported type of 4 097 parameters compares in the wide form with only the importer edited #0 9dc2c2b8b0a8548f7778a598180a9f48f408ddc1f7c39b363b015ac74335c7f0
-cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 dc3756196ce8879a28fea9ec9f7d5352411b64d7e7626b769d7da26fb5b85dac
-devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
-devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
-devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
-devloop_test.test.selected entry projection recovers after emitter preparation refusal in resident development Session #0 682c60e608adfda3680a08a59d60d7269411f0745002ea7985b8b900e8d81ea9
-devloop_test.test.selected entry projection recovers after emitter preparation refusal in resident release Session #0 42755e83e33b9c7650376d5289239483ab6e48862e16d73e5ca78adcb6066cbb
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 6f6577880e663ccefa508fec190be3f3daf4c19657a9f29f469c96ff234e32e4
+build_test.test.modules import each other through ESM, and the program runs #0 2cb61f15d8333910c448ae2b0a4ad8e7d3a2f876a22f1bebba39bbe81a1e55cd
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 63a6c55ce914a2dc1452abab9a279deda22d4bb705b4bae096fe6d62f3bac123
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 a774ce92f6adc9ca2e3eac78d4665459a5bccdbd72c2e13418bfa93b39630aab
+build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #0 c498ad97e158db66649f1e8aa3086093c0fb5372ecc91d8b64dde60364aad917
+build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #1 0665dacb1fce818a47dfb1a6533179275d66e33406bce76659c3b7d4d7efcd05
+build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #2 7db7649a1d5c30f89ffcf3f5cb086e53af78235b5c7a3310cf198e23f9d24d38
+build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #3 e47b5d072944e9849ea6ab42d80aa8bbf6e4c8f5368900fd124efcd43495f479
+build_test.test.the list sanitiser runs only where ownership is enforced, and writes its runtime only there #0 8bed7095c1c7f34da790776d2abb073161e2aa708d6db91dfa1c5c5d13b62456
+cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 9833039a12024afda091c227fa10131c7f5cdfbc145a6eef4a49782ec81da55b
+cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 bc475c5d2c04ac9f587ac3abf6246e721b73e4c564245368e3e18d6653da1fa8
+cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 cbb27331034679de9078f956f45d4a9146ffa8c06a038ff9b83d0c6a3e8335da
+cache_test.test.a constrained function constant rewritten as a lambda invalidates its importer through ownership #0 871585f27744f7b79360b75957f8b930adab57a47bcd1ce6a48119e9a027b532
+cache_test.test.a constrained function constant rewritten with parameters invalidates its importer through ownership #0 06568c39d7b91c7568ab96146551138520663010024a93fbc0643c783a0d7526
+cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 0ba3c8b0ac91234b3a0bdd4f05dc81065c24f79c661320c02c05306bfc0dbd8f
+cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #0 2a970ed0c3ddfe2e27b515318e4e2d88d87803227f70474466383a96535e2df7
+cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #1 86f6fd2cbe7adebadff272d288a7bc0a517a2605d3e8b9157add68b666f71369
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 0f8d7d947c610928205bdf2f22ee7ff8650691baed6b64ac601b7e602e75aba9
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 68403b478032607b39bc040b83a41b0acfe32a6e01f235df3f2b6f55aec28603
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 b826900881b57f1f3da288b69c92ec58984ea7dd12255d29ffe934677d2ad6e7
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #1 e30b0faab029adb2e67958925503387d4b66ebd84963569ee1215d10d75b8160
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 aa869998a3197a2b2db1849fa027c2442a8227f9c7fb88e5fc8729020c608e06
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 d543f3690df5c093a4356392b847337eec82d5c2141a21692cf08980ddcf0717
+cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 8ba6e3c3cae8e76782dde844385e157329f3e1dd0cc32454b8149f8b28baeea5
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 10ef7456c5b13682b9c3b9805e4d814a221fd7bde6729a9cc52c864b1a2e665b
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 574a4341dec39b4ef1ff00899b69cddd9b401fbf798dde3a7352564010ceae94
+cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 0dd4302ba2412b80c8cccc0b470d73008414b72a2855bae2626fb2cfcd646546
+cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 cc9451494c3f16f62537169f47c76d26b0b705635712cd60bff82f4c36be828e
+cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 7a028d805e3da47f6e497efa88ca9fee041c86d6bd41c774b577533e35e24b2b
+cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #0 11e630f79335cb361b3df89cd7e5be8574202659e037d67d790c94ce5e50b0c8
+cache_test.test.a warm build of a markup program after a view's markup is edited writes what a cold build writes #1 9d28afa044d0abecb042014f5fb8986d4803a73300e7c6ccb8ac4f2bddae3f7c
+cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #0 281779e62f7f2557b5373a1b3a823c33857571bfab6a35948e673e8b41474705
+cache_test.test.a warm rebuild is a cold build: a custom eq and compare added to a dependency #1 c6cce62fded6df1727a5fc43dab2a61fe096f7f0e49c490bb0608a8fed14b9c2
+cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #0 019c43188df1fb42cabf9cc943b8da5f283061c87d35913448a27233d3f2af1c
+cache_test.test.a warm rebuild is a cold build: a dependency's function becomes constrained #1 0f6427864c39d566b5ef3920ee7ae77ef29d735e83d1d02cc326b11842b234a6
+cache_test.test.a warm rebuild is a cold build: a field added to a record alias #0 97e03ec05273266a1a3b99ef8cb5a7be872f8315113d8d2e0881a0976b2da850
+cache_test.test.a warm rebuild is a cold build: a function payload makes the type non-equatable #0 e83efcd44f70d1bbffc93ca3e2885b106ac9cccb30a73f9bab4686da5238cd40
+cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #0 7609000297e08d22fe8eba43ec6954c48ce4b2c6be4c975f2e1f8a15d239b691
+cache_test.test.a warm rebuild is a cold build: an alias's expansion changed #1 9f7a05cc274a5bf68256dd25e798e78ee60b5fb64c3b7623655aaf9540abc943
+cache_test.test.a warm rebuild is a cold build: an error in a dependency fixed #0 a902b55cb89e2bcea83ff180a83a3d2b356f35b29f97842bb4c300123bf58422
+cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #0 f021865bf683afb43026ee3b94c19d2ebec22fc2ac5c0e4ece19968d91575648
+cache_test.test.a warm rebuild is a cold build: constructors reordered, which reorders the derived compare #1 0e3cccc60202e90b313c9c7640671391b27cf15217190dfd8911405b1c225f9f
+cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #0 08b8aa1021b62edbeb42a8f56f9bf0a02e0761ed8a44604b348abe89d3b1a45b
+cache_test.test.a warm rebuild is a cold build: the custom eq and compare removed again #1 aa82044d0164d666ab4ee10d77ad61bd3de549770b8ba34ed8aed7e41b86d8c3
+cache_test.test.an imported type of 4 097 parameters compares in the wide form from a warm cache #0 cf372ace113334040c1b7f3efa3dfc5749906920688fd799256098ecd20457bc
+cache_test.test.an imported type of 4 097 parameters compares in the wide form with only the importer edited #0 b21991f8e4da238a39521012288cf41a7ae521fd49a1ccde7843dce250e8dafa
+cache_test.test.an importer re-checked against cached records reads their aliases as a cold build does #0 5bcceb32d5a52ac05c46c56b3de08642b452b7c3e2a2fac2c6379624c7be8d3e
+devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 87e484551a1989bb6ff71dda1c6d61a2f917f89f9ed3f70f3dffaf8a285ce5e3
+devloop_test.test.beni new --platform=node writes a program that runs #0 5ec435c86ea089dbd2f89f4b7fc9ef933f226fe9caedc8d1ef21316da9a11d1f
+devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 03d3c69b9e2195e4a0011e5786bc1124961ae6cc228a1268bce47584c48eef27
+devloop_test.test.selected entry projection recovers after emitter preparation refusal in resident development Session #0 f6201a1e932d0f1418d9043a539d362d0bddc2a009641ba887cf2376013285c4
+devloop_test.test.selected entry projection recovers after emitter preparation refusal in resident release Session #0 e752019a921c64bf4c95cba6142e185f11e80bb4398a04123470c403412d3525
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 78db389fdde18f3393c149cc627209203835ad7d29e5436db3ca1723cd5f2464
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
-iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 0a3b21c95777c2b9adfa9ee2a2244259c00e5db1a5d379d93e62a805e1173900
-iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 8b88b91a97143e288728f1ae404f96838d6f51eb510902ecd8ff0cfcb52c9af8
-ordering_test.test.Json.decode inferred from use prints the same reversed #0 dbe96268562792d5883dd8d678ad90108b5d3228d72fdbde21bca8129200108c
-ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 cbc5d59ec352a57e3641057730527789fa37d425420444092aa0dfa2a94bb308
-ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 c3ed090860e1a92b7a4daa4c92afcc83d3b1c88b7e07baab0bd1905d9bd62964
-ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 46524e80892b7e0d6c5d40ddaaa0a935d0c1cc319af5f1b888356e2959293eb2
-ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 78699e5824e6792b066495bebb5004f86c7c9ead4248f52dd077eb8b213624be
-ordering_test.test.mutually recursive schema declarations print the same reversed #0 96b79619ccf2358e7a1b2ee8d2b1a43e3e1847f702047004c080e95cef4a38cb
-ordering_test.test.nullary methods and record defaults print the same reversed #0 866a63c3d9a0d461b3a80c4b06b846fa28944d486889575b2a4305e77331c82d
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 e2ed67987402a40d5c3ffdea0a9f9b57aa081f9273158547e0f78efd67487d80
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 0895119316f75ed5a1a0540a6f66842ec27b40599788f8de291187bf715bfba4
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 b7b2eebfcab75888713574f163bdc1f24a94f8f576310b2a391e40ebf52c507c
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 6b3496c66c3e758c91693ce06975e08a94bcf4b277e48aba4ccc47afe5960e8c
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 018e5f9d833641ff5cdbd8c6dfc28e4dfd67eeaa5f7202e0acd4874f068bec59
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 f7497c201403a6f7bca564157b6b42bb6cadea6d4b47f29e40a9c18314e40e4b
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 8d7aee9a13d1bc37127c51b78355ff7cd0517503c368d42308ec7152aba08fcb
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 265cad686df83aaa2bb24d8c2ccc08b1eb688dd781b6a2fa359c35833498591a
+iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 5c1b1bdef16ee359275c54d689abacd7fcb9d1af0df604ea0292debb6b23dcca
+iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 3d9305d46bb2bc4f4cc16d46497010be02749f323089c8b8d909e55caee428a3
+ordering_test.test.Json.decode inferred from use prints the same reversed #0 2666f31596e6320f6ef6c4035a338e0de1de58eeecd147052a5342ffe8b64407
+ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 cd0be7eccfc9dc2c918af28e7b8480355be5f9de293ee00549c2ceae5853c3b7
+ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 063da0f41cba99fd23fe892297c8171e4903c174ccada167f049edf73c23621f
+ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 bad5555c354b2f4343a52f5dfdcbb092f4db05e583085f11efca264fe95ec89d
+ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 14b30c7ff7ee51f14951aed9a5adc7b2c4a876d7c4d4a4624a09e1d509f542ba
+ordering_test.test.mutually recursive schema declarations print the same reversed #0 b46ddba369fbfdec5cbe9b0901ccd3dbbb6793d6b1ab4fd91f359d9fa6f46fed
+ordering_test.test.nullary methods and record defaults print the same reversed #0 4b82a541713d2a1be9f08f673e10fddf5148f81cdff5a101513a016cb029fa79
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 d1b5cbf4f3d3b12f0329e74f56392319e53a3d96acce76fbf35ca5084415c8cd
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 9d7c15876b6c0c4067e4981dc227b12137d992c0ce170df060cf33fc1f439091
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 8cdea03e8044eff88245dbb74ee9e44395787018705ee6a58d0d5b426a4d0059
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 ed6545c930344234c135f920cd718fbb7084230f257c453ea0cccadd353020e2
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 c9d2586932ecfc3928650866569d102b144fabafe33cf5909962fc8cc2738c6a
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 522f7234e64879d0a8aff34055c9273d4f9232a9e105002cd33f821eeb54a440
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 cbc1691fc7873ec3b832ef17298485f66045aa0c1fed6d90e233ec3d6deee7d0
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 6934993e129407a12867cbeca34a7894ad063eafa0f0c2ef91b691fbcb8ca016
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 cc12fb90b64981940baf6d3aa327c34acd759b278b3b41b1f8f99bec983d2401
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 7ebd8a471118cd3046dcafef4011c35aa9efdf09013ae4154f51051c6df2b217
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #2 ba3c84c27fdeb5944a3beb60d45b7e69a3475601d75c23244b92549636ea3593
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 36f148b2ee6e64c043bb46fba68e44f01bc8c136757ff0a76bc4da7af14e92ca
 platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #0 552778c27edf20abfb9ab735e12b97f7a6bf4ddff165405bd01ebccb27a8fae7
 platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #1 3ae44a88e14cb4d6e1698816bdba76e183aa4689f03b6d2ebf33ac249eb8a2dd
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-typed_buffer_test.test.an application Js.Buffer module has no privileged core identity #0 008e84de07a8192f43c96506a965c9022d3eae5baeca6c4d963a531aa7efef09
-typed_buffer_test.test.generated buffer sibling participates in core overrides and physical export validation #0 44b29054ed044fe1c75d6da9eeab0c842794f3cd412f8d5107f37637da738c9f
-typed_buffer_test.test.ordinary custom Core Js functions do not become Buffer intrinsics #0 0df0830ad7032c495670a98392a429935ca1dd7b66239b1c35b89f4befa722a9
-typed_buffer_test.test.ordinary custom Core Js functions do not become Buffer intrinsics #1 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
+typed_buffer_test.test.an application Js.Buffer module has no privileged core identity #0 affc8362b4c82af4e28577dcafb5cc8440f0b60da497d91a5b9d928c35487de8
+typed_buffer_test.test.generated buffer sibling participates in core overrides and physical export validation #0 70e83a4f00a03fcdc752e18c70ea3854b7193281130377e7c0c63188c1142360
+typed_buffer_test.test.ordinary custom Core Js functions do not become Buffer intrinsics #0 23f8ff917a56c5b5544014d0b8478e81a42a317556e48ded93c0d5a96528f2ec
+typed_buffer_test.test.ordinary custom Core Js functions do not become Buffer intrinsics #1 b3d11a735033774d93cd1586051419fb5bbc4fd647cd18a54053da5bc90639e5

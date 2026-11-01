@@ -1,0 +1,32 @@
+-- ownership (project): see Main.beni. `pushAll` pushes onto each list of a
+-- list and `ident` answers its argument; `sharedOf x` answers `[ x, x ]`,
+-- `freshOf x` two copies of `x`; `pairOf x y` writes `ident [ x, y ]`;
+-- `keep a b` answers both its arguments.
+pub pushAll : List (List Int) → List (List Int)
+pushAll xss =
+    case xss of
+        [ xs, …rest ] →
+            [ List.push xs 1, …pushAll rest ]
+
+        [] →
+            []
+
+
+pub ident : List (List Int) → List (List Int)
+ident v = v
+
+
+pub sharedOf : List Int → List (List Int)
+sharedOf x = [ x, x ]
+
+
+pub freshOf : List Int → List (List Int)
+freshOf x = [ List.copy x, List.copy x ]
+
+
+pub pairOf : List Int, List Int → List (List Int)
+pairOf x y = pushAll (ident [ x, y ])
+
+
+pub keep : List Int, List Int → List Int × List Int
+keep a b = ( a, b )

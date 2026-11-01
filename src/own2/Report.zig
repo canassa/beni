@@ -1,4 +1,4 @@
-//! L13: the report (`docs/design/ownership-v2.md` §3.7, R-7.15): per module
+//! L14: the report (`docs/design/ownership-v2.md` §3.7, R-7.15): per module
 //! its verdict lines in source order, its own `summary` and `limit` lines,
 //! its counts; then the totals and the causes in R-6.3's order. The grammar
 //! is `dump --stage=ownership`'s, so a golden compares v1's verdict and

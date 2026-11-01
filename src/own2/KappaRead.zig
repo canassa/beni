@@ -386,6 +386,8 @@ pub fn Of(comptime Table: type) type {
                 extra: CondId = .none,
                 /// Read at a position a crossing chose.
                 crossed: bool = false,
+                /// A read of a DAG: where its dropped entries start (`drop_entries`).
+                check_from: u32 = 0,
 
                 fn key(f: @This()) [4]u32 {
                     return .{ @backingInt(f.op), f.ctx.int(), f.node.int(), @intFromBool(f.summary) };
@@ -400,6 +402,10 @@ pub fn Of(comptime Table: type) type {
             defer state.deinit(gpa);
             var done: std.ArrayList(Read) = .empty;
             defer done.deinit(gpa);
+            // Under `runtime_safety`: what each snapshot stores for a node a
+            // rebuild dropped, met below the read in progress (`dropsOf`).
+            var drop_entries: std.ArrayList(CondId) = .empty;
+            defer drop_entries.deinit(gpa);
             var cyclic = false;
             try frames.append(gpa, .{ .op = .read, .ctx = ctx0, .node = n0, .summary = s0, .carry = pairs.len > 0 });
             while (frames.items.len > 0) {
@@ -448,6 +454,7 @@ pub fn Of(comptime Table: type) type {
                                 // crossing every node of it is of the region, read at
                                 // `R`: the carried pairs are not needed there.
                                 f.stage = 1;
+                                f.check_from = @intCast(drop_entries.items.len);
                                 frames.items[fi] = f;
                                 try frames.append(gpa, .{ .op = .inner, .ctx = f.at, .node = f.answer, .summary = f.summary, .carry = f.carry and !f.crossed });
                                 continue;
@@ -459,6 +466,11 @@ pub fn Of(comptime Table: type) type {
                         const crossed = f.crossed or inner.crossed;
                         if (!cyclic) try t.memoPut(gpa, .dag, .{ f.at.int(), f.answer.int(), @intFromBool(f.summary) }, root.int(), crossed);
                         result = .{ .k = if (f.extra != .none) try t.join(gpa, charge, f.extra, root) else root, .crossed = crossed };
+                        if (std.debug.runtime_safety and !t.drop_check_off) {
+                            for (drop_entries.items[f.check_from..]) |e| if (!try t.impliedBy(gpa, v, e, result.?.k))
+                                std.debug.panic("ownership v2: a dropped positions node's entry {d} is not implied by the read {d} of its rebuild (§2.3 *Saturation at two*)", .{ e.int(), result.?.k.int() });
+                            drop_entries.shrinkRetainingCapacity(f.check_from);
+                        }
                     },
                     .inner => if (f.stage == 0) {
                         // The task's one record (above) covers its memo lookups.
@@ -484,6 +496,14 @@ pub fn Of(comptime Table: type) type {
                         const b = vals.pop().?;
                         var k = try t.join(gpa, charge, a.k, b.k);
                         if (t.kappaGet(f.ctx, f.node)) |st| k = try t.join(gpa, charge, st, k);
+                        if (std.debug.runtime_safety and !t.drop_check_off) {
+                            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+                            defer scratch.deinit(gpa);
+                            var drops: std.ArrayList(NodeId) = .empty;
+                            defer drops.deinit(gpa);
+                            try v.shapes.dropsClosure(gpa, &scratch, f.node, &drops);
+                            for (drops.items) |d| if (t.kappaGet(f.ctx, d)) |e| try drop_entries.append(gpa, e);
+                        }
                         const crossed = a.crossed or b.crossed or f.crossed;
                         if (!cyclic) try t.memoPut(gpa, .inner, .{ f.ctx.int(), f.node.int(), @intFromBool(f.summary) }, k.int(), crossed);
                         result = .{ .k = k, .crossed = crossed };
@@ -857,7 +877,7 @@ pub fn Of(comptime Table: type) type {
         /// The aggregate of a cell set (`Agg`), a use mark left out: memoised per
         /// radix node, a node's the disjoint join of its two halves' (`aggJoin`).
         /// Post-order on an explicit stack.
-        pub fn setAgg(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, cells: SetId) Error!Agg {
+        pub fn setAgg(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, cells: SetId) Error!Agg {
             if (cells == .none) return .{};
             if (cellt.sets.branches(cells) == null) {
                 var it = cellt.sets.iterate(cells);
@@ -907,7 +927,7 @@ pub fn Of(comptime Table: type) type {
         /// across them, and the pairs over a base both bind added as `aggAdd`
         /// adds them, the smaller side's cells of that base one by one. No repeat
         /// arises: the keys are disjoint.
-        pub fn aggJoin(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        pub fn aggJoin(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
             if (x.all == .none) return y;
             if (y.all == .none) return x;
             try charge.reserve(gpa, .inspection, 1);
@@ -1001,7 +1021,7 @@ pub fn Of(comptime Table: type) type {
         /// one unfolded cell twice `shared`, a folded one `lost`; `⊤`/approximate
         /// `lost`; arrivals `alias` tells apart the atom, that may be one `lost`;
         /// a split's two sides its κ; two `taken` elements the traversal rule.
-        pub fn sep(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, a: CellId, b: CellId, approx: bool, traversal: ?Traversal) Error!CondId {
+        pub fn sep(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: CellId, b: CellId, approx: bool, traversal: ?Traversal) Error!CondId {
             try charge.reserve(gpa, .inspection, 1);
             if (approx or cellt.origin(a) == .top or cellt.origin(b) == .top) return lost;
             if (a == b) return if (isFolded(cellt, places, a)) lost else shared;
@@ -1013,7 +1033,13 @@ pub fn Of(comptime Table: type) type {
                 .yes => lost,
                 .under => |s| blk: {
                     const k = cellt.splitOf(s).cond;
-                    break :blk if (k == .none) lost else k;
+                    if (k == .none) break :blk lost;
+                    if (k == yes or fails(k)) break :blk k;
+                    // Two parts at one path below two positions of one list:
+                    // `excl` of their one cell, which `k` implies (§2.9 *Two
+                    // positions of one image*).
+                    if (try partsCell(gpa, charge, cellt, places, a, b)) |x| break :blk try t.excl(gpa, charge, x);
+                    break :blk k;
                 },
                 .under_kappa => |container| if (traversal) |tr| (tr.apart(tr.ctx, container, a, b) orelse lost) else lost,
             };
@@ -1022,6 +1048,72 @@ pub fn Of(comptime Table: type) type {
                 (try t.memo_sep.getOrPut(gpa, key)).value_ptr.* = out.int();
             }
             return out;
+        }
+
+        /// The κ of the first split on `c`'s refinement chain that `c` stands
+        /// for many positions of (an `others` or `below` side) and whose list
+        /// may repeat one of them (§2.9 *The repeating split*): its condition
+        /// when that fails (`shared`, `lost`, or none recorded), else null.
+        /// Those positions are not one-to-one with the canonical cell's, so no
+        /// `excl` of that cell may stand for them. One position (`elem`,
+        /// `level`) is one canonical position, whatever the list holds.
+        pub fn repeatingSplit(cellt: *const Cell.Table, c: CellId) ?CondId {
+            var at = c;
+            while (cellt.origin(at).isRefinement()) : (at = cellt.parent(at)) {
+                const o = cellt.origin(at);
+                if (o != .others and o != .below) continue;
+                const x = cellt.get(at);
+                const sp = cellt.findSplit(x.parent, .from(x.b));
+                if (sp == .none) continue;
+                const k = cellt.splitOf(sp).cond;
+                if (k == .none) return lost;
+                if (fails(k)) return k;
+            }
+            return null;
+        }
+
+        /// Whether a list side's split keeps its positions apart: its κ neither
+        /// fails nor is missing (*The repeating split*).
+        fn sideHolds(cellt: *const Cell.Table, sd: CellId) bool {
+            const x = cellt.get(sd);
+            const sp = cellt.findSplit(x.parent, .from(x.b));
+            if (sp == .none) return false;
+            const k = cellt.splitOf(sp).cond;
+            return k != .none and !fails(k);
+        }
+
+        /// `excl c` for a frame cell: the failed κ of a split on its chain whose
+        /// list repeats a position (`repeatingSplit`), which no `excl` stands for.
+        pub fn exclOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, c: CellId) Error!CondId {
+            return repeatingSplit(cellt, c) orelse t.excl(gpa, charge, c);
+        }
+
+        /// The one canonical cell of two parts at one path `q` below two
+        /// disjoint positions of one list (`Cell.listSides`), when `q` takes
+        /// no summary step (`[*]`, `⟲`): then each of its positions is one
+        /// position of the list's element cell, so the split's κ there, read
+        /// at the summary position, implies its `excl`. Null otherwise.
+        fn partsCell(gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: CellId, b: CellId) Error!?CellId {
+            if (cellt.origin(a) != .part or cellt.origin(b) != .part) return null;
+            const sd = cellt.listSides(a, b) orelse return null;
+            if (!sideHolds(cellt, sd[0]) or repeatingSplit(cellt, a) != null or repeatingSplit(cellt, b) != null) return null;
+            try charge.reserve(gpa, .inspection, 1);
+            const x = (try cellt.unrefined(gpa, charge.account, places, a)) orelse return null;
+            if ((try cellt.unrefined(gpa, charge.account, places, b)) != x) return null;
+            const e = (try cellt.unrefined(gpa, charge.account, places, sd[0])) orelse return null;
+            if ((try cellt.unrefined(gpa, charge.account, places, sd[1])) != e) return null;
+            const ex = cellt.get(e);
+            const xx = cellt.get(x);
+            if (ex.origin != xx.origin or ex.a != xx.a or ex.c != xx.c) return null;
+            const ep: Ids.PathId = .from(ex.b);
+            var q: Ids.PathId = .from(xx.b);
+            if (q == ep) return null;
+            while (places.pathDepth(q) > places.pathDepth(ep)) : (q = places.pathParent(q)) {
+                try charge.reserve(gpa, .inspection, 1);
+                const k = places.pathStep(q).kind;
+                if (k == .elem or k == .level) return null;
+            }
+            return if (q == ep) x else null;
         }
 
         // ---- incremental apart reads (§2.9, #1121) ------------------------------------
@@ -1048,6 +1140,10 @@ pub fn Of(comptime Table: type) type {
             bases: u32 = Ids.none_int,
             pairs: CondId = yes,
             hit: bool = false,
+            /// `apartImage`'s images → the list sides that reached each (a set),
+            /// or none once one arrival was no side (§2.9 *Two positions of one
+            /// image*).
+            sides: u32 = Ids.none_int,
         };
 
         pub fn agg(t: *Table, gpa: Allocator, a: Agg) Error!u32 {
@@ -1058,7 +1154,7 @@ pub fn Of(comptime Table: type) type {
         /// `a` with one occurrence of `c` more. `multiset`: a cell met again is
         /// a repeat (two members holding it); otherwise the occurrences join as
         /// a set's do (`a` is one member's reach).
-        pub fn aggAdd(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a0: Agg, c: CellId, approx: bool, multiset: bool) Error!Agg {
+        pub fn aggAdd(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, c: CellId, approx: bool, multiset: bool) Error!Agg {
             var a = a0;
             try charge.reserve(gpa, .inspection, 1);
             const sets = &cellt.sets;
@@ -1167,7 +1263,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// Every cell of `from` added to `a` (`multiset` as `aggAdd`).
-        pub fn aggAll(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a0: Agg, from: SetId, multiset: bool) Error!Agg {
+        pub fn aggAll(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, from: SetId, multiset: bool) Error!Agg {
             var a = a0;
             var it = cellt.sets.iterate(from);
             while (it.next()) |e| a = try t.aggAdd(gpa, charge, cellt, places, a, .from(e.key), e.value == 1, multiset);
@@ -1175,7 +1271,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// Two aggregates as one: the smaller's cells added to the larger's.
-        pub fn aggMerge(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg, multiset: bool) Error!Agg {
+        pub fn aggMerge(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg, multiset: bool) Error!Agg {
             const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
             // What the smaller side adds, its subtrees the larger shares
             // skipped whole (a DAG's two sides share most of their reach).
@@ -1209,14 +1305,14 @@ pub fn Of(comptime Table: type) type {
         /// a leaf against a set is one `aggAdd`. So two sets that both grew pay
         /// their changed spines, never the smaller side's size. The recursion is
         /// the key width.
-        pub fn aggMergeSets(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: SetId, b: SetId) Error!Agg {
+        pub fn aggMergeSets(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId) Error!Agg {
             var out = try t.aggMergeSetsAt(gpa, charge, cellt, places, a, b);
             // A member's own approximation, which `all`'s join forgets.
             out.lost_extra = out.lost_extra or try t.anyLost(gpa, charge, cellt, a) or try t.anyLost(gpa, charge, cellt, b);
             return out;
         }
 
-        pub fn aggMergeSetsAt(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: SetId, b: SetId) Error!Agg {
+        pub fn aggMergeSetsAt(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId) Error!Agg {
             if (a == .none) return t.setAgg(gpa, charge, cellt, places, b);
             if (b == .none) return t.setAgg(gpa, charge, cellt, places, a);
             const sets = &cellt.sets;
@@ -1265,7 +1361,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `aggMerge` of two multisets (an atom's sides): an empty side is the
         /// other, as it is.
-        pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
             if (x.all == .none) return y;
             if (y.all == .none) return x;
             return t.aggMerge(gpa, charge, cellt, places, x, y, true);
@@ -1414,7 +1510,43 @@ pub fn Of(comptime Table: type) type {
         /// The apart condition of `group`'s cells' images (`image` maps one), a
         /// multiset: each group is extended from its predecessor's image
         /// (`group_prov`), `memo` holding the images built under this `image`.
-        pub fn apartImage(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, group: SetId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), CellId) Error!CellId) Error!CondId {
+        /// One arrival `c` at image `m` (§2.9 *Two positions of one image*):
+        /// a repeat, as `aggAdd`'s multiset counts it, unless `m` is symbolic,
+        /// off a fold, and every earlier arrival at it is another side of one
+        /// list split (`Cell.listSide`, the sides kept per image in `a.sides`):
+        /// then `c` is another position of `m` and owes `excl m`. Constant
+        /// work per arrival.
+        fn addArrival(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, c: CellId, m: CellId) Error!Agg {
+            try charge.reserve(gpa, .inspection, 1);
+            const at_side = cellt.listSide(c);
+            const sides_now = t.mapGet(a0.sides, m.int());
+            const met = cellt.sets.get(a0.all, m.int()) != null;
+            var positions = false;
+            if (met and repeatingSplit(cellt, c) == null) if (at_side) |sd| if (sideHolds(cellt, sd)) if (sides_now) |raw| if (raw != Ids.none_int) {
+                const set: SetId = .from(raw);
+                var it = cellt.sets.iterate(set);
+                const one: CellId = .from(it.next().?.key);
+                const o = cellt.origin(m);
+                positions = o.isSymbolic() and o != .top and !onFold(places, .from(cellt.get(m).b)) and
+                    cellt.sameSplit(one, sd) and !cellt.sets.member(set, sd.int());
+            };
+            var a = try t.aggAdd(gpa, charge, cellt, places, a0, m, false, !positions);
+            if (positions) {
+                a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.excl(gpa, charge, m));
+                a.sides = try t.mapPut(gpa, charge, a.sides, m.int(), (try cellt.sets.insert(gpa, charge, .from(sides_now.?), at_side.?.int(), 0)).int());
+            } else if (!met) {
+                a.sides = try t.mapPut(gpa, charge, a.sides, m.int(), if (at_side) |sd| (try cellt.sets.insert(gpa, charge, .none, sd.int(), 0)).int() else Ids.none_int);
+            }
+            return a;
+        }
+
+        fn onFold(places: *const Cell.Places, path: Ids.PathId) bool {
+            var q = path;
+            while (places.pathParent(q) != .none) : (q = places.pathParent(q)) if (places.pathStep(q).kind == .level) return true;
+            return false;
+        }
+
+        pub fn apartImage(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, group: SetId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), CellId) Error!CellId) Error!CondId {
             var chain: std.ArrayList([2]u32) = .empty;
             defer chain.deinit(gpa);
             var at = group;
@@ -1448,13 +1580,13 @@ pub fn Of(comptime Table: type) type {
             }
             if (base != .none) {
                 var it = cellt.sets.iterate(base);
-                while (it.next()) |e| start = try t.aggAdd(gpa, charge, cellt, places, start, try image(ctx, .from(e.key)), false, true);
+                while (it.next()) |e| start = try addArrival(t, gpa, charge, cellt, places, start, .from(e.key), try image(ctx, .from(e.key)));
                 const got = try t.agg(gpa, start);
                 (try memo.getOrPut(gpa, .{base.int()})).value_ptr.* = got;
             }
             var a = start;
             while (chain.pop()) |x| {
-                a = try t.aggAdd(gpa, charge, cellt, places, a, try image(ctx, .from(x[1])), false, true);
+                a = try addArrival(t, gpa, charge, cellt, places, a, .from(x[1]), try image(ctx, .from(x[1])));
                 const got = try t.agg(gpa, a);
                 (try memo.getOrPut(gpa, .{x[0]})).value_ptr.* = got;
             }
@@ -1473,7 +1605,7 @@ pub fn Of(comptime Table: type) type {
 
         /// One key holding each of `cells` once: a source node's own contents at
         /// its position (a cell's approximation is its set value).
-        pub fn classesOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, key: u32, cells: SetId) Error!ClassAggs {
+        pub fn classesOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, key: u32, cells: SetId) Error!ClassAggs {
             if (cells == .none) return .{};
             const a = try t.aggAll(gpa, charge, cellt, places, .{}, cells, false);
             return .{ .map = try t.mapPut(gpa, charge, Ids.none_int, key, try t.agg(gpa, a)), .len = 1 };
@@ -1516,7 +1648,7 @@ pub fn Of(comptime Table: type) type {
                 try charge.reserve(gpa, .inspection, 1);
                 const c: CellId = .from(e.key);
                 const o = cellt.origin(c);
-                if (o.isSymbolic() and o != .top and places.isSummary(.from(cellt.get(c).b))) k = try t.@"and"(gpa, charge, k, try t.excl(gpa, charge, c));
+                if (o.isSymbolic() and o != .top and places.isSummary(.from(cellt.get(c).b))) k = try t.@"and"(gpa, charge, k, try t.exclOf(gpa, charge, cellt, c));
             }
             return k;
         }
@@ -1781,7 +1913,7 @@ pub fn Of(comptime Table: type) type {
 
         /// Two arms of a choice: a cell in both is still one (the maximum), a
         /// repeat in either stays a repeat.
-        pub fn aggChoice(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: Agg, y: Agg) Error!Agg {
+        pub fn aggChoice(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
             const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
             var a = try t.aggMerge(gpa, charge, cellt, places, big, small, false);
             a.dups = try cellt.sets.unionWith(gpa, charge, a.dups, small.dups);
@@ -1813,7 +1945,7 @@ pub fn Of(comptime Table: type) type {
         /// `lost`, the arrivals form ONE `apart` group, pairs over one base are
         /// decided one by one; concrete cells are apart by construction.
         /// `items` is scratch and is reordered.
-        pub fn apart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, items: []Item, traversal: ?Traversal) Error!CondId {
+        pub fn apart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, items: []Item, traversal: ?Traversal) Error!CondId {
             try charge.reserve(gpa, .inspection, @intCast(items.len));
             std.mem.sort(Item, items, {}, struct {
                 fn lessThan(_: void, x: Item, y: Item) bool {
@@ -1871,7 +2003,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// The pairs of `arrivals` over one base that `alias` does not tell apart.
-        pub fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
+        pub fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
             var acc: CondId = yes;
             // By base, then by split: one split's members answer `sep` alike
             // (`under` it), so its run is one pair; runs pair across (linear).
@@ -2218,7 +2350,7 @@ pub fn Of(comptime Table: type) type {
                 const o = cellt.origin(c);
                 if (e.value == 1 or o == .top) return lost;
                 if (isConcrete(o) or o == .mark or !isFolded(cellt, places, c)) continue;
-                acc = try t.@"and"(gpa, charge, acc, try t.excl(gpa, charge, c));
+                acc = try t.@"and"(gpa, charge, acc, try t.exclOf(gpa, charge, cellt, c));
             }
             return acc;
         }
@@ -2234,7 +2366,7 @@ pub fn Of(comptime Table: type) type {
                 const o = cellt.origin(c);
                 if (e.value == 1 or o == .top) return lost;
                 if (isConcrete(o) or o == .mark) continue;
-                acc = try t.@"and"(gpa, charge, acc, try t.excl(gpa, charge, c));
+                acc = try t.@"and"(gpa, charge, acc, try t.exclOf(gpa, charge, cellt, c));
             }
             return acc;
         }
@@ -2488,6 +2620,68 @@ pub fn Of(comptime Table: type) type {
 
         pub fn below(s: Step) bool {
             return s.kind == .elem or s.kind == .level;
+        }
+
+        /// Whether condition `e` adds nothing to `r` (§2.3 *Saturation at two*,
+        /// *Exactness of a dropped entry*): `e ⊑ r` in the lattice once each
+        /// `sep` and `apart` atom of `e` is read as its pairs, a pair being
+        /// covered by a `sep` or an `apart` of `r` that holds both cells. A
+        /// `runtime_safety` check's test: it walks the `and` trees itself and
+        /// writes no memo, so it changes no later read or charge.
+        pub fn impliedBy(t: *Table, gpa: Allocator, v: View, e: CondId, r: CondId) Error!bool {
+            if (e == yes or e == r or r == shared) return true;
+            if (e == shared) return false;
+            if (r == lost) return true;
+            if (e == lost or r == yes) return false;
+            var es: std.ArrayList(CondId) = .empty;
+            defer es.deinit(gpa);
+            var rs: std.ArrayList(CondId) = .empty;
+            defer rs.deinit(gpa);
+            try t.atomsOf(gpa, e, &es);
+            try t.atomsOf(gpa, r, &rs);
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const g: Charge = .growth(&scratch);
+            const sets = &v.cells.sets;
+            next: for (es.items) |a| {
+                if (std.mem.indexOfScalar(CondId, rs.items, a) != null) continue;
+                const d = t.get(a);
+                if (d.atom != .sep and d.atom != .apart) return false;
+                // One `apart` of `r` over a superset covers every pair at once.
+                if (d.atom == .apart) for (rs.items) |b| {
+                    const db = t.get(b);
+                    if (db.atom == .apart and try sets.subset(gpa, g, .from(d.a), .from(db.a))) continue :next;
+                };
+                var cells: std.ArrayList(u32) = .empty;
+                defer cells.deinit(gpa);
+                if (d.atom == .sep) try cells.appendSlice(gpa, &.{ d.a, d.b }) else {
+                    var it = sets.iterate(.from(d.a));
+                    while (it.next()) |c| try cells.append(gpa, c.key);
+                }
+                for (cells.items, 0..) |x, i| for (cells.items[i + 1 ..]) |y| {
+                    const pair = for (rs.items) |b| {
+                        const db = t.get(b);
+                        if (db.atom == .sep and db.a == @min(x, y) and db.b == @max(x, y)) break true;
+                        if (db.atom == .apart and sets.member(.from(db.a), x) and sets.member(.from(db.a), y)) break true;
+                    } else false;
+                    if (!pair) return false;
+                };
+            }
+            return true;
+        }
+
+        /// The atoms of `c`'s `and` tree, each once, read with no memo.
+        pub fn atomsOf(t: *Table, gpa: Allocator, c: CondId, out: *std.ArrayList(CondId)) Error!void {
+            var stack: std.ArrayList(CondId) = .empty;
+            defer stack.deinit(gpa);
+            try stack.append(gpa, c);
+            while (stack.pop()) |x| {
+                if (x == yes) continue;
+                const d = t.get(x);
+                if (d.kind == .@"and") {
+                    try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+                } else if (std.mem.indexOfScalar(CondId, out.items, x) == null) try out.append(gpa, x);
+            }
         }
 
         /// `κ_a(a) ⊑ κ_b(b)` at every position the two structures put at one

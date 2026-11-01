@@ -23,6 +23,9 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 5 | **Class and style helpers**: `classes`, `styles`, `classSet`, `styleMap` | **landed 2026-10-02**, below; `safeUrl` stays |
 | 6 | **What was left**: `safeUrl` (`runtime.js`), `Browser.mountAt` and `Browser.programs` (`Browser.js`) | **landed**, at the end: `runtime.js` exports nothing and `Browser.js` is gone |
 | 7 | **`Hosted.js`**: outlets, jobs, after-render work, taps and relays | **landed 2026-10-02**, below; the keys followed on 2026-10-26 (`plans/core-in-beni.md`, step 4b) |
+| 8 | **`Dom.js`**: `focus`, `blur`, `box`, `scrollTo`, `scrollIntoView`, `viewport` | **landed 2026-10-29**, below: the sibling deleted |
+| 9 | **`Browser/Events.js`** (`size`, `hidden`) and **`browser-inline`'s `Tea.js`** (`sandbox`, `element`) | **built 2026-10-29**, #1228, below: both siblings deleted |
+| 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 
 ## Step 1 — slot and mount (2026-10-02)
@@ -914,3 +917,120 @@ compiler and the branch's and compared as brotli 11 over each bundle: 124 061 �
 raw −212), 5 smaller — the five that reach a moved export, `HelloWorker` −35, `ObjectCounter`
 −30, `ObjectHolders` −8, `ObjectIsolation` −7, `ObjectStorage` −5 — and 8 byte for byte, none
 larger. The full lines are in the pull request's body.
+
+## Step 8 — `Dom.js` (2026-10-29)
+
+**What moved.** The six DOM capabilities of `boundary.md` §9.8.6 — `focus`, `blur`, `box`,
+`scrollTo`, `scrollIntoView` and `viewport` — are beni over `Js` in `Dom.beni`, beside the full
+screen functions that were written so on 2026-10-23, and `platforms/browser/Dom.js` is deleted.
+One private function finds the node: `Js.call (Js.global "document") "getElementById"
+[ Js.from id ]`, and `Js.isNull` on the answer is `Err (NotFound id)`. Each capability then calls
+the node's method through `Js.call` (`focus`, `blur`, `getBoundingClientRect`, `scrollTo`,
+`scrollIntoView`), and `viewport` reads `innerWidth`, `innerHeight`, `scrollX` and `scrollY` with
+`Js.global`. Every body is `impure` by inference, as the `foreign` declared. None of these host
+calls documents a failure, so nothing is caught (`CLAUDE.md` rule 9), as the sibling caught
+nothing.
+
+**What changes shape.** `Dom.Error`, `Box` and `Viewport` crossed the boundary through the
+`foreign` declarations, so every release build kept `NotFound`'s string tag and the two records'
+field names for the sibling to write (`boundary.md` §4, *What JavaScript may read of a beni
+value*). They cross nothing now: `Result` gets integer tags, and `NotFound id` is written as `id`,
+a type of one constructor with one field being its field (`backend.md` §9). The records keep
+their field names where `box` is live: `box` reads the host rectangle's `x`, `y`, `width` and
+`height` with `Js.get`, and a field name the build also writes as a plain property is never
+renamed (`backend.md` §9 item 4's closed list), so a page that measures a node ships those four
+names as before, and a page that only reads the viewport renames `height` and `width`.
+`emit/release/tea/DomCapabilities` pins the shape, and `browser/tea/DomCapabilities` runs all six,
+and the `NotFound` of the five that take an id, under happy-dom in both builds and in headless
+Chrome (`DomCapabilities.chrome-expected`, the layout of a fixed box).
+
+**Sizes.** Measured against `master` at `cdd26f460`, both compilers ReleaseSafe, release brotli 11
+over each concatenated bundle (`zig-out/scratch/pages.mjs` over the `browser/` corpus, 416 of 420
+pages built on both sides; `bench/size.mjs`). The six pages that use `Dom` are smaller in raw and
+in brotli bytes: `tea/AfterRenderFocus` 4 783 → 4 764 (−19, raw −41), `tea/FocusInFlush`
+3 218 → 3 192 (−26, raw −62), `tea/LogCommandContext` 9 777 → 9 748 (−29, raw −72), `tea/TodoMVC`
+9 007 → 8 960 (−47, raw −103), `tea/TodoRouting` 8 301 → 8 258 (−43, raw −117), and the new
+`tea/DomCapabilities` 3 536 → 3 518 (−18, raw −126); the 410 other pages are byte-identical, as is
+every one of the 642 node lines, and the TodoMVC app line of `size.mjs` is −47. The first cut
+wrote each capability over `Result.map` and a `done` helper, and two pages that only focus grew by
+35 and 17 raw bytes; the bodies then took the sibling's own shape — one `found id use` with the
+continuation, a block lambda per capability — and every page fell below the sibling's. No speed
+claim: a capability is one host call either way.
+
+## Step 9 — `Browser/Events.js` and `browser-inline`'s `Tea.js` (2026-10-29)
+
+**What moved.** Two siblings of two exports each. `Browser.Events.size` is a record of
+`Js.global "innerWidth"` and `"innerHeight"`, and the private `hidden`, which `visibility` reads,
+is `Js.same (Js.get (Js.global "document") "visibilityState") (Js.from "hidden")`: an `===` on a
+string, so a page that reads its visibility ships no `String.eq`. Both are `impure` by inference,
+as the `foreign`s declared. `browser-inline`'s `Tea.sandbox` and `Tea.element` take the shape
+`document` and `application` have had since `browser-inline.md` §10.5: a body `unreachable app`
+that no call reaches, since the `inline` lowering compiles each call as the program's mount
+(`Lowering.constructs`) and refuses a constructor used as a value. The platform has no sibling
+left, so a development build copies none. Nothing is caught: none of the four reads can fail.
+
+**What changes shape.** `Size` keeps its field names only where `Dom.box` is live: `box` reads
+`width` and `height` of a rectangle as plain properties, and item 4's closed list pins a text the
+build writes both ways; a page that reads the window and measures no node renames them
+(`{c:globalThis.innerHeight,b:globalThis.innerWidth}`), which is right, since no JavaScript reads
+a `Size`. `Visibility`'s tags were integers already: the `foreign` returned a `Bool`. `emit/release/tea/WindowSize` pins
+the two reads in place. The `word-bodies.txt` rows of `Tea.sandbox` and `Tea.element` move from
+`Tea.js` to `Tea.beni`, with the hash of the beni body; their trusted `entry` words stand, since
+the body is never reached (`ownership-checker.md` §24.8). One representation-key golden moves,
+`repkeys/inline/ArmPiece`: the unit type's key loses its `wild` mark, since the `foreign`
+`sandbox`'s annotation named `⊤` as a closed type a live `foreign` reaches, and no `foreign` does
+now; JavaScript reads no unit value, so nothing observes it.
+
+**Sizes.** Measured against `master` at `eedceaaa0` as step 8 was (428 of 433 `browser/` pages
+built on both sides; `bench/size.mjs`). Four pages move, each smaller in raw and brotli bytes:
+`tea/WindowEvents` 4 193 → 4 170 (−23, raw −62), `tea/DefectReleasesHost` 7 125 → 7 117 (−8,
+raw −21), and two inline pages, `inline/InputInSend` 1 074 → 1 060 (−14) and
+`inline/PointerInSend` 1 407 → 1 389 (−18), where `Cmd` gets integer tags: the `foreign`
+`Tea.element`'s annotation named `Cmd msg`, which kept `Cmd`, `Main.Msg`, `List (Cmd Msg)` and
+`⊤` in the wild set, and no `foreign` names them now (`{$:"Batch",…}` → `{$:2,…}`, `case "None"`
+→ `case 0`; no hand-written code reads `Cmd`'s tags). The 424 other pages and every `size.mjs`
+line are byte for byte. A release build of an inline page never shipped `Tea.js`'s exports
+(`Minify` keeps only what a build imports), so an inline page's release bytes change only where
+a type left the wild set, as on those two; its development tree loses the sibling file.
+
+## Step 10 — `node`'s `Io.js` (2026-10-29)
+
+**What moved.** The two `foreign`s of `Io.beni`. `finish` reads the fiber's `Exit`: `Done program`
+writes the `Program`'s `out` to standard output when it is not empty and sets `process.exitCode`
+to its `code`, `Cancelled` sets 130; a `Program` is the host object `Node`'s sibling builds, read
+by `Js.get`. `startRead` makes an `AbortController`, asks `process.getBuiltinModule` for
+`node:fs/promises` at each call — so a platform that replaces `readFile` (`run/ReadFileDefect`) is
+seen, as the sibling saw it through `syncBuiltinESMExports` — and calls `readFile` with the
+encoding and the signal; `then` takes two lambdas, the fulfilment resuming the fiber with `Ok`,
+the rejection handler `rejected`: an `AbortError` while the signal is aborted is the canceller's
+own and resumes no one; an `Error` whose `code` is a key of the table (`codes`, one `Js.object`
+of the twelve codes to their constructors, read by its own keys with `Object.hasOwn` and
+`Reflect.get`) resumes with that `FileError`; anything else is thrown again, a rejection nothing
+handles, so Node reports it and exits 1 (`CLAUDE.md` rule 9). A `case` over the twelve strings
+was the first cut; it made the two programs that read a file 333 raw bytes larger than the
+sibling, and the table is the sibling's own shape. The canceller aborts the controller.
+Both are `impure` by inference, as the `foreign`s declared, and `startRead`'s lambdas are `sync`.
+`Io.js` keeps only the newer `startReadDir`, added on the base while this move was pending;
+its directory listing, errors, ordering and cancellation stay unchanged. The `node` platform
+also keeps `Node.js`, `Http/Server.js` and `WebSocket.js`.
+
+**What changes shape.** `Exit` and `Result FileError String` crossed the boundary through the
+`foreign` annotations; they cross nothing now, so a release build gives `Exit` and `Result`
+integer tags when no other boundary pins them. The newer `startReadDir` still exposes
+`Result FileError (List Entry)`, so `Result` keeps string tags in a build that reaches it.
+`FileError` keeps its string tags: the table holds its constructors through
+`Js.from`, a use at the type that pins it (`backend.md` §9 item 4), as the sibling's annotation
+did. `Program` stays a `foreign type` of `Node`, read by its two plain properties.
+`emit/release/app/IoReadFile` pins the shape; `run/SuspendReadFile`, `run/ReadFileErrors` (the
+code table through real failures) and `run/ReadFileDefect` (an `EIO` rejection crashes the
+program) run both builds.
+
+**Sizes.** Measured against `master` at `e359de0ff` as step 8 was (`bench/size.mjs`; the
+`browser/` corpus for the pages, which do not reach the `node` platform). The 642 node lines:
+1 344 511 → 1 341 985 B brotli (−2 526, −0.19 %), raw −7 265; 142 smaller, 483 equal, 17 larger
+— each of the 17 by 1 to 16 B at 38 fewer raw bytes, the compressor on `finish`'s shorter code,
+accepted under R47-3's reading (the owner, 2026-10-28). The three programs that read a file:
+`run/ReadFileErrors` 2 402 → 2 367 (−35, raw −54), `run/ReadFileDefect` +14 at raw −25,
+`run/SuspendReadFile` +6 at raw −23. Every page and every `size.mjs` page line is byte for byte.
+The first cut, with the code table as a `case` over twelve strings, made the two `readFile`
+programs 333 raw bytes larger; the sibling's object table put them below it.

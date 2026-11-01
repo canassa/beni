@@ -1987,7 +1987,9 @@ pub type FileError
 The names are what a reader of the program would say, not the errno (Rust's `io::ErrorKind` names
 the same set the same way). The `AbortError` of the primitive's own `AbortSignal` is not an answer:
 the fiber was cancelled and the rejection is dropped. **Any other rejection is re-thrown** from the
-handler, so it is a defect, below.
+handler, so it is a defect, below. *As built 2026-10-29:* the read's start, its rejection handler
+and `Io.run`'s `finish` are beni over `Js` (`plans/runtime-in-beni.md` step 10), and `Io.js` is
+gone.
 
 *Amended 2026-10-29: `Io.readDir`* (#1210; `CLAUDE.md` rules 7 and 9). `Io` lists a directory in the
 shape of `readFile`: a suspending read on the calling fiber, one constructor per failure Node

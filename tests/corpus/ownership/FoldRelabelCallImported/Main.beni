@@ -1,0 +1,55 @@
+-- ownership (project): `FoldRelabelCall` with the trees and calls in
+-- another module: a fold relabelled through imported calls keeps the steps
+-- it saw. `incAll` over `shared`'s tree, directly, through the identity,
+-- through a wrapper and through both, is refused; a tree built at the call
+-- accepts with distinct leaves and is refused with one shared list. v1
+-- accepts the `…Apart` twins (#1495): known entries.
+import Trees exposing (Rose)
+
+
+pub direct : ⊤ → Rose
+direct ⊤ = Trees.incAll (Trees.shared ⊤)
+
+
+pub directApart : ⊤ → Rose
+directApart ⊤ = Trees.incAll (Trees.apart ⊤)
+
+
+pub viaIdent : ⊤ → Rose
+viaIdent ⊤ = Trees.incAll (Trees.ident (Trees.shared ⊤))
+
+
+pub viaIdentApart : ⊤ → Rose
+viaIdentApart ⊤ = Trees.incAll (Trees.ident (Trees.apart ⊤))
+
+
+pub viaWrap : ⊤ → Rose
+viaWrap ⊤ = Trees.incAll (Trees.rewrap (Trees.shared ⊤))
+
+
+pub viaWrapApart : ⊤ → Rose
+viaWrapApart ⊤ = Trees.incAll (Trees.rewrap (Trees.apart ⊤))
+
+
+pub viaTwo : ⊤ → Rose
+viaTwo ⊤ = Trees.incAll (Trees.ident (Trees.rewrap (Trees.shared ⊤)))
+
+
+pub viaTwoApart : ⊤ → Rose
+viaTwoApart ⊤ = Trees.incAll (Trees.ident (Trees.rewrap (Trees.apart ⊤)))
+
+
+pub literalViaIdent : ⊤ → Rose
+literalViaIdent ⊤ =
+    Trees.incAll (Trees.ident (Rose [] [ Rose [] [ Rose [ 1 ] [], Rose [ 2 ] [] ] ]))
+
+
+pub literalViaTwo : ⊤ → Rose
+literalViaTwo ⊤ =
+    Trees.incAll (Trees.ident (Trees.rewrap (Rose [] [ Rose [] [ Rose [ 1 ] [], Rose [ 2 ] [] ] ])))
+
+
+pub literalSharedViaTwo : ⊤ → Rose
+literalSharedViaTwo ⊤ =
+    l = [ 1 ]
+    Trees.incAll (Trees.ident (Trees.rewrap (Rose [] [ Rose [] [ Rose l [], Rose l [] ] ])))

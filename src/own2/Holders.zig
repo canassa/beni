@@ -44,6 +44,7 @@ const Summary = @import("Summary.zig");
 const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
 const Exits = @import("Exits.zig");
+const Joins = @import("Joins.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const CellId = Ids.CellId;
@@ -86,7 +87,7 @@ pub const Demand = struct {
 };
 
 /// `other_paths`: the operand is the rest of the written argument itself, the
-/// paths a call's class does not write (`Transfer.otherPaths`), not another
+/// paths a call's class does not write (`TransferBeside.otherPaths`), not another
 /// operand of the operation: what the message says it reaches (#1380).
 pub const Operand = struct { value: Value, inst: u32, other_paths: bool = false };
 
@@ -284,6 +285,15 @@ const Index = struct {
     desc: Descent = .{},
     exits: Exits.Memo = .{},
     kid_cache: std.ArrayList([2]u32) = .empty,
+    /// Per holder: `lastPoint`, `none` until asked.
+    last_point: std.ArrayList(u32) = .empty,
+    /// The join index (§2.8 step 3, *The join index*, #1510): per node
+    /// whose closure walk entered more than `wide` states, `deep`; per
+    /// deep node read, its joins flattened once (`Joins`).
+    deep: Ids.FixedDict(1) = .{},
+    jx: Joins.Index = .{},
+    /// The runtime-safety walks read no index.
+    no_index: bool = false,
 
     fn deinit(ix: *Index) void {
         const info = @typeInfo(Index).@"struct";
@@ -780,8 +790,16 @@ const Index = struct {
             try ix.entries.append(ix.gpa, .{ .tree = t, .rank2 = ix.rank2(h.start), .point = h.start, .start = h.start, .holder = hi, .atom = none, .use = .none, .exact_path = .none, .any_path = .none, .exact_ok = !top, .element = false, .split = none, .until = h.end });
             return;
         }
+        // Every entry and heavy answer is a use after the pair's first
+        // demand: with none, the cover is not walked (§2.8, #1467).
+        if (try ix.lastPoint(hi) <= ix.occ.items[life.start].point) return;
         blocks.clearRetainingCapacity();
-        try ix.cover(h, grp.x, ix.targets.items[grp.target].c, blocks);
+        // A refinement of another split at the target's own canonical
+        // position (two matches of one recursive value) is held where it is
+        // held: neither chain reaches the other, so its hold is the
+        // target's at the same path (#1491).
+        const c = ix.targets.items[grp.target].c;
+        try ix.cover(h, grp.x, if (try ix.samePosition(grp.x, c)) grp.x else c, blocks);
         if (blocks.items.len == 0) return;
         // `element` (§2.8 condition 5): the first hold this use covers is
         // approximate in itself, whatever the base's cells.
@@ -828,6 +846,21 @@ const Index = struct {
                 }
             }
         }
+    }
+
+    /// The latest point of binding holder `hi`'s uses (`cover`'s range),
+    /// 0 when it has none; memoised per holder, a record per use once.
+    fn lastPoint(ix: *Index, hi: u32) Error!u32 {
+        if (ix.last_point.items.len == 0) try ix.last_point.appendNTimes(ix.gpa, none, ix.frame.holders.len);
+        if (ix.last_point.items[hi] != none) return ix.last_point.items[hi];
+        const h = ix.frame.holders[hi];
+        const index = ix.frame.index;
+        const all = index.rangeOf(ix.env.places, h.who, &.{}, true);
+        try ix.rec(all.len + 1);
+        var last: u32 = 0;
+        for (all.start..all.start + all.len) |i| last = @max(last, index.get(.from(@intCast(i))).point);
+        ix.last_point.items[hi] = last;
+        return last;
     }
 
     /// The earliest use of block `b` after `p` and compatible with it, ties
@@ -897,6 +930,23 @@ const Index = struct {
         const places = ix.env.places;
         const summary = (places.isSummary(f) or stands(cellt, places, x)) and !isMaterialised(cellt, c);
         return !(approx or summary or cellt.origin(x) == .top or (alt and !places.isSummary(f)));
+    }
+
+    /// Whether `x` and `c` stand at one canonical position, one of them a
+    /// refinement, with neither on the other's chain (`Cell.stepsTo`): two
+    /// splits' sides of one recursive value; a side and the canonical cell a
+    /// call writes; a side of a call's answer, relabelled to that canonical
+    /// cell, and a match's refinement of it (#1491).
+    fn samePosition(ix: *Index, x: CellId, c: CellId) Error!bool {
+        const cellt = ix.env.cells;
+        if (x == c or !(cellt.origin(x).isRefinement() or cellt.origin(c).isRefinement())) return false;
+        try ix.rec(2);
+        const ux = (try cellt.unrefined(ix.gpa, ix.env.account(), ix.env.places, x)) orelse return false;
+        const uc = (try cellt.unrefined(ix.gpa, ix.env.account(), ix.env.places, c)) orelse return false;
+        if (ux != uc) return false;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(ix.gpa);
+        return !(try cellt.stepsTo(ix.env.places, x, c, ix.gpa, &steps)) and !(try cellt.stepsTo(ix.env.places, c, x, ix.gpa, &steps));
     }
 
     /// The steps from a hold of `x` down to `c` (§2.8): a `⟲` first when `x`
@@ -972,12 +1022,16 @@ const Index = struct {
     /// `closure(n0, x, c)`: one Tarjan walk (`Shape.Table.cycleWalk`) over
     /// what each state's closure is read from, its sides, so a cycle with
     /// no `node` on it (#1314's knot, #1335) ends at its least fixed point.
+    /// A node whose walk entered more than `wide` states is `deep`: its
+    /// later closures are read from its join index (`closureIndexed`).
     fn closure(ix: *Index, n0: NodeId, x: CellId, c: CellId) Error!u32 {
         const key: Key = .{ n0.int(), x.int(), c.int(), 0 };
         if (ix.clo_of.get(key)) |hit| return hit;
+        if (try ix.joinsOf(n0)) |j| return ix.closureIndexed(j, n0, x, c);
         var w: CloWalk = .{ .ix = ix, .x = x, .c = c };
         defer w.deinit();
         try ix.env.shapes.cycleWalk(ix.gpa, n0, &w);
+        if (!ix.no_index and w.entered > wide) (try ix.deep.getOrPut(ix.gpa, .{n0.int()})).value_ptr.* = 0;
         return ix.clo_of.get(key).?;
     }
 
@@ -1012,6 +1066,8 @@ const Index = struct {
         /// A cycle's members' states and bits while it is settled.
         lists: std.ArrayList(std.ArrayList(St)) = .empty,
         bits: std.ArrayList(Bits) = .empty,
+        /// The states entered: what makes the walk's root `deep`.
+        entered: u32 = 0,
 
         fn deinit(w: *CloWalk) void {
             const gpa = w.ix.gpa;
@@ -1027,6 +1083,7 @@ const Index = struct {
         pub fn from(w: *CloWalk, n: NodeId) Error![2]NodeId {
             const ix = w.ix;
             try ix.rec(1);
+            w.entered += 1;
             const two = try ix.sidesOf(n, false);
             if (!ix.env.cells.sets.member(try ix.reach(n), w.x.int())) {
                 try ix.clo_of.put(ix.gpa, w.key(n), @intCast(ix.clos.items.len));
@@ -1149,6 +1206,114 @@ const Index = struct {
             };
         }
     };
+
+    // ---- the join index (§2.8 step 3, *The join index*, #1510) -------------
+
+    fn jctx(ix: *Index) Joins.Ctx {
+        return .{ .gpa = ix.gpa, .charge = ix.env.charge, .shapes = ix.env.shapes, .cells = ix.env.cells };
+    }
+
+    /// `n`'s joins when `n` is deep and they meet no view.
+    fn joinsOf(ix: *Index, n: NodeId) Error!?Joins.Joins {
+        if (ix.no_index or ix.deep.get(.{n.int()}) == null) return null;
+        return ix.jx.get(ix.jctx(), n);
+    }
+
+    /// The route flags of combination `k` (`Joins.Member.combos`).
+    fn comboSt(k: u2) St {
+        return .{ .node = .none, .alt = k & 1 != 0, .cast = k & 2 != 0 };
+    }
+
+    /// What the members of `j` whose reach holds `x` give, with the folded
+    /// members' hold bits: their own holds under each combination's flags,
+    /// into `bits`, and each node's or delta's children that reach `x`, by
+    /// `kids` once a member and combination.
+    fn readJoins(ix: *Index, j: Joins.Joins, x: CellId, c: CellId, bits: *Bits, ctx: anytype, comptime kids: fn (@TypeOf(ctx), Joins.Member, St, Ids.Range) Error!void) Error!void {
+        const f = Joins.folded(ix.env.cells, j, x);
+        bits.* = bitsOr(bits.*, .{ .any = f.any, .plain = f.plain, .alt = f.alt });
+        var hits: std.ArrayList(u32) = .empty;
+        defer hits.deinit(ix.gpa);
+        try ix.jx.hits(ix.jctx(), j, x, &hits);
+        for (hits.items) |hi| {
+            const m = ix.jx.members.items[hi];
+            try ix.rec(1);
+            var own: Bits = .{};
+            if (try ix.holdAt(.{ .node = m.node }, x, c)) |hd| own = .{ .any = true, .plain = !hd.approx and !hd.several, .alt = !hd.approx and hd.several };
+            var r: Ids.Range = .empty;
+            if (m.frontier) {
+                const lo: u32 = @intCast(ix.kid_cache.items.len);
+                try ix.kidsOf(m.node, x, &ix.kid_cache);
+                r = .{ .start = lo, .len = @as(u32, @intCast(ix.kid_cache.items.len)) - lo };
+            }
+            for (0..4) |k| if (m.combos & (@as(u4, 1) << @intCast(k)) != 0) {
+                const s = comboSt(@intCast(k));
+                bits.* = bitsOr(bits.*, bitsUnder(s, own));
+                if (r.len > 0) try kids(ctx, m, s, r);
+            };
+        }
+    }
+
+    /// `closure(n0, x, c)` read from `n0`'s join index `j`: the same bits
+    /// and states (*The join index*'s lemma), each member's state once a
+    /// combination. Under runtime safety, checked against the walk.
+    fn closureIndexed(ix: *Index, j: Joins.Joins, n0: NodeId, x: CellId, c: CellId) Error!u32 {
+        var bits: Bits = .{};
+        const start: u32 = @intCast(ix.pool.items.len);
+        try ix.readJoins(j, x, c, &bits, ix, struct {
+            fn kids(i: *Index, m: Joins.Member, s: St, r: Ids.Range) Error!void {
+                try i.pool.append(i.gpa, .{ .node = m.node, .alt = s.alt, .cast = s.cast, .kids = r });
+            }
+        }.kids);
+        const id: u32 = @intCast(ix.clos.items.len);
+        try ix.clos.append(ix.gpa, .{ .start = start, .len = @as(u32, @intCast(ix.pool.items.len)) - start, .bits = bits });
+        try ix.clo_of.put(ix.gpa, .{ n0.int(), x.int(), c.int(), 0 }, id);
+        if (std.debug.runtime_safety) try ix.checkClosure(n0, x, c, id);
+        return id;
+    }
+
+    /// The walk's closure of `n0` on its own memo and account, against the
+    /// indexed one: the same bits, and the same states as a set, each by its
+    /// node, flags and children.
+    fn checkClosure(ix: *Index, n0: NodeId, x: CellId, c: CellId, id: u32) Error!void {
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(ix.gpa);
+        const real = ix.env;
+        const real_memo = ix.clo_of;
+        ix.env.charge = .growth(&scratch);
+        ix.clo_of = .empty;
+        ix.no_index = true;
+        defer {
+            ix.clo_of.deinit(ix.gpa);
+            ix.clo_of = real_memo;
+            ix.no_index = false;
+            ix.env = real;
+        }
+        const walked = ix.clos.items[try ix.closure(n0, x, c)];
+        const got = ix.clos.items[id];
+        const same_bits = @as(u8, @bitCast(walked.bits)) == @as(u8, @bitCast(got.bits));
+        const a = ix.pool.items[got.start..][0..got.len];
+        const b = ix.pool.items[walked.start..][0..walked.len];
+        const same = same_bits and ix.statesWithin(a, b) and ix.statesWithin(b, a);
+        if (!same) std.debug.panic("ownership v2: the join index of node {d} differs from the walk for cell {d}: bits {any} / {any}, {d} / {d} states", .{ n0.int(), x.int(), got.bits, walked.bits, a.len, b.len });
+    }
+
+    /// Whether every state of `a` is one of `b`'s, by node, flags and
+    /// children. Uncharged, for runtime safety.
+    fn statesWithin(ix: *const Index, a: []const St, b: []const St) bool {
+        outer: for (a) |s| {
+            for (b) |t| {
+                if (s.node != t.node or s.alt != t.alt or s.cast != t.cast or s.blur != t.blur or s.kids.len != t.kids.len) continue;
+                const ka = ix.kid_cache.items[s.kids.start..][0..s.kids.len];
+                const kb = ix.kid_cache.items[t.kids.start..][0..t.kids.len];
+                const eq = for (ka, kb) |p, q| {
+                    if (p[0] != q[0] or p[1] != q[1]) break false;
+                } else true;
+                if (eq) continue :outer;
+            }
+            return false;
+        }
+        return true;
+    }
 
     /// The children of node `n` whose reach holds `x`, as `(step, child)`:
     /// a wide node's from a cell-to-children index built once (§2.8 step 3).
@@ -1492,10 +1657,47 @@ const Index = struct {
         };
     }
 
-    /// The holds of `x` in `h`'s value, every path listed (today's walk):
-    /// the fallback and the naive scan's.
-    fn holdsAll(ix: *Index, h: Holder, x: CellId, c: CellId, out: *std.ArrayList(struct { PathId, bool })) Error!void {
-        const F = struct { node: NodeId, path: PathId, alt: bool = false, cast: bool = false, blur: bool = false };
+    const Hold = struct { PathId, bool };
+    const HoldFrame = struct { node: NodeId, path: PathId, alt: bool = false, cast: bool = false, blur: bool = false };
+
+    /// The holds of `x` in `h`'s value, every path listed: the fallback's,
+    /// a deep node's joins read from its index (`holdsJoins`). Under runtime
+    /// safety, checked against the walk: the same paths, each exact as often.
+    fn holdsAll(ix: *Index, h: Holder, x: CellId, c: CellId, out: *std.ArrayList(Hold)) Error!void {
+        const mark = out.items.len;
+        const used = try ix.holdsWalk(h, x, c, out, true);
+        if (!std.debug.runtime_safety or !used) return;
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(ix.gpa);
+        const real = ix.env;
+        ix.env.charge = .growth(&scratch);
+        defer ix.env = real;
+        var walked: std.ArrayList(Hold) = .empty;
+        defer walked.deinit(ix.gpa);
+        _ = try ix.holdsWalk(h, x, c, &walked, false);
+        const got = out.items[mark..];
+        if (!holdsWithin(got, walked.items) or !holdsWithin(walked.items, got)) std.debug.panic("ownership v2: the join index's holds of cell {d} differ from the walk's: {d} / {d}", .{ x.int(), got.len, walked.items.len });
+    }
+
+    /// Whether each path of `a` is one of `b`'s, exact in `b` when it is in `a`.
+    fn holdsWithin(a: []const Hold, b: []const Hold) bool {
+        for (a) |p| {
+            var found = false;
+            var exact = false;
+            for (b) |q| if (q[0] == p[0]) {
+                found = true;
+                exact = exact or q[1];
+            };
+            if (!found or (p[1] and !exact)) return false;
+        }
+        return true;
+    }
+
+    /// The holds walk; with `indexed`, a deep node's joins at a path are
+    /// read from its index. Whether one was.
+    fn holdsWalk(ix: *Index, h: Holder, x: CellId, c: CellId, out: *std.ArrayList(Hold), indexed: bool) Error!bool {
+        const F = HoldFrame;
+        var used = false;
         const gpa = ix.gpa;
         var stack: std.ArrayList(F) = .empty;
         defer stack.deinit(gpa);
@@ -1510,6 +1712,11 @@ const Index = struct {
         while (stack.pop()) |f| {
             try ix.rec(1);
             if (!ix.env.cells.sets.member(try ix.reach(f.node), x.int())) continue;
+            if (indexed) if (try ix.joinsOf(f.node)) |j| {
+                used = true;
+                try ix.holdsJoins(j, f, x, c, ext.items, lead, &stack, &seen, out);
+                continue;
+            };
             if (try ix.holdAt(.{ .node = f.node, .alt = f.alt, .blur = f.blur }, x, c)) |hd| {
                 var at = f.path;
                 for (ext.items, 0..) |st, i| {
@@ -1544,6 +1751,45 @@ const Index = struct {
                 },
             }
         }
+        return used;
+    }
+
+    /// Frame `f` of a deep node, its joins at `f.path` read from its index
+    /// `j`: one hold for all its members' (the paths' order sees one path,
+    /// exact when one of them is), then each node's or delta's children that
+    /// leave the path, as the walk pushes them (a delta's base is a member).
+    fn holdsJoins(ix: *Index, j: Joins.Joins, f: HoldFrame, x: CellId, c: CellId, ext: []const Step, lead: bool, stack: *std.ArrayList(HoldFrame), seen: *Ids.FixedDict(3), out: *std.ArrayList(Hold)) Error!void {
+        const gpa = ix.gpa;
+        const places = ix.env.places;
+        // Read once a path and flags: bit 3 apart from a member's own key.
+        if ((try seen.getOrPut(gpa, .{ f.node.int(), f.path.int(), flagsOf(f) | 8 })).found_existing) return;
+        const Push = struct { ix: *Index, f: HoldFrame, stack: *std.ArrayList(HoldFrame), seen: *Ids.FixedDict(3) };
+        var bits: Bits = .{};
+        try ix.readJoins(j, x, c, &bits, Push{ .ix = ix, .f = f, .stack = stack, .seen = seen }, struct {
+            fn kids(p: Push, m: Joins.Member, s: St, _: Ids.Range) Error!void {
+                const g: HoldFrame = .{ .node = m.node, .path = p.f.path, .alt = p.f.alt or s.alt, .cast = p.f.cast or s.cast, .blur = p.f.blur };
+                const i = p.ix;
+                if ((try p.seen.getOrPut(i.gpa, .{ g.node.int(), g.path.int(), flagsOf(g) })).found_existing) return;
+                const d = i.env.shapes.get(m.node);
+                var it = i.env.shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                while (it.next()) |e| {
+                    const ex = try i.env.places.extend(i.gpa, i.env.charge, g.path, e.step);
+                    const q = ex orelse if (g.cast) g.path else continue;
+                    try p.stack.append(i.gpa, .{ .node = e.node, .path = q, .cast = g.cast, .blur = g.blur or ex == null, .alt = g.alt });
+                }
+            }
+        }.kids);
+        if (!bits.any) return;
+        var at = f.path;
+        for (ext, 0..) |st, i| {
+            const e = try places.extend(gpa, ix.env.charge, at, st);
+            at = e orelse if (i == 0 and lead) at else break;
+        }
+        try out.append(gpa, .{ at, ix.bitsExact(at, bitsUnder(.{ .node = f.node, .alt = f.alt, .blur = f.blur }, bits), x, c) });
+    }
+
+    fn flagsOf(f: HoldFrame) u32 {
+        return @as(u32, @intFromBool(f.alt)) | @as(u32, @intFromBool(f.cast)) << 1 | @as(u32, @intFromBool(f.blur)) << 2;
     }
 
     /// Whether a use covers a hold at `f` (§2.7): above it always, under it
@@ -1559,7 +1805,7 @@ const Index = struct {
     /// The cover from every hold listed, against every group of the
     /// local's uses: holds × groups.
     fn coverNaive(ix: *Index, h: Holder, x: CellId, c: CellId, out: *std.ArrayList(Block)) Error!void {
-        var holds: std.ArrayList(struct { PathId, bool }) = .empty;
+        var holds: std.ArrayList(Hold) = .empty;
         defer holds.deinit(ix.gpa);
         try ix.holdsAll(h, x, c, &holds);
         if (holds.items.len == 0) return;
@@ -1912,7 +2158,7 @@ const Index = struct {
         defer hks.deinit(gpa);
         var looks: std.ArrayList(Look) = .empty;
         defer looks.deinit(gpa);
-        var holds: std.ArrayList(struct { PathId, bool }) = .empty;
+        var holds: std.ArrayList(Hold) = .empty;
         defer holds.deinit(gpa);
         const index = ix.frame.index;
         var it = cellt.sets.iterate(base);
@@ -1981,7 +2227,7 @@ const Index = struct {
                         continue;
                     }
                     holds.clearRetainingCapacity();
-                    try ix.holdsAll(h, x, c, &holds);
+                    _ = try ix.holdsWalk(h, x, if (try ix.samePosition(x, c)) x else c, &holds, false);
                     const all = index.rangeOf(ix.env.places, h.who, &.{}, true);
                     var i = all.start;
                     while (i < all.start + all.len) : (i += 1) {

@@ -245,6 +245,10 @@ pub fn build(b: *std.Build) void {
     // given to the gates.
     const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist, wrong-placement); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
+    // The v2 checker broken one way on purpose, to show that a `runtime_safety`
+    // check fires (ownership-v2.md §2.9 rule 3). Hidden; never given to the gates.
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position); `gates` refuses it") orelse "none";
+    own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the
     // narrower runtime roots leaves every answer its lowering read as it
@@ -1339,6 +1343,7 @@ const gate_steps = [_][]const u8{ "test", "test-blackbox", "fmt-check", "beni-fm
 fn gatesRefusal(b: *std.Build, filtered: bool) ?[]const u8 {
     if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to a test step";
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` requires the intended checker: drop -Downership-record-mutation, which breaks it on purpose; use test-record-mutations";
+    if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose";
     return null;
 }
 

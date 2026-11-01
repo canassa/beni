@@ -1,0 +1,18 @@
+module PositionsSaturate
+  40:12 construction a: rejected call: another operand may be it, through the call at 39:15 (approx)
+  41:12 construction m: accepted param
+  42:12 construction m5: accepted param
+  50:11 construction b: accepted fresh
+  56:11 construction a: accepted param
+  80:7 construction a: accepted fresh
+  summary rest: π1 RA; res fresh1 π1
+  summary restOfFirst: π1 R, π1[*] RA; res fresh2 ~fresh1 ~π1[*]{excl π1}r{excl π1}
+  summary sharedLost: π1 RA, π2 RAW, π2[*] RA, π3 RAW, π3[*] A; res [*] condition(fresh1) fresh1{excl π1, excl π2, sep π1 π2[*]} ~condition(fresh4) π2{lost}r{lost} π3[*], [*][*] condition(fresh3) ~condition(fresh2) π1 π2[*], fresh5{shared}r{lost} ~π3{shared}r{lost}
+  summary apartRest: π1 RA, π2 RA, π3 RA; res [*] ~condition(fresh2) ~π1 ~π2 ~π3, ~fresh1{excl π1, excl π2, excl π3, sep π1 π2, sep π1 π3, sep π2 π3}r{excl π1, excl π2, excl π3, sep π1 π2, sep π1 π3, sep π2 π3}
+  summary prepended: π1 RA, π2 RA, π3 RAW, π3[*] A; res [*] fresh2{shared} ~condition(fresh5) π3{shared}, [*][*] condition(fresh1) ~condition(fresh3) π1 π2 π3[*], fresh4{shared}r{excl π3[*]}
+  summary elementShared: π1 RA, π2 RA, π2[*] RA; res [*] ~condition(fresh2) ~π1 ~π2[*], ~condition(fresh1) ~fresh1{excl π1, excl π2, sep π1 π2[*]} ~fresh{shared}r{excl π2[*]} ~π2{shared}r{excl π2[*]}
+  summary literal: π1 RA, π2 RA; res [*] condition(fresh2) π1 π2, fresh1{shared}
+  summary spread: π1 RA, π2 RA; res [*] condition(fresh2) π1 π2, fresh1{shared}
+  demands 6: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 6: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

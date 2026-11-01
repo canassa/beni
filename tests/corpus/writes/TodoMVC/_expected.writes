@@ -12,7 +12,7 @@ program NoEditing.main : Tea.element
   key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
   key UrlChanged · Just                           exact      node ρ; value ρ.filter
   key UrlChanged · _                              exact      node ρ; value ρ.filter
-  tail-analysis eligible 1; visits 520; work 13298; candidates 5; resets 4738
+  tail-analysis eligible 1; visits 520; work 13301; candidates 5; resets 4741
   keys 9: bounded 9 (100%), exact 4, indexed 1, structural 4, * 0; capped 0
   hole NoEditing.beni:186:17                      dynamic    reads ρ.draft
   hole NoEditing.beni:191:31                      dynamic    reads ρ.todos
@@ -56,7 +56,7 @@ program NoRouting.main : Tea.element
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
   key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
   key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
-  tail-analysis eligible 1; visits 693; work 24431; candidates 5; resets 4866
+  tail-analysis eligible 1; visits 693; work 24434; candidates 5; resets 4869
   keys 12: bounded 12 (100%), exact 5, indexed 1, structural 6, * 0; capped 0
   hole NoRouting.beni:242:17                      dynamic    reads ρ.editing.Just#0.draft
   hole NoRouting.beni:263:17                      dynamic    reads ρ.draft
@@ -104,7 +104,7 @@ program NoStorage.main : Tea.element
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
   key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
   key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
-  tail-analysis eligible 1; visits 762; work 22517; candidates 5; resets 4866
+  tail-analysis eligible 1; visits 762; work 22520; candidates 5; resets 4869
   keys 12: bounded 12 (100%), exact 5, indexed 1, structural 6, * 0; capped 0
   hole NoStorage.beni:219:17                      dynamic    reads ρ.editing.Just#0.draft
   hole NoStorage.beni:240:17                      dynamic    reads ρ.draft
@@ -151,7 +151,7 @@ program Sandbox.main : Tea.sandbox
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
   key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
   key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
-  tail-analysis eligible 1; visits 530; work 20605; candidates 5; resets 4866
+  tail-analysis eligible 1; visits 530; work 20608; candidates 5; resets 4869
   keys 11: bounded 11 (100%), exact 4, indexed 1, structural 6, * 0; capped 0
   hole Sandbox.beni:186:17                        dynamic    reads ρ.editing.Just#0.draft
   hole Sandbox.beni:207:17                        dynamic    reads ρ.draft

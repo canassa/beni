@@ -1,4 +1,4 @@
-//! L13: the ownership block (`docs/design/ownership-v2.md` §3.6), minimal:
+//! L14: the ownership block (`docs/design/ownership-v2.md` §3.6), minimal:
 //! classes to words and back, with places written structurally. S2b builds
 //! the class table and its records, written here — a header (`OWN2`, the version), the
 //! place table, the record table, the root classes — and nothing of S6's:
@@ -326,6 +326,9 @@ const Writer = struct {
     sums: *Summary.Table,
     names: Names,
     meter: Refine.Meter,
+    /// `joinImplied`'s reads, on an account of their own: what they cost is
+    /// taken on the codec's lane after each, never the owner's growth.
+    reads: Ids.Account = .{ .allowance = std.math.maxInt(u32) },
     /// Tokens reserved and not yet written.
     tok_credit: u8 = 0,
     recs: std.ArrayList(Rec) = .empty,
@@ -375,6 +378,7 @@ const Writer = struct {
 
     fn deinit(w: *Writer) void {
         const gpa = w.env.gpa;
+        w.reads.deinit(gpa);
         w.recs.deinit(gpa);
         w.index.deinit(gpa);
         w.pos_index.deinit(gpa);
@@ -747,6 +751,22 @@ const Writer = struct {
         }
     }
 
+    /// Whether the entry `k` on union or choice `n` at `cur` adds nothing to
+    /// its read: what `n`'s sides read there, joined, is no stronger than `k`
+    /// in either class. Such a join entry (§2.9 *Keyed where a reader looks*:
+    /// a join keys its DAG node, whose members' snapshots it merged first) is
+    /// observable nowhere a reader of the decoded class looks, so it is not
+    /// written (§3.6). Its reads are the walk's, charged to it.
+    fn joinImplied(w: *Writer, n: NodeId, cur: Cond.Kappas, k: CondId) Error!bool {
+        const before = w.reads.growth;
+        const implied = try w.env.conds.joinImplied(w.env.gpa, .growth(&w.reads), w.env.view(), n, cur, k);
+        // The reads are the writer's, as a trial read's are the reader's
+        // (`BlockRead.read`): baseline, never the owner's growth.
+        const spent = w.reads.growth - before;
+        w.env.charge.account.baseline += spent;
+        w.env.charge.account.baseline_by[@backingInt(Ids.Category.inspection)] += spent;
+        return implied;
+    }
     /// Close owner `o`'s positions under its snapshot: every stored entry a
     /// read can reach. A read — `kappaOf` at a position reached from a
     /// value (as `kappaLeq`, `propagate`, `join` and `map` read, `dagKappa`
@@ -782,6 +802,9 @@ const Writer = struct {
                 while (ht.next()) |e| {
                     w.meter.grow(1);
                     try w.take(1);
+                    // A join's entry its sides already imply reads the same
+                    // without it (§3.6's omission criterion): not written.
+                    if (try w.joinImplied(e.node, c, e.cond)) continue;
                     (try stored.getOrPut(gpa, .{ e.node.int(), c.int() })).value_ptr.* = 0;
                 }
                 var lt = conds.kappaLinks(c);

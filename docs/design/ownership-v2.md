@@ -522,7 +522,7 @@ Structurally interned per owning summary with deterministic comparison trees (th
 | `delta` | `base: NodeId` (never a delta), `over: OverId` — a persistent sorted tree of `(step, NodeId)`, path-copied, O(log F) insert and lookup, structure shared along a chain of updates | the base written: at `ε` the base's cells, at `s` the override or the base's child; a chain of k updates costs O(k log F) |
 | `recast` | `place`, `inner: NodeId` | `inner` read at another type (§2.13.9); projection selects the built inner's matching part when its step/place agrees, otherwise retains the whole inner, approximate |
 | `union` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened) | the lazy join of a value's **possible contents**, not provably exclusive (a call's leaf over its arguments, a pattern's two descriptions of one element, widen's class side): `cellsAt` the union, `proj` the union of projections, both memoised per `(union, step)`; a cell repeated across sides is one position. The path-multiset primitive reads its sides as coexisting. Exclusive alternatives (branch and fixpoint joins) are `choice`, below |
-| `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened); root cell-set reference when requested by `collect` | coexisting element positions, preserving both edges even when they name one node; `proj` preserves the kind. `cellsAt` is a set; κ separately reads occurrence multiplicity (§2.9). `collect` accumulates the root set by per-item inserts; internal sets are lazy, never eagerly unioned at every tree level. |
+| `positions` | `left: NodeId`, `right: NodeId` (a binary DAG; never flattened, except that its constructors keep a member at most twice: *Saturation at two*, below); root cell-set reference when requested by `collect` | coexisting element positions, preserving both edges even when they name one node; `proj` preserves the kind. `cellsAt` is a set; κ separately reads occurrence multiplicity (§2.9). `collect` accumulates the root set by per-item inserts; internal sets are lazy, never eagerly unioned at every tree level. |
 | `view` | `place`, `template: NodeId`, `env: EnvId` | a call's result by reference (§2.11 *Representation of a view*, #1097): the callee class's `res` node `template` read under the call's environment; forced one step at a time, never copied |
 | `cyclic` | a `node` whose child names an ancestor | a widened recursive value (§2.12); no special kind, the knot is in the table |
 
@@ -666,12 +666,24 @@ Operations, memoised on their node arguments:
   `reach(union) = reach(l) ∪ reach(r)`, computed once per node; a chain of k updates adding k cells costs
   O(k log C) when each override contributes one cell and the unchanged base root is shared. General unions,
   including scans adding nothing, are charged by §4.1; this special case is not a union theorem. Membership O(log C).
+  *As built (#1467):* a join (`union`, `choice`, `positions`) whose sides each hold their own `ε` cells in their
+  reach takes no union with its own, which are its sides' (`unionMake`, `choiceMake`, a positions node's parts).
+  An `else if` chain of D arms has D, D − 1, … own cells at its levels, and their unions cost O(D²) records. A
+  side is *short*, its reach perhaps not holding its cells, when it is a view (its reach is its template's
+  image, `reach(view)` below, which need not hold the view's `ε` cells: a call's `result` cell), a lazy node
+  that is no join (its reach is its parts' alone), or a lazy join with a short side or a side in its own
+  component. A join that is not lazy, with a short side or a side in its own component, adds its own cells. A
+  list literal of four items or more is a `positions` root over lazy `positions` nodes, and an item that is a call
+  makes the lazy side above it short. Each node's shortness is a bit kept beside its set, one per walk
+  (`reach`, `arrivals`), set when its component closes. Under runtime safety each component's set is checked to
+  hold every own cell left out, at a value its `and` keeps; the verdicts and summaries of every root of
+  `bench/ownership-roots.mjs` are unchanged.
 - `join(n₁…nₖ)`: deduplicate, **group by base** (a bare node is `delta(n, ∅)`): one group of deltas over one base →
   one `delta(base, s ↦ join(overrides present, base's child))`, O(k + T log(T+2)) grouping/sorting work for T=Σ|Oᵢ| before recursive child joins and set unions; leaves with no children → one leaf with
   the set union; the groups left (one per distinct base, plus leaves) → a balanced `union` DAG over them,
   O(groups) outer nodes; inner work uses §4.1 accounting. A join can have product query work; a projection through a union costs O(groups) once per `(union, step)`.
 - `collect(n₁…nₖ)` (`Shape.collect`): a built value's elements under `[*]` → a balanced `positions` DAG, never
-  deduplicated or absorbed, built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
+  deduplicated or absorbed below two occurrences (*Saturation at two*), built like `join`'s outer DAG; one element is itself. `join` itself only ever makes
   `union`. `map` and `propagate` preserve the kind. Accumulate the requested root cell set by
   inserting each item's cells on its own lane, sharing persistent predecessors. Internal sets stay
   lazy: a request pays for visited radix nodes and changed spines. Identical hash-consed subtrees are
@@ -685,8 +697,535 @@ Operations, memoised on their node arguments:
   both sides of a positions node once more (`Radix.intersection` of the sides' cell sets, one descent per node).
   Reading a positions node as a union would drop a repeated argument's second arrival and accept
   `PositionsRepeatArg` (unsound).
+- **Saturation at two** [M 2026-10-31, #1368]. Multiplicity is read in `{absent, one, repeated}` (§2.9), so a
+  third occurrence of a member says nothing a second does not. The representation saturates where the domain
+  does. A `positions` constructor (`collect`, `proj`'s image of a positions node, `without`'s and `eager`'s
+  rebuilds: every caller of `Shape.positions`) reads the multiset of **members** its two sides reach through
+  positions nodes. A member is any node of another kind, so a union, a choice, a view or a recast is one member.
+  Each member is counted once per route. When a member occurs three times or more, the result is the balanced
+  positions tree over the members, in left-to-right order of first occurrence, each at most twice. Otherwise
+  it is the binary record as written, so a node with no third occurrence is the node it always was. So
+  `positions(positions(x, x), x)` is `positions(x, x)`, and `[ x, x, x ]` collects to `positions(x, x)`.
+  The order is the sides' own, never a hash order (§3.8). `map`, a view's expansion and `BlockRead` keep the
+  record they map, as they keep a union's (*An image no back edge can name*). A relabelling that gives two
+  members one image can thus make a member occur four times, and every reader counts that as twice. The cap is
+  a property of what the constructors make, not an invariant a reader may assume.
+
+  **It is exact: no verdict and no κ answer changes.** Every reader of a positions node reads one of three things:
+  - **The set of cells** (`cellsAt`, `reach`, `leq`'s γ, `rank`, `deep`'s frontier): a set has no multiplicity.
+  - **The multiplicity**: `dagFacts`' repeats (the intersection of the sides' cells), `Cond.arrivalAggs`,
+    `Calls.preimage` and `dagKappa`. Coexistence adds with saturation, so k·a = 2·a for every k ≥ 2 and every
+    a in the domain. Projection and relabelling distribute over the sides, so this holds at every path below
+    too: `proj` of the saturated node is the saturated node of the projections. The pairs of distinct
+    coexisting members, over which `apart` runs, are the same set.
+  - **The members' own reads.** Every member stays in the tree; only an occurrence goes, so each member is
+    still read. The stored entries of the positions nodes a rebuild drops are another matter: below.
+
+  **The entries of a dropped node** [M 2026-10-31, #1420; correcting this section's first text]. The positions
+  nodes a rebuild drops are the constructor's input sides and their counted nodes below. The first text of this
+  section said no snapshot of the new value keys them, so no κ entry needed a home. That is false. A
+  construction merges its operands' snapshots, and an operand's snapshot keys its own positions node at its own
+  position: `m4 = [ a, a ]` stores `shared` for `positions(a, a)` at `m4`'s `[*]`, and `[ a, l2, …m4 ]` drops
+  that node. The tree the constructor would have made held the node, so a read of it joined that entry. The
+  rebuilt tree's read derives its own κ instead, and the two can differ: read through a callee's summary
+  position, the repeated `a` derives `lost` (a folded duplicate), where the stored entry says `shared`. That
+  would weaken a read for a reason of representation alone, and the exactness of a failure is what a
+  diagnostic says (*is shared* against *may be*). So the entries are carried.
+
+  - **The carry.** A construction (`TransferConstruct`'s literal, construction and prepend) walks its new
+    value's snapshot from `[*]`, along the snapshot's own links, each `(position, node)` once. At each
+    position the dropped nodes are those the rebuilds of that position's node dropped (`Shape.dropsClosure`:
+    a dropped node a rebuild returned brings what it dropped in turn) and the projections of the dropped
+    nodes one step above. What the snapshot stores for a dropped node is joined onto the node the value has at
+    that position, unless a read of that node implies it already, at a plain position and at a summary one.
+    *Implies* is `⊑` with each `sep` and `apart` read as its pairs: `apart{π1, π2}` adds nothing beside
+    `apart{π1, π2, π3}`. So a block grows only by entries a read would otherwise miss. The walk stops at a
+    fold, and below a node older than the construction with nothing dropped above it: an operand's own
+    positions were carried by its own construction. It is a growth task.
+  - **It is sound.** The node the rebuild returns stands for every member of the dropped node, each at least
+    as often, at the same position. A stored entry is a condition on the value at that position: `shared`
+    (the same cell at two positions), `lost` (an approximation), `excl c` (an arrival standing for many
+    positions), `sep`/`apart` (arrivals compared), `within`, `keep` and `writes` (a callback's). Each is
+    true of a value that holds every position the dropped node held, so it still holds of every run that
+    reaches those positions through the rebuilt node. No kind fails this. Fold conditions are not snapshot
+    entries: `fold_cond` is read only where a node is read as a root, and a dropped node was a side.
+  - **It is exact, and checked.** With the carry, the read of the rebuilt node joins what the constructors'
+    tree joined. Under `runtime_safety` the read machine checks it at every read of a rebuilt node it walks:
+    each entry the position stores for a node the rebuild dropped must be implied by the read (a panic
+    otherwise). A read that relabels the node (`map`'s images) is not checked there; the carry is what
+    reaches it. Measured over about 5 400 random programs of literals, spreads, prepends, `++`, `rest`
+    views, `[*][*]` nesting, a callback and recursive accumulators: the check met `shared`, `lost`, `excl`
+    and `apart` entries, never fired, and every verdict equals master's. Without the carry it fired on five
+    `shared` entries read `lost`. Summary text can still change: a cell that occurs three times is printed
+    twice, two nodes that the rebuild made one are printed once, and fresh names follow the new order.
+    The κ read at each position does not change.
+
+  **A cap in the readers would buy nothing**, so that option is not taken. The readers already aggregate in the
+  finite domain, and they memoise per node: `dagFacts` per node, `Cond.machine` per (position, node),
+  `arrivalAggs` per node and fold, `preimage` per (node, canonical path). So a reader visits each node of the DAG
+  once, never each occurrence. It cannot stop early once every cell reads `repeated`, because a DAG's read joins
+  the stored entry of every DAG node below it (`machine`'s inner join). The work is per node, and only the
+  representation removes nodes.
+
+  **Cost.** The test is not a walk. Each positions node keeps a memoised count map, member → `{once, twice}`, a
+  persistent radix map (§3.2). A parent merges its sides' maps by saturating sum, on the changed spine. A member is
+  lost exactly when it is `twice` on one side and present on the other. That is the radix intersection of one
+  side's `twice` set with the other side's keys, with identical subtrees skipped by identity. Only then is the
+  tree rebuilt, over at most twice its distinct members. The rebuild is charged as a task of its own, not on
+  the item's lane of `collect`: a lane holds only its item's constant work. A prototype that flattened the sides
+  on each construction and charged that on the lane broke the `transfer_settlement` lane invariant at
+  `LimitSpine` and `WideDeepCondition`.
+
+  **As built** [2026-10-31, #1420]. `Shape.positions` marks each node it makes as *counted*, a bit of the
+  node's record, set at its birth and never later. Only a counted node is read through: a positions node that
+  `map`, a view's expansion or a knot made is one member to every parent, so no count map ever changes once a
+  parent has read it. The count map is made when a parent first asks for it, its counted sides first, and is
+  memoised per node, a record per map. Two sides that are both members alone cannot lose a member, so their
+  test reads nothing and costs nothing. A side that is one member is looked up in the other side's `twice`
+  set. The test and the rebuild are a growth task (`enter(null)`), and the node itself stays on the caller's
+  kernel, so each lane of `collect` still holds its positions node alone. Each rebuild records the counted
+  nodes it dropped under the node it returned, a record each (`Shape.dropsOf`, `dropsClosure`): what the
+  carry and the check of *The entries of a dropped node* read.
+  Measured: of the 2 044 roots, the corpus's, all but one publish the same verdicts, demands and summaries
+  as master, and six blocks are smaller (as above). The one is `ownership/PositionsSaturate`, whose
+  `apartRest` summary prints `apart [π1] [π2] [π3]` without the pair it implies. Byte identity is a fact of
+  the corpus, not a theorem: summary text can change (above). `Rose [ r, r ]` takes 5 785 / 32 732 / 316 884
+  records at 10 / 40 / 160 levels (161, 152 and 270 per n·log₂(n + 2)), so it is still above n log n. The
+  charged rebuilds put 600 spreads of one list at 20 records an item, 18 before.
+
+  **Measured** (a prototype that flattens uncharged, ReleaseSafe, self-hosted):
+  - **The corpus.** All 2 043 roots of `bench/ownership-roots.mjs` (`allOwnership`) were dumped under
+    `--ownership-everywhere --ownership=v2`, on master `f8ec23cbe` and on master with #1459, each with and
+    without the cap. The verdicts, demands, `unchecked` lines and summaries are byte-identical, `account` and
+    `crossing` lines left out. Six roots publish smaller blocks: `OneValueManySites` 1 696 → 1 456 bytes,
+    `StepLanesInGrowth` 31 104 → 30 864, `Recursion` 1 244 → 1 124, `BikeWars` (two roots) 1 460 → 1 380,
+    `bench/corpus` 5 336 → 5 256 (master's figures). `-Downership-full-cross-check` over the ownership corpus fails the same set
+    with and without the cap: v1's five panics and eight counting tests of `build_test`.
+  - **`Rose [ r, r ]` (#1420).** A projection of a `positions` chain of depth d made d new nodes. Saturated, it
+    makes one: 14 449 / 54 449 / 215 175 records at 10 / 20 / 40 levels, refused at 80, become 5 523 / 12 495 /
+    31 620 / 92 295 (312 388 at 160), with byte-identical blocks. It is still above n log n, and #1420 keeps it.
+  - **`run/TailModConsMerge`'s `mergeSort` stays loud** (#1368).
+    - On master the cap never fires. Since read-off interns its images (#1372), no positions node made in
+      `mergeSort`'s walks holds a member three times. The positions multiset under `res` now nests through
+      choices and unions, which are members.
+    - On master with #1459 it fires: 255 549 → 227 295 records, and the round-3 port goes from 297 to 251
+      nodes.
+
+  **What is left of #1368 is not multiplicity** (measured on master `67739df07`, the allowance raised).
+  - `mergeSort` costs 168 829 records (growth 129 727 of 65 536), over walks of 4 946 / 15 099 / 37 479 /
+    88 640.
+  - About half of walk 4 is one `propagate`: the branch join of `mergeSort`'s `case`, whose third member is
+    the view of `merge`'s `res` over two views of the port. It costs 46 644 records over two states, the root
+    and `[*]` (71 296 of 142 186 on #1459). So the cost is the size of the DAG each state reads, not the number
+    of positions.
+  - That DAG grows about 3× a round: the port is 15 / 67 / 183 nodes after rounds 1 / 2 / 3 (15 / 95 / 297
+    on #1459). Of round 3's 183 nodes, 86 are distinct when every choice is read as the set of its arms, and
+    82 when unions are sets and the cap applies too (#1459: 297 → 181 / 132 / 112).
+  - Two causes remain:
+    1. **A choice that a projection or a relabelling makes is not flattened.** *A choice member is
+       flattened*, above, covers joins only. So equal arm sets in two arrangements are two nodes: the
+       projections of the two views of one port at `[*]` are read off as two trees.
+    2. **Rounds nest in place.** Even with every node in canonical form, round 3's port has 82 nodes
+       against round 1's 15. A group's rounds nest `res[*]`'s DAG inside itself at a place that lies on no
+       cycle, and no widen folds that.
+  - Neither cause needs S4's labels: no callback, `cb` label, `sep` or `within` is involved. So the fix stays
+    in S3b (§8, question 9).
+- **A port keeps no round that its last round covers** [M 2026-10-31, #1368, #1372; built 2026-10-31 as option (a), #1470, §8 *As built, 4d*].
+  A group's port is `x_{k+1} = widen(x_k ⊔ F(x_k))`, a choice (`Summary.join`, mode `choice`). The rounds
+  are Kleene iterates: `x_k ⊑ x_{k+1}`, and F is monotone, so `F(x_{k−1}) ⊑ F(x_k)`. So every arm that an
+  earlier round put into the port is covered by the arms of the latest round. The join keeps them all the
+  same: the port is a history of rounds, and each round nests the last one's image again. That history is
+  where most of the port's size comes from, not the nesting itself (measured below).
+
+  **The rule.** `Summary.join(a, b, .choice)` already returns `a`'s `res` and κ when `b`'s are under them
+  (#1423). It gains the other direction and the same test per arm:
+  1. **The side below.** When `a`'s `res` and κ are under `b`'s (`Shape.leq` and `Cond.kappaLeq`, the
+     test the stop rule already trusts), the join's `res` and κ are `b`'s, widened as a join's are.
+  2. **The arms below.** Otherwise, each arm of either side's top `choice` DAG (the nodes that its choice
+     edges reach that are not choices) whose value under its side's snapshot is under the whole other side
+     is dropped before `joinRes`. A side whose every arm is dropped is the first case.
+
+  Only `res` and its κ are absorbed. Uses, `xreq`, `funs` and the other parts join as before. Only a
+  class join does it, never `Shape.choice`, `joinChoice` or `joinAlternatives`: a shape constructor has no
+  κ, and an arm γ-below another can still store a weaker entry. Dropping that arm in the shape alone is
+  unsound.
+
+  **It is exact for the join.** A choice reads its arms by the maximum: γ is their union, multiplicity is
+  the maximum per key (§2.9), and κ is the join of the reads of the nodes a reader meets. When `a ⊑ B`
+  under the same order, `max(a, B) = B` for each of these. This holds at every path below too, because
+  `proj` of a choice is the choice of the projections, and at every caller, because instantiation is
+  monotone (the stop rule needs that already). Pairs that `apart` compares are inside one arm, never
+  across arms. So `choice(a, B)` and `B` read the same. *κ home:* an entry keyed at a choice node that
+  the drop removes is the join of the reads of its members (§2.9 *Keyed where a reader looks*), so it is
+  conjoined into the entry of each arm below it at that position. That only weakens, and since the entry
+  is the arms' join, it changes no read. On 5a's representation (a joined node keyed alone and reached
+  by correspondence), the kept arms are read through the side's root, never through a rebuilt node, so
+  every entry the side keys still applies.
+
+  **It is not exact for the fixpoint.** The join's value is the same, but `widen` is not invariant
+  under representation. The history that the rule removes made widen coarser, and that coarsening made
+  some groups settle sooner. Soundness does not rest on the rule: the published class is still x*, a
+  fixpoint that the stop rule checks with `leq`. The corpus (below) changes no verdict that both runs
+  reach. Two groups that were limits are now checked, and summary lines move in about 40 roots. A class
+  can be more precise than the history-widened one. `[*] π1[*]{excl π1[*]}` beside `[*] π1[*] π2[*]{lost}` becomes the second
+  alone. They read the same, because the second covers the first.
+
+  **Cost.** Per class join, one `leq` per arm of each top choice, charged. Each is memoised per pair, as
+  `leq` is. The arms of a port's top choice are those of its last round plus the seed arms, so this is
+  O(|port|) `leq` work per join, far less than the walk that reads the port.
+
+  **Termination is the open point.** At a fixed inventory every part still rises in a finite lattice,
+  so the bound in §8 slice 4's *Termination* still holds. But the rounds now depend on whether `leq`
+  sees a round's value as settled, and `leq` reads nodes. A read-off image that is new every round
+  (#1372 F3) has no stored κ and reads weaker. So a late round can keep finding `F ⋢ x` until the
+  inventory bound. That happens with #1423's mutual writers `wa`/`wb` on 5a's branch. Their port raw
+  grows 196 → 266 → 392 → 548 nodes in four late versions. Read with its unions as sets, it stays at
+  67 nodes. With the rule, they go from 340 452 / 275 136 records in 9 / 10 walks to the limit. On
+  master they are past the limit with or without the rule. A variant that keeps the join's own value
+  and only takes the smaller one when the two are `leq`-equal is no better: `wa` still reaches the limit,
+  and `mergeSort` keeps 112 231 records. *Options:*
+  - (a) Land the rule alone. `wa`/`wb` stay loud, a known limit under #1372, as on master.
+  - (b) Land it with the two pieces below that make a late round's image the node the last round made:
+    union and choice as interned arm sets, and stable knot images. Measure `wa`/`wb` first.
+  - (c) Gate it on a group of one member. That is not principled, and it is not recommended.
+
+  The manager decides between (a) and (b) (#1372). The recommendation is (a) now, then (b) as 4e.
+  *Measured 2026-10-31 (4e):* of (b), only stable images are exact. Arm sets are withdrawn, and
+  `wa`/`wb` already settle on master without them (below, *What 4e measured*).
+  (a) makes `mergeSort` and DerivedDeepPaths' `rose` pass on both bases, and it loses nothing that the
+  corpus checks.
+
+  **The two pieces that (b) adds, prototyped (4e)** [M 2026-10-31, #1372, #1368]. The text below replaces
+  the first proposal, which was not prototyped. It was measured on master `a4accd406` (4d and 5a merged).
+  Only the first piece is kept.
+  - **Stable images (#1372 F3), kept.** A knot that `map` closes, and the graph that `widen` emits, is
+    interned by its canonical form (`widen`'s graph component by component, step 5).
+    1. *The graph.* For `map`, the graph is the raw images reachable from the knot's entry at its close
+       (the slot `map` allocated at entry, and every raw slot after it). For `widen`, it is every node
+       that `emit` made. A raw node is one that `make` did not intern. Every other node is external and
+       is compared by its id.
+    2. *The form.* The graph is minimised by partition refinement. The signature of a node is its kind,
+       place, its cells (none for a recast or a delta, as `make` keys them), every node-keyed side fact
+       that is not a function of the record (below), and the class or external id at each step, in the
+       record's order. The classes are numbered in a depth-first order from the entry. The key is the
+       sequence of the classes' signatures in that order, with each internal reference written as its
+       class number. *Cost:* O(members × refinement rounds) records for the refinement, and O(members)
+       for the key and the move, all charged as inspection.
+    3. *The rule.* When a knot of that key was made before, every member is moved onto the node of its
+       class in that knot: `map` moves each source's image (`memo_map`), and `widen` moves the root and
+       every `fold_cond` entry. Otherwise the knot is recorded under its key, with one representative per
+       class. A graph that is not minimal (two members in one class) is recorded and never moved, so the
+       move is injective on the members.
+    4. *Side facts in the key.* `fold_cond` is stored by node after `widenFold`, so `widenValue` runs the
+       rule after it stores them, and the key holds each member's `fold_cond`. The other node-keyed facts
+       are the positions node's *counted* bit, `dropsOf`, an eager image other than the node itself, a
+       view it answers, `birth`, the projection correspondence (`proj_origin`) and the bases
+       (`addConstruction`). *As built (`Stable.sideFact`):* a graph with a member that has any of them is
+       not moved, and a target with any but the last two is not a target. A target may have origins and
+       bases: they accumulate on a shared node, from each use of it, as on any node `make` interned.
+       Refusing them blocked the moves that matter: the accumulator below stays at 1.19 M records.
+    4a. *Never onto the widening's source* (as built). No move of `widen`'s graph targets a node of
+       the value being widened (`Fold.image`'s keys). `propagate` reads the image with the source as its
+       one member, in lockstep, and a position whose node is the member's own node is a link: the
+       member's entry there, nothing below walked. That is exact only where the two are one value at one
+       position, and a folded class stands for several. Found by step 5's first build, which moved
+       acyclic images onto source nodes: `mPlain`'s `M [] (Just (M [ 1 ] (Just (M [ 2 ] Nothing))))`
+       read `lost` at three paths that read `yes` (the counted test *a kids list at two depths of a
+       widened tree*). Most of the prototype's 29.5 % on the sweep was those moves.
+    5. *`widen`'s output: only the root's knot moves* (as built, after #1513's review). `emit` makes every
+       class image a new node. The first build ran the rule per strongly connected component, bottom up,
+       and moved each knot. It rewrote, in place, the references of the raw nodes above a moved knot, and
+       it interned the acyclic ones. In-place rewriting is not exact: `proj`'s memo, and every other memo
+       keyed by node, may already hold an answer read from the record before the rewrite. The corrected
+       cross-check found it on the counted test *a kids list at two depths of a widened tree*. There, the
+       widened value's walk reached the raw knot through a stale `proj` entry. So no record is rewritten.
+       A knot moves only when it holds the root, and a knot below the root is recorded under its key but
+       stays where `emit` put it. The first text of this step blamed `PushedTwiceLevels` for the acyclic
+       interning. The review did not reproduce that with step 4a in force, and that claim is withdrawn.
+       The rewrite is the reason. As built: `acc (n − 1) (N [ n ] [ n ] t t)` settles in 4 walks, not 5
+       (691 681 records at one list, against 1 083 526). *Since the atom rule (#1483):* 3 walks with or without the moves (173 075 records at one list, 177 421 without); the walk that the moves saved was the `L` atom's merge of the root's class with each subtree's. `rose` costs 39 694 records against 42 869. The
+       corpus's records fall 0.55 %, with no verdict, condition or summary change and 18 block encodings.
+       Stable.Store keeps the representatives of every knot it recorded, including a knot below a root
+       that later moved. That is only a cost of sharing: no move ever targets a node that is not its
+       key's representative, and `sideFact` refuses a target that has gained a fact.
+
+    **The representation-change lemma.** Let σ be the move. Its precondition: for every member x, the
+    record of x with every internal reference mapped by σ is the record of σ(x), every side fact of
+    step 4 is equal, and σ is injective on the members of each knot. On a node on no cycle σ may merge two
+    nodes, as `make` and `map`'s interning already do (#1372, cause A); a route never meets such a node
+    twice, so the fold below does not concern it. No target of `widen`'s graph is a node of its source
+    (step 4a). The snapshot a reader uses is keyed after the
+    move: `widenValue`'s `propagate` runs over σ(w), and read-off's transport follows `memo_map`, which
+    the move updates. Then each reader reads the same value on the stabilised form:
+    - **Set readers** (`cellsAt`, `reach`, `leq`'s γ, `rank`, `deep`'s frontier) and **widen/leq** read a
+      function of the records, and σ keeps the records. `leq` is memoised by pair, so a hit across
+      rounds is the gain. `widen`'s `occurs` counts by node. Two bisimilar members that σ makes one
+      node fall into one class, so the class has two members or one member reached twice: `many` is the
+      same.
+    - **`dagFacts`** reads repeats as the intersection of the sides' cells. **`Calls.preimage`**, per
+      `(node, canonical path)`, and **`KappaRead.sep`**, over pairs of cells, read cells. σ keeps the
+      cells.
+    - **`Cond.machine`**, per `(position, node)`, and the **5f trie**, by node, read node ids that σ
+      renames on both sides: the snapshot's keys and the value's nodes.
+    - **`arrivalAggs`** reads the fold μ, which is computed on the raw source before the move. Its images
+      move with σ.
+    - **`routesMax`/`frontierAt`** and `propagate`'s fold detect a fold when a route meets a node twice.
+      σ is injective on the members, so inside the moved graph a route meets a node twice exactly when it
+      did before. *As built, proved:* a route never meets σ(x) and the target of another member both,
+      because the key compares an external reference by its id: a graph that reaches a node (an unfolding
+      of a knot, say) never has that node's key, so it is never moved onto it, and a target cannot reach
+      the new graph, which is newer. A unit test in `Shape.zig` builds such an unfolding and shows it is
+      not moved.
+    - **`propagate`'s link** (a position whose joined node is its one member's node) compares node ids.
+      σ never makes `widen`'s image share a node with its source (step 4a). Elsewhere a join's value
+      shares its members' nodes as it always did.
+    - **Readers that compare the parts of one value by id** (the rule-3 walk that a choice's arms share,
+      §2.9 *The repeating split*): σ moves only knots, onto knots of the same key. A knot's key names
+      every external reference by its id, so two knots that σ makes one were one structure over the
+      same external nodes already.
+    - **Memos keyed by node** (`proj`'s, `reach`'s, `rank`'s): σ never changes a record, so a memo
+      entry stays true of its node (step 5).
+    - **`apartImage`** and §2.9 *Two positions of one image* read the cells two positions image to, not
+      node ids (`KappaRead.apartImage` reads cell sets and their images only), and σ keeps cells.
+      `map_shared` is set when σ gives two sources one image.
+    - **BlockRead and the block codec** write structure, and decode makes a graph bisimilar to the
+      written one. The encoding can change where σ shares nodes. With knots only, no block changed over
+      the corpus.
+    - **The printer** names an alias (`#QN.1 = #QN.0`) by node identity. So its text can change where σ
+      makes two equal children two ids, or one. The quadtree's `quad` prints its four children in full
+      on the stabilised form, with the same conditions at every path. No corpus summary changed.
+
+    **The check: σ is a bisimulation** (as built after #1513's review; the manager's decision). In
+    every `runtime_safety` build, each move of `widen`'s output (`Cond.moveIsBisimulation`) checks that
+    σ is a bisimulation of the raw image onto the moved one. For every member n and σ(n), all of these
+    must agree:
+    - the kind, the place and the form's cells;
+    - the stored cells, where both are set (a lazy record fills them in later from its sides);
+    - `fold_cond`, which is the side word;
+    - every side fact that the precondition reads (`Stable.sideFact`): on n, any; on σ(n), any but bases
+      and projection origins;
+    - the references, paired under σ;
+    - the κ entries keyed at nodes inside the moved value, renamed by σ. Both images are read alone,
+      with no memo and on an account of their own, and compared position by position: the same folds,
+      the same link steps, and at each position, for each key the value reaches, the same condition. An
+      entry keyed outside the value names one node in both reads, and is not compared.
+
+    `map`'s knot moves assert the shape half (`moveHolds`, in `Stable.canon`). Their κ is carried by
+    `memo_map`, which the move updates, so it is σ applied to the raw images' κ by construction.
+
+    **The lemma.** If σ is such a bisimulation, every κ reader gives the same answer on the moved value as
+    on the raw one, with its nodes renamed by σ. Each reader consults only what the check compares:
+    - `Cond.machine`, `kappaOf`, `kappaRead` and the 5f trie: entries by (position, node), and the
+      node's kind, cells and references;
+    - `dagFacts`, `Calls.preimage`, `apartImage` and `KappaRead.sep`: the cells, and cells' images;
+    - `arrivalAggs`: μ, computed on the raw source before the move;
+    - `foldCondOf`: `fold_cond` along union, choice and positions sides;
+    - `propagate`'s fold and link (`routesMax`, `frontierAt`): node identity along routes. σ is
+      injective, its targets avoid the widening's source (step 4a), and a key names its external
+      references by id, so no route meets a moved member and its target both;
+    - BlockRead and the block codec: structure;
+    - `leq` and `widen`: the records.
+
+    Each reader is a function of what the check compares, so a regression in any part that the lemma
+    assumes trips the check.
+
+    *Why the first check was replaced.* The first text's check published the read-off twice, once with
+    nothing moved, and required the two κ to be `kappaLeq`-equal. Its no-op control fails. Two
+    publishes with nothing moved disagree on `ins`, `rose`, `descend`, the quadtree and the
+    accumulator, because a snapshot keys entries at nodes outside the value: a member's own linked
+    positions, and projection images made on demand in each pass. So it compared entries outside the
+    value, and pairing the two copies node by node did not fix that. That `kappaLeq` is not a
+    representation-independent equality is #1521's question for the fixpoint.
+
+    *Shown to fire.* Both mutations send each member of a moved widen knot to the next member's
+    target:
+    - With `canon`'s own assertion off, the check panics on `RefinementFoldMultiplicity`,
+      `LevelsApart` and `LinkedFoldCoverage`. These are 3 of the 16 corpus roots that move a widen
+      knot.
+    - With the shape half also off, the κ half alone panics on the same three.
+
+    The full-cross-check build passes `ins` (a black-box test), `rose`, `descend`, the quadtree, the
+    accumulator and `mPlain`. Unit tests show `moveHolds` refusing three moves:
+    - a member sent to a node of another record;
+    - two members sent to one target;
+    - a graph whose side word differs.
+
+    *`sideFact` and `fold_cond`, kept.* No program found so far makes either clause matter under
+    root-only moves. The review saw no change on the corpus or the sweep with `sideFact` always false,
+    or with `fold_cond` out of the key and the precondition. Both clauses are sound and cheap, so they
+    stay, and both are in the bisimulation check, which a regression trips.
+
+  - **Arm sets, withdrawn.** A `choice` or `union` as the canonical tree over its sorted arms was
+    prototyped in the constructors: `choiceMake` and `unionMake`, and also in `map`'s images of
+    choice and union nodes. The tree is split before the arm of highest hash priority (a treap over the
+    gaps). So its shape depends on the set alone, and an insert makes O(log m) new nodes. The balanced
+    split of the first proposal makes about m new nodes per insert, because its midpoint moves. It is not
+    exact, and it gains little:
+    - *Choices, in the constructors.* This saves 0.22 % of the corpus, and it is −2.5 % on `wa`/`wb`.
+      κ moves in both directions. `CallOtherPathsSharedLeaf`'s `chosen` loses its `excl π2[*]` at `.1`.
+      That is the soundness boundary in *A choice member is flattened*: a published value's κ is carried
+      node by node (`kappaRelabel`, `eager`). So an entry at an interior choice node that the canonical
+      tree does not have is lost. `PatternPositions` loses one `apart`, `GroupAnswerCover` gains three
+      `lost`, and `ListPrependDeep` gains an `excl`. The κ home of the first proposal needs the snapshot,
+      which a shape constructor does not have. `Shape.joinAlternatives` already flattens a choice where
+      κ is read whole, and that is where flattening can be exact.
+    - *Unions, in the constructors.* They break convergence. The quadtree self-map does not settle in 90
+      walks (25.9 M records, against 5 walks). `descend` takes 1 244 802 records against 137 834, and T3
+      takes 224 273 against 158 229.
+    - *Unions and choices in `map`'s images only.* The corpus grows by 2.50 %. `wb` falls to 64 978
+      growth, which is inside the allowance, but `descend` takes 755 122 and the quadtree does not settle.
+      A union built through the constructor absorbs a member it holds (`unionHas`). That changes what
+      widen opens on a cycle (§2.3, *On the cycle*), so the rounds differ.
+
+  **What 4e measured** [M 2026-10-31]. Self-hosted Debug, `dump --stage=ownership --ownership=v2
+  --jobs=1`, the allowance at 10⁸, or 4 194 304 for `removeMin` and `wa`/`wb`. The scratch instrumentation
+  dumped every port and every `propagate` call. A scratch analyser counted each DAG raw, with choices as
+  arm sets, and with unions as sets too. It also counted the knot nodes a walk made, and how many of
+  them equal a node of an earlier dump.
+  - **Ports, raw / choices as sets / unions as sets too, at the last round.** `removeMin` 24 / 24 / 21
+    after round 1. `descend` 25 / 25 / 21. `wa` 47 / 44 / 42, `wb` 38 / 36 / 35. `rose` 5 / 5 / 5. The
+    quadtree 58 / 58 / 28. T3 91 / 91 / 47. Choices as sets save almost nothing, because
+    `joinAlternatives` already flattens the port's choices. Unions as sets halve the quadtree and T3, but
+    that representation is not exact (above).
+  - **Knot images.** Each walk makes 2 to 8 knot nodes. Among the dumped DAGs, only `rose`'s round 3
+    remakes knots it had before (3 of 3). The prototype's table, which sees every knot and not only the
+    dumped ones, moved 10 knots on `rose`, 12 on `wa`/`wb`, 4 on the quadtree, 2 on T3 and 5 on #1489.
+  - **States per position at the expensive joins** (states / positions / distinct `(node, bits, run)` /
+    distinct sets of states at a position):
+    - `removeMin`, walk 2 has five calls of 74 134, 74 134, 14 318, 23 949 and 9 811 positions. The first
+      is 190 575 / 74 134 / 444 / 161 over a joined DAG of 236 nodes, 2 686 592 records. Walk 2 costs
+      7.3 M records. At 10⁸ the group stops in walk 3 at `ownership_summary_size`.
+    - `descend`: 2 105 / 1 153 / 151 / 98.
+    - `wa`: 513 / 419 / 93 / 99.
+    - The quadtree: 239 / 71 / 63 / 27.
+    - T3: 261 / 141 / 49 / 35.
+  - **Where the records go.** `propagate` takes 60 % of `descend`'s records, 46 % of `wa`/`wb`'s, 31 % of
+    T3's and 16 % of the quadtree's. The rest of the quadtree's and T3's cost is the walk itself, as
+    §2.3 *What the rule does not reach* says.
+  - **Growth, by piece** (records in parentheses):
+
+    | case | master | stable knots | + acyclic (step 5) | choice arm sets | knots + choice arm sets | union sets in `map` |
+    |---|---|---|---|---|---|---|
+    | `removeMin` (4 194 304) | limit | limit | limit | limit | limit | limit |
+    | `descend` | 98 616 (137 834) | 98 682 | 98 674 | 99 414 | 99 480 | 715 904 |
+    | `wa` | 54 324 (81 245) | 53 966 | 53 951 | 52 965 | 52 717 | 45 313 |
+    | `wb` | 68 804 (90 442) | 68 195 | 68 180 | 66 820 | 66 451 | 64 978 |
+    | DerivedDeepPaths' `rose` | 14 068 (42 832) | **11 610** | 11 986 | 13 453 | 11 245 | 17 482 |
+    | quadtree | 200 499 (238 811) | **192 965** | 200 761 | 200 730 | 193 067 | does not settle |
+    | T3 | 118 843 (158 391) | 119 014 | 118 912 | 118 941 | 119 112 | 183 945 |
+    | `incCs` (4 194 304) | limit (`incAs` 4 186 143) | the same | | | | |
+    | the corpus's records | 6 619 688 | **−0.42 %** | −0.41 % | −0.22 % | | +2.50 % |
+    | the sweep's records | 95 306 884 | −3.8 % | **−29.5 %** | | | |
+
+    *The corpus:* the 2 053 roots of `bench/ownership-roots.mjs` (`allOwnership`,
+    `--ownership-everywhere`), with `account` and `crossing` lines left out. With stable knots, every
+    verdict, summary and block line is byte-identical. With choice arm sets, no verdict changes, but 20
+    summaries and 51 blocks do (above). *The sweep:* 400 random programs (a scratch generator: a type with one
+    or two lists and one to three recursive children, sometimes mutual; a writer with a branch, an
+    accumulator, and two callers that make demands). They were dumped on master and with each variant. Stable
+    knots: no verdict, summary or block line changes, and records fall 3.8 %. Knots with the acyclic part of
+    step 5: no verdict changes and no `{…}` condition changes, 7 summaries change text (names and aliases) and
+    81 blocks change encoding, and records fall 29.5 % (39 % over the 241 programs that pass). An earlier
+    sweep of 800 programs on 5a's head gave no verdict, summary or block change for stable knots. With choice
+    arm sets it gave 15 programs whose conditions changed.
+  - **F2 stacked on top** is not prototyped here. #1465's prototype was deleted. Its cost is
+    O(distinct (run, signature)) position walks, so the distinct sets of states at a position give a
+    lower bound. #1465 measured about 240 records per walked position on `removeMin`.
+    - `descend`'s three joins have 98 + 64 + 49 runs, against 1 153 + 208 + 180 positions. That puts its
+      `propagate` near 14 000 records against 80 000, and its growth near 32 000. So it is inside the
+      allowance, before signature splits.
+    - `wa`/`wb`: their joins have 72 + 99 runs against 180 + 419 positions, so F2 probably takes `wb`
+      inside the allowance. That is an estimate, not a measurement.
+    - `removeMin`'s walk 2 has 161 + 161 + 132 + 176 + 111 runs. Even with no signature split, that is
+      about 180 000 records for walk 2 alone. So F2 does not make it pass, which agrees with #1465 on
+      the older master.
+    - Stable knots change none of these counts: the joined DAGs and the states are the same.
+  - **The question for the manager (#1372; Q8 on #1421).** 4e does not reach its goals. `removeMin` and
+    `descend` are unchanged by both pieces. `wb` stays over the allowance: by 2 659 with stable knots, by 915
+    with both pieces. It goes inside the allowance only with a union representation that breaks the
+    quadtree. `wa`/`wb` already settle on master (6 / 7 walks). The late-round movement that 4d's report found was on 5a's earlier branch, and 5a's
+    final commits removed it. 4e keeps the walks at 6 / 7.
+    - (a) **Recommended:** land 4e as stable images alone (knots, and the acyclic part of step 5), with
+      the lemma and the checks above. No verdict or condition changes on the corpus or the sweep. It cuts
+      `rose` by 15 to 17 %, the quadtree by up to 4 %, and the sweep by 29.5 %. Then build F2 (#1465) as
+      the next slice, for `descend` and `wa`/`wb`.
+    - (b) Specify a fix for `removeMin` before more slices. Its joined DAG has 236 nodes, but its κ
+      snapshot has one entry set per path, 74 134 of them, and only 161 distinct sets of states. A
+      snapshot shared by `(node, run)`, as F2's local snapshot is, removes the output but not the walks.
+      The walks themselves would need to be per DAG node. That is a change to §2.9's positions, not to the
+      port. It needs no S4 labels.
+    - (c) Raise the allowance for `Dict` alone. That is not a fix: at 10⁸ the group still stops in walk 3.
+  - **The same measurement on #1289 and #1489** (5d2's cost failures, #1494). Neither is port growth
+    alone, and 4e does not fix either.
+    - *#1289, the chain `t_k = insert t_{k−1} k`.* `chain` is not a recursive group; `insert` settles in
+      5 walks. Read at its end, the chain is 9 830 / 25 662 / 76 800 / 269 081 / 1 131 398 records at
+      5 / 10 / 20 / 40 / 80 calls, Θ(n²). Published, it is 5 317 / 18 423 / 91 023 / 1 036 758 /
+      14 557 106 at 2 / 4 / 6 / 8 / 10 calls. Stable knots and arm sets each change these by under 0.3 %.
+      **The exponential is one `propagate` call**, over the published result. Its joined DAG grows
+      linearly (51 / 73 / 95 nodes at 4 / 6 / 8 calls, with 8 / 12 / 16 knot nodes). Its positions grow
+      about 3.7 times per call (147 / 2 035 / 30 227), while its distinct sets of states at a position
+      grow linearly (40 / 66 / 92). Each call's view has its own widened knot, with its own fresh cells,
+      so no two knots are equal and stable images cannot merge them. The walk folds only where a route
+      meets a node it has already passed. A knot nested in another one is a new node on the route, so
+      every nesting multiplies the paths. This is the regime of F2's position memo (#1465), not the
+      port's: its runs are linear. It is reported on #1289.
+    - *#1489, the two-branch insert.* This is port growth, but not only that. Raw, the port grows
+      13 / 11 / 48 / 97 / 145 / 217 / 319 / 417 nodes in rounds 1 to 8. As union sets it is 51 nodes from
+      round 4 on. The growth is unions over content-equal raw copies: `union(627, 231)` beside
+      `union(231, 627)`, a union that nests a member it already holds, and a `node` record equal to an
+      interned one under a new id each round. `map`'s raw union images make them. Union sets (in the
+      constructors and in `map`) hold the port at 55 to 63 nodes. But the group still does not settle: each round still adds a
+      choice arm, and each walk still costs about 180 000 records. The case join's `propagate` walks 2 077
+      positions over 73 runs, F2's regime again. So that piece fixes the port's size, but neither the
+      rounds nor the walk cost, and it breaks the quadtree (above). It is reported on #1489.
+    - *A wider view.* In the random sweep, base master reaches the 2 000 000 allowance on 159 of the 400
+      programs (338 of 800 in the first sweep). No variant changes that count. Almost
+      all of these are over a type with two or more recursive children: `f` over `N (List Int) T U T`,
+      or an accumulator `acc (n − 1) (N [ n ] t L)`. A type with one recursive child almost always passes.
+      Core's `Dict`, #1489 and the quadtree have this shape.
+
+  **Options not taken.**
+  - *A widen that folds no-cycle nesting into a knot.* Round k + 1's `res[*]` holds round k's `res[*]`
+    through `positions` (`merge`'s `[ x, …merge xt ys ]`). Folding that occurrence into a cycle through a
+    `positions` node gives every member there an unbounded multiplicity. That reads `repeated` wherever the
+    occurrence was not already doubled, so the fold changes κ. With the rule, `mergeSort`'s port is 11 / 42
+    / 100 nodes after rounds 1 to 3 (8 / 31 / 73 as arm sets), and the group settles in 3 walks with no
+    growth. So it does not need the fold.
+  - *Absorption in the shape constructors.* Unsound, as said above.
+
+  **Measured** (scratch prototype of the rule, Debug, self-hosted, `dump --stage=ownership --ownership=v2
+  --jobs=1`, allowance raised to 10⁸, or 4 194 304 where it says so). The bases are master `fe086e557` and
+  5a's side branch `b030bedcc`. Records, with walks:
+
+  | case | master | + rule | 5a branch | + rule |
+  |---|---|---|---|---|
+  | `run/TailModConsMerge`'s `mergeSort` | 168 829 (4) | **38 477 (3), growth 0** | 187 717 (4) | **42 257 (3)** |
+  | DerivedDeepPaths' `rose` | 16 644 (2) | 10 073 (2) | 177 371 (3) | **45 507 (3)** |
+  | `descend` (copied) | 437 829 | 178 922 | 334 947 | 148 648 |
+  | quadtree self-map | 248 245 | 233 123 | 244 792 | 236 274 |
+  | T3 | 190 537 | 161 378 | 191 627 | 159 927 |
+  | `wa` / `wb` (4 194 304) | limit / 2 485 979 | limit / 2 618 581 | 340 452 / 275 136 | limit / 3 220 753 |
+  | `removeMin` (copied, 4 194 304) | limit | limit | limit | limit |
+  | `incCs` (4 194 304) | 4 111 400 (`incAs` limit) | 4 176 027 (`incAs` limit) | | `incCs` limit |
+
+  The whole corpus, all 2 043 roots of `bench/ownership-roots.mjs` (`allOwnership`, 2 045 on 5a's
+  branch), was dumped under `--ownership-everywhere --ownership=v2`, with `account` and `crossing` lines
+  left out. On master, 43 roots differ, and one verdict changes: `TailModConsMerge`'s `mergeSort` goes
+  from a limit to checked. The other 42 differ only in summary and block lines. On 5a's branch, 42 roots
+  differ, and two verdicts change: `mergeSort` and DerivedDeepPaths' `rose`, each from a limit to checked.
+  Records over the corpus: 6 415 320 → 6 062 066 (−5.5 %) on master, and 6 735 268 → 6 318 916 (−6.2 %)
+  on 5a's branch. The largest increase is `MarkerDisjoint`, 24 873 → 25 802.
+
+  **What the rule does not reach.** Core's `removeMin` and `descend` stay limits. Their cost is not the
+  port. `removeMin`'s port is 25 nodes after round 1 and 119 after round 2. Its walk 2 costs 2 848 729
+  records in `propagate` calls whose joined DAGs have 63 to 125 nodes, unfolded to 29 624 output
+  positions, with 19 states at most per position. They hold 205 to 571 distinct `(node, bits, run)` and 95
+  to 167 distinct sets of states at a position. That is #1465's F2 (the cyclic join memo, by position),
+  with arm sets as the second factor. `descend`'s largest join, after the rule, walks 942 states over 696
+  positions, which hold 108 distinct triples. The quadtree and T3 cost about 1 000 records per port node a
+  walk, in the walk and not in the port. `incCs` likewise.
 - `leq` is **γ-inclusion and kind-blind**: `n ≤ m` iff `cells(n) ⊆ cells(m)` and `proj(n, s) ≤ proj(m, s)` at
-  every step `s` of n's place, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
+  every step `s` of n's place and at a `⟲` child of n, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
   below `y` when both its sides are (every member is below its join, O4), and two `positions` nodes compare by
   their cells per path, independent of their members' order and of the balanced tree's shape. Multiplicity is not
   part of γ: it is compared only through κ, by `Cond.kappaLeq` (§2.9). A structural rule — `x ≤ union(a, b)` iff
@@ -694,6 +1233,14 @@ Operations, memoised on their node arguments:
   `F(x) ⊑ x` under `widen`: a class image is built from many members (below), so `positions(x, x) ≤ image`
   would need a member-to-member match, which fails although γ holds, and the fixpoint would keep growing. γ-inclusion settles `F(x) ⊑ x` in one step for `Rose [ x, x ]` over the widened
   value, at the coinductive pair cost and with no matching task.
+  *Amended 2026-11-01 (#1523): the `⟲` step.* A use shape keeps its canonical paths, `⟲` included (§2.10's
+  read-off), so a node of one can have a `⟲` child, and `⟲` is no step of a place. `leq` compares that child
+  too: `n`'s `⟲` child is below `proj(m, ⟲)`. Without it a group's round that added marks only below a `⟲`
+  was `leq` its port, and the fixpoint stopped one round early: `size r = case r of Rose kids → 1 + sizeList
+  kids` read `π1#Rose.0[*]⟲` but not `π1#Rose.0[*]⟲#Rose.0`, so a holder read by `size` after a call did not
+  hold the lists three levels down, and the call's write of them was accepted while the holder read them
+  (`LevelReadSummary`). Each per-path verdict stands alone for condition 5; a callee's `xreq` is reported on
+  the call's first write (§2.11 step 7), so a deeper path's `accepted` does not discharge it.
 - `widen` across kinds [M 2026-10-27, #1120]: **a `union` or `positions` node met at a re-entry (a `⟲` step: on the
   cycle being folded) is opened**. Its sides stand at its path, so they become members of its class and their own
   structure is walked like any member's. Every other union, choice or positions node (off the cycle, below) is kept as it is, and widen never
@@ -803,7 +1350,32 @@ Operations, memoised on their node arguments:
   their own parts; a first return keys its own class, and a union, choice or positions node there is opened as
   at a `⟲` (`Place.isReturn`: both are returns on the cycle being folded), else a group's rounds would nest
   under it. A group settles a round later: a first return's class takes the previous round's root a round
-  after the root's own does. Over a non-recursive type it is the
+  after the root's own does. *The atom rule (#1483, as built 2026-11-01):* an **atom** is a node with no
+  cell and no part, a nullary constructor (`Leaf`, `Nothing`) or the empty leaf (`Shape.Table.isAtom`). It
+  holds no list, so it belongs to no class: the walk does not enter it, it is its own image wherever it
+  stands, and at a step where a class has another child the atom gives way to it (`Widen.settle`). Atoms
+  are interned, so one atom stands at every path that holds it, and as a member it united those paths'
+  classes: the root and each subtree of `incAll`'s `Node l xs r`, built over one `Leaf`, were one class,
+  and the root's `xs` read as every level's (the `returnedKids` probe, `FoldLevels` 94:23, `LevelFresh`
+  46:23). That merge was a representation artifact, the kind #1471 and #1472 removed. *Lemma (the
+  representation change):* the quotient with atoms is an over-approximation of the value exactly when the
+  quotient without them is. γ(atom) holds no object at any path, so for every class C and step s,
+  `γ(C·s) ⊇ γ(m·s)` for every member m of C holds with an atom member removed, and an atom child at s
+  adds nothing to `cellsAt(C·s, q)` for any q. The atoms' own positions are their own images, which
+  read no cell. Each class is therefore a superset of the same members' content at every path, and only
+  identifications through an atom are dropped. Under `runtime_safety`, `emit` asserts that no class with an
+  image has an atom member and that an atom's class is the atom alone. *Its readers:* (1) an atom is its
+  own image, so the widened graph may name a source node, and `propagate` reads an atom (it computes its
+  κ and writes it) rather than linking the member's snapshot: below a fold, a linked snapshot is merged
+  into the fold as a collapsed one and reads `lost` (`mPlain`, `M [] (Just (M [ 1 ] (Just (M [ 2 ]
+  Nothing))))`, read `{lost}` at its `Int` element atom before this reader). (2) A block shares two κ
+  positions of one class that the original keeps apart only by entries keyed at the widening's source
+  nodes, which the block never writes, so the #1157 review test compares reads per path, not text. (3) A
+  group may take one class version more: R-7.4's ring at k = 2 walks 6 times, not 5, because the empty
+  value at the kids' `[*]` no longer makes the round that closes the ring read `lost` at the root; the
+  next delivery brings the ring's fold there. The fixpoint is more precise, and sound: at k = 2 the cell-free `{lost}` at `#T0.1[*]#T1.1[*]` and `…#T0.1[*]` goes, and at k = 3 and 4 the root's lists read `fresh1 fresh3` instead of `fresh1 fresh3{lost}`. (4) #1128's block test folds
+  `k` at the first return and the level below it, the re-entry's fold, not the atom's.
+  Over a non-recursive type it is the
   identity (no re-entering step), so `w5`'s DAG is untouched. Compute the quotient by a canonical-path
   worklist and congruence closure: union node classes on re-entry, merge their step maps, enqueue the
   corresponding child pairs, and emit the quotient once. Union-by-size/path compression and smaller-to-larger
@@ -1116,6 +1688,22 @@ climb alone misses `kids`, and the subtrees' lists are then pushed in place. The
   `r·⟲·#Rose.0`, the written cell itself; with `xss : List (List Int)`, `elem(xss·ι)` is canonically `xss·[*]`.
   So a refinement is also linked into the **refinement chain** of its canonical path, keyed by
   `(base origin, canonical PathId)`, and anchors by that canonical path.
+  *Amended 2026-10-31 (#1491): a candidate at the target's own position.* A candidate found on the chain at
+  the target's canonical path may be on neither cell's refinement chain: two matches of one recursive value
+  each refine it (`case t of Rose _ ks → … case t of Rose _ ks2 →`), and a call writes the canonical cell
+  `t#Rose.1` itself, which no match refines. `alias` says `yes`, but the cover (§2.8 *The holder index*) read
+  the hold through `stepsTo` from the candidate down to the target, which relates a cell only to its own chain,
+  so it found none, and `rest`, a view of `ks`, was not a holder of `ks2` or of the call's `t#Rose.1`
+  (`ViewCycleHolder`'s `twoMatches` and `oneLevelCall`, accepted by v2 only). The mirror case is the same gap: a
+  call's answer is relabelled to the canonical cell it answers (`kidsOf t` to `t#Rose.1`), so a view of the
+  answer is a side of that plain cell, and the target is a match's refinement of it (`ViewOfCallAnswer`'s
+  `calleeKids`, `case kidsOf t of`, through a second call and through a choice). A candidate and a target at
+  one canonical cell, one of them a refinement, with neither on the other's chain, stand at one position: the
+  candidate's hold is the target's at the same path (`Holders.samePosition`, in the cover and in the naive
+  scan). This only finds more holders. The frames of these shapes hold more than eight holders, so the naive
+  half is checked only by `-Downership-full-cross-check` (reverting it alone panics there on both fixtures).
+  One level down, v1 accepts the call through its folded `⟨Rose⟩⁺` path, which `--sanitize-lists` shows is a
+  stale read, and a second match two levels down: known entries for v1.
 - `Demands` keeps one anchor chain per `(base origin, anchor PathId, step class)`, where the step class is `⟲` or
   `on-cycle`, beside the refinement chains. A cell is linked into its chains when its live count goes 0 → 1, and
   unlinked when it returns to 0, beside its `set_head` link, so a chain holds live cells only. A cell's first
@@ -1248,6 +1836,48 @@ these points, each pinned:
   (`JoinHolds`). Below such joins the exactness and the witness can differ from the live index's (an exact hold
   becomes approximate, and an exact one at a later use may win), never the verdict.
 - **Light or heavy** per pair: heavy when its demands times its use blocks, times 4, is under its uses.
+- **A holder with no later use** makes no entry and no heavy answer: both are uses after the pair's first demand,
+  so a binding holder whose last use is at or before that demand returns before its cover (#1467). The argument
+  of a call over an `else if` chain of D arms is used last at the call, and its cover of each arm's target walked
+  the chain down to that arm, O(D²): 1 038 / 2 430 / 6 704 demand records at D = 8 / 16 / 32, 235 / 427 / 861
+  now. A holder still used after its demands read the chain once per target until the join index (next).
+- **The join index (#1510).** A node whose closure walk entered more than 16 records is *deep*. Its later closures,
+  and the holds walk's frames at it, are read from its joins flattened once (`Joins.zig`), not walked down to the
+  candidate. The joins J(n₀) are the records that `sides` reaches from n₀ at n₀'s path: a union's and a choice's
+  sides (with `alt`), a positions node's sides, a delta's base and a recast's inner (with `cast`). Each member m
+  keeps Φ(m), the flag combinations of the paths from n₀ to m: a fixed point over four combinations, so a cycle of
+  joins ends. A node or a delta, and a lazy record, is a leaf of a balanced tree of reach unions. Every other member
+  (an eager join, recast or leaf) is *folded*: its cells go into `plain` when they are one cell and some φ has no
+  `alt`, and into `alt` when they are several or some φ has `alt`. A read of x takes the members whose reach holds
+  x from the tree, O(hits · log |J|), and one lookup in each of `plain` and `alt`. When J holds a view, n₀ has no
+  index and its walk is unchanged. The walk forces each view it enters, and the order of those forces numbers the
+  answers' nodes; also `reach(view)` need not hold the answer's cells (§2.3).
+
+  *Lemma.* Let J(n₀) hold no view. (a) Every edge of J is an explicit child in `Shape.reach`, so the reach of a
+  record holds each side's reach. A path of joins from n₀ to m therefore has x in the reach of each record on it
+  exactly when x ∈ reach(m). The walk stops at a record whose reach lacks x, so it reaches exactly the pairs
+  (m, φ) with φ ∈ Φ(m) and x ∈ reach(m). `bitsUnder` composes, bitsUnder(φ, bitsUnder(ψ, b)) = bitsUnder(φ ∨ ψ, b),
+  so `closure(n₀, x, c)` has the bits ⋁ bitsUnder(φ, own(m)) over those pairs. Its states are (m, φ, the children of
+  m that reach x), for each such m that is a node or a delta with such a child. (b) An eager record that is not a
+  node or a delta has its cells in its reach: `Shape.reach` takes them, or its sides hold them, which runtime safety
+  asserts since #1467. Its own hold of x thus needs only x ∈ cells(m), which `holdAt` reads apart from c. That hold
+  is exact when x's value is exact. It is plain when cells(m) is one cell and φ has no `alt`, and one of several
+  otherwise. The `and` of a union keeps the exact value when one member has it, so a lookup in `plain` and in
+  `alt` gives these members' bits. (c) The holds walk prunes and flags the same records at that path. A hold's
+  exactness at path f is `bitsExact(f, ·)` of the member's bits under the frame's flags (`blur` comes only from
+  outside the frame). So the members' holds at the path are one path, exact when one of them is: the order of
+  paths (§2.8 *Verdicts*) sees only that. The frames that leave the path are the same: the children of each node or
+  delta, with the frame's flags.
+
+  Under runtime safety each indexed closure is compared with the walk on a memo and an account of its own: the same
+  bits, and the same states as a set, by node, flags and children. Each indexed hold listing is compared with the
+  walk's: the same paths, each one exact as often. With the index taken for every node, not only deep ones, the
+  2 113 roots of `bench/ownership-roots.mjs` read 8 426 indexed closures and 4 914 indexed frames. Every check
+  passed, and every verdict and summary is byte-identical with master. Records of the issue's program (the chain
+  passed to `incAll`, then `ignore v`, arms `Rose [ Rose k, Rose [] ]` in turn), demand records at
+  D = 8 / 16 / 32 / 64: 1 676 / 3 994 / 11 099 / 34 837 → 1 704 / 3 299 / 6 748 / 13 914 (×1.94, ×2.05, ×2.06 a
+  doubling). With `chosen`'s arms: 1 146 / 2 610 / 7 028 / 21 647 → 1 214 / 2 265 / 4 544 / 9 337. At D = 8 a
+  flattening is not repaid. A chain whose arms are views (call results) is still walked per target.
 - **A step's work is constant and charged.** A child's uses are found inside its parent's range by its one step
   (`Liveness.childRange`), the descent's buffers and its children's lists are reused from node to node and pair to
   pair, a kept state carries its children from `closure`, and the closure memo is a hash map (it is never
@@ -1344,30 +1974,142 @@ relative to the value's root, and the argument's snapshot is linked under the ar
 back to it): they are its sparse frontier, the routes by which `deep`, `kappaLeq` and a block find what is stored below it
 (#1129).
 
-**Keyed where a reader looks** [M 2026-10-31, #1399]. A join of alternatives (`propagate`'s `.alternatives`:
-a branch join, `Summary.joinRes`, a supplies join, `widenValue`'s carry) sets κ at every position of the joined
-node from the members, keyed by the node it walks there: `proj(joined, q)`. Below a `choice` or a `union` that
-node is a new DAG (`proj` of a choice is the choice of its arms' projections), and no part of the value names
-it. A reader that descends the value's own structure never meets it. A call's view expands a choice into the
-choice of its arms' views and projects arm by arm (`expandView`), so a caller at `q` meets the views of the arms'
-nodes, never the view of `proj(joined, q)`. `map`'s relabelling (`kappaRelabel`) and the printer walk the arms
-too. Only an in-walk reader that projects the joined node itself meets it. So each node of the DAG below
-`proj(joined, q)` (its union, choice and positions sides, recursively) that a member holds is keyed at the same
-position too, with what the members store for it at their own positions, joined: a built node a member holds
-with no entry gives `lost` (the built-node rule above), a recast gives the member's read of it. A leaf's entry
-that is no stronger than its derivation is left out, as everywhere else. This only weakens a node's read,
-because each value written is a member's own reading there. A reader at `q` joins the reads of the nodes it
-meets, which are the members' nodes, so through the view it reads what the members read. The entry on
-`proj(joined, q)` stays, for the in-walk reader and the block (§3.6). A node that no member holds (an image that
-`widen` made, a set leaf that `join` merged from the members' leaves) is left as it reads (#1406). Keying it
-with the joined κ makes a recursive group's rounds diverge: `kappaLeq` projects the port along a round's
-frontier and meets a node that no `propagate` frame walked. A `runtime_safety` build checks at the end of each
-such join that every built side (a node, a delta or a recast) that a member keys is keyed at that position.
-The branch join was already right by accident. It merges its arms' snapshots into the output first, so the
-arms' nodes keep their own entries. `Summary.joinRes` (a recursive group's port, #1395) starts from nothing.
-There, a caller of `build x n = if n == 0 then [] else List.push (build x (n − 1)) x` read `yes` where the
-port stores `shared` (`GroupJoinShared`). On master no program reached this, because only a group's rounds
-build a class join.
+**Keyed where a reader looks** [M 2026-10-31, #1399; rebuilt by S3b slice 5a, #1447]. A join of alternatives
+(`propagate`'s `.alternatives`: a branch join, `Summary.joinRes`, a supplies join, `widenValue`'s carry) sets κ
+at every position of the joined node from the members, keyed by the node it walks there: `D = proj(joined, q)`.
+Below a `choice` or a `union` that node is a new DAG (`proj` of a choice is the choice of its arms'
+projections), and no part of the value names it. The join keys `D` and nothing below it, and every reader
+reaches `D`:
+
+- **An in-walk reader** projects from the value's root (a demand, `deep`, `kappaLeq`, `propagate`'s frames, the
+  block's `successors`), so it meets `D` itself. Its read of a DAG node joins the node's own entry with its
+  sides' reads (the read machine's *inner* task).
+- **A call** relabels the class's entry on `D` onto `view(D, E)`, as it relabels every class node (`Calls.apply`).
+  A caller projects the call's view, and **the view of a union or choice template projects to the
+  view of the template's projection** (`Shape.proj`, `viewProjectsTemplate`): `proj(view(C, E), s) =
+  view(proj(C, s), E)`, which is `view(D, E)`. Its answer is the template DAG's own expansion, the views of
+  `D`'s sides. Nothing is computed at the call. A view of any other template projects as its answer does, and so
+  does a view at another place than its template's, or a template whose place lacks the step (a type variable's
+  place, instantiated, #1350).
+- **Read-off** (`map`, then `kappaRelabel` one radix node of an entry map at a time, `relabelMap`) never meets
+  `D`. The **projection correspondence** carries it there. `Shape.proj` records each union or choice
+  node it makes from another, with that node and the step (`proj_origins`, every such origin kept). `BlockRead`
+  records the projections it decodes (`noteOrigin`). The image of `D` is `proj(image(o), s)` for the first
+  origin `(o, s)` that leads to an image: `o`'s own, when `map` met it, or, up `o`'s origins, the image of
+  another such projection (`Cond.projectedImage`, memoised per relabel, on an explicit stack). That is the node a
+  reader of the published class meets when it projects `res`. The entry is keyed there. A `relabelMap` leaf
+  costs one memoised lookup more, so the transport stays per submap and source-sized.
+  **Through a call.** A call relabels the class's entry on `D` onto `view(D, E)`, and that view is no part of
+  the caller's value either. Read-off reaches it the same way. A call's view of a node with origins has its
+  template's origins, each origin's node viewed under `E` (`Shape.originHead`). A view that a caller's
+  projection makes records its own origin too. So a function that returns a call's result publishes the join's
+  entry where its own callers look, through any number of calls (#1459's review: before this, a wrapper of a
+  joined port read the sides alone, `excl` where the port reads `lost`, and `yes` where it reads `shared`).
+  `build_test.zig` pins it: a wrapper's and its wrapper's summaries read as the joined function's, in the
+  same module and imported.
+- **The printer** descends the value's own structure. It carries the outermost union or choice on its way, projected
+  along each step since. It joins that projection's read, which takes in every side and every join nested in it,
+  into each node's read: what a reader at
+  that path reads.
+
+These three readers act on unions and choices only, the kinds a join of alternatives makes (§2.3). A
+`positions` node is a literal's (`together`). No transport carried its entries before #1447, and none does now.
+
+**The block writes a join's entry only where it adds to the read** (§3.6's omission criterion; #1459's review).
+`D`'s sides are already parts the block writes. Each holds its member's entries, because the members' snapshots
+were merged first. So `D`'s entry `k` usually adds nothing: what its sides read there, joined, is no stronger
+than `k` in either class. `Block.Writer.joinImplied` tests exactly that and does not write such an entry. Its reads
+are the writer's baseline, not the owner's growth. A decoded class reads `D` through its sides, the same read.
+An entry the sides do not imply is written, for example over a merged leaf or a fold's obligation. So K's block
+is master's byte for byte (13 100 bytes at 40 levels). Writing every `D` doubled its positions, and an importer of K
+paid 1.7 times master's records (#1459's review).
+
+**A recursive group's read-off.** Two rules keep a group's rounds from carrying their history (#1466), on top of
+4d's covered rounds (#1473):
+
+- **No implied join entry is carried.** Before read-off relabels a group member's snapshot, it drops each
+  union, choice or view entry that `map` did not meet and that `joinImplied` shows its sides imply at its
+  position (`Cond.withoutImpliedJoins`). It moves an entry its sides do not imply onto the sides that `map` met.
+  Every read stays the same, and no projection is made for these entries. The reads go on the walk's own
+  charge, its lanes and then growth, so a tall snapshot stops at the limit (#1459's review). Each answer is
+  memoised by `(key, condition, position)`. Positions at a fold are kept as they are. The filter reads every
+  `(position, entry)` pair of the round's snapshot, one at a time, because whether an entry is implied depends
+  on its position. A read-off's relabelling shares submaps; the filter cannot. K's snapshot holds Θ(n²) such
+  pairs in O(n log n) map nodes, so K outside a group stays linear: 13 056 / 29 717 / 64 744 / 138 217 records
+  at 10 / 20 / 40 / 80. Inside a recursive function, the filter's reads grow quadratically: 3 171 / 11 232 /
+  44 760 at 10 / 20 / 40. The rest of that walk grows faster than linear too: 65 072 / 154 349 / 407 364 with
+  no filter at all. Its cause is open (#1479). The run stops at `ownership_summary_size` at 80 levels (about
+  14 s ReleaseSafe, 32 s Debug). 4d alone refuses it at 20.
+- **Own origins only.** A view in a group member's read-off follows only its own origins, never its template's
+  (`Shape.originHead`'s `templates`). A round's view of a joined node is the previous round's class.
+  `Summary.joinRes` reads each round's entries under that round's own snapshot, so the port keeps them.
+  Carried onto this round's projections again, they grew every round: `rose` did not converge at an allowance
+  of 2 000 000 before this rule.
+
+**A covered arm's drop keeps the join below the root** (#1459's review). 4d's `Summary.dropCovered` drops the
+arms of a port's choice that a later round covers, and joins the entry at each choice node into the kept arms at
+the root. Below the root, the join's entry is keyed on `proj(choice, q)`. After the drop, readers meet
+`proj(root, q)` instead, where `root` is the kept choice or arm. The kept arms' sides there still hold the
+certificates that the merge brought in from the dropped arms. So the drop transports the snapshot through the
+projection correspondence, with every choice node of the dropped DAG mapped to `root`. Each entry stays where it
+is, and each joined DAG's entry is keyed on `proj(root, q)` as well (`DropCarry`). The kept arms then read, at
+every position, at most what the dropped choice read there. Mapping a nested choice to `root` joins its entries
+into all kept arms, which only weakens a read. `Summary.zig`'s *a port join that drops a covered arm keeps the
+joined entries below the root* pins it: `x = [a]`, `u = [a | b]` with only `b` certified, `big = [a | c]`. Its
+`[*]` reads `yes` without the carry and fails with it.
+The cover test reads each arm the same way, before any arm is dropped. The arm's κ gets the choice's root entries
+and the same carry, with `root` that arm (`carryTo`). Read under the port's merged snapshot alone, an arm skips `D`'s
+`lost` and borrows another arm's certificate, so a real arm would be judged covered and dropped (#1459's review).
+`Summary.zig`'s *a port join's cover test reads an arm with the join's entries carried to it* pins it: `u = [a | b]`
+read `yes` under `x`'s merged certificate for `a`, and the port then dropped it.
+
+**No entry is dropped for its shape alone.** An earlier version skipped a join's entry wherever every member
+was the joined node or one of its sides. That is unsound once the members' snapshots are merged first. A
+certificate merged in from one member can make a side read stronger than its own member read it
+(`Cond.zig`'s *a class join keeps a join entry its sides' merged certificates would make stronger*: `x = a`,
+`u = union(a, b)`, one member certifying `x` and the other only `b`). So only reads decide, at the block
+(`Block.joinImplied`) and at a group's read-off.
+
+Measured on 4d's head `4c96357b6` (records, 4d in brackets):
+- `rose`: 39 456 in 4 walks, growth 10 692 (10 085 in 2, growth 0);
+- `mergeSort`: 43 147 in 3 walks, growth 4 045, the filter's reads (36 853 in 3);
+- K: 13 056 / 64 744 / 138 217 / 292 195 at 10 / 40 / 80 / 160 (16 842 / 187 601 / 706 567 / refused);
+- K's importer at 40: 132 299 (123 730), with the same block bytes;
+- `build_test.zig`'s `wa`: 17 934 in 4 walks (16 616); `wb`: 27 356 in 5 (28 156).
+
+A block that a limit stops is that limit, said: `limit block: <limit> (the module's summaries are not published)`,
+one of the module's limits, and an `ownership_limit` error under enforcement (#1450). Before, the module published
+nothing and said nothing, and its importers read none of its classes.
+
+**The members' snapshots are merged first.** Every join of alternatives starts from the members' snapshots
+merged (`kappaMerge`). The branch join always did, and `Summary.joinRes` and the supplies join do so too.
+`widenValue` has one member, the value it widens, and merging its snapshot whole would fold its unfolded
+positions into the image's folds, collapsing them. So `propagate` keeps a lone member's entries at each position
+it walks outside a fold (a widened image keeps the parts off its cycle as they are). Each side of `D` that a member
+holds then keeps that
+member's entries, and a built side keeps its certificate (#1093: a join of two built records reads the members'
+join, not `lost`). Where two members store one key, `kappaMerge` joins them. A built side that one member
+certifies, and another holds with none, reads that certificate as a side. Read alone, that would be too strong.
+But no reader reads a side of `D` alone, and `D`'s entry `k` is the members' reads joined, which holds that
+member's `lost`.
+
+**A side that no member holds** (#1406): an image that `widen` made, or a set leaf that `Shape.join` merged from the
+members' leaves. It reads its own derivation as a side. It is never read alone: every reader at `q` reaches `D`
+or its image, whose read joins `k` with the sides' reads. So what a reader reads there is `k` joined with the
+side's derivation, never stronger than `k`. That is the argument #1406 asked for. `Cond.zig` pins it (*a side no
+member holds reads the join's κ joined with its derivation, never stronger*). Nothing is keyed on such a side,
+so `kappaLeq`'s projection of a group's port meets the same entries in every round. 4a's `MarkerAcross.incAll`,
+`LevelRecursiveUpdates.incAll`/`incAll2` and `WriteOneLevel.incAll2` converge in 5 walks, as on master
+[M 2026-10-31].
+
+**Why the eager rule went** (#1428). #1408 keyed every node of the DAG below `D` that a member holds, with the
+members' entries for it (`leafEntries`). That is Θ(|DAG|) per position. In K, the DAG at level k holds every
+earlier level's choice and `Rose` nodes, so K was quadratic: 16 842 / 187 601 / 706 567 records at
+10 / 40 / 80, refused at 160 [M 2026-10-31]. Through the correspondence, K is 13 056 / 64 744 / 138 217 at
+10 / 40 / 80, 292 195 at 160 and 2 069 326 at 1 000. That is 363, 300, 272, 249 and 207 records per
+n·log₂(n + 2), falling (`build_test.zig` counts 10 / 40 / 80). K's block still writes Θ(n²) positions, past the
+allowance at 160 (#1450). Its time is #1426's. `GroupJoinShared` and `GroupJoinSharedImported` keep v1's refusals.
+A caller of `build x n = if n == 0 then [] else List.push (build x (n − 1)) x` reads the port's `shared`.
 
 **Recursive folds and their read.** `widen` identifies distinct recursive levels in the stored shape.
 Its shape quotient and snapshot quotient are one value operation, at read-off and at a fixpoint unknown.
@@ -1419,6 +2161,11 @@ Three concrete structures implement the operation (§3.4):
   across coexisting operands, not between exclusive alternatives. Any unresolved correlation
   conservatively adds obligations; it cannot justify a stronger read. In particular the required
   JoinFoldChoice and K controls below retain their correlation, not conservative `lost`.
+  The representation saturates where this domain does [M 2026-10-31, #1368]: a `positions`
+  constructor keeps a member at most twice (§2.3 *Saturation at two*). That changes no read, because
+  `k · a = 2 · a` for every `k ≥ 2`. A reader may still meet a member more than twice, in an image that
+  `map` or `BlockRead` made, and it counts it as twice. The readers' own aggregates are this domain
+  already and are memoised per node, so the saturation removes work only by removing nodes.
 
 The multiplicity map finds repeated identities. The shared expression and apart index additionally
 retain comparisons between **different symbolic** arrivals which substitution may alias. The condition
@@ -1442,7 +2189,8 @@ paths, so every depth a template path through `⟲` stands for meets at one key.
 position is a state `(node, canonical path)`.
 
 - A node's parts and a `positions` node's sides add.
-- A `choice`'s arms take the maximum.
+- A `choice`'s arms take the maximum. A call's other-paths walk keeps them apart in the same way
+  (§2.11 item 3, *a choice's arms*, #1439).
 - A `union` holds its cells at its position as a set, and its sides' structure below it adds.
 - A leaf's symbolic cells and refinements contribute their projections at every canonical path
   below, found by a pair walk over the argument's path and the cell's own path. A `⊤` cell, a recast,
@@ -1456,7 +2204,9 @@ The states settle by component (Tarjan, explicit stack). A cycle makes every occ
 parts hold repeated, which is the least solution of these equations in {absent, one, repeated}. The
 result is kept in the condition table by `(argument node, prefix)` across reads and calls, so many
 template paths under one prefix walk the argument once. A widened image's own fold certificate does
-not yet stand for its cycle's multiset; that question is open (#1159). The conservative `lost` for an
+not yet stand for its cycle's multiset; that question is open (#1159). *Measured 2026-10-31:* over the
+ownership corpus this Tarjan walk never meets a cycle (0 of 373 roots), so no corpus verdict waits on it (§8,
+slice 4, *The fold certificate, specified*). The conservative `lost` for an
 unopened node is gone. One consequence: an occurrence at another canonical path under the same
 prefix (`0·[*]·arg` beside `0·[*]·⟲·arg`) is outside the preimage. The caller's Disjoint across the
 callee's W paths compares it, and this read does not (§2.11 item 3).
@@ -1687,7 +2437,527 @@ Where κ is set, always **at the selected path p**:
   route. If it is alone at its output position, its completed subtree is independent of the enclosing
   route and may be linked from a memo. The root bit matters because a literal root reads reach, not
   only cells. Cyclic states require a key including the fold correspondence/obligations or stay off
-  this memo. Rank is a proof of route independence, never an exclusivity proof.
+  this memo: *The cyclic join memo* below is that key. Rank is a proof of route independence, never an
+  exclusivity proof.
+
+  **The cyclic join memo** [M 2026-10-31, #1372; specified, not built; *superseded 2026-11-01* by *Fold first* below, whose class memo is this memo with no fold signature]. A state on or above a knot
+  `widen` tied has no finite rank, so the memo above never takes it, and its subwalk is walked again on
+  every path that reaches it. Measured on master `88512a2c9` (Debug, the module allowance raised to
+  4 194 304): the `case` join of walk 2 of `Dict.removeMin`, copied into a user module, walks 75 868
+  states at 29 624 output positions for 1 071 819 records, from 205 distinct `(node, bits, run)`. There
+  are only 95 distinct sets of states at a position. The unit of reuse is therefore the **output
+  position**, not the state. The states at a position are a recast and its inners, or the sides of a
+  union, projected along one step. So almost no position holds one state: 2.6 states per position in
+  `removeMin`, 3 to 4 in the quadtree. A subwalk of one state shares the positions below it with the
+  subwalks of its siblings. There, the first arrival decides the route of a state that both reach.
+
+  *The walk is position-major.* `propagate` walks one output position at a time, and walks it whole:
+  1. The states **delivered** to the position, in the order of delivery. The states of the parent
+     position deliver them in the order those states are walked, and each state delivers its frontier
+     in reverse, which is the order in which the depth-first stack popped them.
+  2. Its child positions, one at a time, each whole.
+  3. The **folded** states delivered to it (a fold that lands there, and the folded children of a
+     folded state), first in, first out, until there are none.
+
+  Every state that the parent position delivers arrives in the order the depth-first walk met it. So a
+  duplicate `(node, bits, run, position)` keeps its first arrival and its route. There is one difference.
+  The depth-first walk could meet a folded state at a position before a delivered sibling with the same
+  key, and it then dropped the sibling's unfolded walk. The position-major walk walks the delivered states
+  first, so a folded state never removes a delivered one. The folded state's walk adds nothing that the
+  delivered state's walk does not add, because both are collapsed into the owner of that position. A
+  depth-first walk instrumented to count that case found 0 cases on the 2 039 roots of
+  `bench/ownership-roots.mjs` (`allOwnership`). The position-major walk alone, with no memo, changes no
+  verdict or summary line on any of them.
+
+  *What a position's walk reads and writes outside it.* Only the states of the position `P` make positions
+  below `P`, and only states below `P` fold onto `P`. So the walk of `P` (its states, its descendants and
+  its folded states) reads one thing from outside: each state's **route** above `P`, at every unfolded
+  frame's lookup `route(child)`. Everything else that it reads (the members' snapshots, `fold_cond`, the
+  bases, the knots, the per-call memos) is the same anywhere in one call. It writes three kinds of things
+  outside `P`, and each one is at an ancestor at a height `h ≥ 1` above `P`: a fold mark (`fold_at`), a
+  step that a fold there saw, and a folded state delivered there.
+
+  *The key.* An entry is recorded when the walk of a position `P` finishes. Its key has two parts:
+  - The **run** of `P`. This is the ordered list of the states that pass deduplication at `P`. Each state
+    is `(node, class and mode bits, root bit, interned member run)`. The run is interned as a
+    cons list, so that equal runs are one id.
+  - The **fold signature**. Let `Q` be the set of nodes that the unfolded frames of `P`'s walk looked up
+    in their routes, including the `Q` of each hit below `P`. For each state `i` of the run, the
+    signature holds every `(i, q, h)` where `q ∈ Q`, `q` is not `i`'s own node, and `i`'s route maps `q`
+    to the ancestor at height `h` above `P`.
+
+  A position `P'` **hits** the entry only when its run is the same id, and its signature, computed at
+  `P'` with the entry's own `Q`, is equal element by element. A hash may index the comparison, but it
+  never replaces it. This is what *the fold is replayed* means. Every lookup of the recorded walk gives
+  the same answer at `P'`: a fold onto the ancestor at the same height, entered through the same state
+  of the run, or no fold. A fold onto `P` itself (`h = 0`) is part of the run. A route has one node per
+  ancestor, so the heights name distinct positions in both places. The walk below `P'` is then the walk
+  below `P` with `P` renamed to `P'` and each ancestor renamed by its height. Its states, their order,
+  their deduplication and their folds are the same. Two positions with one run and different signatures
+  are two entries, which are chained under the run. A position that holds a clean state neither records
+  an entry nor looks one up, because the clean memo above owns it: a hit there would skip the clean
+  states' candidates. A position whose states are all duplicates is not an entry either.
+
+  *The entry, and its replay.* The entry keeps the following:
+  - The **internal records** of the walk: the positions below `P`, the entries, the linked member
+    positions, the fold steps at `P` and below, and the hits below `P`. Each is a range of the call's
+    own lists, because one position is walked contiguously.
+  - The **external effects**, as `(kind, h, value)`. A fold onto `P` or below is internal.
+  - `Q` and the signature.
+
+  A hit at `P'` walks nothing below `P'`. It applies each external effect at the ancestor of `P'` at
+  height `h`. A folded state delivered there is then walked there, and is deduplicated there, like any
+  folded state. The hit also adds `Q` to the `Q` of the position that encloses it. And it records `P'` as
+  a hit of the entry. When the enclosing entry is recorded, its own external effects are the effects of
+  its records and hits whose ancestor is above its root, **deduplicated**: a fold by `h`, a step by
+  `(h, step)`, a folded state by `(h, node, bits, run)`. This is exact: at the ancestor a second fold
+  mark or step changes nothing, a second folded state with the key is a duplicate there, and the order
+  of folded states at a position changes nothing. Without it, two hits of one entry under one parent
+  copy its effects twice into the parent's entry, and the copies double at each level (the review of
+  #1465). So an entry holds at most one effect for each distinct target and key, and each rises once
+  per height.
+
+  *The snapshot.* At the end of the call, a hit position stands for the subwalk of its entry:
+  - If `P'` is its own owner (`propagate` collapses each position below a fold into the highest fold on
+    its way, its owner), its position is the entry's
+    **local snapshot**. This is built from the internal records exactly as the call builds a position
+    with no fold above it, with owners counted from the entry's root. It is built once per entry.
+  - If `P'` is collapsed into an owner `O`, everything that the subwalk stores goes into `O`: its entries
+    are joined by node, the steps of its positions and of its folds go into `O`'s fold links, and its
+    linked member positions are merged into `O`. This is what the walk does with each collapsed position.
+    The **bundle** of an entry is built once, and it is applied once per `(O, entry)`.
+
+  An entry with a fold above its root always takes the second case, because its highest fold marks an
+  ancestor of `P'`. The local snapshot and the bundle contain only the records of the entry's own subwalk.
+  A position is collapsed only by folds that land on it or above it. So the snapshot of the call is the
+  snapshot that the walk without the memo makes. 5a's lone-member `kept` entries (#1459) belong to the
+  internal records. The local snapshot applies them under its own owners, at a position that is its own
+  owner and no fold. A bundle has none, because no position in a collapsed subwalk is its own owner.
+
+  *Failure, rollback and the cross-check.* Every table of the memo (runs, entries, `Q`, signatures, logs,
+  local snapshots, bundles) belongs to one call. A call that exhausts its account fails whole and leaves
+  nothing that another call reads. Outside the call, the memo writes run interning keys, the clean memo's
+  candidates at real positions, and interned conditions, positions and merge and map memo entries for
+  the snapshot and bundles it builds. These are content-addressed, so a later reader gets the same
+  answer whether or not they exist. It needs no validation and no fallback walk, because nothing outside the subwalk
+  of a position can change that subwalk. `-Downership-full-cross-check` walks every call again with
+  `no_memo`, so with no cyclic memo either, and compares the snapshots. A memo across calls would also
+  need the versions of `fold_cond`, the bases and the knots in its key, as `leafEntries`' versioned key
+  has. It is not specified.
+
+  *Interactions.*
+  - **#1425's per-call memos** (slices by run content, frontiers by `(node, class, slice)`, the run one
+    step below by run): the key uses the same interned run ids. The run one step below is interned once
+    for each `(run, step, inner place, class)` and travels with the frame, so a position's run costs a
+    constant number of records for each state. #1425's memos serve the states that the cyclic memo still
+    walks. They never make a hit.
+  - **#1430's port join** (`Summary.join` keeps the port's `res` and κ when the round's are under them):
+    nothing changes. The memo applies inside each `propagate` that the port join still makes.
+  - **5a's projection keying** (#1459): `leafEntries` is gone, so each state writes fewer entries. Each
+    remaining entry is keyed at `proj(joined, q)`, which is a node of the walk, so it is an internal
+    record. `kept` is described above.
+  - **The clean memo**: it is unchanged. A clean state is never part of an entry.
+
+  *Cost.* For one call, the walk is `O(Σ over entries of the walk of its own position)`, and there is one
+  entry for each distinct `(run, signature)`. The cost no longer grows with the number of paths. Each
+  position that is met, whether it is walked or hit, costs:
+  - `O(|run|)` for its key;
+  - `O(routes × height)` for each signature compared, where `routes` is the number of distinct parent
+    routes among the states of the run (states with one parent share one route above `P`);
+  - `O(|effects| × h)` for the replay of a hit.
+
+  The call's snapshot costs `O(real positions)`, plus each entry's local snapshot or bundle once, plus
+  each bundle's size once per `(O, entry)`. An entry's range contains the ranges of the entries
+  recorded inside it, so local snapshots and bundles together cost the sum of their ranges, which for
+  a chain of nested entries is depth × size. A key met again below a position that is still open
+  cannot hit (its entry is recorded when the position closes), so it is walked again. Each node is on
+  a route once, so this repeats a key at most once per open ancestor. All of it is charged.
+
+  *What exactness relies on.* The bundle groups contributions differently from the walk. It joins by
+  node within the entry, merges the linked positions before they meet `O`, and is applied once per
+  `(O, entry)` where the walk adds a contribution once per collapsed position. So the design needs
+  `join` and `kappaMerge` to be associative, commutative and idempotent on interned ids:
+  - `join`'s result depends only on the set of its inputs;
+  - `kappaMerge` interns by content and takes the larger fold kind;
+  - `kappaFold` of a merge is the union of the separate `kappaFold`s.
+  All three hold today. A change to either operation must keep them, or the bundle stops being exact.
+
+  *Measured* (a prototype in a scratch copy, Debug self-hosted, `dump --stage=ownership --ownership=v2
+  --jobs=1`, module allowance 4 194 304; growth records). The first two columns are on master
+  `88512a2c9`. The last two are on #1459's head `b0172b081`, where `wa` settles.
+
+  | Case | Master | Master + memo | #1459 | #1459 + memo |
+  |---|---|---|---|---|
+  | `wa` / `wb` (`A (List Int) B B`, `B (List Int) A`) | limit / 2 461 162 | limit / 2 961 674 | 295 179 / 216 222 | 267 917 / 210 815 |
+  | quadtree self-map | 209 933 | 202 273 | 205 813 | 197 997 |
+  | T3 | 150 989 | 143 322 | 141 961 | 134 582 |
+  | `descend` (copied) | 398 623 | 405 131 | 266 653 | 260 419 |
+  | `removeMin` (copied) | limit | limit | limit | limit |
+  | `incCs` (`FoldedPreimageCall`) | 4 084 656 | 4 086 606 | 4 156 728 | 4 159 140 |
+
+  `wb`'s two master figures cannot be compared, because `wa` exhausts its account at a different round.
+  On master, `propagate`'s own records fall as follows:
+  - quadtree: 60 144 → 52 475 (775 → 326 states);
+  - T3: 60 731 → 53 143 (617 → 256 states);
+  - `descend`: 270 652 → 277 061 (3 004 → 1 083 states). The states that remain are the expensive
+    ones, so `descend`'s cost is distinct work.
+
+  `removeMin`'s joins in walk 2. On master the records are the walk's alone, before its snapshot; with
+  the memo they are the walk's and its snapshot's:
+
+  | Call | States: master → memo | Positions | Records: master → memo |
+  |---|---|---|---|
+  | 12 (the `case` join) | 75 868 → 1 248 | 29 624 → 582 | ≥ 1 071 819 → 139 768 |
+  | 13 | 75 876 → 1 318 | 29 624 → 623 | ≥ 1 080 730 → 148 601 |
+  | 15 | 39 315 → 1 517 | 14 318 → 625 | ≥ 531 200 → 127 090 |
+  | 16 | 61 642 → 1 987 | 23 931 → 918 | ≥ 821 045 → 171 684 |
+  | 17 | 25 278 → 1 095 | 9 753 → 501 | ≥ 341 324 → 86 717 |
+
+  On master, the account is exhausted at call 17. With the memo, the walk goes on to calls 19 to 24.
+  Each of these costs 1.1 to 3.5 M records, with 307 to 722 distinct position runs and 17 to 36 states
+  (folded states included) for each position walked. That is distinct work, which this memo cannot
+  remove. Even with an allowance of 67 108 864, `removeMin` is a limit, so other phases grow too.
+  `incCs` does not repeat anything: its largest calls walk 34 states with 34 distinct keys, at about
+  3 400 records per state. The memo does not help where a call's few states are expensive (one call of
+  `wb` on master walks 4 states for 126 336 records, almost all of it outside the states' own walk), or
+  where the states are all distinct.
+
+  Exactness: on all 2 039 roots of `allOwnership`, under `--ownership-everywhere --ownership=v2`, the
+  verdict, summary and block-hash lines are byte for byte those of the base. This holds on master and on
+  #1459. A `-Downership-full-cross-check` build panics on none of these roots. On master, its lines are those of
+  the base. On #1459 they are too, except `DerivedDeepPaths`' `rose`, which is a limit under the
+  cross-check with and without the memo (#1458). Against #1459's own cross-check build, one root
+  differs: `MarkerAcross.keepRight`, a limit there (#1458), settles under the cross-check with the memo
+  (82 442 → 31 381 records), with its usual lines.
+
+  The memo's bookkeeping adds 0.37 % to the corpus's records (0.39 % on #1459). The worst case is
+  `writes/CapS`' `update`, from 12 363 to 16 468 records, and the best is `keepRight`, from 81 914 to
+  30 848. An implementation may make this bookkeeping cheaper, but it charges every key and signature
+  that it computes.
+
+  *Rejected: a memo per state in the depth-first walk.* The key `(node, bits, run)` with a fold signature
+  is exact only for a state that stays alone at its position. Otherwise, the siblings' subwalks meet the
+  replayed subwalk at the positions below it. A prototype checked aloneness when the call finished, and
+  walked the call again without the memo when the check failed. It also kept only subwalks that fold
+  nowhere above their root. In `removeMin`'s module, the states fell only from 282 703 to 280 820.
+  The quadtree, T3 and `descend` grew by 8 %, 2 % and 14 %, mostly from the walks that it repeated.
+
+  **Fold first: the walk builds no position a fold collapses** [M 2026-11-01, #1372, #1368, #1289;
+  specified and prototyped, not built; it needs #1526 first]. This is the manager's (b) of §2.3 *What 4e
+  measured*. *Revised 2026-11-01 after #1535's review:* the first draft walked regions keyed by the route
+  restricted to a strongly connected component. That key named a graph it did not define, missed folds
+  longer than one step and was exponential in the component's width. The rule below has no route in any
+  key. It reads a graph of states, which it builds as the walk builds its frames.
+  - **The finding.** Almost every position that `propagate` builds is one that a fold collapses into an
+    owner. `owner` (above) gives each position below a fold target to the highest target on its way, so
+    those positions are never output. The depth-first walk builds them anyway: it walks a frame's first
+    child whole before it meets the sibling that folds back onto the frame's position. Measured on master
+    `46ede32b6` with 4e:
+    - `removeMin` (copied): walk 2's `case` join builds 74 134 positions, and 73 948 of them collapse.
+    - #1289's published chain at 8 calls: 30 227 positions, and 30 223 collapse.
+    - `descend`: 1 153 positions, and 976 collapse.
+
+    #1289's exponential is exactly this. Its joined DAG grows by 11 nodes a call, and each call adds a
+    knot whose position collapses everything the walk built below it.
+  - **Terms.**
+    - A *state* is `(node, bits, run)`: the joined node, the class and mode bits of `visited`'s key, and
+      the interned run of the members with their positions. A state's *children* are what one frame of
+      today's walk pushes: for each entry `(c, step, via)` of `frontierWith`, the state of `c` with the
+      run one step below, along `step`. A state whose run links (*Exact links*) has no children. It
+      *links* its member's snapshot. Each child is a function of the state. #1526 makes the slice one,
+      and it is the precondition of everything below.
+    - The *state graph* `Σ` of one call holds the states reachable from the root state
+      `(joined, bits, members)`, with one edge for each child. Its edges are the ones `frontierWith` and
+      the runs below make. So `Σ` holds every node that `proj` makes on demand: the unions, positions
+      nodes, choices, recasts and views of a joined value. A cycle that exists only through derived
+      nodes, such as the product of two knots, is a cycle of `Σ` (*Measured*, the coprime knots).
+    - A state is *cyclic* when a state that it reaches in one step or more has its node.
+  - **The reference semantics** (decided here). The reference walk's frames are
+    `(state, position, folded, route)`. The route maps each node that the frame's lineage passed
+    unfolded to the position where it passed it. For each child `σ'` of a frame's state, along step `s`,
+    where `c` is the node of `σ'`:
+    1. An unfolded frame at `p` with route `R`: if `R(c) = q`, the child frame is `(σ', q, folded, R)`
+       and `q` is marked a fold. Otherwise it is `(σ', p·s, unfolded, R[c ↦ p·s])`.
+    2. A folded frame at `q` with route `R`: if `R(c) = q'` and `q'` is above `q`, the child frame is
+       `(σ', q', folded, R)` and `q'` is marked a fold. Otherwise it is `(σ', q, folded, R)`. A folded
+       frame looks its children up as an unfolded one does. Today's walk does not.
+    3. A frame whose state links takes no transition. Its member's snapshot is merged at the owner of its
+       position. In a fold, that owner is the fold.
+
+    A frame is met once, and the key that deduplicates it is the whole frame. The output is built as
+    today: `owner` gives each position the highest fold on its way, an owner's entry for a node is the
+    join of the entries of every frame under it, a fold's links are the steps of every transition under
+    it, linked snapshots are merged into their owner, and a lone member's `kept` entries stay only at a
+    position that is its own owner and no fold.
+    - *It is order-independent by construction.* The frames are a set, closed under transitions that are
+      functions of the frame. No frame is dropped because another arrived first, so no arrival order
+      chooses a route. The outputs are joins, sets of steps and merges, which are commutative and
+      idempotent on interned ids (*What exactness relies on*, above).
+    - *It is a specification, not an algorithm.* Its routes make it exponential (*Measured*, the sibling
+      witness). The rule computes it.
+  - **The rule.** One call makes three passes.
+    1. *The state graph.* Each state of `Σ` is read once: its slice, its entry, its `kept` entry, its
+       link and its children, exactly as one frame of today's walk reads them. #1425's memos by run stay.
+       The pass records the edges. It builds no position. *It stops at a clean-memo hit:* a state whose
+       node has finite rank, with no traversal, whose clean-memo key holds an entry, is recorded and not
+       expanded. Its rank is at least 1, so nothing below it reaches it or any state above it: no cycle bit
+       above the hit depends on anything below it. The states below it are not all acyclic, though. A
+       rank-0 node projects to rank 0 (`Shape.rank`), `projectLeaf` maps `⊤` and mark cells to
+       themselves, and on a knot-tied place `child(p, s) = p`. So a `{⊤}` leaf at a `List` place whose
+       member cursor is an exact fold is a self-loop of `Σ` below a hit of rank 1 or more. Pass 3 expands
+       a hit lazily, by resuming pass 1 from it, when the hit cannot be used: when it shares a set with
+       other states, stands at a position that is not clean, or lies in a fold's closure. Pass 2 then
+       runs over the resumed subgraph, its components and its `K`-bits, before pass 3 uses any of its
+       states. That is exact, because nothing in the subgraph reaches above the hit. Without it, the
+       self-loop above would read as an open set that is its own child set: the rule would not end, or it
+       would differ from the reference. *Resumed passes read only new states.* A resumed pass 2 numbers only the
+       newly read states, continuing the call's numbering. A state classified before is a sink whose
+       component, cycle bit and bit set are kept. That is exact: an earlier state reaches a new one only
+       through a hit, and no bit above a hit depends on anything below it. The kept bit sets need a shared
+       numbering. Each node takes one bit index for the whole call when it first enters a component `K`,
+       and `K`'s bits are its nodes' indices. A later pass that adds node-graph edges leaves every kept set
+       valid as far as it goes. *A merge reopens kept sets.* Bits propagate only within `K`, so a kept set
+       holds only the bits of the nodes that were in its state's component when its pass ran. When a
+       resumed pass's new edges merge components that hold earlier states, the pass first propagates the
+       merged `K`'s bits again, bottom up over the earlier states in `K` along the edges of `Σ` inside
+       `K`. Only then do new states read those sets. The earlier states' cycle bits do not change (by the
+       rank argument), only their sets widen. Without this, the merged component's other bits are
+       missing. Take two `{⊤}` leaves at rank 0: `c` at place `p` and `d` at place `q`, with
+       `child(p, s) = q` and `child(q, s′) = p`.
+       - Earlier, `X = (d, rX)` reaches `Z = (c, rZ)`. `Z`'s cursors do not link `s`, so there is no
+         edge `c → d`, and `c`'s bit is not in `X`'s set.
+       - In the resumed pass, `Y = (c, rY)` links `s` and has the child `X`. That merges `c` and `d`.
+         `Y` reaches `Z`, which has `Y`'s node, so `Y` is cyclic.
+
+       Read from `X`'s old set, `Y` would not be cyclic. That costs only precision, but it breaks
+       rule = reference. A merge costs `|E_K| · ⌈|K|/64⌉` words for the merged `K`. Each merge lowers the
+       number of node-graph components, so a call has fewer merges than nodes. `k` resumed hits that share
+       a sub-DAG `D` still read `D` once. Pass 1 reads the states that today's walk expands at least once,
+       plus the lazily expanded hits. Today's walk links a clean hit even where its position is shared.
+    2. *The cycle bit.* The pass computes Tarjan's components of `Σ`, and the components of its node
+       graph, which has one vertex per joined node and an edge for each edge of `Σ`. A state whose node
+       is on no cycle of the node graph is not cyclic. A state in a nontrivial component of `Σ` is
+       cyclic. A component of one state with an edge to itself is nontrivial: a period-1 knot is a
+       self-loop of `Σ`, and without this its state would read as acyclic, the rule would differ from
+       the reference and its open sets need not end. For every other state the bits are numbered per
+       component `K` of the node graph: one bit for each node of `K`, propagated bottom up only along the
+       edges of `Σ` whose two ends have nodes in `K`, since a way back to a node of `K` never leaves `K`.
+       The state is cyclic when its node's bit is set below it. This costs `Σ_K |E_K| · ⌈|K|/64⌉` words,
+       where `E_K` holds those edges. One large knot makes it quadratic: `|E_K|` near `|E_Σ|` and `|K|`
+       near the node count.
+    3. *Positions by their set of states.* The root's set is `{root state}`. A set that holds a cyclic
+       state is a *fold*. Its position is an exact fold:
+       - its entries are the join per node of the entries of every state in the set's closure in `Σ`;
+       - its links are the steps of every edge of that closure;
+       - every linked snapshot in the closure is merged into it.
+
+       A set with no cyclic state is *open*:
+       - its entries are its states' `kept` entries and then their entries, joined per node;
+       - its links lead to the sets one step down, which hold, for each step, the children of its states
+         along that step;
+       - its states' linked snapshots are merged into it.
+
+       Each set is interned and built once per call (*The two memos*, below). A clean set of one state
+       reads and writes the clean memo as today. A fold reads and writes neither, which also closes
+       #1537.
+
+    The rule never builds a position that a fold collapses. It finds folds of every length before it
+    builds anything below them, because the cycle bit is a fact about `Σ` and is known before the first
+    position is built.
+  - **It is exact: the rule computes the reference.** Call a position *open* when no fold is on its way,
+    itself included, and let `D(p)` be the set of states of the unfolded frames at `p`.
+    1. *A fold is marked only where a cyclic state stands.* A route maps `c` to `q` only when an unfolded
+       frame of node `c` stood at `q`. So a mark on `q` by a frame of that lineage means that the state
+       at `q` reaches a state of its own node: it is cyclic.
+    2. *Where a cyclic state stands, that position or one above it is marked.* Let `σ` be at `p` on a
+       lineage with route `R`, `R(node σ) = p`, and let `σ` reach a state of its node. Follow that walk
+       on the lineage. When the child with `σ`'s node comes, the frame is unfolded below `p` and finds
+       `p` in its route, or it is folded at `q`. If `q` is below `p`, it finds `p` above `q` (rule 2). If
+       `q` is `p` or above `p`, that position is marked already.
+    3. *By induction from the root, the reference's open positions are the rule's open sets, and its
+       highest folds are the rule's fold sets.* Let every position above `p` hold no cyclic state. By 1,
+       none of them is marked, so every child frame that the parent's frames make at `p` is unfolded,
+       and `D(p)` is the set of the children of `D(parent)` along `p`'s step. That is the rule's set. If `D(p)` holds a cyclic state, then by 2
+       `p` or a position above it is marked, and by 1 none above is, so `p` is the highest fold on its
+       way. Otherwise `p` is open.
+    4. *A fold's content is its closure.* Under a highest fold `p`, the frames are unfolded below `p` or
+       folded at `p` or below it. By 1, none is folded above `p`. Their states are the closure of `D(p)`
+       in `Σ`, because every lineage goes on and only an equal frame is dropped. Each edge of a
+       non-linking state in the closure is taken by some frame, as a path below `p` or as a fold step,
+       and either way its step is one of `p`'s fold links.
+    5. *So the snapshot is the same id.* The entries, links and merges of each open position and each
+       fold are the ones above. Positions and maps are interned by content, and `join` and `kappaMerge`
+       are commutative and idempotent. The rule's snapshot is therefore the reference's.
+  - **Today's walk against the reference: precision only.** Today's walk differs in two ways:
+    - it keys a frame by `(state, position)`, so the first arrival's route stands for every equal state
+      at that position;
+    - its folded frames never look their children up.
+
+    By 1, every mark that today's walk makes stands on a cyclic state, and by 2 the reference collapses
+    that position. So today's walk makes the reference's folds or fewer. Where it makes fewer, it keeps
+    apart positions that the reference collapses, and its snapshot is finer.
+    - *Every choice of folds is sound.* Let a concrete path be a sequence of steps from the root. Every
+      one of these walks, in any order, puts each state reachable along a path `w` at `w` itself or at a
+      fold on `w`'s way. A reader at `w` reads the owner of `w`, which is the highest fold on its way, so
+      what it reads joins every state at `w`. This holds for every set of marks. So where today's walk
+      leaves a fold out, it costs no soundness. This answers #1535's finding 7: the hazard is precision,
+      and it needs no issue. #1526 is another matter. It is not a choice of folds: a slice shared by two
+      runs gives a state another run's `k`, and that is unsound.
+    - *Where the two differ.* Only where a lineage meets another node again before it returns to the
+      node of the cyclic state, and every way back passes that repeat. Measured, this never happens (below).
+  - **The two memos** (what (b) adds to the rule).
+    - *The class memo, which is F2's memo of a position.* The subtree of an open set is a function of the
+      set alone. By 1, no fold below it lands above it, so it needs no fold signature. Two positions with
+      one set share one built position, the same interned id.
+    - *The region memo.* A fold's content is a function of its set. The set is complete before the fold
+      is built, because the parent's set is complete before its children's sets are formed. No upward
+      fold marks exist to replay (by 1). The content also splits per state: a set's closure is the union
+      of its states' closures, and joins, step sets and merges are commutative and idempotent. So a memo
+      per entering state is exact too. The prototype keys by set.
+
+    Both memos belong to one call. They are exact by 3 and 4, and the cross-check below compares them
+    with the reference.
+  - **Cost.** For one call, every unit below is a charged record:
+    - pass 1: `O(|Σ| + |E_Σ|)` state and edge reads, each as one frame of today's walk reads it, where
+      `Σ` stops at clean-memo hits (pass 1);
+    - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits,
+      summed over the whole call with its resumed passes, which number only new states, plus
+      `|E_K| · ⌈|K|/64⌉` for each merge that reopens kept sets (fewer merges than nodes);
+    - pass 3: for each distinct open set, its interning (a record per state) and its edges; for each
+      distinct fold set, its closure and the closure's edges, so `O(fold sets · |E_Σ|)` in all.
+
+    In §4.1's terms this is within the row of joins and shape comparisons, `O(N_f log(N_f + 2))`
+    relative to the records it charges. A polynomial bound in `|Σ|` fails at exactly one place: the
+    number of distinct open sets.
+    - *Along one path* there are at most `|nodes|` open sets. Each state of an open set at depth `d` is
+      the end of a chain of `d` states, each the child of the one before, all in open sets. Such a chain
+      repeats no node, since a repeat would make the earlier state cyclic. (The sets along a path need
+      not have disjoint nodes: two different states of one node may stand in two of them.)
+    - *Across paths* the number is a subset construction over `Σ`, and it is exponential in the worst
+      case (the review of 2a1882b9a). With `k` tokens in `k` layers, `Σ` has `k²` states, none of them
+      cyclic, and there are `2^k` open sets: `O(2^√|Σ|)`, the subset construction's known worst case.
+      In beni it needs `via` children: a union of `k` recasts at one place, whose members' cursors
+      link those steps (a member whose cursor is an exact fold links every step). It is not built yet
+      (#1541, with the cursor construction it needs). No program measured comes near it: the largest
+      count is 185 open sets in one call.
+    - *It ends loudly.* Each set is charged when it is interned, a record per state, and its edges when
+      it is built. So a family that makes many sets meets the declaration's `ownership_summary_size`
+      limit. It is never merged silently into a coarser set.
+    - *It is reported.* `dump --stage=ownership --ownership-propagate`, a hidden and test-only flag,
+      prints one line per `propagate` call with its states, edges, open sets and fold sets.
+
+    Today's walk has no bound there either: its positions are a path count (the sibling witness).
+  - **Where an unfolded position is semantically needed: nowhere outside `propagate`.** Every reader
+    that the coordinator's list names reads the snapshot that `propagate` returns, never its walk:
+    - route counting by canonical path (#1438);
+    - `routesMax` and `frontierAt`;
+    - the 5f trie;
+    - `apartImage`'s per-image sides.
+
+    The rule returns the reference's snapshot id, so each of them reads the same thing.
+  - **`proj`'s side effects.** `proj` records origins (`addOrigin`), constructions (`addConstruction`) and
+    its memo. Pass 1 makes the projections that today's walk makes, plus those below a lazily expanded hit.
+    Those extra ones are `memo_proj` hits only, because the call that wrote the clean entry made them:
+    they cost records, not results. Otherwise only the order differs. That can change the order of a node's origins
+    and which projection made a node first (`fresh`, `base_epoch`), as any change of the walk's order can.
+    The corpus shows no change from it.
+  - **The `runtime_safety` check.** Under `-Downership-full-cross-check`, `propagateFrom` walks each
+    call again, with `no_memo` and on its own account:
+    - the reference walk, with every frontier in its order and again in reverse;
+    - the rule, in both orders.
+
+    The four ids must equal the memoised rule's. This is the representation-change lemma of the rule:
+    rule = reference, not rule = today's walk, which is neither the reference nor a function of its
+    input before #1526. The reference walk is exponential in its routes. A call whose reference walk
+    passes 2²² frames is not compared, and the check prints a line that names the call. On every case
+    measured and on the corpus, no call reached that cap.
+  - **Counted tests** (for the build slice). Each one is a unit fixture in `Cond.zig` with records
+    counted, in the owner's 1 s:
+    - *The shared DAG.* Its mode is pinned: no traversal (with one, no frame is clean and the test says
+      nothing) and alternatives (in together mode the correct rule also grows with `N`).
+      - There is an acyclic DAG `D` of `N` nodes, and `C` calls of `propagate` whose roots differ, are of
+        finite rank and are open.
+      - The roots' members project, one step down, to the same `(D, D′)` with the same contexts, so a
+        root's own work does not depend on `N`. So each call holds, alone at a clean position one step
+        below the root, the same state over `D`: the join of `D` with a second DAG `D′`, as one run.
+      - From the second call on, that state is a clean-memo hit, and pass 1 must stop there.
+
+      The test counts the account's total: the records of `C = 16` minus those of `C = 1` must be the
+      same at `N = 16` and at `N = 64`, within 10 %. A pass 1 that reads below the hit makes the
+      difference grow with `N`, `O(C·N)` instead of `O(N + C)`.
+    - *The resumed hit.* A clean hit is expanded lazily because it shares a set with another state. Below
+      it stands a `{⊤}` leaf at a `List` place whose member cursor is an exact fold, a self-loop of `Σ`.
+      The call must end, and it must give the reference's id.
+      A two-leaf variant: period 2 (`child(p, s) = q`, `child(q, s′) = p`), where only the resumed run's
+      cursor links `s`, so the resumed pass merges the two leaves' components. It must give the
+      reference's id.
+    - *The sibling.* The period-2 knot with a 2^d-path sibling (*Measured*): its states grow as
+      `2d + 9` and its positions do not grow with `2^d`.
+    - *The self-loop.* A period-1 knot, a self-edge of `Σ`: its state is cyclic and the root is a fold.
+    - *The coprime knots.* One component of `Σ`, with the same id in both frontier orders.
+    - *The exponential family* (#1541): `2^k` open sets for `k` layers, charged, and ending at
+      `ownership_summary_size`.
+  - **Measured.** A prototype in scratch on master `169bab548`, which has #1526's fix and no 4e. It is
+    Debug, self-hosted, with `dump --stage=ownership --ownership=v2 --jobs=1` and the module allowance at
+    10⁸. Today's walk (with #1526's fix) against the rule, total records of the declaration, with growth
+    in parentheses:
+
+    | case | today's walk | the rule |
+    |---|---|---|
+    | #1289's chain, published, 4 / 6 / 8 calls (`chain`) | 18 381 / 90 949 (53 997) / 1 036 652 (989 421) | 15 851 / 31 414 / 53 147 (5 916) |
+    | `removeMin`, walk 2's five joins (records of each call) | 2 685 956, 2 723 128, 601 196, 867 613, 432 985 | 113 311, 112 855, 55 166, 66 897, 43 141 |
+    | `removeMin`, the two largest joins of walk 3 | not reached | 1 975 982, 2 412 005 |
+    | `descend` | 137 801 (98 583) | 123 533 (84 315) |
+    | the accumulator `acc` | 1 744 585 (1 712 707) | 1 543 058 (1 511 180) |
+    | `wa` / `wb` | 81 292 (54 371) / 92 444 (70 806) | 75 983 (49 062) / 91 641 (70 003) |
+    | quadtree `quad` | 241 992 (203 680) | 239 743 (201 431) |
+    | coprime knots (unit fixture, one call) | 846: 24 frames over 12 positions | 354: 14 states, one fold |
+    | a period-2 knot whose top has a sibling with 2^d paths (unit fixture), d = 4 / 8 / 12 | 2 637 / 30 493 / 468 255: 66 / 1 026 / 16 386 positions | 547 / 839 / 1 131: 17 / 25 / 33 states |
+
+    The two unit fixtures are #1535's counterexamples, built as tied knots in `Cond.zig`'s fixture.
+    - *Coprime knots.* Knots of periods 2 and 3 over `Rose`, joined. The joined value's cycle runs
+      through 12 unions that only `proj` makes. Today's walk unfolds all 12. The rule finds them as one
+      component of `Σ`, so the root is a fold.
+    - *The sibling.* `type T = N (List T) (List T)`, with a knot of period 2 through the first list,
+      and a DAG with 2^d paths in the top's second list. Two copies are joined. The fold is two levels
+      long. Today's walk builds the DAG's paths in both frontier orders. #1535's first draft would build
+      them when it popped the sibling first, because it found only one-step folds before expanding. The
+      rule reads 2d + 9 states.
+
+    *Exact.* Over the 2 119 roots of `bench/ownership-roots.mjs` (`allOwnership`,
+    `--ownership-everywhere`), no verdict, summary or block line changes. Records go from 10 280 857 to
+    10 303 162 (+0.22 %): a small call pays for the passes. Each of the corpus's 30 373 `propagate` calls
+    was walked seven ways:
+    - today's walk and the rule, each with the memo;
+    - today's walk, the reference and the rule, each without the memo and in both frontier orders.
+
+    Every call gave one id seven times, and no reference walk reached its cap (3·10⁶ frames in the
+    prototype). The seven cases and the two fixtures give the same: one id in every call. On `removeMin`,
+    the check ran without the reference, on its first 23 calls, which hold walk 2's five joins.
+
+    *What is left.* The rule removes repetition, and very little repetition is left. In `removeMin`,
+    walk 2's joins fall from 7.3 M records to 391 k, so the group goes on to walks 3, 4 and 5. Their
+    largest joins hold 1 354, 2 918, 6 638 and 14 670 states of `Σ`, with up to 495 673 edges, and cost
+    up to 27.8 M records. Pass 1 is about 80 % of each of those calls: one read of each distinct state.
+    The prototype read all of `Σ`, below clean-memo hits too, so its figures are an upper bound on the
+    rule. On the accumulator, 6 of its largest call's 403 states have finite rank, so the bound is
+    close there; on `removeMin` the share was not measured. The cycle bits are small: the largest join
+    of walk 3 has 40 of its 221 nodes on node-graph cycles (`|Q|`, one word), and walks 4 and 5 have 70
+    to 102 of 207 to 371 (two words). The per-component sizes `|K|` were not measured. They have at most 142 open sets and 43 folds. So `removeMin` is still
+    a limit at 10⁸. What grows is the number of distinct states, and it grows with the port (§2.3,
+    #1372), not with the walk. `descend`'s growth falls by 14 %, and it is still over the default
+    allowance of 65 536. `propagate` takes 135 600 of its records, against 163 260 before.
+  - **Not taken.**
+    - *A walk keyed per DAG node alone.* It is not exact: the states at one position are merged (`outs`
+      join per node at the owner), so a position's result is a function of its set of states, not of each
+      state (F2's finding). The rule keys positions by that set.
+    - *#1535's first draft: regions keyed by `(node, bits, run, T, s)`, with `s` the route restricted to
+      the node's strongly connected component.* The component was of a graph that `proj` builds on
+      demand, the key left out `folded`, folds longer than one step were found only after the walk had
+      built below them, and `s` can take 2^|component| values.
+    - *Today's first-repeat rule, kept exactly.* A folded frame that never looks up makes the result
+      depend on which repeat a lineage meets first. Kept exactly, that needs the whole route in the key,
+      which is the reference's exponential. The reference instead lets a folded frame look up.
 
   `kappaMerge` uses `(operator, unordered cursor pair, map/correlation context)` as its key;
   `operator` is choice or coexistence. Cursor identity includes its immutable per-class arrival and
@@ -1771,9 +3041,10 @@ Where κ is set, always **at the selected path p**:
   (`build_test.zig`, records per n·log₂(n + 2), never rising): `Rose [r]`, W, T, the mutual pair,
   `Maybe`, and `wrap` same-module and imported, at 10 / 40 / 160 levels, and a push chain over a
   parameter. Debt:
-  - `Rose [r, r]` is still quadratic (#1420): 14 449 / 54 449 / 215 175 records at 10 / 20 / 40,
-    refused at 80. Its together-join and its widen walk the tower's depth. Each projection of a
-    `positions` chain of depth d makes d new nodes, and each read walks them.
+  - `Rose [r, r]` is still above n log n (#1420). It took 14 449 / 54 449 / 215 175 records at 10 / 20 / 40,
+    refused at 80, because each projection of a `positions` chain of depth d made d new nodes. Since
+    positions saturate at two (§2.3) it takes 5 785 / 32 732 / 316 884 at 10 / 40 / 160 (`build_test.zig`
+    counts it). Its together-join and its widen still walk the tower's depth.
   - The block writer, `Summary.Table.add`'s view check and the printer still walk K's entries one
     by one, so their time is quadratic (#1426).
   - T publishes one `apart` group per level, so its block is quadratic (#1427).
@@ -1803,6 +3074,364 @@ projected summary arrival as `excl` at that arrival's path. When the demand's pa
 cannot stand in for that multiset. S3a's deep demands (send, `consumed`, focus) conjoin
 `deep` over their cell set. A deep demand does not strengthen every shallow atom into a deep one. All enumeration, union and substitution work uses §4.1. A chain of W single-arrival stores makes O(W)
 outer condition nodes plus O(W log C) persistent group insertion work, not a quadratic sequence of sorts.
+
+**Two positions of one image** [M 2026-10-31, #1472, built in #1473]. Two cells `a ≠ b` of one frame
+can stand for one cell `X` of a coarser frame: the read-off images both to `X` (`ReadOff.relabel`: a
+refinement is its canonical cell), or, in the frame itself, both are parts at one path `q` below two
+sides of one split. Whether the pair is **one object twice** or **two positions of `X`** decides the
+condition. One object twice is a repeat, and a repeat reads `lost`. Two positions of `X` are kept apart
+exactly by `excl X`: that `X`'s positions share nothing. They must not be read as a repeat, which
+claims they may be one object. Four rules use this.
+- **The test** is `Cell.positionsApart(a, b)` (`listSides`). Each cell's side (`Cell.listSide`) is the
+  first cell up its chain past its parts, when that is an `elem` or an `others` of a recorded split. The
+  two sides are two distinct sides of one *list* split: a pattern's head and its rest (`elem`/`others`),
+  or two of its heads (`elem`/`elem` at two positions). A cell under a nested split (a rest's own
+  positions) has that split's side, so two cells under two nested splits are not compared: that only
+  claims less. These are two disjoint index ranges *of the list that was split*, so `a` and `b` are at
+  two positions of it, never one. The test is about positions, not objects: one object may still sit
+  at both, and the condition is what keeps that from happening. The canonical cell (`Cell.unrefined`)
+  names those positions by the parameter's positions, and that is right only while the list that was
+  split holds each of the parameter's positions once (*The repeating split*, below). It is the relation `alias` reads as
+  `under ι` for those side pairs. The test does not apply to `level`/`below` sides.
+- **Rule 1, the image** (`KappaRead.apartImage`). When an `apart` group is imaged and a member `c` lands
+  on an image `m` that the group has met already, `c` is a repeat of `m` (`aggAdd`'s multiset), unless
+  every earlier member imaged to `m` is `positionsApart` from `c`. In that case `c` is one more position
+  of `m`, and the image owes `excl m`, which the aggregate's pairs carry. The aggregate keeps, per image,
+  the set of sides that reached it (`Agg.sides`), so the test is one lookup per arrival, not a scan of
+  the group: `c`'s side must be of the set's split and not in it. The flat-per-position family of
+  `build_test.zig` holds.
+- **Rule 2, the frame** (`KappaRead.sep` under `ι`). Two parts `a`, `b` whose sides are `positionsApart`,
+  with one canonical cell `X = E·q` (`Cell.unrefined`, charged, where `E` is both sides' canonical
+  element cell), and with `q` taking no summary step (no `[*]`, no `⟲`). They need `excl X`, not the
+  split's own condition `k`. If `k` is `yes` (a fresh list's elements), the answer stays `yes`; if the
+  split has no condition, `lost`. **`k` implies `excl X`:** `k` is κ of the list's contents read at the
+  summary position (`TransferPattern`), so it keeps every two positions of `E` apart in their whole reach.
+  Each position of `X` is one position of `E` followed by `q`, because `q` takes no summary step, and two
+  positions of `X` therefore lie in two positions of `E`. So the requirement only gets weaker where it is
+  still enough. A `q` with `[*]` breaks this: two positions of `X` inside one element are kept apart by
+  no `k` about elements, so `excl X` would ask for something `k` does not give. That case keeps `k`.
+  `sep` is memoised per pair, and the pair fixes `q`.
+- **Rule 3, through a level, at a call** [specified 2026-10-31, #1195, slice 4c; built in #1500, revised
+  after its review]. A callee's `apart` or `sep` over k ≥ 2 cells `πᵢ·P₁ … πᵢ·Pₖ` of one parameter, each
+  crossing `⟲`, is read at a call from each side's image (`Grafter.sideCells`, which through `⟲` is the
+  image cell set of the parameter cell). When the actual's first return lies deeper than the callee's,
+  several images can be one summary cell `X` of the caller's frame. `FoldedBCall`'s `incList` calls
+  `incAll b` with `b` an element of its parameter: `incAll`'s `apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1]`
+  images both sides to `π1[*]#B.0⟲`, because in `incList`'s frame `[*]#B.0` is the first return and every
+  list below it folds onto its `⟲`. Read as a repeat, the call is refused `exclusive (approx)`, where v1
+  accepts it `param`. With k list fields the callee publishes k-sided groups (`LevelPositionsWide`), and the
+  same holds of them. An image that two or more sides share is several positions of `X`, and owes `excl X`
+  instead of a repeat, when all of these hold:
+  - **(a) The callee's positions are apart by route.** The last steps of `P₁ … Pₖ` are named steps (a
+    field, a tuple index, a constructor argument), pairwise different. Every concrete route that `Pⱼ`
+    stands for ends in `Pⱼ`'s last step, so no route is in two of them. A last step `[*]`, `⟲`, `◆`, `◇`
+    or `⟨n⟩` does not qualify. *Reached, and kept strict:* the review of #1500 counted 28 attempts in
+    `LevelRecursiveUpdates`, `MarkerAcross`, `WriteOneLevel` and `MutualWritersMutualTypes` that (a)
+    stops: pairs that end in `[*]` and part at different constructor arguments before `⟲`. Those are
+    distinct by route too (they part at a named step above every `⟲`), so relaxing (a) to "the paths part
+    at a named step above every `⟲`, or end in different named steps" would be sound. The `rule3-route`
+    mutant, which lets every such pair through, changes no verdict and no line over the ownership
+    corpus. So the relaxation has no fixture that pins it, and (a) stays as written until one does.
+  - **(b) The actual is one position there.** Let `L` be the longest common prefix of `P₁ … Pₖ`, cut
+    before the first `⟲`. Walk the actual down `L`'s steps, built nodes and deltas projected one step at a
+    time (`Grafter.onePositionAlong`). The first node that is not built must be one position's possible
+    contents, and it must be met **before any summary step** (`[*]`). That means a leaf, or a union or
+    choice DAG whose every member is a leaf, none holding an approximate cell or a cell under a repeating
+    split (*The repeating split*, below: `KappaRead.repeatingSplit`). Each route of the actual below that
+    node is then the same route below one object, and so one position of the cells it holds and of `X`.
+    - *Below `[*]` nothing is one position* (the review of #1500). A node met after a `[*]` step stands for
+      a list's coexisting elements. A union there is two elements (`List.push [ x ] y`: `x` and `y`), not
+      one position's possible contents, and a leaf there can be one object at two indices
+      (`List.push [ x ] x` dedupes to the leaf `x`). The first version of this rule tested only the node
+      at `L` and read that union as one position. Its own check then panicked on `viaPush`, `viaAppend`
+      and `viaPushes` (`o/LevelPositionsElems`), and its verdict there was right only because another atom
+      also failed. Those programs are now refused by rule 3 not applying, `exclusive (approx)`, where v1
+      accepts them `param` (known entries). A literal `[ x, y ]` is a `positions` node, which was never
+      one position.
+    - A built node, a delta, a recast or a `positions` node at the end of the walk fails (b), because two
+      of its children may hold one object (`B [ v ] [ v ]`).
+  - **(c) `X` is a position name.** A shared image is exact, symbolic and at a summary path. Given (b),
+    every shared image is a symbolic projection of the one leaf (or one union of leaves) that (b) found,
+    so (c) cannot fail. It is a `runtime_safety` assert (`Grafter.namesPositions`). A release build keeps
+    an image that fails it as a repeat, so a broken assumption reads `lost`, never `yes`.
+
+  Then each shared `X` stays on the first side that holds it, leaves every later side, and the group owes
+  `exclOf(X)` (the repeating split's failed κ in place of `excl X`, as everywhere). When two or more images
+  are shared, the group also owes `apart` among them, so that the pair `X₁` on one side and `X₂` on another
+  is not lost when both leave the later sides. And each side that keeps shared images owes `apart`
+  between them and the rest of that side (`shareImages`), so that `X` on a later side against an unshared
+  `Z` on the first side is still required (sides {X, Z} and {X}: the multiset of what is left pairs nothing,
+  since the second side is empty). Every other cell is read in the multiset as before. The work is one
+  pass over the sides' cells with a persistent map from each cell to the first side that holds it, and
+  one merge per side that keeps a shared image, linear in the cells.
+  - *Why `excl X` is enough.* By (a) the callee positions on different sides are distinct routes, and by
+    (b) they are distinct positions under one object of the actual, so distinct positions of `X`. `excl X`
+    says that no two positions of `X` hold one object, which is what `apart` asks of them. That covers
+    `X` against `X`, and only that. A pair of `X` on one side with another image `Z` on another side is
+    what `apart` asks too: where `Z` stays on a side of its own it is in the multiset, two shared images are
+    paired by the `apart` among them, and where `Z` shares the side that keeps `X` (the review of #1500's
+    re-review: sides whose images differ, {X, Z} against {X}) it is paired by that side's own `apart`,
+    which the multiset alone would drop. No corpus input has such sides, since every firing so far has
+    sides with equal images, so this costs no verdict (*As built*) and is pinned by a unit test. `X`'s own callers
+    discharge it by the preimage multiset across depths (§2.9 *As built for a call's folded read*), as they
+    discharge every `summaryExcl`.
+  - *Why each condition is needed.* Without (a), two paths can share a route, and the object at it is on
+    both sides: one object twice. Without (b), the actual `B [ v ] [ v ]`, or a list of `[ x, y ]` at the
+    split, has distinct actual positions at one parameter position, or at positions of two parameter
+    cells that the canonical names identify, so `excl X` holds while two sides may hold one object.
+  - *Measured* (scratch prototype on 4d's head `74fbcc61e`, before the review): over the ownership corpus,
+    verdicts change in `FoldedBCall`, `FoldedBCallImported` and `LevelsApartRoutes` only. *Corrected
+    2026-10-31:* this note said that a prototype without a visited set ran `run/EvidenceDagBuildDepth32`
+    past the 120-second guard. That is not so. Rule 3 is never reached on that program, and with the
+    visited set removed it passes. The one failure seen was a run during which the sources were edited.
+  - *The read does not depend on the representation* (Lemma R3). (b)'s test is the same on every node of
+    one denotation that `Shape` can make: a view and its answer, because the walk forces; a union merged
+    into one set leaf and the unmerged union, and a choice of leaves before and after `joinAlternatives` or
+    4d's drop, because each is one position's possible contents above every `[*]`. Below a `[*]` it fails
+    whatever the representation. A `positions` node is never one position, whether #1471 keeps a member
+    once or twice. Then (a) reads paths only, and the shared images are a set function of the sides. The
+    rule is also monotone: a representation that over-approximates more (a node in place of a leaf) can only
+    fail (b), and then the group reads `lost`, which is weaker.
+    *`runtime_safety` check* (`Grafter.assertOnePosition`). When the rule fires, a fresh preimage walk of
+    the whole actual (`Calls.Pre`, keyed by canonical path, on the denotation) is traced: every source state
+    that brings a shared image to any of the callee's paths must stand at one and the same path, and that
+    path must have no summary step. Two positions of one object show as two paths, whether their arrivals
+    land at one callee path or at two (the cross case), and two elements of a list show as a summary path.
+    The check shares none of the rule's walk.
+  - *As built (#1500, after its review).* `Grafter.positionsThroughLevels`, `onePositionAlong`,
+    `onePosition` (with a visited set), `namesPositions` and `assertOnePosition` in `Calls.zig`, called from
+    the `apart`/`sep` interpretation of a call for any k ≥ 2 sides. The `full_cross_check` comparison
+    conjoins rule 3's atoms too.
+    - *Verdicts.* Over the 2 107 roots of `bench/ownership-roots.mjs` (`allOwnership`, master against this
+      branch, self-hosted Debug), verdicts change in nine roots. At each group's own calls they go from refused `exclusive
+      (approx)` to accepted `param` or `fresh`, v1's verdict, and in `o/PushedTwiceLevels` two callers go
+      from accepted to refused, exactly (the side effect below). The roots are `FoldedBCall` 30:15,
+      `FoldedBCallImported` 19:15, `LevelsApartRoutes` 23:15, and the new `o/LevelPositionsCall` (and its
+      imported form), `o/LevelPositionsWide`, `o/LevelPositionsElems` (and its imported form) and
+      `o/PushedTwiceLevels` at their groups' own calls. The three known entries that 4a gave to 4c are gone.
+    - *A side effect, pinned.* In `o/PushedTwiceLevels`, `g ys = incAll (B ys [])` now publishes
+      `excl` atoms over the lists below `ys`'s elements. So `pushedTwice` (`g (List.push bs x)` with `x`
+      taken from `bs`) and `pushedRest` (the rest of a pattern over that list) are refused `exclusive`,
+      exactly. That is right: the list holds `x` twice, and `g` would write `x`'s lists twice in place.
+      Master and v1 accept both, which is the #1478 class (known entries).
+    - *Cost.* Records change in 119 roots. Nine of them carry the rule's fixpoint: +36 000 to +66 000 each
+      (`FoldedBCall` 92 417 → 128 537), because the new `excl` atoms move each member's class once more
+      (`incAll` 7 walks where it took 5, `incList` 9 where it took 7). The other 110 change by at most 67
+      records, the attempts that (a) or (b) stops. Over all 2 107 roots (master `13e2cb61c`): 9 956 773 → 10 318 429 records (+3.6 %),
+      most of it in the five new fixtures, which master checks too.
+    - *Counted tests* (`build_test.zig`). *Through a chain of n choices*: the rule fires and its cost is
+      linear at n = 8 / 16 / 32. *Over k list fields*: the rule fires at k = 2 / 4 / 8 (master refuses), and
+      each doubling of k at most quadruples the work, which is the class's k² paths. The rule adds 1.5–1.7×
+      to master's records there (100 452 / 283 156 / 1 109 590 against 65 068 / 175 023 / 649 017).
+      *Rule 3's atoms cross a block unchanged*: a forwarder's `xreq` is the same text whether `incList` is
+      in its module or imported, with `excl π1[*]#B.0⟲` in it.
+    - *Fixtures.* `o/LevelPositionsCall` and its imported form (accepted: `incList`'s call, a choice of two
+      heads; refused: one list at both fields of the element, given or fresh). `o/LevelPositionsWide` (three
+      fields; a shared list refused). `o/LevelPositionsElems` and its imported form (the heads below `[*]`:
+      refused, as above). `o/PushedTwiceLevels`. `o/MutualWritersMutualTypes` is #1429's program, accepted
+      `param`. Its `wb` passes the default allowance since 5a (90 408 records), so the module raises it
+      (#1487).
+    - *Mutations* (`-Downership-v2-mutation`, test-only, which `gates` refuses). `rule3-one-position` drops
+      (b). The traced check then panics on five fixtures: both forms of `o/LevelPositionsCall` and of
+      `o/LevelPositionsElems`, and `o/LevelPositionsWide`. `rule3-route` drops (a) and changes nothing
+      (above). (c) has no mutant, since it is an assert.
+- **Rule 4, one actual's routes, where a certificate is instantiated** [specified 2026-10-31, #1485;
+  not built]. A fold certificate (§8 slice 4, *The fold certificate, specified*) is an aggregate over the
+  callee's parameter cells, and each of its readers instantiates it at an actual: read-off's hypothesis
+  node, a call's folded read, the graft through `⟲`, and §2.11 item 3 (d). Canonical paths fold below a
+  first return (§2.1), so distinct keys can image to one cell of the caller. At `same`'s own call
+  `same l`, with `l` the plain path `π1#Node.0`, four keys of `A(same, #Node.1)` image to
+  `X = π1#Node.0⟲#Node.1`: `π1#Node.0#Node.1`, `π1#Node.0⟲#Node.1`, `π1#Node.2#Node.1` and
+  `π1#Node.2⟲#Node.1`. `aggAdd` counts by cell, so `X` is repeated in `F(A)` and once in `A`, and the
+  induction fails for every self-recursive certificate (#1485, *Wall 1*). Rule 3 does not apply: its (a)
+  asks for different last named steps, and all four keys end in `#Node.1`. Its relaxation (parting at a
+  named step above every `⟲`) does not apply either: `π1#Node.0#Node.1` and `π1#Node.0⟲#Node.1` part by
+  depth. But the four images are four disjoint sets of positions of `X`, so they owe `excl X`, not a
+  repeat. The rule:
+  - **The group.** The keys of one parameter πᵢ at one call are instantiated by walking the actual along
+    each key's steps. Views are forced, and built nodes and deltas are projected one step at a time, as
+    in `onePositionAlong`. A key whose walk meets a node that passes rule 3's (b) belongs to the
+    **group** `(call, i, L, node)`, where `L` is the exact prefix (no `[*]`, no `⟲`) at which the walk
+    met the node. (b) asks for a leaf, or a union or choice whose members are leaves, with no approximate
+    cell and no cell under a repeating split. The group also asks that the node stand at the parameter's
+    place at `L`: a recast there is in no group. Different calls, different parameters, and different
+    occurrences of one node are different groups: `Node a xs a` meets `a` at `#Node.0` and at `#Node.2`.
+    A key whose walk meets no such node is in no group, and it adds as before.
+  - **(a′) The keys of a group are pairwise alias-apart, tested in every build.** Before rule 4 takes a
+    maximum or replaces an atom, it tests the group's keys for overlap, and a group in which two keys
+    overlap is no group: all its keys add as before. Two keys overlap when `Cell.alias` says `yes`: one
+    path is a prefix of the other, or past their deepest common node one continues with `⟲` and the
+    other's divergent step is on that `⟲`'s cycle (§2.2, *⟲ matching*). The test needs no pairs. The
+    group's key paths are put in a trie (they are canonical paths of one parameter, so the trie shares
+    the path table's nodes). The group overlaps exactly when one key's node is an ancestor of another
+    key's node, or some trie node has a `⟲` child and another child whose step leads to a place in the
+    strongly connected component of that `⟲`'s place. That is `alias`'s relation on paths, decided at
+    the divergence node, which is where `alias` decides it. Two alias-apart paths are not prefixes of
+    each other and do not meet through `⟲` matching, so their routes are disjoint. This holds for a join
+    name too, `root⟲` included, because `alias` reads a `⟲` on a cycle as overlapping every path of
+    that cycle at its place. An approximate key (`~`, a recast's whole reach, §2.13.9) names more than
+    its path's routes, so it is in no group.
+    - *Why the certificate's condition does not give this* (the independent review of #1519, verified on
+      `259556bae`). An earlier version took (a′) from a condition that is neither `shared` nor `lost`.
+      But `Cell.base` strips refinements only (`Cell.zig`, `base`: it climbs while the origin is a
+      refinement), so two canonical parameter cells such as `a = π1#Node.0#Node.1` and `b = π1⟲#Node.1`
+      are two bases. `aggAdd` makes same-base pairs only within one base's bucket
+      (`t.mapGet(a.bases, b.int())`), so it never pairs `a` with `b`. `aggCond` then keeps
+      `apartAtom(group)`, the atom `apart{a, b}`, and the certificate's condition is not `lost`. Yet
+      `alias(a, b)` is `yes`, because the root join holds the left subtree's list. Instantiated through
+      the leaf `c = π1#Node.0`, both keys image to `X = π1#Node.0⟲#Node.1`, and their routes share
+      `c`'s left child's list. The maximum and `excl X` would let one position count once where it
+      arrives twice. The trie test refuses that group, so `X` is repeated (near-miss row 18).
+    - *Cost.* O(Σ |k|) over the group's keys, at most 3·|places| steps each (§2.1). It is memoised per
+      `(certificate and its version, parameter i, group prefix L)`. The partition into groups depends on
+      the actual only through `L`, and the keys of a group are those of one parameter. The parameter is in
+      the key because `Place.rootPath` is keyed by place, so two parameters of one type share their root
+      prefixes, and a memo without `i` would serve one parameter's answer to the other (the second
+      independent review of #1519). In one certificate, `π1` may hold `π1#Node.1` and
+      `π1#Node.0#Node.1`, which are apart, while `π2` holds `π2#Node.0#Node.1` and `π2⟲#Node.1`, which
+      overlap. Through a caller's `c = π1#Node.0`, `π2`'s two keys both image to
+      `π1#Node.0⟲#Node.1`. So a cached success from `π1` would merge them, and a cached failure from
+      `π2` would refuse `π1`'s safe group: the answer would depend on the order of the parameters
+      (near-miss row 19). An equivalent key is the immutable set of the group's keys. Either way the
+      memo is a function of the group, and it never depends on the order in which groups are tested. It
+      is charged to the instantiation's account like the walk.
+  - **The read.** For each member cell `c` of the group's node, the image of a key `L·r` is the symbolic
+    projection `c·r`, canonical, through `⟲` as well. This is not `Grafter.argAt`'s answer: at a level
+    step `argAt` takes the whole reach of the node so far (`recastWhole`, `Calls.zig`), even for a leaf.
+    But a leaf of symbolic cells at the parameter's place stands for exactly the projections of its cells
+    (§2.2: projecting a symbolic cell appends a step). Where a `⟲` of `r` lands on a root or on a path
+    that is not sealed, the image is the join name that `extend` makes there (`root⟲` included), and it
+    is not expanded. A union's or a choice's members are taken one at a time, because one execution holds
+    one of them. An image takes the **maximum** of the multiplicities of the group's keys that land on it,
+    not their sum. It enters the caller's multiset once with that multiplicity (twice when it is 2+). An
+    `apart` or `sep` atom of the certificate whose two members land on one image `X` of one group
+    instantiates to `exclOf(X)`. Everything else adds in the multiset and pairs in `apart` as before:
+    images of two groups, an image beside the caller's own arrivals, and keys in no group.
+  - *Why it is sound.*
+    1. By (a′), tested on the keys themselves, the keys of a group have pairwise disjoint routes.
+    2. In one execution the group's node holds one object `o`, at one caller route `β` of its cell `c`.
+       `c` may be a summary cell; `o` is then one of its positions. The callee's route `L·ρ` is the
+       caller's route `β·ρ`, and `β·ρ = β·ρ′` only when `ρ = ρ′`. So keys with disjoint routes reach
+       disjoint caller positions, and each caller position gets the occurrences of at most one key. Its
+       multiplicity is therefore at most the maximum. This does not depend on how the images are named:
+       a join name and a level path both name a set of positions that holds the image's routes.
+    3. Two keys whose images are one `X` stand at two disjoint sets of positions of `X`. `exclOf(X)` says
+       that distinct positions of `X` hold objects apart in their whole reach (§2.2), so it implies the
+       callee's atom between the two keys. One member cell gives a shared image only at a summary path:
+       an exact path is one route, and two disjoint non-empty sets of routes cannot both be in it.
+    4. The claim is about the routes below one object, and nothing else. These keep the sum, because
+       there two route prefixes reach one caller position: two calls with one actual
+       (`Node (dupL l) xs (dupL l)`), one node met at two occurrences (`Node a xs a`), and a node below
+       `[*]` (two elements may be one object, rule 3 (b)).
+
+    *Corrected* (the review of #1519): an earlier version of step 1 claimed that every path other than
+    a join names exactly the routes that canonicalise to it. That is false for a `⟲` at a root:
+    `Place.extend(root, ⟲)` makes `root⟲`, `Place.levelPaths` gives no paths there, and `levelsOf(root)`
+    has several. The rule no longer needs that claim. The premise that replaced it, that the
+    certificate's condition makes the keys alias-apart, was false too (above), and it is replaced by the
+    trie test.
+  - *Rule 3 shares the argument but not the test.* Its (a), different last named steps, makes positions
+    distinct but does not make subtrees disjoint (`x#B.0` is a prefix of `x#B.0#B.1`). It stays as
+    built, because no fixture pins a relaxation. Rule 3 reads a callee's `apart`/`sep` sides at a call.
+    Rule 4 reads a certificate's arrival keys wherever one is instantiated.
+  - *The read does not depend on the representation* (Lemma R4).
+    - The groups are a function of the keys' paths and of the node that rule 3's walk meets. That node
+      is the same on a view and its answer, and on a union merged or not (Lemma R3).
+    - (a′) is a function of the keys' paths alone.
+    - The maximum is commutative, associative and idempotent, and it agrees with saturation at two (C1).
+    - An image is a canonical path, computed by `extend` from paths alone.
+    - The rule is monotone. A representation that over-approximates more (a built node or a `positions`
+      node in place of a leaf) makes no group, and then the keys add, which is weaker.
+  - *`runtime_safety` check* (`Grafter.assertRoutesApart`). It runs when a group merges two or more
+    keys onto one image, and it shares no walk with the rule.
+    - The merged keys are compared pairwise by `Cell.alias`, computed again from their paths and not read
+      from the multiset, and each pair must be `no`. This tests (a′) itself, so a key at `root⟲` or at
+      another join passes when it is apart and fails when it overlaps. (`wrapR`, §8, merges `π2#Node.1`
+      and `π2⟲#Node.1` at `π1#Node.0⟲#Node.1`, which is sound, and passes.)
+    - Rule 3's traced preimage walk (`Calls.Pre` on the denotation, as in `assertOnePosition`) runs over
+      the group's images. Every source state that brings a merged image to the callee's keys must stand
+      at one actual path, with no summary step.
+
+    The check only checks, and it tests (a′) by pairs, independently of the trie. The rule's premises
+    (the group's node, the trie test, the approximate keys) are computed in every build.
+  - *Cost.* Two counts are kept apart: the **source keys** of the certificate (A, as in §8), and the
+    **images** that an instantiation makes. A key has one image per member cell of the node its walk
+    meets, so an actual with alternatives makes more images than the certificate has keys. Let W be the
+    instantiation's traversal and projection work: the walk of the actual along each key, memoised per
+    `(actual node, prefix)`, plus one `extend` per step of each image. Let M be the number of image
+    occurrences it generates, at most A times the largest number of member cells of a group's node.
+    Rule 4 is then O(W + M log M): the trie test (O(Σ |k|), inside W) and one insertion per image into a
+    persistent map from image to `(group, maximum)`. Nothing is expanded. Scaling witness: `same`'s
+    certificate (five keys, fixed) applied to `same (if c1 then t1 else if c2 then t2 … else tN)` makes
+    M = 5N images, and the work is linear in N. It is a counted test in `build_test.zig` at
+    N = 8 / 16 / 32 / 64, whose records may at most double, plus a constant, when N doubles. The check is
+    `runtime_safety` only, quadratic in the keys that one image merges.
+  - *Built as rule 1 is.* `Agg.sides` keeps, per image, the group and the keys of it that reached the
+    image. An arrival of the same group with another key is one more position of the image. An arrival
+    of another group, or with the same key, is a repeat.
+
+*The cases.*
+- *Parts below two heads, and below a head and its rest.* The sides are two disjoint index ranges, and
+  equal `q` puts `a` and `b` at two positions of `X`, which `excl X` keeps apart. `#1472`'s
+  `combineHelp` is the head-and-rest case: `first.Ok` and `rest[*].Ok` both image to `π1[*]#Ok.0`.
+  Under rule 2 they need `excl π1[*]#Ok.0`; under rule 1 the image owes it. Before these rules, the image
+  read `lost`, and the frame needed the whole element's `excl π1[*]`.
+- *Through `⟲`.* Disjointness is not assumed. An image whose path holds a `level` step keeps the
+  multiset (rule 1), and a `q` with `⟲` keeps `k` (rule 2). A fold identifies depths that coexist
+  (*Recursive folds and their read*), so two arrivals at one folded class are a repeat by that rule. The
+  sides `level`/`below` of a recursive split are not list positions, so `positionsApart` is false.
+  Rules 3 and 4 are the exceptions, and they assume no disjointness of objects either. Each proves that
+  two positions are distinct by route ((a), (a′)) and one-to-one with `X`'s ((b)), and then asks
+  `excl X` of the objects.
+- *A part under a recast.* A recast changes a node's place, not its cells (§2.13.9), so the pair is the
+  same pair of cells and the rules apply unchanged. A cast that loses facts loses them in the shape,
+  before any read.
+- *The same path reached by two routes.* Cells are interned, so two routes to one position are one cell:
+  `a = b`, which `sep` and `aggAdd` read as before (`shared`, `lost` or a repeat). Two matches of one
+  rest (`case ( rest, rest ) of …`) are two splits of one container, `under_kappa` for `alias`, and
+  never `positionsApart`: they may take one position (`o/CombinePositions` `twoMatches`, refused).
+- *A part whose object is also held outside the list.* The rules change only the condition between `a`
+  and `b`. A third holder is a cell of its own, and the holder check (§2.8) compares it with each of `a`
+  and `b` as before (`o/CombinePositions` `held`, refused `alias`).
+- *Disjointness must not be assumed* for a concrete image, an image or `q` through `⟲` (outside rules 3 and 4) or a summary step,
+  two splits of one container, a part beside its own anchor (`alias` reads its path), a cell under a
+  split whose κ fails (*The repeating split*), or one cell met
+  twice.
+
+*The repeating split* [M 2026-10-31, #1478]. A split's cells stand at positions of the list that was
+split, and the canonical cell names them by the parameter's positions. Those are one-to-one only while
+that list holds each position once. `List.push xs el` (or `[ …xs, el ]`) with `el` taken from `xs` makes
+a list that holds `el` twice. The construction rule records that as `shared` at its `[*]` (*A
+construction lowers …*), and a split of that list records `shared` as its κ. Two of its rest's
+positions may then be one object, though their cells and canonical cell are those of distinct parameter
+positions. **So no `excl` of a canonical cell may stand for positions under a split whose κ fails.**
+`KappaRead.repeatingSplit(c)` finds the first split on `c`'s refinement chain that `c` stands for many
+positions of (an `others` or `below` side) and whose κ is `shared`, `lost`, or not recorded.
+`exclOf(c)` is that κ in place of `excl c`. One position (`elem`, `level`) of a repeating list is one
+parameter position, so its own positions below are one-to-one with the canonical cell's, and its
+`excl` stays. Two such positions may still be one object, so the pair is the split's failed κ. Every `excl` of a frame cell
+goes through it: `summaryExcl`, `shallow`, a class read (`classesRead`), a write's other paths
+(`TransferBeside`), and read-off's `excl` image. Rules 1 and 2 also need the side's own split to hold
+(`sideHolds`). Rule 1 counts an arrival under a repeating split as a repeat, and rule 2 keeps the
+split's failed κ. This is the root cause, and it does not depend on the
+rules: master's route, where a deep read of `rest[*].0` made `excl π1[*].0`, fails the same way. The
+condition is read at the split, which is where the list's `[*]` κ is, and it rides on the cells that the
+split made, wherever they go. So a split's cells that reach another list carry the failure with them.
+A cell that a split took from a list that holds each position once keeps its `excl`. When it is
+stored again into a list that repeats it, that list's construction records the repeat, and a split of
+that list is a repeating split. *Measured:* `o/PushedPositions` and `o/PushedPositionsImported` cover
+`List.push xs el`, `[ …xs, el ]`, the head-and-rest duplicate, an edit in the same frame (`inF`, which
+published `xreq excl π1[*].0` before) and a `[ x ]` binding after the call. All are refused. Master
+`043a524b5` accepted the first three, and so does v1 (#1478). The copied prepend `[ el, …xs ]` stays
+refused and `o/CombinePositions`' `bump` stays accepted.
+
+*Callers discharge the requirement.* `excl X` is an atom of the class over its parameter cells, published
+like any other (`xreq`). A caller whose list shares a payload (`aliased`: `[ Ok b, Ok b ]`), whose second
+list holds a payload of the first (`mixed`: `combineHelp [ Ok b ] [ b ]`), or that passes one element
+twice (`twice`: `[ r, r ]`) does not meet it, and is refused. *As built (#1473):*
+`o/CombinePositions` and `o/CombinePositionsImported`. `mixed` was accepted on master
+`6c8e43e6a`, unsoundly: the port's `excl` entry was keyed on a projection node that its callers' reads
+never met (§2.3 *A port keeps no round that its last round covers*, *As built, 4d*).
 
 Where κ is relied on (oc §18.4): a callback writing what a destructive read supplies (`List.update`, `map`'s
 element, `Dict.focus`, a `taken` element); the split then a write of the taken part (R-4.5.3); a callee's `xreq`;
@@ -2014,12 +3643,57 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      accepted, as v1 accepts it. Through `[*]` or `⟲`, `q` stands for several positions, and the
      answered path is read whole as before: their distinctness is the class's `xreq` (step 7).
      Pinned: `AnsweredHolder` and `AnsweredHolderImported`, every line v1's.
+     *Decided 2026-11-01 (#1546): one tree at two paths of the actual, one of them unmarked.*
+     `dup t = case t of N v l _ → N (List.push v 1) (dup l) l` answers `l` beside the call `dup l`,
+     which writes `l`'s list, so `dup l` is refused `later-use` in `dup`. A caller
+     `dup (N [] t t)` is accepted at `<N …>#N.1#N.0`: `t` also stands at `#N.2`, but the class marks no
+     path at `π1#N.2`, so that position is not a path beside the write, and the answered `π1#N.1` holds
+     the written object only through the write's own steps. Both are sound by this amendment: the alias
+     in the result is the callee's, refused there. Checked by execution: with copies, and with every
+     write in place where its verdict is accepted (refused sites copying), `drive (N [ 5 ] (N [ 6 ] L L)
+     L)` gives `N [1] (N [5,1] (N [6,1] L L) (N [6] L L)) (N [5] (N [6] L L) L)` both times; only the
+     refused writes in `dup` change it, to `… (N [5,1] (N [6,1] L L) L)` at `#N.2`. A callee that reads
+     `π1#N.2` (`N (List.push v 1) (other l) r`) makes it a path beside the write, refused `disjoint`.
+     `bench/ownership-dup-oracle.mjs` runs this family (the child beside the call at pattern depths 1
+     to 3, local and imported, ten callers): 0 differing runs, 1 010 with every write in place.
+     Pinned: `ChildBesideOwnCall`.
+     *Amended 2026-10-31 (#1253's item 2, slice 5c): an answer above a write through `[*]`.* The answered
+     path is read by position as a value beside the write (`reachBeside`, #1438), so the written positions
+     themselves are skipped: they are the objects written, and their distinctness is the class's `xreq`.
+     `reachBeside` dropped a route's path below a place on no cycle (`routePath`), which is right off the
+     write's path, where no fold brings a route back, but it also dropped the route down to the written
+     positions. So `Split.bumpHead`'s `~π1` over `[ [ 1 ], [ 2 ] ]` held the written lists and was refused.
+     The route toward a written path now keeps its path on any place, one path per step of the write. The
+     skip still needs the node there to stand at one position (`frontierAt`'s single route), so one list
+     twice, `[ r, r ]`, stays refused. Pinned: `AnsweredAboveElements` and its imported twin (two
+     literals, two parameters and a bound list accepted, as v1; a repeat and a later read refused). An
+     element bound to a name first (`a = [ 1 ]`, then `[ a, b ]`) was refused for another reason: the
+     element's recast at `[*][*]` reached the element's own cell, so its contents counted as itself.
+     Rule (b)'s amendment (#1492) drops that cell. It is still refused, now `exclusive`: the call's
+     `xreq excl π1[*]` is read through the recast element approximately (#1508, a precision known
+     entry).
    - **(b) A path below `q` counts when `q` goes through `[*]` or `⟲`.** Such a `q` names several
      positions, and a path below it may be below another of them: `f ys = case ys of [ a, b ] → case b
      of [ c ] → ( List.push a [], c )` writes `π1[*]` and answers `π1[*][*]`, and over `[ em, [ em ] ]`
      the `c` it answers is the `a` it writes. Below an exact `q`, the path is inside the written object,
      which a shallow write does not touch (§2.8). `q` itself is never beside itself: the distinctness
      of the positions it names is the class's own `xreq` (step 7).
+     *Amended 2026-10-31 (#1492): a written position's own contents.* An element bound to a name
+     (`a = [ 1 ]`, a `List number`) stands at a `List Int` literal's `[*]` as a place-only recast of
+     the built list, and its projection past a step the inner's place does not share is a whole recast
+     of the list, whose reach holds the list's own cell. So below the written position the walk found
+     the written list itself, and `k [ a ]` (`k` writing `π1[*]` and answering `π1[*][*]`) was refused
+     `disjoint`, where `k [ [ 1 ] ]` and v1 accept. A value has no cycle, so no object inside a written
+     object is that object. At the write's end each side of the value (a join's, each side) that is a
+     written position of one route (`Written`) over a built value gives its own cells; the cells that
+     no side's parts hold are dropped from what the walk keeps below that end
+     (`TransferBeside.ownContents`). A built side's parts are its children's reach; any other side (a
+     leaf, a whole recast, a delta, a side of two routes) counts whole, as its contents are not known
+     apart from it. Everything found below the end other than through that recast is in some side's
+     parts, so no object the parts may hold is dropped, and another position's contents still count:
+     `elems [ em, [ em ] ]` stays refused. Pinned: `LocalElementContents` and its imported twin (a
+     bound element alone and a bound element beside a literal accepted, as v1; one list twice, a list
+     inside another element and a list read after refused).
    - **(c) The caller's own parameters.** Two paths of one parameter of the calling frame are distinct
      objects in that frame, as its own walk takes them. Its class marks both, and its callers check
      them under this item, so such a cell is not beside the write. The base's own cell is the
@@ -2037,6 +3711,12 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      refused (`CallOtherPathsCopies`); an `excl ys[*]` there would only say that distinct positions
      hold distinct objects. The cost is a precision loss where a built value holds two distinct
      projections (#1272).
+     *Amended 2026-10-31 (slice 5c): #1272 is answered by §2.9 rule 2.* Two refinements of distinct
+     positions of one split held in a built record (`{ x = a, y = b }` with `a` the head and `b` the rest's
+     head, or two heads of one pattern) are two sides of one list split, so `sep` owes `excl` of their
+     canonical cell (§2.9 *Two positions of one image*, rule 2) and the write is accepted with that `excl`,
+     which callers discharge. `viaFirst` (one head twice) stays refused. Pinned: `SplitCallSupply` and its
+     imported twin (`headAndNext`, `twoHeads`, `oneHeadTwice`, and callers over distinct and shared lists).
      *Amended 2026-10-30 (#1383): what a callee found apart, discharged here.* A callee that writes `q` of
      πᵢ while a value at another path `q′` of πᵢ is held, answered or read deeply beside it finds the two
      apart in its own frame, because neither path is a prefix of the other (§2.2). That apartness is
@@ -2096,7 +3776,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      and `.z`, and reading an arrival at the write's node as the write accepts `CallOtherPathsKeys` 16:5,
      `CallOtherPaths` 123:5 and `LevelPlacesCall` 44:5, which v1 refuses). The rule is now:
      - **A route carries its canonical path** in the parameter's place graph, from the root of the use,
-       each step by `extend` (`Transfer.routePath`).
+       each step by `extend` (`TransferBeside.routePath`).
      - **The written positions** are the write path's canonical paths (one, or a join's level paths,
        §2.1 *one position, one name*) paired with the actual's nodes the write's path reaches there,
        a join's sides included, **that stand at one position of the path** (`Written`). A route beside
@@ -2108,7 +3788,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        of `π1#Node.0⟲#Node.1` and owes no `excl` (the `[*]` of a list owes one; a constructor field does
        not). Over `Node (Node s [ 2 ] s) [] Leaf` the one node `s` stands at two positions of that path,
        so an arrival at `s`'s list may be its other position, the same list beside the write. So each
-       node there counts its **routes** from the actual, along the write's path (`Transfer.frontierAt`,
+       node there counts its **routes** from the actual, along the write's path (`TransferBeside.frontierAt`,
        `routesBelow`: one walk of the value below each `⟲`, a pass in topological order, each edge a
        `(node, step)` or a join's side, counts summed and capped at two, a node on a knot two). Every
        route to a position at the path goes through the path's positions above it, so these are all its
@@ -2117,7 +3797,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        either way, so nothing is lost. Pinned: `FoldedOnePosition` and `FoldedOnePositionImported`
        (one subtree twice, a parameter's list in it, two equal subtrees over one parameter list, a list
        projected from a literal beside the literal), each refused as v1 refuses it.
-     - **A value beside the write is read by position** (`Transfer.reachBeside`): from its path, each
+     - **A value beside the write is read by position** (`TransferBeside.reachBeside`): from its path, each
        `(node, path)` once, its own cells kept, its children's taken by projection at their paths, a
        written position skipped. A join (`union`, `choice`, `positions`) is read side by side at its
        path. A leaf, a `recast` or a `view`'s answer that is neither (whose parts no step of the place
@@ -2125,7 +3805,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      - **A symbolic value above the base** (rule (c)'s parameter cells, #1383's held or deep readings,
        #1386's splits): a parameter cell `d` of the value whose canonical cell is above the base's `c` holds
        the written object itself when the steps from `d`'s path down to `c`'s, taken from the value's
-       path, land on a written path (`Transfer.atWritten`). Then it holds nothing beside the write, but
+       path, land on a written path (`TransferBeside.atWritten`). Then it holds nothing beside the write, but
        where `c`'s path stands for several positions the frame owes `excl c` upward (rule (c)'s folded
        case), since it is then a symbolic value whose positions only the caller's callers can tell.
      - **Linear.** A route's path is dropped (`none`) below a place on no cycle beside the write's path:
@@ -2142,9 +3822,68 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        doubling at 1 024, the limit at 2 048; master reaches it at 256): below a `⟲` each write route is
        its own and walks the actual below its path again (#1446).
      So `three`, `four` and the distinct twins of 4a's plan fixtures are accepted as v1 accepts them, and
-     every shared actual is refused (`LevelsApart`, `LevelsApartRoutes`). Still apart from v1: a `choice`
-     at the root is read with both arms together, so an object in one arm beside the other arm's write is
-     another path (`CycleJoinRankWriter` 56:5, #1439).
+     every shared actual is refused (`LevelsApart`, `LevelsApartRoutes`).
+     *Amended 2026-10-31 (#1439): a choice's arms.* The walk read a `choice` on the write's path with both
+     arms together, as `reachBeside` reads a join's sides at one path. In `chosen c = incAll (if c then
+     Rose [ Rose k ] else Rose [ Rose [ Rose k ] ])` the list `k` is the first level's list in one arm and
+     the level below in the other, so each arm's `k` was another path of the other arm's write, though no
+     run has both (§2.9: one execution has exactly one arm's value). The rule is now:
+     - **A choice on the write's exact prefix is split.** Where the walk's route on the write's own path
+       (`spine`) meets a value that is a `choice` (after `force`), at a depth up to the write path's first
+       `[*]` or `⟲`, it goes on as one route per arm, the arms of a nested choice each. Above the first
+       `[*]` or `⟲` the route names one position, so one run has one arm there. Below one it names
+       several, which may take different arms in one run, and a choice is read whole, as before.
+     - **The walk is a graph of runs** (`TransferArms.Arms`). Each item, each read and each state of a
+       read by position is a node, met once whatever arm reaches it, and an edge goes from what pushed it.
+       An edge from a choice to a side that is no choice starts that side's arm. A node runs in the arms
+       its incoming edges bring (an arm, or its source's arms), arm 0 above every split: one pass over the
+       graph's strongly connected components in topological order. An arm's parents are the arms of the
+       choices it is a side of. Every node is read by the whole argument's base (`want`) and keeps per
+       node. At the end a cell a node keeps is another path only where its key is a base's in a run the
+       node is in too: the arms of the base's ends of the write's path and the node's arms, one set
+       meeting the other's closure under parents. A parameter's cell is the base's in the runs of the ends
+       whose reach holds it, and is read the same way; a `⊤` cell is kept always. This is
+       sound because a run that takes an arm has that arm's whole value below its depth: a node none of
+       whose arms a base's run shares is in no run with it. A deep demand's base, a `⊤` base, or a route
+       of the write's path that stops above its end keeps every node's cells, as before.
+     - **The written positions, per run** (`TransferArms.frontierMax`). With a split, a node's routes are
+       counted per leaf arm: a node stands at one position when no arm has two routes to it, so a list
+       two arms share at the written path is written in each (`chosen`'s inner `[]`). A join's sides and
+       a view's answer are walked as edges, so a part arms share is counted once, and a join or a view
+       is never a re-entry of a `⟲` itself: its sides or its answer are, and counting both would give the
+       list below two routes in one arm (`ChoiceArmsApart`'s `twoLeaves`, two `Rose []` in one list).
+     - **Coexistence is unchanged.** A `union` (possible contents at one position) and a `positions` node
+       (coexisting elements) are never split: their sides are read together, as `reachBeside` and §2.9
+       read them. Pinned by `ChoiceArmsApart`'s `unionTwin`, the shape of `chosen` with a pattern's two
+       descriptions of one element in place of the `if`: refused, where v1 accepts it.
+     - **Linear.** What arms share is met once: an arm's node above the path's first `⟲` reads its
+       children at the steps where the whole argument's node's children hold a key of the base
+       (`Synthetic`), never its own reach listed again; a read by position is a node per state
+       (`readStep`); a `⟲` below a split is re-entered one node at a time (`expandOne`); and a reach
+       or a spine's children smaller than the base's keys are matched by cell or by their own keys
+       (`keepReach`, `Beside.keysOf`). The arms of a choice tree are its leaves, never their combinations.
+       Measured (records of the call: the declaration's less the same chain's without the call; and the
+       call's three other-paths walks): D arms `Rose [ sN, Rose a_i ]` sharing a tower `sN`, at N, D =
+       16, 4 / 8 / 16: 6 023 / 7 897 / 13 017 on master, 14 239 / 23 396 / 43 391 when each arm walked
+       the tower again, 9 147 / 13 037 / 22 487 now; 64, 32: 38 128 / 353 315 / 88 688; 128, 32: 76 780 /
+       971 344 / 187 020; 128, 64: 113 239 / the limit / 293 653. The walks alone cost about 240 records
+       an arm more than master's at every N (3 704 / 5 566 / 9 641, 32 171, 68 847, 90 132 against 2 506
+       / 3 450 / 5 631, 21 751, 51 547, 64 754), and a doubling DAG in place of the tower likewise (N = 16,
+       D = 32: 29 363 / 99 050 / 37 493). The rest of the call's rise is what its accepted demands go on
+       to read, which master's refusal skips (its `demands` records). An `else if` chain of D distinct
+       arms, D = 8 / 16 / 32 / 64: the walks 1 460 / 2 891 / 6 939 / 17 889 on master, 3 618 / 7 307 /
+       15 969 / 36 643 now, 2 158 / 4 416 / 9 030 / 18 754 more, linear. The chain's own records grow
+       ×2.06 a doubling (13 210 / 27 163 / 55 932 at D = 8 / 16 / 32), D log D: each arm inserts into persistent
+       sets of O(D) members. The call's beside them, demands left out, are linear since #1467 (1 314 / 1 583 /
+       2 548 → 1 201 / 1 213 / 1 225 for `chosen`'s arms; `reach`'s joins above), and so are its demands (§2.8). With no choice on the exact prefix the walk is
+       master's: the K-wide family at K = 8 / 16 / 32, 1 071 / 1 319 / 1 815, unchanged, and the
+       `T (List T)` tower at height 8 / 16 / 32 / 64, 2 775 / 5 162 / 10 894 / 25 820 → 2 781 / 5 168 /
+       10 900 / 25 826 (the exact prefix read for a choice).
+     So `chosen` is accepted as v1 accepts it, as is a choice at a record's field (`ChoiceArmsApart`'s
+     `field`), and `FoldedBCall`'s `chosen`, `k` at `.0[*].0` in one arm and at `.1[*].0` in the other,
+     which v1 refuses. An arm that holds `k` at two levels itself (`sharedArm`, `nestedShared`), and `k`
+     beside the choice in every run (`fieldShared`), stay refused (`ChoiceArmsApart`,
+     `ChoiceArmsApartImported`).
    **One demand per path of the pair graph (#1356).** The `(i, q)` are read off the use shape `S.use(i)` as
    the DAG it is, paired with the actual: each route from the root to a `W` (or, for item 4, an `E`) carries
    the actual's value there, read step by step as `cellsAt` reads a path (a missing step keeps the value
@@ -2180,7 +3919,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      `positionsAt`, `leafDepth` and `spineRefinements` read it then as at the call, and the call's
      `Beside` index is a memo of that value, made again per call. Escapes are not deferred (#1454).
    - **The trie `T(c)`**, after the walk and the liveness index, before `Demands.resolve`
-     (`Transfer.Frame.expandGroups`): the canonical paths at and above every parameter cell the
+     (`TransferGroups.expandGroups`): the canonical paths at and above every parameter cell the
      frame's escapes reach and the holders live at a group's call reach; the paths below `c` the call's
      other arguments reach; and the paths below `c` that a later use of a holder of a cell on `c`'s
      line reads (its use path from that cell, by `extend`). Only a holder live at the call, its life
@@ -2194,7 +3933,7 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      pending value that is no leaf across the call.
    - **The walk.** `u₀` is walked from `c` as `Calls.Routes` walks it, each route its own, its value
      and its canonical path carried. A route **merges** from the first node where its path is no
-     summary path and every route below it to a `W` takes **plain steps** (`Transfer.Plain`: a step
+     summary path and every route below it to a `W` takes **plain steps** (`TransferGroups.Plain`: a step
      `extend` appends, never a fold, a `[*]` or a `⟲`). From there it is a state: the use node, the
      deepest node of `T(c)` it passed (`t`), its **class** (on `t`, or the place of the step that
      left it), and the path's `sig` and place. `sig` is what `extend` reads to fold: the run of the
@@ -2235,6 +3974,130 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      `Exits` walked the use of a call by path (#1452). The whole-corpus v2 dump, 2 039 roots, has no
      line changed but the accounts. Pinned: `ParamLeafByNode` and the two counted tests in
      `build_test.zig`.
+   - **(d) Inside one certified view** [specified 2026-10-31, #1485; revised after the review of #1519;
+     not built]. A view of a certified class (§8 slice 4, *The fold certificate*) is a knot. `same`'s
+     `res` widens to one class, `K = #Node.1`, because `res#Node.0` and `res#Node.2` are the root. So at
+     `incP (P (same t) (same t2))` the write at `π1#P.0#Node.1` and the other path
+     `π1#P.0#Node.0#Node.1` both project into `K`, and `K` holds `t#Node.1` at both. Each path keeps it
+     beside the other, and the call is refused `disjoint` (#1485, *Wall 2*). Neither path has a `⟲`, so
+     the graft through `⟲` (reader 3) never reads them. Neither is a leaf fold ((c)), and neither is a
+     summary cell that owes `excl`. The same happens at a held path whose rest is not in `K`: `incAll`
+     marks `π1#Node.0⟲ RA` and `incP` marks `π1#P.0#Node.0 RA`, and a held tree's reach in the knot is
+     every class of the view, `K` included, with the written `t#Node.1` in it. So
+     `incRoot (same t)`, with `incRoot t = case t of Node l xs r → Node l (List.push xs 1) r`, is
+     refused, though it is safe and v1 accepts it. The rule works on what `otherPaths` already walks, an
+     item at a time, and never on pairs of paths.
+     - **The premises, on the write.** (d1) The write's path `q` is not approximate. (d2) Its spine (the
+       walk's route along `q`) meets one node `V` at an exact prefix `L` (no `[*]` or `⟲` in `L`). Views
+       are tested before they are forced, built nodes and deltas are projected one step at a time, and a
+       `choice` is split arm by arm (*a choice's arms*, above). `V` is a view of the class `C` of a group
+       member `f` under an environment `E`, or the forced answer of one (`Shape.answered` maps it back).
+       A `union`, a `positions` node, a recast or a delta at `L` is not a `V`. (d3) Every position of `q`
+       after `L` lies in one class `K` of `C`. That is, `Fold.classAt` over the rest of `q`'s steps, with
+       each `⟲` taken as every return of its place's cycle in `C`'s fold, gives `K` and only `K`. And
+       `A(f, K)` is certified (published, or a goal of the Prover, below).
+     - **The items inside `V`.** The items of the walk that descend from the spine's item at `V` are the
+       positions of that one occurrence of `V`. Each such item carries its class in `C`: `V`'s root class,
+       then one step of `C`'s fold per step of the walk (the fold's `(image, step)` map). An item below
+       `V` that the walk reaches by another route is another occurrence (`P w w` meets `w` at `#P.0` and
+       at `#P.1`), and it carries no class.
+       - **The tag is part of the item's identity** (the re-review of #1519). An item carries a **tag**:
+         none, or `(occurrence, class)`, where the occurrence is the spine's item at `V` (one per arm).
+         The walk merges items by `(u, v, state, path, inside)` (`seen`, `seen_x` and `seen_r` in
+         `otherPaths`). Use nodes and value nodes are shared, and `routePath` gives `.none` at and below
+         a place on no cycle. So without the tag, an item inside `V` at `K` and an item of another
+         occurrence could be one item. Whichever the walk reached first would decide for both, and an item
+         outside `V` could drop `K`. Counterexample (near-miss row 15): `type Box = Box (List Int)`,
+         `Tree = Node Tree Box Tree | Leaf`, and `bad t = (w = same t; incP (P w w))`, written at
+         `π1#P.0#Node.1#Box.0`. The item inside `V = w` at `#P.0#Node.0#Node.1#Box.0` and the `#P.1`
+         occurrence's item at `#P.1#Node.1#Box.0` both have the key `(u_K, N_K, off, none, …)`, because
+         `Box` is on no cycle. The tag is therefore a field of every key by which the walk merges, and an
+         item met with another tag is another item. There are four such keys: `seen`, `seen_x`,
+         `seen_r`, and the read node of a held item, `arms.read(&read, .{ v, folded, path, inside })`,
+         which holds no use node either (the second re-review of #1519). A held `Box` inside `w` and the
+         held `Box` of the `#P.1` occurrence share one read node when the place above it is on no cycle:
+         `Node Tree Wrap Tree`, `Wrap = Wrap Box`, `Box = Box (List Int)` (near-miss row 17). The plain
+         `Tree` of the `P w w` witness hides all this, since there `K` stands directly below a cyclic place
+         and the paths differ.
+       - **The walk's order is never relied on.** `otherPaths` pops its stack last in, first out, and it
+         pushes the spine's child before the siblings off the spine. So today every subtree off the spine,
+         the whole `#P.1` occurrence included, is explored before the spine reaches `V`, and a merged item
+         would be made untagged, keeping `K`. That order makes rows 15 and 17 safe by accident, not by
+         the rule. The tag is needed in every order. Any order of the walk must give the same verdict,
+         and the tests below force the order in which the item inside `V` is met first.
+       - An item at class `K` keeps nothing of it.
+       - Where an item keeps a reach (`keepReach`), the reach of a position inside `V` is taken by class:
+         the cells of every class of `C` that its class reaches in `C`'s fold, except `K`. Those cells are
+         reader 3's, `A(f, K′)`'s keys instantiated by rule 4 at each class `K′` (*Reader 3 at every step*,
+         §8).
+       - Everything else is read as before: the written positions, the items outside `V`, and the cells
+         of every other class.
+
+       When the rule drops something at `K`, the call relies once on **κ̂(V, K)**: the multiset read of
+       `A(f, K)`'s arrival keys instantiated through `E` by §2.9 rule 4, with the certificate's own atoms
+       substituted. `yes` passes, `and{…}` passes and records `xreq`, `shared` is refused `disjoint`,
+       and `lost` is refused `disjoint (approx)`. κ̂ is read once per `(call, V, K)`.
+     - *Why it is sound.* By (d2), `V` stands for the result of one activation of `f` in this execution:
+       `L` names one position, and an instruction runs once per activation (§2.12, A0). The items that
+       carry a class are positions of that result, and by (d3) every written position is a position of
+       `K` in it. The proved certificate says that every object at a position of `K` in that result is
+       one of `A(f, K)`'s arrivals instantiated through `E`, at most at the counted multiplicity. A κ̂ that
+       passes says three things: no arrival is repeated, distinct arrivals are apart, and distinct
+       positions of a summary arrival are apart. So distinct positions of `K` hold objects that are apart
+       in their whole reach (§2.2). What the rule drops is a position of `K`, at an item or in a reach.
+       Either that position is a written position, and then it is the written object itself, which is
+       never a second path of the write (item 3 (a), #1367, and *the written position*, #1253). Or it is
+       another position of `K`, and its object and that object's whole reach are apart from every written
+       object. This needs no name of either position, so it holds whatever canonical paths the walk
+       makes. The rule keeps the cells of every other class, so an object of another class that the
+       write may meet is still compared. That includes a deep write's own contents (a class inside `K`)
+       and a list that moves between two classes (§8, near-miss row 12). The rule says nothing about two
+       views (`P (same t) (same t)`: the spine meets `same t` at `#P.0`, and the other item meets the
+       other `same t` at `#P.1`), one view at two occurrences (`P w w`), a view below `[*]` (two elements
+       may be one value), or a write whose rest lies in two classes. Those keep the cell comparison.
+     - *A hypothesis is read provisionally.* Inside the group being solved, `C`'s certificate may be a
+       goal of the Prover. The walk then reads the hypothesis (the member's current aggregate), as every
+       reader does during the rounds (§8, *When*). A Disjoint verdict that read a hypothesis is final only
+       when the Prover proves the goal on `x*`'s validation walk. When the proof fails, `lost` is joined
+       into `A(f, K)`, the group goes round again, and the verdict is computed again from the next
+       generation's validation walk, where κ̂ reads `lost`. No verdict is published from a round whose
+       certificate was not proved (§2.12, *Settled generation*).
+     - *The read does not depend on the representation* (Lemma C7, §8). (d2)'s `V` is the same before
+       and after forcing, because the walk tests a node before it forces it and maps an answer back to
+       its view. A choice is split into the same arms whether `joinAlternatives` flattened it or not. The
+       classes come from `C`'s fold by steps, a published table, and no node. κ̂ is rule 4's
+       instantiation (Lemma R4) of a certificate that C1–C4 fix. When a premise is not recognised, the
+       items carry no class and are read by cells, which is weaker.
+     - *`runtime_safety` check* (`TransferBeside.assertCertifiedDrop`). It shares no walk with the rule.
+       For every item that dropped `K`, the actual is walked again along the item's route with every view
+       forced and every choice flattened, and it must meet a node of `V`'s answer at `L` (through
+       `Shape.answered`). Every edge into a dropping item or into the read node of one, in the walk's graph
+       (`TransferArms.Arms`, one edge per route that reached it, merges included), must come from the
+       spine's item at `V` or from an item with the same occurrence in its tag. So no item outside the
+       occurrence was merged into it. `Calls.Pre`'s traced preimage of that answer, keyed by canonical path, must put
+       each dropped position in `K`'s class and each written position in `K`'s class. And C5 (`F(A) ⊑ A`,
+       from the published class alone) must hold for `A(f, K)`. Inside a group the class is not
+       published yet. The check is then recorded with the goal and runs at publication, against the
+       certificate that is published, and it runs only if the verdict it covers is final.
+     - *Cost.* Per item of `otherPaths`' walk, which the walk already meets once per `Beside` key: one
+       tag carried, O(1) through the fold's memoised `(image, step)` map. The tag adds states. A key of
+       today's walk splits into the untagged item and at most one tagged item per class of `C` at which
+       the walk meets that use node and value node inside the occurrence, per arm. In a widened class each
+       class is one node, so a view's node stands at one class, and the split is one extra state per item
+       per `(V, K)`. A cell-set node interned at several classes (`mix`, near-miss row 12) can stand at
+       up to `|classes(C)|` of them. That is a constant of the callee's type, not of the actual's size.
+       The read map is keyed by value node rather than by use node, and the same split applies to it. So the
+       walk has at most `items · (1 + arms · |classes(C)|)` items and at most
+       `reads · (1 + arms · |classes(C)|)` read nodes, where `items` and `reads` count today's walk. Per `(call, V, K)`: one
+       rule 4 instantiation per class of `C`, O(W_K′ + M_K′ log M_K′) for class `K′` (§2.9 rule 4, *Cost*:
+       the traversal work and the images of that class's keys), the reach of each class without `K` as one
+       persistent union over `C`'s fold, memoised, and one κ̂. The premises on the write cost one walk of
+       the spine, as `leafDepth` does (O(|q|)), and one `classAt` of its rest. So a K-wide tree writer
+       stays linear in the walk's items per call (`same`'s class has three classes for any K), and the rule adds Σ over the classes `K′` of
+       `C` of O(W_K′ + M_K′ log M_K′) per `(call, V, K)`. The sum runs per `(call, V, K)`, and where views
+       nest (an actual of `E` that is itself a certified view), each `W_K′` includes the nested view's
+       traversal and instantiation work. So the bound is a sum over every `(call, V, K)` that a walk
+       meets, nested ones included. It is not a total that is independent of the nesting depth.
 4. **E**: `cellsAt(aᵢ, q)` escape deeply, one escape per route as item 3 reads them. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
@@ -2305,6 +4168,14 @@ cannot share an interpretation memo; repeated uses under the same immutable inpu
 preserves every observable read. Callback-result labels are freshened only by invocation; captured cells
 are never freshened. Cyclic grafts follow the tie-before-read protocol below; nested substitutions
 cannot reset an outer call's memo.
+*As built (S3b slice 5a, #1447):* the hook is a correspondence of nodes, not of positions. A transport maps an
+entry map one radix node at a time (`relabelMap`), so a submap that many positions share is mapped once. Walking
+`(old node, κ position)` pairs would be Θ(n²) on K, whose snapshot holds Θ(n²) entries in O(n log n) map nodes.
+The correspondence has two parts. A node's image is the transport's own (a view at a call, `map`'s image at
+read-off). A DAG that a projection made, which no part of the value names, maps through its origin: at a call,
+to the view of the template's projection, and at read-off, to the projection of its origin's image (§2.9
+*Keyed where a reader looks*). A per-position count stays only where `map` interns two sources into one image
+(`map_shared`).
 
 **Views meeting cycles, links, and folds (S3b).** A call view contains the callee template reference,
 actual value roots (shape **and** κ), one invocation identity and a constant-width substitution link.
@@ -2398,7 +4269,22 @@ of the same handle still add multiplicity through the path-multiset primitive.
     `(choose True (ans { b = g.x }) g.y).c` and `{ b = ans { b = g.x } }.b.c` lost `g.x.c`, a
     write through `⟲` into a list of a recursive type that held a view was lost, and a block
     publishing `g xs = w1 xs` did not decode.
-  - *A step a place does not have* (`Transfer.projectAt`): a leaf, or a recast of one, is itself
+
+    *Amended 2026-10-31 (#1516): a view's place is not its cells' place.* A view stands at the
+    instantiated place, but the image of a class cell that is no parameter's (`fresh k ↦ result
+    ι·k`, `esc k ↦ esc ι·k`) is made at that class cell's own place, never at the reader's.
+    §2.2 says a cell labels one object, and the object is one whatever reads it. Before, a
+    forced node made its own cells at the view's place, and the view's reach (`Shape.viewReach`,
+    which maps the template's reach cell by cell and has no view in hand) made them at the
+    template's. At a generic callee these places differ. So `wrap b` with `wrap : a → List a`
+    gave two cells for its one fresh list: the demand of `List.push l0 …` was on the node's
+    own cell, and the holder `l0` was paired through its reach, which named only the other.
+    The later read of `l0` was not seen, and the write was accepted `fresh` where v1 refuses
+    `later-use`. The same was true of a construction `[ …l0, x ]` and of every generic
+    callee that answers a fresh object, nested or imported. A monomorphic callee was right,
+    because there the two places are one. `Grafter.mapCell` takes no place. Fixtures:
+    `ownership/GenericResultHeld`, `ownership/GenericResultHeldImported`.
+  - *A step a place does not have* (`TransferPattern.projectAt`): a leaf, or a recast of one, is itself
     there, a place-only recast, its cells exact; a built value is some value inside it, its reach
     read approximately (`recastWhole`), never its own cells, which its parts' are not among.
   - *A join's place does not depend on order* (`union`, `choice`, `positions`). Two sides at one
@@ -2426,9 +4312,9 @@ of the same handle still add multiplicity through the path-multiset primitive.
   relabelled through `force`, so the published summary is keyed by forced ids. A read below a
   call's re-rooted actual may cross into the actual's own snapshot, and the class's conditions are
   instantiated when read
-  (*κ across a call*, below; #1265). The view of a choice projects arm by arm, so the view of a joined node's
-  projection is never met: a join keys the members' entries on that node's DAG sides too, which the arms' views meet
-  (§2.9 *Keyed where a reader looks*, #1399).
+  (*κ across a call*, below; #1265). The view of a union or choice template projects to the view of
+  the template's projection, so a caller at `q` meets `view(proj(joined, q), E)`, the node the class's entry
+  for a joined DAG is relabelled onto (§2.9 *Keyed where a reader looks*, #1399, #1447).
 - **`fold_cond` never keys a view.** `widen` forces as it descends, so its fold certificates
   (`Cond.fold_cond`) are made over forced nodes and keyed by them; Block reads them there (§3.6).
 - **Cycles, links and folds.** A widened class's knot needs no tie protocol. `view(T, E)` of a cyclic
@@ -3251,6 +5137,14 @@ and each cell is tagged with **every** route that reaches it:
 supply borrowed, so D3 refuses it (accepted loss, #1220). The same goes for a supply made fresh
 per call and grafted (`[ cb (mk ⊤), cb (mk ⊤) ]` with `λl → l`).
 
+**The fold certificate at an instantiation** (#1485). The fold certificate (§8 slice 4) follows the same
+discipline: an independent base, and a preservation check `F(A) ⊑ A` on the settled generation. Its step
+instantiates the member's certificate at each group call, and so does every reader of a certificate:
+read-off's hypothesis node, a call's folded read, the graft through `⟲`, and §2.11 item 3 (d). That
+instantiation is §2.9 rule 4. The keys of one call's one parameter that reach one caller cell through
+the routes of one object take the maximum of their multiplicities, not the sum. So a self-recursive step
+(`same l`) maps `A` into itself, and two calls with one actual (`dupL`) still add.
+
 
 
 Every component is joined round to round, κ included: a `sep` between two `cb j` labels is an atom inside every
@@ -3340,6 +5234,22 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    constructor's arguments are plain projections. `List.tail`/`List.drop` are views because their bodies call the
    `view` primitive, whose words say `returned` at `ε` (R-4.5.1). Rebuilding the matched shape is a prepend over
    the view (R-2.14).
+   **A list pattern reads its list** [M 2026-11-01, #1530]. A list pattern tests the length of the list it
+   matches (`[]`, `[ x, …_ ]`, `[ a, b ]`, `[ …_, z ]`), so the match reads that list at the case's point,
+   whatever its depth below the scrutinee. The scrutinee's `whole` use (§2.7) is the frame's read of it and
+   of everything below it, so a hold in this frame needs nothing more. But read-off (§2.10) takes `R` from
+   uses at their own paths, and the scrutinee's use is at its root: `skip2c r = case r of Rose [ Rose [ x,
+   …_ ], …_ ] → 7` was `π1 R` alone. A caller that wrote the inner `[]` in place before calling `skip2c` on a
+   value that still holds it was accepted, and the answer changed from 0 to 7; v1 refuses it. So a list
+   pattern reads the parameter parts of the value it matches, as a consumed value's are read
+   (`Transfer.Frame.readsOf`), and read-off marks `R` at each: `skip2c` is `π1 R, π1#Rose.0 R,
+   π1#Rose.0[*]#Rose.0 R`. A refined cell reads at its canonical path, so a match below a recursive child
+   reads at `⟲`, and a recursive or mutual reader's `R` closes through its group's fixpoint as any other
+   mark does. `[ …rest ]` alone tests nothing and reads nothing. A constructor pattern's tag test and a
+   literal pattern record no read of their own: a constructor is rebuilt, never written (item 1), the list
+   that holds an element is read by the list pattern that reached the element, and a record pattern binds
+   locals, whose uses are their own. Fixtures: `ownership/PatternReadsList`,
+   `ownership/PatternReadsListImported`.
 4. **Program entry** (R-2.10, R-5.8): a declaration with `entry` on a record parameter gives its constructor an
    entry class; at a call whose record's functions have classes: protocol by the callbacks' types (hosted with
    `settle`); `M₀ = res(init)[flags, Host := crossing]`, a top-level value `init` returns stays `shared`
@@ -3980,6 +5890,10 @@ set_summary: side table (SetId, MapId, immutable context/dependency vector, summ
 memo_merge: (choice | together, unordered immutable cursor pair, map/correlation context) →
             completed content-interned merge; no choice/coexistence result sharing
 memo_prop : §2.9's clean rank-qualified state → completed subtree; no ancestor-dependent fold result
+transport: a node's image, and a DAG a projection made by its origin (Shape's proj_origins: node → its
+            (DAG, step) origins, every one kept; projectedImage, memoised per relabel): the projection of
+            the origin's image (§2.9 *Keyed where a reader looks*, #1447); a join of alternatives starts
+            from its members' snapshots merged and keys the joined DAG node alone
 ```
 
 ### 3.4a The liveness index (`Liveness.zig`)
@@ -4369,7 +6283,16 @@ contexts and derived indexes is not hidden in E. An input string/name is interne
 These are bounds for the specified completed algorithms, not measurements proving all S2 kernels meet
 them. `Cond.lower` must index arrivals by original base so W distinct-base insertions do not rescan W
 members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
-need the observable frontier and exact states of §2.9 (#1063/#1064). Block refinement and shared place
+need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
+(2026-11-01). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
+`Σ_K |E_K| · ⌈|K|/64⌉` words for the cycle bits over the node-graph components `K` (quadratic for one large
+knot), summed over the call (a resumed pass numbers only new states, and each merge of components that
+hold earlier states adds `|E_K| · ⌈|K|/64⌉`, with fewer merges than nodes), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
+closures.
+Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
+polynomial bound in `|Σ|` fails only at the number of distinct open sets, which is exponential in the worst
+case (`O(2^√|Σ|)`, a subset construction). Each set is charged, so such a family ends at
+`ownership_summary_size` (§2.9 *Fold first*, *Cost*). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
 
 **Read-off and run-wide reads: the source continuation** (the owner's decision, 2026-10-29, §4.4's *Source work
@@ -4494,7 +6417,7 @@ ancestor step that asks it already pays for on its own lane.
 Pattern materialisation, including positions-to-alternatives conversion and removal of symbolic
 projections, is value-sized work. Reserve its continuation before traversing it; no pattern atom pays for
 an earlier aggregate's whole DAG. *As built (#1224):* `Shape.without`, which a list pattern's
-`Transfer.bindList` calls to make one position of the contents into alternatives, enters
+`TransferPattern.bindList` calls to make one position of the contents into alternatives, enters
 `Shape.dagWalk` from a `positions`, `union` or `choice` node, like the walks above, so the rebuild is
 never the pattern's `transfer_settlement` lane. Measured on the source continuation (#1198), each
 declaration's whole account: fresh lists at 40 / 100 items take 8 345 / 22 792 records of continuation
@@ -4904,18 +6827,19 @@ import each other; upward needs go through interface structs passed down (`Class
 `Fix.Instance{ctx, step, join, leq}` for the driver, `Obligation.entry` records for `Entry`).
 
 ```
-L16 Enforce
-L15 Ownership
-L14 BlockRead
-L13 Report  Message  Hoists  Block
-L12 Groups  Entry  Refine
-L11 Walk
-L10 Transfer  Fix
+L17 Enforce
+L16 Ownership
+L15 BlockRead
+L14 Report  Message  Hoists  Block
+L13 Groups  Entry  Refine
+L12 Walk
+L11 Transfer
+L10 TransferFrame  TransferBeside  TransferArms  TransferPattern  TransferConstruct  TransferCall  TransferGroups  Fix
 L9  Calls  Demands
 L8  Rows  Holders
 L7  Summary
 L6  Cond
-L5  KappaRead  Liveness  Exits
+L5  KappaRead  Liveness  Exits  Joins
 L4  Regions  Kappa
 L3  Prepass  Shape  CondAlgebra
 L2  Cell  Facts
@@ -4928,35 +6852,44 @@ L0  Ids
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 760 (S3b slice 4a: which copy of the source lanes a walk takes) |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 200 (since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 200 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1) |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 240 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
+| `Stable.zig` | 2 | stable images (§2.3 *The two pieces that (b) adds, prototyped (4e)*): a graph's canonical form by partition refinement, the move onto an equal graph made before and its precondition, `map`'s knot and `widen`'s components; the shape table is given as `anytype` | `Store`, `Redirect`, `canon`, `moveHolds`, `mapKnot`, `widened`, `sideFact` | Ids | ≤ 500 (4e) |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell | ≤ 3 600 (#1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing`, `isAtom` | Ids, Place, Cell, Stable | ≤ 4 025 (#1483: the atom rule, `isAtom` and `settle`, §2.3; 4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
-| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 560 (#1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call) |
-| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, CondAlgebra, Kappa, KappaRead | ≤ 1 160 (4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
-| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 770 (1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows) |
+| `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
+| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 290 (4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
+| `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
+| `Joins.zig` | 5 | the join index (§2.8 *As built*, #1510): a deep node's joins at its path flattened once, with their route-flag combinations, a tree of their reach unions and the folded members' cells by hold | `Index.get`, `Index.hits`, `folded`, `sides` | Ids, Cell, Shape | ≤ 230 |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions | ≤ 2 030 (1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
-| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 1 810 (#1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf) |
+| `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions, Exits, Joins | ≤ 2 280 (#1510: closures and hold listings read from the join index, each checked against the walk under runtime safety, §2.8 *As built*; 2 070 since #1467: a pair whose holder has no later use walks no cover, §2.8 *As built*; 1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
+| `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 080 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `shareImages`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
-| `Transfer.zig` | 10 | one case per BIR tag; the frame state | `eval`, `Frame` | Ids, Facts, Place, Cell, Shape, Cond, Regions, Rows, Calls | ≤ 2 380 (#1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`) |
+| `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
+| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`, `ownContents`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 240 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines; 1 240 since #1492: a written position's own contents below it, `ownContents`, 1 231 lines) |
+| `TransferArms.zig` | 10 | the runs of a write's other-paths walk (§2.11 item 3, *a choice's arms*, #1439): the graph's arms and what each node keeps per run (`Arms`), the whole argument's nodes on the write's path (`Synthetic`), the written positions per run (`frontierMax`, `routesMax`), and the reads and re-entries one node at a time (`readStep`, `expandOne`) | `Frame`'s methods and types of this part | Ids, Place, Calls | ≤ 710 (#1439: 704 lines; it and `TransferBeside` call each other, the walk and its runs) |
+| `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
+| `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
+| `TransferCall.zig` | 10 | call application: a call's class at its instantiation, a demand per write route with its other paths, a group per route that stopped at a parameter's leaf (§2.11) | `Frame`'s methods of this part | Ids, Place, Demands, Calls | ≤ 170 (#1457: split out of `Transfer.zig`, 160 lines: one function, called only by the walk) |
+| `TransferGroups.zig` | 10 | a use below a parameter's leaf, by node (§2.11 item 3, #1412): the groups expanded after the walk into one demand per state (`expandGroups`), and the plain-step `sig` (`Plain`) | `Group`, `CallSnap`, `Plain`, `expandGroups` | Ids, Place, Cell, Cond, Summary, Demands, Calls, Liveness | ≤ 740 (#1457: split out of `Transfer.zig`, 727 lines: it runs after the walk and calls the other paths and the constructions' `demand`) |
+| `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferArms, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
-| `Walk.zig` | 11 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 12 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule) |
-| `Entry.zig` | 12 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
-| `Refine.zig` | 12 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
-| `Block.zig` | 13 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 770 (#1335: a knot whose cycle no child step closes) |
-| `BlockRead.zig` | 14 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 280 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6) |
-| `Hoists.zig` | 13 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
-| `Message.zig` | 13 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
-| `Report.zig` | 13 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 15 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 305 (S3b slice 4a: a group member's walks on its account line) |
-| `Enforce.zig` | 16 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
+| `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule) |
+| `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
+| `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
+| `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
+| `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 300 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
+| `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
+| `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
+| `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
+| `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 330 (S3b slice 4a: a group member's walks on its account line; #1459: a block not published for a limit is that limit, said) |
+| `Enforce.zig` | 17 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
 **Input adapters.** `Groups` builds `Place.Source` and `Rows.Signature` together, reading
@@ -4964,7 +6897,7 @@ L0  Ids
 A list-of-functions signature gets callback-list behaviour only under explicit `once`, `many` or
 `unused`, preserving v1's rule; a plain/borrowed list is a plain argument. Unknown shapes remain
 pessimistic. Derived methods obtain component classes through the passed-down class resolver.
-These are input adapters at L12, available from S3a even before group solving lands in S3b.
+These are input adapters at L13, available from S3a even before group solving lands in S3b.
 
 **Callback proof interface.** `Cond` does not synchronously call `Calls`. When `apart`/`sep` reaches
 callback labels needing actual-class interpretation, it emits a `Facts.ProofRequest{owner, labels,
@@ -4983,7 +6916,18 @@ names into `Table`, so every caller still calls `Cond.Table`'s methods and reads
 import only below them (the algebra's names, storage's `Kappas`); a part's code calls the parts below it through
 the table and never one above it, which the split checked by script and the gate, reading imports, cannot see.
 
-There are **29 production files plus `rules_test.zig`, on 17 layers (L0–L16)**.
+**The transfer frame's seven files (#1457).** `Transfer.Frame` is one struct in seven files, in the same way:
+six parts on L10, each `Of(Frame)`, and `Transfer` itself on L11 (the fields, the binding of the six parts'
+names into `Frame`, the preliminary passes and the walk). In the order their code depends: `TransferFrame` (the
+accessors, the value helpers and the uses), `TransferBeside` (a write's other paths and what is beside it),
+`TransferPattern` (patterns and splits), `TransferConstruct` (constructions), `TransferCall` (call application)
+and `TransferGroups` (a use below a parameter's leaf, after the walk). The parts import no part, so all six sit
+on one layer; a part calls only the parts before it, checked by script, and every caller still reads
+`Transfer.Frame` and `Transfer`'s names. *Amended 2026-10-31 (#1439):* a seventh part, `TransferArms` (the runs
+of a write's other-paths walk), sits beside `TransferBeside`; the two call each other, the walk and its runs,
+and reach each other's types through `Frame` (`BesideItem`, `Arms`, …), never by import.
+
+There are **36 production files plus `rules_test.zig`, on 18 layers (L0–L17)**.
 Targets count production lines before `const testing`, excluding tests; the implemented foundation/S2
 interfaces fix the imports here, including Summary→Facts and Liveness→Place. Tests may import helpers
 under the gate's test rules.
@@ -5446,7 +7390,7 @@ walk per member per pass of the stop rule. The rule applies in 4a too.
 
 *What the worklist iterates.* `Fix.worklist(Instance)` (§5) is the driver. `Groups` passes it
 `Instance{ctx, step, join, leq}`, where `step` is one walk of a member, so `Fix` (L10) never imports
-`Walk` (L11).
+`Walk` (L12).
 - **Round 1.** Every port starts at the empty class ⊥: `res` is nothing (`isNothing`), with no
   marks, no κ and `xreq` yes. ⊥ is for inference only (§2.12 *Recursive proofs*): nothing is
   published from a walk that read a port before the group settled.
@@ -5659,6 +7603,327 @@ a call's folded read (`Calls.preimage`). It stays so for every knot except a gro
   allocation owes W1–W3, and it reads `lost` until S4 emits `within`. The certificate gives a
   parameter-derived fold, such as `incAll`'s `res⟲#Node.1`, the actual's κ instead of `lost`.
 
+*The fold certificate, specified (4c, #1195)* [M 2026-10-31, measured on 4d's head `74fbcc61e`, self-hosted
+Debug, `dump --stage=ownership --ownership=v2 --jobs=1`; not built]. This note measures the plan above
+first, then specifies the certificate fully, and ends with a fork that the manager decides.
+
+**What the 4c-owned known entries are.** None of them is a cycle read `repeated`.
+
+| Known entry | v1 | v2 | Why v2 is coarser |
+|---|---|---|---|
+| `FoldedBCall` 30:15 `incAll b#B.1[*]#B.1⟨B⟩` | absent (v1 writes the path `b#B.1[*]⟨B⟩#B.0`, accepted `param`) | rejected `exclusive (approx)` | The call's `xreq` holds `incAll`'s `apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1]` and its `#B.1` twin. At the actual `b`, an element of `incList`'s parameter, both sides image to one cell, `π1[*]#B.0⟲` (or `π1[*]#B.1⟲`), so the pair reads as a repeat: `lost`. The demand on the call's first write carries the call's whole `xreq`, so this one line is refused. §2.9 rule 3 is the fix. |
+| `FoldedBCallImported` `Walk` 19:15, the same line | as above | as above | The same, through the block. |
+| `LevelsApartRoutes` 23:15, the same line | as above | as above | The same. |
+| The other 14 lines of `FoldedBCall` 30:15 and `FoldedBCallImported` 19:15 | `accepted` / absent | absent / `accepted` | Canonical path text only (§2.2): v1 writes `#B.0[*]⟨B⟩#B.0`, v2 writes `#B.0[*]#B.0⟨B⟩`. The verdict is the same. They carry the 4c note only because they share the root. |
+| #1429, the mutual `wa a` (no fixture yet) | accepted `param` | accepted `param` | It does not reproduce on `74fbcc61e`, with the issue's types and bodies at the default allowance. The fixture is still owed. |
+
+Instrumented, over the ownership corpus (324 files and 49 projects):
+- `Calls.preimage`'s Tarjan walk never finds a cycle (0 of 373 roots), so a call's folded read never
+  saturates.
+- Read-off's `arrivalAggs` saturates in 13 roots: `CycleJoinRankWriter`, `FoldLevels`,
+  `FoldedWriteCall`, `FoldedBCall`, `FoldSymbolicCall`, `FoldedPreimageCall`, `LevelFresh`,
+  `LevelRecursiveUpdates`, `LevelsApartRoutes`, `MarkerAcross`, `RoseKidsHeld`, `WriteOneLevel` and
+  `LevelsApart`.
+- An oracle that reads each saturated cycle as **once** (unsound, scratch only) changes no verdict in those
+  13 roots. It changes one summary: `LevelRecursiveUpdates`, where three `res` paths go from `{lost}` to
+  `apart …, excl …`.
+
+So the certificate's ceiling on today's corpus is **zero verdicts**. §2.9 rule 3 alone removes every
+4c-owned refusal with v1's verdict (its *Measured*). With rule 3 and the oracle, the whole
+`test-blackbox` corpus (ownership, `run/`, `browser/` and core's parity) differs only in those three
+lines.
+
+**The plan's own witnesses** (a scratch module over `Tree = Node Tree (List Int) Tree | Leaf`, with
+`incAll` writing every list, `incP (P a b) = P (incAll a) (incAll b)` and `same` rebuilding a tree):
+
+| Probe | v1 | v2 | Oracle | Plan |
+|---|---|---|---|---|
+| `incP (P (same t) (same t))` | refused `disjoint` | refused `disjoint (approx)` | refused | refused |
+| `incP (P (same t) (same t2))` | refused `exclusive (approx)` | refused `disjoint (approx)` | refused | **accepted** |
+| `incAll (same t)` | refused `exclusive (approx)` | refused `disjoint (approx)` | refused | (accepted by the same rule) |
+| `incAll (unroll t)`, a cell repeated deeper | refused | refused `disjoint (approx)` | refused | refused |
+| `w = same t; incP (P w w)` | refused `disjoint` | refused `disjoint (approx)` | refused | refused |
+| `case incAll t of Node l xs r → Node l (List.push xs 2) r` | **accepted** `param` | refused `element … (approx)` | refused | **accepted** |
+
+The oracle does not accept a single witness. The loss is in two other places:
+- `same`'s class reads `{lost}` at `res#Node.1` because its arrivals hold `~π1#Node.0⟲` and `~π1#Node.2⟲`.
+  These are approximate cells: at a `⟲` step `Grafter.argAt` answers `recastWhole`, the actual's whole
+  reach (§2.13.9, #1219). At the call, `incAll`'s Disjoint reads the actual `same t` through the same
+  recast, so the call is refused `disjoint (approx)`. A certificate that counts occurrences once
+  changes neither.
+- The last probe, the parameter-derived knot, is a **holder** refusal, not a κ one. `incAll`'s `res` is a
+  knot whose root class holds every level's list (`res #Node.1 π1#Node.0#Node.1 π1#Node.0⟲#Node.1 π1#Node.1
+  …`), so `r` is taken to hold the root's `xs`. v1 accepts it, so it is a parity gap outside the corpus
+  (#1483).
+
+**The certificate, specified.** This is the design for the slice that builds it, whichever slice
+that is (the fork, below). It refines the plan above. Nothing above is withdrawn.
+
+- **What is proved.** For a member `f` of a group and a key `K` (a class of `f`'s `res`, named by its
+  canonical path, `Fold.classAt`), the certificate `A(f, K)` is an **aggregate**: the arrival keys at
+  `K` (each symbolic arrival with its multiplicity in {1, 2+}, each fresh arrival likewise), and the
+  condition that the multiset reads (§2.9's three parts). The claim `(fold, f, K)` says that in every
+  activation of `f`, of any depth, the source occurrences that the fold maps into `K` (the activation's
+  own sources at `K` and everything its group calls answer there, at every depth) are covered by
+  `A(f, K)` instantiated at that activation's parameters.
+- **The order of the lattice.** One aggregate is under another when each arrival's multiplicity is not
+  larger and the condition is not stronger. `F` is the transfer of one activation: its own sources plus
+  each group call's certificate instantiated through `E` (sum where they coexist, maximum over a choice's
+  arms, a set at one position for a union). `F` is monotone, because a sum, a maximum, substitution and
+  the multiset read are monotone.
+- **The induction (on activation depth).** Base: an activation whose sources at `K` reach no group view
+  (*Alternatives* above: transitively, by reachability). Step: if every inner activation (strictly
+  inside, so of smaller depth) is covered by `A`, the activation is covered by `F(A)`, and `F(A) ⊑ A`
+  gives coverage by `A`. So `A` is proved when the base is under `A` and `F(A) ⊑ A`, checked once on the
+  settled generation x*. A component with no base alternative is `waiting` and reads `lost` at its keys.
+  Multiplicity saturates at 2, so "repeated" is one value, and the height of the lattice is bounded by
+  2 · (arrival keys) plus the atom inventory.
+- **When.** During rounds a hypothesis node reads the member's **current** aggregate at `K` from the
+  port, version and all. That is a may-fact, and it is used for inference only: x grows as it does
+  today, and the read check (*Validation*) covers what a demand reads of it. After the stop rule's loop
+  ends, the Prover proves every `(fold, f, K)` that some walk read, on x*'s validation walks, before
+  publication. Where the proof fails (a component waiting, or `F(A) ⋢ A`), `lost` is joined into
+  `A(f, K)` and the group goes round again. That only weakens, so the loop still terminates. No
+  acceptance rests on an unproved aggregate.
+- **Widen and 4d.** The key is a canonical path, so it does not move between rounds, and 4d's drop of
+  covered rounds and arms does not change it, because it changes nodes and never paths. An aggregate is
+  a function of the denotation, below, so a drop that keeps `Summary.leq` keeps the read only if `leq`
+  also compares the aggregates. **`Summary.leq` and `kappaLeq` compare `A(f, K)` pointwise** (each
+  multiplicity, then the condition), and 4d's `dropCovered` reads them. Without that, an arm `[ x, x ]`
+  could be dropped under an arm `[ x ]` whose cells are the same: `Shape.leq` compares sets.
+- **Publication.** The class gains one entry per certified key: `(K, arrival keys with multiplicities,
+  fresh arrivals, condition)`. The summary line prints it as `cert K {keys} κ`. `Summary.eq` and
+  `Summary.leq` compare it. The block publishes the certified mark (Q3, decided) with a version bump.
+  Each arrival key is a structural cell (§3.6), and K is a structural canonical path. A key that does
+  not re-intern exactly reads `repeated` and `lost` (#1317, S6), never absent.
+- **Readers.** There are three, and each reads a certified knot in place of a saturated one:
+  1. read-off's `arrivalAggs`, at a view of a group class (the hypothesis node);
+  2. `Calls.preimage`, at a cycle that a settled class's certificate covers;
+  3. the graft through `⟲`. `Grafter.argAt` at a level step of an actual that is a view of a certified
+     class reads the aggregate's cells exactly in place of `recastWhole`'s approximate reach. The
+     Disjoint and `otherPaths` readers read the same cells. This third reader is new. Without it the
+     witnesses stay refused (the table above). *Amended (#1485):* it reads at every step into a
+     certified class, not only at a level step (*Reader 3 at every step*, below).
+
+  Each reader instantiates the certificate by §2.9 rule 4, and Disjoint also reads it for what it meets
+  inside one certified view (§2.11 item 3 (d)). Both rules are specified in *The two walls of #1485*, below.
+- **Cost.** There is one goal per `(member, K)` that a walk read, and the alternatives are the
+  validation walk's sources at `K` (each read once, as the walk already does). There is one edge per
+  hypothesis node, and the aggregate work is the persistent multiset merges of §2.9 (O(log) per arrival).
+  In all, O(S_validation + H · A log A), where H counts hypothesis nodes and A counts arrival keys per
+  certificate. *Amended (the independent review of #1519):* that bound counts source keys, not images.
+  A hypothesis node's instantiation by §2.9 rule 4 costs O(W_h + M_h log M_h), where W_h is its traversal
+  and projection work and M_h its image occurrences. M_h exceeds A when the actual has alternatives
+  (`same (if c1 then t1 else … tN)`: M_h = 5N). So the total is
+  O(S_validation + Σ_h (W_h + M_h log M_h)). All of it is charged growth on the member that receives it (Q2). Rounds that only raise
+  a multiplicity or weaken a condition are bounded by the inventory, as *Termination* says.
+
+**Soundness by cycle shape** (each with the witness that refutes the unsafe reading).
+- *Self-recursive* (`same`, `incAll`). There is one member and one key per class. This is the induction
+  above, unchanged. `unroll` repeats a cell one level deeper, and the step's own sources hold it twice,
+  so its multiplicity is 2+ and the write is refused. *Amended (#1485):* the step holds only with §2.9
+  rule 4. Without it, four keys image to one cell at `same l` and the step reads that cell as a repeat
+  (*The two walls of #1485*, below).
+- *Mutual* (`incAll`/`incList`, `A`/`C`). One Prover component holds the goals of both members. `K`
+  and `K′` correspond through `E` at each group call, and the induction runs over the joint activation
+  tree. A component in which only one member has a base is still proved, because every step reaches the
+  base through the other member's goal.
+- *Through records* (`P (same t) (same t)`, `B [ w ] [ w ]`). The record is built outside the component,
+  and its two coexisting hypothesis nodes sum. One actual `t` brings each symbolic arrival in twice: 2+,
+  refused. Two actuals `t`, `t2` bring two distinct arrivals: `apart`, accepted. That needs reader 3, and §2.11 item 3 (d) for what the walk
+  meets inside one view (#1485).
+- *Through `positions`* (`[ incAll b, …incList rest ]`). A positions node's sides coexist, so they
+  sum. #1471 keeps a member at most twice. Two is "repeated", so the aggregate of a member kept twice
+  equals the aggregate of one kept k > 2 times (Lemma C1).
+- *Through choice* (`if c then same l else same r`). The arms take the maximum, arm by arm. A choice
+  never adds, so a seed in one arm is once. 4d's drop of a covered arm keeps the maximum, because the
+  dropped arm's aggregate is under the kept one by `leq` (above).
+
+**Lemmas: the read does not change with the representation.** In each of the last four slices, a rule
+that was exact on paper changed a read when the representation changed. So each rule here has its
+lemma and a `runtime_safety` check that tests it through a reader that does not share its walk.
+- **C1, saturation.** The aggregate of a `positions` DAG depends only on each member's multiplicity
+  capped at 2. *Check:* for a positions node that #1471's constructor saturated, the aggregate is
+  computed again over the unsaturated sides that the constructor saw, and must be equal.
+- **C2, forcing and flattening.** The aggregate of a view equals the aggregate of its answer, and a
+  choice gives the same aggregate whether or not `joinAlternatives` flattened it, because `arrivalAggs`
+  is defined on the denotation (choice: maximum; union: a set at one position; parts: sum). *Check:* on
+  each proved goal, the step aggregate is computed a second time with every view forced and every
+  choice flattened into one list of arms, and must be equal.
+- **C3, drops.** A 4d drop does not change any `A(f, K)` that the class publishes. *Check:* every
+  `dropCovered` that removes an arm asserts `aggLeq(A_arm, A_kept)` at each certified key below the arm.
+- **C4, the block.** `decode(encode(A))` equals `A` where every key re-interns, and is `repeated`/`lost`
+  where one does not. *Check:* the existing block round trip (§3.6) compares the certified marks too.
+- **C5, the proof.** On each published certificate, `F(A) ⊑ A` is evaluated again from the published
+  class alone, without the Prover's memo, and must hold. This is the post-fixpoint check of #1195's
+  second comment, run where the class is used, not only where it is made.
+
+**The fork (the manager's decision).** The certificate as planned is not what the 4c-owned entries need,
+and it does not turn any witness green without reader 3.
+- **(A) 4c builds §2.9 rule 3 only.** It closes the three 4c-owned refusals with v1's verdicts. The
+  other 4c lines become canonical-path-text entries. The cost is one function in `Calls.zig` of about
+  100 lines, and the corpus diff is those three roots (measured, above). The certificate stays specified
+  here and is built as its own slice, with reader 3, before S4 first reads a certified knot. Cycles
+  keep reading `repeated` until then, which costs no corpus verdict today.
+- **(B) 4c builds rule 3, the certificate and reader 3 together.** That means the `fold` claim, two
+  readers made certificate-aware and a third added, the class entry, the printer and the block's version
+  bump. It buys only the witnesses above, and v1 refuses two of the three that should be accepted (precision
+  beyond v1). The
+  parameter-derived knot is a holder gap that none of this closes (#1483).
+- **Decided: (A)** (the manager, 2026-10-31, on #1484). The certificate and reader 3 are #1485, which
+  must land before S4 first reads a certified knot. The recommendation was (A): It is the exact repair of what the corpus shows, it is small, and it is
+  measured. (B)'s size is not justified by any verdict that the corpus or v1 has. The plan's claim that
+  "the certificate gives a parameter-derived fold the actual's κ instead of `lost`" holds for κ only.
+  The witness it was meant to turn green is refused on holders.
+
+*The two walls of #1485, specified* [M 2026-10-31, on master `8e1f195d6`, self-hosted Debug,
+`dump --stage=ownership --ownership=v2 --jobs=1`; specified, not built]. #1485's implementer stopped
+before code (rule 10). Even if the certificate were built exactly as *The fold certificate, specified*
+says, it would not prove `same` or `incAll` (Wall 1). And Disjoint would still refuse the witnesses at
+paths with no `⟲` (Wall 2). The manager took the issue's option 1: the certificate proves the witnesses,
+the goal of #1485 is not narrowed, and nothing is deferred. Two rules close the walls. Each one reads by
+position what the certificate already claims, where the reader read it by cell.
+
+- **Wall 1 is §2.9 rule 4.** The derivation for `same` over `Tree = Node Tree (List Int) Tree | Leaf`:
+
+  | Key of `A(same, #Node.1)` | m | Image at `same l` (`l = π1#Node.0`) | Image at `same r` (`r = π1#Node.2`) |
+  |---|---|---|---|
+  | `π1#Node.1` | 1 | `π1#Node.0#Node.1` | `π1#Node.2#Node.1` |
+  | `π1#Node.0#Node.1` | 1 | `X = π1#Node.0⟲#Node.1` | `Y = π1#Node.2⟲#Node.1` |
+  | `π1#Node.0⟲#Node.1` | 1 | `X` | `Y` |
+  | `π1#Node.2#Node.1` | 1 | `X` | `Y` |
+  | `π1#Node.2⟲#Node.1` | 1 | `X` | `Y` |
+
+  Each call is one group: its actual is the leaf of `π1#Node.0` (or `π1#Node.2`), met at the empty
+  prefix. The four keys that reach `X` take the maximum, 1, and owe `exclOf(X)`. With the own source
+  `π1#Node.1`, `F(A) = A`. The base (`Leaf → Leaf`) has no arrival at `K`. So `A` is proved, with the
+  condition `excl π1#Node.0⟲#Node.1 ∧ excl π1#Node.2⟲#Node.1`. The other pairs are distinct paths of one
+  parameter, which the frame takes as apart and its callers check through the marks (§2.11 item 3 (c)).
+  `incAll` has the same derivation, since its `List.push xs 1` answers `π1#Node.1`. Counted by cell
+  (`aggAdd` today), `X` and `Y` read 2+, and the certificate reads `lost`.
+- **Wall 2 is §2.11 item 3 (d).** At `incP (P (same t) (same t2))`, each write of `incP` below `#P.0` has
+  its spine meet the one view `V₁ = same t` at the prefix `#P.0`, with its rest in `K`. Every item that
+  the walk meets inside `V₁` drops `K`, whether it stands at `K` (`π1#P.0#Node.0#Node.1` beside the
+  write at `π1#P.0#Node.1`) or holds a tree whose reach holds `K` (`π1#P.0#Node.0 RA`). The call relies
+  once on κ̂(V₁, K), which is `excl t#Node.0⟲#Node.1 ∧ excl t#Node.2⟲#Node.1`. The same holds below
+  `#P.1` with `t2`. An item below `#P.1` is outside `V₁` and keeps its cells, `t2`'s keys, which are
+  apart from `t`'s. `incAll (same t)` and `incRoot (same t)` meet `V` at the empty prefix. In
+  `incRoot`, the answered subtrees `π1#Node.0` and `π1#Node.2` hold `K` only, so they keep nothing.
+  (Whether those held marks shrink once rule 4 projects a leaf through `⟲` symbolically is not
+  measured. (d) does not depend on it.)
+- **Reader 3 at every step.** Wherever Disjoint and `otherPaths` read the cells of a certified view at a
+  position in `K`, through a level step or a plain one, they read `A(f, K)`'s arrival keys instantiated by
+  rule 4. The certificate covers every object at a position of `K`, so this is a sound cell set. It equals
+  the class's own cells at `K` where those are exact, and it replaces an approximate cell such as
+  `same`'s `~π1#Node.0⟲` today (the `recastWhole` reach). So a refusal across two views of one tree is
+  exact: `disjoint`, v1's word, not `disjoint (approx)`.
+
+**The witnesses.** v1 and v2 are measured on `8e1f195d6`. The verdict under the rules is derived on
+paper, and the scratch model below agrees with it. *Concrete* is that model run on every tree of
+height 3 or less whose lists are pairwise distinct, which is the `xreq` that a caller must meet. "Unsafe"
+means that the in-place writes reach one list object twice.
+
+| Probe | v1 | v2 today | Under rule 4 and (d) | Concrete |
+|---|---|---|---|---|
+| `incP (P (same t) (same t))` | refused `disjoint` | refused `disjoint (approx)` | refused `disjoint`: `t#Node.1` at `#P.0#Node.1` and `#P.1#Node.1`, two views | unsafe on 25 of 26 |
+| `incP (P (same t) (same t2))` | refused `exclusive (approx)` | refused `disjoint (approx)` | **accepted** `param`, with `excl` of each tree's lists below its first returns in `xreq` | safe on 130 of 130 |
+| `incAll (same t)` | refused `exclusive (approx)` | refused `disjoint (approx)` | **accepted** `param`, likewise | safe on 26 of 26 |
+| `incRoot (same t)`, `incRoot t = case t of Node l xs r → Node l (List.push xs 1) r` | accepted `param` | refused `disjoint (approx)` | **accepted** `param`: the answered `π1#Node.0` and `π1#Node.2` are inside `V` and drop `K` | safe on 677 of 677 (height ≤ 4): the root list is in no subtree |
+| `incRoot (unroll t)` | refused `call (approx)` | refused `disjoint (approx)` | refused `disjoint (approx)`: `A(unroll)` is `lost` | unsafe on 676 of 677: the root list is also the left child's |
+| `incAll (unroll t)`, `unroll t = Node (Node (unroll l) xs Leaf) xs (unroll r)` | refused `exclusive` | refused `disjoint (approx)` | refused `disjoint (approx)`: the own source `π1#Node.1` is met twice, so `A(unroll)` is `lost` | unsafe on 25 of 26 |
+| `w = same t; incP (P w w)` | refused `disjoint` | refused `disjoint (approx)` | refused `disjoint`: `#P.0` against `#P.1`, one view at two occurrences | unsafe on 25 of 26 |
+| `case incAll t of Node l xs r → Node l (List.push xs 2) r` | accepted `param` | refused `element … (approx)` | refused, unchanged: a holder gap (#1483), not a κ one | — |
+
+So each refusal that the rules keep, other than #1483's holder gap, is genuine, and each new acceptance
+is safe on every input that meets its `xreq`. `incRoot (same t)` is also a v1 parity line: v1 accepts it,
+and before the review of #1519 this spec still refused it. `unroll`, `P w w` and `P (same t) (same t)` write one list twice on every tree that has a list.
+
+**Near misses, the future fixtures.** These attack the rules where they are weakest: keys with the same
+last step, aliasing at different depths, and two calls that share an argument. In every row the
+concrete model agrees with the expected verdict, except the precision gaps, which are safe programs that
+stay refused.
+
+| # | Program | Expected | Concrete | Why |
+|---|---|---|---|---|
+| 1 | `swap t = Node (swap r) xs (swap l)`, `incAll (swap t)` | accepted | safe, 26 of 26 | Every key ends in `#Node.1`. Each call is one group, so the images take the maximum. |
+| 2 | `dupL t = Node (dupL l) xs (dupL l)`, `incAll (dupL t)` | refused `disjoint (approx)` | unsafe, 20 of 26 | Two calls with one actual are two groups, and their images add. |
+| 3 | `shareL`: `Node (same l) ys (same r)`, with `ys` being `l`'s list; `incAll (shareL t)` | refused `disjoint (approx)` | unsafe, 20 of 26 | An own source beside a group's image of the same cell (`π1#Node.0#Node.1`) adds. |
+| 4 | `deeper`: `Node (deeper ll) xs (Node (deeper lr) ys (deeper r))`, with `ll` and `lr` the subtrees of `l`; `incAll (deeper t)` | refused `disjoint (approx)` | **safe**, 26 of 26 | A precision gap. `ll` and `lr` are two positions of the one cell `π1#Node.0⟲`, and two calls are two groups, so their images add. Telling them apart needs the level's sides (`level`/`below`), which rule 1 does not read. |
+| 5 | `incAll (Node (same t) xs (same t))` | refused `disjoint` | unsafe, 25 of 26 | Two views of one tree. |
+| 6 | `incAll (Node (same t) xs (same t2))` | accepted | safe, 130 of 130 | The items inside each view drop `K` and read its κ̂. An item in the other view compares `t` with `t2`. |
+| 7 | `incAll (same (Node a xs a))` | refused `disjoint` | unsafe, 25 of 26 | Rule 4 groups by occurrence: `a` at `#Node.0` and at `#Node.2` are two groups, so `a#Node.1` is repeated and κ̂ is `shared`. |
+| 8 | `incAll (same (Node a xs b))` | accepted, with `excl` of `a`'s and `b`'s lists below their roots in `xreq` | safe, 26 of 26 | One group per subtree, each arrival once. |
+| 9 | `incAll (if c then same t else same t2)` | accepted | safe (each arm is row `incAll (same t)`) | (d2) splits the choice, and each arm reads its own κ̂. |
+| 10 | `both a b = P (same a) (same b)`, `incP (both t t)` | refused `disjoint` | unsafe | `both` is in no group, so its result is `P` of two views of `t`. |
+| 11 | `incTs [ same t ]`, where `incTs` writes the lists of every tree in a list | refused `(approx)`, unchanged | safe | A precision gap. `L` crosses `[*]`, which (d2) excludes, as rule 3's *Below `[*]`* does. |
+| 12 | `T2 = N T2 (List Int) (List Int) T2 \| E`, `mix t = N (mix l) ys xs (mix r)`, and a writer of every list over `mix t` | refused `(approx)` | safe | A precision gap. A list moves between the classes `#N.1` and `#N.2` with depth, so a `⟲` rest is in no single class ((d3)), and the walk compares cells. |
+| 13 | `J = J (List Int) (List J) (List J)`, `sameJ`/`sameJs` and `incJ`/`incJs` by explicit recursion, `incJ (sameJ j)` | accepted (predicted) | safe | Join names below `#J.1[*]#J.1` are keys and images, never expanded, and alias-apart from the other keys. The fixture pins the verdict, or records the other reason if it is refused. |
+| 14 | `wrapR n t = if n == 0 then same (Node t [] Leaf) else wrapR (n − 1) t`, called as `incAll (wrapR n ll)` with `ll` a grandchild (`π1#Node.0⟲`) | accepted | safe on 677 of 677 (height ≤ 4) | `A(wrapR, #Node.1)` holds `π2#Node.1` and the root join `π2⟲#Node.1`, which are alias-apart. Both image to `π1#Node.0⟲#Node.1` through `ll`, one group, so the maximum is taken. C6's alias check passes where an unrolling of `π2⟲` would have failed (the review of #1519). The fresh `[]` reaches `K` through the recursive call as a folded `ι⋆`; if that needs S4's `within` (W1–W3), the line is refused `(approx)` for that reason only, and the twin with a parameter list in place of `[]` pins rule 4 alone. |
+| 15 | `type Box = Box (List Int)`, `Tree = Node Tree Box Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag (§2.11 item 3 (d)). `Box` is on no cycle, so an item inside `w` at `#P.0` and an item of the `#P.1` occurrence have one key without it, and the first one met decided for both (the re-review of #1519). With the tag they are two items, and the `#P.1` item keeps `t#Node.1#Box.0`. |
+| 16 | Row 15 with the list in a record field, `Node Tree { xs : List Int } Tree` | refused `disjoint` | unsafe | An S5 row: a record field inside a constructor is S5's (record demands). The same tag argument applies, because a record place is on no cycle either. |
+| 17 | `Box = Box (List Int)`, `Wrap = Wrap Box`, `Tree = Node Tree Wrap Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag in the read map (§2.11 item 3 (d)). `Wrap` is on no cycle, so the held `Box` inside `w` (class `#Node.1#Wrap.0`) and the held `Box` of the `#P.1` occurrence share one read node without the tag. If the item inside `V` made that read node first, the `#P.1` route lost `t`'s lists (the second re-review of #1519). |
+| 18 | `h2 n t = if n == 0 then (case t of Node l _ _ → case l of Node _ ys _ → Node (same (Node t [] Leaf)) ys Leaf; … Leaf → Leaf) else h2 (n − 1) t`, called as `case t of Node l _ _ → incAll (h2 n l)` | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | `A(h2, #Node.1)` holds `a = π1#Node.0#Node.1` (`ys`) and `b = π1⟲#Node.1` (the root join, through `same`), two bases, so its condition keeps `apart{a, b}` and is not `lost`. Through the leaf `l` both image to `π1#Node.0⟲#Node.1` in one group. The trie test finds `a` under `b`'s `⟲` (`#Node.0` is on `Tree`'s cycle), so the group is no group and the image is repeated. Without the test, rule 4 would merge them (the independent review of #1519). |
+| 19 | One certificate over two parameters of type `Tree`, with `π1`'s keys `π1#Node.1` and `π1#Node.0#Node.1` (apart) and `π2`'s keys `π2#Node.0#Node.1` and `π2⟲#Node.1` (overlapping): `g2 n a b = if n == 0 then Node (same a) [] (h2 0 b) else g2 (n − 1) a b`, called as `case t of Node l _ _ → incAll (g2 n s l)` with `s` a list-distinct second tree | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | The overlap memo is keyed by `(certificate, version, i, L)` (§2.9 rule 4 (a′)). `π1`'s group (through `s`) merges nothing it should not, and `π2`'s group (through `l`) overlaps, so it is no group, and its image is repeated, in either order. A unit test in `build_test.zig` runs both orders of the groups (a test-only switch that reverses the parameter order of the instantiation) and must give the same verdict and the same certificate read. `g2`'s own condition may already fail (if the substituted `apart` of `h2` reads `lost` in `g2`'s frame), which would refuse the line whatever the memo does. So the unit test also builds this certificate directly, as an aggregate with these four keys and a condition that is not `lost`, and checks both orders on it. |
+
+Rows 4, 11 and 12 are accepted debt (#1518). Row 4 is not a hole in rule 4. It is the
+limit that rule 4 shares with rule 1: positions are told apart below one object, and never across two
+calls whose actuals one summary cell names.
+
+**Lemmas for the walls.** They extend C1–C5. Each has a `runtime_safety` check through a reader that does
+not share its walk.
+- **C6, rule 4.** Lemma R4 (§2.9). *Check:* `Grafter.assertRoutesApart` wherever a group merges keys.
+  It compares the merged keys by `Cell.alias` and traces the one-position walk, and it unrolls nothing.
+  C2's check computes the step aggregate again with every view forced and every choice flattened, and
+  that computation applies rule 4 too, so C2 also tests R4 on the forced representation.
+- **C7, Disjoint by certificate.** The read of §2.11 item 3 (d). *Check:*
+  `TransferBeside.assertCertifiedDrop` wherever the rule drops `K` at an item. Inside a group being
+  solved the check is deferred to publication, and it runs only if the verdict it covers is final.
+
+**Cost.** Rule 4 is O(W + M log M) per instantiation, with W its traversal and projection work and M its
+image occurrences (§2.9 rule 4, *Cost*), so the certificate's total is O(S_validation + Σ_h (W_h + M_h
+log M_h)) (*Cost*, above). The counted test with N alternatives (`same (if c1 then t1 else … tN)`, N = 8 to
+64) must be linear in N. Rule (d) adds O(1) per item of `otherPaths`' walk (one class id
+carried) and, per `(call, V, K)`, one instantiation per class of `C` and one memoised union per class, so a
+K-wide tree writer stays linear per call. Neither rule expands a join or adds a walk in a release build. No verdict of today's corpus moves before #1485
+is built, because both rules read a certificate and no certificate exists yet. #1485 measures the
+corpus with them. 4c's oracle (*What the 4c-owned known entries are*, above) found no corpus verdict that
+certificates change, so the expected corpus diff is the new fixtures only.
+
+**The scratch model** (not committed). It is a Node script of about 220 lines. It implements §2.1's
+first-return fold for `Tree`, the certificate's iteration to a post-fixpoint under the old count by cell
+and under rule 4, and the pair rule (d) against the cell comparison, over the probes above. It also runs
+the programs on concrete trees with in-place writes. Its abstract verdicts are the "Under rule 4 and (d)"
+column and the expected verdicts of the near misses. Under the count by cell, every self-recursive
+certificate (`same`, `swap`, `incAll`) reads `lost` at `π1#Node.0⟲#Node.1` and `π1#Node.2⟲#Node.1`,
+which is Wall 1. Under rule 4 those three are proved, and `dupL`, `unroll`, `shareL` and `deeper` stay
+`lost`. The model checked the first, pairwise form of (d), which compared only two paths in `K`. The rows
+added after the review of #1519 (`incRoot`, `wrapR`) were checked concretely by a second script, on every
+tree of height 4 or less, and derived on paper for the item form of (d) and the alias form of (a′).
+
+**What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
+instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
+- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17–19 in one module, and the counted test with N alternatives in
+  `build_test.zig`.
+- `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
+  library module, so the certified mark crosses a block (C4).
+- `o/FoldedKnotCall`: reader 2. `incAll`'s `xreq excl π1#Node.0⟲#Node.1` is read at a certified view
+  through `Calls.preimage`: `incAll (same t)` is accepted, and `incAll (unroll t)` and `incAll (dupL t)`
+  are refused.
+- Two test-only mutations. `cert-rule4-sum` adds the images of a group, and `cert-view-cells` drops
+  (d). Each must turn the accepted witnesses red. A third, `cert-untagged`, leaves the tag out of the
+  walk's four keys. Because of the walk's order (§2.11 item 3 (d)), the mutation alone changes no
+  verdict. So it is tested with a test-only switch, `otherPaths-spine-first`, which reverses the push
+  order so that the spine reaches `V` before any sibling off it. Two unit tests in `build_test.zig` run
+  rows 15 and 17 under the switch. With the tag, both are refused in either order. Under the switch with
+  `cert-untagged`, both are accepted, and C7's edge check panics. `gates` refuses both switches, as it
+  refuses every mutation.
+- Measure what #1485's stop report left open: the approximate `~…⟲` cells that `Grafter.argAt`'s
+  `recastWhole` puts at `#Node.1[*]` (and at each class below `K`) in each member's own recursion
+  (`same`, `incAll`, `unroll`), once rule 4 projects a leaf through `⟲` symbolically. Record which of
+  them remain, and whether any of them aliases the written keys at a call (`incAll (same t)`,
+  `incRoot (same t)`). Those cells are kept by (d), because they are not in `K`. So one that aliases
+  a written key refuses a witness, and that would be a finding for the spec, not a reason to drop it.
+
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it
 earned, and the group is unbuilt. A limit in any member's walk, in a delivery or in the validation
@@ -5703,6 +7968,9 @@ deliveries into its class, the Prover goals keyed by it, and its validation.
     n = 16 from 134 542 to 90 141. `mergeSort` stays past the allowance: its `res[*]` positions
     multiset nests both views of the last port every round (#1368), and a self-map's n views are
     forced one by one before widen folds them into one class; both are open (#1372).
+    *Measured again* [M 2026-10-31, #1368]: most of that port is the history of rounds, which the join
+    keeps although the last round covers it. §2.3 *A port keeps no round that its last round covers*
+    drops it, and `mergeSort` falls to 38 477 records in 3 walks with no growth (42 257 on 5a's branch).
   - From 4b, facts are deliveries, each `(edge, fact)` once, bounded by the size of the class the
     group publishes. Inference walks happen only on a new callee `res.shape`. Validation walks are
     one per member per pass of the stop rule, plus the one that follows any inference walk that
@@ -5730,7 +7998,9 @@ RecursiveSummaryGeneration's reorderings).
 |---|---|---|
 | 4a | Ports, ⊥, synchronous rounds, group calls by reference with `(port, version)` in `E`, stable labels, widen(x ⊔ F(x)), `Summary.eq` termination, validation as above, publication all at once, failure and cold re-check of a whole group, the coarse read vector recorded at each group call, and the stop rule's joint loop (the read check and `leq`, with `propagate` from 4b), run in 4a too, where every change wakes its readers. Its first commit gives a call of the walk's own group its own `.v2.unchecked` reason, `recursion`, so the to-do list is exact before any code lands. Any port change wakes every reader, and every walk past the second is growth (interim, Q1). Cycles stay `repeated`. | Every `recursion` line of every `.v2.unchecked` file is gone or carries another reason. Each changed root holds v1's verdicts, or has a known entry that names 4c (`repeated`) or S4 (`within`) as its owner (Q4). The 4a fixtures below are green, the counted ones as stated. The verdict diff over the corpus is reported. |
 | 4b | `Fix.propagate(Edges)`, run to quiescence after each round: argument and result edges (projections included), parameter images as chained edges, and marks, cells, atoms and occurrence facts as deltas. The wake rule: only a callee's new `res.shape` wakes an inference walk. The read check sends what demands and obligations read to the validation walk. | The counted families below meet their bounds. A per-member walk counter pins inference walks against delivered facts. `Rot` holds v1's refusal, and so does `o/RecursiveTupleGuards` at 19:17 and 21:17. No verdict or block changes from 4a except where a known entry says so. |
-| 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). | #1195's witnesses and the 4c fixtures are green. Every known entry that 4a gave to 4c is gone. #1195 closes. |
+| 4c | The certificate induction: the `fold` claim, the hypothesis node with the certificate as an aggregate (arrival keys and condition) in `arrivalAggs` and `Calls.Pre`, alternatives on x*'s validation walk, the Prover's answer joined into x, certified knots at a call's folded read, and the block's certified mark with arrival keys (Q3, decided). *Specified 2026-10-31* (*The fold certificate, specified*): the 4c-owned refusals are §2.9 rule 3's, not a cycle's, and the certificate also needs a third reader, the graft through `⟲`. **Decided (A)** (the manager, 2026-10-31, on #1484): 4c builds rule 3, and the certificate with its third reader is #1485, which lands before S4 reads a certified knot. *Built 2026-10-31* (§2.9 rule 3, *As built (4c)*). | Under (A): `FoldedBCall`, `FoldedBCallImported` and `LevelsApartRoutes` hold v1's verdicts, their remaining lines are canonical-path-text entries, and #1429 has its fixture. Under (B), or for the certificate's own slice: #1195's witnesses and the 4c fixtures are green, and lemmas C1–C5 hold as `runtime_safety` checks. Every known entry that 4a gave to 4c is gone. #1195 closes. |
+| 4d | §2.3 *A port keeps no round that its last round covers*: `Summary.join` in `choice` mode takes the other side's `res` and κ when one side is under the other, and drops each arm of a top choice that the other side covers, with the κ home stated there. Only a class join does it. Proposed 2026-10-31, after 5a. | `run/TailModConsMerge` is checked at the default allowance, with no `.v2.unchecked` line for `mergeSort`. DerivedDeepPaths' `rose` likewise on 5a. No verdict changes over `bench/ownership-roots.mjs`'s roots except limits that become checked. #1423's `wa`/`wb` either hold 5a's figures or carry a known entry under #1372 (§2.3, option (a)). |
+| 4e | Stable images (§2.3, *The two pieces that (b) adds, prototyped (4e)*): `map`'s closed knots interned by canonical form, and `widen`'s emitted knots component by component, `fold_cond` in the key, never onto the widening's source, the move asserted under `runtime_safety` and the snapshot compared under `-Downership-full-cross-check`. Arm sets are withdrawn: they are not exact for κ, and as union sets they break the quadtree's convergence. *Proposed 2026-10-31; the manager decides (§2.3, *What 4e measured*).* | No verdict or `{…}` condition changes over `bench/ownership-roots.mjs`'s roots, and a block changes only in its encoding. DerivedDeepPaths' `rose` at or under the measured 11 986 growth. A counted test for the accumulator `acc (n − 1) (N [ n ] [ n ] t t)` (4 walks, against 5). *As built (4e):* the corpus's 2 107 roots on master `46ede32b6` show no verdict, condition or summary change, 18 blocks change encoding, and records fall 0.64 %. A sweep of 400 random programs shows no verdict change and no condition set change, and records fall about 9 % (the 37 programs whose summaries change text reach a smaller class with the same conditions). `rose` 14 105 → 10 930 growth, the accumulator 1 712 743 → 1 157 586 in 4 walks, `wa`/`wb` 54 449 / 68 942 → 54 166 / 68 428, the quadtree unchanged (201 399 → 201 558). `removeMin` and `descend` are not 4e's: they are F2's (#1465) and the question in §2.3. |
 
 *As built, 4b (#1440).* What 4b builds, and where it departs from the plan above.
 - **Edges.** A walk records each call of its group (`Transfer.Context.onCall`): the callee, the
@@ -5776,6 +8046,49 @@ RecursiveSummaryGeneration's reorderings).
   directions with 4a's class (checked in one process, 4a's rounds run again over the same tables):
   fewer rounds keep fewer alternatives (§2.3), and a delivered use is grafted call by call, so the
   mark of a `⟲` path is spelled out.
+
+*As built, 4d (#1470).* §2.3 *A port keeps no round that its last round covers*, option (a).
+- **The rule.** `Summary.joinClassRes`: `b` under `a` keeps `a` as it is (#1423, both modes). In
+  `choice` mode, `a` under `b` takes `b`, widened by `widenValue`. Otherwise `dropCovered` takes off
+  `a`'s covered arms against the whole of `b`, and then `b`'s against what is left of `a`, so a value
+  that both sides hold never leaves both. A side whose arms are all covered is the first case. Every
+  test is `Shape.leq` and `kappaLeq` on the caller's charge, and every node of the top choice DAG and
+  every arm is a charged record.
+- **κ home.** The entry that the side's snapshot stores at a choice node of its top DAG, joined with
+  what is carried to that node, is carried to its sides, parents first. Each kept arm takes that join
+  into its own entry (`kappaSet`). The kept arms are a balanced choice in the order the walk met them.
+- **Departure.** A side one of whose choice nodes owes a fold condition (`fold_cond`) is kept whole.
+  A read meets that condition at every choice node it passes (`foldCondOf`), and no snapshot stores it,
+  so dropping the node would drop it. Over the corpus this never fires. Until #1478's review, only the
+  root was checked.
+- **Measured** (self-hosted Debug, `dump --stage=ownership --ownership=v2 --jobs=1`, the leq work
+  charged). `mergeSort`: a limit → 36 853 records in 3 walks, growth 0. DerivedDeepPaths' `rose`:
+  16 644 → 10 085. `descend` (copied, allowance 10⁸): 437 829 → 178 999. Over the 2 043 roots of
+  `bench/ownership-roots.mjs` (`allOwnership`, `--ownership-everywhere`): 6 415 320 → 6 040 556 records
+  (−5.8 %), and the only verdict change is `mergeSort`, a limit that is now checked. `wa`/`wb`,
+  `removeMin`, `descend` and `incAs` stay limits.
+- **Checked.** Every member of every solved group walked again against the final ports (a scratch
+  build, 1 652 walks over the roots): every walk is built, its read-off is under its port, its
+  verdicts are the validation walk's, and every edge delivers under its receiver's port. The same check
+  with the read check removed fails 283 of 1 668. `-Downership-full-cross-check` over the ownership
+  corpus fails only v1's five panics, as on master.
+- **Summaries.** They move in 42 roots, 138 summaries. Most drop alternatives that another one
+  covers: an `excl` beside a `lost` at one path, a cell repeated under `{lost}`, an unrolled level a
+  fold already covers. Nine `res` paths read weaker (`excl` → `lost`): core's `Result.combine`,
+  `combineHelp`, `partition` and `partitionHelp`, `LevelRecursiveUpdates.c2`,
+  `MarkerAcross.keepRight` and `WriteOneLevel.c2`. The port of the first case equals master's under
+  `leq`, but the tail call's delivery over it reads `lost` where master's reads `excl`, so it is
+  not exact for the fixpoint in the direction that loses precision. No corpus verdict depends on it.
+  A caller that edits an element of `combine`'s result is refused (#1472).
+- **The precision restored (#1472).** The cause was not `leq`: the two ports read alike in the class's
+  frame, and each is checked against its own `F`. The tail call's read-off counted `first.Ok` and
+  `rest[*].Ok`, which image to one cell, as a repeat. Master escaped this only because its kept history
+  held the argument's own snapshot and keyed the class's entry where no caller read it, which also let
+  `combineHelp [ Ok b ] [ b ]` through. §2.9 *Two positions of one image* gives both readers the
+  positions rule. With it, no `res` path over the 2 043 roots reads weaker than master, six read
+  stronger (`TwoCallsApart`'s and `Apart`'s `bumpAll`, `bump3` and `bumpLet`: `lost` → `apart …,
+  excl π1[*][*], excl π1[*][*][*]`), the only verdict change is `mergeSort`'s, and the records are
+  6 049 652 (+0.15 % over 4d alone, −5.7 % against master).
 
 4a carries the required fixtures that #1159, #1199 and #1219 owe through real calls: their actuals
 are literals, so they are acyclic, and only the callee recurses. 4c carries #1159's cyclic-source
@@ -5884,6 +8197,21 @@ allowance, with no limit line.
     lanes, and it is reported (Q1).
   - `GroupSelfFold` again: unchanged.
 - **4c.**
+  - §2.9 rule 3 (*specified 2026-10-31*, built under either option of the fork). `o/LevelPositionsCall`
+    and its imported form `o/LevelPositionsCallImported`:
+    - `incList`'s `incAll b` over `B (List B) (List B)` is accepted `param`, as in v1. The `T (List T)`
+      twin is accepted already, and stays so;
+    - the actual `B [ B xs [] ] [ B xs [] ]` built in the caller fails (b), and Disjoint refuses it, as
+      in v1;
+    - an actual that is a rest of a repeating split (`List.push bs b` with `b` taken from `bs`) fails
+      (b) and is refused;
+    - two paths whose last steps are the same (`⟲#B.0` twice through different prefixes) fail (a) and
+      are refused;
+    - a choice of two leaves at `L` (`incAll (if c then b1 else b2)` with `b1`, `b2` heads of one
+      parameter) is one position and is accepted, as in v1. v2 refuses it today. The scratch prototype
+      accepts it.
+  - #1429's mutual `A`/`B` writer as `o/MutualWritersMutualTypes`, accepted `param` as in v1.
+  - The rest of this list is the certificate's, under (B) or in its own slice.
   - #1195's witnesses as `o/FoldCertificate`:
     - a deeper unrolling that repeats a cell (`f t = case t of Node l xs r → Node (f l) xs (Node
       Leaf xs Leaf)`): a writer over the result is refused;
@@ -5989,7 +8317,7 @@ has it. "Sx" means a later slice has it.
 | R-7.4's qualified families | The recursive-function row: `GroupSelfFold` (4a), `GroupTreeRecursion` (4b). The Θ(NK) witness: not written. The update-arm and wide-`main` rows: S5, S7. | 5d |
 | Read-off keeps each pair of distinct pre-fold `sep` labels through direct calls, for S4's `within` | Moved to S4 (#1441): in S3b no stored atom has two sides that `ι⋆` merges, so the pair set is always empty. | S4 |
 | The cold re-check sees the callees' summaries (#1016's comment of 2026-10-29) | Done: #1261 (a cold run walks its callees first), 4a (a group's cold run) | `build_test.zig`'s cold-run tests |
-| Fold-step relabelling through a call graft at source level (#1016's comment of 2026-10-28) | Not pinned at source level | 5c (`ViewFoldRoute`'s call twin is 4c's; the relabel twin is 5c's) |
+| Fold-step relabelling through a call graft at source level (#1016's comment of 2026-10-28) | Done in 5c (#1486): `o/FoldRelabelCall` and its imported twin | 5c (`ViewFoldRoute`'s call twin is 4c's; the relabel twin is 5c's) |
 | The SCC worklist for a cyclic source's occurrence facts, and the fuller preimage walk (#1016's comment of 2026-10-29) | Preimage: done, #1196. The SCC for a group's knots: 4c. | |
 
 *Inventory: the fixtures.* `o/` is `tests/corpus/ownership/`, `p/` is `tests/pending/ownership/`.
@@ -6001,14 +8329,14 @@ has it. "Sx" means a later slice has it.
 | RoseKidsHeld | 4a, blocked by #1394 | No file |
 | ReturnsFresh, ReturnsArg, MutualTypes, MutualCycles, AliasWriter | Done: #1261 | Checked, no known entry |
 | CallerSide | `twin`, `apart` wait for `record_update` (S5) | `.v2.unchecked` |
-| LevelLimit alias/disjoint; `inline xs xs`; `two` (#1016's comment of 2026-10-26) | Behaviour done: #1261. Not pinned. | Probe: `inline xs xs` is refused `disjoint`, `inline xs [ 1 ]` with `xs` read again `later-use`, distinct literals accepted. `two` over a tree holding `xs` twice is refused `disjoint`, distinct lists accepted. → 5c |
+| LevelLimit alias/disjoint; `inline xs xs`; `two` (#1016's comment of 2026-10-26) | Done in 5c (#1486): `o/LevelLimitCallers` and its imported twin | Probe: `inline xs xs` is refused `disjoint`, `inline xs [ 1 ]` with `xs` read again `later-use`, distinct literals accepted. `two` over a tree holding `xs` twice is refused `disjoint`, distinct lists accepted. → 5c |
 | LevelPlacesKinds' folded W (64:5) | Done: #1261, #1382 | Refused. Known entries are path text. |
 | Recursion | 4a (`List.close` waits for S4) | `not built: call` on master |
-| `p/MutualListField` | Behaviour done | v2 accepts 21:23 `param`, the fixture's answer. It is red only for v1. → 5c moves it with a known entry. |
+| `p/MutualListField` | Done in 5c (#1486): moved to `o/MutualListField` | v2 accepts 21:23 `param`, the fixture's answer. It is red only for v1. → 5c moves it with a known entry. |
 | `p/WriteOneLevel` | 4a moves it to `o/` | |
 | `p/AliasWriterCall` | Done in 5e (#1434): moved to `o/`, with `o/AliasGroupCall` and `o/AliasImported` | 5e |
 | R-5.13.1, `p/…/ComparisonWrites` | Done in 5e (#1434): moved to `o/ComparisonWrites` | 5e |
-| Local ordering tests | 4a: `RecursiveGroupsPermuted`, the per-order charge test. `ordering_test.zig` has v2 only for `core/CastOrder`. No reversed twin of a call fixture. | 5c |
+| Local ordering tests | 4a: `RecursiveGroupsPermuted`, the per-order charge test. `ordering_test.zig` has v2 only for `core/CastOrder`. No reversed twin of a call fixture. Done in 5c (#1486): `CallOrderReversed` in `ordering_test.zig`, `CallOtherPaths` and `CallOtherPathsImported` with each module's declarations reversed. | 5c |
 | RecursiveFunctions, FoldLevels, Initialization* | S4, S7, S8, as the row says | |
 | KappaLeafJoin, KappaEmptyProjection, IdentityMapKappa, joins under two shared-owner routes | Not written (no file of these names) | 5a |
 | Validation after a new κ constraint arrives; no stale memo after failure | 4a (`RecursiveGroupsSharedRead`, the failure twins) | |
@@ -6019,7 +8347,7 @@ has it. "Sx" means a later slice has it.
 | FoldedBCall (+ imported) | 4a, blocked by #1394 | `Calls.zig` has a unit test of its actual on the eager graft |
 | #1144's cyclic-record regressions | Done: #1144 | `Calls.zig`'s #1138/#1143 unit tests |
 | #1146's X_k chain at 4 … 1 024 | Done on the eager graft: #1149 | `Calls.zig`'s three #1146 tests count `Grafter.linkArgs`. Since 2b, `apply` answers views, and `Grafter.graft` is reached only by tests (#1308). The view path has no such count. → 5d |
-| Appendix B's matrix, every S3b row | 2 of 20 rows have a fixture (4a: `RecursiveCallView`, `RecursiveSummaryGeneration`) | No file of any other row's name on master or on 4a. The rows are cut below. |
+| Appendix B's matrix, every S3b row | 2 of 20 rows have a fixture (4a: `RecursiveCallView`, `RecursiveSummaryGeneration`) | No file of any other row's name on master or on 4a. The rows are cut below. *5c (#1486):* the seven 5c rows each have a same-module and an imported fixture. *#1498:* 4a's rows have their imported twins, and 5a's four rows and 4c's five rows have a same-module and an imported fixture each. The matrix names their paths. |
 
 *Appendix B's matrix, by PR.* The 20 rows labelled S3b:
 - **4a:** C×A RecursiveCallView, C×G RecursiveSummaryGeneration (the S3b half), F×A FoldedWriteCall,
@@ -6033,15 +8361,34 @@ has it. "Sx" means a later slice has it.
   SplitCallSupply (the S3b half).
 - **5d:** C×J CycleJoinRank's counted half (the K tower, #1420).
 
+*As built (#1498): 4a's twins, 5a's rows and 4c's rows.* Each imported twin gives the same verdicts as its
+same-module form, under both checkers. 4c's rows are their S3b halves: builders and choices answered by
+calls, and written by `CycleJoinRankWriter`'s recursive kids writer. The fixtures found these defects:
+- **v1, soundness.** v1 loses a callee's write to a parameter that is linked below a new node and written
+  through the fold. Its summary of `twoTrees t u = incAll (Rose [ t, u ])` reads `π1` and `π2` only. So v1
+  accepts `LinkedFoldCoverage`'s `treeReadAfter` and `RefinementFoldMultiplicity`'s `takenOneBeside`, and
+  `--sanitize-lists` shows that they read stale data. v2 refuses both. The known entries are for v1.
+- **v2, precision.** A builder that puts its parameter three levels down publishes it `lost` (#1501,
+  `ViewFoldRoute`'s `freshDeeper`). A call's choice of one list at two depths is refused over a fresh
+  literal (#1502, `JoinFoldChoice`'s `depthArms` and `distinctArms`). Both have known entries.
+- **Both checkers, precision.** Two distinct elements of one split, handed to a recursive writer, read as
+  one (#1503, `RefinementFoldMultiplicity`'s `takenTwo` and `apartFresh`). Both checkers refuse them, so
+  there is no entry.
+- **v1, precision.** v1 reads two `List.copy x` answers as `lost` (`JoinedCallContexts`'s `freshActual`).
+  This has a known entry.
+- **Cost.** The mutual group `incA`/`incBs`/`incAs` of `CrossDepthKids` takes about 79 000 growth records
+  in 12 walks. Its two list members carry `@ownership_summary_size(88000)`, the measured cost plus a tenth
+  (#1372).
+
 *The PR cut.* Each PR is green and sound on its own. Each fixture has a same-module form and an
 imported form, and each holds v1's verdicts or has a known entry that names an owner later than S3b.
 A defect that a fixture finds gets its own issue, and its fix lands in the PR that found it or before it.
 
 | PR | Builds | Fixtures | Depends on | Done when |
 |---|---|---|---|---|
-| 5a κ transport | `Shape.map`'s correspondence hook. It reports each `(old node, new node)` with its child edges and back edges, per substitution context. `Cond` transports a snapshot along it: read-off, `Calls.apply` and `BlockRead` stop relabelling by node. A κ root's key holds the invocation (§2.9). A projection of a view gives the projection of its eager image (#1313). A join of two built records reads the members' join (#1093). `Summary.eq` is `leq` both ways (#1094). Block positions close over `Cond.frontier` (#1082). #1406 is answered: a fix that keeps the groups converging, or an argument. | `o/KappaLeafJoin`, `o/KappaEmptyProjection`, `o/IdentityMapKappa`, `o/SharedOwnerRoutesJoin` (a join under two shared-owner routes), `KappaTransport`'s S3b half (relabel, projection, union, block), `ViewLinkedSnapshot`, `LinkedJoinCertificate`, `RepeatedPathCall` (closes #1122), `JoinedCallContexts`. Each compares selected κ reads, `deep` and semantic inclusion before and after `map` and `BlockRead`. | 4a merged. #1408 merged. #1308's pure split of `Cond.zig` merged first, so that the PR does not move code and change it at once. | The fixtures are green. `-Downership-full-cross-check` also checks the by-node relabelling against the correspondence. They differ only where a pinned fixture says the new read is stronger. #1093, #1094, #1082, #1122, #1313 and #1406 close. No block changes, except where a fixture pins it. |
+| 5a κ transport | `Shape.map`'s correspondence hook. It reports each `(old node, new node)` with its child edges and back edges, per substitution context. *Amended (#1447, the manager's decision of 2026-10-31):* the transport stays per submap (`relabelMap`), and the correspondence gives node images and projection origins only, since a walk of `(node, position)` pairs is Θ(n²) on K (§2.11 *Instantiation boundary*). `Rose [ r, r ]` is not 5a's: it is not a transport problem, and it moves to #1420's own PR. `Cond` transports a snapshot along it: read-off, `Calls.apply` and `BlockRead` stop relabelling by node. A κ root's key holds the invocation (§2.9). A projection of a view gives the projection of its eager image (#1313). A join of two built records reads the members' join (#1093). `Summary.eq` is `leq` both ways (#1094). Block positions close over `Cond.frontier` (#1082). #1406 is answered: a fix that keeps the groups converging, or an argument. | `o/KappaLeafJoin`, `o/KappaEmptyProjection`, `o/IdentityMapKappa`, `o/SharedOwnerRoutesJoin` (a join under two shared-owner routes), `KappaTransport`'s S3b half (relabel, projection, union, block), `ViewLinkedSnapshot`, `LinkedJoinCertificate`, `RepeatedPathCall` (closes #1122), `JoinedCallContexts`. Each compares selected κ reads, `deep` and semantic inclusion before and after `map` and `BlockRead`. | 4a merged. #1408 merged. #1308's pure split of `Cond.zig` merged first, so that the PR does not move code and change it at once. | The fixtures are green. `-Downership-full-cross-check` also checks the by-node relabelling against the correspondence. They differ only where a pinned fixture says the new read is stronger. #1093, #1094, #1082, #1122, #1313 and #1406 close. No block changes, except where a fixture pins it. **As built (#1447):** a joined DAG node is keyed alone, and every reader reaches it (§2.9 *Keyed where a reader looks*): a caller through the view of the template's projection, read-off through the projection correspondence, the printer through its context. Every join of alternatives starts from its members' snapshots merged; widen keeps its one member's entries outside its folds. `leafEntries` is gone. K is 13 056 / 64 744 / 138 217 / 292 195 records at 10 / 40 / 80 / 160, counted at 10 / 40 / 80; its block is #1450. `GroupJoinShared` and its imported twin hold v1's refusals. The 4a groups converge in 5 walks, as on master. Over the 2 039 roots of `bench/ownership-roots.mjs`, no verdict changed; 100 roots differ in summary text or block bytes. `Summary.eq` is `leq` both ways (#1094). #1093, #1094, #1406 and #1428 close. After review: a call's view of a joined node has its template's origins, so a wrapper reads what the joined function reads; the block writes no join entry its sides imply, and a block that a limit stops says so (#1450); a group's read-off carries no implied join entry and follows own origins only. #1082 is partly done (the block writes `D` where readers look, pinned by a round trip), and #1122 and #1313 stay open. |
 | 5b `sep` pairs for S4 | Moved to S4 (#1441). In S3b no stored atom has two sides that `ι⋆` merges, so there are no pairs to record. They first exist in S4 with the `cb` labels and `foldWithin`'s members, and §2.12 publishes them as the certificate (P, ℓ, M), with no separate provenance store. S4's read-off, block (a version bump) and printer carry them; `o/SepPairsCall` and `o/SepPairsCallImported` move there. | None in S3b. | S4. | Closed in S3b. |
-| 5c the matrix, S3b halves | No new mechanism. The fixtures and the fixes they find. Rule (c) takes two refinements of distinct positions of one split as evidence (#1272). #1253's option B, if 4a does not finish it. | The seven 5c rows above. `o/LevelLimitCallers` (`inline xs xs`, `inline xs` with `xs` read again, `two` over a shared tree, each with a distinct twin). `p/MutualListField` moves to `o/`. `o/CallOrderReversed`: `CallOtherPaths` and its imported form with each module's declarations reversed, in `ordering_test.zig`. The source-level relabel of a fold step through a call (#1016's comment of 2026-10-28). | 4a. 5a for the rows that read κ after a call. | Every S3b row of the matrix has a fixture with its refusal and its control, same-module and imported, across 4a, 4c, 5a and 5c. No such fixture has a `not built` line, except one that a known entry gives to S4 or S5. #1253 and #1272 close. Appendix B names each fixture's path. |
+| 5c the matrix, S3b halves | No new mechanism. The fixtures and the fixes they find. Rule (c) takes two refinements of distinct positions of one split as evidence (#1272). #1253's option B, if 4a does not finish it. | The seven 5c rows above. `o/LevelLimitCallers` (`inline xs xs`, `inline xs` with `xs` read again, `two` over a shared tree, each with a distinct twin). `p/MutualListField` moves to `o/`. `o/CallOrderReversed`: `CallOtherPaths` and its imported form with each module's declarations reversed, in `ordering_test.zig`. The source-level relabel of a fold step through a call (#1016's comment of 2026-10-28). | 4a. 5a for the rows that read κ after a call. | Every S3b row of the matrix has a fixture with its refusal and its control, same-module and imported, across 4a, 4c, 5a and 5c. No such fixture has a `not built` line, except one that a known entry gives to S4 or S5. #1253 and #1272 close. Appendix B names each fixture's path. **As built (#1486):** the seven rows are `o/ViewCycleHolder`, `o/ViewSplitStoredBack`, `o/ViewBranchJoin`, `o/ViewCallArgument`, `o/CycleSplitRefinement`, `o/CycleLinkRooting` and `o/SplitCallSupply`, each with an `…Imported` twin and no `.v2.unchecked`; with them `o/LevelLimitCallers`, `o/FoldRelabelCall`, `o/AnsweredAboveElements` and `o/ViewOfCallAnswer` (each with its twin), `o/MutualListField` moved, and `CallOrderReversed` in `ordering_test.zig`. Two defects were fixed: a view held across a write of a second match of one recursive value, or of the canonical cell a call writes, was no holder (soundness, #1491; §2.8 *Holders across a cycle*), and an answer above a write through `[*]` held the written positions (precision, #1253's item 2; §2.11 item 3 (a)). #1272 was answered by §2.9 rule 2 already (§2.11 item 3 (c)). Three precision defects are known entries: a local element's contents (#1492), a recursive value's matched field against a call's write (#1493) and a list answered from below the first return (#1495). v1 is unsound at five positions the fixtures pin (`ViewCycleHolder`'s three `viaCall` forms, `CycleSplitRefinement.twoChains`, `ViewSplitStoredBack.storedBack`), where v2 refuses. A `P`/`Q` traversal stands for the `A`/`B` list writers, which are #1372's loud groups. 5a's four rows and 4a's imported twins are #1498. |
 | 5d1 the counted towers | The eight families of §2.9 as counted tests at the default allowance (gated at 10 / 40 / 160, which the 1 s test budget holds and which separates n log n from n²; 1 000 is measured in the pull request, not gated: the manager's decision, 2026-10-31), with per-category counts, read-off and codec work and published bytes, normalised against n log(n + 2). Fixes for K and `Rose [ r, r ]` (#1420) and for the push chain over a parameter (#1419). | `build_test.zig`: the eight families, each with the identity, mutual and `Maybe` forms Appendix B names, and each memo disabled in turn so that its witness fails. K's exclusive seed stays one, with `yes` at the kids path (C×J). | None: no call or group is needed. It can start now. | Each family meets its bound. #1419 and #1420 close. |
 | 5d2 the counted calls | `wrap (wrap … r)` at 10 / 100 / 1 000, same-module and imported, with the identity-helper control and a refused twin (`wrap2 r = Rose [ r, r ]` under a kids writer). #1146's X_k chain counted through `apply`'s view and the κ read, not through `Grafter`. #1289's tree-insert chain flat per call. #1097's done condition. R-7.4's Θ(NK) witness: N transfer nodes and K `res.shape` versions, measured and reserved as growth. | `build_test.zig` counted tests. The source-lanes test is tightened to G_f = 0 for the chain. | 4b for the R-7.4 witness. 5a for the X_k count, if the view path changes. | The bounds hold. #1097 and #1289 close. #1308 may then delete `Grafter.graft`. |
 | 5e the remaining call forms | R-5.13.1: a class Dispatch marks as `eq`/`compare` whose `writes` bit is set is `comparison_changes_value` at its first demand on an arrival. A derived class joins its component classes first (§2.13.13). R-5.5.6: a top-level alias of a function is a call of what it names, through any number of names (`ext_value`, `top`). | `ComparisonWrites` moves from `tests/pending/check/bad/inline/` with a v2 `.diag`. `CallbackListWords`' derived half. `p/AliasWriterCall` moves to `o/`. Each has a known entry against v1. | 4a: a derived comparison over a recursive type is a group. | Both fixtures are green under v2. The new code is in `diagnostic.Code`. `skills/beni/` changes when the code becomes visible without the hidden flag (S10), not before. **As built (#1434):** done; §2.11 and §2.13.13 item 13 have the notes. `ComparisonWrites` pins the code whole in a `.v2.diag`, which `ownershipV2` compares; `AliasWriterCall` (a nine-name chain), `AliasGroupCall` (the target in a recursive group; an alias inside one is a value defined in terms of itself, the checker's error) and `AliasImported` (across three modules) are new or moved. The comparison refusal moved the writing comparisons of fourteen fixtures (eight `Cmp*`, two `ContainerOverWriter*`, two `DerivedOverWriter*`, `EvidenceDeep`, `PrivateEqThroughShapes`) from `param` to refused; `CallbackListWords`' derived half is those fixtures (its callback half is S4's). A comparison written as an alias (`ComparisonAlias`, `ComparisonAliasImported`) and values named `eq` and `compare` of another shape (`ComparisonNameOnly`, accepted) are pinned, and so are a comparison with a type variable parameter (`ComparisonVariableParam`) and a chain through three modules (`AliasThreeModules`). |
@@ -6052,6 +8399,19 @@ A defect that a fixture finds gets its own issue, and its fix lands in the PR th
 then 4c, then 5c. 5d1 can start at once. 5d2 follows 4b. 5e and 5f follow 4a. 5z is last.
 S4 needs 4c (certified knots) and 5a (the transport, to which S4 adds supply roots). 5b moved into S4
 (#1441): the pairs first exist there and are published as the certificate (P, ℓ, M), §2.12. S4 does not need 5c–5f to start.
+
+*As built, 5d2* [M 2026-10-31, Debug]. **Holds.**
+- `wrap (wrap … r)`: 234 / 231 / 246 records a call at 10 / 100 / 1 000, and about 11 more a call through `ident`. Imported, it costs the same. The gates count 10 and 100, because 1 000 takes about a second.
+- The refused twin: `growKid` below `wrap2` at the top is `exclusive`, and below `wrap` it is accepted.
+- #1146's X_k chain through `apply` and `kappaOf`: 197 / 799 / 3 429 / 14 891 / 64 561 records at 4 … 1 024. No `Grafter` is built by hand. `Grafter.graft` itself was deleted on 2026-10-30, so #1308 owes nothing more for it. `linkArgs` stays, because `apply` uses it.
+- #1097's done condition: the push chain has G_f = 0 at 100 and 200, and the source-lanes test says so. `rebuilt` has G_f = 0 at 65 and 130 fields.
+- R-7.4's Θ(NK) witness is a ring of k types. `m0` walks 5 times at k = 2 and 8 times at k = 3, whatever n is. A small member's walks pass its lanes into growth at k = 3, and k = 8 is loud.
+
+**Open findings.** These have no ceiling pinned:
+- The `deep` read of the X_k answer is Θ(n²), with or without a view (#1488).
+- `growKid` below a wrap tower costs about n^1.6 (#1490).
+- #1289's tree-insert chain is Θ(n²) when read and exponential when published (#1289's comment of 2026-10-31).
+- The two-branch tree insert is itself past the allowance (#1489).
 
 *What the counts say about the size of what is left* [M 2026-10-31]. Master has 2 825 lines
 `not built: call` in 1 197 `.v2.unchecked` files. They cover the calls of a function value (S4),
@@ -6064,13 +8424,13 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
 | Issue | What | Recommendation |
 |---|---|---|
 | #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
-| #1372 | A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
-| #1368 | `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The next step is a spec proposal (saturating occurrence counts, or a home for κ under a merged positions node). | **Spec before 4b, fix before S3b closes.** It is an ordinary program, not a length family. 4b's validation walk still reads the whole class, so 4b alone does not fix it. |
+| #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. *2026-10-31 (4e):* stable images are exact for every condition read, save 0.42 % of the corpus and 29.5 % of a random sweep. Arm sets are withdrawn. Neither piece touches `removeMin` or `descend`, #1289's exponential or #1489's walk cost (§2.3, *What 4e measured*). | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
+| #1368 | *2026-10-31:* fixed by 4d (§2.3 *A port keeps no round that its last round covers*): 168 829 → 38 477 records, growth 0, exact for the join, and no corpus verdict lost. `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact once a dropped node's entries are carried onto the node it returns (*The entries of a dropped node*). It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
 | #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
 | #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
 | #1399 | A port's joined κ below a choice is not read (unsound on 4a). | **Before 4a merges** (#1408). |
 | #1394 | 4a's fixtures that walk a list of recursive values. | **Before S3b closes**, as question 3 decides. |
-| #1253, #1272 | Call precision: canonical `⟲`, approximate answers, rule (c) over a split. | **Before S3b closes** (4a or 5c). Their known entries are S3b's own. |
+| #1253, #1272 | Call precision: canonical `⟲`, approximate answers, rule (c) over a split. | **Before S3b closes** (4a or 5c). Their known entries are S3b's own. *Closed by 5c (#1486):* canonical `⟲` by #1438, approximate answers by §2.11 item 3 (a)'s 5c amendment, rule (c) over a split by §2.9 rule 2. |
 | #1362 | Widen keeps a choice above a cycle whole, so a group whose result is such a choice nests each round. The manager decided: widen each arm on its own. | **Before 4b.** A group whose `res` is a choice of trees otherwise runs to the allowance. |
 | #1373 | Widen's fold misses a child class reached twice under an opened union. | **In 4c**, with the fold certificates that read the same `fold_cond`. |
 | #1195 | The fold certificate. | 4c closes it. |
@@ -6107,10 +8467,27 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    in the block as the certificate (P, ℓ, M), §2.12, so imported and same-module pairs alike.
 8. **Can S3b close with a core known limit?** On 4a, core's `Dict.removeMin` and `Dict.descend` are
    known limits (#1372). Before 4a, a limit in core always failed the corpus. *Recommendation:* no. S3b
-   closes only when core has no known limit (see #1372 above).
+   closes only when core has no known limit (see #1372 above). *Measured (2026-10-31):* 4d does not make
+   `removeMin` or `descend` pass. Their remaining cost is `propagate`'s walk by position, so #1465's F2,
+   with 4e's arm sets, is what is still needed (§2.3, *What the rule does not reach*). *Measured again
+   (2026-10-31, 4e):* arm sets and stable knot images change neither function's joined DAGs nor their
+   states. F2 probably makes `descend` pass. It does not make `removeMin` pass: walk 2 has 741
+   distinct sets of states at a position, about 180 000 records even with no signature split. So core
+   needs F2 and a decision on §2.3's question (b), *What 4e measured*. *Decided (b), 2026-11-01:* §2.9 *Fold first*, with #1526 first. *Revised the same day after #1535's review:*
+   `propagate` reads its state graph once, finds every fold from a cycle bit before it builds a position,
+   and builds each set of states once. The class memo (F2's) and the region memo are part of the rule. Both
+   are keyed by the set, which is complete when it is used. *Measured (prototype):* the corpus does not
+   change, every corpus call gives the reference's id, #1289's chain at 8 calls falls from 1 036 652 to
+   53 147 records, and walk 2's joins of `removeMin` fall from 7.3 M to 391 k. But `removeMin` and
+   `descend` stay limits. What is left is one read for each distinct state, and `removeMin`'s states grow
+   with its port (§2.3, #1372). So (b) alone does not make core checked, and S3b still cannot close on it.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
-   known limit names S4.
+   known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
+   exact, but it is not the fix. The two causes that remain (choices that projection and relabelling do
+   not flatten, and rounds that nest `res[*]` in place) involve no callback, `cb` label, `sep` or
+   `within`. So the known limit stays S3b's, owned by #1368. *Proposal (2026-10-31, §2.3 *A port keeps no
+   round that its last round covers*):* 4d fixes it in S3b. Neither the no-cycle fold nor S4 is needed.
 
 The review history sets concrete acceptance obligations, not a duration estimate:
 
@@ -6434,7 +8811,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 | Fixture (CK) | Requirement | Slice |
 |---|---|---|
 | DeepTupleDag (269) | R-7.2 | S3a |
-| MutualListField (279), WriteOneLevel (280), AliasWriterCall (284) | R-4.7.4, R-4.7.8, R-5.5.6 | S3b |
+| MutualListField (279), WriteOneLevel (280), AliasWriterCall (284) | R-4.7.4, R-4.7.8, R-5.5.6 | S3b (all three moved to `tests/corpus/ownership/`: MutualListField by 5c, WriteOneLevel by 4a, AliasWriterCall by 5e) |
 | PatternStoredBack (278), ExclusiveFreshHelper (275), UpdateReturnsHeld (277), AppliedLambdaRecursion (311), CyclicFold (296), NeedOuterOnly (294), EditAnsweredList (295), OnceOtherHolder (297), CalledTwicePusher (298), JoinedFunctionValue (301) | R-4.6.9, R-4.6.7, R-4.6.10, R-7.12, R-5.3.7, R-5.2.8, R-5.2.9, R-5.4.3, R-5.4.4, R-5.5.5 | S4 |
 | RecordSplitPushBack (264), RecordWriteBeforeKeep (272), RecordKeptInLiteral (273), RecordInnerKept (274), RecordWrapperRead (290), RecordProvenanceCallbackResult (291), RecordCopyOpen (309), RecordIndexExchange (283), ReturnedLambdaWrite (300), OnceLaterArgument (299), PrependFreshRecord (282) | R-4.6.9, R-4.8.11, R-4.8.12, R-4.8.14, R-4.10.4, R-4.8.17, R-5.4.9, R-5.4.5, R-4.4.3 | S5 |
 | ConduitEntryRecords (—), SendRecordObjects (305), ListenTopLevelStart (306), PushTagger (—), RecordForItem (262), RecordSchemaRun (271), RecordVariantMove (292), RecordProvenanceCtorValue (291), RecordProvenanceEntryPage (291), RecordProvenanceSameVariant (291), RecordProvenanceTopLevelOk (291), SchemaIssuesFresh (307), SchemaIssuesExclusive (293) | R-5.8.9, R-5.9.3, R-5.9.9, R-5.5.12, R-5.8.6, R-5.11.3, R-4.8.15, R-4.8.14, R-5.11.5, R-4.10.8 | S7 |
@@ -6565,32 +8942,32 @@ No row is excused by an unbuilt declaration when its slice closes.
 
 | Pair | Fixture | Required combination and control | Requirement | Slice |
 |---|---|---|---|---|
-| V×C | ViewCycleHolder | Match two levels of Rose and keep a lower rest/view while writing an on-cycle kids list it reaches: refuse alias/held-operand. Dead view and disjoint off-cycle List Int field accept. Repeat with mutual A/B and Maybe children. | R-4.5.1, R-4.7.1 | S3a, S3b |
-| V×R | ViewSplitStoredBack | Take an element, keep the rest, then store the element back before an inner write: refuse exclusive; editing the once-taken element while only the materialised remainder lives accepts under its original κ. Copying outer storage alone does not separate nested aliases. | R-4.5.3, R-4.6.9 | S3b, S4 |
-| V×L | ViewLinkedSnapshot | Return a linked singleton containing a view through an identity wrapper; a later read of its base refuses a base write. A dead view accepts. Same node at two cursors keeps each cursor, including a constraint under an empty projection. | R-4.5.1, R-4.6.4 | S3b |
-| V×J | ViewBranchJoin | Join a taken/rest view with an alias or a fresh copy in the other arm, then write/read the base after the join: alias alternative refuses; copies of the actually written storage accept. A sibling-arm-only read must not keep the writing arm live. | R-4.2.1, R-4.5.1 | S3b |
-| V×F | ViewFoldRoute | Fold a recursive value whose deeper view holds the written base: refuse even after identity κ relabelling and block decode. Fresh disjoint subtree accepts. Preserve fold steps and κ at unbuilt projections (#1129). | R-4.7.1, R-5.7.1 | S3a, S3b |
-| V×A | ViewCallArgument | Pass a view and its base as two touched arguments to a writer; refuse caller Disjoint. A reader before the write and a callee ignoring that subtree accept. Include view of an element below a recursive root. | R-4.3.5, R-5.1.5 | S3b |
+| V×C | ViewCycleHolder (S3b: `tests/corpus/ownership/ViewCycleHolder.beni`, `tests/corpus/ownership/ViewCycleHolderImported/`) | Match two levels of Rose and keep a lower rest/view while writing an on-cycle kids list it reaches: refuse alias/held-operand. Dead view and disjoint off-cycle List Int field accept. Repeat with mutual A/B and Maybe children. | R-4.5.1, R-4.7.1 | S3a, S3b |
+| V×R | ViewSplitStoredBack (S3b: `tests/corpus/ownership/ViewSplitStoredBack.beni`, `tests/corpus/ownership/ViewSplitStoredBackImported/`) | Take an element, keep the rest, then store the element back before an inner write: refuse exclusive; editing the once-taken element while only the materialised remainder lives accepts under its original κ. Copying outer storage alone does not separate nested aliases. | R-4.5.3, R-4.6.9 | S3b, S4 |
+| V×L | ViewLinkedSnapshot (S3b: `tests/corpus/ownership/ViewLinkedSnapshot.beni`, `tests/corpus/ownership/ViewLinkedSnapshotImported/`) | Return a linked singleton containing a view through an identity wrapper; a later read of its base refuses a base write. A dead view accepts. Same node at two cursors keeps each cursor, including a constraint under an empty projection. | R-4.5.1, R-4.6.4 | S3b |
+| V×J | ViewBranchJoin (S3b: `tests/corpus/ownership/ViewBranchJoin.beni`, `tests/corpus/ownership/ViewBranchJoinImported/`) | Join a taken/rest view with an alias or a fresh copy in the other arm, then write/read the base after the join: alias alternative refuses; copies of the actually written storage accept. A sibling-arm-only read must not keep the writing arm live. | R-4.2.1, R-4.5.1 | S3b |
+| V×F | ViewFoldRoute (S3b: `tests/corpus/ownership/ViewFoldRoute.beni`, `tests/corpus/ownership/ViewFoldRouteImported/`) | Fold a recursive value whose deeper view holds the written base: refuse even after identity κ relabelling and block decode. Fresh disjoint subtree accepts. Preserve fold steps and κ at unbuilt projections (#1129). | R-4.7.1, R-5.7.1 | S3a, S3b |
+| V×A | ViewCallArgument (S3b: `tests/corpus/ownership/ViewCallArgument.beni`, `tests/corpus/ownership/ViewCallArgumentImported/`) | Pass a view and its base as two touched arguments to a writer; refuse caller Disjoint. A reader before the write and a callee ignoring that subtree accept. Include view of an element below a recursive root. | R-4.3.5, R-5.1.5 | S3b |
 | V×G | ViewFeedback | A fold callback returns a view of its previous accumulator, with that view still held on the next write: refuse. Fresh accumulator/control accepts; solve feedback before deciding the loan/holder, not against round zero. | R-5.3.2, R-3.1 | S4 |
-| C×R | CycleSplitRefinement | Split level/below and elem/others across a mutual recursive boundary, write the taken path while a holder aliases through another refinement chain: refuse; a disjoint sibling and one traversal accept. Include nested splits whose canonical paths coincide. | R-4.7.1, R-4.7.4 | S3b, S4 |
-| C×L | CycleLinkRooting | Construct Node xs repeatedly and compare reads of xs alone and under each parent link; the cursor re-roots across recursive steps. Writing an element of linked xs = [r,r] refuses exclusive; xs = [r1,r2] with separately allocated children accepts. Shared versus exclusive siblings keep different κ. Just/Maybe and mutual constructors give the same result. | R-4.7.3, R-4.6.4 | S3a, S3b |
-| C×J | CycleJoinRank | K tower joins the same value at different depths: counts O(n log n), side certificates preserved. Starting from an exclusive seed, a recursive kids writer accepts at every tested height; starting with a kids list reused at two coexisting depths, the same write refuses exclusive. Choice alone must never make the seed repeated. A recast/cyclic graft is excluded from finite-rank memo unless effective rank is proved. Refused rank followed by a query from another owner cannot poison it. | R-4.7.5, R-7.2, R-7.12 | S3a, S3b |
-| C×F | CrossDepthKids | Use minimal, kidsPush, kidsSpread and onePush from #1125 comment 6430188411: folded kids κ must fail exclusivity (exact shared if the witness stays exact, otherwise approximate lost), including through singleton and spread construction. plainPush with separate kids allocations reads yes. Repeat at depths 1/2/6, and across mutual constructors. | R-4.7.5, R-3.1 | S3a, S3b |
-| C×A | RecursiveCallView | An identity/forwarding helper returns a recursive argument by reference. Writing a returned child while another argument/capture reaches it refuses; distinct children accept. A finite-rank template grafting a cyclic argument must not hit a route-independent memo incorrectly. | R-5.1.3, R-4.7.1 | S3b |
-| C×G | RecursiveSummaryGeneration | Mutual functions and local groups propagate a late-discovered alias or κ weakening through a result/supply/environment cycle. Final validation refuses the unsafe writer; a fresh invariant accepts. Reordering declarations, changing queue order and reusing a completed SCC give identical verdicts. | R-5.6.1, R-7.7 | S3b, S4 |
+| C×R | CycleSplitRefinement (S3b: `tests/corpus/ownership/CycleSplitRefinement.beni`, `tests/corpus/ownership/CycleSplitRefinementImported/`) | Split level/below and elem/others across a mutual recursive boundary, write the taken path while a holder aliases through another refinement chain: refuse; a disjoint sibling and one traversal accept. Include nested splits whose canonical paths coincide. | R-4.7.1, R-4.7.4 | S3b, S4 |
+| C×L | CycleLinkRooting (S3b: `tests/corpus/ownership/CycleLinkRooting.beni`, `tests/corpus/ownership/CycleLinkRootingImported/`) | Construct Node xs repeatedly and compare reads of xs alone and under each parent link; the cursor re-roots across recursive steps. Writing an element of linked xs = [r,r] refuses exclusive; xs = [r1,r2] with separately allocated children accepts. Shared versus exclusive siblings keep different κ. Just/Maybe and mutual constructors give the same result. | R-4.7.3, R-4.6.4 | S3a, S3b |
+| C×J | CycleJoinRank (S3b, the writer half: `tests/corpus/ownership/CycleJoinRankWriter.beni`, `tests/corpus/ownership/CycleJoinRankWriterImported/`; the counted half is 5d1's) | K tower joins the same value at different depths: counts O(n log n), side certificates preserved. Starting from an exclusive seed, a recursive kids writer accepts at every tested height; starting with a kids list reused at two coexisting depths, the same write refuses exclusive. Choice alone must never make the seed repeated. A recast/cyclic graft is excluded from finite-rank memo unless effective rank is proved. Refused rank followed by a query from another owner cannot poison it. | R-4.7.5, R-7.2, R-7.12 | S3a, S3b |
+| C×F | CrossDepthKids (S3b: `tests/corpus/ownership/CrossDepthKids.beni`, `tests/corpus/ownership/CrossDepthKidsImported/`) | Use minimal, kidsPush, kidsSpread and onePush from #1125 comment 6430188411: folded kids κ must fail exclusivity (exact shared if the witness stays exact, otherwise approximate lost), including through singleton and spread construction. plainPush with separate kids allocations reads yes. Repeat at depths 1/2/6, and across mutual constructors. | R-4.7.5, R-3.1 | S3a, S3b |
+| C×A | RecursiveCallView (S3b: `tests/corpus/ownership/RecursiveCallView.beni`, `tests/corpus/ownership/RecursiveCallViewImported/`) | An identity/forwarding helper returns a recursive argument by reference. Writing a returned child while another argument/capture reaches it refuses; distinct children accept. A finite-rank template grafting a cyclic argument must not hit a route-independent memo incorrectly. | R-5.1.3, R-4.7.1 | S3b |
+| C×G | RecursiveSummaryGeneration (S3b: `tests/corpus/ownership/RecursiveSummaryGeneration.beni`, `tests/corpus/ownership/RecursiveSummaryGenerationImported/`) | Mutual functions and local groups propagate a late-discovered alias or κ weakening through a result/supply/environment cycle. Final validation refuses the unsafe writer; a fresh invariant accepts. Reordering declarations, changing queue order and reusing a completed SCC give identical verdicts. | R-5.6.1, R-7.7 | S3b, S4 |
 | R×L | SplitSingletonRoot | Link a singleton [(xs,x)] after taking x from xs: retain lost/root obligation; [(a,b)] retains apart of arrivals. A fresh split under exclusive κ accepts. A missing built certificate and a recast member cannot acquire yes from the link. | R-4.6.1, R-4.6.9 | S3a, S4 |
 | R×J | SplitTraversalJoin | Join split cells from the same traversal versus two different entries, then run a writer. Same lineage/entry with single and container κ may accept; different entries or a recursive/many callback clear single and refuse. Include one branch containing the taken element twice. | R-4.6.2, R-5.4.2 | S4 |
-| R×F | RefinementFoldMultiplicity | Fold level/below refinements and a taken element stored at another depth: refuse the duplicate at the folded written path. Distinct one-traversal supplies retain their conditional proof. No newly merged self-pair may invent within. | R-4.6.9, R-4.7.5 | S3b, S4 |
-| R×A | SplitCallSupply | A wrapper receives the taken element and its container/remainder; demand checks use the initial argument and in-force refinement. Passing whole container plus the same element to a keeper refuses; only remainder plus a proven exclusive element accepts. Call substitution preserves lineage and entry. | R-4.5.3, R-5.2.1 | S3b, S4 |
+| R×F | RefinementFoldMultiplicity (S3b: `tests/corpus/ownership/RefinementFoldMultiplicity.beni`, `tests/corpus/ownership/RefinementFoldMultiplicityImported/`) | Fold level/below refinements and a taken element stored at another depth: refuse the duplicate at the folded written path. Distinct one-traversal supplies retain their conditional proof. No newly merged self-pair may invent within. | R-4.6.9, R-4.7.5 | S3b, S4 |
+| R×A | SplitCallSupply (S3b: `tests/corpus/ownership/SplitCallSupply.beni`, `tests/corpus/ownership/SplitCallSupplyImported/`) | A wrapper receives the taken element and its container/remainder; demand checks use the initial argument and in-force refinement. Passing whole container plus the same element to a keeper refuses; only remainder plus a proven exclusive element accepts. Call substitution preserves lineage and entry. | R-4.5.3, R-5.2.1 | S3b, S4 |
 | R×G | RefinementFeedbackTwice | FeedbackPrevTwice and the two-traversal C.11 twins remain refused after refinement folding. Positive: one traversal of exclusive xs edits each taken list once and returns it at its original position, without a previous-item carry or second traversal; the inner write accepts under xs's κ. A fold starting at [] whose callback only pushes the current item and returns the same accumulator accepts its storage write (not an element-exclusivity claim). An invariant may assume one traversal only when independently certified; the decided fold-element lost remains until verified. | R-5.3.2, R-3.1 | S4 |
-| L×J | LinkedJoinCertificate | Join [x] with [x], [x] with [x,x], and two distinct built members under their own snapshots. First stays one alternative; duplicate twin refuses exclusive; independent fresh members keep yes. Store κ below a leaf, recast and empty projection and require semantic inclusion from both operands. | R-4.6.2, R-4.6.4 | S3b, S4 |
-| L×F | LinkedFoldCoverage | Merge an exact fold with an uncertified built child linked at one route only: collapse reads lost. Two exact folds preserve coverage but new coexisting members still owe the multiset check. Identity-map/decode keeps steps and full fold obligations. | R-3.1, R-5.7.4 | S3a, S3b |
-| L×A | RepeatedPathCall | pair a b = (a,(a,b)), then call a helper writing .1.0 while .0 is live: refuse; copied .1.0 accepts. Both routes survive class read-off, a reference call view, printing and Block through the same multiset image (#1122); the printer may use an explicit shared reference but cannot silently omit a route. Also map two template nodes onto one argument and join their κ. | R-4.3.1, R-5.7.1 | S3b |
+| L×J | LinkedJoinCertificate (S3b: `tests/corpus/ownership/LinkedJoinCertificate.beni`, `tests/corpus/ownership/LinkedJoinCertificateImported/`) | Join [x] with [x], [x] with [x,x], and two distinct built members under their own snapshots. First stays one alternative; duplicate twin refuses exclusive; independent fresh members keep yes. Store κ below a leaf, recast and empty projection and require semantic inclusion from both operands. | R-4.6.2, R-4.6.4 | S3b, S4 |
+| L×F | LinkedFoldCoverage (S3b: `tests/corpus/ownership/LinkedFoldCoverage.beni`, `tests/corpus/ownership/LinkedFoldCoverageImported/`) | Merge an exact fold with an uncertified built child linked at one route only: collapse reads lost. Two exact folds preserve coverage but new coexisting members still owe the multiset check. Identity-map/decode keeps steps and full fold obligations. | R-3.1, R-5.7.4 | S3a, S3b |
+| L×A | RepeatedPathCall (S3b: `tests/corpus/ownership/RepeatedPathCall.beni`, `tests/corpus/ownership/RepeatedPathCallImported/`) | pair a b = (a,(a,b)), then call a helper writing .1.0 while .0 is live: refuse; copied .1.0 accepts. Both routes survive class read-off, a reference call view, printing and Block through the same multiset image (#1122); the printer may use an explicit shared reference but cannot silently omit a route. Also map two template nodes onto one argument and join their κ. | R-4.3.1, R-5.7.1 | S3b |
 | L×G | LinkedSupplyVersion | A callback supply is a linked singleton whose κ weakens after feedback; consumers must wake on the new immutable cursor. Duplicate-returning callback refuses; fresh per-invocation results accept. No cache hit from the earlier linked generation authorises the final write. | R-5.3.2, R-5.3.3 | S4 |
-| J×F | JoinFoldChoice | if c then Rose [x] else Rose [x] must not invent two simultaneous x occurrences. A value storing x at two coexisting depths must fail after the same widening. Carry shared alternatives through joins of exact/collapsed folds and a recast-union with distinct inner leaves. | R-4.2.1, R-4.7.5 | S3b |
-| J×A | JoinedCallContexts | Two calls of one template under different argument snapshots/supplies cannot share a κ memo; a join preserves each side certificate. A shared-returning actual refuses; fresh actual accepts. identity on a built argument with absent certificate stays lost. Include aliased arguments with no callee xreq. | R-5.1.1, R-5.1.5 | S3b, S4 |
+| J×F | JoinFoldChoice (S3b: `tests/corpus/ownership/JoinFoldChoice.beni`, `tests/corpus/ownership/JoinFoldChoiceImported/`) | if c then Rose [x] else Rose [x] must not invent two simultaneous x occurrences. A value storing x at two coexisting depths must fail after the same widening. Carry shared alternatives through joins of exact/collapsed folds and a recast-union with distinct inner leaves. | R-4.2.1, R-4.7.5 | S3b |
+| J×A | JoinedCallContexts (S3b: `tests/corpus/ownership/JoinedCallContexts.beni`, `tests/corpus/ownership/JoinedCallContextsImported/`) | Two calls of one template under different argument snapshots/supplies cannot share a κ memo; a join preserves each side certificate. A shared-returning actual refuses; fresh actual accepts. identity on a built argument with absent certificate stays lost. Include aliased arguments with no callee xreq. | R-5.1.1, R-5.1.5 | S3b, S4 |
 | J×G | JoinedClosurePorts | Join different code/ports and nested-class tables of unequal size, then call a writer from one arm: preserve every alternative/capture, refuse the shared twin. Equal-length differently ordered tables cannot pair by index. Add once-token aliases and mutually exclusive versus sequential calls. | R-5.4.2, R-5.5.5 | S4 |
-| F×A | FoldedWriteCall / FoldSymbolicCall / FoldedBCall | LevelPlacesKinds.demoRose at 64:5 refuses after viaKid merges W paths; LevelLimit.inline xs xs refuses via caller Disjoint even without xreq, and two discharges its recorded requirement. Also build a folded T with distinct list parameters a and b at different depths, instantiate both with xs, and run the recursive writer: refuse through the substituted apart obligation; separately copied list arguments accept. FoldedBCall below additionally checks a folded template against an entirely unfolded actual whose least common ancestor is a constructor. Distinct/copy twins accept; body-inline, wrapper and imported forms agree. | R-4.7.5, R-4.6.6, R-5.1.5 | S3b |
+| F×A | FoldedWriteCall / FoldSymbolicCall / FoldedBCall (S3b: `tests/corpus/ownership/FoldedWriteCall.beni`, `tests/corpus/ownership/FoldedWriteCallImported/`; `tests/corpus/ownership/FoldSymbolicCall.beni`, `tests/corpus/ownership/FoldSymbolicCallImported/`; `tests/corpus/ownership/FoldedBCall.beni`, `tests/corpus/ownership/FoldedBCallImported/`) | LevelPlacesKinds.demoRose at 64:5 refuses after viaKid merges W paths; LevelLimit.inline xs xs refuses via caller Disjoint even without xreq, and two discharges its recorded requirement. Also build a folded T with distinct list parameters a and b at different depths, instantiate both with xs, and run the recursive writer: refuse through the substituted apart obligation; separately copied list arguments accept. FoldedBCall below additionally checks a folded template against an entirely unfolded actual whose least common ancestor is a constructor. Distinct/copy twins accept; body-inline, wrapper and imported forms agree. | R-4.7.5, R-4.6.6, R-5.1.5 | S3b |
 | F×G | FoldCallbackIdentity | Compare two results of different fresh callback invocations versus one result returned twice, a captured result, and a feedback result re-returned. Only the independently proved fresh/taken cases accept; preserve within provenance and reject a proof cycle that just assumes itself. Folded accumulator cross-depth alias refuses. | R-5.2.2, R-5.3.2 | S4 |
 | A×G | CallFeedbackGeneration | A recursive helper returns a closure that calls a supplied function; changing supplies or capture κ must invalidate exactly its dependent call views. Fresh GrowFresh accepts; GrowAlias and RecursiveClassGrowth refuse their shared probes. Independent base and preservation checks run on one settled generation. | R-5.4.8, R-5.6.3 | S4 |
 

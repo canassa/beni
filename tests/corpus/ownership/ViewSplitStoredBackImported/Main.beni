@@ -1,0 +1,37 @@
+-- ownership (project): `ViewSplitStoredBack` with every callee in another
+-- module (ownership-v2.md Appendix B, V×R, the S3b half). An element
+-- stored back (`Lists.pushBack`) and then written by `Lists.incEach` is
+-- refused `exclusive`; the taken head edited while a copied remainder
+-- lives (`Lists.editTaken`) accepts over distinct lists and is refused
+-- over one list twice; a copy of the outer list alone does not separate
+-- its elements. v1 accepts `storedBack` (a known entry for v1, as #1478).
+import Lists
+
+
+pub storedBack : ⊤ → Int
+storedBack ⊤ = List.length (Lists.incEach (Lists.pushBack [ [ 1 ], [ 2 ] ]))
+
+
+pub notStoredBack : ⊤ → Int
+notStoredBack ⊤ = List.length (Lists.incEach [ [ 1 ], [ 2 ] ])
+
+
+pub takenDistinct : ⊤ → Int
+takenDistinct ⊤ =
+    ( l, _ ) = Lists.editTaken [ [ 1 ], [ 2 ] ]
+    List.length l
+
+
+pub takenShared : ⊤ → Int
+takenShared ⊤ =
+    r = [ 1 ]
+    ( l, _ ) = Lists.editTaken [ r, r ]
+    List.length l
+
+
+pub copiedOuter : List (List Int) → Int
+copiedOuter ys = List.length (Lists.incEach (List.copy ys)) + Lists.firstLength ys
+
+
+pub copiedOuterOnly : List (List Int) → Int
+copiedOuterOnly ys = List.length (Lists.incEach (List.copy ys))

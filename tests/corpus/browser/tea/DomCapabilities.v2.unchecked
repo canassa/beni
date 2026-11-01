@@ -1,0 +1,4 @@
+DomCapabilities run: lines 26-62 (not built: call)
+DomCapabilities update: lines 82-83 (not built: local)
+DomCapabilities view: lines 86-95 (not built: markup)
+DomCapabilities main: lines 101-107 (not built: lambda)

@@ -1,0 +1,110 @@
+-- ownership: a written position's own contents are not beside the write
+-- (ownership-v2.md §2.11 item 3, rule (b), #1492). An element bound to a
+-- name (`a = [ 1 ]`, a `List number`) stands at the literal's `[*]` as a
+-- place-only recast, whose projection below is a whole recast of the
+-- list: its reach holds the list's own cell. A value has no cycle, so
+-- that cell below the written list is the written list, not another
+-- path: `k [ a ]` and `elems [ ee, [ [ 2 ] ] ]` are accepted, as v1
+-- accepts them. Another position's contents still count: one list at
+-- two positions (`twice`, `elemsTwice`), a list held inside another
+-- element (`elemsShared`, `heldInside`) and a list read after the call
+-- (`readAgain`) are refused.
+type T a
+    = T (List (T a)) a
+
+
+k : List (List Int) → List (List Int)
+k rows =
+    case rows of
+        [ r ] →
+            [ List.push r 0 ]
+
+        _ →
+            []
+
+
+pub local : ⊤ → Int
+local ⊤ =
+    a = [ 1 ]
+    List.length (k [ a ])
+
+
+pub twice : ⊤ → Int
+twice ⊤ =
+    a = [ 1 ]
+    List.length (k [ a, a ])
+
+
+pub readAgain : ⊤ → Int
+readAgain ⊤ =
+    a = [ 1 ]
+    List.length (k [ a ]) + List.length a
+
+
+elems : List (List (List Int)) → List (List Int) × List Int
+elems ys =
+    case ys of
+        [ a, b ] →
+            case b of
+                [ c ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub elemsBound : ⊤ → Int
+elemsBound ⊤ =
+    ee = [ [ 1 ] ]
+    ( l, _ ) = elems [ ee, [ [ 2 ] ] ]
+    List.length l
+
+
+pub elemsShared : ⊤ → Int
+elemsShared ⊤ =
+    em = []
+    ( l, _ ) = elems [ em, [ em ] ]
+    List.length l
+
+
+pub elemsTwice : ⊤ → Int
+elemsTwice ⊤ =
+    ee = [ [ 1 ] ]
+    ( l, _ ) = elems [ ee, ee ]
+    List.length l
+
+
+-- `kT` writes its first element and answers the second's kids, which
+-- may hold the first.
+kT : List (List (T Int)) → List (List (T Int)) × List (T Int)
+kT rows =
+    case rows of
+        [ r, s ] →
+            case s of
+                [ T kids _ ] →
+                    ( [ List.push r (T [] 0) ], kids )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub heldInside : ⊤ → Int
+heldInside ⊤ =
+    m = [ T [] 1 ]
+    n = [ T m 2 ]
+    ( l, _ ) = kT [ m, n ]
+    List.length l
+
+
+pub heldApart : ⊤ → Int
+heldApart ⊤ =
+    m = [ T [] 1 ]
+    n = [ T [ T [] 3 ] 2 ]
+    ( l, _ ) = kT [ m, n ]
+    List.length l

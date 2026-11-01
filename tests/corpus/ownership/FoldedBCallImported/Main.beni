@@ -4,8 +4,8 @@
 -- are the same-module fixture's: `shared`, `viaHelper` and `viaWrapper`
 -- hand `incAll` `k` at `.0[*].0` and at `.1[*].0` and are refused;
 -- `distinct` is accepted; `chosen`, `k` in one placement or the other, is
--- refused by v1. Under v2 `distinct` is refused until #1253, and `Walk`'s
--- `incAll b` until 4c, as in `FoldedBCall` (known entries).
+-- refused by v1 and accepted by v2 (#1439). Under v2 `distinct` is refused
+-- until #1253, and `Walk`'s `incAll b` until 4c (known entries).
 import Walk exposing (B)
 
 

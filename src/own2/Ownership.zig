@@ -1,4 +1,4 @@
-//! L15: the facade of the ownership checker v2 (`docs/design/ownership-v2.md`
+//! L16: the facade of the ownership checker v2 (`docs/design/ownership-v2.md`
 //! §5): check the modules it is handed (`Groups`), and say what each found
 //! as report lines (`Message`, `Report`). The caller — `Enforce`'s hook, the
 //! dump — prepares each module's inputs.
@@ -167,7 +167,14 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 } else if (text.len != 0) try others.append(arena, text);
             }
         }
-        const block: ?[]const u8 = if ((in.publish or in.format_summaries) and limits == 0) try publish(gpa, arena, in.names, mod) else null;
+        var unpublished: ?[]const u8 = null;
+        const block: ?[]const u8 = if ((in.publish or in.format_summaries) and limits == 0) try publish(gpa, arena, in.names, mod, &unpublished) else null;
+        // A block not written for a limit is that limit, said (never a silent
+        // missing block, #1450): its importers read none of its classes.
+        if (unpublished) |why| {
+            limits += 1;
+            try others.append(arena, try std.fmt.allocPrint(arena, "limit block: {s} (the module's summaries are not published)", .{why}));
+        }
         // The dump names the block by its size and a hash of its bytes: what
         // the determinism tests compare across job counts (rule 5).
         if (in.format_summaries) if (block) |b| try others.append(arena, try std.fmt.allocPrint(arena, "block: {d} bytes, hash {x:0>16}", .{ b.len, std.hash.Wyhash.hash(0, b) }));
@@ -262,7 +269,7 @@ const Strings = struct {
 /// may apply it, which a walk past a limit or left unbuilt may not (§2.11,
 /// S3b slice 3) — then `Block.write`'s words. Bytes in `arena`; null when a
 /// class could not be written (an owner past its limits).
-pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Module) Allocator.Error!?[]const u8 {
+pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Module, why: *?[]const u8) Allocator.Error!?[]const u8 {
     var classes: std.ArrayList(Ids.ClassId) = .empty;
     defer classes.deinit(gpa);
     var decls: std.ArrayList(u32) = .empty;
@@ -272,7 +279,10 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
         if (!d.is_pub or !d.kind.isValue()) continue;
         const c = (Groups.declaredClass(mod, @intCast(di)) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
-            else => return null,
+            else => {
+                why.* = try limitText(arena, mod);
+                return null;
+            },
         }) orelse continue;
         try classes.append(gpa, c);
         try decls.append(gpa, @intCast(di));
@@ -287,7 +297,10 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
     defer words.deinit(gpa);
     Block.write(mod.env(), &mod.sums, classes.items, block_names, &words) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        else => return null,
+        else => {
+            why.* = try limitText(arena, mod);
+            return null;
+        },
     };
     if (s.failed) return error.OutOfMemory;
     var out: std.ArrayList(u32) = .empty;
@@ -301,4 +314,14 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
     try out.appendSlice(arena, dir.items);
     try out.appendSlice(arena, words.items);
     return std.mem.sliceAsBytes(out.items);
+}
+
+/// Why the module's block was not written: the limit its account met.
+fn limitText(arena: Allocator, mod: *Groups.Module) Allocator.Error![]const u8 {
+    const f = mod.base_account.failed orelse return "ownership_summary_size";
+    return switch (f) {
+        .exhausted => "ownership_summary_size",
+        .limit => |l| try std.fmt.allocPrint(arena, "{t}", .{l}),
+        .invariant => |l| try std.fmt.allocPrint(arena, "ownership_accounting_invariant ({t} lane of atom {d}, {t})", .{ l.role, l.atom, l.phase }),
+    };
 }

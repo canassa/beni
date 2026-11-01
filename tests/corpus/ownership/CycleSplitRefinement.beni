@@ -1,0 +1,103 @@
+-- ownership: splits across a mutual recursive boundary, through calls
+-- (ownership-v2.md Appendix B, C×R, the S3b half; R-4.7.1, R-4.7.4). `A`
+-- holds `B`s that hold `A`s again. A constructor match is a level/below
+-- split and a list pattern an elem/others one. `twoChains` matches one
+-- value twice and writes the label of the `A` one chain took while the
+-- other chain's `y`, the same `A`, lives: refused. The controls accept: the
+-- taken `A`'s siblings held (`siblingsHeld`), the next position of a
+-- nested split, whose canonical path is the taken one's (`nestedSplit`),
+-- and one traversal of a `P`/`Q` value (`traversed`). One list at two
+-- depths (`traversedShared`) is refused. v1 accepts `twoChains` (a known
+-- entry for v1) and refuses `nestedSplit` (v2 keeps the positions apart).
+type A
+    = A (List Int) (List B)
+
+
+type B
+    = B (List A)
+
+
+pushLabel : A → A
+pushLabel a =
+    case a of
+        A l bs →
+            A (List.push l 1) bs
+
+
+pub twoChains : A → A × A
+twoChains a =
+    case a of
+        A _ [ B [ x, …_ ], …_ ] →
+            case a of
+                A _ [ B [ y, …_ ], …_ ] →
+                    ( pushLabel x, y )
+
+                _ →
+                    ( a, a )
+
+        _ →
+            ( a, a )
+
+
+pub siblingsHeld : A → A × List A
+siblingsHeld a =
+    case a of
+        A _ [ B [ x, …others ], …_ ] →
+            ( pushLabel x, others )
+
+        _ →
+            ( a, [] )
+
+
+pub nestedSplit : A → A × A
+nestedSplit a =
+    case a of
+        A _ [ B [ x, …r1 ], …_ ] →
+            case r1 of
+                [ z, …_ ] →
+                    ( pushLabel x, z )
+
+                [] →
+                    ( a, a )
+
+        _ →
+            ( a, a )
+
+
+-- One traversal across a mutual boundary through `Maybe` (the `A`/`B`
+-- list writers are #1372's loud groups).
+type P
+    = P (List Int) (Maybe Q)
+
+
+type Q
+    = Q P
+
+
+incP : P → P
+incP p =
+    case p of
+        P l m →
+            case m of
+                Just q →
+                    P (List.push l 1) (Just (incQ q))
+
+                Nothing →
+                    P (List.push l 1) Nothing
+
+
+incQ : Q → Q
+incQ q =
+    case q of
+        Q p →
+            Q (incP p)
+
+
+pub traversed : ⊤ → P
+traversed ⊤ = incP (P [] (Just (Q (P [] Nothing))))
+
+
+pub traversedShared : ⊤ → P
+traversedShared ⊤ =
+    l = [ 1 ]
+    incP (P l (Just (Q (P l Nothing))))

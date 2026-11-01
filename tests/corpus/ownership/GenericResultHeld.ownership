@@ -1,0 +1,24 @@
+module GenericResultHeld
+  33:10 List.push l0: rejected later-use: l0 is read again at 34:5
+  40:10 List.push l0: rejected later-use: l0 is read again at 41:5
+  47:12 construction l0: rejected later-use: l0 is read again at 48:5
+  54:10 List.push l0: rejected later-use: l0 is read again at 55:5
+  61:12 construction l0: rejected later-use: l0 is read again at 62:5
+  68:10 List.push l0: rejected later-use: l0 is read again at 69:5
+  75:10 List.push l0: rejected later-use: l0 is read again at 81:13
+  87:5 List.push l0: accepted call
+  summary wrap: π1 RA; res [*] π1, fresh1{excl π1}r{excl π1}
+  summary idt: π1 RA; res π1
+  summary two: π1 RA, π2 RA; res [*] condition(fresh2) π1 π2, fresh1{excl π1, excl π2, sep π1 π2}r{excl π1, excl π2, sep π1 π2}
+  summary one: res fresh1
+  summary mono: res .0 fresh1 ~condition(fresh4), .1 condition(fresh5) fresh1, .1[*] ~condition(fresh2) ~fresh2, condition(fresh3){shared}
+  summary push: π1 RA; res .0 fresh1{excl π1} ~condition(fresh4), .0[*] ~condition(fresh7) π1, .1 condition(fresh5) fresh1{excl π1}, .1[*] condition(fresh6) ~condition(fresh2) ~fresh2{excl π1} π1, condition(fresh3){shared}
+  summary spread: π1 RA; res .0 condition(fresh4) fresh2{excl π1}, .0[*] condition(fresh7) fresh1, .1 condition(fresh5) fresh2{excl π1}, .1[*] condition(fresh6) fresh1 π1, condition(fresh3){shared}r{shared}
+  summary nested: res .0 fresh1 ~condition(fresh4), .1 condition(fresh5) fresh1, .1[*] ~condition(fresh2) ~fresh2, condition(fresh3){shared}
+  summary nestedPair: π1 RA; res .0 fresh2{excl π1} ~condition(fresh6), .0[*] condition(fresh3) ~condition(fresh9) ~fresh1 ~π1, .1 fresh2{excl π1} ~condition(fresh7), .1[*] condition(fresh3) fresh4 ~condition(fresh8) ~fresh1 ~π1, condition(fresh5){shared}
+  summary inRecord: res .a fresh1 ~condition(fresh4), .c condition(fresh5) fresh1, .c[*] ~condition(fresh2) ~fresh2, condition(fresh3){shared} fresh501◦
+  summary inArm: unused
+  summary pushOnce: res [*] ~fresh2, fresh1
+  demands 8: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 8: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause later-use 7

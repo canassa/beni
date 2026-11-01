@@ -46,6 +46,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const stamped = @import("../stamped.zig");
+const Stable = @import("Stable.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const OverId = Ids.OverId;
@@ -91,6 +92,12 @@ pub const Table = struct {
     overs: std.MultiArrayList(OverNode) = .empty,
     over_intern: Ids.FixedDict(4) = .{},
     memo_proj: Ids.FixedDict(2) = .{},
+    /// The projection correspondence (§2.9 *Keyed where a reader looks*): a
+    /// union, choice or positions node that `proj` made as the projection of
+    /// a DAG node → the head of its origins in `proj_origins`, each `(that
+    /// node, the step's word, the next origin)` (`projectedImage`).
+    proj_origin: Ids.FixedDict(1) = .{},
+    proj_origins: std.ArrayList([3]u32) = .empty,
     memo_join: Ids.FixedDict(3) = .{},
     memo_leq: Ids.FixedDict(2) = .{},
     /// `leq`'s answers that rest on a coinductive assumption of the query
@@ -132,6 +139,8 @@ pub const Table = struct {
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
+    /// Stable images (§2.3, 4e): the graphs met by canonical form, and `map`'s trail.
+    stable: Stable.Store = .{},
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
     named_memo: stamped.Column(NodeId, [2]u32) = .{},
     named_pool: std.ArrayList(u32) = .empty,
@@ -190,6 +199,22 @@ pub const Table = struct {
     memo_dag_members: Ids.FixedDict(2) = .{},
     dag_members_ties: Ids.FixedDict(2) = .{},
     track_relevance: bool = false,
+    /// §2.3 *Saturation at two*: the positions nodes `positions` made
+    /// (`counted`, a bit of each node's record), and their count maps once
+    /// asked for, by node, an index into `member_maps` (the members' keys and
+    /// those met twice, sets over `member_sets`).
+    counted: std.DynamicBitSetUnmanaged = .{},
+    /// Per node, for `reach` (0) and `arrivals` (1): whether its settled set
+    /// may not hold the node's `cellsOf` (`Reach.short`, #1467).
+    reach_short: [2]std.DynamicBitSetUnmanaged = .{ .{}, .{} },
+    member_counts: Ids.FixedDict(1) = .{},
+    member_maps: std.ArrayList([2]SetId) = .empty,
+    member_sets: Cell.Radix = .{ .category = .memo },
+    /// The counted nodes each rebuild dropped, by the node it returned, a list
+    /// through `drop_links` (`node`, `next`): what a construction carries
+    /// entries from and the read machine checks (§2.3 *Saturation at two*).
+    drop_head: Ids.FixedDict(1) = .{},
+    drop_links: std.ArrayList([2]u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.reach_pool.deinit(gpa);
@@ -203,6 +228,8 @@ pub const Table = struct {
         t.overs.deinit(gpa);
         t.over_intern.deinit(gpa);
         t.memo_proj.deinit(gpa);
+        t.proj_origin.deinit(gpa);
+        t.proj_origins.deinit(gpa);
         t.memo_join.deinit(gpa);
         t.memo_leq.deinit(gpa);
         t.leq_provisional.deinit(gpa);
@@ -240,6 +267,14 @@ pub const Table = struct {
         t.born.deinit(gpa);
         t.memo_dag_members.deinit(gpa);
         t.dag_members_ties.deinit(gpa);
+        t.member_counts.deinit(gpa);
+        t.counted.deinit(gpa);
+        for (&t.reach_short) |*b| b.deinit(gpa);
+        t.member_maps.deinit(gpa);
+        t.member_sets.deinit(gpa);
+        t.drop_head.deinit(gpa);
+        t.drop_links.deinit(gpa);
+        t.stable.deinit(gpa);
     }
 
     pub fn count(t: *const Table) u32 {
@@ -532,6 +567,16 @@ pub const Table = struct {
     pub fn isNothing(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!bool {
         const x = try t.force(gpa, account, n);
         return t.kind(x) == .leaf and t.cells(x) == .none;
+    }
+
+    /// An atom (§2.3 *The atom rule*, #1483): no cell and no part, a nullary
+    /// constructor (`Leaf`) or the empty leaf. It holds no list, so it is no
+    /// member of any class of `widen`'s quotient: interned, one atom stands
+    /// at every path that holds it, and as a member it united those paths'
+    /// classes (the root's `xs` of `Node l xs r` became every level's).
+    pub fn isAtom(t: *const Table, n: NodeId) bool {
+        const d = t.get(n);
+        return d.cells == .none and (d.kind == .leaf or (d.kind == .node and d.a == over_none));
     }
 
     /// The empty value at `at`: provably no cell (§2.3).
@@ -1337,8 +1382,9 @@ pub const Table = struct {
     }
 
     /// `collect(n₁…nₖ)` (§2.3): a built value's elements under `[*]` as a
-    /// balanced `positions` DAG — never deduplicated or absorbed: the same
-    /// node on both sides is two positions, which κ reads as `shared`. One
+    /// balanced `positions` DAG — never deduplicated or absorbed below two
+    /// occurrences (*Saturation at two*, `positions`): the same node on both
+    /// sides is two positions, which κ reads as `shared`. One
     /// element is itself, so `[ x ]` joined with `[ x ]` stays one position.
     /// `collect` with the root's cell set its caller accumulated by one
     /// insertion per item, on the item's lane (§2.3, §4.1, #1098): the
@@ -1446,23 +1492,214 @@ pub const Table = struct {
         t.ties +%= 1;
     }
 
-    /// Two positions at one place (`collect`'s node, `proj`'s image of one).
+    /// Two positions at one place (`collect`'s node, `proj`'s image of one,
+    /// `without`'s and `eager`'s rebuilds), each member at most twice (§2.3
+    /// *Saturation at two*): when a member would occur three times or more,
+    /// the balanced tree over the members in first-occurrence order, each
+    /// once or twice.
     fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
         const before = t.nodes.len;
-        const out = try t.positionsMake(gpa, account, cellsets, l, r);
+        // A side that is nothing (an empty leaf) is no position: no object
+        // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
+        // `[*]` past the empty list is `x`'s alone, not a new node per level.
+        const nothing_side: ?NodeId = if (try t.isNothing(gpa, account, r)) l else if (try t.isNothing(gpa, account, l)) r else null;
+        if (nothing_side) |out| {
+            try t.joinBases(gpa, account, out, &.{ l, r }, before);
+            return out;
+        }
+        // The count maps' test and the rebuild are a task of their own, never
+        // the caller's lane (a lane of `collect` holds only its item's
+        // constant work, §4.1). Two sides that are members alone cannot lose
+        // one: their test reads nothing.
+        const lost = if (!t.isCounted(l) and !t.isCounted(r)) false else blk: {
+            const task = try account.enter(gpa, null);
+            defer account.leave(task);
+            break :blk try t.losesOne(gpa, account, l, r);
+        };
+        if (lost) {
+            const out = try t.saturate(gpa, account, cellsets, l, r);
+            try t.joinBases(gpa, account, out, &.{ l, r }, before);
+            return out;
+        }
+        // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
+        const out = try t.make(gpa, account, .{ .kind = .positions, .place = t.joinPlace(l, r), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
+        // A node made here is counted, from its birth and never later: a
+        // positions node another reader made (`map`'s, a view's expansion's,
+        // a knot's) is not, and stays one member to a parent. The mark is a
+        // bit of the node's record; its count map is made when a parent asks.
+        if (out.int() >= before) {
+            try t.counted.resize(gpa, t.nodes.len, false);
+            t.counted.set(out.int());
+        }
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
         return out;
     }
 
-    fn positionsMake(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
-        // A side that is nothing (an empty leaf) is no position: no object
-        // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
-        // `[*]` past the empty list is `x`'s alone, not a new node per level.
-        if (try t.isNothing(gpa, account, r)) return l;
-        if (try t.isNothing(gpa, account, l)) return r;
-        _ = cellsets;
-        // Its cells are lazy (`cellsOf`): what its sides hold, built on request.
-        return t.make(gpa, account, .{ .kind = .positions, .place = t.joinPlace(l, r), .cells = lazy_cells, .a = l.int(), .b = r.int(), .reach = .none });
+    /// Whether `positions` made `n`: a node whose members a parent counts
+    /// (§2.3 *Saturation at two*). Every other node is one member.
+    fn isCounted(t: *const Table, n: NodeId) bool {
+        return n.int() < t.counted.bit_length and t.counted.isSet(n.int());
+    }
+
+    /// The members `n` stands for as a side, as `(keys, twice)` sets over
+    /// `member_sets`: a counted node's count map, or `n` alone.
+    fn sideCounts(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![2]SetId {
+        if (t.isCounted(n)) return t.countMap(gpa, account, n);
+        return .{ try t.member_sets.insert(gpa, .growth(account), .none, n.int(), 1), .none };
+    }
+
+    /// A counted node's count map, member → `{once, twice}` as the members
+    /// (`keys`) and those met twice or more (`twice`), memoised per node and
+    /// made on request, its counted sides first on an explicit stack. A
+    /// parent's map is its sides' merged by saturating sum (§2.3 *Cost*):
+    /// identical subtrees are skipped by identity, so a merge pays for its
+    /// changed spine. A record per map made.
+    fn countMap(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![2]SetId {
+        if (t.member_counts.get(.{n.int()})) |i| return t.member_maps.items[i];
+        const Frame = struct { node: NodeId, expanded: bool };
+        var stack: std.ArrayList(Frame) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, .{ .node = n, .expanded = false });
+        while (stack.pop()) |f| {
+            if (t.member_counts.get(.{f.node.int()}) != null) continue;
+            const d = t.get(f.node);
+            if (!f.expanded) {
+                try stack.append(gpa, .{ .node = f.node, .expanded = true });
+                for ([_]u32{ d.a, d.b }) |s| if (t.isCounted(.from(s)) and t.member_counts.get(.{s}) == null) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
+                continue;
+            }
+            const m = try t.mergeCounts(gpa, account, .from(d.a), .from(d.b));
+            try account.reserve(.memo, 1);
+            (try t.member_counts.getOrPut(gpa, .{f.node.int()})).value_ptr.* = @intCast(t.member_maps.items.len);
+            try t.member_maps.append(gpa, m);
+        }
+        return t.member_maps.items[t.member_counts.get(.{n.int()}).?];
+    }
+
+    /// The count map of `positions(l, r)`: the keys' union, and twice what
+    /// either side holds twice or both hold.
+    fn mergeCounts(t: *Table, gpa: Allocator, account: *Account, l: NodeId, r: NodeId) Error![2]SetId {
+        const sets = &t.member_sets;
+        const g: Ids.Charge = .growth(account);
+        const cl = try t.sideCounts(gpa, account, l);
+        const cr = try t.sideCounts(gpa, account, r);
+        const both = try sets.intersection(gpa, g, cl[0], cr[0]);
+        return .{ try sets.unionWith(gpa, g, cl[0], cr[0]), try sets.unionWith(gpa, g, try sets.unionWith(gpa, g, cl[1], cr[1]), both) };
+    }
+
+    /// Whether `positions(l, r)` would hold a member three times: one side
+    /// holds it twice and the other holds it. A side that is one member is
+    /// looked up in the other's `twice`.
+    fn losesOne(t: *Table, gpa: Allocator, account: *Account, l: NodeId, r: NodeId) Error!bool {
+        const sets = &t.member_sets;
+        if (!t.isCounted(r)) return sets.member((try t.countMap(gpa, account, l))[1], r.int());
+        if (!t.isCounted(l)) return sets.member((try t.countMap(gpa, account, r))[1], l.int());
+        const g: Ids.Charge = .growth(account);
+        const cl = try t.countMap(gpa, account, l);
+        const cr = try t.countMap(gpa, account, r);
+        return try sets.intersects(gpa, g, cl[1], cr[0]) or try sets.intersects(gpa, g, cl[0], cr[1]);
+    }
+
+    /// `positions(l, r)` with a member met three times or more: the
+    /// balanced positions tree over its members in left-to-right order of
+    /// first occurrence, each met twice or more twice (§2.3 *Saturation at
+    /// two*). Charged as a task of its own. Each counted node of the sides
+    /// is read once, so the work is the sides' distinct structure.
+    fn saturate(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        const task = try account.enter(gpa, null);
+        defer account.leave(task);
+        const twice = (try t.mergeCounts(gpa, account, l, r))[1];
+        const seen = try t.marks.take(gpa);
+        defer t.marks.give(seen);
+        // The counted nodes read, for the κ-home check (`recordDropped`).
+        var read: std.ArrayList(NodeId) = .empty;
+        defer read.deinit(gpa);
+        var order: std.ArrayList(NodeId) = .empty;
+        defer order.deinit(gpa);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.appendSlice(gpa, &.{ r, l });
+        while (stack.pop()) |n| {
+            if ((try seen.getOrPut(gpa, n)).found_existing) continue;
+            try account.reserve(.shape, 1);
+            if (t.isCounted(n)) {
+                try read.append(gpa, n);
+                const d = t.get(n);
+                try stack.appendSlice(gpa, &.{ .from(d.b), .from(d.a) });
+                continue;
+            }
+            try order.append(gpa, n);
+            if (t.member_sets.member(twice, n.int())) try order.append(gpa, n);
+        }
+        const out = try t.collect(gpa, account, cellsets, order.items);
+        try t.recordDropped(gpa, account, read.items, out);
+        return out;
+    }
+
+    /// The counted nodes a rebuild read that its tree `out` does not hold,
+    /// kept under `out` (`dropsOf`), a record each: what a construction
+    /// carries their snapshot entries from (§2.3 *Saturation at two*, *The
+    /// entries of a dropped node*) and what the read machine checks.
+    fn recordDropped(t: *Table, gpa: Allocator, account: *Account, read: []const NodeId, out: NodeId) Error!void {
+        const kept = try t.marks.take(gpa);
+        defer t.marks.give(kept);
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, out);
+        while (stack.pop()) |n| {
+            if ((try kept.getOrPut(gpa, n)).found_existing) continue;
+            if (!t.isCounted(n)) continue;
+            try account.reserve(.shape, 1);
+            const d = t.get(n);
+            try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) });
+        }
+        for (read) |n| if (!kept.contains(n)) {
+            try account.reserve(.memo, 1);
+            const head = try t.drop_head.getOrPut(gpa, .{out.int()});
+            if (!head.found_existing) head.value_ptr.* = Ids.none_int;
+            try t.drop_links.append(gpa, .{ n.int(), head.value_ptr.* });
+            head.value_ptr.* = @intCast(t.drop_links.items.len - 1);
+        };
+    }
+
+    /// The nodes the rebuilds that returned `n` dropped (`recordDropped`).
+    pub const Drops = struct {
+        t: *const Table,
+        at: u32,
+
+        pub fn next(it: *Drops) ?NodeId {
+            if (it.at == Ids.none_int) return null;
+            const l = it.t.drop_links.items[it.at];
+            it.at = l[1];
+            return .from(l[0]);
+        }
+    };
+
+    pub fn dropsOf(t: *const Table, n: NodeId) Drops {
+        return .{ .t = t, .at = t.drop_head.get(.{n.int()}) orelse Ids.none_int };
+    }
+
+    /// Every node a rebuild of `n` dropped, and what a dropped node that a
+    /// rebuild returned dropped in turn, each once, appended to `out`: the
+    /// counted nodes of the tree the constructors would have made that `n`
+    /// does not hold. A record per node.
+    pub fn dropsClosure(t: *Table, gpa: Allocator, account: *Account, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        if (t.drop_head.get(.{n.int()}) == null) return;
+        const seen = try t.marks.take(gpa);
+        defer t.marks.give(seen);
+        for (out.items) |x| try seen.put(gpa, x, {});
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, n);
+        while (stack.pop()) |x| {
+            var it = t.dropsOf(x);
+            while (it.next()) |d| {
+                if ((try seen.getOrPut(gpa, d)).found_existing) continue;
+                try account.reserve(.memo, 1);
+                try out.append(gpa, d);
+                try stack.append(gpa, d);
+            }
+        }
     }
 
     /// How many arms `n`'s choice DAG has, an arm counted once per route,
@@ -1579,6 +1816,13 @@ pub const Table = struct {
     pub fn setProj(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
         try account.reserve(.memo, 1);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = m.int();
+        try t.noteOrigin(gpa, account, n, s, m);
+    }
+
+    /// `m`, decoded as the projection of `n` at `s` (`BlockRead`), takes that
+    /// origin as one `proj` made does (§2.9 *Keyed where a reader looks*).
+    pub fn noteOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        return t.addOrigin(gpa, account, n, s, m);
     }
 
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
@@ -1613,6 +1857,16 @@ pub const Table = struct {
         return if (hit == Ids.none_int) null else NodeId.from(hit);
     }
 
+    /// Whether view `v` projects at `s` to the view of its template's
+    /// projection: a union or choice template (a join's) at the view's own
+    /// place with the step, where a call relabels a join's κ (§2.9 *Keyed
+    /// where a reader looks*). Elsewhere it projects as its answer does (#1350).
+    fn viewProjectsTemplate(t: *const Table, places: *const Place.Table, v: NodeId, s: Step) bool {
+        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        if (!isJoinKind(t.kind(template))) return false;
+        return t.place(v) == t.place(template) and places.child(t.place(template), s) != null;
+    }
+
     /// The nodes `n`'s projection at `s` reads the projections of.
     fn projBelow(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, stack: anytype, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
@@ -1620,8 +1874,10 @@ pub const Table = struct {
             .recast => if (try t.recastPart(gpa, account, places, n, s)) |inner| try stack.append(gpa, .{ .node = inner, .expanded = false }),
             .delta => if (t.overGet(d.b, s) == null) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }),
             .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .{ .node = .from(d.a), .expanded = false }, .{ .node = .from(d.b), .expanded = false } }),
-            // A view projects as its answer does.
-            .view => try stack.append(gpa, .{ .node = try t.force(gpa, account, n), .expanded = false }),
+            // A view projects as its answer does; the view of a DAG template
+            // projects to the view of the template's projection, the node a
+            // call's κ is keyed on (§2.9 *Keyed where a reader looks*).
+            .view => if (t.viewProjectsTemplate(places, n, s)) try stack.append(gpa, .{ .node = .from(d.a), .expanded = false }) else try stack.append(gpa, .{ .node = try t.force(gpa, account, n), .expanded = false }),
             else => {},
         }
     }
@@ -1649,6 +1905,15 @@ pub const Table = struct {
         // A view projects as its answer does, whose place may have a step
         // the template's has not: the actual at a type variable's place
         // (§2.11 *Re-rooting at a parameter*, #1350).
+        if (d.kind == .view and t.viewProjectsTemplate(places, n, s)) {
+            const tp: NodeId = .from(t.memo_proj.get(.{ d.a, s.word() }).?);
+            const out = try t.view(gpa, account, tp, d.b);
+            // A call relabels a join's entry onto this view, which no part of the
+            // caller's value names: its origin carries it on (§2.9).
+            try t.addOrigin(gpa, account, n, s, out);
+            (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
+            return;
+        }
         if (d.kind == .view) {
             const hit = t.memo_proj.get(.{ t.memo_force.get(n).?.int(), s.word() }).?;
             (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = hit;
@@ -1696,7 +1961,58 @@ pub const Table = struct {
             .delta, .view => false,
         };
         if (made) try t.addConstruction(gpa, account, out, &.{n}, out.int() >= before);
+        // A DAG made as a DAG's projection may be no part of any value: a
+        // transport finds it through its origins (§2.9 *Keyed where a reader looks*).
+        try t.addOrigin(gpa, account, n, s, out);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = out.int();
+    }
+
+    /// A union or a choice: the kinds a join of alternatives makes (§2.3).
+    fn isJoinKind(k: Kind) bool {
+        return k == .@"union" or k == .choice;
+    }
+
+    /// A union or a choice, or a call's view of one: what a join of
+    /// alternatives keys, and what its projections' origins name (§2.9
+    /// *Keyed where a reader looks*).
+    pub fn isJoinNode(t: *const Table, n: NodeId) bool {
+        const k = t.kind(n);
+        if (k == .view) return isJoinKind(t.kind(.from(t.nodes.items(.a)[n.int()])));
+        return isJoinKind(k);
+    }
+
+    /// `m`, the projection of DAG `n` at `s`, takes that origin, each of a DAG's
+    /// kept, the latest first (§2.9 *Keyed where a reader looks*).
+    fn addOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        if (!t.isJoinNode(n) or !t.isJoinNode(m)) return;
+        try account.reserve(.memo, 1);
+        const got = try t.proj_origin.getOrPut(gpa, .{m.int()});
+        const next: u32 = if (got.found_existing) got.value_ptr.* else Ids.none_int;
+        var i = next;
+        while (i != Ids.none_int) : (i = t.proj_origins.items[i][2]) {
+            if (t.proj_origins.items[i][0] == n.int() and t.proj_origins.items[i][1] == s.word()) return;
+        }
+        got.value_ptr.* = @intCast(t.proj_origins.items.len);
+        try t.proj_origins.append(gpa, .{ n.int(), s.word(), next });
+    }
+
+    /// Whether DAG node `n` is the projection of a DAG node (§2.9 *Keyed
+    /// where a reader looks*).
+    pub fn hasOrigin(t: *const Table, n: NodeId) bool {
+        return t.proj_origin.get(.{n.int()}) != null;
+    }
+
+    /// Where `n`'s origins start: its own, or, for a call's view of a node
+    /// with origins, its template's, each origin's node then viewed under the
+    /// view's environment (`env`, none for its own): a call relabels a
+    /// class's join entry onto the view of its node (§2.9 *Keyed where a
+    /// reader looks*). `templates` false: own origins only (a recursive group's
+    /// read-off, whose rounds the port join carries, #1466).
+    pub fn originHead(t: *const Table, n: NodeId, templates: bool) ?struct { head: u32, env: u32 } {
+        if (t.proj_origin.get(.{n.int()})) |h| return .{ .head = h, .env = Ids.none_int };
+        if (!templates or t.kind(n) != .view) return null;
+        const h = t.proj_origin.get(.{t.nodes.items(.a)[n.int()]}) orelse return null;
+        return .{ .head = h, .env = t.nodes.items(.b)[n.int()] };
     }
 
     /// Project a leaf's cells: every symbolic cell to its child at `s`
@@ -1881,6 +2197,68 @@ pub const Table = struct {
             return out;
         }
 
+        /// A join whose `ε` cells its sides' reaches hold, so `run` leaves
+        /// them out (§2.3, #1467): its cells are its sides' `cellsOf`
+        /// (`unionMake`, `choiceMake`, a positions node's parts), and each
+        /// side is settled outside `m`'s component and not `short`, so its
+        /// set holds them. A lazy join's own is nothing already.
+        fn ownInSides(r: *const Reach, m: NodeId) bool {
+            const d = r.t.get(m);
+            if (d.kind != .@"union" and d.kind != .choice and d.kind != .positions) return false;
+            if (r.t.isLazy(m)) return false;
+            for ([2]NodeId{ .from(d.a), .from(d.b) }) |k| if (r.s.on_stack.contains(k) or r.short(k)) return false;
+            return true;
+        }
+
+        /// Whether settled `k`'s set may not hold `cellsOf(k)`: a view's is
+        /// its template's image (`viewReach`), not its answer's cells; a lazy
+        /// node's is its parts' sets alone, which hold its cells only for a
+        /// join over two sides that hold theirs, outside its component. Any
+        /// other node's set holds its own cells, or sides' that hold them.
+        fn short(r: *const Reach, k: NodeId) bool {
+            if (r.t.kind(k) == .view) return true;
+            const b = &r.t.reach_short[@intFromBool(r.filter != null)];
+            return k.int() < b.bit_length and b.isSet(k.int());
+        }
+
+        /// `short` for `m`, of the component closing: its sides outside it
+        /// are settled, those in it still on the stack.
+        fn shortNow(r: *const Reach, m: NodeId) bool {
+            if (r.t.kind(m) == .view) return true;
+            if (!r.t.isLazy(m)) return false;
+            const d = r.t.get(m);
+            if (d.kind != .@"union" and d.kind != .choice and d.kind != .positions) return true;
+            for ([2]NodeId{ .from(d.a), .from(d.b) }) |k| if (r.s.on_stack.contains(k) or r.short(k)) return true;
+            return false;
+        }
+
+        /// Record `short` for `m`: a bit of a column grown by doubling, at
+        /// most twice the nodes made (each charged when it was made).
+        fn markShort(r: *Reach, m: NodeId, v: bool) Error!void {
+            const b = &r.t.reach_short[@intFromBool(r.filter != null)];
+            if (m.int() >= b.bit_length) {
+                if (!v) return;
+                try b.resize(r.gpa, @max(r.t.nodes.len, 2 * b.bit_length), false);
+            }
+            b.setValue(m.int(), v);
+        }
+
+        /// Whether `set` holds join `m`'s own cells (`own`'s filter applied)
+        /// at values its `and` keeps. Uncharged, for runtime safety.
+        fn covers(r: *Reach, set: SetId, m: NodeId) bool {
+            if (r.t.isLazy(m)) return true;
+            var it = r.sets.iterate(r.t.cells(m));
+            while (it.next()) |e| {
+                if (r.filter) |cellt| {
+                    const o = cellt.origin(.from(e.key));
+                    if (e.value == 0 and (o == .site or o == .result or o == .esc)) continue;
+                }
+                const v = r.sets.get(set, e.key) orelse return false;
+                if (v & e.value != v) return false;
+            }
+            return true;
+        }
+
         fn push(r: *Reach, n: NodeId) Error!void {
             try r.account.reserve(.memo, 1);
             try r.s.index.put(r.gpa, n, r.next_index);
@@ -1930,7 +2308,9 @@ pub const Table = struct {
                 while (i > 0) {
                     i -= 1;
                     const m = r.s.scc_stack.items[i];
-                    set = try r.sets.unionWith(r.gpa, .growth(r.account), set, try r.own(m));
+                    // A chain of D nested choices has D, D − 1, … own cells:
+                    // their unions were O(D²) records (`ownInSides`).
+                    if (!r.ownInSides(m)) set = try r.sets.unionWith(r.gpa, .growth(r.account), set, try r.own(m));
                     const first: u32 = @intCast(r.s.kids.items.len);
                     try r.children(m);
                     for (r.s.kids.items[first..]) |k| {
@@ -1940,6 +2320,10 @@ pub const Table = struct {
                     r.s.kids.shrinkRetainingCapacity(first);
                     if (m == n) break;
                 }
+                // The set is the one the joins' own cells would give.
+                if (std.debug.runtime_safety) for (r.s.scc_stack.items[i..]) |m| if (r.ownInSides(m)) std.debug.assert(r.covers(set, m));
+                // Before the members leave the stack, which `shortNow` reads.
+                for (r.s.scc_stack.items[i..]) |m| try r.markShort(m, r.shortNow(m));
                 while (r.s.scc_stack.items.len > 0) {
                     const m = r.s.scc_stack.pop().?;
                     r.s.on_stack.remove(m);
@@ -2512,6 +2896,7 @@ pub const Table = struct {
         t.map_src.clear();
         t.map_images.clear();
         t.map_shared = false;
+        t.stable.clearTrail();
         return t.mapWalk(gpa, account, n, ctx, f);
     }
 
@@ -2558,6 +2943,12 @@ pub const Table = struct {
         return slot;
     }
 
+    /// `memo_map`'s put, on the trail a closed knot moves along (§2.3, 4e).
+    fn mapPut(t: *Table, gpa: Allocator, src: NodeId, img: NodeId) Allocator.Error!void {
+        try t.memo_map.put(gpa, src, img);
+        try t.stable.trail.append(gpa, .{ src.int(), img.int() });
+    }
+
     fn mapWalk(t: *Table, gpa: Allocator, account: *Account, root: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
         // On an explicit stack (#1138: a value is as deep as the source). A
         // node or a delta takes its image before its children, so a cyclic
@@ -2587,7 +2978,7 @@ pub const Table = struct {
                     continue;
                 }
                 switch (d.kind) {
-                    .leaf => try t.memo_map.put(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
+                    .leaf => try t.mapPut(gpa, n, try t.leaf(gpa, account, d.place, try f(ctx, d.cells))),
                     .recast => {
                         // A lazy node's image is lazy too: its parts' images hold its cells.
                         try stack.append(gpa, .{ .node = n, .expanded = true, .cells = if (d.cells == lazy_cells) lazy_cells else try f(ctx, d.cells) });
@@ -2611,8 +3002,9 @@ pub const Table = struct {
                         try account.reserve(.shape, 1);
                         const out: NodeId = .from(t.count());
                         try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
-                        try t.memo_map.put(gpa, n, out);
+                        try t.mapPut(gpa, n, out);
                         try t.map_open.put(gpa, n, entered);
+                        try t.stable.trail_at.append(gpa, @intCast(t.stable.trail.items.len));
                         entered += 1;
                         try stack.append(gpa, .{ .node = n, .expanded = true });
                         // The children in order, then a delta's base: pushed in reverse.
@@ -2636,7 +3028,7 @@ pub const Table = struct {
                 var id: ?NodeId = n;
                 while (id) |x| : (id = if (t.kind(x) == .view) t.chainNext(x) else null) {
                     if (t.memo_map.get(x) != null) break;
-                    try t.memo_map.put(gpa, x, image);
+                    try t.mapPut(gpa, x, image);
                     try t.mapLowPut(gpa, x, low);
                 }
                 continue;
@@ -2654,7 +3046,7 @@ pub const Table = struct {
                     var id: ?NodeId = n;
                     while (id) |x| : (id = t.chainNext(x)) {
                         if (t.memo_map.get(x) != null) break;
-                        try t.memo_map.put(gpa, x, image);
+                        try t.mapPut(gpa, x, image);
                         try t.mapLowPut(gpa, x, low);
                     }
                 },
@@ -2662,7 +3054,7 @@ pub const Table = struct {
                     if (t.memo_map.get(n) != null) continue;
                     const in = t.memo_map.get(.from(d.a)).?;
                     // A whole recast stays whole, its reach relabelled (#1311).
-                    try t.memo_map.put(gpa, n, if (d.b == 1) try t.wholeOver(gpa, account, d.place, in, fr.cells) else try t.recast(gpa, account, d.place, in));
+                    try t.mapPut(gpa, n, if (d.b == 1) try t.wholeOver(gpa, account, d.place, in, fr.cells) else try t.recast(gpa, account, d.place, in));
                     try t.mapLowPut(gpa, n, t.mapLowWith(null, .from(d.a)));
                 },
                 .@"union", .choice, .positions => {
@@ -2681,7 +3073,7 @@ pub const Table = struct {
                         try t.nodes.append(gpa, rec);
                         break :blk id;
                     } else try t.make(gpa, account, rec);
-                    try t.memo_map.put(gpa, n, out);
+                    try t.mapPut(gpa, n, out);
                     try t.mapLowPut(gpa, n, low);
                 },
                 .node, .delta => {
@@ -2719,8 +3111,8 @@ pub const Table = struct {
                     // image is, as no back edge can name its slot.
                     t.map_open.put(gpa, n, map_closed) catch unreachable;
                     if (low) |l| {
-                        if (l.index < index) try t.map_low.put(gpa, n, l);
-                    } else try t.memo_map.put(gpa, n, try t.mapAdopt(gpa, out));
+                        if (l.index < index) try t.map_low.put(gpa, n, l) else try Stable.mapKnot(t, gpa, account, out, index);
+                    } else try t.mapPut(gpa, n, try t.mapAdopt(gpa, out));
                     try t.map_src.put(gpa, n, {});
                     if ((try t.map_images.getOrPut(gpa, t.memo_map.get(n).?)).found_existing) t.map_shared = true;
                 },
@@ -2965,11 +3357,12 @@ pub const Table = struct {
             var below: ?[2]NodeId = null;
             if (top.ok) {
                 const steps = places.steps(t.place(top.n)).steps;
-                while (top.step < steps.len) {
-                    const s = steps[top.step];
+                while (top.step <= steps.len) {
+                    // Last, a use shape's `⟲` child, no step of a place; a leaf `m` stands for it (#1523).
+                    const s = if (top.step < steps.len) steps[top.step] else Step.level;
                     top.step += 1;
-                    const pn = (try t.proj(gpa, account, places, cellt, top.n, s)) orelse continue;
-                    const pm = (try t.proj(gpa, account, places, cellt, top.m, s)) orelse {
+                    const pn = (if (s.kind != .level) try t.proj(gpa, account, places, cellt, top.n, s) else if (t.kind(top.n) == .node) t.overGet(t.nodes.items(.a)[top.n.int()], s) else null) orelse continue;
+                    const pm = (if (s.kind == .level and t.kind(top.m) == .leaf) top.m else try t.proj(gpa, account, places, cellt, top.m, s)) orelse {
                         top.ok = false;
                         break;
                     };
@@ -3192,13 +3585,33 @@ pub const Table = struct {
             return x;
         }
 
+        /// A second child `child` at step `step` of class `rep`, whose step
+        /// map holds `slot`: a congruence to settle (queued), unless one of
+        /// the two is an atom (`Table.isAtom`), which adds nothing beside
+        /// the other: the atom gives way, the entry names `child`.
+        fn settle(w: *Widen, rep: u32, step: u32, slot: *u32, child: u32) Error!void {
+            if (w.find(slot.*) == w.find(child) or w.t.isAtom(.from(child))) return;
+            if (!w.t.isAtom(.from(slot.*))) return w.pending.append(w.gpa, .{ slot.*, child });
+            const old = slot.*;
+            slot.* = child;
+            var e = w.edge_head.items[rep];
+            while (e != none) : (e = w.entries.items(.next)[e]) {
+                try w.account.reserve(.inspection, 1);
+                if (w.entries.items(.step)[e] == step and w.entries.items(.child)[e] == old) {
+                    w.entries.items(.child)[e] = child;
+                    return;
+                }
+            }
+            unreachable; // the step map and the entry list name one child
+        }
+
         /// Record `rep —s→ child`: a second child at one step of a class is
-        /// a congruence to settle (queued), never two entries.
+        /// a congruence to settle (`settle`), never two entries.
         fn addEdge(w: *Widen, rep: u32, step: u32, child: u32) Error!void {
             try w.account.reserve(.edge, 1);
             const got = try w.edges.getOrPut(w.gpa, .{ rep, step });
             if (got.found_existing) {
-                if (w.find(got.value_ptr.*) != w.find(child)) try w.pending.append(w.gpa, .{ got.value_ptr.*, child });
+                try w.settle(rep, step, got.value_ptr, child);
                 return;
             }
             got.value_ptr.* = child;
@@ -3230,7 +3643,7 @@ pub const Table = struct {
                 const child = w.entries.items(.child)[e];
                 const got = try w.edges.getOrPut(w.gpa, .{ big, step });
                 if (got.found_existing) {
-                    if (w.find(got.value_ptr.*) != w.find(child)) try w.pending.append(w.gpa, .{ got.value_ptr.*, child });
+                    try w.settle(big, step, got.value_ptr, child);
                 } else {
                     got.value_ptr.* = child;
                     w.entries.items(.next)[e] = none;
@@ -3342,6 +3755,8 @@ pub const Table = struct {
             while (stack.pop()) |f| {
                 // Widen forces as it descends (§2.11): it folds answers, never views.
                 const fnode = try w.t.force(w.gpa, w.account, f.node);
+                // An atom is no member of any class (`Table.isAtom`).
+                if (w.t.isAtom(fnode)) continue;
                 try w.touch(fnode);
                 const seen_before = w.occurs.get(fnode) orelse 0;
                 try w.occurs.put(w.gpa, fnode, seen_before + 1);
@@ -3440,6 +3855,12 @@ pub const Table = struct {
             while (stack.pop()) |rep0| {
                 const rep = w.find(rep0);
                 if (w.image.contains(.from(rep))) continue;
+                if (w.t.isAtom(.from(rep))) {
+                    // Its own class, alone, and its own image (`Table.isAtom`).
+                    if (std.debug.runtime_safety) std.debug.assert(w.head.items[rep] == rep and w.tail.items[rep] == rep);
+                    try w.image.put(w.gpa, .from(rep), .from(rep));
+                    continue;
+                }
                 try w.account.reserve(.shape, 1);
                 const id: NodeId = .from(w.t.count());
                 try w.t.nodes.append(w.gpa, .{ .kind = .node, .place = w.t.place(.from(rep)), .cells = .none, .a = over_none, .b = 0, .reach = .none });
@@ -3464,6 +3885,8 @@ pub const Table = struct {
                 var m = w.head.items[rep];
                 while (m != none) : (m = w.next_member.items[m]) {
                     try w.account.reserve(.inspection, 1);
+                    // The atom rule: no class with an image has an atom member.
+                    if (std.debug.runtime_safety) std.debug.assert(!w.t.isAtom(.from(m)));
                     const d = w.t.get(.from(m));
                     c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, try w.t.cellsOf(w.gpa, w.account, &w.cellt.sets, .from(m)));
                     switch (d.kind) {
@@ -4529,6 +4952,41 @@ test "#1372: map interns an image on no knot: a value relabelled again is the no
     try testing.expectEqual(once, try f.shapes.map(gpa, &f.account, try record2(&f, 9), &f, OneCell.relabel));
 }
 
+test "positions saturate at two: a third occurrence rebuilds the tree in first-occurrence order, off the item's lane" {
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const rec = try f.placeOf(3);
+    const fa = try Place.Step.field(&f.account, 10);
+    const x = try f.shapes.leaf(gpa, &f.account, rec, try f.param(1, rec));
+    const y = try f.shapes.leaf(gpa, &f.account, rec, try f.param(2, rec));
+    const xx = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x });
+    // `[ x, x, x ]` is `[ x, x ]`, and so is `positions(positions(x, x), x)`
+    // (§2.3 *Saturation at two*).
+    try testing.expectEqual(xx, try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x, x }));
+    try testing.expectEqual(xx, try f.shapes.positions(gpa, &f.account, &f.cells.sets, xx, x));
+    try testing.expectEqual(xx, try f.shapes.positions(gpa, &f.account, &f.cells.sets, xx, xx));
+    // Two occurrences are the record as written: no rebuild.
+    const xy = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y });
+    const xyx = try f.shapes.positions(gpa, &f.account, &f.cells.sets, xy, x);
+    try testing.expectEqual(xy.int(), f.shapes.nodes.items(.a)[xyx.int()]);
+    // `[ x, y, x, x ]`: the members in first-occurrence order, each at most
+    // twice, is `[ x, x, y ]`.
+    const g = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y, x, x });
+    try testing.expectEqual(try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, x, y }), g);
+    // Projection distributes over the sides, so it saturates as well: the
+    // image of `positions(xx, xx)` is `xx`'s.
+    try testing.expectEqual(try f.proj(xx, fa), try f.proj(try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ xx, x }), fa));
+    // The count maps and the rebuild are their own task: a collection on the
+    // items' lanes charges each lane its positions node alone (§4.1).
+    var lanes: [6]Ids.Lane = undefined;
+    for (&lanes, 0..) |*l, i| l.* = .{ .atom = 100 + @as(u32, @intCast(i)), .role = .transfer_settlement };
+    const z = try f.shapes.leaf(gpa, &f.account, rec, try f.param(3, rec));
+    _ = try f.shapes.collectRoot(gpa, &f.account, &f.cells.sets, &.{ z, y, z, x, z, z }, Table.lazy_cells, &lanes);
+    for (lanes) |l| try testing.expect(f.account.laneUsed(l) <= 1);
+}
+
 test "#1372: a positions node whose sides map to one node keeps both edges" {
     var f: Fixture = .{};
     f.init();
@@ -4561,7 +5019,7 @@ fn knotSide(f: *Fixture, n: NodeId) !NodeId {
     return error.TestUnexpectedResult;
 }
 
-test "#1372: an image on a knot is not interned: each map of a widened value ties its own knot" {
+test "#1372 F3 (4e): an image on a knot is the knot an equal map made before; the raw pass ties its own" {
     var f: Fixture = .{};
     f.init();
     defer f.deinit();
@@ -4588,15 +5046,21 @@ test "#1372: an image on a knot is not interned: each map of a widened value tie
     };
     const m1 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
     const m2 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
+    // With nothing moved (the cross-check's raw pass), a map ties a knot of
+    // its own.
+    f.shapes.stable.off = true;
+    const m3 = try f.shapes.map(gpa, &f.account, w, {}, Same.same);
+    f.shapes.stable.off = false;
     try testing.expect(m1 != w and m2 != w);
-    try testing.expect(m1 != m2);
-    // Each a knot of its own (#1253, #1382: the root's first return keys a
-    // class of its own, and the subtrees are the knot): the recursive child
-    // of each map's subtree class names that class's own image, and the two
-    // maps' knots are two records. The root is on no knot and only names
-    // its knot, so it is interned, and differs because its knot does.
-    var subs: [2]NodeId = undefined;
-    for ([_]NodeId{ m1, m2 }, 0..) |m, i| {
+    // The second map's knot has the first's form, so it is that knot, and
+    // the root on no knot is interned onto the first's (§2.3, 4e).
+    try testing.expectEqual(m1, m2);
+    try testing.expect(m3 != m1);
+    // Each a knot (#1253, #1382: the root's first return keys a class of
+    // its own, and the subtrees are the knot): the recursive child of each
+    // map's subtree class names that class's own image.
+    var subs: [3]NodeId = undefined;
+    for ([_]NodeId{ m1, m2, m3 }, 0..) |m, i| {
         const sub = try f.proj(m, s0);
         try testing.expect(sub != m);
         // The knot is the union's built side; `map` orders a union's sides
@@ -4606,8 +5070,57 @@ test "#1372: an image on a knot is not interned: each map of a widened value tie
         try testing.expectEqual(core, try knotSide(&f, child));
         subs[i] = core;
     }
-    try testing.expect(subs[0] != subs[1]);
-    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m1, m2));
+    try testing.expectEqual(subs[0], subs[1]);
+    try testing.expect(subs[2] != subs[0]);
+    try testing.expect(try f.shapes.eq(gpa, &f.account, &f.places, &f.cells, m1, m3));
+
+    // The raw knot has the form recorded: σ moves it onto the first map's,
+    // and its precondition holds.
+    const raw = subs[2];
+    var redir = (try Stable.canon(&f.shapes, gpa, &f.account, raw, raw.int(), null, null)) orelse return error.TestUnexpectedResult;
+    defer redir.deinit(gpa);
+    try testing.expectEqual(subs[0].int(), redir.get(raw.int()).?);
+    var members: std.ArrayList(u32) = .empty;
+    defer members.deinit(gpa);
+    for (0..redir.count()) |i| try members.append(gpa, redir.key(@intCast(i)));
+    try testing.expect(try Stable.moveHolds(&f.shapes, gpa, members.items, &redir, null));
+    // The check fires on a move that does not keep the records: the knot
+    // sent to a node of another record, or two members to one target.
+    const wrong = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    var bad: Stable.Redirect = .{};
+    defer bad.deinit(gpa);
+    for (0..redir.count()) |i| try bad.put(gpa, redir.key(@intCast(i)), redir.value(@intCast(i)));
+    try bad.put(gpa, raw.int(), wrong.int());
+    try testing.expect(!try Stable.moveHolds(&f.shapes, gpa, members.items, &bad, null));
+    if (members.items.len >= 2) {
+        var twice: Stable.Redirect = .{};
+        defer twice.deinit(gpa);
+        for (0..redir.count()) |i| try twice.put(gpa, redir.key(@intCast(i)), redir.value(@intCast(i)));
+        try twice.put(gpa, members.items[1], twice.get(members.items[0]).?);
+        try testing.expect(!try Stable.moveHolds(&f.shapes, gpa, members.items, &twice, null));
+    }
+    // A side word in the key (`fold_cond`): the same graph with another word
+    // has another form, and is not moved.
+    const Word = struct {
+        fn seven(_: *anyopaque, _: NodeId) u32 {
+            return 7;
+        }
+    };
+    var dummy: u8 = 0;
+    try testing.expectEqual(@as(?Stable.Redirect, null), try Stable.canon(&f.shapes, gpa, &f.account, raw, raw.int(), .{ .ctx = &dummy, .word = Word.seven }, null));
+
+    // A graph that reaches its target never has its key: a raw copy of the
+    // knot's entry, whose references name the knot itself, is on no cycle;
+    // it is not moved onto the knot, so no route meets a moved member and
+    // its target both (§2.3, 4e, the fold case of the lemma).
+    const k = subs[0];
+    try f.account.reserve(.shape, 1);
+    const copy: NodeId = .from(f.shapes.count());
+    try f.shapes.nodes.append(gpa, f.shapes.get(k));
+    try testing.expectEqual(@as(?Stable.Redirect, null), try Stable.canon(&f.shapes, gpa, &f.account, copy, copy.int(), null, null));
+    var moved = try Stable.widened(&f.shapes, gpa, &f.account, copy, copy.int(), null);
+    defer moved.deinit(gpa);
+    try testing.expect(moved.get(copy.int()) == null or moved.get(copy.int()).? != k.int());
 }
 
 test "#1372: joinAlternatives flattens a choice member into one set of distinct alternatives; joinChoice keeps it" {
@@ -4868,6 +5381,9 @@ test "#1158 review: a recast or a delta over a lazy node is one node before and 
 pub const TestInstantiation = struct {
     cellt: *Cell.Table,
     arg: NodeId,
+    /// When set, a parameter cell below the root is the argument projected
+    /// along its path; otherwise the argument whole.
+    places: ?*Place.Table = null,
 
     pub fn inst(x: *TestInstantiation) Table.Instantiation {
         return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach, .reroot = reroot, .parts = parts };
@@ -4886,7 +5402,25 @@ pub const TestInstantiation = struct {
     fn leaf(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId) Error!NodeId {
         _ = env;
         const x = of(ctx);
-        return if (x.isParam(t.cells(template))) x.arg else t.leaf(gpa, account, t.place(template), t.cells(template));
+        if (!x.isParam(t.cells(template))) return t.leaf(gpa, account, t.place(template), t.cells(template));
+        const places = x.places orelse return x.arg;
+        // A parameter cell below the root stands for the argument there, as
+        // `Views`' `argAt` reads it: the argument projected along its path.
+        var it = x.cellt.sets.iterate(t.cells(template));
+        const p = while (it.next()) |e| {
+            if (x.cellt.origin(.from(e.key)) == .param) break x.cellt.get(.from(e.key));
+        } else unreachable;
+        var steps: std.ArrayList(Step) = .empty;
+        defer steps.deinit(gpa);
+        var at: Ids.PathId = .from(p.b);
+        while (places.pathParent(at) != .none) : (at = places.pathParent(at)) try steps.append(gpa, places.pathStep(at));
+        var out = x.arg;
+        var k = steps.items.len;
+        while (k > 0) {
+            k -= 1;
+            out = (try t.proj(gpa, account, places, x.cellt, out, steps.items[k])) orelse return t.nothing(gpa, account, t.place(template));
+        }
+        return out;
     }
 
     fn parts(ctx: *anyopaque, t: *Table, gpa: Allocator, account: *Account, env: u32, template: NodeId, out: *std.ArrayList(Table.LeafPart)) Error!void {
@@ -4989,7 +5523,7 @@ test "a view of every kind forces to its eager image: map, widen and join read i
     const arg = try f.shapes.leaf(gpa, &f.account, list, try f.site(20, list, .list));
     const template = try everyKind(&f, p1, a_site, b_site);
     const eager = try everyKind(&f, arg, a_site, b_site);
-    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg };
+    var ti: TestInstantiation = .{ .cellt = &f.cells, .arg = arg, .places = &f.places };
     f.shapes.instantiation = ti.inst();
     const v = try f.shapes.view(gpa, &f.account, template, 0);
     const Id = struct {
