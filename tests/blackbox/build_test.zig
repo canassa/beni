@@ -9322,7 +9322,9 @@ test "the checker v2's call over a chain of nested choices is linear in its dept
     // now: the other-paths walk reads the reach of the chain's root, and
     // each choice unioned its own cells (all its arms' roots) into it
     // again, O(D) records a choice. At most 1.5 times a doubling, and 1.7
-    // times D = 32's.
+    // times D = 32's. Since #1523, 1 513 / 1 645 / 2 169: `incAll`'s group
+    // takes one walk fewer, which left memos the caller read, so the D = 32
+    // ceiling is that +10% until the count is the call's own (#1525).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
@@ -9334,7 +9336,7 @@ test "the checker v2's call over a chain of nested choices is linear in its dept
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectChainGrowth("the call", .{ costs[0][1], costs[1][1], costs[2][1] }, 15, 10, 2_080);
+    try expectChainGrowth("the call", .{ costs[0][1], costs[1][1], costs[2][1] }, 15, 10, 2_390);
 }
 
 test "the checker v2's demands over a chain of nested choices cost records linear in its depth" {
