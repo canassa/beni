@@ -935,7 +935,7 @@ Operations, memoised on their node arguments:
        stays where `emit` put it. The first text of this step blamed `PushedTwiceLevels` for the acyclic
        interning. The review did not reproduce that with step 4a in force, and that claim is withdrawn.
        The rewrite is the reason. As built: `acc (n − 1) (N [ n ] [ n ] t t)` settles in 4 walks, not 5
-       (691 681 records at one list, against 1 083 526). `rose` costs 39 694 records against 42 869. The
+       (691 681 records at one list, against 1 083 526). *Since the atom rule (#1483):* 3 walks with or without the moves (173 075 records at one list, 177 421 without); the walk that the moves saved was the `L` atom's merge of the root's class with each subtree's. `rose` costs 39 694 records against 42 869. The
        corpus's records fall 0.55 %, with no verdict, condition or summary change and 18 block encodings.
        Stable.Store keeps the representatives of every knot it recorded, including a knot below a root
        that later moved. That is only a cost of sharing: no move ever targets a node that is not its
@@ -1342,7 +1342,32 @@ Operations, memoised on their node arguments:
   their own parts; a first return keys its own class, and a union, choice or positions node there is opened as
   at a `⟲` (`Place.isReturn`: both are returns on the cycle being folded), else a group's rounds would nest
   under it. A group settles a round later: a first return's class takes the previous round's root a round
-  after the root's own does. Over a non-recursive type it is the
+  after the root's own does. *The atom rule (#1483, as built 2026-11-01):* an **atom** is a node with no
+  cell and no part, a nullary constructor (`Leaf`, `Nothing`) or the empty leaf (`Shape.Table.isAtom`). It
+  holds no list, so it belongs to no class: the walk does not enter it, it is its own image wherever it
+  stands, and at a step where a class has another child the atom gives way to it (`Widen.settle`). Atoms
+  are interned, so one atom stands at every path that holds it, and as a member it united those paths'
+  classes: the root and each subtree of `incAll`'s `Node l xs r`, built over one `Leaf`, were one class,
+  and the root's `xs` read as every level's (the `returnedKids` probe, `FoldLevels` 94:23, `LevelFresh`
+  46:23). That merge was a representation artifact, the kind #1471 and #1472 removed. *Lemma (the
+  representation change):* the quotient with atoms is an over-approximation of the value exactly when the
+  quotient without them is. γ(atom) holds no object at any path, so for every class C and step s,
+  `γ(C·s) ⊇ γ(m·s)` for every member m of C holds with an atom member removed, and an atom child at s
+  adds nothing to `cellsAt(C·s, q)` for any q. The atoms' own positions are their own images, which
+  read no cell. Each class is therefore a superset of the same members' content at every path, and only
+  identifications through an atom are dropped. Under `runtime_safety`, `emit` asserts that no class with an
+  image has an atom member and that an atom's class is the atom alone. *Its readers:* (1) an atom is its
+  own image, so the widened graph may name a source node, and `propagate` reads an atom (it computes its
+  κ and writes it) rather than linking the member's snapshot: below a fold, a linked snapshot is merged
+  into the fold as a collapsed one and reads `lost` (`mPlain`, `M [] (Just (M [ 1 ] (Just (M [ 2 ]
+  Nothing))))`, read `{lost}` at its `Int` element atom before this reader). (2) A block shares two κ
+  positions of one class that the original keeps apart only by entries keyed at the widening's source
+  nodes, which the block never writes, so the #1157 review test compares reads per path, not text. (3) A
+  group may take one class version more: R-7.4's ring at k = 2 walks 6 times, not 5, because the empty
+  value at the kids' `[*]` no longer makes the round that closes the ring read `lost` at the root; the
+  next delivery brings the ring's fold there, and the fixpoint is the same. (4) #1128's block test folds
+  `k` at the first return and the level below it, the re-entry's fold, not the atom's.
+  Over a non-recursive type it is the
   identity (no re-entering step), so `w5`'s DAG is untouched. Compute the quotient by a canonical-path
   worklist and congruence closure: union node classes on re-entry, merge their step maps, enqueue the
   corresponding child pairs, and emit the quotient once. Union-by-size/path compression and smaller-to-larger
@@ -6483,7 +6508,7 @@ L0  Ids
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Stable.zig` | 2 | stable images (§2.3 *The two pieces that (b) adds, prototyped (4e)*): a graph's canonical form by partition refinement, the move onto an equal graph made before and its precondition, `map`'s knot and `widen`'s components; the shape table is given as `anytype` | `Store`, `Redirect`, `canon`, `moveHolds`, `mapKnot`, `widened`, `sideFact` | Ids | ≤ 500 (4e) |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
-| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing` | Ids, Place, Cell, Stable | ≤ 3 990 (4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
+| `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing`, `isAtom` | Ids, Place, Cell, Stable | ≤ 4 025 (#1483: the atom rule, `isAtom` and `settle`, §2.3; 4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |

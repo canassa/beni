@@ -569,6 +569,16 @@ pub const Table = struct {
         return t.kind(x) == .leaf and t.cells(x) == .none;
     }
 
+    /// An atom (§2.3 *The atom rule*, #1483): no cell and no part, a nullary
+    /// constructor (`Leaf`) or the empty leaf. It holds no list, so it is no
+    /// member of any class of `widen`'s quotient: interned, one atom stands
+    /// at every path that holds it, and as a member it united those paths'
+    /// classes (the root's `xs` of `Node l xs r` became every level's).
+    pub fn isAtom(t: *const Table, n: NodeId) bool {
+        const d = t.get(n);
+        return d.cells == .none and (d.kind == .leaf or (d.kind == .node and d.a == over_none));
+    }
+
     /// The empty value at `at`: provably no cell (§2.3).
     pub fn nothing(t: *Table, gpa: Allocator, account: *Account, at: PlaceId) Error!NodeId {
         return t.leaf(gpa, account, at, .none);
@@ -3575,13 +3585,33 @@ pub const Table = struct {
             return x;
         }
 
+        /// A second child `child` at step `step` of class `rep`, whose step
+        /// map holds `slot`: a congruence to settle (queued), unless one of
+        /// the two is an atom (`Table.isAtom`), which adds nothing beside
+        /// the other: the atom gives way, the entry names `child`.
+        fn settle(w: *Widen, rep: u32, step: u32, slot: *u32, child: u32) Error!void {
+            if (w.find(slot.*) == w.find(child) or w.t.isAtom(.from(child))) return;
+            if (!w.t.isAtom(.from(slot.*))) return w.pending.append(w.gpa, .{ slot.*, child });
+            const old = slot.*;
+            slot.* = child;
+            var e = w.edge_head.items[rep];
+            while (e != none) : (e = w.entries.items(.next)[e]) {
+                try w.account.reserve(.inspection, 1);
+                if (w.entries.items(.step)[e] == step and w.entries.items(.child)[e] == old) {
+                    w.entries.items(.child)[e] = child;
+                    return;
+                }
+            }
+            unreachable; // the step map and the entry list name one child
+        }
+
         /// Record `rep —s→ child`: a second child at one step of a class is
-        /// a congruence to settle (queued), never two entries.
+        /// a congruence to settle (`settle`), never two entries.
         fn addEdge(w: *Widen, rep: u32, step: u32, child: u32) Error!void {
             try w.account.reserve(.edge, 1);
             const got = try w.edges.getOrPut(w.gpa, .{ rep, step });
             if (got.found_existing) {
-                if (w.find(got.value_ptr.*) != w.find(child)) try w.pending.append(w.gpa, .{ got.value_ptr.*, child });
+                try w.settle(rep, step, got.value_ptr, child);
                 return;
             }
             got.value_ptr.* = child;
@@ -3613,7 +3643,7 @@ pub const Table = struct {
                 const child = w.entries.items(.child)[e];
                 const got = try w.edges.getOrPut(w.gpa, .{ big, step });
                 if (got.found_existing) {
-                    if (w.find(got.value_ptr.*) != w.find(child)) try w.pending.append(w.gpa, .{ got.value_ptr.*, child });
+                    try w.settle(big, step, got.value_ptr, child);
                 } else {
                     got.value_ptr.* = child;
                     w.entries.items(.next)[e] = none;
@@ -3725,6 +3755,8 @@ pub const Table = struct {
             while (stack.pop()) |f| {
                 // Widen forces as it descends (§2.11): it folds answers, never views.
                 const fnode = try w.t.force(w.gpa, w.account, f.node);
+                // An atom is no member of any class (`Table.isAtom`).
+                if (w.t.isAtom(fnode)) continue;
                 try w.touch(fnode);
                 const seen_before = w.occurs.get(fnode) orelse 0;
                 try w.occurs.put(w.gpa, fnode, seen_before + 1);
@@ -3823,6 +3855,12 @@ pub const Table = struct {
             while (stack.pop()) |rep0| {
                 const rep = w.find(rep0);
                 if (w.image.contains(.from(rep))) continue;
+                if (w.t.isAtom(.from(rep))) {
+                    // Its own class, alone, and its own image (`Table.isAtom`).
+                    if (std.debug.runtime_safety) std.debug.assert(w.head.items[rep] == rep and w.tail.items[rep] == rep);
+                    try w.image.put(w.gpa, .from(rep), .from(rep));
+                    continue;
+                }
                 try w.account.reserve(.shape, 1);
                 const id: NodeId = .from(w.t.count());
                 try w.t.nodes.append(w.gpa, .{ .kind = .node, .place = w.t.place(.from(rep)), .cells = .none, .a = over_none, .b = 0, .reach = .none });
@@ -3847,6 +3885,8 @@ pub const Table = struct {
                 var m = w.head.items[rep];
                 while (m != none) : (m = w.next_member.items[m]) {
                     try w.account.reserve(.inspection, 1);
+                    // The atom rule: no class with an image has an atom member.
+                    if (std.debug.runtime_safety) std.debug.assert(!w.t.isAtom(.from(m)));
                     const d = w.t.get(.from(m));
                     c = try w.cellt.sets.unionWith(w.gpa, .growth(w.account), c, try w.t.cellsOf(w.gpa, w.account, &w.cellt.sets, .from(m)));
                     switch (d.kind) {

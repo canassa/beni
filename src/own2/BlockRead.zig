@@ -3970,20 +3970,27 @@ test "#1128: a folded class's path-multiset obligation crosses the block" {
     try testing.expectEqualStrings(before, try b.text(arena, try roundTrip(&a, &b, c)));
 }
 
-test "#1128: a #1125 repeat, one kids list at two depths, reads lost through the block" {
+test "#1128: a #1125 repeat, one kids list at two depths of a fold, reads lost through the block" {
     const gpa = testing.allocator;
     var a: Tables = .{};
     try a.init();
     defer a.deinit();
     a.account.allowance = std.math.maxInt(u32) - 1;
     const env = a.env();
-    // `k = [ … ]` at `.1` of the root and of its `.0` child (#1125's
-    // minimal): no path holds `k` twice, the folded class does.
+    // `T (T (T _ k _) k _) j _`: `k = [ … ]` at `.1` of the first return
+    // `.0` and of the level below it, which the fold identifies with it
+    // (#1253; the root keeps `j`): no path holds `k` twice, the folded
+    // class does. A `Leaf` is no member of any class (§2.3 *The atom
+    // rule*), so the fold is the re-entry's, not the atom's.
     const tree = try a.place(8);
     const list = try a.place(0);
     const s = [_]Step{ try a.places.ctorStep(gpa, &a.account, 0, 0), try a.places.ctorStep(gpa, &a.account, 0, 1), try a.places.ctorStep(gpa, &a.account, 0, 2) };
-    const site = try a.cells.site(gpa, &a.account, 1, list, .list);
-    const k = try a.shapes.node(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), Ids.none_int);
+    var ls: [2]NodeId = undefined;
+    for (&ls, 0..) |*l, i| {
+        const site = try a.cells.site(gpa, &a.account, @intCast(i + 1), list, .list);
+        l.* = try a.shapes.node(gpa, &a.account, list, try a.cells.sets.insert(gpa, env.charge, .none, site.int(), 0), Ids.none_int);
+    }
+    const k, const j = ls;
     const empty = try a.shapes.nothing(gpa, &a.account, tree);
     const node = struct {
         fn of(t: *Tables, ss: [3]Step, l: NodeId, e: NodeId, sub: NodeId) !NodeId {
@@ -3993,12 +4000,15 @@ test "#1128: a #1125 repeat, one kids list at two depths, reads lost through the
             return t.shapes.node(testing.allocator, &t.account, try t.place(8), .none, m);
         }
     }.of;
-    const inner = try node(&a, s, k, empty, empty);
-    const outer = try node(&a, s, k, empty, inner);
+    const deeper = try node(&a, s, k, empty, empty);
+    const inner = try node(&a, s, k, empty, deeper);
+    const outer = try node(&a, s, j, empty, inner);
     var kk = (try a.conds.kappaSet(gpa, env.charge, .none, outer, Cond.yes)).ctx;
     kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[0]}, inner, Cond.yes);
-    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[1]}, k, Cond.yes);
+    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[0] }, deeper, Cond.yes);
+    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{s[1]}, j, Cond.yes);
     kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[1] }, k, Cond.yes);
+    kk = try a.conds.kappaSetAt(gpa, env.charge, kk, &.{ s[0], s[0], s[1] }, k, Cond.yes);
     const w = try a.conds.widenValue(gpa, env.charge, env.view(), outer, kk);
     const c = try a.sums.add(env, .{ .params = &.{}, .res = w.node, .kappas = w.kappas });
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
@@ -4056,9 +4066,37 @@ test "#1157 review: a widened class's lost stays lost through the block, a choic
         var b: Tables = .{};
         try b.init();
         defer b.deinit();
-        // `roundTrip` compares the printed class before and after.
-        _ = try roundTrip(&a, &b, c);
+        var arena_state: std.heap.ArenaAllocator = .init(gpa);
+        defer arena_state.deinit();
+        const before = try a.text(arena_state.allocator(), c);
+        if (variant == 0) {
+            // No fold: a `Leaf` is no member of any class (§2.3 *The atom
+            // rule*), so the root and its `.0` child keep their own lists.
+            try testing.expectEqualStrings("summary f: res #Just.0#Just.1 site2, #Just.1 site1", before);
+            _ = try roundTrip(&a, &b, c);
+            continue;
+        }
+        // `k` stands at `.1` and in the fold's other arm at `.0.1`: one
+        // class, `lost` at both.
+        try testing.expectEqualStrings("summary f: res #Just.0#Just.1 site1 site2{lost}, #Just.1 site1 site2{lost}", before);
+        // The block shares the two positions the original keeps apart only
+        // by entries keyed at the widening's source nodes, which it never
+        // writes; so it is compared read by read, not by text.
+        const bc = try roundTripWith(&a, &b, c, false);
+        const back = b.sums.get(bc);
+        try testing.expectEqualStrings("summary f: res #Just.0#Just.1 site1 site2{lost}, #Just.1 = #Just.0#Just.1", try b.text(arena_state.allocator(), bc));
+        for ([_][]const Step{ &.{}, &.{s[0]}, &.{s[1]}, &.{s[2]}, &.{ s[0], s[0] }, &.{ s[0], s[1] }, &.{ s[0], s[2] } }) |path| {
+            try testing.expectEqual(try kappaAt(&a, w.kappas, w.node, path), try kappaAt(&b, back.kappas, back.res, path));
+            try testing.expectEqual(try cellCountAt(&a, w.node, path), try cellCountAt(&b, back.res, path));
+        }
     }
+}
+
+/// How many cells `n` holds at `steps` below it.
+fn cellCountAt(t: *Tables, n: NodeId, steps: []const Step) !u32 {
+    var at = n;
+    for (steps) |s| at = (try t.shapes.proj(testing.allocator, &t.account, &t.places, &t.cells, at, s)).?;
+    return t.cells.sets.count(try t.shapes.cellsOf(testing.allocator, &t.account, &t.cells.sets, at));
 }
 
 /// #1314's knot over `List` (place 0): `U = union(leaf{π0}, D)`,

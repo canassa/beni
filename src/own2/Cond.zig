@@ -892,11 +892,13 @@ pub const Table = struct {
             // An alternative that is nothing (an empty leaf with nothing
             // stored) adds nothing to a join, so it does not count.
             // Together, an empty member is no object either, but two equal
-            // members are two positions, never one.
+            // members are two positions, never one. An atom is read, never
+            // linked: it is a widen's own image (§2.3 *The atom rule*), and
+            // its snapshot linked under a fold would collapse the fold.
             if (f.len > 0) {
                 const m0 = slices.items[si].m0;
                 const c0 = slices.items[si].c0;
-                const one = slices.items[si].one and m0 != .none and (f.node == m0 or try joinOfOne(gpa, charge, v, f.node, m0, if (mode == .alternatives) .@"union" else .positions));
+                const one = slices.items[si].one and m0 != .none and !v.shapes.isAtom(f.node) and (f.node == m0 or try joinOfOne(gpa, charge, v, f.node, m0, if (mode == .alternatives) .@"union" else .positions));
                 if (one) {
                     try charge.reserve(gpa, .inspection, 1);
                     try linked.append(gpa, .{ .path = f.path, .at = c0 });
