@@ -4221,6 +4221,44 @@ fn switched(comptime which: []const u8) bool {
     };
 }
 
+test "§2.9 rule 4: a group's image through `⟲` is one join name per member, never its level paths" {
+    // The read's *Cost* (#1485): an image is `extend`'s canonical path, a
+    // `⟲` at a root the join name `root⟲`, and is never expanded. The root
+    // join of `Tree` stands for two level paths (`#Node.0`, `#Node.2`), so an
+    // expansion would double the images; for a type of many level paths it
+    // multiplies them. Two members, one key: two images.
+    var x: KnotFixture = .{};
+    try x.init();
+    defer x.deinit();
+    const gpa = testing.allocator;
+    const charge = x.env().charge;
+    const src: Place.Source = .{ .ctx = &x.graph, .describe = TestGraph.describe };
+    const tree = try x.places.of(gpa, &x.account, src, 14);
+    const n1 = try x.places.ctorStep(gpa, &x.account, 6, 1);
+    const root = try x.places.rootPath(gpa, tree);
+    const key_path = (try x.places.extend(gpa, charge, (try x.places.extend(gpa, charge, root, Step.level)).?, n1)).?;
+    const key = try x.cells.symbolic(gpa, &x.account, &x.places, .param, 0, key_path, 0);
+    var members: SetId = .none;
+    for ([_]u32{ 5, 6 }) |i| members = try x.cells.sets.insert(gpa, charge, members, (try x.cells.symbolic(gpa, &x.account, &x.places, .param, i, root, 0)).int(), 0);
+    const args = [_]Value{.{ .node = try x.shapes.leaf(gpa, &x.account, tree, members) }};
+    var s: Scratch = .{};
+    defer s.deinit(gpa);
+    var g: Grafter = .{ .env = x.env(), .sums = &x.sums, .args = &args, .label = .none, .s = &s };
+    defer g.deinit();
+    const grp = (try g.groupOf(0, key_path)).?;
+    var out: std.ArrayList(Cond.Table.HypKey) = .empty;
+    defer out.deinit(gpa);
+    try testing.expect(try g.groupImages(key, grp, 0, &out));
+    try testing.expectEqual(@as(usize, 2), out.items.len);
+    // The root join stands for two level paths, so an expansion would at
+    // least double the images.
+    try testing.expect((try x.places.levelsOf(gpa, charge, root)).len >= 2);
+    for (out.items) |h| {
+        const p: PathId = .from(x.cells.get(h.image).b);
+        try testing.expectEqual(Step.level.word(), x.places.pathStep(x.places.pathParent(p)).word());
+    }
+}
+
 test "§2.9 rule 4 (a′): row 19's certificate reads the same in either order of its parameters" {
     // Near-miss row 19 (#1485), its certificate built directly: four keys
     // over two parameters of type `Tree`, a condition that is not `lost`.
