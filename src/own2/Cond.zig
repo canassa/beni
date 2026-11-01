@@ -197,6 +197,19 @@ pub const Table = struct {
     /// Lazy conditions: the resolver, the `inst` atoms in creation order and
     /// how far they are resolved, and the resolutions by condition.
     resolver: ?Resolver = null,
+    /// The fold certificate's readers (§8 slice 4, #1485): which views are
+    /// hypothesis nodes, and §2.9 rule 4's instantiation of a certificate's
+    /// arrival keys at one (`Calls.Views`).
+    hyp: ?Hyp = null,
+    /// During a read-off (`Walk.resOf`): each node of the source that is the
+    /// image of a hypothesis node → that view, and the read-off's relabelling
+    /// of a cell (stable labels), which a key's images take.
+    hyp_nodes: stamped.Column(NodeId, NodeId) = .{},
+    hyp_image: ?HypImage = null,
+    /// The `res` nodes of classes a class join widens (`Summary.joinRes`):
+    /// each is a widened knot whose folded classes owe their own fold
+    /// conditions, read by its cells once per class (#1485).
+    hyp_knots: stamped.Column(NodeId, void) = .{},
     inst_queue: std.ArrayList(CondId) = .empty,
     inst_next: u32 = 0,
     memo_resolved: Ids.FixedDict(1) = .{},
@@ -263,6 +276,8 @@ pub const Table = struct {
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
         t.fold_cond.deinit(gpa);
+        t.hyp_nodes.deinit(gpa);
+        t.hyp_knots.deinit(gpa);
         t.classes_memo.deinit(gpa);
         t.classes_done.deinit(gpa);
         t.fold_of.deinit(gpa);
@@ -313,6 +328,9 @@ pub const Table = struct {
     pub const expectSame = algebra.expectSame;
     pub const canonical = algebra.canonical;
     pub const Resolver = algebra.Resolver;
+    pub const Hyp = KappaRead.Hyp;
+    pub const HypKey = KappaRead.HypKey;
+    pub const HypImage = struct { ctx: *anyopaque, image: *const fn (ctx: *anyopaque, c: CellId) Error!CellId };
     pub const instAtom = algebra.instAtom;
     pub const instSet = algebra.instSet;
     pub const inst_set_bit = algebra.inst_set_bit;
@@ -437,6 +455,11 @@ pub const Table = struct {
     pub const foldCondWalk = reads.foldCondWalk;
     pub const foldCond = reads.foldCond;
     const arrivalAggs = reads.arrivalAggs;
+    pub const hypEnv = reads.hypEnv;
+    pub const hypAggs = reads.hypAggs;
+    pub const certClassAgg = reads.certClassAgg;
+    pub const certRead = reads.certRead;
+    pub const sourceParts = reads.sourceParts;
     pub const ownAgg = reads.ownAgg;
     pub const aggChoice = reads.aggChoice;
     pub const classMerge = reads.classMerge;

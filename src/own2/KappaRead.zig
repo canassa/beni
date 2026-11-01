@@ -42,6 +42,28 @@ pub const View = struct { shapes: *Shape.Table, cells: *Cell.Table, places: *Cel
 /// One stored cell of a construction, with its pair's approximation.
 pub const Item = struct { cell: CellId, approx: bool };
 
+/// One arrival key of a certificate instantiated at a hypothesis node (§2.9
+/// rule 4, #1485): the key, one of its images in the caller, whether that
+/// image is approximate, and the key's group (`none_int`: in no group, so
+/// its images add as before).
+pub const HypKey = struct { key: CellId, image: CellId, approx: bool, group: u32 };
+
+/// The environment a class's own knot is read under (`Cond.Table.hyp_knots`):
+/// its cells are its keys.
+pub const identity_env: u32 = Ids.none_int - 1;
+
+/// The fold certificate's readers (§8 slice 4, *The fold certificate,
+/// specified*, #1485), over the views calls answer (`Calls.Views`).
+pub const Hyp = struct {
+    ctx: *anyopaque,
+    /// The environment of `v` when it is a hypothesis node: a view of a
+    /// class of the group being solved, or of a settled certified class.
+    envOf: *const fn (ctx: *anyopaque, shapes: *Shape.Table, v: NodeId) ?u32,
+    /// The certificate's arrival keys `cells` (a class of the template) at
+    /// environment `env`, each key's images by §2.9 rule 4, into `out`.
+    keys: *const fn (ctx: *anyopaque, gpa: Allocator, charge: Charge, env: u32, cells: SetId, out: *std.ArrayList(HypKey)) Error!void,
+};
+
 /// The part of `Cond.Table` this file holds, over the table `Cond.zig` declares.
 pub fn Of(comptime Table: type) type {
     return struct {
@@ -1792,12 +1814,23 @@ pub fn Of(comptime Table: type) type {
             var parts: std.ArrayList(NodeId) = .empty;
             defer parts.deinit(gpa);
             var cyclic = false;
-            // The widen walked answers: a view root is read at its answer.
-            try stack.append(gpa, .{ .node = try v.shapes.force(gpa, charge.account, x), .expanded = false });
+            // The widen walked answers: a view root is read at its answer, but a
+            // hypothesis node, which is read by its certificate (#1485).
+            const root = if (t.hypEnv(v, x) != null) x else try v.shapes.force(gpa, charge.account, x);
+            try stack.append(gpa, .{ .node = root, .expanded = false });
             while (stack.pop()) |f| {
                 if (memo.get(f.node) != null) continue;
+                if (t.hypEnv(v, f.node)) |e| {
+                    // A hypothesis node: its certificate, never its cycle.
+                    const got = try t.hypAggs(gpa, charge, v, fold, f.node, e) orelse {
+                        cyclic = true;
+                        break;
+                    };
+                    try memo.put(gpa, f.node, got);
+                    continue;
+                }
                 parts.clearRetainingCapacity();
-                try sourceParts(gpa, charge, v, fold, f.node, &parts);
+                try t.sourceParts(gpa, charge, v, fold, f.node, &parts);
                 // An opened choice's arms: the maximum, arm by arm (§2.3).
                 const arms = v.shapes.kind(f.node) == .choice and fold.opened.contains(f.node);
                 if (!f.expanded) {
@@ -1828,7 +1861,7 @@ pub fn Of(comptime Table: type) type {
                 }
                 try memo.put(gpa, f.node, acc);
             }
-            if (!cyclic) return memo.get(v.shapes.forced(x)).?;
+            if (!cyclic) return memo.get(root).?;
             // On a cycle: every source node's cells at its class, all repeated.
             var all: stamped.Column(NodeId, SetId) = .{};
             defer all.deinit(gpa);
@@ -1851,7 +1884,8 @@ pub fn Of(comptime Table: type) type {
                     try all.put(gpa, img, try v.cells.sets.unionWith(gpa, charge, old, if (v.shapes.isLazy(n)) SetId.none else v.shapes.cells(n)));
                 }
                 parts.clearRetainingCapacity();
-                try sourceParts(gpa, charge, v, fold, n, &parts);
+                try t.sourceParts(gpa, charge, v, fold, n, &parts);
+                for (parts.items) |*p| p.* = try v.shapes.force(gpa, charge.account, p.*);
                 try walk.appendSlice(gpa, parts.items);
             }
             var out: ClassAggs = .{ .saturated = true };
@@ -1865,15 +1899,189 @@ pub fn Of(comptime Table: type) type {
             return out;
         }
 
+        /// The environment of `n` when it is a hypothesis node (§8 slice 4,
+        /// *The hypothesis node*, #1485), null for any other node.
+        pub fn hypEnv(t: *const Table, v: View, n: NodeId) ?u32 {
+            const h = t.hyp orelse return null;
+            if (t.hyp_knots.contains(n)) return identity_env;
+            const view = t.hyp_nodes.get(n) orelse n;
+            if (v.shapes.kind(view) != .view) return null;
+            return h.envOf(h.ctx, v.shapes, view);
+        }
+
+        /// A hypothesis node's contribution (§8 slice 4, *The hypothesis
+        /// node*; §2.9 rule 4, #1485): the walk does not enter the view's
+        /// cycle. Each class of its template (a node of the callee's widened
+        /// `res`, a union's or choice's sides one class with it) gives its
+        /// certificate's arrival keys, instantiated through the view's
+        /// environment by rule 4, at the class of the caller's fold that the
+        /// view's answer puts it in (the fold's steps, in lockstep). A group's
+        /// keys enter once per image (the maximum), each pair of them merged
+        /// onto one image owing `exclOf`; keys in no group, and the classes
+        /// of the template, add. Null where the caller's fold has no class
+        /// for a template class: the walk then saturates, as before.
+        pub fn hypAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, e: u32) Error!?ClassAggs {
+            const shapes = v.shapes;
+            const view = t.hyp_nodes.get(n) orelse n;
+            const template: NodeId = if (e == identity_env) n else .from(shapes.get(view).a);
+            const img0 = fold.image.get(n) orelse fold.image.get(try shapes.force(gpa, charge.account, view)) orelse {
+                return null;
+            };
+            var out: ClassAggs = .{};
+            var seen: Ids.FixedDict(2) = .{};
+            defer seen.deinit(gpa);
+            var stack: std.ArrayList([2]NodeId) = .empty;
+            defer stack.deinit(gpa);
+            var keys: std.ArrayList(HypKey) = .empty;
+            defer keys.deinit(gpa);
+            var merged: Ids.FixedDict(2) = .{};
+            defer merged.deinit(gpa);
+            var sides: std.ArrayList(NodeId) = .empty;
+            defer sides.deinit(gpa);
+            try stack.append(gpa, .{ template, img0 });
+            while (stack.pop()) |x| {
+                try charge.reserve(gpa, .inspection, 1);
+                if ((try seen.getOrPut(gpa, .{ x[0].int(), x[1].int() })).found_existing) continue;
+                const tn = x[0];
+                const img = x[1];
+                const a = try t.certClassAgg(gpa, charge, v, e, tn, &keys, &merged);
+                if (a.all_len > 0 or a.pairs != yes) out = try t.classesMerge(gpa, charge, v, out, .{ .map = try t.mapPut(gpa, charge, Ids.none_int, img.int(), try t.agg(gpa, a)), .len = 1 }, true);
+                // The class's children, each another class.
+                sides.clearRetainingCapacity();
+                try sides.append(gpa, tn);
+                var i: usize = 0;
+                while (i < sides.items.len) : (i += 1) {
+                    const s = sides.items[i];
+                    const d = shapes.get(s);
+                    switch (d.kind) {
+                        .@"union", .choice, .positions => try sides.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                        .node, .delta => {
+                            if (d.kind == .delta) try sides.append(gpa, .from(d.a));
+                            var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                            while (it.next()) |c| {
+                                const ci = fold.steps.get(.{ img.int(), c.step.word() }) orelse {
+                                    return null;
+                                };
+                                try stack.append(gpa, .{ c.node, .from(ci) });
+                            }
+                        },
+                        .view => return null, // a class is stored forced
+                        .leaf, .recast => {},
+                    }
+                }
+            }
+            return out;
+        }
+
+        /// One class `tn` of a certificate at environment `e` (`identity_env`:
+        /// a class's own knot): its arrival keys instantiated by §2.9 rule 4
+        /// as a multiset, a group's keys once per image (the maximum), a pair
+        /// of them merged onto one image owing `exclOf` (#1485). `keys` and
+        /// `merged` are scratch.
+        pub fn certClassAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, tn: NodeId, keys: *std.ArrayList(HypKey), merged: *Ids.FixedDict(2)) Error!Agg {
+            const h = t.hyp.?;
+            const cells = v.cells;
+            keys.clearRetainingCapacity();
+            const own = try v.shapes.cellsOf(gpa, charge.account, &cells.sets, tn);
+            if (e == identity_env) {
+                // A class's own knot: each of its cells once, its repeats
+                // its own fold condition's.
+                var it = cells.sets.iterate(own);
+                while (it.next()) |c| if (cells.origin(.from(c.key)) != .mark)
+                    try keys.append(gpa, .{ .key = .from(c.key), .image = .from(c.key), .approx = c.value == 1, .group = Ids.none_int });
+            } else try h.keys(h.ctx, gpa, charge, e, own, keys);
+            merged.deinit(gpa);
+            merged.* = .{};
+            // In a read-off, an image is the class's cell (`ReadOff.image`).
+            if (t.hyp_image) |hi| for (keys.items) |*k| {
+                k.image = try hi.image(hi.ctx, k.image);
+            };
+            // A group whose keys overlap (`Cell.alias` not `no` for some pair)
+            // is dropped, and its keys add as before (§2.9 rule 4, in every
+            // build). Pairwise here; the spec's trie is owed (#1485).
+            var over: Ids.FixedDict(1) = .{};
+            defer over.deinit(gpa);
+            for (keys.items, 0..) |x, i| if (x.group != Ids.none_int) for (keys.items[i + 1 ..]) |y| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (y.group == x.group and y.key != x.key and cells.alias(v.places, x.key, y.key) != .no) (try over.getOrPut(gpa, .{x.group})).value_ptr.* = 0;
+            };
+            for (keys.items) |*k| if (k.group != Ids.none_int and over.get(.{k.group}) != null) {
+                k.group = Ids.none_int;
+            };
+            var a: Agg = .{};
+            // The keys of a group already at each image: `merged` maps
+            // `(group, image)` to the head of a run in `runs`.
+            var runs: std.ArrayList([2]u32) = .empty;
+            defer runs.deinit(gpa);
+            for (keys.items) |k| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (k.group != Ids.none_int) {
+                    const got = try merged.getOrPut(gpa, .{ k.group, k.image.int() });
+                    if (got.found_existing) {
+                        // One more position of the image only when the key is
+                        // alias-apart from every key of its group already there:
+                        // route separation, tested in every build (§2.9 rule 4).
+                        // The same key again adds nothing; an aliasing key is a
+                        // repeat, as by cell.
+                        var same = false;
+                        var routes_apart = true;
+                        var r = got.value_ptr.*;
+                        while (r != Ids.none_int) : (r = runs.items[r][1]) {
+                            try charge.reserve(gpa, .inspection, 1);
+                            const y: CellId = .from(runs.items[r][0]);
+                            if (y == k.key) same = true else if (cells.alias(v.places, y, k.key) != .no) routes_apart = false;
+                        }
+                        if (same) continue;
+                        if (routes_apart) {
+                            try runs.append(gpa, .{ k.key.int(), got.value_ptr.* });
+                            got.value_ptr.* = @intCast(runs.items.len - 1);
+                            a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.exclOf(gpa, charge, cells, k.image));
+                            continue;
+                        }
+                    } else {
+                        try runs.append(gpa, .{ k.key.int(), Ids.none_int });
+                        got.value_ptr.* = @intCast(runs.items.len - 1);
+                    }
+                }
+                a = try t.aggAdd(gpa, charge, cells, v.places, a, k.image, k.approx, true);
+            }
+            return a;
+        }
+
+        /// κ̂(V, K) (§2.11 item 3 (d), #1485): the certificate of class `k`
+        /// read at environment `e`, its keys by §2.9 rule 4 (a repeat `lost`,
+        /// distinct arrivals `apart`, a symbolic arrival at a summary path
+        /// `excl`), with the certificate's own condition instantiated there.
+        pub fn certRead(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, k: NodeId) Error!CondId {
+            var keys: std.ArrayList(HypKey) = .empty;
+            defer keys.deinit(gpa);
+            var merged: Ids.FixedDict(2) = .{};
+            defer merged.deinit(gpa);
+            const a = try t.certClassAgg(gpa, charge, v, e, k, &keys, &merged);
+            var c = try t.foldCond(gpa, charge, v.cells, v.places, a);
+            var it = v.cells.sets.iterate(a.all);
+            while (it.next()) |x| {
+                try charge.reserve(gpa, .inspection, 1);
+                const cell: CellId = .from(x.key);
+                const o = v.cells.origin(cell);
+                if (o.isSymbolic() and o != .top and v.places.isSummary(.from(v.cells.get(cell).b))) c = try t.@"and"(gpa, charge, c, try t.exclOf(gpa, charge, v.cells, cell));
+            }
+            if (t.fold_cond.get(k)) |fc| if (t.resolver) |r| {
+                c = try t.@"and"(gpa, charge, c, try r.resolve(r.ctx, t, gpa, charge, fc.int(), e, false));
+            };
+            return c;
+        }
+
         /// The parts of source node `n` the widen walked: its explicit
         /// children, an opened union's, choice's or positions node's sides. They
         /// coexist, except an opened choice's arms, which the caller takes by the
         /// maximum (§2.3: two source occurrences add, one execution has one arm).
-        fn sourceParts(gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        pub fn sourceParts(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
             const from = out.items.len;
             defer for (out.items[from..]) |*p| {
-                // The widen forced each child as it descended: its source nodes are answers.
-                p.* = v.shapes.forced(p.*);
+                // The widen forced each child as it descended: its source nodes
+                // are answers, but a hypothesis node's (#1485).
+                if (t.hypEnv(v, p.*) == null) p.* = v.shapes.forced(p.*);
             };
             const d = v.shapes.get(n);
             switch (d.kind) {
