@@ -1,0 +1,47 @@
+-- `Http.Server` under `--release` once `Server.js` is gone
+-- (plans/runtime-in-beni.md step 12, boundary.md §9.10 *The sibling,
+-- moved*): the listen table of constructors read by its own keys, the two
+-- `Js.catchIf`s of `invalid` naming Node's `TypeError` codes, the request
+-- built from `rawHeaders` by an index loop, the response's headers pushed
+-- flat, the upgrade record a `Js.object` of its eight names and the
+-- `gone` table read by its keys; `Request` and `Response` cross no
+-- `foreign`, so their fields are short.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Deferred ⊤, Request → Response
+handle stop request =
+    case request.path of
+        "/stop" →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 "bye"
+
+        _ →
+            { status = 200
+            , headers = [ ( "x-method", request.method ), ( "content-type", "text/plain" ) ]
+            , body = request.body
+            }
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = handle stop _
+            , upgrade =
+                λrequest →
+                    Server.refuse (Server.text 403 (String.join (Server.protocols request) ","))
+            }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print "stopped"
