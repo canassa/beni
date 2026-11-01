@@ -2703,16 +2703,12 @@ const Emitter = struct {
             .{try e.writtenProgramName(entry.module)},
         );
         const program = e.options.platform.program orelse "";
-        const expected = e.session.checked.types.find(
-            e.graph(),
-            .platform,
-            try e.session.interner.getOrPut(e.gpa, platformModule(program)),
-            try e.session.interner.getOrPut(e.gpa, shortName(program)),
-        );
+        const expected = try e.platformProgramType(program);
         if (e.expandedTypeName(entry.module, b, annotation, null, 0)) |t| {
             if (expected != .none and t.id == expected) return;
-            if (std.mem.eql(u8, t.module, platformModule(program)) and
-                std.mem.eql(u8, t.name, shortName(program)))
+            if (expected != .none and
+                std.mem.eql(u8, t.module, e.session.interner.slice(e.session.checked.types.entry(expected).module_name)) and
+                std.mem.eql(u8, t.name, e.session.interner.slice(e.session.checked.types.entry(expected).name)))
             {
                 return e.report(.main_not_program, file, d.name_token,
                     \\`main` must use the platform's `{s}`.
@@ -2741,6 +2737,25 @@ const Emitter = struct {
                 if (actual) |t| e.writtenTypeName(entry.module, t) else "something else",
             },
         );
+    }
+
+    /// Resolve the manifest's platform-owned type through the same aliases as
+    /// the entry annotation. A missing type has no identity to impersonate.
+    fn platformProgramType(e: *Emitter, program: []const u8) !CheckedTypes.TypeId {
+        const types = &e.session.checked.types;
+        const id = types.find(
+            e.graph(),
+            .platform,
+            try e.session.interner.getOrPut(e.gpa, platformModule(program)),
+            try e.session.interner.getOrPut(e.gpa, shortName(program)),
+        );
+        if (id == .none) return .none;
+        const named = types.entry(id);
+        if (named.kind != .alias) return id;
+        const b = e.bir(named.module);
+        const body = b.decl(named.decl).annotation.unwrap() orelse return .none;
+        const expanded = e.expandedTypeName(named.module, b, body, null, 0) orelse return .none;
+        return expanded.id;
     }
 
     /// A resolved type reference, split into the two halves a message needs.
