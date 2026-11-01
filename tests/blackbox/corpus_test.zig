@@ -3113,8 +3113,10 @@ const Case = struct {
             break :blk "--platform=" ++ browser.platform_dir;
         };
         const sources = try c.writeSources();
-        // The v1/v2 parity of the page's program (§7.2), from one dump.
-        if (c.cfg.v2Net() and c.cfg.chrome == null and c.cfg.runs(Kind.browser.partOf(.dev))) try c.runV2Parity(platform_arg, sources, platform, h);
+        // The v1/v2 parity of the page's program (§7.2), from one dump. Its
+        // value-fuzz case (`Fixture.values`) is the same program on the same
+        // platform, and its page case has made this dump already.
+        if (c.cfg.v2Net() and c.cfg.chrome == null and !c.fixture.values and c.cfg.runs(Kind.browser.partOf(.dev))) try c.runV2Parity(platform_arg, sources, platform, h);
 
         // The steps, copied into the project under the name the driver
         // reports a step by.
