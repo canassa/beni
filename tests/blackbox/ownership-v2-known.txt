@@ -1890,7 +1890,6 @@ tests/corpus/ownership/ViewSplitStoredBack.beni [node] ViewSplitStoredBack 42:29
 tests/corpus/ownership/ViewSplitStoredBackImported [node] Main 12:29 #0 :: Lists.incEach <call>[*] :: accepted :: rejected  v1 is unsound: `pushBack` stores its head again, so `incEach` would write one list twice (as #1478)
 tests/corpus/ownership/ViewOfCallAnswer.beni [node] ViewOfCallAnswer 131:31 #0 :: List.push gs2 :: accepted :: rejected  v1 is unsound (#1491): a second match two levels down writes `gs2`, the list `rest` views, while `rest` lives; v2 refuses it
 tests/corpus/ownership/ViewOfCallAnswerImported [node] Main 93:31 #0 :: List.push gs2 :: accepted :: rejected  v1 is unsound (#1491): a second match two levels down writes `gs2`, the list `rest` views, while `rest` lives; v2 refuses it
-||||||| parent of 164e7750d (🐛 own2: two positions of one image through ⟲ at a call (rule 3))
 # §2.9 rule 3 (slice 4c, #1195): two positions of one image through `⟲` at a call. The same writes and
 # verdicts as v1, under v2's canonical path text (§2.2).
 tests/corpus/ownership/LevelPositionsCall.beni [node] LevelPositionsCall 22:16 #0 :: LevelPositionsCall.incList <call>[*]#B.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
