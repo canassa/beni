@@ -219,6 +219,11 @@ pub fn Of(comptime Frame: type) type {
         /// container's contents are its explicit elements, on both sides.
         pub fn bindList(f: *Frame, p: u32, v: Value, point: u32, deferred: *std.ArrayList(BindItem)) Error!void {
             const items = f.bir.extraSlice(Bir.inlineRange(f.data(p)), Inst.Index);
+            // The match tests the list's length (`[]`, `[ x, …_ ]`, `[ a, b ]`),
+            // so it reads the list itself, at whatever depth the pattern is
+            // (§2.13.3, *A list pattern reads its list*): a parameter's part
+            // is `R` there. `[ …rest ]` alone tests nothing.
+            if (!(items.len == 1 and f.tag(items[0].int()) == .pat_spread)) try f.readsOf(v, .none, false);
             if (items.len == 0) return;
             // Several container cells are inferred alternatives: their per-cell
             // work is a product with the items, growth chosen before the work
