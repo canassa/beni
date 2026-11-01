@@ -35,6 +35,7 @@ const TrackedKey = struct { store: usize, root: u32, depth: u32, query: u8 };
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Arena = @import("../Arena.zig");
+const stamped = @import("../stamped.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
@@ -2876,8 +2877,82 @@ fn xsumAnd(a: Allocator, x: XSum, y: XSum) Allocator.Error!XSum {
     return .{ .atoms = sortAtoms(all) };
 }
 
+/// A stable sort, so it orders exactly as `std.mem.sort` does: by
+/// insertion while short, and above that a merge through one buffer.
+/// `std.mem.sort` fills a 512-element cache on every call, and the
+/// condition-only rows of a doubling tuple (#856) make millions of calls.
+fn sortStable(comptime T: type, a: Allocator, items: []T, context: anytype, comptime less: fn (@TypeOf(context), T, T) bool) Allocator.Error!void {
+    const short = 16;
+    if (items.len <= short) return insertSort(T, items, context, less);
+    if (std.sort.isSorted(T, items, context, less)) return;
+    var from = items;
+    var to = try a.alloc(T, items.len);
+    const buffer = to;
+    defer a.free(buffer);
+    var i: usize = 0;
+    while (i < items.len) : (i += short) insertSort(T, items[i..@min(i + short, items.len)], context, less);
+    var width: usize = short;
+    while (width < items.len) : (width *= 2) {
+        var lo: usize = 0;
+        while (lo < items.len) : (lo += 2 * width) {
+            const mid = @min(lo + width, items.len);
+            const hi = @min(lo + 2 * width, items.len);
+            var l = lo;
+            var r = mid;
+            for (to[lo..hi]) |*slot| {
+                // The left run wins ties: the merge is stable.
+                if (r < hi and (l == mid or less(context, from[r], from[l]))) {
+                    slot.* = from[r];
+                    r += 1;
+                } else {
+                    slot.* = from[l];
+                    l += 1;
+                }
+            }
+        }
+        const t = from;
+        from = to;
+        to = t;
+    }
+    if (from.ptr != items.ptr) @memcpy(items, from);
+}
+
+fn insertSort(comptime T: type, items: []T, context: anytype, comptime less: fn (@TypeOf(context), T, T) bool) void {
+    var i: usize = 1;
+    while (i < items.len) : (i += 1) {
+        const x = items[i];
+        var j = i;
+        while (j > 0 and less(context, x, items[j - 1])) : (j -= 1) items[j] = items[j - 1];
+        items[j] = x;
+    }
+}
+
+test "sortStable orders ties as std.mem.sort does" {
+    const lessKey = struct {
+        fn less(_: void, x: [2]u32, y: [2]u32) bool {
+            return x[0] < y[0];
+        }
+    }.less;
+    var prng: std.Random.DefaultPrng = .init(856);
+    for ([_]usize{ 0, 1, 15, 16, 17, 33, 500, 4099 }) |n| {
+        const want = try std.testing.allocator.alloc([2]u32, n);
+        defer std.testing.allocator.free(want);
+        for (want, 0..) |*p, i| p.* = .{ prng.random().uintLessThan(u32, 7), @intCast(i) };
+        const got = try std.testing.allocator.dupe([2]u32, want);
+        defer std.testing.allocator.free(got);
+        std.mem.sort([2]u32, want, {}, lessKey);
+        try sortStable([2]u32, std.testing.allocator, got, {}, lessKey);
+        try std.testing.expectEqualSlices([2]u32, want, got);
+    }
+}
+
 pub fn sortAtoms(all: []XAtom) []const XAtom {
-    std.mem.sort(XAtom, all, {}, struct {
+    // Short, and with no allocator at hand: by insertion (`sortStable`).
+    if (all.len <= 16) insertSort(XAtom, all, {}, struct {
+        fn less(_: void, p: XAtom, q: XAtom) bool {
+            return p.less(q);
+        }
+    }.less) else std.mem.sort(XAtom, all, {}, struct {
         fn less(_: void, p: XAtom, q: XAtom) bool {
             return p.less(q);
         }
@@ -3211,7 +3286,7 @@ fn unionFieldSets(a: Allocator, sets: []const []const u32) Allocator.Error![]con
 /// `entries` sorted by path and provenance, each pair at one path merged.
 fn sortedRes(keep: Allocator, entries: []const ResEntry) Allocator.Error![]const ResEntry {
     const res = try keep.dupe(ResEntry, entries);
-    std.mem.sort(ResEntry, res, {}, struct {
+    try sortStable(ResEntry, keep, res, {}, struct {
         fn less(_: void, x: ResEntry, y: ResEntry) bool {
             if (x.path != y.path) return x.path < y.path;
             return x.prov.less(y.prov);
@@ -7997,6 +8072,8 @@ const Walker = struct {
     mode: Mode,
     /// The declaration is in a recursive group (§16.6).
     recursive: bool = false,
+    /// `annotationSpines`' guard accumulators, by cell (`stamped.Pool`).
+    guard_slots: stamped.Pool(stamped.Column(u32, u32)) = .{},
 
     point: u32 = 0,
     cast_open_used: bool = false,
@@ -8448,9 +8525,8 @@ const Walker = struct {
     /// Sorted and deduplicated, in place: every caller hands over an array
     /// of its own.
     fn norm(w: *Walker, items: []Entry) Allocator.Error!AV {
-        _ = w;
         if (items.len <= 1) return items;
-        std.mem.sort(Entry, items, {}, struct {
+        try sortStable(Entry, w.a, items, {}, struct {
             fn less(_: void, x: Entry, y: Entry) bool {
                 if (x.path != y.path) return x.path < y.path;
                 if (x.cell != y.cell) return x.cell < y.cell;
@@ -9217,7 +9293,7 @@ const Walker = struct {
         const all = try w.a.alloc(WAtom, xs.len + ys.len);
         @memcpy(all[0..xs.len], xs);
         @memcpy(all[xs.len..], ys);
-        std.mem.sort(WAtom, all, {}, struct {
+        try sortStable(WAtom, w.a, all, {}, struct {
             fn less(_: void, p: WAtom, q: WAtom) bool {
                 return p.less(q);
             }
@@ -9428,7 +9504,7 @@ const Walker = struct {
         // `(cell, path)` sorted: a cell at two paths or more is two runs.
         const at = try w.a.alloc([2]u32, av.len);
         for (av, at) |e, *p| p.* = .{ e.cell, e.path };
-        std.mem.sort([2]u32, at, {}, lessPair);
+        try sortStable([2]u32, w.a, at, {}, lessPair);
         var multi: std.ArrayList(u32) = .empty;
         for (at, 0..) |p, i| {
             if (i == 0 or at[i - 1][0] != p[0] or at[i - 1][1] == p[1]) continue;
@@ -20400,6 +20476,10 @@ const Walker = struct {
         } else true;
         var conditions: std.ArrayList(CondAcc) = .empty;
         var touched: std.ArrayList(u32) = .empty;
+        // Each guard's accumulator in `conditions`, by the guard's id: a column
+        // from the pool, so no call makes the slots an earlier one made (#856).
+        const slots = try w.guard_slots.take(w.a);
+        defer w.guard_slots.give(slots);
         var seen_conditions: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
         for (sc.atoms) |t| {
             if (t.kind != .sep_root) continue;
@@ -20446,11 +20526,14 @@ const Walker = struct {
                     try w.initCond(guard, cond_yes);
                     try w.rinitCond(guard, cond_yes);
                     if (batch and guard_cell.condition_only) {
-                        if (guard >= conditions.items.len) try conditions.appendNTimes(w.a, .{}, guard + 1 - conditions.items.len);
                         if (!(try seen_conditions.getOrPut(w.a, .{ guard, k })).found_existing) {
-                            const acc = &conditions.items[guard];
-                            if (acc.last == none) try touched.append(w.a, guard);
-                            try acc.add(w, k);
+                            const slot = try slots.getOrPut(w.a, guard);
+                            if (!slot.found_existing) {
+                                slot.value_ptr.* = @intCast(conditions.items.len);
+                                try conditions.append(w.a, .{});
+                                try touched.append(w.a, guard);
+                            }
+                            try conditions.items[slot.value_ptr.*].add(w, k);
                         }
                     } else try w.initSpine(guard, k);
                     var growth = gJoin(e.grown, root.grown);
@@ -20471,7 +20554,7 @@ const Walker = struct {
                 }
             }
         }
-        for (touched.items) |guard| try w.initSpine(guard, try w.condAndAll(&conditions.items[guard]));
+        for (touched.items, conditions.items) |guard, *acc| try w.initSpine(guard, try w.condAndAll(acc));
         return w.norm(out.items);
     }
 
@@ -22140,7 +22223,7 @@ const Walker = struct {
             if (k != .site and k != .result) continue;
             try made.append(w.a, .{ e.cell, e.path *% 2 +% @intFromBool(e.approx != 0), @intCast(i) });
         }
-        std.mem.sort([3]u32, made.items, {}, struct {
+        try sortStable([3]u32, w.a, made.items, {}, struct {
             fn less(_: void, x: [3]u32, y: [3]u32) bool {
                 if (x[0] != y[0]) return x[0] < y[0];
                 return x[1] < y[1];
@@ -22158,7 +22241,7 @@ const Walker = struct {
             r.first = @min(r.first, p[2]);
             r.to = @intCast(i + 1);
         }
-        std.mem.sort(Run, runs.items, w, struct {
+        try sortStable(Run, w.a, runs.items, w, struct {
             fn less(ww: *Walker, x: Run, y: Run) bool {
                 const cx = ww.cells.items[x.cell];
                 const cy = ww.cells.items[y.cell];
@@ -22174,7 +22257,7 @@ const Walker = struct {
             fc.* = r.cell;
             bc.* = .{ r.cell, @intCast(i) };
         }
-        std.mem.sort([2]u32, by_cell, {}, lessPair);
+        try sortStable([2]u32, w.a, by_cell, {}, lessPair);
         const fresh: Fresh = .{ .cells = fresh_cells, .by_cell = by_cell };
         // A fresh number only says which result paths may hold one new
         // cell (thesis §3.7, §4.6: `k ≤ |Q|`), so cells that appear at the
