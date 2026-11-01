@@ -39,7 +39,8 @@ const layers = [_]Entry{
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1200 },
+    // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1210 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
@@ -192,7 +193,9 @@ const layers = [_]Entry{
     // alias chain taken hop by hop.
     // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
     // wake rule. 2 205 since #1543: `--ownership-propagate`'s plumbing.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2205 },
+    // 2 220 since #1566: a block read's re-interning memo, read outside the
+    // call's lane.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2220 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -218,7 +221,8 @@ const layers = [_]Entry{
     .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
-    .{ .file = "Enforce.zig", .layer = 17, .max_lines = 500 },
+    // 510 since #1566: the block read's `own_memo`, kept across one read.
+    .{ .file = "Enforce.zig", .layer = 17, .max_lines = 510 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
