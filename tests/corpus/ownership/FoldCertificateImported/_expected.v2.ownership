@@ -51,11 +51,11 @@ module Main
   78:10 Main.incAll <call Lib.dupL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   78:10 Main.incAll <call Lib.dupL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   78:10 Main.incAll <call Lib.dupL>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  82:10 Main.incAll <call Lib.shareL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
-  82:10 Main.incAll <call Lib.shareL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
-  82:10 Main.incAll <call Lib.shareL>#Node.1: rejected disjoint: another path of the same argument reaches it
-  82:10 Main.incAll <call Lib.shareL>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
-  82:10 Main.incAll <call Lib.shareL>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  82:10 Main.incAll <call Lib.shareL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  82:10 Main.incAll <call Lib.shareL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  82:10 Main.incAll <call Lib.shareL>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  82:10 Main.incAll <call Lib.shareL>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  82:10 Main.incAll <call Lib.shareL>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   86:10 Main.incAll <call Lib.deeper>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   86:10 Main.incAll <call Lib.deeper>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   86:10 Main.incAll <call Lib.deeper>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)

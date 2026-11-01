@@ -1,0 +1,95 @@
+-- ownership: a recursive producer whose base returns a raw parameter, or
+-- builds a node around one (ownership-v2.md §2.11 item 3 (d3); §8 slice
+-- 4, *As built, part 3*; #1485). Its class holds the parameter as a leaf
+-- beside the built node, so the positions below that leaf lie in no class
+-- of the fold: (d) does not read the certificate there, and the walk
+-- compares cells. Each class reads `lost` or folds, so a refusal by cells
+-- inside it is `(approx)`. `accA` puts one tree at two positions and is
+-- unsafe; the others are safe on every input and are precision gaps.
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+wrapN : Int, Tree → Tree
+wrapN n a =
+    if n == 0 then
+        a
+    else
+        Node (wrapN (n - 1) a) [] Leaf
+
+
+acc8 : Int, Tree, Tree → Tree
+acc8 n a b =
+    if n == 0 then
+        Node a [] b
+    else
+        Node (acc8 (n - 1) a b) [] Leaf
+
+
+accL : Int, Tree → Tree
+accL n a =
+    if n == 0 then
+        Node a [] Leaf
+    else
+        Node (accL (n - 1) a) [] Leaf
+
+
+accA : Int, Tree → Tree
+accA n a =
+    if n == 0 then
+        Node a [] a
+    else
+        Node (accA (n - 1) a) [] Leaf
+
+
+accR : Int, Tree → Tree
+accR n a =
+    if n == 0 then
+        a
+    else
+        Node Leaf [] (accR (n - 1) a)
+
+
+sw3 : Tree, Tree → Tree
+sw3 a b =
+    case a of
+        Leaf →
+            b
+
+        Node al xs _ →
+            Node (sw3 b al) xs Leaf
+
+
+pub wrapped : Int, Tree → Tree
+wrapped n t = incAll (wrapN n t)
+
+
+pub twoAtBase : Int, Tree, Tree → Tree
+twoAtBase n a b = incAll (acc8 n a b)
+
+
+pub leftAtBase : Int, Tree → Tree
+leftAtBase n t = incAll (accL n t)
+
+
+pub twiceAtBase : Int, Tree → Tree
+twiceAtBase n t = incAll (accA n t)
+
+
+pub rightChain : Int, Tree → Tree
+rightChain n t = incAll (accR n t)
+
+
+pub swapped : Tree, Tree → Tree
+swapped a b = incAll (sw3 a b)
