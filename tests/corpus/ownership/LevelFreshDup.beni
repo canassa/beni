@@ -1,0 +1,41 @@
+-- ownership: a recursive member walked again against the ports it
+-- settled at reads off the same class (issue #1582). `dup` is
+-- `LevelFresh`'s, alone: its third walk's read-off closes a knot in
+-- `map` whose form the next walk's knot has too. That knot moved onto
+-- the first, all but its entry, so the parent named the raw entry while
+-- the κ carried through the move named the target: walked once more,
+-- `dup` read `#Node.0 {lost}` that its port did not have. The corpus
+-- walks every member again at the fixpoint and compares. `pushDup`
+-- stays refused: the root's list and its left child's are one list.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+dup : Int → Tree
+dup n =
+    if n == 0 then
+        Leaf
+    else
+        ys = [ n ]
+        Node (Node (dup (n - 1)) ys Leaf) ys Leaf
+
+
+size : Tree → Int
+size t =
+    case t of
+        Leaf →
+            0
+
+        Node l xs r →
+            size l + List.length xs + size r
+
+
+pub pushDup : Int → Tree × Int
+pushDup n =
+    case dup n of
+        Node l xs r →
+            ( Node l (List.push xs 0) r, size l )
+
+        Leaf →
+            ( Leaf, 0 )

@@ -908,6 +908,19 @@ Operations, memoised on their node arguments:
        every `fold_cond` entry. Otherwise the knot is recorded under its key, with one representative per
        class. A graph that is not minimal (two members in one class) is recorded and never moved, so the
        move is injective on the members.
+       *As built since #1582:* "each source" includes the knot's entry. `map` puts the entry's own
+       `(source, slot)` pair on the trail after its trail mark, so the move covers it. Before the
+       fix the mark came after that pair, and the move missed it. The entry's source kept its raw
+       slot, so the parent's record named the raw knot, while every view and eager source of the
+       knot moved to the target, and the κ carried through `memo_map` with them. The value and its
+       κ then named two knots. A walk whose knot was first met recorded it, and the next walk's
+       knot of the same form moved. So the second of two walks against the same ports read off
+       another class: `dup` read `#Node.0 {lost}` (§8 S3b slice 4, *Validation and publication*).
+       In `LevelFresh` the move fires only under the atom rule (#1483): with the rule reverted the
+       re-walk agrees. The two walks' knots there are one self-looping node that reaches the `Leaf`
+       atom, an external node, and the first walk records it. The unit test is *#1582: a map's knot moves its
+       entry's image too*. Over the 362 ownership fixtures, no v2 dump line changes except the
+       `account` and `block` lines. Over the 2 121 roots, no verdict changes.
     4. *Side facts in the key.* `fold_cond` is stored by node after `widenFold`, so `widenValue` runs the
        rule after it stores them, and the key holds each member's `fold_cond`. The other node-keyed facts
        are the positions node's *counted* bit, `dropsOf`, an eager image other than the node itself, a
@@ -7162,7 +7175,7 @@ L0  Ids
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferArms, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 220 (#1566: a block read's re-interning memo, outside the first call's lane; S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; #1543: `--ownership-propagate`'s two lines) |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 260 (#1582: under `--ownership-rewalk-check`, each member walked again at the fixpoint against the ports it settled at, its read-off compared both ways with its last walk's; #1566: a block read's re-interning memo, outside the first call's lane; S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; #1543: `--ownership-propagate`'s two lines) |
 | `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
@@ -7818,6 +7831,17 @@ member's last walk saw x* exactly. That walk is the member's final source valida
 its read-off is F(x*) ⊑ x*, and its demands are the ones reported. No acceptance from an earlier
 generation is published (§2.12). Then every member publishes at once, with its stable labels (*Stable labels*):
 `results` receive the classes and the lines together.
+
+"Its last walk saw x* exactly" holds only if a walk is a function of the ports: two walks against the
+same x read off the same class, whatever the tables hold from earlier walks. *As built (#1582):* under the
+hidden, test-only `--ownership-rewalk-check`, `Groups.assertRewalks` walks every member once more at the
+joint fixpoint, as a validation walk on an account of its own, and panics unless the read-off equals the
+last walk's both ways (`Summary.leq`). The corpus passes the flag to every `--ownership=v2` dump. It is a
+flag, not a `runtime_safety` check, because the extra walk warms memos that a later declaration reads, and
+the counted tests measure records in the safety build (*the call over a chain of nested choices* fell
+from 1 513 to 906 records at D = 8, #1525). It found that `map`'s knot move
+(§2.3, 4e, step 3) left the knot's entry behind: `LevelFresh`'s `dup`, walked a fourth time against its
+settled port, read `#Node.0 {lost}` that the port did not have. `ownership/LevelFreshDup` pins it.
 
 The general rule follows. **An inference walk that records a new edge is followed by a validation
 walk**: the facts the new edge brings arrive after that walk's vector was taken.

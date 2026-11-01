@@ -194,8 +194,9 @@ const layers = [_]Entry{
     // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
     // wake rule. 2 205 since #1543: `--ownership-propagate`'s plumbing.
     // 2 220 since #1566: a block read's re-interning memo, read outside the
-    // call's lane.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2220 },
+    // call's lane. 2 260 since #1582: `--ownership-rewalk-check` walks each
+    // member again at the fixpoint and compares the read-off.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2260 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.

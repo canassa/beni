@@ -82,6 +82,7 @@ pub const Input = struct {
     /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
     imports: ?Imports = null,
     order_check: bool = false, // `--ownership-order-check` (test-only)
+    rewalk_check: bool = false, // `--ownership-rewalk-check` (test-only)
     propagate_dump: bool = false, // `--ownership-propagate` (test-only)
 
     pub fn isCore(in: *const Input, m: u32) bool {
@@ -1815,6 +1816,7 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         }
         if (!any) break;
     }
+    if (mod.in.rewalk_check) try assertRewalks(mod, g, prepass);
     for (rs, 0..) |*r, k| {
         charging(mod, &r.account);
         // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
@@ -1826,6 +1828,46 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         g.lines[k] = &.{};
     }
     return true;
+}
+
+/// At the joint fixpoint, each member walked once more against the ports
+/// as they stand reads off its last walk's class, both ways `Summary.leq`
+/// (§8 S3b slice 4, *Validation and publication*: the stop rule takes a
+/// walk to be a function of the ports, #1582), under the hidden
+/// `--ownership-rewalk-check`, which the corpus passes to every v2 dump.
+/// The walk is a validation walk on an account of its own, with no member
+/// under way, so it moves no limit, count or edge; it warms memos, so a
+/// counted test never passes the flag (#1525).
+fn assertRewalks(mod: *Module, g: *Group, prepass: *const Facts.Prepass) Error!void {
+    const gpa = mod.gpa;
+    for (g.members, 0..) |di, k| {
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        charging(mod, &scratch);
+        const d = mod.in.bir.decls[di];
+        mod.cur_locals = d.locals_start;
+        scratch.source = d.inst_end.int() - d.inst_start.int();
+        g.reads.clearRetainingCapacity();
+        const run = g.param_runs.items[k];
+        var again = try Walk.walk(.{
+            .env = mod.env(),
+            .sums = &mod.sums,
+            .ctx = mod.context(),
+            .bir = mod.in.bir,
+            .decl = d,
+            .prepass = prepass,
+            .phase = .validation,
+            .param_places = g.param_places.items[run.start..][0..run.len],
+            .result_place = g.result_places.items[k],
+            .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
+            .comparison = mod.comparison[di],
+        });
+        defer again.deinit(gpa);
+        if (again.unbuilt != none) std.debug.panic("ownership v2: a recursive member walked again at the fixpoint is unbuilt (#1582)", .{});
+        const env = mod.env();
+        if (!try mod.sums.leq(env, again.class, g.out[k]) or !try mod.sums.leq(env, g.out[k], again.class))
+            std.debug.panic("ownership v2: a recursive member walked again against the same ports reads off another class (§8 S3b slice 4, #1582)", .{});
+    }
 }
 
 /// One pass (§8 S3b slice 4): the members `which` walked against the ports

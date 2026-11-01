@@ -3002,9 +3002,9 @@ pub const Table = struct {
                         try account.reserve(.shape, 1);
                         const out: NodeId = .from(t.count());
                         try t.nodes.append(gpa, .{ .kind = d.kind, .place = d.place, .cells = c, .a = 0, .b = 0, .reach = .none });
+                        try t.stable.trail_at.append(gpa, @intCast(t.stable.trail.items.len));
                         try t.mapPut(gpa, n, out);
                         try t.map_open.put(gpa, n, entered);
-                        try t.stable.trail_at.append(gpa, @intCast(t.stable.trail.items.len));
                         entered += 1;
                         try stack.append(gpa, .{ .node = n, .expanded = true });
                         // The children in order, then a delta's base: pushed in reverse.
@@ -5125,6 +5125,42 @@ test "#1372 F3 (4e): an image on a knot is the knot an equal map made before; th
     var moved = try Stable.widened(&f.shapes, gpa, &f.account, copy, copy.int(), null);
     defer moved.deinit(gpa);
     try testing.expect(moved.get(copy.int()) == null or moved.get(copy.int()).? != k.int());
+}
+
+test "#1582: a map's knot moves its entry's image too, so a second map of one value is the first's" {
+    // `dup`'s read-off (`LevelFresh`): a node whose child is itself, below a
+    // node on no knot. The second map's knot has the first's form and moves
+    // onto it; its entry is the source the knot's slot was made for, and its
+    // image moves with the rest, or the parent names the raw slot while κ
+    // carried through the trail names the target.
+    var f: Fixture = .{};
+    f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const tree = try f.placeOf(0);
+    const list = try f.placeOf(1);
+    const s0 = try f.places.ctorStep(gpa, &f.account, 0, 0);
+    const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
+    const xs = try f.shapes.leaf(gpa, &f.account, list, try f.site(1, list, .list));
+    try f.account.reserve(.shape, 1);
+    const knot: NodeId = .from(f.shapes.count());
+    var kids = try f.one(s0, knot);
+    kids = try f.shapes.overPut(gpa, &f.account, kids, s1, xs);
+    try f.shapes.nodes.append(gpa, .{ .kind = .node, .place = tree, .cells = .none, .a = kids, .b = 0, .reach = .none });
+    var top = try f.one(s0, knot);
+    top = try f.shapes.overPut(gpa, &f.account, top, s1, xs);
+    const root = try f.shapes.node(gpa, &f.account, tree, .none, top);
+    const Same = struct {
+        fn same(_: void, s: SetId) Error!SetId {
+            return s;
+        }
+    };
+    const m1 = try f.shapes.map(gpa, &f.account, root, {}, Same.same);
+    const k1 = f.shapes.memo_map.get(knot).?;
+    const m2 = try f.shapes.map(gpa, &f.account, root, {}, Same.same);
+    try testing.expectEqual(k1, f.shapes.memo_map.get(knot).?);
+    try testing.expectEqual(k1, try f.proj(m2, s0));
+    try testing.expectEqual(m1, m2);
 }
 
 test "#1372: joinAlternatives flattens a choice member into one set of distinct alternatives; joinChoice keeps it" {

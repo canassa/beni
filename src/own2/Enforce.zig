@@ -170,6 +170,7 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .core = ins.core,
         .interner = &session.interner,
         .order_check = session.options.ownership_order_check,
+        .rewalk_check = session.options.ownership_rewalk_check,
         .propagate_dump = session.options.ownership_propagate,
     };
 }

@@ -400,6 +400,10 @@ pub const Options = struct {
     /// v2's `propagate` checks its walk in both frontier orders. Hidden
     /// and test-only.
     ownership_order_check: bool = false,
+    /// `--ownership-rewalk-check` (`Cli.Common`, `ownership-v2.md` §8 S3b
+    /// slice 4): v2 walks each group member again at its fixpoint and
+    /// compares. Hidden and test-only.
+    ownership_rewalk_check: bool = false,
     /// `--ownership-propagate` (`Cli.Common`, `ownership-v2.md` §2.9 *Fold
     /// first*): v2's `propagate` prints a line per call. Hidden and test-only.
     ownership_propagate: bool = false,
