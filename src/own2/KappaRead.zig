@@ -332,7 +332,7 @@ pub fn Of(comptime Table: type) type {
             const from = t.pending.items.len;
             const r = try t.machine(gpa, charge, v, ctx, n, at_summary, pairs);
             // Every read outside a check is checked: memo hits walked whole.
-            if (std.debug.runtime_safety and full_cross_check and !r.crossed and !t.no_memo) try t.crossCheckRead(gpa, charge, v, ctx, n, at_summary, r.k);
+            if (std.debug.runtime_safety and full_cross_check and !r.crossed and !t.no_memo) try t.crossCheck(gpa, false, v, ctx, n, at_summary, r.k);
             if (!r.crossed) return r.k;
             t.crossed_reads += 1;
             if (v.shapes.base_epoch != epoch) {
@@ -344,14 +344,20 @@ pub fn Of(comptime Table: type) type {
                 return (try t.machine(gpa, charge, v, ctx, n, at_summary, &.{})).k;
             }
             try t.settle(gpa, from, true);
-            if (std.debug.runtime_safety and full_cross_check and !t.no_memo) try t.crossCheckRead(gpa, charge, v, ctx, n, at_summary, r.k);
+            if (std.debug.runtime_safety and full_cross_check and !t.no_memo) try t.crossCheck(gpa, false, v, ctx, n, at_summary, r.k);
             return r.k;
         }
 
-        /// `-Downership-full-cross-check` (*Cross-check*): a crossed read made
-        /// again at `C`, with no crossing and no memo, gives the same kind and
-        /// atom set.
-        pub fn crossCheckRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!void {
+        /// `-Downership-full-cross-check` (*Cross-check*): a read (`kappaOf`'s
+        /// machine, or `deep`'s walk) made again at `C`, with no crossing and
+        /// no memo, gives the same kind and atom set. On an account and caches
+        /// of its own: a check never changes what the read it checks charges (#1545).
+        pub fn crossCheck(t: *Table, gpa: Allocator, comptime deep_walk: bool, v: View, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!void {
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const charge: Charge = .growth(&scratch);
+            var caches = t.checkBegin(true);
+            defer t.checkEnd(gpa, &caches);
             const saved = .{ t.no_cross, t.no_memo };
             t.no_cross = true;
             t.no_memo = true;
@@ -359,8 +365,8 @@ pub fn Of(comptime Table: type) type {
                 t.no_cross = saved[0];
                 t.no_memo = saved[1];
             }
-            const exact = (try t.machine(gpa, charge, v, ctx, n, at_summary, &.{})).k;
-            try t.expectSame(gpa, charge, k, exact);
+            if (!deep_walk) return t.expectSame(gpa, charge, k, (try t.machine(gpa, charge, v, ctx, n, at_summary, &.{})).k);
+            try t.expectSame(gpa, charge, try t.resolved(gpa, charge, k), try t.resolved(gpa, charge, (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k));
         }
 
         /// The crossing at re-root view `n` read at `ctx` (*The crossing*):
@@ -835,7 +841,15 @@ pub fn Of(comptime Table: type) type {
                 a.dups_approx = try v.cells.sets.unionWith(gpa, charge, a.dups_approx, try v.cells.sets.unionWith(gpa, charge, dups_approx, old));
             }
             const k = try t.@"and"(gpa, charge, try t.summaryExcl(gpa, charge, v.cells, v.places, cells), try t.aggCond(gpa, charge, v.cells, v.places, a));
-            if (std.debug.runtime_safety and full_cross_check) try t.expectSame(gpa, charge, k, try t.derivedCellsFlat(gpa, charge, v, cells, dups, dups_approx));
+            if (std.debug.runtime_safety and full_cross_check) {
+                // On an account and caches of its own (#1545).
+                var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+                defer scratch.deinit(gpa);
+                const ch: Charge = .growth(&scratch);
+                var caches = t.checkBegin(true);
+                defer t.checkEnd(gpa, &caches);
+                try t.expectSame(gpa, ch, k, try t.derivedCellsFlat(gpa, ch, v, cells, dups, dups_approx));
+            }
             return k;
         }
 
@@ -2529,7 +2543,7 @@ pub fn Of(comptime Table: type) type {
             const r = try t.deepWalk(gpa, charge, v, ctx, n, at_summary);
             if (!r.crossed and !(std.debug.runtime_safety and full_cross_check and !t.no_memo)) return r.k;
             if (!r.crossed) {
-                try t.crossCheckDeep(gpa, charge, v, ctx, n, at_summary, r.k);
+                try t.crossCheck(gpa, true, v, ctx, n, at_summary, r.k);
                 return r.k;
             }
             if (v.shapes.base_epoch != epoch) {
@@ -2541,21 +2555,8 @@ pub fn Of(comptime Table: type) type {
                 return (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k;
             }
             try t.settle(gpa, from, true);
-            if (std.debug.runtime_safety and full_cross_check and !t.no_memo) try t.crossCheckDeep(gpa, charge, v, ctx, n, at_summary, r.k);
+            if (std.debug.runtime_safety and full_cross_check and !t.no_memo) try t.crossCheck(gpa, true, v, ctx, n, at_summary, r.k);
             return r.k;
-        }
-
-        /// `-Downership-full-cross-check`: a `deep` read walked again whole, with
-        /// no memo and no crossing, gives the same kind and atom set.
-        pub fn crossCheckDeep(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!void {
-            const saved = .{ t.no_cross, t.no_memo };
-            t.no_cross = true;
-            t.no_memo = true;
-            defer {
-                t.no_cross = saved[0];
-                t.no_memo = saved[1];
-            }
-            try t.expectSame(gpa, charge, try t.resolved(gpa, charge, k), try t.resolved(gpa, charge, (try t.deepWalk(gpa, charge, v, ctx, n, at_summary)).k));
         }
 
         pub fn deepWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!Read {

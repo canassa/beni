@@ -1376,6 +1376,13 @@ const Grafter = struct {
         const places = g.env.places;
         const cells = g.env.cells;
         if (i >= g.args.len or g.args[i].node == .none) return;
+        // On an account of its own: the check never changes what the call
+        // charges (#1545).
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa_);
+        const real = g.env.charge;
+        g.env.charge = .growth(&scratch);
+        defer g.env.charge = real;
         var root: PathId = .from(cells.get(callee[0]).b);
         while (places.pathParent(root) != .none) root = places.pathParent(root);
         var trace: std.ArrayList(Pre.Arrival) = .empty;
@@ -1576,10 +1583,19 @@ const Grafter = struct {
                 }
                 const k = try t.@"and"(gpa_, g.env.charge, try t.aggCond(gpa_, g.env.charge, g.env.cells, g.env.places, acc), extra);
                 if (std.debug.runtime_safety and Cond.full_cross_check) {
+                    // On an account and caches of its own (#1545).
+                    var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+                    defer scratch.deinit(gpa_);
+                    const ch: Ids.Charge = .growth(&scratch);
+                    var caches = t.checkBegin(true);
+                    defer t.checkEnd(gpa_, &caches);
+                    const real = g.env.charge;
+                    g.env.charge = ch;
+                    defer g.env.charge = real;
                     var items: std.ArrayList(Cond.Item) = .empty;
                     defer items.deinit(gpa_);
                     for (sides.items) |s| try g.addItems(s, &items);
-                    try t.expectSame(gpa_, g.env.charge, k, try t.@"and"(gpa_, g.env.charge, try t.apart(gpa_, g.env.charge, g.env.cells, g.env.places, items.items, null), extra));
+                    try t.expectSame(gpa_, ch, k, try t.@"and"(gpa_, ch, try t.apart(gpa_, ch, g.env.cells, g.env.places, items.items, null), extra));
                 }
                 return k;
             },

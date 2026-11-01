@@ -103,15 +103,17 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             const r = try rule(t, gpa, charge, &in, !t.no_memo, t.reverse_front, t.propagate_dump and !t.no_memo);
             const cross = std.debug.runtime_safety and options.full_cross_check;
             if (t.no_memo or !(cross or t.order_check)) return r;
-            // Walked again with no memo, on an account of its own so that the
-            // check moves no limit (§2.9 *The `runtime_safety` check*): the
-            // rule in both frontier orders and, under the full cross-check,
-            // the reference in both. Each interns in the module's tables, so
-            // it may move later records.
+            // Walked again with no memo, on an account of its own and its
+            // counters put back, so that the check moves no limit (§2.9
+            // *The `runtime_safety` check*, #1545): the rule in both frontier
+            // orders and, under the full cross-check, the reference in both.
+            // Each still interns in the module's tables and fills its caches.
             var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
             defer scratch.deinit(gpa);
             t.no_memo = true;
             defer t.no_memo = false;
+            var caches = t.checkBegin(false);
+            defer t.checkEnd(gpa, &caches);
             for ([_]bool{ false, true }) |rev| {
                 if (!cross and !rev) continue;
                 if (r != try rule(t, gpa, .growth(&scratch), &in, false, rev, false))
