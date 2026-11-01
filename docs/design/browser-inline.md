@@ -89,6 +89,9 @@ declaration, in declaration order.
 
 ## 4. Commands
 
+A polymorphic command body is checked with the actual synchronous sender and
+its captured values. A known suspension or an unresolved call remains refused.
+
 The pass evaluates each key's arm — and `init` — to its `model × Cmd msg` result and reads the
 command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
 

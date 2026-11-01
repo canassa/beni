@@ -45,7 +45,6 @@ pub fn write(
         if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
         for (s.depsOf(c)) |d| worth[d] = true;
     }
-    if (std.mem.indexOfScalar(bool, worth, true) == null) return Interface.no_terms;
 
     var sites: std.ArrayList(BlockSite) = .empty;
     defer sites.deinit(gpa);
@@ -56,6 +55,18 @@ pub fn write(
     roots[0] = v;
     @memcpy(roots[1..], where_types);
     try walkSites(e, roots, &sites, &steps, context, symbol_index);
+
+    // A constructor can join a callback arrow and a nominal result without
+    // adding a rung or dependency. Keep that relationship at imported uses.
+    const seen = try gpa.alloc(bool, classes.len);
+    defer gpa.free(seen);
+    @memset(seen, false);
+    for (sites.items) |site| {
+        const c = s.classIndex(decl, site.node) orelse continue;
+        if (seen[c]) worth[c] = true;
+        seen[c] = true;
+    }
+    if (std.mem.indexOfScalar(bool, worth, true) == null) return Interface.no_terms;
 
     // Classes numbered by first site.
     const number = try gpa.alloc(u32, classes.len);
