@@ -3019,10 +3019,15 @@ Where κ is set, always **at the selected path p**:
       1 035 422 under the walk before it; since #1538's atom rule both take 7 603 / 13 392 / 20 468, so
       the doubling record and the sibling fixture are what fail without fold first. That record was the "genuine product" of four tests of §4.1 (the source continuation,
       the summary that is not printed, near-limit acceptance in either order); they use the doubling calls
-      `w_k x = w_{k-1} (w_{k-1} x)` now, which still are one. The near-limit test measures `h`'s growth in
-      one order and runs both orders under one allowance 5 % above it, each accepted with that growth; its
-      twin runs the other order 5 % below it, which stops at the limit. Both fail under a deliberate
-      charge to whichever declaration meets a shared table's first misses (#1104's kind).
+      `w_k x = w_{k-1} (w_{k-1} x)` now, which still are one: `h` makes ten calls of `w9`, about 78 000
+      records from a few atoms. The near-limit test is one run of three modules: `h` first and `g` first
+      under one allowance above `h`'s growth, accepted with equal growth, and a third under one below it,
+      which stops at the limit; the run checks that both allowances lie within 5 % of the growth it
+      reports. It fails under a deliberate charge to whichever declaration meets a shared table's first
+      misses (#1104's kind). Each of these tests takes under 1 s: a dump of `h` costs about 0.35 s, so a
+      test runs at most two dumps in a row, and puts its other cases in parallel modules of one run.
+      `w10` cannot be shared from a module of its own: its type nests past the interface's 512 levels, and
+      `h` over an imported `w9` stops at a `call_view` lane's ceiling (`ownership_accounting_invariant`).
     - *Measured* (self-hosted ReleaseSafe, `dump --stage=ownership --ownership=v2`, against master
       `8faad6453`). Over the 2 125 roots of `allOwnership` under `--ownership-everywhere`: no verdict or
       limit line changes; records rise 0.14 % (9 972 608 → 9 986 751). Four roots' summaries number their fresh labels in another order
