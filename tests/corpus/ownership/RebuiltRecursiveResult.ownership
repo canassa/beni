@@ -1,0 +1,13 @@
+module RebuiltRecursiveResult
+  20:16 List.push v: accepted param
+  20:32 call RebuiltRecursiveResult.f l#N.0: rejected later-use: l⟨T⟩#N.0 is read again at 20:13 (RebuiltRecursiveResult.f writes π1#N.0)
+  20:32 call RebuiltRecursiveResult.f l#N.1⟨T⟩#N.0: rejected later-use: l⟨T⟩#N.0 is read again at 20:13 (RebuiltRecursiveResult.f writes π1#N.1⟨T⟩#N.0)
+  28:10 call RebuiltRecursiveResult.f <N …>#N.0: accepted fresh (RebuiltRecursiveResult.f writes π1#N.0)
+  28:10 call RebuiltRecursiveResult.f <N …>#N.1⟨T⟩#N.0: accepted param (RebuiltRecursiveResult.f writes π1#N.1⟨T⟩#N.0)
+  30:21 List.push b: rejected level: x⟨T⟩#N.0 may hold it at another level, and is read at 30:18 (approx)
+  summary f: π1 R, π1#N.0 RAW[storage], π1#N.0[*] A, π1#N.1 RA, π1#N.1⟨T⟩#N.0 RAW[storage], π1#N.1⟨T⟩#N.0[*] RA, π1#N.1⟨T⟩#N.1 RA; res #N.0 condition(fresh2) ~condition(fresh9) π1#N.0, #N.0[*] ~condition(fresh4) ~π1#N.0[*], #N.1 condition(fresh11){lost}r{lost} condition(fresh5){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh6) ~condition(fresh10) π1#N.1⟨T⟩#N.0{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh8) ~π1#N.1⟨T⟩#N.0[*]{excl π1#N.1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh11){lost}r{lost}, #N.1⟨T⟩#N.2 ~condition(fresh7) π1#N.1⟨T⟩#N.1{excl π1#N.1}r{lost}, #N.2 ~condition(fresh3) π1#N.1, condition(fresh1){lost}r{lost}; xreq excl π1#N.1
+  summary drive: π1 RA, π1⟨T⟩#N.0 RAW[storage], π1⟨T⟩#N.0[*] RA, π1⟨T⟩#N.1 RA; res #N.0 condition(fresh1) fresh1 ~condition(fresh10), #N.0[*] ~condition(fresh5), #N.1 condition(fresh13){lost}r{lost} ~condition(fresh12){lost}r{lost} ~condition(fresh6){lost}r{lost}, #N.1⟨T⟩#N.0 condition(fresh7) ~condition(fresh11) π1⟨T⟩#N.0{excl π1}r{lost}, #N.1⟨T⟩#N.0[*] ~condition(fresh8) ~π1⟨T⟩#N.0[*]{excl π1}r{lost}, #N.1⟨T⟩#N.1 condition(fresh12){lost}r{lost}, #N.1⟨T⟩#N.2 ~condition(fresh9) π1⟨T⟩#N.1{excl π1}r{lost}, #N.2 condition(fresh2) ~condition(fresh4) π1, condition(fresh3){lost}r{lost}; xreq excl π1
+  demands 6: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 6: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 2
+cause level 1

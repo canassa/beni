@@ -1,0 +1,33 @@
+-- ownership: a caller that destructures a recursive writer's result and
+-- rebuilds it (#1548). `f` pushes into its root's list and recurses into
+-- its left child, which it then keeps as the third child, so the
+-- recursive call is refused `later-use`. `drive` hands `f` a fresh list
+-- at the root and its parameter twice, takes the result apart two levels
+-- down and pushes into the inner list: refused, because `y` may hold it
+-- (approx). v2 checked `drive` only past `ownership_summary_size` while
+-- an atom (`L`) united a widened class's levels (#1483): `f`'s `res` then
+-- read every level's list at the root, and `drive`'s case join and
+-- holders read that class. It now checks within the default allowance.
+type T
+    = N (List Int) T T
+    | L
+
+
+f : T → T
+f t =
+    case t of
+        N v l _ →
+            N (List.push v 1) (f l) l
+
+        L →
+            L
+
+
+pub drive : T → T
+drive t =
+    case f (N [] t t) of
+        N a (N b x y) z →
+            N a (N (List.push b 9) x y) z
+
+        other →
+            other

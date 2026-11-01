@@ -1,0 +1,19 @@
+module RebuiltRecursiveResult
+  20:16 List.push v: accepted param
+  20:32 RebuiltRecursiveResult.f l#N.1⟨T⟩#N.0: rejected element: l#N.1⟨T⟩#N.0 holds it and is read at 20:13 (approx)
+  20:32 RebuiltRecursiveResult.f l#N.1#N.0: rejected later-use: l is read again at 20:13
+  20:32 RebuiltRecursiveResult.f l#N.0: rejected later-use: l is read again at 20:13
+  28:10 RebuiltRecursiveResult.f <N …>#N.1⟨T⟩#N.0: accepted param
+  28:10 RebuiltRecursiveResult.f <N …>#N.1#N.0: accepted param
+  28:10 RebuiltRecursiveResult.f <N …>#N.0: accepted fresh
+  30:21 List.push b: rejected element: y holds it and is read at 30:18 (approx)
+  account f: source 26, baseline 19857, growth 0 of 65536, total 19857, continuation 19560 of 26624, demands 866, walks 4, inference 3, deliveries 5, direct_data lanes 2, liveness_index lanes 8, direct_demand_query lanes 2, call_view lanes 6, transfer_settlement lanes 58
+  crossing: reads 1, redone 0, base moves 26
+  summary f: π1 R, π1#N.0 RAW, π1#N.0[*] A, π1#N.1 RA, π1#N.1#N.0 RAW, π1#N.1#N.0[*] RA, π1#N.1⟲ RA, π1#N.1⟲#N.0 RAW, π1#N.1⟲#N.0[*] RA; res #N.0 π1#N.0{lost}, #N.0[*] π1#N.0[*]{lost}, #N.1 ~π1#N.1⟲ π1#N.1⟲ π1#N.1⟲{lost}, #N.1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0{lost}, #N.1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*]{lost}, #N.2 π1#N.1{lost}
+  account drive: source 37, baseline 38042, growth 8845 of 65536, total 46887, continuation 37888 of 37888, demands 12552, hold listings 26, cell 101, set 388, shape 740, cond 147, class 2, memo 1516, edge 1, path 1947, inspection 4003, direct_data lanes 1, liveness_index lanes 8, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 40
+  summary drive: π1 RAW, π1#N.0 RAW, π1#N.0[*] RA, π1#N.1 RA, π1#N.1#N.0 RAW, π1#N.1#N.0[*] RA, π1#N.1⟲ RA, π1#N.1⟲#N.0 RAW, π1#N.1⟲#N.0[*] RA, π1#N.2 RA, π1#N.2#N.0 RAW, π1#N.2#N.0[*] RA, π1#N.2⟲ RA, π1#N.2⟲#N.0 RAW, π1#N.2⟲#N.0[*] RA; res #N.0 fresh1{lost}, #N.1 {lost}, #N.1 ~π1 π1#N.1 π1#N.1⟲ π1#N.2 π1#N.2⟲{lost}, #N.1#N.0 ~π1 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0 π1#N.2#N.0 π1#N.2⟲#N.0{lost}, #N.1#N.0 π1#N.0 π1#N.1#N.0 π1#N.1⟲#N.0 π1#N.2#N.0 π1#N.2⟲#N.0{lost}, #N.1#N.0[*] ~π1 ~π1#N.0[*] π1#N.0[*] π1#N.1#N.0[*] π1#N.1⟲#N.0[*] π1#N.2#N.0[*] π1#N.2⟲#N.0[*]{lost}, #N.1#N.0[*] ~π1 π1#N.0[*]{lost}, #N.1#N.1 ~π1 ~π1#N.1 π1#N.1 π1#N.1⟲ π1#N.1⟲ π1#N.2 π1#N.2⟲ π1#N.2⟲{lost}, #N.1#N.1#N.0 = #N.1#N.0, #N.1#N.2 ~π1 ~π1#N.2 π1#N.1 π1#N.1⟲ π1#N.1⟲ π1#N.2 π1#N.2⟲ π1#N.2⟲{lost}, #N.1#N.2#N.0 = #N.1#N.0, #N.2 π1{lost}; xreq excl π1#N.1⟲#N.0, excl π1#N.2⟲#N.0
+  block: 3112 bytes, hash b34ec5e844e5d27c
+  demands 8: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 8: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause later-use 2
+cause element 2
