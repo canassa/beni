@@ -62,7 +62,8 @@ const layers = [_]Entry{
     // 3 990 since 4e: `map`'s trail and its knot's move (§2.3, stable images).
     // 4 025 since #1483: the atom rule, `isAtom` and `settle` (§2.3).
     // 4 075 since #1485 part 2: C1, the saturation check.
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4075 },
+    // 4 100 since #1570: `interned` and `rawCopy`, a block's class kept raw.
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4100 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -79,7 +80,9 @@ const layers = [_]Entry{
     // repeating split (`repeatingSplit`, `exclOf`, #1478).
     // 2 980 since #1485: the fold certificate's readers, rule 4 and (d);
     // 3 020 for its part 2: a certificate's class κ read at a position (`ClassPos`).
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 3020 },
+    // 3 180 since #1559: rule 4 across the classes of one certificate
+    // (`ruleFourAgg`, `certClassesAggs`) and its check, `assertClassesSum`.
+    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 3180 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
@@ -88,7 +91,9 @@ const layers = [_]Entry{
     .{ .file = "Joins.zig", .layer = 5, .max_lines = 230 },
     // #1543: `propagate` by §2.9 *Fold first* (the state graph, the cycle
     // bit, positions by their set of states) and its reference, out of Cond.
-    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1280 },
+    // 1 350 since #1485: a widened knot's union sides keyed at a fold
+    // (`keySides`, `unionSides`).
+    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1350 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
