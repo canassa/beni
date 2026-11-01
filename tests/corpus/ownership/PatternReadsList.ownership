@@ -17,15 +17,15 @@ module PatternReadsList
   summary inTuple: π1 R
   summary inMaybe: π1 R
   summary firstKids: π1 R, π1⟨Rose⟩⁺#Rose.0 RA; res fresh1 π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.0}r{excl π1#Rose.0}
-  summary skipped: res .0 ~fresh1, .0[*] ~fresh2
-  summary deep: res .0 ~fresh1, .0[*] ~fresh2
+  summary skipped: res .0 ~fresh1 ~fresh2, .0[*] ~fresh3, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
+  summary deep: res .0 ~fresh1 ~fresh2, .0[*] ~fresh3, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
   summary three: res .0 fresh2 ~fresh1, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
-  summary mutual: res .0 ~fresh1, .0[*] ~fresh2
+  summary mutual: res .0 ~fresh1 ~fresh2, .0[*] ~fresh3, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
   summary nestedList: res .0 fresh1
   summary tupled: res .0 fresh1
   summary maybe: res .0 fresh1
-  summary rebuilt: res .0 ~fresh1, .0[*] ~fresh2
-  summary unread: res .0 ~fresh1, .0[*] ~fresh2
+  summary rebuilt: res .0 ~fresh1 ~fresh2, .0[*] ~fresh3, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
+  summary unread: res .0 ~fresh1 ~fresh2, .0[*] ~fresh3, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
   demands 9: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
 total 9: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
 cause alias 3

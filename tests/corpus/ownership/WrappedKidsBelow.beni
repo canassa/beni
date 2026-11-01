@@ -1,0 +1,64 @@
+-- ownership: a kids list handed whole to a new node that a writer of the
+-- levels below writes (#1562). `incBelow` pushes onto the labels of every
+-- `Rose` strictly below its argument. `wrapKids ks` writes the labels of
+-- `ks`'s elements and of the levels below them; `nest2 ks` the same with
+-- `ks` two levels down. With `ks` read after (`kidsRead`, `nestRead`) the
+-- write is refused; with `ks` dead (`kidsDead`, `nestDead`) it is
+-- accepted. v1 once accepted the reads: a projection along `⟨Rose⟩⁺` left
+-- out a cell that holds the `Rose`s (`ks` at `#Rose.1`), and the rest
+-- after a marker that reaches them (`ownership-checker.md` §16.7, *The
+-- canonical form*). A `--sanitize-lists` run showed the stale read.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose l kids →
+            Rose (List.push l 1) (incList kids)
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+incBelow : Rose → Rose
+incBelow r =
+    case r of
+        Rose l kids →
+            Rose l (incList kids)
+
+
+wrapKids : List Rose → Rose
+wrapKids ks = incBelow (Rose [] ks)
+
+
+nest2 : List Rose → Rose
+nest2 ks = incBelow (Rose [] [ Rose [] ks ])
+
+
+pub kidsRead : ⊤ → Rose × Rose
+kidsRead ⊤ =
+    ks = [ Rose [ 0 ] [ Rose [] [] ], Rose [] [] ]
+    ( wrapKids ks, Rose [] ks )
+
+
+pub kidsDead : ⊤ → Rose
+kidsDead ⊤ = wrapKids [ Rose [ 0 ] [ Rose [] [] ], Rose [] [] ]
+
+
+pub nestRead : ⊤ → Rose × List Rose
+nestRead ⊤ =
+    ks = [ Rose [ 0 ] [ Rose [] [] ], Rose [] [] ]
+    ( nest2 ks, ks )
+
+
+pub nestDead : ⊤ → Rose
+nestDead ⊤ = nest2 [ Rose [ 0 ] [ Rose [] [] ], Rose [] [] ]

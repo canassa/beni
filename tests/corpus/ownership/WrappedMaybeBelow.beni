@@ -1,0 +1,48 @@
+-- ownership: a `Maybe` child handed to a new node that a writer of the
+-- levels below writes (#1562). `incBelow` pushes onto the labels of every
+-- `M` strictly below its argument, through `Maybe`. `wrapOpt mm` writes
+-- the labels inside `mm`. With `mm` read after (`optRead`) the write is
+-- refused; with `mm` dead (`optDead`) it is accepted. v1 once accepted the
+-- read: a projection along `⟨M⟩⁺` left out `mm` at `#M.1`, a field whose
+-- `M`s it does not list (`ownership-checker.md` §16.7). A
+-- `--sanitize-lists` run showed the stale read.
+type M
+    = M (List Int) (Maybe M)
+
+
+incAll : M → M
+incAll r =
+    case r of
+        M l k →
+            M (List.push l 1) (incOpt k)
+
+
+incOpt : Maybe M → Maybe M
+incOpt mm =
+    case mm of
+        Just m →
+            Just (incAll m)
+
+        Nothing →
+            Nothing
+
+
+incBelow : M → M
+incBelow r =
+    case r of
+        M l k →
+            M l (incOpt k)
+
+
+wrapOpt : Maybe M → M
+wrapOpt mm = incBelow (M [] mm)
+
+
+pub optRead : ⊤ → M × M
+optRead ⊤ =
+    mm = Just (M [ 0 ] (Just (M [ 0 ] Nothing)))
+    ( wrapOpt mm, M [] mm )
+
+
+pub optDead : ⊤ → M
+optDead ⊤ = wrapOpt (Just (M [ 0 ] (Just (M [ 0 ] Nothing))))
