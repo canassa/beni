@@ -83,6 +83,7 @@ pub const Input = struct {
     imports: ?Imports = null,
     order_check: bool = false, // `--ownership-order-check` (test-only)
     rewalk_check: bool = false, // `--ownership-rewalk-check` (test-only)
+    contracts: u8 = 0, // `--ownership-contracts` (experiment)
     propagate_dump: bool = false, // `--ownership-propagate` (test-only)
 
     pub fn isCore(in: *const Input, m: u32) bool {
@@ -612,6 +613,8 @@ pub const DeclResult = struct {
     /// The account's failure, when it stopped the walk.
     failure: ?Ids.Failure = null,
     account: Ids.Account = .{},
+    /// The experiment's contract statistics, when it solved the group.
+    contract: ?ContractStats = null,
 };
 
 pub const Module = struct {
@@ -1285,7 +1288,15 @@ fn nameRank(in: *const Input, di: u32) u32 {
 /// solved whole.
 fn solve(mod: *Module, members: []const u32, recursive: bool, prepass: *const Facts.Prepass, rs: []DeclResult) Allocator.Error!void {
     if (!recursive) {
-        for (members, rs) |di, *r| try walkIn(mod, mod.in.bir.decls[di], prepass, r);
+        for (members, rs, 0..) |di, *r, k| {
+            // Stage 5 (a diagnostic variant): a first-order function outside
+            // any recursive group is summarised by its contract too.
+            if ((mod.in.contracts == 5 or mod.in.contracts == 7 or mod.in.contracts == 8) and mod.in.bir.decls[di].params != 0) {
+                try solveGroup(mod, members[k..][0..1], prepass, rs[k..][0..1]);
+                continue;
+            }
+            try walkIn(mod, mod.in.bir.decls[di], prepass, r);
+        }
         return;
     }
     try solveGroup(mod, members, prepass, rs);
@@ -1735,7 +1746,11 @@ fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass,
         mod.views.group = null;
         charging(mod, &mod.base_account);
     }
-    const settled = runGroup(mod, &g, prepass, rs) catch |err| switch (err) {
+    const use_contract = mod.in.contracts != 0 and (contractScope(mod, members) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.OwnershipLimit, error.AccountingInvariant => false,
+    });
+    const settled = (if (use_contract) runContractGroup(mod, &g, prepass, rs) else runGroup(mod, &g, prepass, rs)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.OwnershipLimit, error.AccountingInvariant => false,
     };
@@ -1916,6 +1931,7 @@ fn pass(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclResult
             return false;
         }
         if (inference) g.inference[k] += 1;
+        if (contract_trace) std.debug.print("v2 walk {d} member {d}: growth {d} total {d}\n", .{ g.walks[k], k, rs[k].account.growth, rs[k].account.total() });
         gpa.free(g.lines[k]);
         g.lines[k] = res.lines;
         g.out[k] = res.class;
@@ -2329,4 +2345,1449 @@ const full_cross_check = @import("ownership_options").full_cross_check;
 /// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
 fn mutated(comptime which: []const u8) bool {
     return std.mem.eql(u8, v2_mutation, which);
+}
+
+// ===========================================================================
+// Recursive contracts — an EXPERIMENT (`--ownership-contracts=1|2`, hidden).
+//
+// A recursive group's port is not v2's expanding result graph but a contract
+// over a FIXED inventory read from the typed interface: per member, its use
+// marks (joined), its `xreq`, and one origin set per canonical path of its
+// result place (the slots). Each round builds the port afresh from the slots
+// alone — a node per slot, its children the slots its steps reach, so the
+// recursive structure is the place graph's and never a previous round's
+// answer — walks every member once with v2's own walk against those ports,
+// and abstracts the read-off back onto the slots (`alpha`). Rounds only add
+// cells to a fixed set of slots and marks to a fixed set of paths, so they
+// stop. Stage 1 publishes the slots with no stored κ: a built node reads
+// `lost`, so the answer may alias its input and is never exclusive. Stage 2
+// adds one predicate, inferred and checked from the BIR (`Tokens`): for each
+// parameter, the most times one of its objects can occur in the answer, and
+// whether fresh objects can repeat. Where every origin of a slot occurs at
+// most once, the slot's node stores `yes`, which at a summary position reads
+// `yes ∧ derived(cells)`: the answer keeps whatever separation the caller
+// supplies, never more. Everything else — liveness, holders, demands,
+// callers' checks — is v2's, unchanged.
+// ===========================================================================
+
+pub const ContractStats = struct {
+    stage: u8 = 0,
+    rounds: u32 = 0,
+    slots: u32 = 0,
+    slot_cells: u32 = 0,
+    origins: u32 = 0,
+    unknown_origins: u32 = 0,
+    alpha_visits: u32 = 0,
+    port_records: u32 = 0,
+    tokens: u32 = 0,
+    token_ops: u32 = 0,
+    token_rounds: u32 = 0,
+    validate_ops: u32 = 0,
+    /// Per-parameter multiplicities the validated predicate publishes,
+    /// packed two bits each (0, 1, 2 = repeated), parameter 1 lowest.
+    mults: u32 = 0,
+    fresh_dup: bool = false,
+    preserved: bool = false,
+    validated: bool = false,
+    v2_leq: bool = false,
+    v2_leq_uses: bool = false,
+    certified: bool = false,
+    reason: []const u8 = "",
+    growth_at_walk2: u64 = 0,
+    total_at_walk2: u64 = 0,
+};
+
+/// The slots of one member's result: its canonical paths, each with the
+/// slots its steps reach and the origin cells α put there.
+const Slots = struct {
+    paths: std.ArrayList(Ids.PathId) = .empty,
+    index: Ids.FixedDict(1) = .{},
+    kid_runs: std.ArrayList(Ids.Range) = .empty,
+    kids: std.ArrayList(struct { step: Step, slot: u32 }) = .empty,
+    cells: std.ArrayList(Ids.SetId) = .empty,
+
+    fn deinit(s: *Slots, gpa: Allocator) void {
+        s.paths.deinit(gpa);
+        s.index.deinit(gpa);
+        s.kid_runs.deinit(gpa);
+        s.kids.deinit(gpa);
+        s.cells.deinit(gpa);
+    }
+
+    fn build(s: *Slots, mod: *Module, root_place: PlaceId) Error!void {
+        const gpa = mod.gpa;
+        const env = mod.env();
+        const root = try mod.places.rootPath(gpa, root_place);
+        _ = try s.add(gpa, root);
+        var i: usize = 0;
+        var pending: std.ArrayList(struct { step: Step, slot: u32 }) = .empty;
+        defer pending.deinit(gpa);
+        while (i < s.paths.items.len) : (i += 1) {
+            const p = s.paths.items[i];
+            const st = mod.places.steps(mod.places.pathPlace(p));
+            pending.clearRetainingCapacity();
+            for (st.steps) |step| {
+                try env.charge.reserve(gpa, .path, 1);
+                const q = (try mod.places.extend(gpa, env.charge, p, step)) orelse continue;
+                const j = try s.add(gpa, q);
+                try pending.append(gpa, .{ .step = step, .slot = j });
+            }
+            const start: u32 = @intCast(s.kids.items.len);
+            for (pending.items) |k| try s.kids.append(gpa, .{ .step = k.step, .slot = k.slot });
+            try s.kid_runs.append(gpa, .{ .start = start, .len = @intCast(pending.items.len) });
+        }
+    }
+
+    fn add(s: *Slots, gpa: Allocator, p: Ids.PathId) Allocator.Error!u32 {
+        const got = try s.index.getOrPut(gpa, .{p.int()});
+        if (!got.found_existing) {
+            got.value_ptr.* = @intCast(s.paths.items.len);
+            try s.paths.append(gpa, p);
+            try s.cells.append(gpa, .none);
+        }
+        return got.value_ptr.*;
+    }
+};
+
+/// A member's contract while the group is solved.
+const Contract = struct {
+    slots: Slots = .{},
+    /// The joined use marks, `xreq` and bits: a class whose `res` is nothing.
+    uses: ClassId = .none,
+    /// The stage-2 predicate: per parameter its multiplicity, fresh repeats.
+    mults: []u2 = &.{},
+    fresh_dup: bool = false,
+    preserved: bool = false,
+    stats: ContractStats = .{},
+};
+
+/// Whether the experiment takes this group: first order only (no function
+/// in a parameter or the result, no lambda in a body). A higher-order group
+/// is v2's (the second checkpoint of the review, not this one).
+fn contractScope(mod: *Module, members: []const u32) Error!bool {
+    var places: std.ArrayList(PlaceId) = .empty;
+    defer places.deinit(mod.gpa);
+    var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+    defer scratch.deinit(mod.gpa);
+    const saved = mod.account;
+    charging(mod, &scratch);
+    defer charging(mod, saved);
+    for (members) |di| {
+        mod.cur_locals = mod.in.bir.decls[di].locals_start;
+        try places.append(mod.gpa, try declPlaces(mod, mod.in.bir.decls[di], di, &places));
+    }
+    for (places.items) |p| if (mod.places.holds(p).closure or mod.places.kind(p) == .closure) return false;
+    const bir = mod.in.bir;
+    for (members) |di| {
+        const d = bir.decls[di];
+        var i = d.inst_start.int();
+        while (i < d.inst_end.int()) : (i += 1) switch (bir.instTag(@fromBackingInt(i))) {
+            .lambda => return false,
+            .let_def => {
+                const def = bir.extraData(@fromBackingInt(bir.instData(@fromBackingInt(i)).lhs), Bir.LetDef);
+                if (def.params_end != def.params_start) return false;
+            },
+            else => {},
+        };
+    }
+    return true;
+}
+
+/// α: the read-off's `res` onto the slots. A pair `(slot, node)` is visited
+/// once; a node's cells at `ε` go into its slot, each mapped onto the
+/// inventory (`mapCell`), and its projection by each of the slot's steps is
+/// visited at the slot that step reaches. Nothing of the read-off's
+/// structure survives but the cells per slot.
+fn alpha(mod: *Module, c: *Contract, res: Ids.NodeId) Error!bool {
+    const gpa = mod.gpa;
+    const env = mod.env();
+    var seen: Ids.FixedDict(2) = .{};
+    defer seen.deinit(gpa);
+    var todo: std.ArrayList([2]u32) = .empty;
+    defer todo.deinit(gpa);
+    var grew = false;
+    try todo.append(gpa, .{ 0, res.int() });
+    _ = try seen.getOrPut(gpa, .{ 0, res.int() });
+    while (todo.pop()) |x| {
+        try env.charge.reserve(gpa, .inspection, 1);
+        c.stats.alpha_visits += 1;
+        const slot = x[0];
+        const n: Ids.NodeId = .from(x[1]);
+        // A join's sides are read one by one at its slot: the join's own
+        // cell set lets an exact occurrence mask an approximate one.
+        switch (mod.shapes.kind(n)) {
+            .@"union", .choice, .positions => {
+                const nd = mod.shapes.get(n);
+                for ([_]u32{ nd.a, nd.b }) |side| {
+                    const got = try seen.getOrPut(gpa, .{ slot, side });
+                    if (!got.found_existing) try todo.append(gpa, .{ slot, side });
+                }
+                continue;
+            },
+            else => {},
+        }
+        const cs = try mod.shapes.cellsOf(gpa, mod.account, &mod.cells.sets, n);
+        // A recast's cells are its inner's, approximate at every path: the
+        // node kind carries that, so the slot keeps it as the approx bit.
+        const recast = mod.shapes.kind(n) == .recast;
+        if (alpha_trace) {
+            std.debug.print("alpha slot {d} node {d} kind {t} cells:", .{ slot, n.int(), mod.shapes.kind(n) });
+            var it2 = mod.cells.sets.iterate(cs);
+            while (it2.next()) |e| std.debug.print(" {t}{d}.{d}~{d}", .{ mod.cells.origin(.from(e.key)), mod.cells.get(.from(e.key)).a, mod.cells.get(.from(e.key)).b, e.value });
+            std.debug.print(" kids:", .{});
+            if (mod.shapes.kind(n) == .node) {
+                var oi = mod.shapes.overEntries(mod.shapes.get(n).a);
+                while (oi.next()) |e| std.debug.print(" {d}", .{e.node.int()});
+            } else if (mod.shapes.kind(n) != .leaf) std.debug.print(" a={d} b={d}", .{ mod.shapes.get(n).a, mod.shapes.get(n).b });
+            std.debug.print("\n", .{});
+        }
+        var it = mod.cells.sets.iterate(cs);
+        while (it.next()) |e| {
+            const mapped = try mapCell(mod, c, slot, .from(e.key));
+            const before = c.slots.cells.items[slot];
+            const had = mod.cells.sets.get(before, mapped.int());
+            const bit: u1 = if (recast or e.value == 1 or (had != null and had.? == 1)) 1 else 0;
+            const after = try mod.cells.sets.insert(gpa, env.charge, before, mapped.int(), bit);
+            if (after != before) {
+                c.slots.cells.items[slot] = after;
+                grew = true;
+            }
+        }
+        const run = c.slots.kid_runs.items[slot];
+        for (c.slots.kids.items[run.start..][0..run.len]) |k| {
+            const m = (try mod.shapes.proj(gpa, mod.account, &mod.places, &mod.cells, n, k.step)) orelse continue;
+            const got = try seen.getOrPut(gpa, .{ k.slot, m.int() });
+            if (!got.found_existing) try todo.append(gpa, .{ k.slot, m.int() });
+        }
+    }
+    return grew;
+}
+
+/// A read-off cell as an origin of the inventory: a parameter's cell, `⊤`
+/// and `shared` as they are; an object made in an activation (`fresh k`,
+/// `esc k`) as it is too — read-off numbers them by the group's stable
+/// allocation keys, so one allocation is ONE cell at every slot it reaches
+/// and two slots holding it alias (renaming it per slot lost that: #pushDup);
+/// anything else (a callback's, a refinement) as `⊤`, so unknown is never
+/// empty.
+fn mapCell(mod: *Module, c: *Contract, slot: u32, x: Ids.CellId) Error!Ids.CellId {
+    const env = mod.env();
+    _ = slot;
+    return switch (mod.cells.origin(x)) {
+        .param, .top, .shared, .result, .esc => x,
+        .site => x,
+        else => blk: {
+            c.stats.unknown_origins += 1;
+            break :blk try mod.cells.top(env.gpa, mod.account);
+        },
+    };
+}
+
+/// The port a contract stands for: a node per slot, tied into the place
+/// graph's own cycles, κ `yes` stored at a slot's node only where the
+/// stage-2 predicate holds for every origin in it.
+fn synthPort(mod: *Module, g: *Group, k: usize, c: *Contract) Error!ClassId {
+    const gpa = mod.gpa;
+    const env = mod.env();
+    const before = mod.shapes.count();
+    const n = c.slots.paths.items.len;
+    const knots = try gpa.alloc(Ids.NodeId, n);
+    defer gpa.free(knots);
+    for (knots) |*x| x.* = try mod.shapes.knot(gpa, mod.account);
+    // A preserved slot stores the condition its own arrivals read at a
+    // summary position, as atoms (`summaryExcl ∧ apart`), never bare `yes`:
+    // instantiation must see the pair (two arrivals one caller cell is
+    // `apart(b, b)`, refused), which a derived read of the instantiated
+    // cell SET would have collapsed.
+    const good = try gpa.alloc(?Ids.CondId, n);
+    defer gpa.free(good);
+    @memset(good, null);
+    // The node each slot's κ is stored under: its plain part.
+    const keyed = try gpa.alloc(Ids.NodeId, n);
+    defer gpa.free(keyed);
+    for (0..n) |i| {
+        var over: u32 = none;
+        const run = c.slots.kid_runs.items[i];
+        for (c.slots.kids.items[run.start..][0..run.len]) |kid| over = try mod.shapes.overPut(gpa, mod.account, over, kid.step, knots[kid.slot]);
+        const at = mod.places.pathPlace(c.slots.paths.items[i]);
+        // A place with no steps (a type variable, an opaque or crossing
+        // leaf) is a LEAF: below it, whatever its symbolic cells project to
+        // (only parameter cells reach such a place). A built node there
+        // would say "nothing below" and drop every read and alias a caller
+        // makes through the answer at its own type (#1350's re-rooting).
+        const leafy = mod.places.steps(at).steps.len == 0;
+        // Approximate cells (a recast's, `~πᵢ·q`) keep their meaning — the
+        // inner's cells at every path below — as a recast over a leaf of
+        // them, joined with the slot's exact cells and children; copied into
+        // a plain node they would name only the object at the slot itself.
+        var exact: Ids.SetId = .none;
+        var approx: std.ArrayList(Ids.CellId) = .empty;
+        defer approx.deinit(gpa);
+        var it = mod.cells.sets.iterate(c.slots.cells.items[i]);
+        while (it.next()) |e| {
+            if (e.value == 1) try approx.append(gpa, .from(e.key)) else exact = try mod.cells.sets.insert(gpa, env.charge, exact, e.key, 0);
+        }
+        const plain_rec: Shape.Node = .{ .kind = if (leafy) .leaf else .node, .place = at, .cells = exact, .a = if (leafy) 0 else over, .b = 0, .reach = .none };
+        if (approx.items.len == 0) {
+            mod.shapes.tie(knots[i], plain_rec);
+            keyed[i] = knots[i];
+        } else {
+            const plain = try mod.shapes.knot(gpa, mod.account);
+            mod.shapes.tie(plain, plain_rec);
+            keyed[i] = plain;
+            var acc: Ids.NodeId = .none;
+            for (approx.items) |x| {
+                const pl = mod.cells.place(x);
+                const lf = try mod.shapes.leaf(gpa, mod.account, pl, try mod.cells.sets.insert(gpa, env.charge, .none, x.int(), 1));
+                const r = if (pl == at) lf else try mod.shapes.recast(gpa, mod.account, at, lf);
+                acc = if (acc == .none) r else try mod.shapes.@"union"(gpa, mod.account, &mod.cells.sets, acc, r);
+            }
+            mod.shapes.tie(knots[i], .{ .kind = .@"union", .place = at, .cells = try mod.cells.sets.unionWith(gpa, env.charge, exact, try mod.shapes.cellsOf(gpa, mod.account, &mod.cells.sets, acc)), .a = plain.int(), .b = acc.int(), .reach = .none });
+        }
+        if (c.preserved and try slotPreserved(mod, c, c.slots.cells.items[i])) {
+            const kd = try mod.conds.derivedCells(gpa, env.charge, env.view(), c.slots.cells.items[i], true, .none, .none);
+            if (kd != Cond.lost and kd != Cond.shared) good[i] = kd else if (leafy) good[i] = Cond.lost;
+        } else if (leafy) good[i] = Cond.lost;
+    }
+    var kappas: Cond.Kappas = .none;
+    if (std.mem.indexOfNone(?Ids.CondId, good, &.{null}) != null) {
+        // κ as v2 stores it: a trie of positions along the slot graph's
+        // steps, and an exact fold where a slot lies on a cycle (every slot
+        // the cycle reaches keyed at it).
+        const memo = try gpa.alloc(?Cond.Kappas, n);
+        defer gpa.free(memo);
+        @memset(memo, null);
+        kappas = try kappaPos(mod, c, keyed, good, memo, 0);
+    }
+    const u = mod.sums.get(c.uses);
+    _ = g;
+    _ = k;
+    const params = try gpa.dupe(Ids.NodeId, mod.sums.paramUses(c.uses));
+    defer gpa.free(params);
+    const cls = try mod.sums.add(env, .{
+        .params = params,
+        .res = knots[0],
+        .kappas = kappas,
+        .xreq = u.xreq,
+        .refs = u.refs,
+        .refs_top = u.refs_top,
+        .writes = u.writes,
+        .origin = .inferred,
+    });
+    c.stats.port_records = mod.shapes.count() - before;
+    return cls;
+}
+
+fn reaches(c: *Contract, from: u32, to: u32, gpa: Allocator) Allocator.Error!bool {
+    var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+    defer seen.deinit(gpa);
+    var todo: std.ArrayList(u32) = .empty;
+    defer todo.deinit(gpa);
+    try todo.append(gpa, from);
+    while (todo.pop()) |x| {
+        const run = c.slots.kid_runs.items[x];
+        for (c.slots.kids.items[run.start..][0..run.len]) |k| {
+            if (k.slot == to) return true;
+            if ((try seen.getOrPut(gpa, k.slot)).found_existing) continue;
+            try todo.append(gpa, k.slot);
+        }
+    }
+    return false;
+}
+
+fn kappaPos(mod: *Module, c: *Contract, knots: []const Ids.NodeId, good: []const ?Ids.CondId, memo: []?Cond.Kappas, i: u32) Error!Cond.Kappas {
+    if (memo[i]) |m| return m;
+    const gpa = mod.gpa;
+    const env = mod.env();
+    if (try reaches(c, i, i, gpa)) {
+        // A cycle: one exact fold holding every slot reachable from here.
+        var here: u32 = none;
+        var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        defer seen.deinit(gpa);
+        var todo: std.ArrayList(u32) = .empty;
+        defer todo.deinit(gpa);
+        try todo.append(gpa, i);
+        _ = try seen.getOrPut(gpa, i);
+        while (todo.pop()) |x| {
+            if (good[x]) |k| here = try mod.conds.mapPut(gpa, env.charge, here, knots[x].int(), k.int());
+            const run = c.slots.kid_runs.items[x];
+            for (c.slots.kids.items[run.start..][0..run.len]) |k| if (!(try seen.getOrPut(gpa, k.slot)).found_existing) try todo.append(gpa, k.slot);
+        }
+        const p = if (here == none) Cond.Kappas.none else try mod.conds.makePos(gpa, env.charge, .{ .here = here, .links = none, .fold = Cond.Table.fold_exact });
+        memo[i] = p;
+        return p;
+    }
+    var here: u32 = none;
+    if (good[i]) |k| here = try mod.conds.mapPut(gpa, env.charge, here, knots[i].int(), k.int());
+    var links: u32 = none;
+    const run = c.slots.kid_runs.items[i];
+    for (c.slots.kids.items[run.start..][0..run.len]) |k| {
+        const sub = try kappaPos(mod, c, knots, good, memo, k.slot);
+        if (sub != .none) links = try mod.conds.mapPut(gpa, env.charge, links, k.step.word(), sub.int());
+    }
+    const p = try mod.conds.makePos(gpa, env.charge, .{ .here = here, .links = links, .fold = 0 });
+    memo[i] = p;
+    return p;
+}
+
+fn slotPreserved(mod: *Module, c: *Contract, cs: Ids.SetId) Error!bool {
+    var it = mod.cells.sets.iterate(cs);
+    while (it.next()) |e| {
+        const x: Ids.CellId = .from(e.key);
+        switch (mod.cells.origin(x)) {
+            .param => {
+                const i = mod.cells.get(x).a;
+                if (i >= c.mults.len or c.mults[i] > 1) return false;
+            },
+            .result => if (c.fresh_dup) return false,
+            else => return false,
+        }
+    }
+    return true;
+}
+
+/// The top of the vocabulary at every slot: each parameter's cell at each
+/// of its canonical paths whose place is the slot's, and the slot's fresh cell.
+fn seedSlots(mod: *Module, g: *Group, k: usize, c: *Contract) Error!void {
+    const gpa = mod.gpa;
+    const env = mod.env();
+    const run = g.param_runs.items[k];
+    for (g.param_places.items[run.start..][0..run.len], 0..) |pp, i| {
+        var ps: Slots = .{};
+        defer ps.deinit(gpa);
+        try ps.build(mod, pp);
+        for (ps.paths.items) |q| {
+            const cell = try mod.cells.symbolic(gpa, mod.account, &mod.places, .param, @intCast(i), q, 0);
+            for (c.slots.paths.items, 0..) |p, si| if (mod.places.pathPlace(p) == mod.places.pathPlace(q)) {
+                c.slots.cells.items[si] = try mod.cells.sets.insert(gpa, env.charge, c.slots.cells.items[si], cell.int(), 0);
+            };
+        }
+    }
+    for (c.slots.paths.items, 0..) |p, si| {
+        const at = mod.places.pathPlace(p);
+        const fresh = try mod.cells.result(gpa, mod.account, .result, .none, @intCast(si), at, Cell.Kind.ofPlace(mod.places.kind(at)));
+        c.slots.cells.items[si] = try mod.cells.sets.insert(gpa, env.charge, c.slots.cells.items[si], fresh.int(), 0);
+    }
+}
+
+/// A class with the read-off's marks, `xreq` and bits and no answer: what
+/// the contract keeps of a walk besides its slots.
+fn usesOf(mod: *Module, f: ClassId, result_place: PlaceId) Error!ClassId {
+    const env = mod.env();
+    const c = mod.sums.get(f);
+    const params = try env.gpa.dupe(Ids.NodeId, mod.sums.paramUses(f));
+    defer env.gpa.free(params);
+    return mod.sums.add(env, .{
+        .params = params,
+        .res = try mod.shapes.nothing(env.gpa, mod.account, result_place),
+        .xreq = c.xreq,
+        .refs = c.refs,
+        .refs_top = c.refs_top,
+        .writes = c.writes,
+        .origin = .inferred,
+    });
+}
+
+const contract_trace = false;
+const tok_trace = false;
+const alpha_trace = false;
+
+fn runContractGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclResult) Error!bool {
+    const gpa = mod.gpa;
+    const n = g.members.len;
+    g.fresh = try gpa.alloc(Ids.FixedDict(3), n);
+    @memset(g.fresh, .{});
+    g.walks = try gpa.alloc(u32, n);
+    @memset(g.walks, 0);
+    g.inference = try gpa.alloc(u32, n);
+    @memset(g.inference, 0);
+    g.deliveries = try gpa.alloc(u32, n);
+    @memset(g.deliveries, 0);
+    g.lines = try gpa.alloc([]Walk.Line, n);
+    @memset(g.lines, &.{});
+    g.out = try gpa.alloc(ClassId, n);
+    g.vectors = try gpa.alloc(Ids.Range, n);
+    @memset(g.vectors, .{ .start = 0, .len = 0 });
+    g.edges = try gpa.alloc(Edges, n);
+    @memset(g.edges, .{});
+    g.queued = try gpa.alloc(bool, n);
+    @memset(g.queued, false);
+    g.callers = try gpa.alloc(std.ArrayList([2]u32), n);
+    @memset(g.callers, .empty);
+    const cs = try gpa.alloc(Contract, n);
+    defer {
+        for (cs) |*c| {
+            c.slots.deinit(gpa);
+            gpa.free(c.mults);
+        }
+        gpa.free(cs);
+    }
+    @memset(cs, .{});
+    for (g.members, 0..) |di, k| {
+        (try g.index.getOrPut(gpa, .{di})).value_ptr.* = @intCast(k);
+        const d = mod.in.bir.decls[di];
+        charging(mod, &rs[k].account);
+        rs[k].account.source = d.inst_end.int() - d.inst_start.int();
+        mod.cur_locals = d.locals_start;
+        const start: u32 = @intCast(g.param_places.items.len);
+        const res = try declPlaces(mod, d, di, &g.param_places);
+        try g.param_runs.append(gpa, .{ .start = start, .len = @intCast(g.param_places.items.len - start) });
+        try g.result_places.append(gpa, res);
+        const uses = try gpa.alloc(Ids.NodeId, g.param_places.items.len - start);
+        defer gpa.free(uses);
+        @memset(uses, .none);
+        cs[k].stats.stage = mod.in.contracts;
+        cs[k].uses = try mod.sums.add(mod.env(), .{ .params = uses, .res = try mod.shapes.nothing(gpa, mod.account, res) });
+        try cs[k].slots.build(mod, res);
+        cs[k].mults = try gpa.alloc(u2, g.param_runs.items[k].len);
+        @memset(cs[k].mults, 2);
+        try g.ports.append(gpa, .{ .class = .none, .version = 0, .shape_res = .none });
+    }
+    // Stage 2: the predicate, inferred and validated from the BIR alone,
+    // before any walk (it reads no port).
+    if (mod.in.contracts >= 2 and mod.in.contracts != 8) try inferTokens(mod, g, cs, rs);
+    // Seeded (6, 7): every slot starts with every parameter cell of its
+    // place and its fresh cell, the top of the vocabulary; the first
+    // round REPLACES the slots by its read-off (a descending step, sound
+    // because any post-fixed point is), the later ones add as before.
+    const seeded = mod.in.contracts == 6 or mod.in.contracts == 7;
+    if (seeded) for (cs, 0..) |*c, k| {
+        charging(mod, &rs[k].account);
+        try seedSlots(mod, g, k, c);
+    };
+    var first = true;
+    while (true) {
+        for (cs, 0..) |*c, k| {
+            charging(mod, &rs[k].account);
+            g.ports.items[k].class = try synthPort(mod, g, k, c);
+            g.ports.items[k].version += 1;
+        }
+        for (g.members, 0..) |_, k| {
+            g.staging.clear();
+            g.walking = @intCast(k);
+            var res = walkMember(mod, g, @intCast(k), prepass, &rs[k]) catch |err| {
+                g.walking = none;
+                return err;
+            };
+            g.walking = none;
+            if (res.unbuilt != none) {
+                res.deinit(gpa);
+                rs[k].unbuilt = res.unbuilt;
+                rs[k].polymorphic = res.unbuilt == g.poly;
+                return false;
+            }
+            g.inference[k] += 1;
+            gpa.free(g.lines[k]);
+            g.lines[k] = res.lines;
+            g.out[k] = res.class;
+            if (contract_trace) std.debug.print("contract walk {d} member {d}: growth {d} total {d} port nodes {d}\n", .{ g.walks[k], k, rs[k].account.growth, rs[k].account.total(), cs[k].stats.port_records });
+            if (g.walks[k] == 2) {
+                cs[k].stats.growth_at_walk2 = rs[k].account.growth;
+                cs[k].stats.total_at_walk2 = rs[k].account.total();
+            }
+        }
+        var changed = false;
+        for (cs, 0..) |*c, k| {
+            charging(mod, &rs[k].account);
+            const u = try usesOf(mod, g.out[k], g.result_places.items[k]);
+            if (!try mod.sums.leq(mod.env(), u, c.uses)) {
+                c.uses = try mod.sums.join(mod.env(), c.uses, u, .choice);
+                changed = true;
+            }
+            if (seeded and first) {
+                @memset(c.slots.cells.items, .none);
+                _ = try alpha(mod, c, mod.sums.get(g.out[k]).res);
+                changed = true;
+            } else if (try alpha(mod, c, mod.sums.get(g.out[k]).res)) changed = true;
+        }
+        first = false;
+        for (cs) |*c| c.stats.rounds += 1;
+        if (contract_trace) for (cs, 0..) |*c, k| {
+            var sc: u32 = 0;
+            for (c.slots.cells.items) |x| sc += mod.cells.sets.count(x);
+            std.debug.print("contract round {d} member {d}: changed {}, slots {d}, slot cells {d}, growth {d}\n", .{ c.stats.rounds, k, changed, c.slots.paths.items.len, sc, rs[k].account.growth });
+        };
+        if (!changed) break;
+    }
+    // The last round's walks read the ports as they stand and changed no
+    // slot and no mark: the contract is a post-fixed point of the walk on
+    // its own inventory, and those walks are the validation (their lines
+    // are reported). v2's own `leq` of each read-off under its port is
+    // recorded beside it, as a cross-check only.
+    for (rs, cs, 0..) |*r, *c, k| {
+        charging(mod, &r.account);
+        c.stats.v2_leq = try mod.sums.leq(mod.env(), g.out[k], g.ports.items[k].class);
+        c.stats.v2_leq_uses = try mod.sums.leq(mod.env(), try usesOf(mod, g.out[k], g.result_places.items[k]), c.uses);
+        c.stats.slots = @intCast(c.slots.paths.items.len);
+        var origins: Ids.SetId = .none;
+        for (c.slots.cells.items) |s| {
+            c.stats.slot_cells += mod.cells.sets.count(s);
+            origins = try mod.cells.sets.unionWith(gpa, mod.env().charge, origins, s);
+        }
+        c.stats.origins = mod.cells.sets.count(origins);
+        c.stats.preserved = c.preserved;
+        c.stats.fresh_dup = c.fresh_dup;
+        for (c.mults, 0..) |m, i| if (i < 16) {
+            c.stats.mults |= @as(u32, m) << @intCast(2 * i);
+        };
+        r.class = g.ports.items[k].class;
+        // The fold certificate (§8 slice 4): published only where the
+        // validated predicate implies its claim — every parameter object and
+        // every fresh object at most once in the whole answer, so at most
+        // once in each folded class. Its readers then read the class exactly.
+        if (c.preserved and !c.fresh_dup and std.mem.indexOfScalar(u2, c.mults, 2) == null) {
+            try mod.sums.certify(gpa, r.class);
+            c.stats.certified = true;
+            r.contract = c.stats;
+        }
+        r.walks = g.walks[k];
+        r.inference = g.inference[k];
+        r.deliveries = g.deliveries[k];
+        r.lines = g.lines[k];
+        g.lines[k] = &.{};
+        r.contract = c.stats;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2: occurrence tokens over the BIR.
+//
+// A token is an object the body can name: a parameter's (`πᵢ` and a path of
+// pattern steps below it), one a site makes in this activation, or a part of
+// an opaque value (a call's answer, a choice's join) by its path below it.
+// Two tokens of one root overlap when one path is a prefix of the other; of
+// two roots, never — the caller's separation is the assumption (published
+// as the conditional κ, never as a fact). An opaque value is a multiset of
+// older tokens (its expansion) and a bit, `clean`: no object occurs twice
+// in it, so two disjoint parts of it hold disjoint objects. A call's
+// expansion is each argument's tokens times the callee's multiplicity for
+// that parameter, plus the call's own fresh token (repeated when the
+// callee's fresh objects may repeat). Alternatives take the maximum: each
+// tail arm is counted alone, and a non-tail choice is an opaque value whose
+// expansion keeps the larger multiplicity per token. Components built
+// together add, saturating at 2 ("repeated"). Values whose place holds no
+// storage carry no token.
+//
+// A group's predicate is the least fixed point from "nothing returned"
+// (every multiplicity 0): it only rises, two bits per parameter. It is then
+// VALIDATED by a separate pass: each body evaluated once more with the
+// group's calls answered by the candidate, its answer's multiplicities
+// compared with the candidate's (the base — an arm with no group call — and
+// the step are both in that one evaluation; nothing it reads came from the
+// inference). A candidate the validator refuses is not published: its
+// member keeps stage 1's κ.
+// ---------------------------------------------------------------------------
+
+const TokRoot = enum(u8) { param, fresh, opq };
+
+const Tokens = struct {
+    gpa: Allocator,
+    mod: *Module,
+    // token table
+    parent: std.ArrayList(u32) = .empty,
+    step: std.ArrayList(u32) = .empty,
+    depth: std.ArrayList(u32) = .empty,
+    root: std.ArrayList(u32) = .empty,
+    root_kind: std.ArrayList(TokRoot) = .empty,
+    root_arg: std.ArrayList(u32) = .empty,
+    intern: Ids.FixedDict(3) = .{},
+    // opaque values
+    opq_exp: std.ArrayList(Ids.Range) = .empty,
+    opq_clean: std.ArrayList(bool) = .empty,
+    occs: std.ArrayList(Occ) = .empty,
+    // values
+    vals: std.ArrayList(V) = .empty,
+    vkids: std.ArrayList(u32) = .empty,
+    locals: Ids.FixedDict(1) = .{},
+    ops: u32 = 0,
+    failed: ?[]const u8 = null,
+    /// The group's candidate, read at its calls.
+    cand: []const Cand = &.{},
+    /// Same-module declarations analysed on demand (not in the group).
+    cache: std.AutoHashMapUnmanaged(u32, Cand) = .empty,
+    busy: std.AutoHashMapUnmanaged(u32, void) = .empty,
+    cache_mults: std.ArrayList([]u2) = .empty,
+
+    const Occ = struct { tok: u32, mult: u2 };
+    const V = struct { kind: enum(u8) { none, tok, con }, tok: u32 = none, ctor: u32 = none, kids: Ids.Range = .{ .start = 0, .len = 0 } };
+    const Cand = struct { mults: []u2, fresh_dup: bool };
+
+    fn deinit(t: *Tokens) void {
+        const gpa = t.gpa;
+        t.parent.deinit(gpa);
+        t.step.deinit(gpa);
+        t.depth.deinit(gpa);
+        t.root.deinit(gpa);
+        t.root_kind.deinit(gpa);
+        t.root_arg.deinit(gpa);
+        t.intern.deinit(gpa);
+        t.opq_exp.deinit(gpa);
+        t.opq_clean.deinit(gpa);
+        t.occs.deinit(gpa);
+        t.vals.deinit(gpa);
+        t.vkids.deinit(gpa);
+        t.locals.deinit(gpa);
+        t.cache.deinit(gpa);
+        t.busy.deinit(gpa);
+        for (t.cache_mults.items) |m| gpa.free(m);
+        t.cache_mults.deinit(gpa);
+    }
+
+    fn op(t: *Tokens) Error!void {
+        t.ops += 1;
+        try t.mod.env().charge.reserve(t.gpa, .inspection, 1);
+    }
+
+    fn rootTok(t: *Tokens, kind: TokRoot, arg: u32) Error!u32 {
+        return t.mk(none, (@as(u32, @backingInt(kind)) << 30) | arg, kind, arg);
+    }
+
+    fn child(t: *Tokens, p: u32, s: u32) Error!u32 {
+        return t.mk(p, s, t.root_kind.items[t.root.items[p]], 0);
+    }
+
+    fn mk(t: *Tokens, p: u32, s: u32, kind: TokRoot, arg: u32) Error!u32 {
+        try t.op();
+        const got = try t.intern.getOrPut(t.gpa, .{ p, s, if (p == none) arg else 0 });
+        if (got.found_existing) return got.value_ptr.*;
+        const id: u32 = @intCast(t.parent.items.len);
+        got.value_ptr.* = id;
+        try t.parent.append(t.gpa, p);
+        try t.step.append(t.gpa, s);
+        try t.depth.append(t.gpa, if (p == none) 0 else t.depth.items[p] + 1);
+        try t.root.append(t.gpa, if (p == none) id else t.root.items[p]);
+        try t.root_kind.append(t.gpa, kind);
+        try t.root_arg.append(t.gpa, if (p == none) arg else t.root_arg.items[t.root.items[p]]);
+        return id;
+    }
+
+    /// Whether one token's path is a prefix of the other's, in one root.
+    fn overlap(t: *Tokens, a: u32, b: u32) Error!bool {
+        try t.op();
+        if (t.root.items[a] != t.root.items[b]) return false;
+        var x = a;
+        var y = b;
+        while (t.depth.items[x] > t.depth.items[y]) x = t.parent.items[x];
+        while (t.depth.items[y] > t.depth.items[x]) y = t.parent.items[y];
+        return x == y;
+    }
+
+    fn val(t: *Tokens, v: V) Allocator.Error!u32 {
+        try t.vals.append(t.gpa, v);
+        return @intCast(t.vals.items.len - 1);
+    }
+
+    fn noneVal(t: *Tokens) Allocator.Error!u32 {
+        return t.val(.{ .kind = .none });
+    }
+
+    fn holdsStorage(t: *Tokens, at: PlaceId) bool {
+        if (at == .none) return true;
+        const places = &t.mod.places;
+        return !places.holds(at).isEmpty() or !Place.Kind.own(places.kind(at)).isEmpty();
+    }
+
+    fn instHolds(t: *Tokens, inst: u32) Error!bool {
+        return t.holdsStorage(try Module.placeOfInst(t.mod, inst));
+    }
+
+    fn localHolds(t: *Tokens, local: u32) Error!bool {
+        return t.holdsStorage(try Module.placeOfLocal(t.mod, local));
+    }
+
+    fn ownsCell(t: *Tokens, inst: u32) Error!bool {
+        const at = try Module.placeOfInst(t.mod, inst);
+        if (at == .none) return false;
+        return !Place.Kind.own(t.mod.places.kind(at)).isEmpty();
+    }
+
+    // ---- flattening and counting --------------------------------------
+
+    fn flatten(t: *Tokens, v: u32, k: u2, out: *std.ArrayList(Occ)) Error!void {
+        try t.op();
+        if (k == 0) return;
+        const x = t.vals.items[v];
+        switch (x.kind) {
+            .none => {},
+            .tok => try out.append(t.gpa, .{ .tok = x.tok, .mult = k }),
+            .con => {
+                if (x.tok != none) try out.append(t.gpa, .{ .tok = x.tok, .mult = k });
+                var i: u32 = 0;
+                while (i < x.kids.len) : (i += 1) try t.flatten(t.vkids.items[x.kids.start + i], k, out);
+            },
+        }
+    }
+
+    fn sat(a: u32) u2 {
+        return @intCast(@min(a, 2));
+    }
+
+    /// Opaque roots replaced by their expansions, newest first, each group
+    /// of parts of one opaque value counted once when the value is clean
+    /// and the parts are disjoint and none is the whole.
+    fn resolve(t: *Tokens, occs: *std.ArrayList(Occ)) Error!void {
+        while (true) {
+            var newest: u32 = none;
+            for (occs.items) |o| {
+                const r = t.root.items[o.tok];
+                if (t.root_kind.items[r] != .opq) continue;
+                const a = t.root_arg.items[r];
+                if (newest == none or a > newest) newest = a;
+            }
+            if (newest == none) return;
+            var group: std.ArrayList(Occ) = .empty;
+            defer group.deinit(t.gpa);
+            var i: usize = 0;
+            while (i < occs.items.len) {
+                const o = occs.items[i];
+                const r = t.root.items[o.tok];
+                if (t.root_kind.items[r] == .opq and t.root_arg.items[r] == newest) {
+                    try group.append(t.gpa, o);
+                    _ = occs.swapRemove(i);
+                } else i += 1;
+            }
+            var whole = false;
+            var disjoint = true;
+            var mx: u2 = 0;
+            var sum: u32 = 0;
+            for (group.items, 0..) |o, a| {
+                try t.op();
+                if (t.depth.items[o.tok] == 0) whole = true;
+                mx = @max(mx, o.mult);
+                sum += o.mult;
+                for (group.items[a + 1 ..]) |o2| if (try t.overlap(o.tok, o2.tok)) {
+                    disjoint = false;
+                };
+            }
+            const kv: u2 = if (!whole and disjoint and t.opq_clean.items[newest]) mx else sat(sum);
+            const r = t.opq_exp.items[newest];
+            var j: u32 = 0;
+            while (j < r.len) : (j += 1) {
+                const e = t.occs.items[r.start + j];
+                try occs.append(t.gpa, .{ .tok = e.tok, .mult = sat(@as(u32, e.mult) * kv) });
+            }
+        }
+    }
+
+    /// Per base token its total multiplicity: the sum over the occurrences
+    /// that overlap it, saturated. Into `mults` (per parameter, the max)
+    /// and the fresh repeat bit; true when no token repeats.
+    fn count(t: *Tokens, occs: []const Occ, mults: []u2, fresh_dup: *bool) Error!bool {
+        var clean = true;
+        for (occs) |o| {
+            var total: u32 = 0;
+            for (occs) |o2| if (try t.overlap(o.tok, o2.tok)) {
+                total += o2.mult;
+            };
+            const m = sat(total);
+            if (m >= 2) clean = false;
+            const r = t.root.items[o.tok];
+            switch (t.root_kind.items[r]) {
+                .param => {
+                    const i = t.root_arg.items[r];
+                    if (i < mults.len) mults[i] = @max(mults[i], m);
+                },
+                .fresh => if (m >= 2) {
+                    fresh_dup.* = true;
+                },
+                .opq => unreachable,
+            }
+        }
+        return clean;
+    }
+
+    // ---- an opaque value ------------------------------------------------
+
+    fn opq(t: *Tokens, exp: []const Occ, clean: bool) Error!u32 {
+        const start: u32 = @intCast(t.occs.items.len);
+        try t.occs.appendSlice(t.gpa, exp);
+        const id: u32 = @intCast(t.opq_exp.items.len);
+        try t.opq_exp.append(t.gpa, .{ .start = start, .len = @intCast(exp.len) });
+        try t.opq_clean.append(t.gpa, clean);
+        return t.val(.{ .kind = .tok, .tok = try t.rootTok(.opq, id) });
+    }
+
+    /// Whether a value, resolved, repeats no object.
+    fn isClean(t: *Tokens, v: u32) Error!bool {
+        var occs: std.ArrayList(Occ) = .empty;
+        defer occs.deinit(t.gpa);
+        try t.flatten(v, 1, &occs);
+        try t.resolve(&occs);
+        var dummy: [0]u2 = .{};
+        var fd = false;
+        return try t.count(occs.items, &dummy, &fd) and !fd;
+    }
+
+    // ---- the walk -------------------------------------------------------
+
+    fn bir(t: *Tokens) *const Bir {
+        return t.mod.in.bir;
+    }
+
+    fn tag(t: *Tokens, i: u32) Bir.Inst.Tag {
+        return t.bir().instTag(@fromBackingInt(i));
+    }
+
+    fn data(t: *Tokens, i: u32) Bir.Inst.Data {
+        return t.bir().instData(@fromBackingInt(i));
+    }
+
+    fn fail(t: *Tokens, why: []const u8) void {
+        if (t.failed == null) t.failed = why;
+    }
+
+    fn ctorKey(t: *Tokens, ref: u32) ?u32 {
+        const c = Module.ctorOf(t.mod, ref) orelse return null;
+        return c[0];
+    }
+
+    const tuple_key: u32 = 0xFFFF;
+    fn stepWord(kind: u32, a: u32, b: u32) u32 {
+        return (kind << 28) | ((a & 0xFFF) << 16) | (b & 0xFFFF);
+    }
+
+    /// Bind a pattern against a value; false when the pattern cannot match
+    /// a value built here with another constructor (a dead arm).
+    fn bind(t: *Tokens, pat: u32, v: u32) Error!bool {
+        try t.op();
+        const d = t.data(pat);
+        const x = t.vals.items[v];
+        switch (t.tag(pat)) {
+            .pat_wild, .pat_int, .pat_char, .pat_string, .pat_unit => return true,
+            .pat_var => {
+                const lv = if (try t.localHolds(d.lhs)) v else try t.noneVal();
+                (try t.locals.getOrPut(t.gpa, .{d.lhs})).value_ptr.* = lv;
+                return true;
+            },
+            .pat_as => {
+                if (!try t.bind(d.lhs, v)) return false;
+                const lv = if (try t.localHolds(d.rhs)) v else try t.noneVal();
+                (try t.locals.getOrPut(t.gpa, .{d.rhs})).value_ptr.* = lv;
+                return true;
+            },
+            .pat_ctor, .pat_tuple => {
+                const key: u32 = if (t.tag(pat) == .pat_tuple) tuple_key else (t.ctorKey(d.lhs) orelse {
+                    t.fail("pattern constructor");
+                    return true;
+                });
+                const args = if (t.tag(pat) == .pat_tuple) t.bir().extraSlice(Bir.inlineRange(d), Bir.Inst.Index) else t.bir().extraSlice(t.bir().subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
+                if (x.kind == .con) {
+                    if (x.ctor != key) return false;
+                    for (args, 0..) |a, i| {
+                        const kv = if (i < x.kids.len) t.vkids.items[x.kids.start + i] else try t.noneVal();
+                        if (!try t.bind(a.int(), kv)) return false;
+                    }
+                    return true;
+                }
+                for (args, 0..) |a, i| {
+                    const kv = if (x.kind == .tok) try t.val(.{ .kind = .tok, .tok = try t.child(x.tok, stepWord(1, key, @intCast(i))) }) else try t.noneVal();
+                    if (!try t.bind(a.int(), kv)) return false;
+                }
+                return true;
+            },
+            .pat_record => {
+                for (t.bir().extraSlice(Bir.inlineRange(d), u32)) |local| {
+                    const kv = if (x.kind == .tok and try t.localHolds(local)) try t.val(.{ .kind = .tok, .tok = try t.child(x.tok, stepWord(2, 0, local)) }) else if (x.kind == .con) blk: {
+                        // A record built here: every field's tokens (its field order is not ours to read).
+                        var occs: std.ArrayList(Occ) = .empty;
+                        defer occs.deinit(t.gpa);
+                        try t.flatten(v, 1, &occs);
+                        break :blk try t.opq(occs.items, try t.isClean(v));
+                    } else try t.noneVal();
+                    (try t.locals.getOrPut(t.gpa, .{local})).value_ptr.* = kv;
+                }
+                return true;
+            },
+            .pat_list => {
+                const items = t.bir().extraSlice(Bir.inlineRange(d), Bir.Inst.Index);
+                var spread_seen = false;
+                for (items, 0..) |a, i| {
+                    const is_spread = t.tag(a.int()) == .pat_spread;
+                    const step = if (is_spread) stepWord(3, 1, @intCast(i)) else stepWord(3, if (spread_seen) 2 else 0, @intCast(if (spread_seen) items.len - i else i));
+                    if (is_spread) spread_seen = true;
+                    const kv = switch (x.kind) {
+                        .tok => try t.val(.{ .kind = .tok, .tok = try t.child(x.tok, step) }),
+                        .con => blk: {
+                            // A literal matched here: its elements, the spread a part of the list.
+                            if (!is_spread and !spread_seen and i < x.kids.len) break :blk t.vkids.items[x.kids.start + i];
+                            var occs: std.ArrayList(Occ) = .empty;
+                            defer occs.deinit(t.gpa);
+                            try t.flatten(v, 1, &occs);
+                            break :blk try t.opq(occs.items, false);
+                        },
+                        .none => try t.noneVal(),
+                    };
+                    if (is_spread) {
+                        if (!try t.bind(t.data(a.int()).lhs, kv)) return false;
+                    } else if (!try t.bind(a.int(), kv)) return false;
+                }
+                return true;
+            },
+            .pat_spread => return t.bind(d.lhs, v),
+            else => {
+                t.fail("pattern");
+                return true;
+            },
+        }
+    }
+
+    /// The value of an expression.
+    fn eval(t: *Tokens, i: u32) Error!u32 {
+        try t.op();
+        const d = t.data(i);
+        switch (t.tag(i)) {
+            .local => return (t.locals.get(.{d.lhs})) orelse t.noneVal(),
+            .int, .float, .char, .string, .chunk, .unit, .interp => return t.noneVal(),
+            .ctor, .ext_ctor => {
+                const key = t.ctorKey(i) orelse {
+                    t.fail("constructor");
+                    return t.noneVal();
+                };
+                return t.val(.{ .kind = .con, .ctor = key, .tok = if (try t.ownsCell(i)) try t.rootTok(.fresh, i) else none });
+            },
+            .top, .ext_value => {
+                // A parameterless value: shared, never this activation's.
+                if (!try t.instHolds(i)) return t.noneVal();
+                return t.opq(&.{.{ .tok = try t.rootTok(.fresh, i), .mult = 2 }}, false);
+            },
+            .tuple, .list => {
+                const items = t.bir().extraSlice(Bir.inlineRange(d), Bir.Inst.Index);
+                const kids = try t.gpa.alloc(u32, items.len);
+                defer t.gpa.free(kids);
+                for (items, 0..) |e, k| kids[k] = try t.eval(e.int());
+                const start: u32 = @intCast(t.vkids.items.len);
+                try t.vkids.appendSlice(t.gpa, kids);
+                return t.val(.{ .kind = .con, .ctor = if (t.tag(i) == .tuple) tuple_key else none, .tok = if (try t.ownsCell(i)) try t.rootTok(.fresh, i) else none, .kids = .{ .start = start, .len = @intCast(items.len) } });
+            },
+            .record => {
+                const fields = t.bir().extraSlice(Bir.inlineRange(d), Bir.Field);
+                const kids = try t.gpa.alloc(u32, fields.len);
+                defer t.gpa.free(kids);
+                for (fields, 0..) |f, k| kids[k] = try t.eval(f.value.int());
+                const start: u32 = @intCast(t.vkids.items.len);
+                try t.vkids.appendSlice(t.gpa, kids);
+                return t.val(.{ .kind = .con, .ctor = none - 1, .tok = if (try t.ownsCell(i)) try t.rootTok(.fresh, i) else none, .kids = .{ .start = start, .len = @intCast(fields.len) } });
+            },
+            .field_access, .tuple_index => {
+                const target = try t.eval(d.lhs);
+                if (!try t.instHolds(i)) return t.noneVal();
+                const x = t.vals.items[target];
+                switch (x.kind) {
+                    .none => return t.noneVal(),
+                    .tok => return t.val(.{ .kind = .tok, .tok = try t.child(x.tok, if (t.tag(i) == .field_access) stepWord(2, 0, d.rhs) else stepWord(1, tuple_key, d.rhs)) }),
+                    .con => {
+                        if (t.tag(i) == .tuple_index and d.rhs < x.kids.len) return t.vkids.items[x.kids.start + d.rhs];
+                        var occs: std.ArrayList(Occ) = .empty;
+                        defer occs.deinit(t.gpa);
+                        try t.flatten(target, 1, &occs);
+                        return t.opq(occs.items, try t.isClean(target));
+                    },
+                }
+            },
+            .call, .method_call => return t.call(i),
+            .let => {
+                for (t.bir().extraSlice(t.bir().subRange(@fromBackingInt(d.lhs)), Bir.Inst.Index)) |b| try t.letItem(b.int());
+                return t.eval(d.rhs);
+            },
+            .case => {
+                const scrut = try t.eval(d.lhs);
+                const branches = t.bir().extraSlice(t.bir().subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
+                if (!try t.instHolds(i)) {
+                    for (branches) |b| if (try t.bind(t.data(b.int()).lhs, scrut)) {
+                        _ = try t.eval(t.data(b.int()).rhs);
+                    };
+                    return t.noneVal();
+                }
+                // A choice: the larger multiplicity per token, over the arms.
+                var all: std.ArrayList(Occ) = .empty;
+                defer all.deinit(t.gpa);
+                var clean = true;
+                for (branches) |b| {
+                    if (!try t.bind(t.data(b.int()).lhs, scrut)) continue;
+                    const v = try t.eval(t.data(b.int()).rhs);
+                    var occs: std.ArrayList(Occ) = .empty;
+                    defer occs.deinit(t.gpa);
+                    try t.flatten(v, 1, &occs);
+                    if (!try t.isClean(v)) clean = false;
+                    for (occs.items) |o| {
+                        var merged = false;
+                        for (all.items) |*a| if (a.tok == o.tok) {
+                            a.mult = @max(a.mult, o.mult);
+                            merged = true;
+                        };
+                        if (!merged) try all.append(t.gpa, o);
+                    }
+                }
+                return t.opq(all.items, clean);
+            },
+            .@"error" => {
+                t.fail("error");
+                return t.noneVal();
+            },
+            else => {
+                t.fail(@tagName(t.tag(i)));
+                return t.noneVal();
+            },
+        }
+    }
+
+    fn letItem(t: *Tokens, b: u32) Error!void {
+        const d = t.data(b);
+        switch (t.tag(b)) {
+            .let_def => {
+                const def = t.bir().extraData(@fromBackingInt(d.lhs), Bir.LetDef);
+                if (def.params_end != def.params_start) {
+                    t.fail("local function");
+                    return;
+                }
+                const v = try t.eval(d.rhs);
+                const lv = if (try t.localHolds(def.local)) v else try t.noneVal();
+                (try t.locals.getOrPut(t.gpa, .{def.local})).value_ptr.* = lv;
+            },
+            .let_pattern => _ = try t.bind(d.lhs, try t.eval(d.rhs)),
+            .let_stmt => _ = try t.eval(d.rhs),
+            else => t.fail("let item"),
+        }
+    }
+
+    /// The values a body can return, one per tail arm: a tail `case`'s arms
+    /// are alternatives, counted apart (the maximum).
+    fn tails(t: *Tokens, i: u32, out: *std.ArrayList(u32)) Error!void {
+        try t.op();
+        const d = t.data(i);
+        switch (t.tag(i)) {
+            .let => {
+                for (t.bir().extraSlice(t.bir().subRange(@fromBackingInt(d.lhs)), Bir.Inst.Index)) |b| try t.letItem(b.int());
+                try t.tails(d.rhs, out);
+            },
+            .case => {
+                const scrut = try t.eval(d.lhs);
+                for (t.bir().extraSlice(t.bir().subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index)) |b| {
+                    if (!try t.bind(t.data(b.int()).lhs, scrut)) continue;
+                    try t.tails(t.data(b.int()).rhs, out);
+                }
+            },
+            else => try out.append(t.gpa, try t.eval(i)),
+        }
+    }
+
+    /// A call's value: a constructor's built node, else an opaque value
+    /// whose expansion is the callee's multiplicities over the arguments.
+    fn call(t: *Tokens, i: u32) Error!u32 {
+        const d = t.data(i);
+        var args: std.ArrayList(u32) = .empty;
+        defer args.deinit(t.gpa);
+        try t.mod.argsOf(i, &args);
+        const vs = try t.gpa.alloc(u32, args.items.len);
+        defer t.gpa.free(vs);
+        for (args.items, 0..) |a, k| vs[k] = try t.eval(a);
+        if (t.tag(i) == .call) if (t.ctorKey(d.lhs)) |key| {
+            const start: u32 = @intCast(t.vkids.items.len);
+            try t.vkids.appendSlice(t.gpa, vs);
+            return t.val(.{ .kind = .con, .ctor = key, .tok = if (try t.ownsCell(i)) try t.rootTok(.fresh, i) else none, .kids = .{ .start = start, .len = @intCast(vs.len) } });
+        };
+        if (!try t.instHolds(i)) return t.noneVal();
+        const cand = try t.calleeCand(i, vs.len);
+        if (tok_trace) std.debug.print("tok call {d}: mults {any} fdup {}\n", .{ i, cand.mults, cand.fresh_dup });
+        var exp: std.ArrayList(Occ) = .empty;
+        defer exp.deinit(t.gpa);
+        var clean = !cand.fresh_dup;
+        for (vs, 0..) |v, k| {
+            const m: u2 = if (k < cand.mults.len) cand.mults[k] else 2;
+            if (m > 1) clean = false;
+            try t.flatten(v, m, &exp);
+        }
+        if (clean) {
+            // The arguments together repeat no object.
+            var occs: std.ArrayList(Occ) = .empty;
+            defer occs.deinit(t.gpa);
+            for (vs, 0..) |v, k| if (k < cand.mults.len and cand.mults[k] != 0) try t.flatten(v, 1, &occs);
+            try t.resolve(&occs);
+            var dummy: [0]u2 = .{};
+            var fd = false;
+            if (!try t.count(occs.items, &dummy, &fd) or fd) clean = false;
+        }
+        try exp.append(t.gpa, .{ .tok = try t.rootTok(.fresh, i), .mult = if (cand.fresh_dup) 2 else 1 });
+        return t.opq(exp.items, clean);
+    }
+
+    var unknown_mults: [32]u2 = @splat(2);
+
+    /// The callee's multiplicities: the group's candidate for a member, the
+    /// predicate of another declaration of this module analysed on demand,
+    /// else read off its v2 class (a parameter the answer reaches at most one
+    /// non-summary path of is once; one it never reaches, zero), else
+    /// repeated.
+    fn calleeCand(t: *Tokens, i: u32, nargs: usize) Error!Cand {
+        const unknown: Cand = .{ .mults = unknown_mults[0..@min(nargs, 32)], .fresh_dup = true };
+        const target = t.mod.calledDecl(i) orelse return t.classCand(i, nargs, unknown);
+        if (target[0] == t.mod.in.module) {
+            if (t.mod.group) |g| if (g.index.get(.{target[1]})) |k| return t.cand[k];
+            if (t.cache.get(target[1])) |c| return c;
+            if (try t.analyseDecl(target[1])) |c| return c;
+        }
+        return t.classCand(i, nargs, unknown);
+    }
+
+    fn classCand(t: *Tokens, i: u32, nargs: usize, unknown: Cand) Error!Cand {
+        const saved = t.mod.group;
+        t.mod.group = null;
+        const ce = Module.callee(t.mod, i) catch |err| {
+            t.mod.group = saved;
+            return err;
+        };
+        t.mod.group = saved;
+        const cls = switch (ce) {
+            .class => |c| c,
+            .harmless => {
+                const m = try t.gpa.alloc(u2, nargs);
+                @memset(m, 0);
+                try t.cache_mults.append(t.gpa, m);
+                return .{ .mults = m, .fresh_dup = false };
+            },
+            else => return unknown,
+        };
+        const m = try t.gpa.alloc(u2, nargs);
+        try t.cache_mults.append(t.gpa, m);
+        @memset(m, 0);
+        const c = t.mod.sums.get(cls);
+        var on_path: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        defer on_path.deinit(t.gpa);
+        var fd = false;
+        var budget: u32 = 4096;
+        const counts = try t.countRes(c.res, c.kappas, false, .none, null, nargs, &on_path, &fd, &budget) orelse return unknown;
+        defer t.gpa.free(counts);
+        for (m, counts) |*x, n| x.* = sat(n);
+        return .{ .mults = m, .fresh_dup = fd };
+    }
+
+    /// Per parameter, how many positions of a callee's answer may hold one of
+    /// its objects: a position counts once where the class's κ there is not
+    /// `lost`/`shared` (its objects are apart, conditionally on the caller's
+    /// separation, which the token analysis assumes too), twice otherwise;
+    /// coexisting parts add, alternatives take the larger; a cycle of the
+    /// answer repeats whatever it reaches. Null: a shape this reader does
+    /// not cover (unknown).
+    fn countRes(t: *Tokens, n: Ids.NodeId, kpos: Cond.Kappas, at_summary: bool, parent: Ids.SetId, step: ?Step, nargs: usize, on_path: *std.AutoHashMapUnmanaged(u32, void), fd: *bool, budget: *u32) Error!?[]u32 {
+        if (budget.* == 0) return null;
+        budget.* -= 1;
+        try t.op();
+        const gpa = t.gpa;
+        const out = try gpa.alloc(u32, nargs);
+        @memset(out, 0);
+        errdefer gpa.free(out);
+        const mod = t.mod;
+        const env = mod.env();
+        if (on_path.contains(n.int())) {
+            var it = mod.cells.sets.iterate(try mod.shapes.reach(gpa, mod.account, &mod.cells.sets, n));
+            while (it.next()) |e| switch (mod.cells.origin(.from(e.key))) {
+                .param => {
+                    const pi = mod.cells.get(.from(e.key)).a;
+                    if (pi < nargs) out[pi] = 2;
+                },
+                .result, .site => fd.* = true,
+                else => {},
+            };
+            return out;
+        }
+        try on_path.put(gpa, n.int(), {});
+        defer _ = on_path.remove(n.int());
+        const node = mod.shapes.get(n);
+        switch (node.kind) {
+            .leaf, .node => {
+                const k = try env.conds.kappaOf(gpa, env.charge, env.view(), kpos, n, at_summary);
+                const bad = k == Cond.lost or k == Cond.shared;
+                var it = mod.cells.sets.iterate(try mod.shapes.cellsOf(gpa, mod.account, &mod.cells.sets, n));
+                while (it.next()) |e| switch (mod.cells.origin(.from(e.key))) {
+                    .param => {
+                        const pc = mod.cells.get(.from(e.key));
+                        const pi = pc.a;
+                        // The parent position's object projected by this step:
+                        // the same occurrence, not another.
+                        const q: Ids.PathId = .from(pc.b);
+                        const projected = if (step) |st| blk: {
+                            const p0 = mod.places.pathParent(q);
+                            if (p0 == .none or !Step.eql(mod.places.pathStep(q), st)) break :blk false;
+                            const up = try mod.cells.symbolic(gpa, mod.account, &mod.places, .param, pi, p0, 0);
+                            break :blk mod.cells.sets.member(parent, up.int());
+                        } else false;
+                        if (pi < nargs and (!projected or bad)) out[pi] += if (bad) 2 else 1;
+                    },
+                    .result, .site, .esc => if (bad) {
+                        fd.* = true;
+                    },
+                    .top, .shared => {},
+                    else => {
+                        gpa.free(out);
+                        return null;
+                    },
+                };
+                if (node.kind == .node) {
+                    var oi = mod.shapes.overEntries(node.a);
+                    while (oi.next()) |e| {
+                        const below = mod.places.kind(node.place) == .list or mod.places.kind(node.place) == .dict or at_summary;
+                        const sub = (try t.countRes(e.node, mod.conds.kappaChild(kpos, e.step), below, try mod.shapes.cellsOf(gpa, mod.account, &mod.cells.sets, n), e.step, nargs, on_path, fd, budget)) orelse {
+                            gpa.free(out);
+                            return null;
+                        };
+                        defer gpa.free(sub);
+                        for (out, sub) |*o, s| o.* += s;
+                    }
+                }
+            },
+            .@"union", .choice, .positions => {
+                const l = (try t.countRes(.from(node.a), kpos, at_summary, parent, step, nargs, on_path, fd, budget)) orelse {
+                    gpa.free(out);
+                    return null;
+                };
+                defer gpa.free(l);
+                const r = (try t.countRes(.from(node.b), kpos, at_summary, parent, step, nargs, on_path, fd, budget)) orelse {
+                    gpa.free(out);
+                    return null;
+                };
+                defer gpa.free(r);
+                for (out, l, r) |*o, x, y| o.* = if (node.kind == .positions) x + y else @max(x, y);
+            },
+            else => {
+                gpa.free(out);
+                return null;
+            },
+        }
+        return out;
+    }
+
+    /// A same-module declaration outside the group, analysed once: its
+    /// predicate with no hypothesis (a recursive one met here is unknown).
+    fn analyseDecl(t: *Tokens, di: u32) Error!?Cand {
+        if (t.busy.contains(di)) return null;
+        const d = t.bir().decls[di];
+        if (d.body.unwrap() == null) return null;
+        try t.busy.put(t.gpa, di, {});
+        defer _ = t.busy.remove(di);
+        const saved_locals = t.locals;
+        t.locals = .{};
+        const saved_cur = t.mod.cur_locals;
+        t.mod.cur_locals = d.locals_start;
+        defer {
+            t.locals.deinit(t.gpa);
+            t.locals = saved_locals;
+            t.mod.cur_locals = saved_cur;
+        }
+        const saved_failed = t.failed;
+        t.failed = null;
+        const m = try t.gpa.alloc(u2, d.params);
+        try t.cache_mults.append(t.gpa, m);
+        @memset(m, 0);
+        var fd = false;
+        try t.body(di, m, &fd);
+        const failed = t.failed;
+        t.failed = saved_failed;
+        if (failed != null) return null;
+        const c: Cand = .{ .mults = m, .fresh_dup = fd };
+        try t.cache.put(t.gpa, di, c);
+        return c;
+    }
+
+    /// One evaluation of a declaration's body: the multiplicities its tail
+    /// arms reach, joined into `mults` and `fd` (the maximum).
+    fn body(t: *Tokens, di: u32, mults: []u2, fd: *bool) Error!void {
+        const d = t.bir().decls[di];
+        const params = t.bir().extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
+        for (params, 0..) |p, k| {
+            const v = try t.val(.{ .kind = .tok, .tok = try t.rootTok(.param, @intCast(k)) });
+            _ = try t.bind(p.int(), v);
+        }
+        var outs: std.ArrayList(u32) = .empty;
+        defer outs.deinit(t.gpa);
+        const b = d.body.unwrap() orelse return;
+        try t.tails(b.int(), &outs);
+        for (outs.items) |o| {
+            var occs: std.ArrayList(Occ) = .empty;
+            defer occs.deinit(t.gpa);
+            try t.flatten(o, 1, &occs);
+            try t.resolve(&occs);
+            if (tok_trace) for (occs.items) |oc| std.debug.print("tok tail {d}: tok {d} root {t} arg {d} depth {d} mult {d}\n", .{ di, oc.tok, t.root_kind.items[t.root.items[oc.tok]], t.root_arg.items[t.root.items[oc.tok]], t.depth.items[oc.tok], oc.mult });
+            _ = try t.count(occs.items, mults, fd);
+        }
+    }
+};
+
+/// Stage 2: the least fixed point of the group's multiplicities from 0, then
+/// one validation pass against it; a member the validator refuses, or whose
+/// body the analysis does not cover, publishes stage 1's κ.
+fn inferTokens(mod: *Module, g: *Group, cs: []Contract, rs: []DeclResult) Error!void {
+    const gpa = mod.gpa;
+    var t: Tokens = .{ .gpa = gpa, .mod = mod };
+    defer t.deinit();
+    const n = g.members.len;
+    const cand = try gpa.alloc(Tokens.Cand, n);
+    defer {
+        for (cand) |c| gpa.free(c.mults);
+        gpa.free(cand);
+    }
+    for (cand, 0..) |*c, k| {
+        c.mults = try gpa.alloc(u2, g.param_runs.items[k].len);
+        @memset(c.mults, 0);
+        c.fresh_dup = false;
+    }
+    t.cand = cand;
+    // A test-only mutation: claim the strongest predicate with no inference,
+    // so the validator alone must refuse a false one.
+    const forced = mod.in.contracts == 3 or mod.in.contracts == 4;
+    var failed: ?[]const u8 = null;
+    if (forced) {
+        for (cand) |*c| @memset(c.mults, 1);
+    } else while (true) {
+        var moved = false;
+        for (g.members, 0..) |di, k| {
+            charging(mod, &rs[k].account);
+            t.failed = null;
+            const m = try gpa.alloc(u2, cand[k].mults.len);
+            defer gpa.free(m);
+            @memcpy(m, cand[k].mults);
+            var fd = cand[k].fresh_dup;
+            t.locals.deinit(gpa);
+            t.locals = .{};
+            mod.cur_locals = mod.in.bir.decls[di].locals_start;
+            try t.body(di, m, &fd);
+            if (t.failed) |f| failed = f;
+            if (!std.mem.eql(u2, m, cand[k].mults) or fd != cand[k].fresh_dup) {
+                @memcpy(cand[k].mults, m);
+                cand[k].fresh_dup = fd;
+                moved = true;
+            }
+        }
+        for (cs) |*c| c.stats.token_rounds += 1;
+        if (!moved) break;
+    }
+    const infer_ops = t.ops;
+    // Validation: each body once more under the candidate, nothing reused
+    // from the inference but the candidate itself.
+    for (g.members, 0..) |di, k| {
+        charging(mod, &rs[k].account);
+        var vt: Tokens = .{ .gpa = gpa, .mod = mod, .cand = cand };
+        defer vt.deinit();
+        const m = try gpa.alloc(u2, cand[k].mults.len);
+        defer gpa.free(m);
+        @memset(m, 0);
+        var fd = false;
+        mod.cur_locals = mod.in.bir.decls[di].locals_start;
+        try vt.body(di, m, &fd);
+        var ok = vt.failed == null and failed == null;
+        for (m, cand[k].mults) |got, claimed| if (got > claimed) {
+            ok = false;
+        };
+        if (fd and !cand[k].fresh_dup) ok = false;
+        const c = &cs[k];
+        c.stats.validate_ops = vt.ops;
+        c.stats.token_ops = infer_ops;
+        c.stats.tokens = @intCast(t.parent.items.len + vt.parent.items.len);
+        c.stats.validated = ok;
+        @memcpy(c.mults, cand[k].mults);
+        c.fresh_dup = cand[k].fresh_dup;
+        // Preserved: validated, and some parameter is not repeated.
+        c.preserved = ok or mod.in.contracts == 4;
+        if (vt.failed orelse failed) |f| c.stats.reason = f else if (!ok) c.stats.reason = "validator refused the candidate";
+    }
 }

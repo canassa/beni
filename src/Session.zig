@@ -404,6 +404,7 @@ pub const Options = struct {
     /// slice 4): v2 walks each group member again at its fixpoint and
     /// compares. Hidden and test-only.
     ownership_rewalk_check: bool = false,
+    ownership_contracts: u8 = 0,
     /// `--ownership-propagate` (`Cli.Common`, `ownership-v2.md` §2.9 *Fold
     /// first*): v2's `propagate` prints a line per call. Hidden and test-only.
     ownership_propagate: bool = false,

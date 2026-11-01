@@ -212,6 +212,9 @@ pub const Common = struct {
     /// stops when its read-off is not its last walk's. On `Common` for
     /// `--ownership-everywhere`'s reason; absent from `usage`.
     ownership_rewalk_check: bool = false,
+    /// `--ownership-contracts=1|2`: hidden, experiment only (recursive
+    /// groups summarised by a fixed-slot contract).
+    ownership_contracts: u8 = 0,
     /// `--ownership-propagate` — **hidden** and test-only (`ownership-v2.md`
     /// §2.9 *Fold first*, *Cost*): the checker v2 prints a line to standard
     /// error for each `propagate` call, with its states, edges, open sets
@@ -797,6 +800,11 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--ownership-rewalk-check")) {
         if (value != null) return noValue(name);
         common.ownership_rewalk_check = true;
+        return null;
+    }
+    if (std.mem.eql(u8, name, "--ownership-contracts")) {
+        const v = value orelse return needsValue(name, "1|2");
+        common.ownership_contracts = std.fmt.parseInt(u8, v, 10) catch return needsValue(name, "1|2");
         return null;
     }
     // Hidden and test-only (see `Common.ownership_propagate`).

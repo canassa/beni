@@ -146,6 +146,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 if (steps != 0) line.writer.print(", step lanes {d}", .{steps}) catch return error.OutOfMemory;
                 try others.append(arena, line.written());
             }
+            if (in.format_summaries) if (dr.contract) |c| try others.append(arena, try std.fmt.allocPrint(arena, "contract {s}: stage {d}, rounds {d}, slots {d}, slot cells {d}, origins {d}, unknown {d}, alpha {d}, port nodes {d}, tokens {d}, token ops {d}, token rounds {d}, validation ops {d}, mults {x}, fresh dup {}, validated {}, preserved {}, v2 leq {}, v2 leq uses {}, certified {}, walk2 growth {d}, walk2 total {d}{s}{s}", .{ name, c.stage, c.rounds, c.slots, c.slot_cells, c.origins, c.unknown_origins, c.alpha_visits, c.port_records, c.tokens, c.token_ops, c.token_rounds, c.validate_ops, c.mults, c.fresh_dup, c.validated, c.preserved, c.v2_leq, c.v2_leq_uses, c.certified, c.growth_at_walk2, c.total_at_walk2, if (c.reason.len != 0) ", reason " else "", c.reason }));
             // The crossing's counts (§2.11 *κ across a call*), once per module:
             // the reads that crossed, those redone at `C` and `base_epoch`'s
             // moves (the counted tests read them).
