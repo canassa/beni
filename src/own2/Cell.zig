@@ -822,24 +822,34 @@ pub const Table = struct {
         // source's patterns).
         var chain: std.ArrayList(CellId) = .empty;
         defer chain.deinit(gpa);
+        // Columns, not `get`: a whole cell gathers all ten of them, and this
+        // reads two (#1560). `symbolic` below appends, so the down walk
+        // slices again per step.
         var at = c;
-        while (t.get(at).origin.isRefinement()) : (at = t.get(at).parent) try chain.append(gpa, at);
-        const root = t.get(at);
-        var inner: CellId = if (root.origin.isSymbolic() and root.origin != .top) at else return null;
+        {
+            const s = t.cells.slice();
+            const origins = s.items(.origin);
+            const parents = s.items(.parent);
+            while (origins[at.int()].isRefinement()) : (at = parents[at.int()]) try chain.append(gpa, at);
+            if (!(origins[at.int()].isSymbolic() and origins[at.int()] != .top)) return null;
+        }
+        var inner: CellId = at;
         while (chain.pop()) |r| {
-            const x = t.get(r);
-            const y = t.get(inner);
-            const step: ?Place.Step = switch (x.origin) {
-                .elem, .others => if (t.splitsPositions(r)) null else Place.Step.elem,
-                .below => Place.Step.fromWord(x.c),
-                .part => places.pathStep(.from(x.c)),
+            const s = t.cells.slice();
+            const xo = s.items(.origin)[r.int()];
+            const xc = s.items(.c)[r.int()];
+            const step: ?Place.Step = switch (xo) {
+                .elem, .others => if (xc & positions_bit != 0) null else Place.Step.elem,
+                .below => Place.Step.fromWord(xc),
+                .part => places.pathStep(.from(xc)),
                 .level => null,
                 .loan => continue,
                 else => unreachable,
             };
-            const s = step orelse continue;
-            const path = (try places.extend(gpa, .growth(account), .from(y.b), s)) orelse return null;
-            inner = try t.symbolic(gpa, account, places, y.origin, y.a, path, y.c);
+            const st = step orelse continue;
+            const i = inner.int();
+            const path = (try places.extend(gpa, .growth(account), .from(s.items(.b)[i]), st)) orelse return null;
+            inner = try t.symbolic(gpa, account, places, s.items(.origin)[i], s.items(.a)[i], path, s.items(.c)[i]);
         }
         return inner;
     }

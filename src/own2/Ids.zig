@@ -578,8 +578,9 @@ pub fn FixedDict(comptime k: usize) type {
     return struct {
         /// `crit`: the critical bit's position (0 is the most significant
         /// bit of word 0), or `leaf_crit` for a leaf whose `left` is the
-        /// key/value index.
-        nodes: std.MultiArrayList(Node) = .empty,
+        /// key/value index. Whole nodes, not columns: a descent reads all
+        /// three words of each node it visits (#1560).
+        nodes: std.ArrayList(Node) = .empty,
         keys: std.ArrayList(u32) = .empty,
         values: std.ArrayList(u32) = .empty,
         root: u32 = none_int,
@@ -605,6 +606,13 @@ pub fn FixedDict(comptime k: usize) type {
             return @intCast(d.values.items.len);
         }
 
+        pub fn clearRetainingCapacity(d: *Self) void {
+            d.nodes.clearRetainingCapacity();
+            d.keys.clearRetainingCapacity();
+            d.values.clearRetainingCapacity();
+            d.root = none_int;
+        }
+
         inline fn bitOf(key: Key, crit: u32) u1 {
             return @intCast((key[crit / 32] >> @intCast(31 - crit % 32)) & 1);
         }
@@ -617,11 +625,9 @@ pub fn FixedDict(comptime k: usize) type {
         fn descend(d: *const Self, key: Key) u32 {
             var at = d.root;
             if (at == none_int) return none_int;
-            const crits = d.nodes.items(.crit);
-            const lefts = d.nodes.items(.left);
-            const rights = d.nodes.items(.right);
-            while (crits[at] != leaf_crit) at = if (bitOf(key, crits[at]) == 0) lefts[at] else rights[at];
-            return lefts[at];
+            const ns = d.nodes.items;
+            while (ns[at].crit != leaf_crit) at = if (bitOf(key, ns[at].crit) == 0) ns[at].left else ns[at].right;
+            return ns[at].left;
         }
 
         pub fn get(d: *const Self, key: Key) ?u32 {
@@ -639,7 +645,7 @@ pub fn FixedDict(comptime k: usize) type {
             try d.keys.appendSlice(gpa, &key);
             try d.values.append(gpa, undefined);
             try d.nodes.ensureUnusedCapacity(gpa, 2);
-            const leaf_node: u32 = @intCast(d.nodes.len);
+            const leaf_node: u32 = @intCast(d.nodes.items.len);
             d.nodes.appendAssumeCapacity(.{ .crit = leaf_crit, .left = new_leaf, .right = none_int });
             if (leaf == none_int) {
                 d.root = leaf_node;
@@ -651,16 +657,14 @@ pub fn FixedDict(comptime k: usize) type {
             const other = d.keyAt(leaf);
             var crit: u32 = 0;
             while (crit / 32 < k and bitOf(other, crit) == bitOf(key, crit)) crit += 1;
-            const crits = d.nodes.items(.crit);
-            const lefts = d.nodes.items(.left);
-            const rights = d.nodes.items(.right);
             var parent: u32 = none_int;
             var at = d.root;
-            while (crits[at] != leaf_crit and crits[at] < crit) {
+            while (d.nodes.items[at].crit != leaf_crit and d.nodes.items[at].crit < crit) {
                 parent = at;
-                at = if (bitOf(key, crits[at]) == 0) lefts[at] else rights[at];
+                const n = d.nodes.items[at];
+                at = if (bitOf(key, n.crit) == 0) n.left else n.right;
             }
-            const branch: u32 = @intCast(d.nodes.len);
+            const branch: u32 = @intCast(d.nodes.items.len);
             const new_bit = bitOf(key, crit);
             d.nodes.appendAssumeCapacity(.{
                 .crit = crit,
@@ -669,10 +673,10 @@ pub fn FixedDict(comptime k: usize) type {
             });
             if (parent == none_int) {
                 d.root = branch;
-            } else if (d.nodes.items(.left)[parent] == at) {
-                d.nodes.items(.left)[parent] = branch;
+            } else if (d.nodes.items[parent].left == at) {
+                d.nodes.items[parent].left = branch;
             } else {
-                d.nodes.items(.right)[parent] = branch;
+                d.nodes.items[parent].right = branch;
             }
             return .{ .found_existing = false, .value_ptr = &d.values.items[new_leaf], .index = new_leaf };
         }

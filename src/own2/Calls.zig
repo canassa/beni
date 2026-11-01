@@ -365,8 +365,9 @@ const Pre = struct {
     fn unionSides(w: *Pre, u: NodeId, path: PathId) Error!void {
         const gpa = w.env.gpa;
         const shapes = w.env.shapes;
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
+        // From the node table's pool, as every walk over it (#1191, #1560).
+        const seen = try shapes.marks.take(gpa);
+        defer shapes.marks.give(seen);
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.appendSlice(gpa, &.{ .from(shapes.get(u).a), .from(shapes.get(u).b) });
@@ -675,8 +676,8 @@ const Grafter = struct {
         const places = g.env.places;
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(g.gpa());
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(g.gpa());
+        const seen = try shapes.marks.take(g.gpa());
+        defer shapes.marks.give(seen);
         try stack.append(g.gpa(), grp.node);
         while (stack.pop()) |m0| {
             const m = try shapes.force(g.gpa(), g.account(), m0);
@@ -1434,8 +1435,8 @@ const Grafter = struct {
         const shapes = g.env.shapes;
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(g.gpa());
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(g.gpa());
+        const seen = try shapes.marks.take(g.gpa());
+        defer shapes.marks.give(seen);
         try stack.append(g.gpa(), n0);
         while (stack.pop()) |m| {
             if (seen.contains(m)) continue;
@@ -1991,8 +1992,8 @@ pub fn reentries(env: Env, x: NodeId, out: *std.ArrayList(NodeId)) Error!void {
     const shapes = env.shapes;
     const places = env.places;
     const p = shapes.place(x);
-    var seen: stamped.Column(NodeId, void) = .{};
-    defer seen.deinit(gpa);
+    const seen = try shapes.marks.take(gpa);
+    defer shapes.marks.give(seen);
     var stack: std.ArrayList(NodeId) = .empty;
     defer stack.deinit(gpa);
     try stack.append(gpa, x);
