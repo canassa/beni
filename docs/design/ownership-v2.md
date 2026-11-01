@@ -2349,7 +2349,13 @@ may move record counts, and the plain gates do not run it: `build_test.zig` runs
 `ownership/EmptyRunFrontierOrder`, #1513's and #1489's two-branch inserts, `wa`/`wb`, the quadtree and
 `RoseAlias`, of which all but the last two failed it before. Corpus (2 120 roots): no verdict, summary,
 limit or block change; three roots' records move, +0.03 % in all. `wa`/`wb`'s memoised and memo-free
-walks now agree under the full cross-check (#1497).
+walks now agree under the full cross-check (#1497). A walk with `no_memo` set neither reads nor writes the
+join memo: before, it wrote `memo_prop` as a memoised walk does. Outside the two checks that is the walks of
+`moveIsBisimulation` (4e's move check, every safety build), a construction's carried-entry test
+(`TransferConstruct.carryDropped`, any `propagate` it reaches), and two unit tests of `Cond.zig`. The order
+check skips those walks: `propagateFrom` returns at once under `no_memo`, and the move check calls the walk
+directly. Measured, the change moves no record: with those writes kept and the new key, the corpus is the
+same as this build root for root, so the +0.03 % above is the key's alone.
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
 at the same node remain separate states; revisiting a completed identical state reuses its answer.

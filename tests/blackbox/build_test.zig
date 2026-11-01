@@ -12824,10 +12824,42 @@ test "the checker v2 walks #1489's two-branch insert the same in either frontier
 }
 
 test "the checker v2 walks the mutual group wa and wb the same in either frontier order" {
-    // The group of *charges a recursive group the same in either
-    // declaration order*, whose memoised walks differed from their plain
-    // walks under `-Downership-full-cross-check` until #1526 (#1497).
-    try orderChecked("Main.beni", "@ownership_summary_size(module, 151100)\n\ntype A\n    = A (List Int) B B\n    | AL\n\n\ntype B\n    = B (List Int) A\n    | BL\n\n\npub wa : A → A\nwa a =\n    case a of\n        A xs b1 b2 →\n            A (List.push xs 1) (wb b1) b2\n\n        AL →\n            AL\n\n\npub wb : B → B\nwb b =\n    case b of\n        B ys a →\n            B ys (wa a)\n\n        BL →\n            BL\n");
+    // A one-child form of the group of *charges a recursive group the same
+    // in either declaration order* (#1497), whose memoised walks differed
+    // from their plain walks under `-Downership-full-cross-check` until
+    // #1526; this form is checked at the default allowance in about 0.4 s
+    // and fails the order check with the key reverted, as that group does.
+    try orderChecked("Main.beni",
+        \\type A
+        \\    = A (List Int) B
+        \\    | AL
+        \\
+        \\
+        \\type B
+        \\    = B (List Int) A
+        \\    | BL
+        \\
+        \\
+        \\pub wa : A → A
+        \\wa a =
+        \\    case a of
+        \\        A xs b1 →
+        \\            A (List.push xs 1) (wb b1)
+        \\
+        \\        AL →
+        \\            AL
+        \\
+        \\
+        \\pub wb : B → B
+        \\wb b =
+        \\    case b of
+        \\        B ys a →
+        \\            B ys (wa a)
+        \\
+        \\        BL →
+        \\            BL
+        \\
+    );
 }
 
 test "the checker v2 walks the quadtree and the rose tree the same in either frontier order" {
