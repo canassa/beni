@@ -396,7 +396,17 @@ pub fn Of(comptime Frame: type) type {
         pub fn foldedView(f: *Frame, v: NodeId) Error!bool {
             const shapes = f.env.shapes;
             if (shapes.kind(v) != .view) return false;
-            // 1 on the DFS path, 2 done.
+            // Once per template in a walk: items meet one view at many positions
+            // and calls (a memo of records charged once, never by order of answers).
+            if (f.knots.get(.{shapes.get(v).a})) |hit| return hit == 1;
+            const got = try knotIn(f, shapes.get(v).a);
+            (try f.knots.getOrPut(f.gpa, .{shapes.get(v).a})).value_ptr.* = @intFromBool(got);
+            return got;
+        }
+
+        fn knotIn(f: *Frame, root: u32) Error!bool {
+            const shapes = f.env.shapes;
+            // 1 on the DFS path, 2 done; `f.knots` across walks of the frame.
             var state: Ids.FixedDict(1) = .{};
             defer state.deinit(f.gpa);
             // A node, then its exit (the high bit).
@@ -405,11 +415,17 @@ pub fn Of(comptime Frame: type) type {
             var kids: std.ArrayList(NodeId) = .empty;
             defer kids.deinit(f.gpa);
             const exit: u32 = 1 << 31;
-            try stack.append(f.gpa, shapes.get(v).a);
+            try stack.append(f.gpa, root);
             while (stack.pop()) |w| {
                 try f.env.charge.reserve(f.gpa, .inspection, 1);
                 if (w & exit != 0) {
                     (try state.getOrPut(f.gpa, .{w & ~exit})).value_ptr.* = 2;
+                    // Left with no cycle met below it: none is reachable from it.
+                    (try f.knots.getOrPut(f.gpa, .{w & ~exit})).value_ptr.* = 0;
+                    continue;
+                }
+                if (f.knots.get(.{w})) |hit| {
+                    if (hit == 1) return true;
                     continue;
                 }
                 const got = try state.getOrPut(f.gpa, .{w});
