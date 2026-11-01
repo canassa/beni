@@ -8409,6 +8409,65 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   `incRoot (same t)`). Those cells are kept by (d), because they are not in `K`. So one that aliases
   a written key refuses a witness, and that would be a finding for the spec, not a reason to drop it.
 
+*As built, part 1 (#1485, partial: the PR says what is left).* Self-hosted Debug,
+`dump --stage=ownership --ownership=v2 --jobs=1`.
+- **The root's `lost` was two keying gaps, not a transport gap.** The stop report traced the last
+  refusal of `incAll (same t)` to `same`'s published root κ `{lost}`, and guessed that read-off's
+  cyclic copy of a knot view lost its κ. Measured: `Shape.map` and the read-off's carry move every
+  entry the frame holds, the copy's nodes included (the relabelled class κ sits at `view(n, E)` for
+  each keyed `n`, and `Carry.node` maps it to the image). The class itself had no entry to carry:
+  - *Widen keyed the union, not its built side.* At a fold position `propagate` writes one entry per
+    state, keyed by the state's joined node. A knot rooted at `Leaf | Node …` is a `union` whose
+    `node` side is widen's own record: no member snapshot holds it and no state is keyed by it, so a
+    read of the union joins in that side's `lost` (O13). Now, while `widenValue` propagates, each
+    built side of a union or choice at a fold that no state keys takes that state's κ
+    (`Cond.Table.widen_sides`, `unionSides`). *Lemma:* the state's κ is the join of every member's
+    read at that position; an object at the fold through that side is one of those members' objects
+    (widen's quotient), so the join covers it. The entry is added only where nothing else keys the
+    node, so no member's own entry is weakened.
+  - *A port join collapsed the knot.* `Summary.joinRes` merged the two classes' snapshots first
+    (`kappaMerge`). The port's knot is an exact fold at the root, the new round's root is not a fold,
+    and §2.9 merges the two into a collapsed fold, where every built node reads `lost`. The widened
+    join is now propagated from the two members, each at its own snapshot (`widenValueOf`).
+    `propagate` is defined on a join of its members, widened or not (§2.9), so this reads what the
+    members store, and the merged snapshot still serves the unwidened join.
+  - *Check* (`runtime_safety`, `widenValueOf`): O15 on the widened value, every member's κ at its root
+    under the widened root's. No ownership fixture fires it.
+  So no second mechanism reads a hypothesis node's κ at the view: the copy reads the class's entries,
+  which now exist. `same`'s published root is `yes`, and `incAll (same t)` and
+  `incP (P (same t) (same t2))` are accepted on every line.
+- **Reader 3 at every leaf.** `Grafter.argAt` projects an exact symbolic or refined leaf (no `⊤`, no
+  approximate cell, none under a repeating split) through `⟲` symbolically at every call, not only at
+  a certified view. *Argument:* such a leaf stands for exactly its cells' projections (§2.2: projecting
+  a symbolic cell appends a step), and `Place.extend` names a `⟲` image as every position of its cycle,
+  a join name where the place is a root or unsealed. So the projection names a superset of the
+  positions `recastWhole` would reach, as exact cells instead of one approximate one. *Corpus:* no
+  verdict changes over the ownership, `run/`, `browser/` and core corpora; `core.v2.unchecked` loses
+  `Dict descend` (lines 604-611), which no longer stops at its limit. *Measured:* no `~…⟲` cell remains
+  at `#Node.1[*]` or below in `same`, `incAll` or `unroll`, so none can alias a written key at
+  `incAll (same t)` or `incRoot (same t)`.
+- **A κ̂ that fails still tags its occurrence.** When κ̂(V, K) is `shared` or `lost`, the items inside
+  `V` keep every class, `K` included, exact or approximate (`TransferBeside.Occ.fail`), so the write is
+  refused `disjoint` or `disjoint (approx)`, as (d) says. The WIP fell back to the cell comparison
+  there, and that is why `incAll (unroll t)`, `incRoot (unroll t)` and the safe row 4 (`deeper`) read
+  a plain `disjoint`, a definite conflict the rule does not claim. They now read `disjoint (approx)`,
+  as the witness table has them, so the table needs no amendment.
+- **`o/FoldCertificate` as measured.** Every witness has its specified verdict. The near-miss rows match
+  except two:
+  - Row 2 (`dupL`) is refused, but by `exclusive (approx)`, through `incAll`'s `xreq` on the
+    `#Node.2⟲#Node.1` line. The `#Node.1` and `#Node.2#Node.1` lines are accepted. Row 2's other path
+    `#Node.0#Node.1` is no line of the dump, which prints three lines per `incAll` call. Open.
+  - Row 14 (`wrapR`, and its twin `wrapL` with a parameter list) is refused, not accepted: both classes
+    keep a root `{lost}` (`#Node.0 {lost}` and `{lost}`), and `wrapL` also refuses `#Node.1`
+    `disjoint`. Open.
+- **Not built yet:** the certificate's publication (the class entry `cert K {keys} κ`, `Summary.eq`/
+  `leq` over it, the block's certified mark and version bump, so `o/FoldCertificateImported`); the
+  trie test of (a′) with its memo keyed by `(certificate, version, i, L)` (the WIP tests the group's
+  keys pairwise by `Cell.alias` in every build); C1–C7; the switch `otherPaths-spine-first` and the
+  unit tests of rows 15 and 17; the counted test; the two-order test of row 19; `o/FoldedKnotCall`;
+  the oracle sweep; the mutation tests. A settled group's classes are taken as certified when the
+  stop rule ends (`Summary.certs`). That is not yet argued in this document, so it is no proof yet.
+
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it
 earned, and the group is unbuilt. A limit in any member's walk, in a delivery or in the validation
