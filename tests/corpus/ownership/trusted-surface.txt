@@ -78,3 +78,4 @@ browser-inline Tea.application    ownership/EntryUrlTaggers.beni   1:entry>-
 # document delegates to element with the same protocol; no further ownership promise.
 browser-inline Tea.document       browser/inline/DocumentTitle.beni     -
 page       Page.sandbox           browser/Counter.beni             1:entry>-
+core       Js.invoke             ownership/core/JsWords.beni     2:aliased>borrowed+res:unknown>fresh

@@ -1,0 +1,1 @@
+{ "platform": true, "name": "typed-queue-test", "platforms": ["node"], "reexports": ["Node"] }

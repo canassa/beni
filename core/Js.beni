@@ -157,6 +157,14 @@ pub foreign impure call : Value, name, args → Value
 pub foreign impure apply : Value, args → Value
 
 
+--| One typed runtime protocol step (owner, 2026-11-01). The callback may
+--| suspend: its raw result, including Task's sentinel, is returned for the
+--| driver to consume. Its real type and callback summary are retained.
+--| Core's fiber driver only; this does not turn suspension into a value
+--| an application can hold. Unlike a host callback, `work` is not `sync`.
+pub foreign impure invoke : once (a → b), aliased a → unknown b
+
+
 --| `new C(a, b)`: an object made by a constructor, the arguments written
 --| as a list literal. `Js.construct (Js.global "Error") [ Js.from m ]` is
 --| `new Error(m)`.
