@@ -8494,26 +8494,37 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   in the reach's order and bucketed by `(origin, index, c)`, and each ask reads its own bucket.
   `Cell.below` and equality hold only within one bucket, so the answer is the same first cell in
   the reach's order. No verdict changes anywhere in the ownership corpus.
-- **The counted test** (`build_test.zig`, *a fold certificate over N alternatives*). `incAll (same
-  (if n == 1 then t1 else … tN))` is accepted at every N, and twice N may cost at most twice the
-  records plus the cost at N = 8 (`f`'s account):
+- **The counted tests** (`build_test.zig`). Records are deterministic, and each test runs one
+  process: every size is a declaration of one module, so `incAll` and `same` are solved once.
+  - *Over N alternatives*: `incAll (same (if n == 1 then t1 else … tN))` at N = 6 and 12, accepted.
+    Twice N may cost twice the records plus a sixteenth of the cost at N = 6, which leaves room for
+    the radix sets' log factor. This test catches the two quadratic terms.
+  - *Through a shared DAG of built nodes*: `x{i} = if n == i then Node x{i-1} [] Leaf else x{i-1}`,
+    `incAll (same x{N})`, at depth 4 and 8. Each key's walk goes through built nodes, and every
+    choice names the one before it twice. Twice the depth may cost at most twice the records. The
+    line is refused because `same` over a built node reads its root `lost` (row 14, part A); this
+    test pins the cost only. It catches the projection memo.
 
-  | build | N = 8 | 16 | 32 | 64 |
+  | build (self-hosted ReleaseSafe) | N = 6 | 12 | depth 4 | 8 |
   |---|---|---|---|---|
-  | this branch | 52 390 | 107 602 | 218 336 | 456 077 |
-  | groups tested by pairs (the checkpoint's `certClassAgg`) | 57 080 | 128 336 | 304 758 | 808 275, fails |
-  | `holdsCanonical` once per parameter cell | 57 830 | 131 282 | 316 896 | 857 997, fails |
-  | both (the checkpoint) | 62 345 | 151 841 | 403 143 | `ownership_summary_size` |
-  | `Shape.proj`'s memo hits disabled | 61 973 | 119 809 | 235 791 | 485 340, passes |
-  | each image's `⟲` expanded to its level paths (`expandLevels`) | 53 478 | 109 778 | 222 688 | 464 781, passes |
+  | this branch | 40 254 | 78 591 | 25 487 | 45 443 |
+  | groups tested by pairs (the checkpoint's `certClassAgg`) | 42 683 | 89 812, fails | | |
+  | `holdsCanonical` once per parameter cell | 43 134 | 91 551, fails | | |
+  | `Shape.proj`'s memo hits ignored | | | 54 322 | 194 401, fails |
 
-  The last two rows are local mutants measured for the spec's claim that the test catches them.
-  It does not, and the measurement shows why. Every key's walk meets the choice at the root (`L = ε`),
-  so no projection is made, and `Tree` has one level path per `⟲`, so an expansion costs a constant
-  factor. A witness for either mutant needs keys that walk through built nodes and a type with several
-  level paths. N = 128 costs 969 351 (2.13×, the radix sets' log factor). The test takes about 2 s in
-  ReleaseSafe: about 0.4 s per process at N = 8, and 1.0 s at N = 64. Four processes cannot fit the
-  1 s budget for a black-box test.
+  Each mutant was applied to the source and run through the test step, which failed. Each test
+  takes 0.6–0.65 s, under a host load average of 9–20.
+  - *An image expanded per level path is not a matter of scale.* How many level paths a `⟲` stands
+    for is a property of the type, so the expansion is a constant factor for any fixed type. A family
+    that widens the type to multiply it widens the certificate's class quadratically: `incAll` over a
+    `Tree` with two list fields, or a `W` with four recursive fields, already exceeds
+    `ownership_summary_size` (the k-list-fields test documents the k² class). And for `Tree`,
+    `Place.levelPaths` names no join at a root or a sealed return. So `expandLevels` on every image
+    changes nothing: 53 478 against 52 390 at N = 8 over alternatives. So the property is pinned
+    where it is decided. `Calls.zig`, *a group's image through `⟲` is one join name per member*,
+    expects one image per member of a two-member group at the root join `root⟲`, which stands for two
+    level paths (`levelsOf`). A mutant that expands images into `levelsOf`'s paths gives 8 images
+    there instead of 2, and the test fails.
 - **Rows 18 and 19** are in `o/FoldCertificate` (part 1) and refused `disjoint (approx)`. Neither
   needs the trie today: `h2`'s and `g2`'s classes read `lost`, because `h2` calls `same` on a built
   node (`same (Node t [] Leaf)`, row 14's open root `lost`). So the trie is tested directly:
@@ -8529,15 +8540,33 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
     Over `o/FoldCertificate` every verdict and every summary is unchanged; only account records
     move. `build_test.zig`'s row 19 test passes in both orders.
   - `otherPaths-spine-first` reverses each item's pushes in `otherPaths`.
-- **Rows 15 and 17 do not show the tag (#1532).** `build_test.zig`'s two tag tests pass in the walk's
-  order and under `otherPaths-spine-first`: both rows are refused `disjoint`. Under the switch plus
-  `cert-untagged` they expect acceptance, as this section says, and they are red. Both rows stay
-  refused, with records identical to the default build's. Measured: (d) never fires there. `certKid`
-  finds no class at `#Box.0` below `same`'s leaf class at `#Node.1`, so no occurrence is tagged and
-  the walk compares cells. A variant whose `same` rebuilds the `Box` reaches (d): one view and two
-  trees are accepted. But `P w w` stays refused under the switch plus the mutation, so no two items
-  share a key without the tag there either. Which program shows the tag is a spec question (#1532).
-  C7's panic, the other half of that test, is pending on part A.
+- **Rows 15 and 17: the tag's absence cannot be observed with today's walk (#1532).** The corpus
+  rows never reach (d): `certKid` finds no class at `#Box.0` below `same`'s leaf class at `#Node.1`,
+  so no occurrence is tagged, and the walk compares cells. In `build_test.zig`'s tag tests, `same`
+  rebuilds the wrappers (`Node (same l) (Box xs) (same r)`, and with `Wrap (Box xs)` for row 17).
+  Then (d) fires: `incAll (same t)` is accepted, and `incP (P w w)` is refused `disjoint`. Both
+  tests pass in the walk's order, under `otherPaths-spine-first`, and under that switch plus
+  `cert-untagged`.
+  - *Measured* (a probe of the walk under the switch plus the mutation): items of the second
+    occurrence do merge into tagged items inside `V`, 30 times in row 15's module. Every merge is
+    below the `Box`. Every item outside `V` that keeps a cell is an ancestor at a `Tree` place, and
+    its key differs from every item inside `V` by `path` alone.
+  - *Why no program can do better.*
+    1. `pushOff` gives an item off the spine the spine's canonical path, extended by its step.
+    2. `routePath` keeps extending it while the item steps from a cyclic place, and makes it `none`
+       only after a step from a place on no cycle.
+    3. So the first item of a route outside `V` has a path that no item inside `V` has, because the
+       two diverge at the spine's step above `V`. The same holds for each of its descendants at a
+       cyclic place.
+    4. The callee reaches below such an item only by reading it, so the item carries a mark. A marked
+       item outside the spine keeps its whole reach (`arms.read`, also keyed by `path`), and that
+       happens before any of its descendants is met.
+    5. A merge can happen only where both paths are `none`. By then, every cell it could drop has
+       already been kept above it.
+
+    So, with the tag or without it, the kept cells are the same. The tag stays, because it costs
+    nothing and it carries the item identity that (d) relies on. The test pins all three
+    configurations. C7's edge check (part A) has no failing case to panic on from these rows.
 
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it

@@ -2411,12 +2411,7 @@ const Blackbox = struct {
                 .root_source_file = bb.b.path(root),
                 .target = bb.target,
                 .optimize = mode,
-                .imports = &.{
-                    .{ .name = "diagnostic", .module = bb.diagnostic },
-                    // The checker's test-only switches, which a black-box test
-                    // reads to know which order the compiler it spawns runs.
-                    .{ .name = "ownership_options", .module = ownership_options.? },
-                },
+                .imports = &.{.{ .name = "diagnostic", .module = bb.diagnostic }},
             }),
         });
     }
