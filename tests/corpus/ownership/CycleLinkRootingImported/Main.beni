@@ -3,7 +3,7 @@
 -- half). Over `[ r, r ]` each imported write is refused `exclusive`, alone,
 -- under one link, under two and under its parent; over separately built
 -- kids each accepts, and the same through `Maybe` and `A`/`B`. Known
--- entries: v1 refuses `underOneApart`; v2 refuses `underTwoApart` (#1495).
+-- entries: v1 refuses `underOneApart`; both refuse `underTwoApart` (#1495).
 -- Both refuse `siblingsApart` (#1495).
 import Roses exposing (Rose, M, A, B)
 

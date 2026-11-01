@@ -6,8 +6,8 @@ module CycleLinkRooting
   51:29 call CycleLinkRooting.incLabels <literal>[*]#Rose.0: accepted fresh (CycleLinkRooting.incLabels writes π1[*]#Rose.0)
   64:18 call CycleLinkRooting.incLabels <call CycleLinkRooting.kidsOf>[*]#Rose.0: rejected level: another operand may hold it at another level: the checker keeps one place for the levels of a recursive value (CycleLinkRooting.incLabels writes π1[*]#Rose.0) (approx)
   68:32 call CycleLinkRooting.incLabels <call CycleLinkRooting.kidsOf>[*]#Rose.0: rejected level: another operand may hold it at another level: the checker keeps one place for the levels of a recursive value (CycleLinkRooting.incLabels writes π1[*]#Rose.0) (approx)
-  84:18 call CycleLinkRooting.incLabels <call CycleLinkRooting.innerKids>[*]#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (CycleLinkRooting.incLabels writes π1[*]#Rose.0)
-  88:32 call CycleLinkRooting.incLabels <call CycleLinkRooting.innerKids>[*]#Rose.0: accepted call (CycleLinkRooting.incLabels writes π1[*]#Rose.0)
+  84:18 call CycleLinkRooting.incLabels <call CycleLinkRooting.innerKids>[*]#Rose.0: rejected level: another operand may hold it at another level: the checker keeps one place for the levels of a recursive value (CycleLinkRooting.incLabels writes π1[*]#Rose.0) (approx)
+  88:32 call CycleLinkRooting.incLabels <call CycleLinkRooting.innerKids>[*]#Rose.0: rejected level: another operand may hold it at another level: the checker keeps one place for the levels of a recursive value (CycleLinkRooting.incLabels writes π1[*]#Rose.0) (approx)
   94:5 call CycleLinkRooting.incKids <call CycleLinkRooting.wrap>⟨Rose⟩⁺#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (CycleLinkRooting.incKids writes π1⟨Rose⟩⁺#Rose.0)
   98:24 call CycleLinkRooting.incKids <call CycleLinkRooting.wrap>⟨Rose⟩⁺#Rose.0: accepted fresh (CycleLinkRooting.incKids writes π1⟨Rose⟩⁺#Rose.0)
   104:5 call CycleLinkRooting.incKids <call CycleLinkRooting.wrap2>⟨Rose⟩⁺#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (CycleLinkRooting.incKids writes π1⟨Rose⟩⁺#Rose.0)
@@ -47,7 +47,7 @@ module CycleLinkRooting
   summary incKidsA: π1 R, π1#A.0 RA, π1#A.1 R, π1#A.1[*]#B.0 RAW[storage], π1#A.1[*]#B.0[*] RA, π1#A.1[*]#B.1 RA; res #A.0 ~condition(fresh9) π1#A.0, #A.1 ~fresh5{lost}r{lost} ~fresh7{lost}r{lost}, #A.1[*] ~condition(fresh1){sep π1#A.1[*]#B.0 π1#A.1[*]#B.1, sep π1#A.1[*]#B.1 π1#A.1[*]#B.0[*]}r{sep π1#A.1[*]#B.1 π1#A.1[*]#B.0[*]} ~fresh1{lost}r{lost} ~fresh7{lost}r{lost}, #A.1[*]#B.0 condition(fresh2) ~condition(fresh6) π1#A.1[*]#B.0{excl π1#A.1}, #A.1[*]#B.0[*] ~condition(fresh4) ~π1#A.1[*]#B.0[*]{excl π1#A.1}r{excl π1#A.1}, #A.1[*]#B.1 condition(fresh10) ~condition(fresh3) π1#A.1[*]#B.1{excl π1#A.1}r{excl π1#A.1}, condition(fresh8){sep π1#A.0 π1#A.1[*]#B.0, sep π1#A.0 π1#A.1[*]#B.0[*], sep π1#A.0 π1#A.1[*]#B.1}; xreq excl π1#A.1
   summary mutualShared: res #A.0 fresh3 ~condition(fresh11), #A.1 ~fresh7{lost}r{lost} ~fresh9{lost}r{lost}, #A.1[*] ~condition(fresh4) ~fresh4{lost}r{lost} ~fresh9{lost}r{lost}, #A.1[*]#B.0 condition(fresh1){shared} fresh1{shared} ~condition(fresh8), #A.1[*]#B.0[*] ~condition(fresh6), #A.1[*]#B.1 condition(fresh2){shared}r{shared} fresh2{shared}r{shared} ~condition(fresh5), condition(fresh10)
   summary mutualApart: res #A.0 fresh3 ~condition(fresh11), #A.1 ~fresh7{lost}r{lost} ~fresh9{lost}r{lost}, #A.1[*] ~condition(fresh4) ~fresh4{lost}r{lost} ~fresh9{lost}r{lost}, #A.1[*]#B.0 condition(fresh1) fresh1 ~condition(fresh8), #A.1[*]#B.0[*] ~condition(fresh6), #A.1[*]#B.1 condition(fresh2) fresh2 ~condition(fresh5), condition(fresh10)
-  demands 23: accepted 15 (fresh 4, call 1, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
-total 23: accepted 15 (fresh 4, call 1, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
-cause exclusive 6
-cause level 2
+  demands 23: accepted 14 (fresh 4, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 23: accepted 14 (fresh 4, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause exclusive 5
+cause level 4

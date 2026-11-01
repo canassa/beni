@@ -7,9 +7,9 @@
 -- `ks`'s lists apart, so `ks` taken from `t` is refused (`kidsOfItself`)
 -- and two fresh values are accepted (`kidsApart`). `twoTrees t u` links two
 -- whole trees: one tree twice is refused (`sameTree`), two trees accepted
--- (`twoFresh`), and with `t` read after refused (`treeReadAfter`): v1
--- accepts it, since its `twoTrees` reads `t` and `u` only, a known entry
--- for v1 (a `--sanitize-lists` run shows the stale read). Through the
+-- (`twoFresh`), and with `t` read after refused (`treeReadAfter`). v1
+-- once accepted it: its canonical form lost the write below the new node,
+-- and a `--sanitize-lists` run showed the stale read (#1562). Through the
 -- identity `ident` the obligations are the same (`sameTreeIdent`,
 -- refused; `twoFreshIdent`, accepted).
 type Rose
