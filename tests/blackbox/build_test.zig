@@ -9279,6 +9279,45 @@ fn chainDump(w: *World, called: bool) ![3][3]u64 {
     return out;
 }
 
+/// The call's own records over an `else if` chain of D arms (`chosen`'s,
+/// as `chainDump`'s called chain), for D = 8, 16 and 32 (#1525). Each
+/// declaration is alone in its module and `incAll` is imported, so no walk
+/// of another declaration fills a memo it reads: `calledD`'s total, less
+/// `plainD`'s (the same chain without the call) and less the call's
+/// demands. One dump.
+fn chainCallCold(w: *World) ![3]u64 {
+    const a = testing.allocator;
+    try w.write("Lib.beni", "pub type Rose\n    = Rose (List Rose)\n\n\npub incAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
+    const depths = [_]u32{ 8, 16, 32 };
+    const arms = [_][]const u8{ "Rose [ Rose k ]", "Rose [ Rose [ Rose k ] ]" };
+    for (depths) |n| {
+        for ([_][]const u8{ "called", "plain" }, [_][]const u8{ "Called", "Plain" }) |name, module| {
+            var src: std.ArrayList(u8) = .empty;
+            defer src.deinit(a);
+            try src.print(a, "import Lib exposing (Rose)\n\n\npub {s}{d} : Bool → Rose\n{s}{d} c =\n    k = [ Rose [] ]\n    v =\n", .{ name, n, name, n });
+            for (1..n + 1) |i| try src.print(a, "        {s} c then\n            {s}\n", .{ if (i == 1) "if" else "else if", arms[i % 2] });
+            try src.appendSlice(a, "        else\n            Rose []\n");
+            try src.appendSlice(a, if (name[0] == 'c') "    Lib.incAll v\n" else "    v\n");
+            var path: [32]u8 = undefined;
+            try w.write(try std.fmt.bufPrint(&path, "{s}{d}.beni", .{ module, n }), src.items);
+        }
+    }
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    if (std.mem.indexOf(u8, dump.stdout, "\n  limit ") != null or std.mem.indexOf(u8, dump.stdout, ": rejected") != null) {
+        std.debug.print("a call over the chain is refused or past a limit\n{s}\n", .{dump.stdout});
+        return error.TestUnexpectedResult;
+    }
+    var out: [3]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var pn: [16]u8 = undefined;
+        var cn: [16]u8 = undefined;
+        const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
+        out[i] = try accountTotal(dump.stdout, name) - try accountTotal(dump.stdout, try std.fmt.bufPrint(&pn, "plain{d}", .{n})) - try accountField(dump.stdout, name, "demands");
+    }
+    return out;
+}
+
 /// Each doubling of D costs at most `num / den` times the last, and D = 32
 /// at most `ceiling` records.
 fn expectChainGrowth(what: []const u8, costs: [3]u64, num: u64, den: u64, ceiling: u64) !void {
@@ -9318,25 +9357,26 @@ test "the checker v2's call over a chain of nested choices is linear in its dept
     // `ownership-v2.md` §2.11 item 3, *a choice's arms* (#1439, #1467): the
     // call costs its arms, each once. Its records (the declaration's less
     // the same chain's without the call, and less its demands) at D = 8 /
-    // 16 / 32 were 1 314 / 1 583 / 2 548 on master, 1 201 / 1 213 / 1 225
-    // now: the other-paths walk reads the reach of the chain's root, and
-    // each choice unioned its own cells (all its arms' roots) into it
-    // again, O(D) records a choice. At most 1.5 times a doubling, and 1.7
-    // times D = 32's. Since #1523, 1 513 / 1 645 / 2 169: `incAll`'s group
-    // takes one walk fewer, which left memos the caller read, so the D = 32
-    // ceiling is that +10% until the count is the call's own (#1525).
+    // 16 / 32 were 1 314 / 1 583 / 2 548 before #1467: the other-paths walk
+    // reads the reach of the chain's root, and each choice unioned its own
+    // cells (all its arms' roots) into it again, O(D) records a choice.
+    // Counted with one declaration a module (`chainCallCold`, #1525), as
+    // memos the callee group or another declaration filled made the count
+    // move with every change to their walks (74 at D = 128 once): 1 101 /
+    // 1 154 / 1 251, and 1 209 / 1 525 / 2 592 with #1467's `ownInSides`
+    // undone. At most 1.5 times a doubling, and D = 32's +10%.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const costs = try chainDump(&w, true);
+    const costs = try chainCallCold(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectChainGrowth("the call", .{ costs[0][1], costs[1][1], costs[2][1] }, 15, 10, 2_390);
+    try expectChainGrowth("the call", costs, 15, 10, 1_380);
 }
 
 test "the checker v2's demands over a chain of nested choices cost records linear in its depth" {
