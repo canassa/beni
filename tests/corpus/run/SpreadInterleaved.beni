@@ -1,0 +1,22 @@
+-- A list chain whose spreads have items between them: `[ …a, x, …b, y, …c ]`.
+-- The list sanitiser wraps only the writes the ownership checker accepted,
+-- which for a chain is its first spread.
+import Node exposing (Program)
+import String
+
+
+part : String → List String
+part name = [ name ++ "1", name ++ "2" ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ "a:"
+        , …part "a"
+        , "b:"
+        , …part "b"
+        , "c:"
+        , …part "c"
+        , "end"
+        ]

@@ -5237,7 +5237,12 @@ pub const Lowerer = struct {
     /// on its first operand.
     fn markSanitizeChain(l: *Lowerer, inst: Inst.Index, arg_insts: []const Inst.Index) Allocator.Error!void {
         if (!l.sanitizesLists() or arg_insts.len != 2) return;
-        const rest = arg_insts[1];
+        var rest = arg_insts[1];
+        // Items between two spreads are `List.cons` links in front of the
+        // next spread's call: look through them (`[ …a, x, …b ]`).
+        if (l.isSpreadAppend(inst)) {
+            while (l.consTail(rest)) |tail| rest = tail;
+        }
         const spread = l.isSpreadAppend(inst) and l.isSpreadAppend(rest);
         const plus = l.in.dispatch.isListAppend(inst) and l.bir.instTag(rest) == .call and l.in.dispatch.isListAppend(rest);
         if (!spread and !plus) return;
