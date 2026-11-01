@@ -139,8 +139,9 @@ const layers = [_]Entry{
     // 1 240 since #1492: a written position's own contents below it
     // (`ownContents`, `without`).
     // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
-    // 1 600 since #1485 part 2: C7, the drop and the tag checks.
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1600 },
+    // 1 600 since #1485 part 2: C7, the drop and the tag checks; 1 700 with
+    // part B's `Canon` and switch beside them.
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1700 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.

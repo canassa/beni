@@ -4312,8 +4312,13 @@ test "§2.9 rule 4 (a′): row 19's certificate reads the same in either order o
     const Fake = struct {
         keys: []const Cond.Table.HypKey,
         reversed: bool,
+        res: NodeId = .none,
         fn envOf(_: *anyopaque, _: *Shape.Table, _: NodeId) ?u32 {
             return null;
+        }
+        fn classOf(ctx: *anyopaque, _: u32) Cond.Table.HypClass {
+            const f: *@This() = @ptrCast(@alignCast(ctx));
+            return .{ .res = f.res, .kappas = .none };
         }
         fn keysOf(ctx: *anyopaque, gpa_: Allocator, _: Ids.Charge, _: u32, _: SetId, out: *std.ArrayList(Cond.Table.HypKey)) Error!void {
             const f: *@This() = @ptrCast(@alignCast(ctx));
@@ -4325,8 +4330,8 @@ test "§2.9 rule 4 (a′): row 19's certificate reads the same in either order o
     const tn = try x.shapes.leaf(gpa, &x.account, tree, own);
     var reads: [2]CondId = undefined;
     for (0..2) |order| {
-        var fake: Fake = .{ .keys = &ks, .reversed = order == 1 };
-        x.conds.hyp = .{ .ctx = &fake, .envOf = Fake.envOf, .keys = Fake.keysOf };
+        var fake: Fake = .{ .keys = &ks, .reversed = order == 1, .res = tn };
+        x.conds.hyp = .{ .ctx = &fake, .envOf = Fake.envOf, .keys = Fake.keysOf, .class = Fake.classOf };
         defer x.conds.hyp = null;
         var keys: std.ArrayList(Cond.Table.HypKey) = .empty;
         defer keys.deinit(gpa);
@@ -4337,7 +4342,7 @@ test "§2.9 rule 4 (a′): row 19's certificate reads the same in either order o
         try testing.expect(x.cells.sets.member(a.dups, ks[2].image.int()));
         try testing.expect(!x.cells.sets.member(a.dups, ks[0].image.int()));
         try testing.expect(!x.cells.sets.member(a.dups, ks[1].image.int()));
-        reads[order] = try x.conds.canonical(gpa, charge, try x.conds.certRead(gpa, charge, x.env().view(), 0, tn));
+        reads[order] = try x.conds.canonical(gpa, charge, try x.conds.certRead(gpa, charge, x.env().view(), 0, tn, &.{}));
     }
     try testing.expectEqual(reads[0], reads[1]);
     try testing.expect(Cond.Table.fails(reads[0]));
