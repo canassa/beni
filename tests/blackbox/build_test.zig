@@ -8688,6 +8688,328 @@ fn viaXreq(dump: []const u8) ![]const u8 {
     return error.NoSummary;
 }
 
+/// The checker's test-only switches the spawned compiler was built with
+/// (`-Downership-v2-switch`, `-Downership-v2-mutation`): a test that runs
+/// under one says what it then expects (ownership-v2.md §8 slice 4, #1485).
+const own2_options = @import("ownership_options");
+
+fn own2Switched(comptime which: []const u8) bool {
+    var it = std.mem.splitScalar(u8, own2_options.v2_switch, ',');
+    while (it.next()) |s| if (std.mem.eql(u8, s, which)) return true;
+    return false;
+}
+
+/// The lines of `dump` that hold `needle`, trimmed, a verdict line's
+/// `line:column ` left out.
+fn dumpLines(a: std.mem.Allocator, dump: []const u8, needle: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var lines = std.mem.splitScalar(u8, dump, '\n');
+    while (lines.next()) |l| {
+        var t = std.mem.trim(u8, l, " ");
+        if (std.mem.indexOf(u8, t, needle) == null) continue;
+        if (t.len > 0 and std.ascii.isDigit(t[0])) if (std.mem.indexOfScalar(u8, t, ' ')) |sp| {
+            t = t[sp + 1 ..];
+        };
+        try out.appendSlice(a, t);
+        try out.append(a, '\n');
+    }
+    return out.toOwnedSlice(a);
+}
+
+const fold_tree_src =
+    \\type Tree
+    \\    = Node Tree (List Int) Tree
+    \\    | Leaf
+    \\
+    \\
+    \\incAll : Tree → Tree
+    \\incAll t =
+    \\    case t of
+    \\        Node l xs r →
+    \\            Node (incAll l) (List.push xs 1) (incAll r)
+    \\
+    \\        Leaf →
+    \\            Leaf
+    \\
+    \\
+    \\same : Tree → Tree
+    \\same t =
+    \\    case t of
+    \\        Leaf →
+    \\            Leaf
+    \\
+    \\        Node l xs r →
+    \\            Node (same l) xs (same r)
+    \\
+    \\
+    \\
+;
+
+test "the checker v2 instantiates a fold certificate over N alternatives in records linear in N" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 rule 4, *Cost*, and §8 slice 4 (#1485):
+    // `same`'s certificate, five keys, at `same (if c1 then t1 else … tN)`
+    // makes M = 5N images, one group of five keys, and its read is O(W + M
+    // log M). Twice N may cost at most twice the records plus a constant,
+    // here the cost at N = 8. Measured (self-hosted Debug): 52 390 / 107 602 /
+    // 218 336 / 456 077 at N = 8 / 16 / 32 / 64. Testing the group's keys by
+    // pairs (O(M²), the overlap test before the trie) gave 57 080 / 128 336 /
+    // 304 758 / 808 275; reading the holders' reach once per parameter cell
+    // of the base (`holdsCanonical` before `Canon`) 57 830 / 131 282 /
+    // 316 896 / 857 997. Both fail here, at N = 64.
+    const a = testing.allocator;
+    var totals: [4]u64 = undefined;
+    for ([_]u32{ 8, 16, 32, 64 }, 0..) |n, run| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, fold_tree_src);
+        try src.appendSlice(a, "pub f : Int");
+        for (0..n) |_| try src.appendSlice(a, ", Tree");
+        try src.appendSlice(a, " → Tree\nf n");
+        for (1..n + 1) |i| try src.print(a, " t{d}", .{i});
+        try src.appendSlice(a, " =\n    incAll (same (if n == 1 then t1");
+        for (2..n) |i| try src.print(a, " else if n == {d} then t{d}", .{ i, i });
+        try src.print(a, " else t{d}))\n", .{n});
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, ": rejected ") == null);
+        try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit f") == null);
+        totals[run] = try accountTotal(dump.stdout, "f");
+    }
+    for (1..totals.len) |i| if (totals[i] > 2 * totals[i - 1] + totals[0]) {
+        std.debug.print("certificate over N alternatives at N = 8 / 16 / 32 / 64: {d} / {d} / {d} / {d} records\n", .{ totals[0], totals[1], totals[2], totals[3] });
+        return error.TestUnexpectedResult;
+    };
+}
+
+test "the checker v2 reads row 19's certificate the same in either order of its parameters" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §8 slice 4, near-miss row 19 (#1485): `g2`'s
+    // certificate holds two parameters of type `Tree`, and rule 4's
+    // overlap test is memoised by a group's key set, never by its prefix
+    // alone, so the order of the parameters changes nothing. This test runs
+    // in the walk's order and, built with `-Downership-v2-switch=
+    // cert-params-reversed`, in the other, and expects one text. `g2`'s own
+    // class reads `lost` already (`h2` calls `same` on a built node, near-
+    // miss row 14), so this pins the line's verdict; the memo itself is
+    // the unit test of `Calls.zig` that builds the certificate directly.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", fold_tree_src ++
+        \\h2 : Int, Tree → Tree
+        \\h2 n t =
+        \\    if n == 0 then
+        \\        case t of
+        \\            Node l _ _ →
+        \\                case l of
+        \\                    Node _ ys _ →
+        \\                        Node (same (Node t [] Leaf)) ys Leaf
+        \\
+        \\                    Leaf →
+        \\                        Leaf
+        \\
+        \\            Leaf →
+        \\                Leaf
+        \\    else
+        \\        h2 (n - 1) t
+        \\
+        \\
+        \\g2 : Int, Tree, Tree → Tree
+        \\g2 n a b =
+        \\    if n == 0 then
+        \\        Node (same a) [] (h2 0 b)
+        \\    else
+        \\        g2 (n - 1) a b
+        \\
+        \\
+        \\pub row19 : Int, Tree, Tree → Tree
+        \\row19 n s t =
+        \\    case t of
+        \\        Node l _ _ →
+        \\            incAll (g2 n s l)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const lines = try dumpLines(a, dump.stdout, "Main.incAll <call Main.g2>");
+    defer a.free(lines);
+    try testing.expectEqualStrings(
+        \\Main.incAll <call Main.g2>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+        \\Main.incAll <call Main.g2>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+        \\Main.incAll <call Main.g2>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+        \\
+    , lines);
+    const read = try dumpLines(a, dump.stdout, "summary g2: ");
+    defer a.free(read);
+    try testing.expectEqualStrings("summary g2: π2 R, π2#Node.0 R, π2#Node.0#Node.1 RA, π2#Node.0⟲ R, π2#Node.0⟲#Node.1 RA, π2#Node.1 RA, π2#Node.2 R, π2#Node.2#Node.1 RA, π2#Node.2⟲ R, π2#Node.2⟲#Node.1 RA, π3 R, π3#Node.0 R, π3#Node.0#Node.1 RA, π3#Node.0⟲ R, π3#Node.0⟲#Node.1 R, π3#Node.1 RA, π3#Node.2 R, π3#Node.2#Node.1 R, π3#Node.2⟲ R, π3#Node.2⟲#Node.1 R, π3⟲#Node.1 A; res #Node.0 {lost}, #Node.0#Node.1 fresh1 fresh2 fresh2 fresh3 fresh3 π2#Node.0#Node.1 π2#Node.0#Node.1 π2#Node.0⟲#Node.1 π2#Node.0⟲#Node.1 π2#Node.1 π2#Node.1 π2#Node.2#Node.1 π2#Node.2#Node.1 π2#Node.2⟲#Node.1 π2#Node.2⟲#Node.1 π3#Node.0#Node.1 π3#Node.0#Node.1 π3#Node.1 π3#Node.1 π3⟲#Node.1 π3⟲#Node.1{lost}, #Node.0#Node.1 fresh4 fresh4 π2#Node.0#Node.1 π2#Node.0#Node.1 π2#Node.0⟲#Node.1 π2#Node.0⟲#Node.1 π2#Node.1 π2#Node.1 π2#Node.2#Node.1 π2#Node.2#Node.1 π2#Node.2⟲#Node.1 π2#Node.2⟲#Node.1 π3#Node.0#Node.1 π3#Node.0#Node.1 π3#Node.1 π3#Node.1 π3⟲#Node.1{lost}, #Node.1 = #Node.0#Node.1, #Node.2 = #Node.0, {lost}\n", read);
+}
+
+/// Near-miss rows 15 and 17 (`ownership-v2.md` §8 slice 4): `w` is one view
+/// of `same`'s class, and `incP (P w w)` writes one tree's lists twice.
+fn expectTagRow(src: []const u8, line: []const u8, writes: []const []const u8) !void {
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", src);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const got = try dumpLines(a, dump.stdout, line);
+    defer a.free(got);
+    // Under the spine-first switch with the tag left out, the item inside
+    // `V` is met first and decides for the `#P.1` item: the spec accepts
+    // the line, and C7's edge check panics. That run is red today: the walk
+    // never merges the two items, since (d) does not reach a write below
+    // `same`'s leaf class at `#Node.1` (#1532). C7's panic is pending on
+    // the fold certificate's part A, which builds the check.
+    const merged = own2Switched("otherPaths-spine-first") and std.mem.eql(u8, own2_options.v2_mutation, "cert-untagged");
+    var want: std.ArrayList(u8) = .empty;
+    defer want.deinit(a);
+    for (writes) |p| try want.print(a, "{s}{s}: {s}\n", .{ line, p, if (merged) "accepted param" else "rejected disjoint: another path of the same argument reaches it" });
+    try testing.expectEqualStrings(want.items, got);
+}
+
+const box_src =
+    \\type Box
+    \\    = Box (List Int)
+    \\
+    \\
+;
+
+test "the checker v2 tells a view's item from its second occurrence by the tag, in either walk order (row 15)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE / EXECUTE / VERIFY              │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3 (d), near-miss row 15 (#1485): `Box`
+    // is on no cycle, so without the tag an item inside `w` and an item of
+    // the `#P.1` occurrence have one key. With the tag the line is refused
+    // `disjoint` in the walk's order and, built with `-Downership-v2-switch=
+    // otherPaths-spine-first`, in the order that meets the spine first.
+    try expectTagRow(box_src ++
+        \\type Tree
+        \\    = Node Tree Box Tree
+        \\    | Leaf
+        \\
+        \\
+        \\type P
+        \\    = P Tree Tree
+        \\
+        \\
+        \\incAll : Tree → Tree
+        \\incAll t =
+        \\    case t of
+        \\        Node l (Box xs) r →
+        \\            Node (incAll l) (Box (List.push xs 1)) (incAll r)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\
+        \\incP : P → P
+        \\incP p =
+        \\    case p of
+        \\        P a b →
+        \\            P (incAll a) (incAll b)
+        \\
+        \\
+        \\same : Tree → Tree
+        \\same t =
+        \\    case t of
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\        Node l b r →
+        \\            Node (same l) b (same r)
+        \\
+        \\
+        \\pub row15 : Tree → P
+        \\row15 t =
+        \\    w = same t
+        \\    incP (P w w)
+        \\
+    , "Main.incP <P …>", &.{ "#P.1#Node.2⟨Tree⟩#Node.1#Box.0", "#P.1#Node.2#Node.1#Box.0", "#P.1#Node.1#Box.0" });
+}
+
+test "the checker v2 tells a view's held value from its second occurrence by the tag, in either walk order (row 17)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE / EXECUTE / VERIFY              │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11 item 3 (d), near-miss row 17 (#1485): the tag
+    // in the read map. `Wrap` is on no cycle, so the held `Box` inside `w`
+    // and the held `Box` of the `#P.1` occurrence share one read node
+    // without it. Refused in either order, as row 15.
+    try expectTagRow(box_src ++
+        \\type Wrap
+        \\    = Wrap Box
+        \\
+        \\
+        \\type Tree
+        \\    = Node Tree Wrap Tree
+        \\    | Leaf
+        \\
+        \\
+        \\type P
+        \\    = P Tree Tree
+        \\
+        \\
+        \\incAll : Tree → Tree
+        \\incAll t =
+        \\    case t of
+        \\        Node l (Wrap (Box xs)) r →
+        \\            Node (incAll l) (Wrap (Box (List.push xs 1))) (incAll r)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\
+        \\incP : P → P
+        \\incP p =
+        \\    case p of
+        \\        P a b →
+        \\            P (incAll a) (incAll b)
+        \\
+        \\
+        \\same : Tree → Tree
+        \\same t =
+        \\    case t of
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\        Node l w r →
+        \\            Node (same l) w (same r)
+        \\
+        \\
+        \\pub row17 : Tree → P
+        \\row17 t =
+        \\    w = same t
+        \\    incP (P w w)
+        \\
+    , "Main.incP <P …>", &.{ "#P.1#Node.2⟨Tree⟩#Node.1#Wrap.0#Box.0", "#P.1#Node.2#Node.1#Wrap.0#Box.0", "#P.1#Node.1#Wrap.0#Box.0" });
+}
+
 test "the checker v2's holder index answers a frame's demands in records linear in its holders and uses" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
