@@ -12374,13 +12374,15 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
     // R-7.4: "K shape changes affecting N transfer nodes can require Θ(NK)
     // tasks". The ring takes K `res.shape` versions, and each one walks
     // `m0`'s N statements again (the owner's Q1 decision, §8 slice 4's
-    // plan). Measured: `m0` walks 5 times at k = 2 and 8 at k = 3 (10 at 4),
+    // plan). Measured: `m0` walks 6 times at k = 2 and 8 at k = 3 (10 at 4),
+    // (5 at k = 2 until #1485, whose keyed knot root moves once more where
+    // it read `lost`),
     // whatever n is; its records are 25 080 at (n, k) = (10, 2) and 52 128
     // at (10, 3) (57 929 at (40, 2)). A small member's walks pass its two
     // lanes at k = 3, and the rest is growth (11 276 records of `m1`), so a
     // larger k exhausts R_f loudly (k = 8 is `ownership_summary_size`).
     const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
-    const walks = [_]u64{ 5, 8 };
+    const walks = [_]u64{ 6, 8 };
     // About 1.7 times the measured records: a doubled cost per walk fails.
     const ceilings = [_]u64{ 42_000, 88_000 };
     var total: [cases.len]u64 = undefined;

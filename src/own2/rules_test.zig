@@ -70,7 +70,8 @@ const layers = [_]Entry{
     // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
     // 2 730 since #1473, on top of #1420: §2.9 *Two positions of one image* in `apartImage` and `sep`, and the
     // repeating split (`repeatingSplit`, `exclOf`, #1478).
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2730 },
+    // 2 980 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2980 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
@@ -100,13 +101,15 @@ const layers = [_]Entry{
     // with its memos, and `widenValue`.
     // #1447 removed `leafEntries`: a reader meets the joined DAG node by the
     // projection correspondence (§2.9 *Keyed where a reader looks*).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1197 },
+    // 1 340 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1340 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
     // from Rows), which a group's port joins every round.
     // 1 860 since 4d: a class join drops what the other side covers.
-    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1925 },
+    // 1 980 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1980 },
     .{ .file = "Rows.zig", .layer = 8, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
@@ -123,7 +126,8 @@ const layers = [_]Entry{
     // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
     // route's stop at a parameter's leaf. 1 830 since #1439: the keys a
     // `Beside` spine's children are listed under (`keysOf`).
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2080 },
+    // 2 450 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2450 },
     // 260 since #1457: the frame's accessors, value helpers and uses, split
     // out of Transfer (§5).
     .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
@@ -132,7 +136,8 @@ const layers = [_]Entry{
     // walk as a graph of items and reads, its runs in `TransferArms`.
     // 1 240 since #1492: a written position's own contents below it
     // (`ownContents`, `without`).
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1240 },
+    // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1540 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.
@@ -162,7 +167,8 @@ const layers = [_]Entry{
     // 640 since #1457: the seven-file split (§5) leaves
     // here the frame's fields, the bindings of the six parts' methods, the
     // preliminary passes and the walk.
-    .{ .file = "Transfer.zig", .layer = 11, .max_lines = 640 },
+    // 660 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Transfer.zig", .layer = 11, .max_lines = 660 },
     .{ .file = "Walk.zig", .layer = 12, .max_lines = 1500 },
     // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
     // calls of walked declarations; 1 330 since slice 3: imported classes,
@@ -181,7 +187,8 @@ const layers = [_]Entry{
     // alias chain taken hop by hop.
     // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
     // wake rule.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2200 },
+    // 2 250 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2250 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
