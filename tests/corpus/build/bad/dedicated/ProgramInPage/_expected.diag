@@ -1,0 +1,1 @@
+[{"code":"worker_entry_not_static","severity":"error","span":{"file":"Main.beni","start":{"line":17,"col":22},"end":{"line":17,"col":28}},"title":"WORKER ENTRY NOT STATIC","message":"Use this Program only as a worker launch argument, directly or through an alias\nor finite choice. Its body runs only in its own worker."}]

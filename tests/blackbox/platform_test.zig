@@ -1532,10 +1532,10 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
     for ([_]bool{ false, true }) |release| {
         // EXECUTE
         const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
-        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
+        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
         try testing.expectEqual(@as(u8, 0), one.exit_code);
         try testing.expectEqual(@as(usize, 0), one.diagnostics.len);
-        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
+        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
         try testing.expectEqual(@as(u8, 0), eight.exit_code);
         try testing.expectEqual(@as(usize, 0), eight.diagnostics.len);
         // VERIFY OUTPUT AND SIDE EFFECTS
@@ -1584,7 +1584,7 @@ test "worker runtime factories are diagnosed before writing any output" {
         \\
     );
     // EXECUTE
-    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+    const result = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" });
     // VERIFY OUTPUT AND SIDE EFFECTS
     try testing.expectEqual(@as(u8, 1), result.exit_code);
     try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
@@ -1644,7 +1644,7 @@ test "worker launch URLs stay relative to their module under release specializat
     for ([_]bool{ false, true }) |release| {
         // EXECUTE
         const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
-            &.{ "build", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
+            &.{ "build", "--allow-unchecked-workers", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
             if (release) &.{"--release"} else &.{},
         });
         const result = try w.run(args);

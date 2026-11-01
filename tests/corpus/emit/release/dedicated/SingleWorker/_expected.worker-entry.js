@@ -4,7 +4,7 @@ const pending = [];
 const hold = event => { event.stopImmediatePropagation(); pending.push(event.data); };
 globalThis.addEventListener("message", hold);
 const runtime = await import("./_platform/WorkerRuntime.mjs");
-const program = await import("./TwoEntries.mjs");
+const program = await import("./SingleWorker.mjs");
 runtime.db(program.e);
 globalThis.removeEventListener("message", hold);
 for (const data of pending) globalThis.dispatchEvent(new MessageEvent("message", { data }));

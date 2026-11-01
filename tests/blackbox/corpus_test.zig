@@ -656,12 +656,25 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
     // Dedicated module workers are exercised on a test-only platform.
+    if (kind == .build_bad) {
+        const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, "dedicated" });
+        const start = fixtures.items.len;
+        try collect(arena, worker_dir, false, false, &fixtures, true);
+        const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = worker_platform;
+            fixture.unchecked_workers = true;
+        }
+    }
     if (kind == .browser) {
         const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, "dedicated" });
         const start = fixtures.items.len;
         try collect(arena, worker_dir, false, false, &fixtures, true);
         const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
-        for (fixtures.items[start..]) |*fixture| fixture.platform = worker_platform;
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = worker_platform;
+            fixture.unchecked_workers = true;
+        }
     }
     if (kind == .emit) {
         for ([_]bool{ false, true }) |release| {
@@ -671,6 +684,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
             for (fixtures.items[start..]) |*fixture| {
                 fixture.platform = worker_platform;
+                fixture.unchecked_workers = true;
                 fixture.app = true;
                 fixture.release = release;
             }
@@ -1452,6 +1466,7 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
     /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
+    unchecked_workers: bool = false,
     /// A `browser/tea/` page's second case, when it carries a
     /// `.fuzz-run-hash`: its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
@@ -1781,6 +1796,7 @@ const Case = struct {
     fn argv(c: Case, args: []const []const u8) ![]const []const u8 {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
+        if (c.fixture.unchecked_workers and args.len != 0 and std.mem.eql(u8, args[0], "build")) try list.append(c.arena, "--allow-unchecked-workers");
         if (c.fixture.core) try list.append(c.arena, "--core");
         // Enforcement refusals use the same platform as their ownership dump.
         if (c.kind == .check_bad and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {

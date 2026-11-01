@@ -151,6 +151,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .library = build.library,
         .release = build.release,
         .allow_debug = build.allow_debug,
+        .allow_unchecked_workers = build.allow_unchecked_workers,
         .test_hooks = build.test_hooks,
         .sanitize_records = build.sanitize_records,
         .sanitize_lists = build.sanitize_lists,

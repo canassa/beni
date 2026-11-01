@@ -476,6 +476,7 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
+    allow_unchecked_workers: bool = false,
     /// `--test-hooks`, the hidden test-only flag (`src/Cli.zig`): what
     /// `Js.testHooks ()` is (`backend.md` §4, *`Js.testHooks` is the
     /// build's test hooks*); a platform's test hooks are in the build only
@@ -1554,26 +1555,31 @@ const Emitter = struct {
         e.deferred = deferred;
     }
 
-    fn staticPrograms(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index, kind: EntryPlan.KindIndex, found: *std.ArrayList(u32), depth: u32) Allocator.Error!bool {
+    fn staticPrograms(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index, kind: EntryPlan.KindIndex, found: *std.ArrayList(u32), allowed: ?[][]bool, depth: u32) Allocator.Error!bool {
         if (depth > max_alias_depth) return false;
         const b = e.bir(m);
         if (e.resolvedValue(m, at)) |n| {
             for (e.worker_candidates, 0..) |candidate, i| {
                 if (candidate.module == n.module and candidate.decl == n.index and candidate.kind == kind) {
                     if (std.mem.indexOfScalar(u32, found.items, @intCast(i)) == null) try found.append(e.scratch, @intCast(i));
+                    if (allowed) |refs| refs[m.int()][at.int()] = true;
                     return true;
                 }
             }
             const target = e.bir(n.module).decls[n.index];
             if (target.params_start != target.params_end) return false;
-            return e.staticPrograms(n.module, target.body.unwrap() orelse return false, kind, found, depth + 1);
+            const ok = try e.staticPrograms(n.module, target.body.unwrap() orelse return false, kind, found, allowed, depth + 1);
+            if (ok) if (allowed) |refs| {
+                refs[m.int()][at.int()] = true;
+            };
+            return ok;
         }
         const d = b.instData(at);
         switch (b.instTag(at)) {
             .case => {
                 const branches = b.extraSlice(b.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
                 for (branches) |branch| {
-                    if (!try e.staticPrograms(m, @fromBackingInt(b.instData(branch).rhs), kind, found, depth + 1)) return false;
+                    if (!try e.staticPrograms(m, @fromBackingInt(b.instData(branch).rhs), kind, found, allowed, depth + 1)) return false;
                 }
                 return branches.len != 0;
             },
@@ -1581,18 +1587,27 @@ const Emitter = struct {
         }
     }
 
+    fn isDeferred(e: *Emitter, m: Graph.Index, di: usize, selected: ?Entry) bool {
+        for (e.deferred) |n| {
+            if (n.module == m and n.index == di) return selected == null or selected.?.module != m or selected.?.decl.int() != di;
+        }
+        return false;
+    }
+
     fn discoverWorkers(e: *Emitter, selected: ?Entry, found: *std.ArrayList(u32)) !void {
         if (e.session.entry_plan.launches.len == 0) return;
         const plan = &e.session.entry_plan;
+        const allowed = try e.scratch.alloc([]bool, e.graph().count());
+        for (allowed, 0..) |*refs, mi| {
+            refs.* = try e.scratch.alloc(bool, e.bir(@fromBackingInt(@intCast(mi))).insts.len);
+            @memset(refs.*, false);
+        }
         for (0..e.graph().count()) |mi| {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
             const b = e.bir(m);
             for (b.decls, 0..) |decl, di| {
                 if (!e.live.decl(m, di)) continue;
-                const is_deferred = for (e.deferred) |n| {
-                    if (n.module == m and n.index == di) break true;
-                } else false;
-                if (is_deferred and (selected == null or selected.?.module != m or selected.?.decl.int() != di)) continue;
+                if (e.isDeferred(m, di, selected)) continue;
                 for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
                     const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
                     if (b.instTag(at) != .call) continue;
@@ -1603,15 +1618,58 @@ const Emitter = struct {
                         for (k.launches.start..k.launches.start + k.launches.len) |li| {
                             const launch = plan.launches.get(li);
                             if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
+                            allowed[mi][data.lhs] = true;
                             if (e.options.library) {
                                 try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
                                 continue;
                             }
                             const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
-                            if (launch.parameter >= args.len or !try e.staticPrograms(m, args[launch.parameter], @fromBackingInt(@intCast(ki)), found, 0)) {
+                            if (launch.parameter >= args.len or !try e.staticPrograms(m, args[launch.parameter], @fromBackingInt(@intCast(ki)), found, allowed, 0)) {
                                 try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "This launch needs a top-level Program declaration, or a finite choice between such references. A runtime factory cannot define a worker entry.", .{});
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // Only the callee position of a direct call is a supported launch
+        // reference. Passing it to a callback or alias would hide the edge.
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di)) continue;
+                if (e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    if (allowed[mi][ii]) continue;
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    const value = e.resolvedValue(m, at) orelse continue;
+                    for (0..plan.launches.len) |li| {
+                        const launch = plan.launches.get(li).value;
+                        if (value.module != launch.module or value.index != launch.decl) continue;
+                        try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Use this worker launch as a direct call. Passing or aliasing the launch function hides its worker entry.", .{});
+                    }
+                }
+            }
+        }
+        if (e.hasErrors()) return;
+        // Program bodies belong to their own realm. Only references reached
+        // through a launch argument may become descriptors in this realm.
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di) or e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    if (allowed[mi][ii]) continue;
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    if (e.resolvedValue(m, at) == null) continue;
+                    for (0..plan.kinds.len) |ki| {
+                        var candidates: std.ArrayList(u32) = .empty;
+                        if (!try e.staticPrograms(m, at, @fromBackingInt(@intCast(ki)), &candidates, null, 0) or candidates.items.len == 0) continue;
+                        try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Use this Program only as a worker launch argument, directly or through an alias or finite choice. Its body runs only in its own worker.", .{});
+                        break;
                     }
                 }
             }
@@ -2932,6 +2990,10 @@ const Emitter = struct {
                 }
             };
             if (e.diagnostics.items.len != errors_before) continue;
+            if (row.launches.len != 0 and !e.options.allow_unchecked_workers) {
+                try e.entryKindError(kind, "Worker launches are unavailable until realm and Wire checks are implemented.", .{});
+                continue;
+            }
             const constructor_start: u32 = @intCast(plan.constructors.len);
             for (constructors.items) |constructor| try plan.constructors.append(e.gpa, constructor);
             const launch_start: u32 = @intCast(plan.launches.len);
