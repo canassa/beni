@@ -1,0 +1,13 @@
+module LevelFreshDup
+  38:23 List.push xs: rejected element: l#Node.0#Node.1 holds it and is read at 38:15 (approx)
+  account dup: source 33, baseline 5793, growth 0 of 65536, total 5793, continuation 5641 of 33792, demands 3, walks 4, inference 3, deliveries 2, direct_data lanes 2, liveness_index lanes 10, call_view lanes 10, transfer_settlement lanes 74
+  crossing: reads 0, redone 0, base moves 0
+  summary dup: res #Node.0#Node.1 fresh1 fresh2{lost}, #Node.1 fresh1 fresh2{lost}
+  account size: source 29, baseline 974, growth 0 of 65536, total 974, continuation 786 of 29696, demands 2, walks 3, inference 1, deliveries 5, direct_data lanes 2, liveness_index lanes 8, call_view lanes 10, transfer_settlement lanes 64
+  summary size: π1 R, π1#Node.0 R, π1#Node.0#Node.1 R, π1#Node.0⟲ R, π1#Node.0⟲#Node.1 R, π1#Node.1 R, π1#Node.2 R, π1#Node.2#Node.1 R, π1#Node.2⟲ R, π1#Node.2⟲#Node.1 R
+  account pushDup: source 34, baseline 1513, growth 0 of 65536, total 1513, continuation 1381 of 34816, demands 311, hold listings 2, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 37
+  summary pushDup: res .0#Node.0#Node.1 fresh1 fresh2{lost}, .0#Node.1 fresh1 fresh2{lost}
+  block: 1020 bytes, hash a1552ab6528566ce
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause element 1

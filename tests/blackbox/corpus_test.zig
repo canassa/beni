@@ -4009,7 +4009,7 @@ const Case = struct {
     /// R-7.15). The `.v2` file says why the fixture is one of v2's.
     fn ownershipV2(c: Case, flags: []const []const u8, path: []const u8, golden: []const u8, enforces: bool, token: []const u8) !void {
         if (!c.goldenExists("v2")) return c.ownershipParity(flags, path, golden, token);
-        const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2" }, flags, &.{path} }));
+        const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-rewalk-check" }, flags, &.{path} }));
         try expectExit(0, r);
         try c.v2Unchecked(if (flags.len == 0) "v2.unchecked" else try std.fmt.allocPrint(c.arena, "{s}.v2.unchecked", .{std.fs.path.basename(token)}), r.stdout, true);
         // `check --ownership=v2` agrees with v2's own report as v1's does with
@@ -4054,7 +4054,7 @@ const Case = struct {
     /// An ownership fixture with no `.v2` is still checked by v2 (§7.2's
     /// whole-corpus parity, fail-closed): v2's dump against v1's golden.
     fn ownershipParity(c: Case, flags: []const []const u8, path: []const u8, golden: []const u8, token: []const u8) !void {
-        const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2" }, flags, &.{path} }));
+        const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-rewalk-check" }, flags, &.{path} }));
         try expectExit(0, r);
         const v1 = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes));
         try c.v2Unchecked(if (flags.len == 0) "v2.unchecked" else try std.fmt.allocPrint(c.arena, "{s}.v2.unchecked", .{std.fs.path.basename(token)}), r.stdout, false);

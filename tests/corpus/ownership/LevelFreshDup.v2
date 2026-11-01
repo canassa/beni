@@ -1,0 +1,1 @@
+#1582: the corpus's v2 dump (`--ownership-rewalk-check`) walks `dup` again at its fixpoint and compares the read-off with its last walk's; v2 names the holder by its path (`element`) where v1 refuses the call (`call`).

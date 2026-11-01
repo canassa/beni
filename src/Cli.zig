@@ -206,6 +206,12 @@ pub const Common = struct {
     /// stops when the two snapshots differ. On `Common` for
     /// `--ownership-everywhere`'s reason; absent from `usage`.
     ownership_order_check: bool = false,
+    /// `--ownership-rewalk-check` — **hidden** and test-only (`ownership-v2.md`
+    /// §8 S3b slice 4, *Validation and publication*): the checker v2 walks
+    /// each recursive group member once more at the joint fixpoint and
+    /// stops when its read-off is not its last walk's. On `Common` for
+    /// `--ownership-everywhere`'s reason; absent from `usage`.
+    ownership_rewalk_check: bool = false,
     /// `--ownership-propagate` — **hidden** and test-only (`ownership-v2.md`
     /// §2.9 *Fold first*, *Cost*): the checker v2 prints a line to standard
     /// error for each `propagate` call, with its states, edges, open sets
@@ -785,6 +791,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--ownership-order-check")) {
         if (value != null) return noValue(name);
         common.ownership_order_check = true;
+        return null;
+    }
+    // Hidden and test-only (see `Common.ownership_rewalk_check`).
+    if (std.mem.eql(u8, name, "--ownership-rewalk-check")) {
+        if (value != null) return noValue(name);
+        common.ownership_rewalk_check = true;
         return null;
     }
     // Hidden and test-only (see `Common.ownership_propagate`).
