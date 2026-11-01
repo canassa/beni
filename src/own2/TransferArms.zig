@@ -82,7 +82,7 @@ pub fn Of(comptime Frame: type) type {
             }
             /// The node of a read of key `key` by node `by`: new (to read now)
             /// or null, and an edge from `by` either way.
-            pub fn read(a: *Arms, gpa: Allocator, dict: *Ids.FixedDict(4), key: [4]u32, by: u32) Allocator.Error!?u32 {
+            pub fn read(a: *Arms, gpa: Allocator, dict: *Ids.FixedDict(5), key: [5]u32, by: u32) Allocator.Error!?u32 {
                 const got = try dict.getOrPut(gpa, key);
                 if (got.found_existing) {
                     try a.edge(gpa, by, got.value_ptr.*, none);

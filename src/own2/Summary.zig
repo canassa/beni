@@ -305,8 +305,15 @@ pub const Table = struct {
     nested: std.ArrayList(ClassId) = .empty,
     onces: std.ArrayList(PathId) = .empty,
     backs: std.MultiArrayList(Back) = .empty,
+    /// The classes whose fold certificates the induction proved (§8 slice
+    /// 4, *The fold certificate, specified*, #1485): a settled recursive
+    /// group's classes, each folded class of its `res` certified at its key
+    /// with its cells there as the arrival keys and its κ there as the
+    /// condition. A view of one is a hypothesis node for every reader.
+    certs: std.AutoHashMapUnmanaged(u32, void) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.certs.deinit(gpa);
         t.classes.deinit(gpa);
         t.uses.deinit(gpa);
         t.funs.deinit(gpa);
@@ -316,6 +323,14 @@ pub const Table = struct {
         t.nested.deinit(gpa);
         t.onces.deinit(gpa);
         t.backs.deinit(gpa);
+    }
+
+    pub fn certified(t: *const Table, c: ClassId) bool {
+        return c != .none and t.certs.contains(c.int());
+    }
+
+    pub fn certify(t: *Table, gpa: Allocator, c: ClassId) Allocator.Error!void {
+        try t.certs.put(gpa, c.int(), {});
     }
 
     pub fn count(t: *const Table) u32 {
@@ -779,6 +794,12 @@ pub const Table = struct {
         const both = try env.conds.kappaMerge(env.gpa, env.charge, ka, kb);
         const mj = env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
         const mj_ok = try mj;
+        // Each side is a class's `res`, a widened knot whose folded classes
+        // owe their own fold conditions: read by their cells, once per class,
+        // never as a cycle of the join's source (§8 slice 4, #1485).
+        env.conds.hyp_knots.clear();
+        defer env.conds.hyp_knots.clear();
+        for ([_]NodeId{ a, b }) |m| try env.conds.hyp_knots.put(env.gpa, m, {});
         const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj_ok);
         return .{ .node = w.node, .kappas = w.kappas };
     }
