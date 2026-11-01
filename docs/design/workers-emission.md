@@ -48,6 +48,12 @@ initializers. Repeat discovery until no new Program reference appears. Intern
 an already-discovered reference instead of recursively expanding it. Opaque
 factories that could synthesize executable code remain worker_entry_not_static.
 
+Value-cycle analysis treats references to direct Program definitions as
+descriptor edges. During module checking, constructor selectors provisionally
+identify these definitions; the complete entryKinds validation still gates
+every accepted build. The selectors participate in checker cache keys, so a
+manifest edit cannot reuse a different cycle-analysis result.
+
 Sort the final references by canonical package, module and declaration identity
 before assigning entry indices. Stable output IDs derive from those canonical
 identities, independently of discovery order and job scheduling. Detect output
