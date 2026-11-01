@@ -5098,6 +5098,22 @@ of the same handle still add multiplicity through the path-multiset primitive.
   - `derivedCells` and an instantiated `apart` are also computed by the old list-based `apart`;
   - a resolved `inst` atom is also instantiated eagerly.
 
+  *A check does not change what it checks (#1545).* Each second computation, and propagate's
+  (§2.9 *The `runtime_safety` check*), runs on a scratch account and on empty copies of the κ
+  table's caches (`Cond.Table.checkBegin`/`checkEnd`: the memos that are a function of their
+  key), with the table's counters put back after it; propagate's keeps the caches, since cold at
+  every call the K tower's counted test ran past its 120-second guard. Before this the second
+  reads charged the declaration's own account: in the cross-check build `CrossDepthKids`, its
+  imported twin and `FoldCertificateRawBase` hit their summary-size limit, and 15 counted tests
+  failed. On scratch accounts alone, the checks' memo entries still moved later reads: 489 of the
+  914 runs of the ownership fixtures (each with and without `--ownership-rewalk-check`) printed
+  other `account` lines than the normal build. On the caches too, no counted test fails there,
+  and 91 runs (20 with the re-walk flag, at most 28 records a line) still differ: the checks
+  leave shape-table state that is not a cache (a lazy node's cells and reach filled in place, a
+  forced view), and without the flag the cross-check build re-walks every group (#1582, C5),
+  which leaves all of a walk's state. `Cond.assertResolved`, a `runtime_safety` check of every
+  build, walks its `and` tree itself and charges nothing.
+
   **Counted tests.** Each is red before its part, a black-box count within the owner's 1 s, and a unit
   test of its memo within 0.3 s. Each counts the records
   by category for `apply`, read-off and publish, without Demands' resolve (#1214's), at 10, 100 and

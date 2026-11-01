@@ -316,6 +316,39 @@ pub const Table = struct {
         t.memo_agg_pair.deinit(gpa);
     }
 
+    /// The table's pure caches: what a check walks on empty copies of, so
+    /// that it neither reads them nor leaves an entry a later reader would
+    /// take (#1545). Each is a function of its key.
+    const caches = .{ "flat_memo", "of_set", "memo_deep", "memo_sep", "memo_prop", "memo_implied", "lost_memo", "memo_dag", "memo_chain", "memo_merge", "memo_inner", "memo_crossed", "memo_eq", "memo_fold_below", "memo_map_union", "memo_diff", "memo_map_keys", "memo_nodes_part", "memo_per_cell", "memo_set_agg", "memo_resolved", "memo_resolved_root", "memo_inst_latest", "memo_cell_part", "memo_agg_pair" };
+    const counters = .{ "prop_calls", "classes_sum_checks", "crossed_reads", "crossed_redos", "inst_next" };
+
+    /// What `checkBegin` set aside: the counters as they were, and the
+    /// caches when the check walks on empty ones.
+    pub const CheckSaved = struct { t: Table, caches: bool };
+
+    /// A check's walk begins: its counters noted and, with `with_caches`,
+    /// the caches set aside for empty ones. Propagate's check keeps the
+    /// caches: walked cold at every call, the K tower's counted test ran
+    /// past its 120-second guard.
+    pub fn checkBegin(t: *Table, with_caches: bool) CheckSaved {
+        var s: CheckSaved = .{ .t = .{}, .caches = with_caches };
+        if (with_caches) inline for (caches) |f| std.mem.swap(@TypeOf(@field(t, f)), &@field(t, f), &@field(s.t, f));
+        inline for (counters) |f| @field(s.t, f) = @field(t, f);
+        s.t.prop_stats = t.prop_stats;
+        return s;
+    }
+
+    /// The check's walk ends: its caches dropped, the table's and its
+    /// counters put back.
+    pub fn checkEnd(t: *Table, gpa: Allocator, s: *CheckSaved) void {
+        if (s.caches) inline for (caches) |f| {
+            @field(t, f).deinit(gpa);
+            @field(t, f) = @field(s.t, f);
+        };
+        inline for (counters) |f| @field(t, f) = @field(s.t, f);
+        t.prop_stats = s.t.prop_stats;
+    }
+
     pub const count = algebra.count;
     pub const get = algebra.get;
     pub const kind = algebra.kind;
@@ -416,7 +449,7 @@ pub const Table = struct {
     pub const kappaOf = reads.kappaOf;
     pub const readAt = reads.readAt;
     pub const readAtRaw = reads.readAtRaw;
-    pub const crossCheckRead = reads.crossCheckRead;
+    pub const crossCheck = reads.crossCheck;
     pub const crossAt = reads.crossAt;
     pub const carried = reads.carried;
     pub const machine = reads.machine;
@@ -488,7 +521,6 @@ pub const Table = struct {
     pub const sameBasePairs = reads.sameBasePairs;
     pub const deep = reads.deep;
     pub const deepRaw = reads.deepRaw;
-    pub const crossCheckDeep = reads.crossCheckDeep;
     pub const deepWalk = reads.deepWalk;
     pub const crossingsAt = reads.crossingsAt;
     pub const perCell = reads.perCell;
