@@ -2656,7 +2656,7 @@ Where κ is set, always **at the selected path p**:
   The quadtree, T3 and `descend` grew by 8 %, 2 % and 14 %, mostly from the walks that it repeated.
 
   **Fold first: the walk builds no position a fold collapses** [M 2026-11-01, #1372, #1368, #1289;
-  specified and prototyped, not built; it needs #1526 first]. This is the manager's (b) of §2.3 *What 4e
+  specified and prototyped; it needs #1526 first; built in #1543, *As built* below]. This is the manager's (b) of §2.3 *What 4e
   measured*. *Revised 2026-11-01 after #1535's review:* the first draft walked regions keyed by the route
   restricted to a strongly connected component. That key named a graph it did not define, missed folds
   longer than one step and was exponential in the component's width. The rule below has no route in any
@@ -2835,7 +2835,11 @@ Where κ is set, always **at the selected path p**:
       `Σ` stops at clean-memo hits (pass 1);
     - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits,
       summed over the whole call with its resumed passes, which number only new states, plus
-      `|E_K| · ⌈|K|/64⌉` for each merge that reopens kept sets (fewer merges than nodes);
+      `|E_K| · ⌈|K|/64⌉` for each component that a resumed pass merges and so reopens. The merges of one
+      resumed pass are batched: it takes the node graph's components once, on its final graph, and
+      reopens each merged `K` once. Each reopening is at most `|E_Σ| · ⌈|K|/64⌉` words, and the reopened
+      components of one pass are disjoint, so the reopenings cost `O(resumed passes · |E_Σ| · ⌈|K|/64⌉)`
+      in all, not `O(|nodes| · |E_Σ| · ⌈|K|/64⌉)` (the review of 2d21144d6, #1543);
     - pass 3: for each distinct open set, its interning (a record per state) and its edges; for each
       distinct fold set, its closure and the closure's edges, so `O(fold sets · |E_Σ|)` in all.
 
@@ -2960,6 +2964,70 @@ Where κ is set, always **at the selected path p**:
     a limit at 10⁸. What grows is the number of distinct states, and it grows with the port (§2.3,
     #1372), not with the walk. `descend`'s growth falls by 14 %, and it is still over the default
     allowance of 65 536. `propagate` takes 135 600 of its records, against 163 260 before.
+  - **As built (#1543).** The rule is `Propagate.zig` (L5, §5), methods of `Cond.Table` bound there by
+    name; the walk before it is gone, and `widenValue`'s bisimulation check reads its two images with the
+    rule alone (`propagatePlain`). Where the build had to choose:
+    - *Pass 1.* A state reads its head first, as a frame did: the link test, its `kept` entry, and then
+      the clean memo. A link or a hit stops there; anything else reads its body (κ, its entry, its
+      children). A state is *clean* when its node has a finite rank of at least 1 and the call has no
+      traversal, a function of the state, so a hit no longer needs a clean route above it. A hit is linked
+      only where it stands alone at an open position; elsewhere it is expanded. The clean memo's key gains
+      one bit: whether the call keeps a lone member's entries (alternatives over one member), so an entry
+      written by a call of one member is never read by a call of two.
+    - *Pass 2.* Each pass, the first and every resumed one, takes the node graph's components once, on
+      the whole graph as it then is. A component whose node set and nontriviality are those of a component
+      of the last pass keeps its id and its nodes' bit indices. Any other component is numbered again and,
+      when it holds earlier states, reopened: its earlier states' bit sets are propagated again, bottom up
+      along Σ's edges inside it, before the new states read them. That covers a merge and also a component
+      that new nodes join, which is the same work and no more than the bound below. Then Tarjan runs over
+      the new states alone, the earlier ones read as sinks. Under `runtime_safety` a reopened component
+      must leave every earlier state's cycle bit as it was, and a bit set is never read across components.
+    - *Pass 3.* A set is a cons list of state ids, interned per call with a record per state. Open sets
+      are built post-order on an explicit stack; an open set met again while it is still open panics,
+      since the bits make that impossible. A fold's closure is a breadth-first walk that expands each hit
+      it meets, then one resumed pass 2 over what that read. The clean memo is written only for an open
+      set of one state, so no fold writes it: #1537's empty snapshot cannot be recorded.
+    - *The reference and the checks.* `reference` walks frames over the fully read Σ (no memo), with
+      §2.3's owners and output built as the walk before the rule built them, and stops at 2²² frames. Under
+      `-Downership-full-cross-check` each call compares the memoised rule with the rule without its memo
+      and with the reference, in both frontier orders. `--ownership-order-check` (#1526) now compares the
+      rule reversed for an equal id, no longer two snapshots under `kappaLeq`. `--ownership-propagate`
+      prints `propagate N: S states, E edges, O open sets, F fold sets, R resumed` per call on standard
+      error.
+    - *Mutations* (`-Downership-v2-mutation`, which `gates` refuses): `propagate-full-read` (pass 1 reads
+      below a hit), `propagate-no-fold-first` (the reference stands for the rule), `propagate-no-resumed-pass2`
+      and `propagate-no-merge-reopen`. Each fails the counted test that pins it.
+    - *Counted tests.* In `Cond.zig`: the shared DAG (C = 16 less C = 1 within 10 % at N = 16 and 64), the
+      sibling (2d + 7 states and one fold at d = 4, 8, 12, linear records; this fixture's `B` names one
+      list, the prototype's two), the period-1 self-loop, the coprime knots (14 states, one fold), the
+      resumed hit and the two-leaf merge, each against the reference in both orders. In `build_test.zig`:
+      #1289's chain published at 4 / 6 / 8 calls, and a record that doubles at 11 levels: 2 670 records
+      with the same summary, where the walk before the rule is a limit (190 868 records at a raised
+      allowance). The chain cost 15 848 / 31 213 / 52 447 records under the rule and 18 401 / 91 040 /
+      1 035 422 under the walk before it; since #1538's atom rule both take 7 603 / 13 392 / 20 468, so
+      the doubling record and the sibling fixture are what fail without fold first. That record was the "genuine product" of four tests of §4.1 (the source continuation,
+      the summary that is not printed, near-limit acceptance in either order); they use the doubling calls
+      `w_k x = w_{k-1} (w_{k-1} x)` now, which still are one, and the near-limit pair measures its growth
+      and sets the allowance 5 % above it.
+    - *Measured* (self-hosted ReleaseSafe, `dump --stage=ownership --ownership=v2`, against master
+      `8faad6453`). Over the 2 125 roots of `allOwnership` under `--ownership-everywhere`: no verdict or
+      limit line changes; records rise 0.14 % (9 972 608 → 9 986 751). Four roots' summaries number their fresh labels in another order
+      (`CycleLinkRooting` and its imported twin, `FoldedPreimageCall`, `RoseKidsHeld`), the same summaries
+      once renamed, and their blocks with them (`RoseKidsHeld` 3 412 → 2 672 bytes, `FoldedPreimageCall`
+      9 716 → 9 768): `proj` is called in another order, as *`proj`'s side effects* allows. A scratch
+      build that ran the walk before the rule beside the rule on every call found the same id in all 30 533
+      calls of those roots (on master before #1538). An oracle in scratch made 600 probe modules over tree
+      writers, keyed inserts, accumulators, `removeMin`-like rotations and mutual writers, each judged by
+      the dump and run by a model twice, pushes copying and pushes in place where the module was
+      accepted whole: 0 unsafe accepts, with 178 accepted at the default allowance and 283 at 4 Mi, as
+      master accepts; forced to accept every probe, the model finds 218 unsafe. Under `-Downership-full-cross-check`, the 440 cases of
+      `tests/corpus/ownership/` give no propagate panic and reach no reference cap (their other lines are
+      the base's under the same flag, fresh labels aside). The rest of the corpus passes, but for what fails
+      there under the flag before this change too: v1's own §16.7 check panics on 15 fixtures, and
+      `CrossDepthKids`' `incAs` is a limit. `descend`:
+      137 891 → 122 867 records, growth 83 649, still over 65 536. `removeMin` is still a limit at 10⁸: its
+      largest joins read 29 545 states and 681 815 edges. The dump's peak memory falls from 3.6 GB to
+      450 MB; its time, on a shared machine, went 194 → 179 s in one run and 243 → 313 s in another.
   - **Not taken.**
     - *A walk keyed per DAG node alone.* It is not exact: the states at one position are merged (`outs`
       join per node at the owner), so a position's result is a function of its set of states, not of each
@@ -6297,10 +6365,11 @@ These are bounds for the specified completed algorithms, not measurements provin
 them. `Cond.lower` must index arrivals by original base so W distinct-base insertions do not rescan W
 members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
 need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
-(2026-11-01). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
+(2026-11-01; built in #1543, `Propagate.zig`). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
 `Σ_K |E_K| · ⌈|K|/64⌉` words for the cycle bits over the node-graph components `K` (quadratic for one large
 knot), summed over the call (a resumed pass numbers only new states, and each merge of components that
-hold earlier states adds `|E_K| · ⌈|K|/64⌉`, with fewer merges than nodes), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
+hold earlier states adds `|E_K| · ⌈|K|/64⌉`; a resumed pass takes the components once on its final graph and
+reopens each merged `K` once, so the reopenings cost `O(resumed passes · |E_Σ| · ⌈|K|/64⌉)` in all), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
 closures.
 Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
 polynomial bound in `|Σ|` fails only at the number of distinct open sets, which is exponential in the worst
@@ -6874,10 +6943,11 @@ L0  Ids
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
-| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 300 (#1526: `propagate`'s order check, §2.9; 4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
+| `Cond.zig` | 6 | the condition table: its columns, the binding of the four parts' methods to one `Table` (`Propagate`'s `propagate` among them) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the four parts | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead, Propagate | ≤ 830 (#1543: `propagate` moved to `Propagate.zig`; #1526: `propagate`'s order check, §2.9; 4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Joins.zig` | 5 | the join index (§2.8 *As built*, #1510): a deep node's joins at its path flattened once, with their route-flag combinations, a tree of their reach unions and the folded members' cells by hold | `Index.get`, `Index.hits`, `folded`, `sides` | Ids, Cell, Shape | ≤ 230 |
+| `Propagate.zig` | 5 | `propagate` of `Cond.Table` (§2.9 *Fold first*, #1543): the state graph Σ read once and stopped at clean-memo hits, the cycle bit by components of Σ and of its node graph with resumed passes, positions by their set of states (open sets and exact folds, both memos), the reference walk, and their `runtime_safety` cross-check | `Mode`, `Stats`, `propagate`, `propagateFrom`, `propagatePlain`, `propagateReference` (`Cond.Table`'s methods) | Ids, Shape, CondAlgebra, Kappa | ≤ 1 280 (#1543: out of `Cond.zig`, which bound it; its types come in from `Cond` as parameters, so it imports no file of its own layer) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions, Exits, Joins | ≤ 2 280 (#1510: closures and hold listings read from the join index, each checked against the walk under runtime safety, §2.8 *As built*; 2 070 since #1467: a pair whose holder has no later use walks no cover, §2.8 *As built*; 1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
@@ -6893,7 +6963,7 @@ L0  Ids
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferArms, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule) |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; 2 205 since #1543: `--ownership-propagate`'s two lines) |
 | `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
@@ -8494,6 +8564,11 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    53 147 records, and walk 2's joins of `removeMin` fall from 7.3 M to 391 k. But `removeMin` and
    `descend` stay limits. What is left is one read for each distinct state, and `removeMin`'s states grow
    with its port (§2.3, #1372). So (b) alone does not make core checked, and S3b still cannot close on it.
+   *Built (#1543):* the corpus's verdicts do not change, and the rule gives the walk's id in each of its 30 533
+   calls. A record that doubles at 11 levels costs 2 670 records, where the walk before it is a limit.
+   #1289's chain is linear (since #1538 under that walk too). `descend` costs 122 867 records
+   (137 891 before) and is still over the default allowance. `removeMin` is still a limit at 10⁸: its largest
+   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*).
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
