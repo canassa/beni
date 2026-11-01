@@ -1,0 +1,42 @@
+{
+  "revision": "ff8e02df3",
+  "mode": "--platform=node --library [--release]",
+  "compiler": "own Debug build; nix develop --command zig build",
+  "source": "import Dict exposing (Dict)\nimport Set exposing (Set)\n\npub type Choice = Empty | Filled Int\npub opaque type Box = Box Int\n\npub record : Int \u2192 { count : Int, label : String }\nrecord n = { count = n, label = \"x\" }\n\npub tuple : Int \u2192 Int \u00d7 String\ntuple n = ( n, \"x\" )\n\npub choice : Int \u2192 Choice\nchoice n = Filled n\n\npub empty : Choice\nempty = Empty\n\npub box : Int \u2192 Box\nbox n = Box n\n\npub array : Int \u2192 List Int\narray n = [ n, n + 1, n + 2 ]\n\npub view : List Int \u2192 List Int\nview xs =\n    case xs of\n        [ _, \u2026rest ] \u2192 rest\n        [] \u2192 []\n\npub dict : Int \u2192 Dict String Int\ndict n = Dict.singleton \"x\" n\n\npub set : Int \u2192 Set Int\nset n = Set.singleton n\n\npub nothing : Maybe Int\nnothing = Nothing\n\npub just : Int \u2192 Maybe Int\njust n = Just n\n",
+  "artifacts": {
+    "dev/Shapes.mjs": {
+      "bytes": 1861,
+      "sha256": "8ff02720bb41f531f590f009f288850da9e0d64d5c2432d53a844094b3c5a6d1"
+    },
+    "dev/_core/List.mjs": {
+      "bytes": 3760,
+      "sha256": "6d8f2d9f5ec870d7aae3c36cbc87f0db90597a58a5c6e1f960203153d5f36a52"
+    },
+    "dev/_core/Dict.mjs": {
+      "bytes": 279,
+      "sha256": "dfd9473e2492f41ac75e4cc1615dd08179555a42d620df22bdcf82fb15dda486"
+    },
+    "dev/_core/Set.mjs": {
+      "bytes": 196,
+      "sha256": "d95fb9bb9616c7a0550d35af9a1fed2517a2382219c2d42fbc96cba2e074ab31"
+    },
+    "release/Shapes.mjs": {
+      "bytes": 698,
+      "sha256": "39dad12f410877fab28a6ef372a8aa88d3f8a3dd3c9bedb41fee686a60f2e378"
+    },
+    "release/_core/List.mjs": {
+      "bytes": 1015,
+      "sha256": "0f51e9d16626d864ef4b2fff29af0059bea89eb764da92df8c38b8acea6a415a"
+    },
+    "release/_core/Dict.mjs": {
+      "bytes": 126,
+      "sha256": "2b62638704645dc2a6e2eeb89106d67a1cb14efa4c705943698f9c04e1869755"
+    },
+    "release/_core/Set.mjs": {
+      "bytes": 34,
+      "sha256": "2ff209ff05f026d4a6f880bfb642869051f3af3239166ceb6eeacedfc85b5d8b"
+    }
+  },
+  "dev_module_bytes": 6944,
+  "release_module_bytes": 2002
+}

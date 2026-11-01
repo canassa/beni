@@ -351,6 +351,59 @@ pub fn build(b: *std.Build) void {
     run_cmd.addPassthruArgs();
     run_step.dependOn(&run_cmd.step);
 
+    // Native binding catalogue generation: workers-native-bindings.md.
+    // An explicit command consumes the pinned archive and writes ordinary
+    // nominal types plus source-indexed metadata; it exposes no operations.
+    const native_module = b.createModule(.{
+        .root_source_file = b.path("src/native/Generate.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const native_tool_module = b.createModule(.{
+        .root_source_file = b.path("tests/native_bindings.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    native_tool_module.addImport("native_bindings", native_module);
+    native_tool_module.addAnonymousImport("webref_idl", .{
+        .root_source_file = b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"),
+    });
+    native_tool_module.addAnonymousImport("webref_receipt", .{
+        .root_source_file = b.path("docs/design/research/workers/sources.json"),
+    });
+    const native_tool = b.addExecutable(.{ .name = "beni-native-bindings", .root_module = native_tool_module });
+    const native_step = b.step("native-bindings", "Generate the pinned native type and binding metadata catalogue");
+    const native_run = b.addRunArtifact(native_tool);
+    native_run.addPassthruArgs();
+    native_step.dependOn(&native_run.step);
+    const native_tests = b.addTest(.{
+        .name = "native_bindings_test",
+        .root_module = native_tool_module,
+        .test_runner = testRunner(b),
+        .filters = test_filters,
+    });
+    const native_unit_tests = b.addTest(.{
+        .name = "native_idl_test",
+        .root_module = native_module,
+        .test_runner = testRunner(b),
+        .filters = test_filters,
+    });
+    const native_test_step = b.step("test-native-bindings", "Test pinned native type and metadata generation");
+    const native_test_run = runTests(b, native_tests);
+    native_test_step.dependOn(&native_test_run.step);
+    const native_unit_run = runTests(b, native_unit_tests);
+    native_test_step.dependOn(&native_unit_run.step);
+    // Compile every generated nominal type with the real development compiler.
+    // These files are output of the command, not hand-written stand-ins.
+    const native_generated = b.addRunArtifact(native_tool);
+    native_generated.addFileArg(b.path("docs/design/research/workers/webref-idl-3.86.0.tgz"));
+    const native_directory = native_generated.addOutputDirectoryArg("native-bindings");
+    const native_check = b.addRunArtifact(exe);
+    native_check.addArgs(&.{ "check", "--core", "--no-cache" });
+    native_check.addPrefixedDirectoryArg("--root=", native_directory);
+    native_check.addDirectoryArg(native_directory);
+    native_test_step.dependOn(&native_check.step);
+
     // ---- Hermetic suite. ----
     // `src/beni.zig` references every internal module from its test block;
     // `diagnostic` is its own module and therefore its own test artifact.

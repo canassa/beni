@@ -233,6 +233,7 @@ pub const render = struct {
 };
 
 test {
+    std.testing.refAllDecls(@import("entry/Plan.zig"));
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(lex);
     std.testing.refAllDecls(parse);

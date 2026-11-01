@@ -154,3 +154,12 @@ page_fuzz_test.test.a page that stopped hands nothing to the next: a message tha
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 cbc1691fc7873ec3b832ef17298485f66045aa0c1fed6d90e233ec3d6deee7d0
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 6934993e129407a12867cbeca34a7894ad063eafa0f0c2ef91b691fbcb8ca016
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 cc12fb90b64981940baf6d3aa327c34acd759b278b3b41b1f8f99bec983d2401
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 7ebd8a471118cd3046dcafef4011c35aa9efdf09013ae4154f51051c6df2b217
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #2 ba3c84c27fdeb5944a3beb60d45b7e69a3475601d75c23244b92549636ea3593
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 36f148b2ee6e64c043bb46fba68e44f01bc8c136757ff0a76bc4da7af14e92ca
+platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #0 552778c27edf20abfb9ab735e12b97f7a6bf4ddff165405bd01ebccb27a8fae7
+platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #1 3ae44a88e14cb4d6e1698816bdba76e183aa4689f03b6d2ebf33ac249eb8a2dd
+platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
+platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
+platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
