@@ -379,7 +379,9 @@ fn answers(p: *Plan) Error!Result {
             // "May be impure": already, or once the declaration is used with
             // something that is — a `poly` callee, or one a `sync` class
             // reaches, which is never `poly` because it cannot suspend.
-            const impure = level(p, c[1]) != .pure or a != .no or p.tainted[c[1]] == tag;
+            const impure = level(p, c[1]) != .pure or a != .no or p.tainted[c[1]] == tag or
+                p.e.solved.demanded.items[c[1]];
+
             if (a != .no or impure) try sites.append(gpa, .{ .inst = @fromBackingInt(@intCast(c[0])), .own = a, .impure = impure });
         }
         for (p.fns[d].items) |f| {

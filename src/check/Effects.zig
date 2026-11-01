@@ -777,6 +777,8 @@ pub fn run(e: *Effects, in: Input) Error!void {
     // 1. Classes: every join, every zip position by position, every copy of
     // a generalised local (§14.3 rule 4).
     const scheme_decl = try e.schemeDecls(in, scratch);
+    const shared = try e.sharedCells(in, scratch);
+
     for (e.joins.items) |p| try e.unite(p.a, p.b);
     for (in.wanted_joins) |p| try e.unite(p.a, p.b);
     for (e.readings) |rd| {
@@ -788,8 +790,25 @@ pub fn run(e: *Effects, in: Input) Error!void {
         }
     }
     for (e.zips.items) |p| try e.zipped(p.a, p.b, scratch);
+    const shared_nodes = try scratch.alloc(bool, n);
+    @memset(shared_nodes, false);
+    for (shared, 0..) |is_shared, vi| {
+        if (is_shared) shared_nodes[try e.nodeFor(@fromBackingInt(@intCast(vi)))] = true;
+    }
     for (e.records.items) |r| {
-        if (scheme_decl.get(r.scheme) != null) continue;
+        if (scheme_decl.get(r.scheme) != null) {
+            // Reading one module-level mutable cell does not make another
+            // storage identity. Its callback classes are shared by writes
+            // and reads, unlike a factory's fresh cell at each call.
+            for (e.pairs.items[r.start..][0..r.len]) |p| {
+                const node = try e.nodeFor(p.a);
+                if (shared_nodes[node]) {
+                    try e.unite(p.a, p.b);
+                    shared_nodes[try e.nodeFor(p.a)] = true;
+                }
+            }
+            continue;
+        }
         for (e.pairs.items[r.start..][0..r.len]) |p| try e.unite(p.a, p.b);
     }
     // Every class is final now: flattened, so each later `find` is one read.
@@ -964,6 +983,49 @@ fn propagate(e: *Effects, work: *std.ArrayList(u32), scratch: Allocator) Error!v
             try e.raise(y, s.level.items[x], work, scratch);
         }
     }
+}
+
+/// Callback classes stored in module-level Js.Ref values have one identity.
+/// Stop at functions: their signatures describe a factory, not a cell already
+/// allocated by module evaluation. Records/tuples may contain cells as well.
+fn sharedCells(e: *Effects, in: Input, scratch: Allocator) Error![]bool {
+    const store = e.store;
+    const shared = try scratch.alloc(bool, store.count());
+    @memset(shared, false);
+    const seen = try scratch.alloc(u8, store.count());
+    @memset(seen, 0);
+    const Item = struct { v: Var, stored: bool = false };
+    var stack: std.ArrayList(Item) = .empty;
+    defer stack.deinit(scratch);
+    for (in.decl_scheme) |maybe| {
+        const scheme = maybe.unwrap() orelse continue;
+        try stack.append(scratch, .{ .v = scheme });
+        while (stack.pop()) |item| {
+            const r, _ = store.resolved(item.v);
+            const bit: u8 = if (item.stored) 2 else 1;
+            if (seen[r.int()] & bit != 0) continue;
+            seen[r.int()] |= bit;
+            if (item.stored and e.carries(r)) shared[r.int()] = true;
+            var stored = item.stored;
+            switch (store.content(r)) {
+                .structure => |st| switch (st) {
+                    .func => if (!stored) continue,
+                    .app => |a| if (a.type != .none) {
+                        const entry = e.types.entry(a.type);
+                        if (entry.package == .core and
+                            std.mem.eql(u8, e.interner.slice(entry.module_name), "Js") and
+                            std.mem.eql(u8, e.interner.slice(entry.name), "Ref")) stored = true;
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+            var k: u32 = 0;
+            while (Walk.stepped(store, r, k)) |c| : (k += 1)
+                try stack.append(scratch, .{ .v = c.v, .stored = stored });
+        }
+    }
+    return shared;
 }
 
 /// Every own declaration by its scheme's root, so a record names the

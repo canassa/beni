@@ -1399,6 +1399,13 @@ of the type is precise. **This step takes the third**, report 43's recommendatio
   information). A `foreign type` has no constructors: its values are the host's (`Html msg`,
   `Program`), and a function stored in one is the host's to call, which is the `sync` step's.
 
+*Amended 2026-11-01 (#1617):* callback classes inside a module-level `Js.Ref`
+value describe one mutable storage identity. Copies made when declarations read
+that value share those classes, including cells inside records and tuples.
+A function that creates cells retains fresh classes at each call. A shared
+`sync` callback class may still be impure; lowering retains its invocation when
+the result is ignored, as it does for a sync callback parameter.
+
 ### 14.6 The interface
 
 Interface format 8 → 9 (`iface_bytes.format_version`): **a scheme gains one word, `effects`**,
@@ -1770,6 +1777,20 @@ makes a callback independent of the call, so declared `pure` it made `Task.andTh
 impure `k` was — which the release optimiser, reading `impure` since that day (§16.5), would have
 turned into a dropped call. The emitted code is unchanged: the generator's calls are JavaScript, not
 beni, and no rung is read from them. The `sync` mark still does what the sentence above says.
+
+**Owner decision, 2026-11-01 (#1295, #1612): typed completion callbacks.**
+The suspending path may use an internal CPS calling convention: a hidden typed
+completion callback accompanies each suspendable call. Core's `Task.callback`
+has a private typed accessor for that callback. Closed unit jobs capture the
+matching typed input, continuation and result destination; the runtime stores
+no heterogeneous value or callable in `Js.Value` for this purpose. The unique
+sentinel comparison and cancellation/finalizer order remain unchanged. This
+adds no user syntax or public API and no generated continuation union.
+**Functions that cannot suspend must emit byte-identical output to the prior
+protocol.** The compiler supplies and checks the hidden callback; it cannot be
+manufactured or read by application code. `workers-task-storage.md` owns the
+migration order. This decision supersedes the proposal's §16.1 erased continuation list
+where the typed implementation replaces it; sections are not renumbered.
 
 ### 16.2 What the checker hands the backend
 
