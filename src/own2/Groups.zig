@@ -520,11 +520,11 @@ pub const Adapter = struct {
     /// fields, a leaf. A parameterised constructor type's arguments are not
     /// in a block, so its place stays the block's (S6, #1317). Checked by
     /// `Place.equals`, so a node that differs is never taken for `p`.
-    pub fn ownPlace(a: *Adapter, p: PlaceId) Error!?PlaceId {
+    /// `own` is kept across one read, so nested places cost each place once (#1566).
+    pub fn ownPlace(a: *Adapter, own: *OwnMemo, p: PlaceId) Error!?PlaceId {
         const places = a.places;
         const pending = none - 1;
-        var memo: stamped.Column(PlaceId, u32) = .{};
-        defer memo.deinit(a.gpa);
+        const memo = &own.node;
         var stack: std.ArrayList(struct { p: PlaceId, expanded: bool }) = .empty;
         defer stack.deinit(a.gpa);
         var kids: std.ArrayList(Kid) = .empty;
@@ -570,9 +570,21 @@ pub const Adapter = struct {
         const node = memo.get(p).?;
         if (node == none) return null;
         const q = try places.of(a.gpa, a.account, a.source(), node);
-        if (q != p and !try Place.Table.equals(places, p, places, q, a.gpa, .growth(a.account))) return null;
+        if (q != p and !try Place.Table.equals(places, p, places, q, a.gpa, .growth(a.account), &own.proven)) return null;
         return q;
     }
+
+    /// `ownPlace`'s memo for one read: a node depends on its place's structure
+    /// alone (one reaching a cycle no nominal closes is none from any start).
+    pub const OwnMemo = struct {
+        node: stamped.Column(PlaceId, u32) = .{},
+        proven: Ids.FixedDict(2) = .{},
+
+        pub fn deinit(m: *OwnMemo, gpa: Allocator) void {
+            m.node.deinit(gpa);
+            m.proven.deinit(gpa);
+        }
+    };
 };
 
 // ---------------------------------------------------------------------------
@@ -691,6 +703,10 @@ pub const Module = struct {
     fn importedClass(mod: *Module, m: u32, di: u32) Error!?ClassId {
         const imports = mod.in.imports orelse return null;
         if (!mod.imported.contains(m)) {
+            // The read's re-interning is block-sized: a reservation naming no
+            // lane, never the first call's `call_view` (§4.1, #1566).
+            const kernel = try mod.account.enter(mod.gpa, null);
+            defer mod.account.leave(kernel);
             const cs = try imports.read(imports.ctx, mod, m);
             if (cs) |c| mod.imported_owned.append(mod.gpa, c) catch |err| {
                 mod.gpa.free(c);

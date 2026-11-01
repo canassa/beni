@@ -11747,6 +11747,61 @@ test "the checker v2 says why a summary is not printed" {
     try testing.expect(std.mem.indexOf(u8, over, "summary h") == null);
 }
 
+test "the checker v2 reads an imported doubling function's block as growth, at the same-module cost" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #1566: `w1 x = ( x, x )`, `w_k x = w_{k-1} (w_{k-1} x)`, and
+    // `h x = w_k (w_k x)`, with the `w`s in `h`'s module or in `W`. The
+    // importer reads `W`'s block at its first call into `W`, and its
+    // re-interning compares the block's places with its own: `w9`'s result
+    // nests 256 tuples deep. That work was charged to the first call's
+    // `call_view` lane, so `h` stopped at `ownership_accounting_invariant`;
+    // and each place's comparison walked every place below it again, so the
+    // read cost the square of the depth. It is growth now, each pair once.
+    // At k = 7 and 9 (the depth ×4): `h`'s growth over the same-module
+    // twin's, the read's, within a tenth of the twin's total (+227 and +899,
+    // 3%; +66 000 at k = 9 with the square), and its total over the twin's,
+    // the block's read, the same factor at both k to a tenth (×1.43 at 7, 8
+    // and 9).
+    var ratio: [2]u64 = undefined;
+    for ([_]u32{ 7, 9 }, 0..) |k, run| {
+        var cost: [2]struct { growth: u64, total: u64 } = undefined;
+        for ([_]bool{ false, true }, 0..) |imported, side| {
+            var w = try World.init(testing.allocator, testing.io);
+            defer w.deinit();
+            const a = w.arena.allocator();
+            var ws: std.ArrayList(u8) = .empty;
+            const pubs: []const u8 = if (imported) "pub " else "";
+            try ws.print(a, "{s}w1 x = ( x, x )\n", .{pubs});
+            for (2..k + 1) |j| try ws.print(a, "\n\n{s}w{d} x = w{d} (w{d} x)\n", .{ pubs, j, j - 1, j - 1 });
+            const q: []const u8 = if (imported) "W." else "";
+            const h = try std.fmt.allocPrint(a, "h x = {s}w{d} ({s}w{d} x)\n", .{ q, k, q, k });
+            if (imported) {
+                try w.write("W.beni", ws.items);
+                try w.write("Main.beni", try std.fmt.allocPrint(a, "@ownership_summary_size(module, 4194304)\n\nimport W\n\n\n{s}", .{h}));
+            } else try w.write("Main.beni", try std.fmt.allocPrint(a, "@ownership_summary_size(module, 4194304)\n\n\n{s}\n\n{s}", .{ ws.items, h }));
+
+            // ┌─────────────────────────────────────────┐
+            // │ EXECUTE                                 │
+            // └─────────────────────────────────────────┘
+            const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--root=.", "." });
+
+            // ┌─────────────────────────────────────────┐
+            // │ VERIFY OUTPUT                           │
+            // └─────────────────────────────────────────┘
+            try testing.expectEqual(@as(u8, 0), dump.exit_code);
+            try testing.expect(std.mem.indexOf(u8, dump.stdout, "ownership_accounting_invariant") == null);
+            try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h") == null);
+            try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary h: π1 RA;") != null);
+            cost[side] = .{ .growth = try accountField(dump.stdout, "h", "growth"), .total = try accountField(dump.stdout, "h", "total") };
+        }
+        try testing.expect(cost[1].growth <= cost[0].growth + cost[0].total / 10);
+        ratio[run] = 1000 * cost[1].total / cost[0].total;
+    }
+    try testing.expect(10 * ratio[1] <= 11 * ratio[0]);
+}
+
 test "the checker v2 joins a group's port without its unchanged res again" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

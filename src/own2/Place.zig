@@ -1153,35 +1153,45 @@ pub const Table = struct {
     /// Structural equality of `a` in `ta` and `b` in `tb`: a graph-pair
     /// walk, every pair visited once, O(pairs) — the charged comparison of
     /// §2.1's *Identity*: one record reserved per pair before it is read.
-    pub fn equals(ta: *const Table, a: PlaceId, tb: *const Table, b: PlaceId, gpa: Allocator, charge: Charge) Error!bool {
+    /// A pair in `proven`, which an earlier walk over the same two tables
+    /// proved, is not walked again; on `true` every pair visited joins it
+    /// (#1566: nested places compared one by one cost their pairs once).
+    pub fn equals(ta: *const Table, a: PlaceId, tb: *const Table, b: PlaceId, gpa: Allocator, charge: Charge, proven: ?*Ids.FixedDict(2)) Error!bool {
         var seen: Ids.FixedDict(2) = .{};
         defer seen.deinit(gpa);
         var stack: std.ArrayList([2]PlaceId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, .{ a, b });
-        while (stack.pop()) |pair| {
+        const same = while (stack.pop()) |pair| {
             try charge.reserve(gpa, .inspection, 1);
-            const got = try seen.getOrPut(gpa, .{ pair[0].int(), pair[1].int() });
+            const key: [2]u32 = .{ pair[0].int(), pair[1].int() };
+            if (proven) |pv| if (pv.get(key) != null) continue;
+            const got = try seen.getOrPut(gpa, key);
             if (got.found_existing) continue;
             got.value_ptr.* = 1;
             const x = pair[0];
             const y = pair[1];
-            if (ta.kind(x) != tb.kind(y) or ta.head(x) != tb.head(y)) return false;
+            if (ta.kind(x) != tb.kind(y) or ta.head(x) != tb.head(y)) break false;
             const rx = ta.stepRange(x);
             const ry = tb.stepRange(y);
-            if (rx.len != ry.len) return false;
+            if (rx.len != ry.len) break false;
             var i: u32 = 0;
-            while (i < rx.len) : (i += 1) {
+            const steps_same = while (i < rx.len) : (i += 1) {
                 const sx = ta.step_tab.items(.step)[rx.start + i];
                 const sy = tb.step_tab.items(.step)[ry.start + i];
-                if (sx.kind != sy.kind) return false;
+                if (sx.kind != sy.kind) break false;
                 if (sx.kind == .ctor_arg) {
-                    if (!std.mem.eql(u32, &ta.ctorArgOf(sx), &tb.ctorArgOf(sy))) return false;
-                } else if (!sx.eql(sy)) return false;
+                    if (!std.mem.eql(u32, &ta.ctorArgOf(sx), &tb.ctorArgOf(sy))) break false;
+                } else if (!sx.eql(sy)) break false;
                 try stack.append(gpa, .{ ta.step_tab.items(.child)[rx.start + i], tb.step_tab.items(.child)[ry.start + i] });
-            }
-        }
-        return true;
+            } else true;
+            if (!steps_same) break false;
+        } else true;
+        if (same) if (proven) |pv| {
+            var k: usize = 0;
+            while (k < seen.keys.items.len) : (k += 2) (try pv.getOrPut(gpa, seen.keys.items[k..][0..2].*)).value_ptr.* = 1;
+        };
+        return same;
     }
 };
 
@@ -1508,7 +1518,7 @@ test "encode writes a cycle once through the names table, and decode reads an eq
     var on_built: u32 = 0;
     for (0..f.table.count()) |i| on_built += @intFromBool(f.table.cyclic(.from(@intCast(i))));
     try testing.expectEqual(on_built, on);
-    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account)));
+    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account), null));
     // A different graph at the same place count is not equal, and the
     // comparison was charged per pair.
     var g: Fixture = .{};
@@ -1516,7 +1526,7 @@ test "encode writes a cycle once through the names table, and decode reads an eq
     defer g.deinit();
     const outer = try g.of(0);
     const before = f.account.growth;
-    try testing.expect(!try Table.equals(&f.table, rec, &g.table, outer, gpa, .growth(&f.account)));
+    try testing.expect(!try Table.equals(&f.table, rec, &g.table, outer, gpa, .growth(&f.account), null));
     try testing.expect(f.account.growth > before);
     // Truncated or malformed words are no graph; neither is one whose
     // children come out of order after the remap.
@@ -1565,7 +1575,7 @@ test "no session id reaches the bytes for any place kind, a reclassified leaf in
     }
     var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
     defer decoded.deinit(gpa);
-    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account)));
+    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account), null));
     // Every head came back as it was, the leaf's as 0.
     var i: u32 = 0;
     var seen_heads: u32 = 0;
@@ -1634,6 +1644,6 @@ test "two tables that intern one type in different orders write identical bytes"
     // And both decode to a graph equal to either.
     var decoded = (try Table.decode(gpa, &f.account, wg.items, Names.identity)).?;
     defer decoded.deinit(gpa);
-    try testing.expect(try Table.equals(&f.table, rf, &decoded, .from(0), gpa, .growth(&f.account)));
-    try testing.expect(try Table.equals(&g.table, rg, &decoded, .from(0), gpa, .growth(&g.account)));
+    try testing.expect(try Table.equals(&f.table, rf, &decoded, .from(0), gpa, .growth(&f.account), null));
+    try testing.expect(try Table.equals(&g.table, rg, &decoded, .from(0), gpa, .growth(&g.account), null));
 }

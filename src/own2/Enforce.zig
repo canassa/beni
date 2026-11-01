@@ -204,6 +204,7 @@ const ImportReader = struct {
         @memcpy(std.mem.sliceAsBytes(words), bytes);
         var e: Envelope = .{ .r = r, .mod = mod, .m = m };
         defer e.texts.deinit(gpa);
+        defer e.own_memo.deinit(gpa);
         const body = (try e.parse(gpa, words)) orelse return null;
         var classes: std.ArrayList(Groups.ClassId) = .empty;
         defer classes.deinit(gpa);
@@ -240,6 +241,8 @@ const ImportReader = struct {
         dir: []const u32 = &.{},
         failed: bool = false,
         oom: bool = false,
+        /// `Remap.own`'s memo for this block (`Groups.Adapter.ownPlace`).
+        own_memo: Groups.Adapter.OwnMemo = .{},
 
         /// The block's words after the string table and the directory, or
         /// null when the envelope is malformed.
@@ -319,7 +322,7 @@ const ImportReader = struct {
 
         fn own(ctx: *anyopaque, p: Groups.PlaceId) Groups.Error!?Groups.PlaceId {
             const e: *Envelope = @ptrCast(@alignCast(ctx));
-            return e.mod.adapter.ownPlace(p);
+            return e.mod.adapter.ownPlace(&e.own_memo, p);
         }
         fn inst(ctx: *anyopaque, i: u32) u32 {
             const e: *Envelope = @ptrCast(@alignCast(ctx));
