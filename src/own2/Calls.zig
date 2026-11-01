@@ -69,11 +69,14 @@ pub const Scratch = struct {
     memo: stamped.Column(NodeId, NodeId) = .{},
     escaped: std.ArrayList(NodeId) = .empty,
     members: std.ArrayList(NodeId) = .empty,
+    /// Rule 4's walk of a key's steps (`Grafter.groupOf`).
+    steps: std.ArrayList(Step) = .empty,
     /// The place the caller reads the call's result at (its instruction's),
     /// or `.none`: a structured result template is instantiated there.
     result_place: PlaceId = .none,
 
     pub fn deinit(s: *Scratch, gpa: Allocator) void {
+        s.steps.deinit(gpa);
         s.memo.deinit(gpa);
         s.escaped.deinit(gpa);
         s.members.deinit(gpa);
@@ -231,6 +234,7 @@ const Pre = struct {
         w.own_at = .{};
         const first: u32 = @intCast(w.parts.items.len);
         var max = false;
+        var cert: Cond.Table.ClassAggs = .{};
         switch (d.kind) {
             .node, .delta => {
                 if (!st.below) try w.addAll(st.path, try shapes.cellsOf(gpa, w.env.account(), &w.env.cells.sets, st.node), false);
@@ -260,20 +264,83 @@ const Pre = struct {
                 if (!st.below) try w.addAll(st.path, try shapes.cellsOf(gpa, w.env.account(), &w.env.cells.sets, st.node), false);
                 try w.unionSides(st.node, st.path);
             },
-            // A view is its answer at the same path: one part (§2.11).
-            .view => try w.part(try shapes.force(gpa, w.env.account(), st.node), st.path, st.below),
+            // A view is its answer at the same path: one part (§2.11). A view
+            // of a certified class is its certificate (reader 2, #1485): each
+            // class of its template at each canonical path below, its keys by
+            // §2.9 rule 4, never its cycle.
+            .view => if (w.env.conds.hypEnv(w.env.view(), st.node)) |e| {
+                cert = try w.certView(st, e);
+            } else try w.part(try shapes.force(gpa, w.env.account(), st.node), st.path, st.below),
             .choice, .positions => {
                 max = d.kind == .choice;
                 try w.part(.from(d.a), st.path, st.below);
                 try w.part(.from(d.b), st.path, st.below);
             },
         }
-        var own: Cond.Table.ClassAggs = .{};
+        var own: Cond.Table.ClassAggs = cert;
         for (w.own.items) |o| own = try w.env.conds.classesMerge(gpa, charge, w.env.view(), own, try w.env.conds.classesOf(gpa, charge, w.env.cells, w.env.places, o.key, o.cells), true);
         const s = &w.states.items[id];
         s.own = own;
         s.max = max;
         s.parts = .{ .start = first, .len = @as(u32, @intCast(w.parts.items.len)) - first };
+    }
+
+    /// Reader 2 (§8 slice 4, #1485): the certificate of a view `st.node` of a
+    /// certified class at environment `e`, below `st.path`. Each class of
+    /// its template meets each canonical path the walk of its steps reaches
+    /// (a pair `(class, path)` once, so a `⟲` folds onto the path it
+    /// returns to), and gives there its keys' multiset by rule 4. Distinct
+    /// classes at one path add: they are distinct positions of one result.
+    fn certView(w: *Pre, st: State, e: u32) Error!Cond.Table.ClassAggs {
+        const gpa = w.env.gpa;
+        const charge = w.env.charge;
+        const shapes = w.env.shapes;
+        const conds = w.env.conds;
+        var out: Cond.Table.ClassAggs = .{};
+        var seen: Ids.FixedDict(2) = .{};
+        defer seen.deinit(gpa);
+        var stack: std.ArrayList([2]u32) = .empty;
+        defer stack.deinit(gpa);
+        var keys: std.ArrayList(Cond.Table.HypKey) = .empty;
+        defer keys.deinit(gpa);
+        var merged: Ids.FixedDict(2) = .{};
+        defer merged.deinit(gpa);
+        try stack.append(gpa, .{ shapes.get(st.node).a, st.path.int() });
+        while (stack.pop()) |x| {
+            try charge.reserve(gpa, .inspection, 1);
+            if ((try seen.getOrPut(gpa, .{ x[0], x[1] })).found_existing) continue;
+            const tn: NodeId = .from(x[0]);
+            const path: PathId = .from(x[1]);
+            if (!st.below or path != st.path) {
+                const a = try conds.certClassAgg(gpa, charge, w.env.view(), e, tn, &keys, &merged);
+                if (w.trace) |tr| for (keys.items) |k| try tr.append(gpa, .{ .key = path, .cell = k.image, .state = w.cur });
+                if (a.all_len > 0 or a.pairs != Cond.yes) out = try conds.classesMerge(gpa, charge, w.env.view(), out, .{ .map = try conds.mapPut(gpa, charge, Ids.none_int, path.int(), try conds.agg(gpa, a)), .len = 1 }, true);
+            }
+            try w.certKids(tn, path, &stack);
+        }
+        return out;
+    }
+
+    /// `certView`'s children of class `tn` at `path`: a join's sides at the
+    /// path, a node's or delta's entries one step below.
+    fn certKids(w: *Pre, tn: NodeId, path: PathId, stack: *std.ArrayList([2]u32)) Error!void {
+        const shapes = w.env.shapes;
+        const d = shapes.get(tn);
+        switch (d.kind) {
+            .@"union", .choice, .positions => {
+                try w.certKids(.from(d.a), path, stack);
+                try w.certKids(.from(d.b), path, stack);
+            },
+            .node, .delta => {
+                if (d.kind == .delta) try w.certKids(.from(d.a), path, stack);
+                var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
+                while (it.next()) |c| {
+                    const cp = (try w.env.places.extend(w.env.gpa, w.env.charge, path, c.step)) orelse continue;
+                    try stack.append(w.env.gpa, .{ c.node.int(), cp.int() });
+                }
+            },
+            else => {},
+        }
     }
 
     fn child(w: *Pre, path: PathId, s: Step, n: NodeId) Error!void {
@@ -466,13 +533,178 @@ const Grafter = struct {
         try g.stepsOf(p, &steps);
         var n = g.args[i].node;
         for (steps.items) |s| {
-            if (s.kind == .level) return g.env.shapes.recastWhole(g.gpa(), g.account(), &g.env.cells.sets, at, n);
+            if (s.kind == .level and !try g.symbolicLeaf(n)) return g.env.shapes.recastWhole(g.gpa(), g.account(), &g.env.cells.sets, at, n);
             n = (try g.env.shapes.proj(g.gpa(), g.account(), g.env.places, g.env.cells, n, s)) orelse return g.topLeaf(at);
         }
         // At a type variable's place the call instantiates the variable to
         // the actual's type: the actual stands at its own place (#1350).
         if (g.env.places.kind(at) != .@"var" and g.env.shapes.place(n) != at) return g.env.shapes.recast(g.gpa(), g.account(), at, n);
         return n;
+    }
+
+    /// §2.9 rule 4 for one arrival key `c` of a certificate at this call
+    /// (#1485): a parameter key whose walk along the actual meets one
+    /// position's node (rule 3's (b), at the parameter's place, at an exact
+    /// prefix `L`) is in the group `(πᵢ, L, node)`, and its images are the
+    /// symbolic projections of the node's member cells along the key's rest,
+    /// canonical, a `⟲` included and never expanded. Any other key adds its
+    /// images as the graft reads them (`cellsOf`). Group ids are `groups`'
+    /// values, one per `(i, L, node)`.
+    fn ruleFourKey(g: *Grafter, c: CellId, approx: bool, groups: *Ids.FixedDict(3), out: *std.ArrayList(Cond.Table.HypKey)) Error!void {
+        const cells = g.env.cells;
+        const x = cells.get(c);
+        if (x.origin == .param and !approx) {
+            const first = out.items.len;
+            if (try g.groupOf(x.a, .from(x.b))) |grp| {
+                const got = try groups.getOrPut(g.gpa(), .{ x.a, grp.prefix.int(), grp.node.int() });
+                if (!got.found_existing) got.value_ptr.* = groups.count() - 1;
+                if (try g.groupImages(c, grp, got.value_ptr.*, out)) {
+                    // The mutation adds a group's images, as by cell (#1485).
+                    if (mutated("cert-rule4-sum")) for (out.items[first..]) |*k| {
+                        k.group = Ids.none_int;
+                    };
+                    return;
+                }
+                out.shrinkRetainingCapacity(first);
+            }
+        }
+        var it = cells.sets.iterate(try g.cellsOf(c, g.placeOfCell(c)));
+        while (it.next()) |e| {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            try out.append(g.gpa(), .{ .key = c, .image = .from(e.key), .approx = approx or e.value == 1, .group = Ids.none_int });
+        }
+    }
+
+    const Group = struct { node: NodeId, prefix: PathId, rest: []const Step };
+
+    /// Rule 4 over an atom's sides (#1485): an image that an earlier side of
+    /// the same group holds, met again, is one more position of it. It owes
+    /// `exclOf` and stays on the first side only. Sides of other groups, and
+    /// sides in no group, keep their images, which the multiset then reads.
+    fn ruleFourSides(g: *Grafter, t: *Cond.Table, callee: []const CellId, gids: []const u32, sides: []SetId) Error!CondId {
+        const cells = g.env.cells;
+        var first: Ids.FixedDict(2) = .{};
+        defer first.deinit(g.gpa());
+        var extra: CondId = Cond.yes;
+        for (sides, gids, 0..) |*side, gid, j| {
+            if (gid == Ids.none_int) continue;
+            var kept: SetId = .none;
+            var it = cells.sets.iterate(side.*);
+            while (it.next()) |e| {
+                try g.env.charge.reserve(g.gpa(), .inspection, 1);
+                const got = try first.getOrPut(g.gpa(), .{ gid, e.key });
+                if (!got.found_existing) got.value_ptr.* = @intCast(j);
+                // Two positions of the image only for alias-apart keys: route
+                // separation, tested in every build. Else both sides keep it,
+                // and the multiset reads a repeat.
+                if (got.value_ptr.* != j and cells.alias(g.env.places, callee[got.value_ptr.*], callee[j]) == .no) {
+                    extra = try t.@"and"(g.gpa(), g.env.charge, extra, try t.exclOf(g.gpa(), g.env.charge, cells, .from(e.key)));
+                    continue;
+                }
+                kept = try cells.sets.insert(g.gpa(), g.env.charge, kept, e.key, e.value);
+            }
+            side.* = kept;
+        }
+        return extra;
+    }
+
+    /// Rule 4's group of a key of argument `i` at path `p`: walking the actual
+    /// along `p` (views forced, built nodes and deltas projected one step at a
+    /// time), the first node that is not built, met before any `[*]` or `⟲`,
+    /// standing at the parameter's place there, and one position's possible
+    /// contents (`onePosition`). Null for none. `rest` lives in `g.s`.
+    fn groupOf(g: *Grafter, i: u32, p: PathId) Error!?Group {
+        const shapes = g.env.shapes;
+        const places = g.env.places;
+        if (i >= g.args.len or g.args[i].node == .none) return null;
+        g.s.steps.clearRetainingCapacity();
+        try g.stepsOf(p, &g.s.steps);
+        const steps = g.s.steps.items;
+        var pfx = p;
+        while (places.pathParent(pfx) != .none) pfx = places.pathParent(pfx);
+        var n = g.args[i].node;
+        var k: usize = 0;
+        while (true) : (k += 1) {
+            try g.env.charge.reserve(g.gpa(), .inspection, 1);
+            n = try shapes.force(g.gpa(), g.account(), n);
+            switch (shapes.kind(n)) {
+                .leaf, .@"union", .choice => {
+                    if (shapes.place(n) != places.pathPlace(pfx) or !try g.onePosition(n)) return null;
+                    return .{ .node = n, .prefix = pfx, .rest = steps[k..] };
+                },
+                .node, .delta => {
+                    if (k == steps.len) return null;
+                    const s = steps[k];
+                    if (s.kind == .elem or s.kind == .level) return null;
+                    n = (try shapes.proj(g.gpa(), g.account(), places, g.env.cells, n, s)) orelse return null;
+                    pfx = (try places.extend(g.gpa(), g.env.charge, pfx, s)) orelse return null;
+                },
+                else => return null,
+            }
+        }
+    }
+
+    /// The images of key `c` in its group: each member cell of the group's
+    /// node, canonical, extended along the rest by `Place.extend`. False
+    /// when a member has no canonical cell or a step no path: the key then
+    /// adds as before.
+    fn groupImages(g: *Grafter, c: CellId, grp: Group, id: u32, out: *std.ArrayList(Cond.Table.HypKey)) Error!bool {
+        const shapes = g.env.shapes;
+        const cells = g.env.cells;
+        const places = g.env.places;
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(g.gpa());
+        var seen: stamped.Column(NodeId, void) = .{};
+        defer seen.deinit(g.gpa());
+        try stack.append(g.gpa(), grp.node);
+        while (stack.pop()) |m0| {
+            const m = try shapes.force(g.gpa(), g.account(), m0);
+            if (seen.contains(m)) continue;
+            try seen.put(g.gpa(), m, {});
+            const d = shapes.get(m);
+            switch (d.kind) {
+                .@"union", .choice => try stack.appendSlice(g.gpa(), &.{ .from(d.a), .from(d.b) }),
+                .leaf => {
+                    var it = cells.sets.iterate(d.cells);
+                    while (it.next()) |e| {
+                        try g.env.charge.reserve(g.gpa(), .inspection, 1);
+                        const cell: CellId = .from(e.key);
+                        const o = cells.origin(cell);
+                        if (o == .top or o == .mark) return false;
+                        const sym = if (o.isRefinement()) (try cells.unrefined(g.gpa(), g.account(), places, cell)) orelse return false else cell;
+                        const sd = cells.get(sym);
+                        if (!sd.origin.isSymbolic() or sd.origin == .top) return false;
+                        var path: PathId = .from(sd.b);
+                        for (grp.rest) |s| path = (try places.extend(g.gpa(), g.env.charge, path, s)) orelse return false;
+                        const img = try cells.symbolic(g.gpa(), g.account(), places, sd.origin, sd.a, path, sd.c);
+                        try out.append(g.gpa(), .{ .key = c, .image = img, .approx = false, .group = id });
+                    }
+                },
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    /// A leaf of exact symbolic or refined cells, none `⊤` and none under a
+    /// repeating split: it stands for exactly its cells' projections (§2.2),
+    /// so `argAt` projects it through `⟲` symbolically, never by its whole
+    /// reach (§2.9 rule 4's read, #1485).
+    fn symbolicLeaf(g: *Grafter, n0: NodeId) Error!bool {
+        const shapes = g.env.shapes;
+        const n = try shapes.force(g.gpa(), g.account(), n0);
+        if (shapes.kind(n) != .leaf) return false;
+        const cells = g.env.cells;
+        var it = cells.sets.iterate(shapes.cells(n));
+        var any = false;
+        while (it.next()) |e| {
+            if (e.value == 1) return false;
+            const o = cells.origin(.from(e.key));
+            if (o == .top or !(o.isSymbolic() or o.isRefinement())) return false;
+            if (Cond.Table.repeatingSplit(cells, .from(e.key)) != null) return false;
+            any = true;
+        }
+        return any;
     }
 
     /// `excl` of argument `i` at a template path `p` that crosses `⟲`, null
@@ -1266,7 +1498,7 @@ const Grafter = struct {
                 const at = g.placeOfCell(c);
                 const n = try g.argAt(x.a, .from(x.b), at);
                 const kappa = try g.argKappa(x.a, .from(x.b));
-                return t.deep(gpa_, g.env.charge, g.env.view(), kappa, n, g.env.places.isSummary(.from(x.b)));
+                return try t.deep(gpa_, g.env.charge, g.env.view(), kappa, n, g.env.places.isSummary(.from(x.b)));
             },
             .sep, .apart => {
                 // `apart [A] [B]` over the sides' cells as a multiset: each side's
@@ -1277,24 +1509,43 @@ const Grafter = struct {
                 var callee: std.ArrayList(CellId) = .empty;
                 defer callee.deinit(gpa_);
                 if (a.atom == .sep) {
-                    for ([_]u32{ a.a, a.b }) |side| {
-                        const c: CellId = .from(side);
-                        try callee.append(gpa_, c);
-                        try sides.append(gpa_, try g.sideCells(c));
-                    }
+                    for ([_]u32{ a.a, a.b }) |side| try callee.append(gpa_, .from(side));
                 } else {
                     var it = g.env.cells.sets.iterate(.from(a.a));
-                    while (it.next()) |e| {
-                        const c: CellId = .from(e.key);
-                        try callee.append(gpa_, c);
-                        try sides.append(gpa_, try g.sideCells(c));
-                    }
+                    while (it.next()) |e| try callee.append(gpa_, .from(e.key));
                 }
+                // §2.9 rule 4 (#1485): a side in a group stands at its images
+                // there; two sides of one group whose images meet at `X` are two
+                // disjoint sets of positions of `X`, apart under `exclOf(X)`.
+                var extra: CondId = Cond.yes;
+                var groups: Ids.FixedDict(3) = .{};
+                defer groups.deinit(gpa_);
+                var gids: std.ArrayList(u32) = .empty;
+                defer gids.deinit(gpa_);
+                var keys: std.ArrayList(Cond.Table.HypKey) = .empty;
+                defer keys.deinit(gpa_);
+                for (callee.items) |c| {
+                    keys.clearRetainingCapacity();
+                    var gid: u32 = Ids.none_int;
+                    var side: SetId = .none;
+                    const x = g.env.cells.get(c);
+                    if (x.origin == .param and !mutated("cert-rule4-sum")) if (try g.groupOf(x.a, .from(x.b))) |grp| {
+                        const got = try groups.getOrPut(gpa_, .{ x.a, grp.prefix.int(), grp.node.int() });
+                        if (!got.found_existing) got.value_ptr.* = groups.count() - 1;
+                        if (try g.groupImages(c, grp, got.value_ptr.*, &keys)) {
+                            gid = got.value_ptr.*;
+                            for (keys.items) |k| side = try g.env.cells.sets.insert(gpa_, g.env.charge, side, k.image.int(), 0);
+                        }
+                    };
+                    if (gid == Ids.none_int) side = try g.sideCells(c);
+                    try sides.append(gpa_, side);
+                    try gids.append(gpa_, gid);
+                }
+                if (std.mem.indexOfNone(u32, gids.items, &.{Ids.none_int}) != null) extra = try g.ruleFourSides(t, callee.items, gids.items, sides.items);
                 // Two sides (a `sep`, or an `apart` of two): merged along their
                 // tries, memoised per node pair; more, one into the other.
                 // Two positions of one image through `⟲` (§2.9 rule 3).
-                var extra: CondId = Cond.yes;
-                if (sides.items.len >= 2) extra = try g.positionsThroughLevels(t, callee.items, sides.items);
+                if (sides.items.len >= 2) extra = try t.@"and"(gpa_, g.env.charge, extra, try g.positionsThroughLevels(t, callee.items, sides.items));
                 var acc: Cond.Table.Agg = .{};
                 if (sides.items.len == 2) {
                     acc = try t.aggMergeSets(gpa_, g.env.charge, g.env.cells, g.env.places, sides.items[0], sides.items[1]);
@@ -1417,6 +1668,11 @@ pub const Views = struct {
     shapes: *Shape.Table,
     conds: *Cond.Table,
     sums: *const Summary.Table,
+    /// The group being solved, while one is (`Groups`): which classes are
+    /// its members' ports, so a view of one is a hypothesis node (#1485).
+    group: ?GroupPorts = null,
+
+    pub const GroupPorts = struct { ctx: *anyopaque, isPort: *const fn (ctx: *anyopaque, class: ClassId) bool };
 
     const ViewEnv = struct { class: ClassId, args: Ids.Range, label: LabelId };
 
@@ -1466,6 +1722,7 @@ pub const Views = struct {
             .leaf => {
                 if (v.places.kind(at) != .@"var") return at;
                 var none: Scratch = .{};
+                defer none.deinit(gpa_);
                 var g = v.grafter(gpa_, account_, e, &none);
                 defer g.deinit();
                 return g.instantiatedPlace(at, d.cells);
@@ -1529,6 +1786,7 @@ pub const Views = struct {
     fn leafImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!NodeId {
         const v = of(ctx);
         var none: Scratch = .{};
+        defer none.deinit(gpa_);
         var g = v.grafter(gpa_, account_, e, &none);
         defer g.deinit();
         return g.viewLeaf(&v.members, t.place(template), t.cells(template));
@@ -1537,6 +1795,7 @@ pub const Views = struct {
     fn partsImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId, out: *std.ArrayList(Shape.Table.LeafPart)) Error!void {
         const v = of(ctx);
         var none: Scratch = .{};
+        defer none.deinit(gpa_);
         var g = v.grafter(gpa_, account_, e, &none);
         defer g.deinit();
         return g.eagerParts(t.place(template), t.cells(template), out);
@@ -1545,9 +1804,48 @@ pub const Views = struct {
     fn cellsImage(ctx: *anyopaque, _: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, s: SetId, at: PlaceId) Error!SetId {
         const v = of(ctx);
         var none: Scratch = .{};
+        defer none.deinit(gpa_);
         var g = v.grafter(gpa_, account_, e, &none);
         defer g.deinit();
         return g.imageCells(s, at);
+    }
+
+    /// The fold certificate's readers (§8 slice 4, #1485), set on `conds`
+    /// once, as `resolver` is.
+    pub fn hyp(v: *Views) Cond.Table.Hyp {
+        return .{ .ctx = v, .envOf = hypEnvOf, .keys = hypKeys };
+    }
+
+    /// A view's environment when its class is a hypothesis: a port of the
+    /// group being solved (`group`), or a settled class whose certificate
+    /// the induction proved (`Summary.Table.certified`).
+    fn hypEnvOf(ctx: *anyopaque, shapes: *Shape.Table, n: NodeId) ?u32 {
+        const v = of(ctx);
+        const e = shapes.nodes.items(.b)[n.int()];
+        if (e >= v.envs.items.len) return null;
+        const class = v.envs.items[e].class;
+        if (v.sums.certified(class)) return e;
+        const g = v.group orelse return null;
+        return if (g.isPort(g.ctx, class)) e else null;
+    }
+
+    /// The certificate's keys `cells` at environment `e`, each with its
+    /// images by §2.9 rule 4 (`Grafter.ruleFourKey`).
+    fn hypKeys(ctx: *anyopaque, gpa_: Allocator, charge: Ids.Charge, e: u32, cells: SetId, out: *std.ArrayList(Cond.Table.HypKey)) Error!void {
+        const v = of(ctx);
+        var none: Scratch = .{};
+        defer none.deinit(gpa_);
+        var g = v.grafter(gpa_, charge.account, e, &none);
+        defer g.deinit();
+        var groups: Ids.FixedDict(3) = .{};
+        defer groups.deinit(gpa_);
+        var it = v.cells.sets.iterate(cells);
+        while (it.next()) |x| {
+            try charge.reserve(gpa_, .inspection, 1);
+            const c: CellId = .from(x.key);
+            if (v.cells.origin(c) == .mark) continue;
+            try g.ruleFourKey(c, x.value == 1, &groups, out);
+        }
     }
 
     /// The resolver of the `inst` atoms calls make (§2.11 *κ across a call*,
@@ -1560,6 +1858,7 @@ pub const Views = struct {
     fn resolveImage(ctx: *anyopaque, t: *Cond.Table, gpa_: Allocator, charge: Ids.Charge, k: u32, e: u32, set: bool) Error!CondId {
         const v = of(ctx);
         var none: Scratch = .{};
+        defer none.deinit(gpa_);
         var g = v.grafter(gpa_, charge.account, e, &none);
         defer g.deinit();
         if (!set) return t.instantiate(gpa_, charge, .from(k), .{ .ctx = &g, .atom = Grafter.atom });
@@ -1581,6 +1880,7 @@ pub const Views = struct {
         if (t.kind(template) != .leaf) return null;
         const cell = rerootCell(v.cells, t.cells(template)) orelse return null;
         var none: Scratch = .{};
+        defer none.deinit(gpa_);
         var g = v.grafter(gpa_, account_, e, &none);
         defer g.deinit();
         const x = v.cells.get(cell);
@@ -1590,6 +1890,7 @@ pub const Views = struct {
     fn reachImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, c: CellId, approx: u1) Error!SetId {
         const v = of(ctx);
         var none: Scratch = .{};
+        defer none.deinit(gpa_);
         var g = v.grafter(gpa_, account_, e, &none);
         defer g.deinit();
         const x = v.cells.get(c);

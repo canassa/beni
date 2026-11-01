@@ -215,6 +215,10 @@ const ReadOff = struct {
         return out;
     }
 
+    fn imageOf(ctx: *anyopaque, c: CellId) Error!CellId {
+        return image(@ptrCast(@alignCast(ctx)), c);
+    }
+
     /// One cell's image in the class (as `relabel` maps each member).
     fn image(r: *ReadOff, c: CellId) Error!CellId {
         const set = try r.relabel(try r.env.cells.sets.insert(r.env.gpa, r.env.charge, .none, c.int(), 0));
@@ -907,7 +911,19 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     // Published as the eager graft made it (§2.11 *κ at a view*): each
     // view, and each node holding one, as its eager image.
     _ = try env.shapes.eager(gpa, env.account(), env.places, env.cells, result.node);
+    // The hypothesis nodes of the value (§8 slice 4, #1485), before the map
+    // forgets which of its nodes were views.
+    var hyps: std.ArrayList(NodeId) = .empty;
+    defer hyps.deinit(gpa);
+    try hypViews(env, result.node, &hyps);
     const mapped = try env.shapes.map(gpa, env.account(), result.node, ro, ReadOff.relabel);
+    env.conds.hyp_nodes.clear();
+    defer {
+        env.conds.hyp_nodes.clear();
+        env.conds.hyp_image = null;
+    }
+    for (hyps.items) |h| if (env.shapes.memo_map.get(env.shapes.eagerOf(h))) |m| try env.conds.hyp_nodes.put(gpa, m, h);
+    env.conds.hyp_image = .{ .ctx = ro, .image = ReadOff.imageOf };
     // The value's κ, carried over the relabelling: each entry's node
     // relabelled, its path unchanged (§2.9).
     var presence: Presence = .{};
@@ -927,6 +943,39 @@ fn resOf(env: Env, ro: *ReadOff, uses: []NodeId, param_places: []const PlaceId, 
     // path-multiset obligation (§2.9, #1128).
     const widened = try env.conds.widenValue(gpa, env.charge, env.view(), mapped, kappa);
     return .{ .node = widened.node, .kappas = widened.kappas };
+}
+
+/// The views of `root` that are hypothesis nodes (`Cond.Table.hypEnv`), each
+/// once, into `out`: the value's structure walked, never a view's answer.
+fn hypViews(env: Env, root: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+    if (env.conds.hyp == null or root == .none) return;
+    const gpa = env.gpa;
+    const shapes = env.shapes;
+    var seen: Ids.FixedDict(1) = .{};
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(NodeId) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, root);
+    while (stack.pop()) |n| {
+        if ((try seen.getOrPut(gpa, .{n.int()})).found_existing) continue;
+        try env.charge.reserve(gpa, .inspection, 1);
+        const d = shapes.get(n);
+        switch (d.kind) {
+            .view => if (env.conds.hypEnv(env.view(), n) != null) try out.append(gpa, n),
+            .node => {
+                var it = shapes.overEntries(d.a);
+                while (it.next()) |e| try stack.append(gpa, e.node);
+            },
+            .delta => {
+                try stack.append(gpa, .from(d.a));
+                var it = shapes.overEntries(d.b);
+                while (it.next()) |e| try stack.append(gpa, e.node);
+            },
+            .@"union", .choice, .positions => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+            .recast => try stack.append(gpa, .from(d.a)),
+            .leaf => {},
+        }
+    }
 }
 
 /// A κ carried over a relabelling (`ReadOff`): each entry's node the map's

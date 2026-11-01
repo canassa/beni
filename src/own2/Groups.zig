@@ -1396,6 +1396,7 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.shapes.instantiation = mod.views.instantiation();
     mod.conds.shapes_hook = &mod.shapes;
     mod.conds.resolver = mod.views.resolver();
+    mod.conds.hyp = mod.views.hyp();
     mod.shapes.trackRelevance();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.result_of, none);
@@ -1658,6 +1659,13 @@ const Group = struct {
         return false;
     }
 
+    /// Whether `class` is a member's port, as the walk under way reads it.
+    fn isPort(ctx: *anyopaque, class: ClassId) bool {
+        const g: *Group = @ptrCast(@alignCast(ctx));
+        for (g.ports.items) |p| if (p.class == class) return true;
+        return false;
+    }
+
     fn enqueue(g: *Group, k: u32) Allocator.Error!void {
         if (g.queued[k]) return;
         g.queued[k] = true;
@@ -1696,11 +1704,14 @@ fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass,
     var g: Group = .{ .gpa = gpa, .members = members };
     defer g.deinit(gpa);
     mod.group = &g;
+    // A view of a member's port is a hypothesis node (#1485).
+    mod.views.group = .{ .ctx = &g, .isPort = Group.isPort };
     // Widen opens a join on a cycle place in a group's rounds (#1363).
     mod.shapes.widen_rounds = true;
     defer {
         mod.shapes.widen_rounds = false;
         mod.group = null;
+        mod.views.group = null;
         charging(mod, &mod.base_account);
     }
     const settled = runGroup(mod, &g, prepass, rs) catch |err| switch (err) {
@@ -1799,6 +1810,10 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         charging(mod, &r.account);
         // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
         r.class = g.ports.items[k].class;
+        // The joint fixpoint: every member's read-off, its certificates' step
+        // F(A) included, is below its port, whose certificates were the
+        // walks' hypotheses, so the induction proves them (§8 slice 4).
+        try mod.sums.certify(gpa, r.class);
         r.walks = g.walks[k];
         r.inference = g.inference[k];
         r.deliveries = g.deliveries[k];

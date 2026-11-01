@@ -126,12 +126,18 @@ pub fn Of(comptime Frame: type) type {
             var relied: CondId = Cond.yes;
             var stack: std.ArrayList(Push) = .empty;
             defer stack.deinit(gpa);
-            var seen: Ids.FixedDict(5) = .{};
+            var seen: Ids.FixedDict(6) = .{};
             defer seen.deinit(gpa);
-            var seen_x: Ids.FixedDict(6) = .{};
+            var seen_x: Ids.FixedDict(7) = .{};
             defer seen_x.deinit(gpa);
-            var seen_r: Ids.FixedDict(5) = .{};
+            var seen_r: Ids.FixedDict(6) = .{};
             defer seen_r.deinit(gpa);
+            // The certified views the spine meets (§2.11 item 3 (d), #1485).
+            var cert: Cert = .{};
+            defer cert.deinit(gpa);
+            const outer = f.cert;
+            f.cert = &cert;
+            defer f.cert = outer;
             // The written positions, by canonical path (#1253): the base's nodes
             // at the write's own path. A route beside the write that folds back
             // onto that path through the use shape's knot, or a reach that holds
@@ -159,16 +165,19 @@ pub fn Of(comptime Frame: type) type {
             // A deep demand's base is a reach, which no end of the write's
             // path names alone, and a `⊤` base may be anything: kept whole.
             arms.whole = deep or want.all or !split;
-            var read: Ids.FixedDict(4) = .{};
+            var read: Ids.FixedDict(5) = .{};
             defer read.deinit(gpa);
             var excl: SetId = .none;
+            // The test-only mutation leaves the tag out of the walk's keys.
+            const untagged = mutated("cert-untagged");
             try stack.append(gpa, .{ .it = .{ .u = use, .v = arg.node, .mode = .spine, .depth = 0, .folded = false, .stuck = false, .level = false, .held = false, .path = try f.env.places.rootPath(gpa, shapes.place(use)) } });
             while (stack.pop()) |p| {
                 try f.env.charge.reserve(gpa, .inspection, 1);
-                const it = p.it;
+                var it = p.it;
+                const key_tag: u32 = if (untagged) none else it.tag;
                 const state: u32 = @as(u32, @backingInt(it.mode)) | @as(u32, @intFromBool(it.folded)) << 2 | @as(u32, @intFromBool(it.stuck)) << 3 | @as(u32, @intFromBool(it.level)) << 4 | @as(u32, @intFromBool(it.held)) << 5 | (if (it.mode == .spine) it.depth << 6 else 0);
                 if (it.mode == .read) {
-                    const rg = try seen_r.getOrPut(gpa, .{ it.v.int(), @as(u32, @intFromBool(it.folded)) | @as(u32, @intFromBool(it.held)) << 1, it.path.int(), it.top.int(), it.inside.int() });
+                    const rg = try seen_r.getOrPut(gpa, .{ it.v.int(), @as(u32, @intFromBool(it.folded)) | @as(u32, @intFromBool(it.held)) << 1, it.path.int(), it.top.int(), it.inside.int(), key_tag });
                     if (rg.found_existing) {
                         try arms.edge(gpa, p.from, rg.value_ptr.*, none);
                         continue;
@@ -183,9 +192,9 @@ pub fn Of(comptime Frame: type) type {
                     continue;
                 }
                 const got = if (it.expand != none)
-                    try seen_x.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.expand, it.inside.int() })
+                    try seen_x.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.expand, it.inside.int(), key_tag })
                 else
-                    try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.inside.int() });
+                    try seen.getOrPut(gpa, .{ it.u.int(), it.v.int(), state, it.path.int(), it.inside.int(), key_tag });
                 if (got.found_existing) {
                     try arms.edge(gpa, p.from, got.value_ptr.*, p.arm);
                     continue;
@@ -193,6 +202,10 @@ pub fn Of(comptime Frame: type) type {
                 const idx = try arms.node(gpa);
                 got.value_ptr.* = idx;
                 try arms.edge(gpa, p.from, idx, p.arm);
+                // (d2): the spine meets a certified view at an exact prefix.
+                if (it.tag == none and it.mode == .spine and !it.stuck and !it.level and it.expand == none and it.depth <= exact_to)
+                    it.tag = try f.certDetect(it, idx, ws[it.depth..], &relied);
+                if (it.tag != none) (try cert.node_tags.getOrPut(gpa, .{idx})).value_ptr.* = it.tag;
                 if (it.expand != none) {
                     // The re-entries below a value below a split (`advance`),
                     // one node at a time: a part arms share is expanded once.
@@ -242,15 +255,21 @@ pub fn Of(comptime Frame: type) type {
                         .spine => .{ it.depth < ws.len and (marks & 2 != 0 or it.held), leaf != null and leaf.? < it.depth },
                         .below, .off, .read => .{ true, it.folded },
                     };
-                    if (beside and it.mode == .spine and exact) {
+                    if (beside and it.tag != none) {
+                        // Inside a certified view (§2.11 item 3 (d), #1485): a
+                        // position's reach by class, `K` left out, never its cells.
+                        const on: ?Step = if (it.mode == .spine and it.depth < ws.len) ws[it.depth] else null;
+                        try f.keepReach(bs, &want, try f.certReach(it.tag, on), folded, true, null, refs.items, &arms.kept.items[idx], &excl, &relied, null);
+                        if (it.mode == .spine) held_below = true;
+                    } else if (beside and it.mode == .spine and exact) {
                         // A stuck value is from above, where `ws[depth..]` is not its
                         // rest: whole, unless a held item already read it there.
                         if (!it.stuck)
                             try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &arms.kept.items[idx], &excl, &relied)
-                        else if (!it.held) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int() }, idx)) |r|
+                        else if (!it.held) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx)) |r|
                             try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &arms.kept.items[r], &excl, &relied, null);
                         held_below = true;
-                    } else if (beside) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int() }, idx)) |r| {
+                    } else if (beside) if (try arms.read(gpa, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx)) |r| {
                         const held = marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells));
                         if (!split or it.path == .none) {
                             const w: Where = .{ .path = it.path, .written = &written, .paths = where_paths };
@@ -289,7 +308,7 @@ pub fn Of(comptime Frame: type) type {
                             next.u = child;
                             try f.advance(it, s, next, true, &kids);
                             for (kids.items) |x| {
-                                try f.pushOff(.{ .step = s, .u = x.u, .v = x.v, .stuck = x.stuck, .level = x.level }, ws[it.depth], folded, it.path, it.ctx, &stack);
+                                try f.pushOff(.{ .step = s, .u = x.u, .v = x.v, .stuck = x.stuck, .level = x.level }, ws[it.depth], folded, it.path, it.ctx, it.tag, &stack);
                                 stack.items[stack.items.len - 1].it.expand = x.expand;
                             }
                         }
@@ -298,7 +317,7 @@ pub fn Of(comptime Frame: type) type {
                     const sp = try f.spineOf(bs, it);
                     if (want.all) {
                         const r = bs.ranges.items[sp];
-                        for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, it.path, it.ctx, &stack);
+                        for (bs.kids.items[r[0]..][0..r[1]]) |k| try f.pushOff(k, ws[it.depth], folded, it.path, it.ctx, it.tag, &stack);
                         continue;
                     }
                     // The keys the children are listed under, or the base's,
@@ -313,7 +332,7 @@ pub fn Of(comptime Frame: type) type {
                         var link = bs.head(sp, k);
                         while (link != none) : (link = bs.links.items[link][1]) {
                             try f.env.charge.reserve(gpa, .inspection, 1);
-                            try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, it.path, it.ctx, &stack);
+                            try f.pushOff(bs.kids.items[bs.links.items[link][0]], ws[it.depth], folded, it.path, it.ctx, it.tag, &stack);
                         }
                     }
                     continue;
@@ -364,7 +383,233 @@ pub fn Of(comptime Frame: type) type {
         /// path its read started at (`readStep`). `inside`: below a written
         /// position of one route, the cells only its approximation finds in
         /// its contents (`ownContents`, #1492), none elsewhere.
-        pub const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId, ctx: u32 = 0, expand: u32 = none, top: PathId = .none, inside: SetId = .none };
+        /// `tag`: inside a certified view the write's spine met (§2.11 item 3
+        /// (d), #1485), the item's `(occurrence, class)` (`Cert.tags`), none
+        /// elsewhere. It is part of the item's identity: every key the walk
+        /// merges items by holds it.
+        pub const Item = struct { u: NodeId, v: NodeId, mode: Mode, depth: u32, folded: bool, stuck: bool, level: bool, held: bool, path: PathId, ctx: u32 = 0, expand: u32 = none, top: PathId = .none, inside: SetId = .none, tag: u32 = none };
+
+        /// The certified views of one write's walk (§2.11 item 3 (d), #1485):
+        /// per occurrence (the spine's item at a view `V` of a certified
+        /// class `C`) its environment, `C`'s template root and the write's
+        /// class `K`; the tags `(occurrence, class)`; and per tag the reach
+        /// by class without `K`, memoised by class.
+        pub const Cert = struct {
+            occs: std.ArrayList(Occ) = .empty,
+            ids: Ids.FixedDict(2) = .{},
+            tags: std.ArrayList([2]u32) = .empty,
+            reach: Ids.FixedDict(1) = .{},
+            inst: Ids.FixedDict(2) = .{},
+            /// Per node of the walk's graph (`Arms`), its tag, for C7.
+            node_tags: Ids.FixedDict(1) = .{},
+            pub const Occ = struct { env: u32, k: NodeId, spine: u32 };
+            pub fn deinit(c: *Cert, gpa: Allocator) void {
+                c.occs.deinit(gpa);
+                c.ids.deinit(gpa);
+                c.tags.deinit(gpa);
+                c.reach.deinit(gpa);
+                c.inst.deinit(gpa);
+                c.node_tags.deinit(gpa);
+            }
+            fn intern(c: *Cert, gpa: Allocator, occ: u32, cls: NodeId) Allocator.Error!u32 {
+                const got = try c.ids.getOrPut(gpa, .{ occ, cls.int() });
+                if (!got.found_existing) {
+                    got.value_ptr.* = @intCast(c.tags.items.len);
+                    try c.tags.append(gpa, .{ occ, cls.int() });
+                }
+                return got.value_ptr.*;
+            }
+        };
+
+        fn certOf(f: *Frame) ?*Cert {
+            return @ptrCast(@alignCast(f.cert orelse return null));
+        }
+
+        /// The tag a child at step `s` of an item tagged `tag` carries: the
+        /// child's class in `C`'s fold (`certKid`), none where it has none.
+        pub fn certStep(f: *Frame, tag: u32, s: Step) Error!u32 {
+            if (tag == none) return none;
+            const c = certOf(f) orelse return none;
+            const t = c.tags.items[tag];
+            const kid = try f.certKid(.from(t[1]), s) orelse return none;
+            return c.intern(f.gpa, t[0], kid);
+        }
+
+        /// The class of `C`'s fold one step `s` below class `cls` (a node of
+        /// the callee's widened `res`, a join's sides one class with it), null
+        /// for none or several. A `⟲` is every return of the place's cycle
+        /// below `cls`: one class, or none.
+        pub fn certKid(f: *Frame, cls: NodeId, s: Step) Error!?NodeId {
+            const shapes = f.env.shapes;
+            var got: ?NodeId = null;
+            var stack: std.ArrayList(NodeId) = .empty;
+            defer stack.deinit(f.gpa);
+            var seen: Ids.FixedDict(1) = .{};
+            defer seen.deinit(f.gpa);
+            if (s.kind == .level) {
+                // The re-entries below `cls` at its place.
+                const at = shapes.place(cls);
+                try f.certKidsAll(cls, &stack);
+                while (stack.pop()) |x| {
+                    try f.env.charge.reserve(f.gpa, .inspection, 1);
+                    if ((try seen.getOrPut(f.gpa, .{x.int()})).found_existing) continue;
+                    if (shapes.place(x) == at) {
+                        if (got != null and got.? != x) return null;
+                        got = x;
+                    }
+                    try f.certKidsAll(x, &stack);
+                }
+                return got;
+            }
+            try stack.append(f.gpa, cls);
+            while (stack.pop()) |x| {
+                try f.env.charge.reserve(f.gpa, .inspection, 1);
+                if ((try seen.getOrPut(f.gpa, .{x.int()})).found_existing) continue;
+                const d = shapes.get(x);
+                const kid: ?NodeId = switch (d.kind) {
+                    .@"union", .choice, .positions => blk: {
+                        try stack.appendSlice(f.gpa, &.{ .from(d.a), .from(d.b) });
+                        break :blk null;
+                    },
+                    .node => shapes.overGet(d.a, s),
+                    .delta => shapes.overGet(d.b, s) orelse blk: {
+                        try stack.append(f.gpa, .from(d.a));
+                        break :blk null;
+                    },
+                    else => null,
+                };
+                if (kid) |k| {
+                    if (got != null and got.? != k) return null;
+                    got = k;
+                }
+            }
+            return got;
+        }
+
+        /// The classes one step below `cls`, each step's, a join's sides'.
+        pub fn certKidsAll(f: *Frame, cls: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+            const shapes = f.env.shapes;
+            const d = shapes.get(cls);
+            switch (d.kind) {
+                .@"union", .choice, .positions => {
+                    try f.certKidsAll(.from(d.a), out);
+                    try f.certKidsAll(.from(d.b), out);
+                },
+                .node => {
+                    var it = shapes.overEntries(d.a);
+                    while (it.next()) |e| try out.append(f.gpa, e.node);
+                },
+                .delta => {
+                    var it = shapes.overEntries(d.b);
+                    while (it.next()) |e| try out.append(f.gpa, e.node);
+                    try f.certKidsAll(.from(d.a), out);
+                },
+                else => {},
+            }
+        }
+
+        /// (d)'s premises at a spine item (§2.11 item 3 (d)): its value is a
+        /// view `V` of a certified class (tested before it is forced), at an
+        /// exact prefix, and the rest of the write's path lies in one class
+        /// `K` of the view's template. Then the call relies on κ̂(V, K), and
+        /// the item is the occurrence: its tag. None when a premise fails or
+        /// κ̂ fails (the walk then compares cells).
+        pub fn certDetect(f: *Frame, it: Item, idx: u32, rest: []const Step, relied: *CondId) Error!u32 {
+            const c = certOf(f) orelse return none;
+            const shapes = f.env.shapes;
+            if (mutated("cert-view-cells")) return none;
+            if (shapes.kind(it.v) != .view) return none;
+            const e = f.env.conds.hypEnv(f.env.view(), it.v) orelse return none;
+            const root: NodeId = .from(shapes.get(it.v).a);
+            var k = root;
+            for (rest) |s| k = try f.certKid(k, s) orelse return none;
+            const kh = try f.env.conds.certRead(f.gpa, f.env.charge, f.env.view(), e, k);
+            if (Cond.Table.fails(kh)) return none;
+            relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, kh);
+            try c.occs.append(f.gpa, .{ .env = e, .k = k, .spine = idx });
+            return c.intern(f.gpa, @intCast(c.occs.items.len - 1), root);
+        }
+
+        /// The cells of class `cls` under occurrence `occ`'s environment:
+        /// the certificate's keys instantiated by §2.9 rule 4, as a set.
+        pub fn certCells(f: *Frame, occ: u32, cls: NodeId) Error!SetId {
+            const c = certOf(f).?;
+            const gpa = f.gpa;
+            const got = try c.inst.getOrPut(gpa, .{ occ, cls.int() });
+            if (got.found_existing) return .from(got.value_ptr.*);
+            got.value_ptr.* = SetId.none.int();
+            const h = f.env.conds.hyp.?;
+            var keys: std.ArrayList(Cond.Table.HypKey) = .empty;
+            defer keys.deinit(gpa);
+            try h.keys(h.ctx, gpa, f.env.charge, c.occs.items[occ].env, try f.env.shapes.cellsOf(gpa, f.account(), &f.env.cells.sets, cls), &keys);
+            var s: SetId = .none;
+            for (keys.items) |key| {
+                const old = f.env.cells.sets.get(s, key.image.int()) orelse 0;
+                s = try f.env.cells.sets.insert(gpa, f.env.charge, s, key.image.int(), old | @intFromBool(key.approx));
+            }
+            (try c.inst.getOrPut(gpa, .{ occ, cls.int() })).value_ptr.* = s.int();
+            return s;
+        }
+
+        /// The reach of a position of class `tag`'s inside its occurrence, by
+        /// class: the cells of every class its class reaches in `C`'s fold,
+        /// `K` left out (§2.11 item 3 (d)). Memoised by tag, a class of one
+        /// occurrence, never by node. `skip`: a step whose child is not read
+        /// (the write's own next step, on the spine), none for every step.
+        pub fn certReach(f: *Frame, tag: u32, skip: ?Step) Error!SetId {
+            const c = certOf(f).?;
+            const gpa = f.gpa;
+            const shapes = f.env.shapes;
+            const t = c.tags.items[tag];
+            const occ = c.occs.items[t[0]];
+            if (skip == null) if (c.reach.get(.{tag})) |hit| return .from(hit);
+            var acc: SetId = .none;
+            var stack: std.ArrayList(NodeId) = .empty;
+            defer stack.deinit(gpa);
+            var seen: Ids.FixedDict(1) = .{};
+            defer seen.deinit(gpa);
+            const cls: NodeId = .from(t[1]);
+            if (skip) |s| {
+                // The class itself and its children off the write's step.
+                if (cls != occ.k) acc = try f.env.cells.sets.unionWith(gpa, f.env.charge, acc, try f.certCells(t[0], cls));
+                (try seen.getOrPut(gpa, .{cls.int()})).value_ptr.* = 0;
+                var kids: std.ArrayList(NodeId) = .empty;
+                defer kids.deinit(gpa);
+                try f.certKidsOff(cls, s, &kids);
+                try stack.appendSlice(gpa, kids.items);
+            } else try stack.append(gpa, cls);
+            while (stack.pop()) |x| {
+                try f.env.charge.reserve(gpa, .inspection, 1);
+                if ((try seen.getOrPut(gpa, .{x.int()})).found_existing) continue;
+                if (x != occ.k) acc = try f.env.cells.sets.unionWith(gpa, f.env.charge, acc, try f.certCells(t[0], x));
+                try f.certKidsAll(x, &stack);
+            }
+            _ = shapes;
+            if (skip == null) (try c.reach.getOrPut(gpa, .{tag})).value_ptr.* = acc.int();
+            return acc;
+        }
+
+        /// The classes one step below `cls` at every step but `s`.
+        pub fn certKidsOff(f: *Frame, cls: NodeId, s: Step, out: *std.ArrayList(NodeId)) Error!void {
+            const shapes = f.env.shapes;
+            const d = shapes.get(cls);
+            switch (d.kind) {
+                .@"union", .choice, .positions => {
+                    try f.certKidsOff(.from(d.a), s, out);
+                    try f.certKidsOff(.from(d.b), s, out);
+                },
+                .node => {
+                    var it = shapes.overEntries(d.a);
+                    while (it.next()) |e| if (e.step.word() != s.word()) try out.append(f.gpa, e.node);
+                },
+                .delta => {
+                    var it = shapes.overEntries(d.b);
+                    while (it.next()) |e| if (e.step.word() != s.word()) try out.append(f.gpa, e.node);
+                    try f.certKidsOff(.from(d.a), s, out);
+                },
+                else => {},
+            }
+        }
 
         /// The written positions of one write (`otherPaths`): its canonical
         /// path and the argument's nodes there.
@@ -448,6 +693,8 @@ pub fn Of(comptime Frame: type) type {
         pub fn advance(f: *Frame, it: Item, s: Step, next0: Item, lazy: bool, out: *std.ArrayList(Item)) Error!void {
             var next = next0;
             next.path = try f.routePath(it.path, it.mode, s);
+            // The child's class in the certified view, from `it`'s (#1485).
+            next.tag = try f.certStep(it.tag, s);
             if (it.stuck) {
                 if (s.kind == .level) return;
                 try out.append(f.gpa, next);
@@ -831,9 +1078,11 @@ pub fn Of(comptime Frame: type) type {
         }
 
         /// A child of a node on the write's path, off it unless at its step.
-        pub fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, from: PathId, ctx: u32, out: *std.ArrayList(Push)) Error!void {
+        /// `tag` is the pushing item's: the child's is its class one step
+        /// below (`certStep`), never read from the kid (§2.11 item 3 (d)).
+        pub fn pushOff(f: *Frame, k: Beside.Kid, on: Step, folded: bool, from: PathId, ctx: u32, tag: u32, out: *std.ArrayList(Push)) Error!void {
             if (k.step.word() == on.word()) return;
-            try out.append(f.gpa, .{ .it = .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level, .held = false, .path = try f.routePath(from, .spine, k.step), .ctx = ctx } });
+            try out.append(f.gpa, .{ .it = .{ .u = k.u, .v = k.v, .mode = .off, .depth = 0, .folded = folded, .stuck = k.stuck, .level = k.level, .held = false, .path = try f.routePath(from, .spine, k.step), .ctx = ctx, .tag = try f.certStep(tag, k.step) } });
         }
 
         /// The cells of `v` beside the base that may be one of its objects,
@@ -1228,4 +1477,11 @@ pub fn Of(comptime Frame: type) type {
             return at;
         }
     };
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }
