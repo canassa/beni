@@ -123,6 +123,11 @@ pub const Table = struct {
     prop_runs: Ids.FixedDict(3) = .{},
     /// `propagate`'s calls, numbered (`--ownership-propagate`'s lines).
     prop_calls: u32 = 0,
+    /// Set while `widenValue` propagates (#1485): a union or choice that a
+    /// fold position keys also keys each of its built sides there that no
+    /// state keys, since widen made them and no member snapshot holds them
+    /// (§2.9 *Keyed where a reader looks*).
+    widen_sides: bool = false,
     /// `withoutImpliedJoins`' answers by `(key, condition, position)`: all
     /// three immutable, so never stale.
     memo_implied: Ids.FixedDict(3) = .{},
@@ -646,7 +651,20 @@ pub const Table = struct {
     /// through the fold) and distinct arrivals owe `apart`, while one value
     /// in either arm of a choice stays one (`propagate` conjoins them at
     /// the class, `fold_cond`). The widened node and its κ.
-    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!struct { node: NodeId, kappas: Kappas } {
+    pub const Widened = struct { node: NodeId, kappas: Kappas };
+
+    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!Widened {
+        return t.widenValueOf(gpa, charge, v, x, kx, &.{x}, &.{kx});
+    }
+
+    /// `widenValue` of `x`, a join of `members` whose snapshot is `kx`: the
+    /// widened node's κ propagated from the members, each at its own
+    /// snapshot, not from `kx` (#1485). `kx` merges the members' snapshots,
+    /// and a member's knot (an exact fold) merged with another member's
+    /// position there is a collapsed fold, where every built node reads
+    /// `lost` (§2.9); `propagate` reads a join of its members, widened or
+    /// not, in lockstep with each.
+    pub fn widenValueOf(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas, members: []const NodeId, member_ctxs: []const Kappas) Error!Widened {
         var fold: Shape.Table.Fold = .{};
         defer fold.deinit(gpa);
         const lo = v.shapes.count();
@@ -668,8 +686,13 @@ pub const Table = struct {
         const w: NodeId = if (redir.get(raw.int())) |to| .from(to) else raw;
         // One member: `propagate` keeps its entries at each position it walks
         // outside a fold (§2.9 *Keyed where a reader looks*).
-        const kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null);
-        if (std.debug.runtime_safety and redir.count() > 0 and !try t.moveIsBisimulation(gpa, v, raw, w, x, kx, &redir, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source }))
+        // The join's union sides are keyed at a fold too (`widen_sides`),
+        // in the propagate and in the move's check alike.
+        const saved = t.widen_sides;
+        t.widen_sides = true;
+        defer t.widen_sides = saved;
+        const kappas = try t.propagate(gpa, charge, v, .none, w, members, member_ctxs, .alternatives, false, null);
+        if (std.debug.runtime_safety and redir.count() > 0 and !try t.moveIsBisimulation(gpa, v, raw, w, members, member_ctxs, &redir, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source }))
             std.debug.panic("ownership v2: a stable image's move is not a bisimulation of its raw image (§2.3, 4e)", .{});
         return .{ .node = w, .kappas = kappas };
     }
@@ -694,8 +717,9 @@ pub const Table = struct {
     /// images read alone (no memo, an account of their own) and compared
     /// position by position, each entry keyed at a node of the value
     /// renamed by σ. An entry keyed outside the value (a member's own) is
-    /// not compared: it names the same node in both.
-    fn moveIsBisimulation(t: *Table, gpa: Allocator, v: View, raw: NodeId, w: NodeId, x: NodeId, kx: Kappas, redir: *const Stable.Redirect, extra: Stable.Extra) Error!bool {
+    /// not compared: it names the same node in both. Both images are read
+    /// from the join's members (`widenValueOf`), as the widened one is.
+    fn moveIsBisimulation(t: *Table, gpa: Allocator, v: View, raw: NodeId, w: NodeId, members_in: []const NodeId, member_ctxs: []const Kappas, redir: *const Stable.Redirect, extra: Stable.Extra) Error!bool {
         var members: std.ArrayList(u32) = .empty;
         defer members.deinit(gpa);
         for (0..redir.count()) |i| try members.append(gpa, redir.key(@intCast(i)));
@@ -705,8 +729,8 @@ pub const Table = struct {
         const was = t.no_memo;
         t.no_memo = true;
         defer t.no_memo = was;
-        const rk = try t.propagatePlain(gpa, .growth(&scratch), v, raw, &.{x}, &.{kx});
-        const mk = try t.propagatePlain(gpa, .growth(&scratch), v, w, &.{x}, &.{kx});
+        const rk = try t.propagatePlain(gpa, .growth(&scratch), v, raw, members_in, member_ctxs);
+        const mk = try t.propagatePlain(gpa, .growth(&scratch), v, w, members_in, member_ctxs);
         var inside: Stable.Redirect = .{};
         defer inside.deinit(gpa);
         try Stable.reachable(v.shapes, gpa, w, &inside);
