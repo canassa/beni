@@ -36,7 +36,6 @@ constructors: std.MultiArrayList(Constructor) = .empty,
 launches: std.MultiArrayList(Launch) = .empty,
 roles: std.MultiArrayList(Role) = .empty,
 paths: std.ArrayList(InternPool.Symbol) = .empty,
-top_program: Types.TypeId = .none,
 selected: KindIndex = .none,
 validated: bool = false,
 
@@ -48,7 +47,6 @@ pub fn reset(plan: *Plan) void {
     plan.launches.clearRetainingCapacity();
     plan.roles.clearRetainingCapacity();
     plan.paths.clearRetainingCapacity();
-    plan.top_program = .none;
     plan.selected = .none;
     plan.validated = false;
 }
@@ -72,12 +70,6 @@ pub fn runtime(plan: *const Plan) ?Value {
     const index = @backingInt(plan.selected);
     std.debug.assert(index < plan.kinds.len);
     return plan.kinds.get(index).runtime;
-}
-
-pub fn find(plan: *const Plan, program: Types.TypeId) ?KindIndex {
-    if (!plan.validated) return null;
-    for (0..plan.kinds.len) |i| if (plan.kinds.get(i).program == program) return @fromBackingInt(@intCast(i));
-    return null;
 }
 
 pub fn appendKind(plan: *Plan, gpa: Allocator, kind: Kind) Allocator.Error!KindIndex {
@@ -113,21 +105,17 @@ test "resolved entry plan reset removes every checked-store reference" {
         .launches = .{ .start = 0, .len = 1 },
         .roles = .{ .start = 0, .len = 1 },
     });
-    plan.top_program = program;
     try std.testing.expectEqual(@as(?Value, null), plan.runtime());
     plan.finish();
     try std.testing.expectEqualDeep(@as(?Value, value), plan.runtime());
-    try std.testing.expectEqual(@as(?KindIndex, @fromBackingInt(0)), plan.find(program));
     plan.reset();
     try std.testing.expectEqual(@as(usize, 0), plan.kinds.len);
     try std.testing.expectEqual(@as(usize, 0), plan.constructors.len);
     try std.testing.expectEqual(@as(usize, 0), plan.launches.len);
     try std.testing.expectEqual(@as(usize, 0), plan.roles.len);
     try std.testing.expectEqual(@as(usize, 0), plan.paths.items.len);
-    try std.testing.expectEqual(Types.TypeId.none, plan.top_program);
     try std.testing.expectEqual(KindIndex.none, plan.selected);
     try std.testing.expectEqual(@as(?Value, null), plan.runtime());
-    try std.testing.expectEqual(@as(?KindIndex, null), plan.find(program));
     plan.finish(); // A successful legacy recheck has no generic runtime.
     try std.testing.expectEqual(@as(?Value, null), plan.runtime());
 }

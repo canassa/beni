@@ -2487,14 +2487,6 @@ const Emitter = struct {
         plan.reset();
         if (e.options.platform.entry_kinds.len == 0) return;
         errdefer plan.reset();
-        if (e.options.platform.program) |program| {
-            plan.top_program = e.session.checked.types.find(
-                e.graph(),
-                .platform,
-                try e.session.interner.getOrPut(e.gpa, platformModule(program)),
-                try e.session.interner.getOrPut(e.gpa, shortName(program)),
-            );
-        }
         const Identity = struct { module: Graph.Index, type: Interface.TypeIndex };
         const identities = try e.scratch.alloc(?Identity, e.options.platform.entry_kinds.len);
         @memset(identities, null);
@@ -2683,7 +2675,7 @@ const Emitter = struct {
                 plan.selected = resolved;
             };
         }
-        if (!e.hasErrors() and e.options.platform.entry_kinds.len != 0 and e.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
+        if (!e.options.library and !e.hasErrors() and e.options.platform.entry_kinds.len != 0 and e.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
             if (e.options.platform.program) |program| try e.reportInFile(.invalid_entry_kind, .{ .path = try e.manifestPath() }, "The platform has no runtime file or entryKinds row for its top Program `{s}`.", .{program});
         }
         if (e.hasErrors()) plan.reset() else plan.finish();

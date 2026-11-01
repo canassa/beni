@@ -1,0 +1,6 @@
+-- The golden pins the generic entry's runtime import and run(main) call.
+import Start
+
+
+main : Start.Program
+main = Start.make "generic runtime"
