@@ -215,6 +215,10 @@ const ReadOff = struct {
         return out;
     }
 
+    fn condOf(ctx: *anyopaque, k: CondId) Error!CondId {
+        return cond(@ptrCast(@alignCast(ctx)), k);
+    }
+
     fn imageOf(ctx: *anyopaque, c: CellId) Error!CellId {
         return image(@ptrCast(@alignCast(ctx)), c);
     }
@@ -929,7 +933,7 @@ fn publish(env: Env, ro: *ReadOff, result: Value) Error!Summary.Table.Joined {
         env.conds.hyp_image = null;
     }
     for (hyps.items) |h| if (env.shapes.memo_map.get(env.shapes.eagerOf(h))) |m| try env.conds.hyp_nodes.put(gpa, m, h);
-    env.conds.hyp_image = .{ .ctx = ro, .image = ReadOff.imageOf };
+    env.conds.hyp_image = .{ .ctx = ro, .image = ReadOff.imageOf, .cond = ReadOff.condOf };
     // The value's κ, carried over the relabelling: each entry's node
     // relabelled, its path unchanged (§2.9).
     var presence: Presence = .{};

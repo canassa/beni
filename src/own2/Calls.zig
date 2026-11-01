@@ -285,6 +285,10 @@ const Pre = struct {
         s.parts = .{ .start = first, .len = @as(u32, @intCast(w.parts.items.len)) - first };
     }
 
+    /// An entry of `certView`'s walk: a class of the template, its path, and
+    /// its position in the class's snapshot (`Cond.Table.ClassPos`).
+    const CertEntry = struct { tn: u32, path: u32, pos: Cond.Table.ClassPos };
+
     /// Reader 2 (§8 slice 4, #1485): the certificate of a view `st.node` of a
     /// certified class at environment `e`, below `st.path`. Each class of
     /// its template meets each canonical path the walk of its steps reaches
@@ -299,44 +303,46 @@ const Pre = struct {
         var out: Cond.Table.ClassAggs = .{};
         var seen: Ids.FixedDict(2) = .{};
         defer seen.deinit(gpa);
-        var stack: std.ArrayList([2]u32) = .empty;
+        var stack: std.ArrayList(CertEntry) = .empty;
         defer stack.deinit(gpa);
         var keys: std.ArrayList(Cond.Table.HypKey) = .empty;
         defer keys.deinit(gpa);
         var merged: Ids.FixedDict(2) = .{};
         defer merged.deinit(gpa);
-        try stack.append(gpa, .{ shapes.get(st.node).a, st.path.int() });
+        try stack.append(gpa, .{ .tn = shapes.get(st.node).a, .path = st.path.int(), .pos = conds.classPos(w.env.view(), e) });
         while (stack.pop()) |x| {
             try charge.reserve(gpa, .inspection, 1);
-            if ((try seen.getOrPut(gpa, .{ x[0], x[1] })).found_existing) continue;
-            const tn: NodeId = .from(x[0]);
-            const path: PathId = .from(x[1]);
+            if ((try seen.getOrPut(gpa, .{ x.tn, x.path })).found_existing) continue;
+            const tn: NodeId = .from(x.tn);
+            const path: PathId = .from(x.path);
             if (!st.below or path != st.path) {
-                const a = try conds.certClassAgg(gpa, charge, w.env.view(), e, tn, &keys, &merged);
+                var a = try conds.certClassAgg(gpa, charge, w.env.view(), e, tn, &keys, &merged);
+                // The certificate's condition at the class, its κ (#1485).
+                if (!mutated("cert-keys-only-reader2")) a.pairs = try conds.@"and"(gpa, charge, a.pairs, try conds.classCond(gpa, charge, w.env.view(), x.pos, tn, e));
                 if (w.trace) |tr| for (keys.items) |k| try tr.append(gpa, .{ .key = path, .cell = k.image, .state = w.cur });
                 if (a.all_len > 0 or a.pairs != Cond.yes) out = try conds.classesMerge(gpa, charge, w.env.view(), out, .{ .map = try conds.mapPut(gpa, charge, Ids.none_int, path.int(), try conds.agg(gpa, a)), .len = 1 }, true);
             }
-            try w.certKids(tn, path, &stack);
+            try w.certKids(tn, path, x.pos, &stack);
         }
         return out;
     }
 
     /// `certView`'s children of class `tn` at `path`: a join's sides at the
     /// path, a node's or delta's entries one step below.
-    fn certKids(w: *Pre, tn: NodeId, path: PathId, stack: *std.ArrayList([2]u32)) Error!void {
+    fn certKids(w: *Pre, tn: NodeId, path: PathId, pos: Cond.Table.ClassPos, stack: *std.ArrayList(CertEntry)) Error!void {
         const shapes = w.env.shapes;
         const d = shapes.get(tn);
         switch (d.kind) {
             .@"union", .choice, .positions => {
-                try w.certKids(.from(d.a), path, stack);
-                try w.certKids(.from(d.b), path, stack);
+                try w.certKids(.from(d.a), path, pos, stack);
+                try w.certKids(.from(d.b), path, pos, stack);
             },
             .node, .delta => {
-                if (d.kind == .delta) try w.certKids(.from(d.a), path, stack);
+                if (d.kind == .delta) try w.certKids(.from(d.a), path, pos, stack);
                 var it = shapes.overEntries(if (d.kind == .node) d.a else d.b);
                 while (it.next()) |c| {
                     const cp = (try w.env.places.extend(w.env.gpa, w.env.charge, path, c.step)) orelse continue;
-                    try stack.append(w.env.gpa, .{ c.node.int(), cp.int() });
+                    try stack.append(w.env.gpa, .{ .tn = c.node.int(), .path = cp.int(), .pos = try w.env.conds.classStep(w.env.gpa, w.env.charge, w.env.view(), pos, c.step) });
                 }
             },
             else => {},
