@@ -1145,7 +1145,7 @@ const Reader = struct {
         // it is a node no constructor interns, its map tied when the knot is
         // read (`unit`). Every other kind is its constructor's, its parts
         // read before it.
-        const id: NodeId = switch (kind) {
+        var id: NodeId = switch (kind) {
             .view => return error.Malformed, // a block holds no views: they are forced at publish (§2.11)
             .leaf => try shapes.leaf(gpa, acct, at, try r.opt(SetId, .set)),
             .node => blk: {
@@ -1204,9 +1204,17 @@ const Reader = struct {
         // certificate's readers read at the class (C4, §8 slice 4, #1485).
         const fc = try r.opt(CondId, .cond);
         if (fc != .none) {
+            // It is one class's, so it is kept on a node of that class alone,
+            // as the writer's widen made it: a raw node, never the one its
+            // constructor interns. Under the atom rule a class can be a plain
+            // leaf, and an interned leaf is every class's with those cells
+            // (#1570): one producer's class would read another's certificate.
+            if (shapes.interned(id)) id = try shapes.rawCopy(gpa, acct, id);
             const conds = r.env.conds;
-            const old = conds.fold_cond.get(id);
-            try conds.fold_cond.put(gpa, id, if (old) |o| try conds.@"and"(gpa, r.env.charge, o, fc) else fc);
+            if (std.debug.runtime_safety and conds.fold_cond.get(id) != null)
+                std.debug.panic("ownership v2: a block gives one node two classes' fold obligations (C4, #1570)", .{});
+            try conds.fold_cond.put(gpa, id, fc);
+            conds.fold_cond_n += 1;
         }
         _ = try r.steps(true, false);
         try r.infos.append(gpa, .{ .node = id, .at_summary = at_summary, .cursor = cursor, .kappa = kappa, .place = at, .first = first, .len = @intCast(r.edges.items.len - first), .absorbed = absorbed });

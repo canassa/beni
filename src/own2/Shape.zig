@@ -559,6 +559,15 @@ pub const Table = struct {
         return .from(got.value_ptr.*);
     }
 
+    /// Whether `n` is the node its constructor interns for its record, one
+    /// any other maker of that record meets (`make`).
+    pub fn interned(t: *const Table, n: NodeId) bool {
+        const d = t.nodes.get(n.int());
+        const keyed: u32 = if (d.kind == .recast or d.kind == .delta) Ids.none_int else d.cells.int();
+        const got = t.intern.get(.{ @backingInt(d.kind), d.place.int(), keyed, d.a, d.b }) orelse return false;
+        return got == n.int();
+    }
+
     pub fn leaf(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, c: SetId) Error!NodeId {
         return t.make(gpa, account, .{ .kind = .leaf, .place = at, .cells = c, .a = 0, .b = 0, .reach = .none });
     }
@@ -1482,6 +1491,20 @@ pub const Table = struct {
         try account.reserve(.shape, 1);
         const id: NodeId = .from(t.count());
         try t.nodes.append(gpa, .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
+        return id;
+    }
+
+    /// A raw copy of `n`: its record in a node no constructor interns, its
+    /// reach memo and that memo's `short` bit kept (#1517), as `widen`'s
+    /// emit copies a class that is its side. A node keyed outside the table
+    /// by the class it is an image of (`fold_cond`, #1570) is one of these,
+    /// so no other class meets it.
+    pub fn rawCopy(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!NodeId {
+        const id = try t.knot(gpa, account);
+        t.nodes.set(id.int(), t.nodes.get(n.int()));
+        const sb = &t.reach_short[0];
+        if (sb.bit_length <= id.int()) try sb.resize(gpa, @max(t.nodes.len, 2 * sb.bit_length), false);
+        sb.setValue(id.int(), n.int() < sb.bit_length and sb.isSet(n.int()));
         return id;
     }
 
