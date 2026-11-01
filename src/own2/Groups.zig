@@ -1635,8 +1635,11 @@ const Group = struct {
     scratch: Calls.Scratch = .{},
     /// The first group call at another instantiation than its member's own.
     poly: u32 = none,
+    /// Per member, its port at ⊥: the base of the induction's check.
+    bottoms: std.ArrayList(ClassId) = .empty,
 
     fn deinit(g: *Group, gpa: Allocator) void {
+        g.bottoms.deinit(gpa);
         g.index.deinit(gpa);
         g.ports.deinit(gpa);
         g.param_runs.deinit(gpa);
@@ -1806,10 +1809,14 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         @memset(uses, .none);
         const nothing = try mod.shapes.nothing(gpa, mod.account, res);
         try g.ports.append(gpa, .{ .class = try mod.sums.add(mod.env(), .{ .params = uses, .res = nothing }), .version = 0, .shape_res = nothing });
+        try g.bottoms.append(gpa, g.ports.items[k].class);
     }
     var inference = true;
     while (true) {
         if (!try pass(mod, g, prepass, rs, which, inference)) return false;
+        // A test-only mutation: stop after the first pass, before the
+        // fixpoint, so the induction's check must fire (C5).
+        if (mutated("cert-stop-early")) break;
         // The wake rule: a callee's new `res.shape` wakes an inference walk.
         var any = false;
         for (which, 0..) |*w, k| {
@@ -1826,13 +1833,15 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         }
         if (!any) break;
     }
+    if (std.debug.runtime_safety) try checkInduction(mod, g, prepass);
     for (rs, 0..) |*r, k| {
         charging(mod, &r.account);
         // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
         r.class = g.ports.items[k].class;
-        // The joint fixpoint: every member's read-off, its certificates' step
-        // F(A) included, is below its port, whose certificates were the
-        // walks' hypotheses, so the induction proves them (§8 slice 4).
+        // The joint fixpoint proves the certificates: every member's last
+        // walk read the ports as they stand, its hypothesis nodes their
+        // certificates, and its read-off is below its port, so F(A) ⊑ A,
+        // and the base is in F (§8 slice 4, *The proof is the stop rule's*).
         try mod.sums.certify(gpa, r.class);
         r.walks = g.walks[k];
         r.inference = g.inference[k];
@@ -2046,6 +2055,53 @@ fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r:
     });
 }
 
+/// C5, the induction checked again (§8 slice 4, *The proof is the stop
+/// rule's*, #1485), `runtime_safety` only: each member walked once more on
+/// an account of its own, its walk counts and edges untouched. Against the
+/// settled ports x*, its read-off is below its port (the step, F(A) ⊑ A);
+/// against every port at ⊥, it is too (the base: what an activation that
+/// makes no group call answers). The certificates are the ports' own `res`,
+/// so these are the claims every reader of a certified knot rests on.
+fn checkInduction(mod: *Module, g: *Group, prepass: *const Facts.Prepass) Error!void {
+    const gpa = mod.gpa;
+    const settled = try gpa.dupe(ClassId, g.out);
+    defer gpa.free(settled);
+    for (g.ports.items, 0..) |p, k| settled[k] = p.class;
+    for (g.members, 0..) |di, k| for ([_]bool{ false, true }) |base| {
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        charging(mod, &scratch);
+        if (base) for (g.ports.items, g.bottoms.items) |*p, b| {
+            p.class = b;
+        };
+        defer if (base) for (g.ports.items, settled) |*p, c| {
+            p.class = c;
+        };
+        const d = mod.in.bir.decls[di];
+        mod.cur_locals = d.locals_start;
+        scratch.source = d.inst_end.int() - d.inst_start.int();
+        g.reads.clearRetainingCapacity();
+        const run = g.param_runs.items[k];
+        var res = try Walk.walk(.{
+            .env = mod.env(),
+            .sums = &mod.sums,
+            .ctx = mod.context(),
+            .bir = mod.in.bir,
+            .decl = d,
+            .prepass = prepass,
+            .phase = .validation,
+            .param_places = g.param_places.items[run.start..][0..run.len],
+            .result_place = g.result_places.items[k],
+            .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
+            .comparison = mod.comparison[di],
+        });
+        defer res.deinit(gpa);
+        if (res.unbuilt != none) std.debug.panic("ownership v2: a settled group's member is unbuilt when walked again (C5, #1485)", .{});
+        if (!try mod.sums.leq(mod.env(), res.class, settled[k]))
+            std.debug.panic("ownership v2: the fold certificate's {s} fails: a member's read-off is not below its settled port (C5, #1485)", .{if (base) "base" else "step"});
+    };
+}
+
 /// `⊤call` over `d`'s places (O10).
 fn pessimisticOf(mod: *Module, d: Bir.Decl, di: u32, places: *std.ArrayList(PlaceId)) Error!ClassId {
     const res = try declPlaces(mod, d, di, places);
@@ -2230,4 +2286,11 @@ pub fn wordKindErrors(mod: *Module, out: *std.ArrayList(WordError)) Error!void {
             for (checks) |c| if (words & c.w.bit() != 0 and !c.ok) try out.append(mod.gpa, .{ .decl = @intCast(di), .slot = s[0], .word = c.w });
         }
     }
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }

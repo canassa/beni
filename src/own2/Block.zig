@@ -106,7 +106,8 @@ pub const magic: u32 = 0x324e574f;
 /// 13: a use shape's marks gain `D`, a deep read (§2.10, #1328).
 /// 14: a knot's side, base or inner may name any member, a cycle no child
 /// step closes (§2.11 *A cycle with no node on it*, #1335).
-pub const version: u32 = 14;
+/// 15: a class carries its fold certificate's mark (§8 slice 4, Q3, #1485).
+pub const version: u32 = 15;
 
 pub const none: u32 = Ids.none_int;
 
@@ -672,18 +673,24 @@ const Writer = struct {
         // same after a round trip.
         if (kappas == null) {
             try w.tok(.ref, none);
+            try w.tok(.ref, none);
         } else {
             // A widened class image's path-multiset obligation (§2.9, §3.6,
             // #1128) is stored with it, a settled certificate: the reader has no
             // fold to derive it from.
             var stored: ?CondId = conds.kappaGet(cur, p.node);
+            const fold = conds.fold_cond.get(p.node);
             // Into what is stored; a built node or a delta with nothing stored
             // reads `lost` already, and stays unstored (#1157's review).
-            if (conds.fold_cond.get(p.node)) |fc| {
+            if (fold) |fc| {
                 const built = d.kind == .node or d.kind == .delta;
                 if (stored) |s| stored = try conds.@"and"(gpa, w.env.charge, s, fc) else if (!built) stored = fc;
             }
             try w.ref(.cond, if (stored) |k| k.int() else none);
+            // And on its own: a fold certificate's readers read it at the
+            // class (`certRead`, `certView`), so the importer's table holds it
+            // as the module's does (C4, §8 slice 4, #1485).
+            try w.ref(.cond, if (fold) |k| k.int() else none);
         }
         // The projections that lead to a stored κ beyond the node's parts
         // (`entries`), each a position.
@@ -1104,7 +1111,7 @@ const Writer = struct {
         const gpa = w.env.gpa;
         const k = w.sums.get(c);
         const o = try w.owner(k.kappas);
-        try w.put(&.{ k.params.len, @as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2), @backingInt(k.origin) });
+        try w.put(&.{ k.params.len, @as(u32, @intFromBool(k.writes)) | (@as(u32, @intFromBool(k.entry)) << 1) | (@as(u32, @intFromBool(k.refs_top)) << 2) | (@as(u32, @intFromBool(w.sums.certified(c) and !mutated("cert-unmarked"))) << 3), @backingInt(k.origin) });
         try w.tok(.ref, try w.value(k.res, o));
         try w.ref(.owner, o);
         const uses = try w.owner(null);
@@ -1788,3 +1795,10 @@ const Writer = struct {
         }
     }
 };
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
+}

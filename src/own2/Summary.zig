@@ -984,6 +984,9 @@ pub const Table = struct {
         // `⊤call` is the top of the order: whatever another class supplies,
         // keeps or puts back (its write-backs included), `⊤call` may do.
         if (cb.origin == .unknown) return true;
+        // A certified class reads its knots by their certificates, where an
+        // uncertified one saturates: it is the stronger (§8 slice 4, #1485).
+        if (t.certified(b) and !t.certified(a)) return false;
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| if (!try leqUse(env, ua, ub)) return false;
         if (!try env.shapes.leq(gpa, env.account(), env.places, env.cells, ca.res, cb.res)) return false;
         if (!try env.conds.kappaLeq(gpa, env.charge, env.view(), ca.kappas, ca.res, cb.kappas, cb.res, false)) return false;
@@ -1495,6 +1498,9 @@ pub const Table = struct {
             }
             groups.shrinkRetainingCapacity(kept);
             if (groups.items.len > 0) try parts.append(arena, try std.fmt.allocPrint(arena, "res {s}", .{try std.mem.join(arena, ", ", groups.items)}));
+            // The fold certificate (§8 slice 4, *Publication*, #1485): each
+            // `res` line of a certified class is its entry `K {keys} κ`.
+            if (p.t.certified(p.class_id)) try parts.append(arena, "cert");
             for (0..k.funs.len) |i| {
                 const f = p.t.fun(p.class_id, @intCast(i));
                 var buf: std.Io.Writer.Allocating = .init(arena);

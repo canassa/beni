@@ -335,6 +335,7 @@ pub const Table = struct {
     pub const Resolver = algebra.Resolver;
     pub const Hyp = KappaRead.Hyp;
     pub const HypKey = KappaRead.HypKey;
+    pub const HypClass = KappaRead.HypClass;
     pub const HypImage = struct { ctx: *anyopaque, image: *const fn (ctx: *anyopaque, c: CellId) Error!CellId };
     pub const instAtom = algebra.instAtom;
     pub const instSet = algebra.instSet;
