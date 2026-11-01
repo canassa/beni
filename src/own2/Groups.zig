@@ -1830,8 +1830,13 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         }
         if (!any) break;
     }
-    if (mod.in.rewalk_check) try assertRewalks(mod, g, prepass);
-    if (std.debug.runtime_safety) try checkInduction(mod, g, prepass);
+    // Re-walks leave table state that later callers read, so they run only
+    // under the test-only flag and the cross-check build, never in a
+    // counted run (#1582, #1525).
+    if (mod.in.rewalk_check or (std.debug.runtime_safety and full_cross_check)) {
+        try assertRewalks(mod, g, prepass);
+        try checkInduction(mod, g, prepass);
+    }
     for (rs, 0..) |*r, k| {
         charging(mod, &r.account);
         // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
@@ -2094,7 +2099,8 @@ fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r:
 }
 
 /// C5, the induction checked again (§8 slice 4, *The proof is the stop
-/// rule's*, #1485), `runtime_safety` only: each member walked once more on
+/// rule's*, #1485), under `--ownership-rewalk-check` and
+/// `-Downership-full-cross-check` only: each member walked once more on
 /// an account of its own, its walk counts and edges untouched, against the
 /// settled ports x*: its read-off is below its port (the step, F(A) ⊑ A).
 /// The base is the step's depth-1 case and is not walked apart: a walk
@@ -2318,6 +2324,7 @@ pub fn wordKindErrors(mod: *Module, out: *std.ArrayList(WordError)) Error!void {
 }
 
 const v2_mutation = @import("ownership_options").v2_mutation;
+const full_cross_check = @import("ownership_options").full_cross_check;
 
 /// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
 fn mutated(comptime which: []const u8) bool {

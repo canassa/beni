@@ -8637,14 +8637,22 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
      last walk of each member, which read x* (`runGroup`). So no provisional Disjoint verdict of (d)
      survives a round, and none needs to be computed again.
 
-  *Check* (C5, `runtime_safety`, `Groups.checkInduction`): after the loop, each member is walked
+  *Check* (C5, `Groups.checkInduction`): after the loop, each member is walked
   once more against x*, on a scratch account, with its walk counts and edges untouched. Its read-off
   must be under its port (the step). No ownership fixture fires it. The base is not walked on its own.
   It is the depth-1 case of the step (item 3). A walk over ports at ⊥ also makes views that a later walk
   of the module meets, and that moves the later walk's records: the counted test of a call over a chain
   of nested choices went from 1 225 to 2 242 records at D = 32. The test-only mutation
   `cert-stop-early` stops the loop after its first pass, and the step check panics on
-  `o/FoldCertificate`.
+  `o/FoldCertificate`. *Where it runs (#1582, #1588):* C5 runs only under the hidden, test-only
+  `--ownership-rewalk-check`, which the corpus passes to every `--ownership=v2` dump, and in the
+  `-Downership-full-cross-check` build, beside #1582's re-walk check, never as an always-on
+  `runtime_safety` check. A check must not change what it checks (#1545): a re-walk leaves table
+  state (memos, stable images and their bases) that later callers read, and the counted tests measure
+  the safety build. Always on, with #1582's fix C5's walk lands on the port's own knot, and *the call
+  over a chain of nested choices* read 869 / 963 / 1 465 records at D = 8 / 16 / 32 (941 at D = 32
+  without C5), past its 1.5 times a doubling. The long-term fix for that test's sensitivity to memo
+  state is #1525: a count of the call's own records.
 - **Publication.** A certified class prints `cert` after its `res`. Each `res` line of such a class is
   its entry `K {keys} κ`, so the line is not printed twice. `Summary.leq` takes a certified class as the
   stronger. The block's format is version 15. A class record's flags carry the certified mark (bit 3),
@@ -8824,13 +8832,16 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   classes from its third walk on: the walk reads state its last walk left. It is neither the
   propagate memo, nor `no_memo`'s memos, nor the stable images' move, nor a `fold_cond` overwrite;
   `-Downership-full-cross-check` is clean. With #1538's atom rule reverted it goes. Both conflict
-  resolutions show it, so it does not come from either. C5 stays (rule 10), so the gates are red on
-  `LevelFresh` until #1582 is fixed.
+  resolutions show it, so it does not come from either. *Fixed by #1582:* `map`'s knot move now covers
+  the knot's entry (§2.3, 4e, step 3). Before that, C5 stayed (rule 10), so the gates were red on
+  `LevelFresh` until it was.
 - **R-7.4's ring walks once less (#1588).** Rebased, `m0` walks 5 and 7 times at k = 2 and 3, not
   6 and 8, and at k = 3 `m1`'s continuation is not spent, so the test's growth check there fails.
   The fixpoint is more precise than master's (the root's lists lose `{lost}` at k = 2, the cell-free
   `{lost}` at `#T0.1[*]` goes at k = 3). It is neither rule 4 across classes nor the union sides at a
-  fold. Until its soundness is shown, the test is left as it is, and red.
+  fold. *Settled:* the cause is the hypothesis nodes (with `Calls.Views.group` unset the walks are 6
+  and 8 again, with master's records and summaries), and the fixpoint is sound (§2.3, the atom rule's
+  note (3), *Since the fold certificate*). The test pins 5 and 7, and its growth witness is at k = 4.
 - **Rows 15, 17 and 19's unit tests** take the atom rule's paths: rows 15 and 17 refuse five lines,
   the two `#Node.0` lines added, and row 19 accepts its two `#Node.0` lines (`same s`'s), as §8's
   table says.
