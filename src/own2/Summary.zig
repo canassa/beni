@@ -905,7 +905,9 @@ pub const Table = struct {
             var kx = ks;
             if (acc.get(.{x.int()})) |c| kx = (try env.conds.kappaSet(gpa, env.charge, kx, x, .from(c))).ctx;
             kx = try carryTo(env, kx, post.items, x);
-            if (!try resLeq(env, x, kx, o, ko)) try kept.append(gpa, x);
+            if (!mutated("cert-drop-any") and !try resLeq(env, x, kx, o, ko)) {
+                try kept.append(gpa, x);
+            } else if (std.debug.runtime_safety) try assertDropKeeps(env, x, kx, o, ko);
         }
         if (kept.items.len == arms.items.len) return whole;
         if (kept.items.len == 0) return .{ .node = .none, .kappas = .none };
@@ -918,6 +920,29 @@ pub const Table = struct {
         return .{ .node = root, .kappas = k };
     }
 
+
+    /// C3 (§8 slice 4, *Lemmas*, #1485), `runtime_safety` only: an arm
+    /// `x` dropped under `o` keeps every fold certificate below it, read by
+    /// a reader the cover test does not share: every exact cell `x` reaches
+    /// is one `o` reaches, and `x`'s frontier read (`deep`) is no weaker
+    /// than `o`'s. A key's multiplicity is in that read (`lost`), so an arm
+    /// `[ x, x ]` is never dropped under `[ x ]`.
+    fn assertDropKeeps(env: Env, x: NodeId, kx: Kappas, o: NodeId, ko: Kappas) Error!void {
+        const gpa = env.gpa;
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        const ch: Ids.Charge = .growth(&scratch);
+        const sets = &env.cells.sets;
+        const rx = try env.shapes.reach(gpa, &scratch, sets, x);
+        const ro = try env.shapes.reach(gpa, &scratch, sets, o);
+        var it = sets.iterate(rx);
+        while (it.next()) |e| if (e.value == 0 and sets.get(ro, e.key) == null and env.cells.origin(.from(e.key)) != .top)
+            std.debug.panic("ownership v2: a dropped arm reaches a cell its cover does not (C3, #1485)", .{});
+        const dx = try env.conds.deep(gpa, ch, env.view(), kx, x, false);
+        const d_o = try env.conds.deep(gpa, ch, env.view(), ko, o, false);
+        if (!try env.conds.leq(gpa, ch, dx, d_o))
+            std.debug.panic("ownership v2: a dropped arm reads weaker than its cover (C3, #1485)", .{});
+    }
     /// `dropCovered`'s transport: every entry kept where it is, and a joined
     /// DAG's entry also on the kept root's projection.
     const DropCarry = struct {
@@ -2569,4 +2594,11 @@ test "a port join's cover test reads an arm with the join's entries carried to i
     const at = f.conds.kappaAlong(q3.kappas, elem);
     const k = try env.conds.kappaOf(gpa, env.charge, env.view(), at, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, q3.node, Place.Step.elem)).?, true);
     try testing.expect(Cond.Table.fails(k));
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }
