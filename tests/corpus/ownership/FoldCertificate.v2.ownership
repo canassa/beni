@@ -1,0 +1,146 @@
+module FoldCertificate
+  23:19 FoldCertificate.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  23:19 FoldCertificate.incAll l#Node.2#Node.1: accepted param
+  23:19 FoldCertificate.incAll l#Node.1: accepted param
+  23:19 FoldCertificate.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  23:19 FoldCertificate.incAll l#Node.0#Node.1: accepted param
+  23:30 List.push xs: accepted param
+  23:47 FoldCertificate.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  23:47 FoldCertificate.incAll r#Node.2#Node.1: accepted param
+  23:47 FoldCertificate.incAll r#Node.1: accepted param
+  23:47 FoldCertificate.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  23:47 FoldCertificate.incAll r#Node.0#Node.1: accepted param
+  33:21 List.push xs: accepted param
+  43:16 FoldCertificate.incAll a#Node.2⟨Tree⟩#Node.1: accepted param
+  43:16 FoldCertificate.incAll a#Node.2#Node.1: accepted param
+  43:16 FoldCertificate.incAll a#Node.1: accepted param
+  43:16 FoldCertificate.incAll a#Node.0⟨Tree⟩#Node.1: accepted param
+  43:16 FoldCertificate.incAll a#Node.0#Node.1: accepted param
+  43:27 FoldCertificate.incAll b#Node.2⟨Tree⟩#Node.1: accepted param
+  43:27 FoldCertificate.incAll b#Node.2#Node.1: accepted param
+  43:27 FoldCertificate.incAll b#Node.1: accepted param
+  43:27 FoldCertificate.incAll b#Node.0⟨Tree⟩#Node.1: accepted param
+  164:14 FoldCertificate.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  164:14 FoldCertificate.incP <P …>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  164:14 FoldCertificate.incP <P …>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it
+  164:14 FoldCertificate.incP <P …>#P.0#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  164:14 FoldCertificate.incP <P …>#P.0#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  164:14 FoldCertificate.incP <P …>#P.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  168:17 FoldCertificate.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: accepted param
+  168:17 FoldCertificate.incP <P …>#P.1#Node.2#Node.1: accepted param
+  168:17 FoldCertificate.incP <P …>#P.1#Node.1: accepted param
+  168:17 FoldCertificate.incP <P …>#P.0#Node.2⟨Tree⟩#Node.1: accepted param
+  168:17 FoldCertificate.incP <P …>#P.0#Node.2#Node.1: accepted param
+  168:17 FoldCertificate.incP <P …>#P.0#Node.1: accepted param
+  172:13 FoldCertificate.incAll <call FoldCertificate.same>#Node.2⟨Tree⟩#Node.1: accepted param
+  172:13 FoldCertificate.incAll <call FoldCertificate.same>#Node.2#Node.1: accepted param
+  172:13 FoldCertificate.incAll <call FoldCertificate.same>#Node.1: accepted param
+  176:16 FoldCertificate.incRoot <call FoldCertificate.same>#Node.1: accepted param
+  180:18 FoldCertificate.incRoot <call FoldCertificate.unroll>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  184:14 FoldCertificate.incAll <call FoldCertificate.unroll>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  184:14 FoldCertificate.incAll <call FoldCertificate.unroll>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  184:14 FoldCertificate.incAll <call FoldCertificate.unroll>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  190:5 FoldCertificate.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  190:5 FoldCertificate.incP <P …>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  190:5 FoldCertificate.incP <P …>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it
+  195:10 FoldCertificate.incAll <call FoldCertificate.swap>#Node.2⟨Tree⟩#Node.1: accepted param
+  195:10 FoldCertificate.incAll <call FoldCertificate.swap>#Node.2#Node.1: accepted param
+  195:10 FoldCertificate.incAll <call FoldCertificate.swap>#Node.1: accepted param
+  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.2#Node.1: accepted param
+  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.1: accepted param
+  203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.1: rejected disjoint: another path of the same argument reaches it
+  203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  207:10 FoldCertificate.incAll <call FoldCertificate.deeper>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  207:10 FoldCertificate.incAll <call FoldCertificate.deeper>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  207:10 FoldCertificate.incAll <call FoldCertificate.deeper>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  211:13 FoldCertificate.incAll <Node …>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  211:13 FoldCertificate.incAll <Node …>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  211:13 FoldCertificate.incAll <Node …>#Node.1: accepted param
+  211:13 FoldCertificate.incAll <Node …>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  211:13 FoldCertificate.incAll <Node …>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  215:16 FoldCertificate.incAll <Node …>#Node.2⟨Tree⟩#Node.1: accepted param
+  215:16 FoldCertificate.incAll <Node …>#Node.2#Node.1: accepted param
+  215:16 FoldCertificate.incAll <Node …>#Node.1: accepted param
+  215:16 FoldCertificate.incAll <Node …>#Node.0⟨Tree⟩#Node.1: accepted param
+  215:16 FoldCertificate.incAll <Node …>#Node.0#Node.1: accepted param
+  219:13 FoldCertificate.incAll <call FoldCertificate.same>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  219:13 FoldCertificate.incAll <call FoldCertificate.same>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  219:13 FoldCertificate.incAll <call FoldCertificate.same>#Node.1: rejected disjoint: another path of the same argument reaches it
+  223:15 FoldCertificate.incAll <call FoldCertificate.same>#Node.2⟨Tree⟩#Node.1: accepted param
+  223:15 FoldCertificate.incAll <call FoldCertificate.same>#Node.2#Node.1: accepted param
+  223:15 FoldCertificate.incAll <call FoldCertificate.same>#Node.1: accepted param
+  227:15 FoldCertificate.incAll <expression>#Node.2⟨Tree⟩#Node.1: accepted param
+  227:15 FoldCertificate.incAll <expression>#Node.2#Node.1: accepted param
+  227:15 FoldCertificate.incAll <expression>#Node.1: accepted param
+  231:11 FoldCertificate.incP <call FoldCertificate.both>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  231:11 FoldCertificate.incP <call FoldCertificate.both>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  231:11 FoldCertificate.incP <call FoldCertificate.both>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it
+  231:11 FoldCertificate.incP <call FoldCertificate.both>#P.0#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  231:11 FoldCertificate.incP <call FoldCertificate.both>#P.0#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  231:11 FoldCertificate.incP <call FoldCertificate.both>#P.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.2#Node.1: accepted param
+  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.1: accepted param
+  255:21 FoldCertificate.incAll <call FoldCertificate.wrapL>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  255:21 FoldCertificate.incAll <call FoldCertificate.wrapL>#Node.2#Node.1: accepted param
+  255:21 FoldCertificate.incAll <call FoldCertificate.wrapL>#Node.1: rejected disjoint: another path of the same argument reaches it
+  268:13 FoldCertificate.incAll <call FoldCertificate.h2>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  268:13 FoldCertificate.incAll <call FoldCertificate.h2>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  268:13 FoldCertificate.incAll <call FoldCertificate.h2>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  278:13 FoldCertificate.incAll <call FoldCertificate.g2>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  278:13 FoldCertificate.incAll <call FoldCertificate.g2>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  278:13 FoldCertificate.incAll <call FoldCertificate.g2>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  302:20 FoldCertificate.incAllB l#NodeB.2⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  302:20 FoldCertificate.incAllB l#NodeB.2#NodeB.1#Box.0: accepted param
+  302:20 FoldCertificate.incAllB l#NodeB.1#Box.0: accepted param
+  302:20 FoldCertificate.incAllB l#NodeB.0⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  302:20 FoldCertificate.incAllB l#NodeB.0#NodeB.1#Box.0: accepted param
+  302:37 List.push xs: accepted param
+  302:55 FoldCertificate.incAllB r#NodeB.2⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  302:55 FoldCertificate.incAllB r#NodeB.2#NodeB.1#Box.0: accepted param
+  302:55 FoldCertificate.incAllB r#NodeB.1#Box.0: accepted param
+  302:55 FoldCertificate.incAllB r#NodeB.0⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  302:55 FoldCertificate.incAllB r#NodeB.0#NodeB.1#Box.0: accepted param
+  312:17 FoldCertificate.incAllB a#NodeB.2⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  312:17 FoldCertificate.incAllB a#NodeB.2#NodeB.1#Box.0: accepted param
+  312:17 FoldCertificate.incAllB a#NodeB.1#Box.0: accepted param
+  312:17 FoldCertificate.incAllB a#NodeB.0⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  312:17 FoldCertificate.incAllB a#NodeB.0#NodeB.1#Box.0: accepted param
+  312:29 FoldCertificate.incAllB b#NodeB.2⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  312:29 FoldCertificate.incAllB b#NodeB.2#NodeB.1#Box.0: accepted param
+  312:29 FoldCertificate.incAllB b#NodeB.1#Box.0: accepted param
+  312:29 FoldCertificate.incAllB b#NodeB.0⟨TreeB⟩#NodeB.1#Box.0: accepted param
+  328:5 FoldCertificate.incPB <PB …>#PB.1#NodeB.2⟨TreeB⟩#NodeB.1#Box.0: rejected disjoint: another path of the same argument reaches it
+  328:5 FoldCertificate.incPB <PB …>#PB.1#NodeB.2#NodeB.1#Box.0: rejected disjoint: another path of the same argument reaches it
+  328:5 FoldCertificate.incPB <PB …>#PB.1#NodeB.1#Box.0: rejected disjoint: another path of the same argument reaches it
+  349:20 FoldCertificate.incAllW l#NodeW.2⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  349:20 FoldCertificate.incAllW l#NodeW.2#NodeW.1#Wrap.0#Box.0: accepted param
+  349:20 FoldCertificate.incAllW l#NodeW.1#Wrap.0#Box.0: accepted param
+  349:20 FoldCertificate.incAllW l#NodeW.0⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  349:20 FoldCertificate.incAllW l#NodeW.0#NodeW.1#Wrap.0#Box.0: accepted param
+  349:43 List.push xs: accepted param
+  349:62 FoldCertificate.incAllW r#NodeW.2⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  349:62 FoldCertificate.incAllW r#NodeW.2#NodeW.1#Wrap.0#Box.0: accepted param
+  349:62 FoldCertificate.incAllW r#NodeW.1#Wrap.0#Box.0: accepted param
+  349:62 FoldCertificate.incAllW r#NodeW.0⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  349:62 FoldCertificate.incAllW r#NodeW.0#NodeW.1#Wrap.0#Box.0: accepted param
+  359:17 FoldCertificate.incAllW a#NodeW.2⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  359:17 FoldCertificate.incAllW a#NodeW.2#NodeW.1#Wrap.0#Box.0: accepted param
+  359:17 FoldCertificate.incAllW a#NodeW.1#Wrap.0#Box.0: accepted param
+  359:17 FoldCertificate.incAllW a#NodeW.0⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  359:17 FoldCertificate.incAllW a#NodeW.0#NodeW.1#Wrap.0#Box.0: accepted param
+  359:29 FoldCertificate.incAllW b#NodeW.2⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  359:29 FoldCertificate.incAllW b#NodeW.2#NodeW.1#Wrap.0#Box.0: accepted param
+  359:29 FoldCertificate.incAllW b#NodeW.1#Wrap.0#Box.0: accepted param
+  359:29 FoldCertificate.incAllW b#NodeW.0⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: accepted param
+  375:5 FoldCertificate.incPW <PW …>#PW.1#NodeW.2⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: rejected disjoint: another path of the same argument reaches it
+  375:5 FoldCertificate.incPW <PW …>#PW.1#NodeW.2#NodeW.1#Wrap.0#Box.0: rejected disjoint: another path of the same argument reaches it
+  375:5 FoldCertificate.incPW <PW …>#PW.1#NodeW.1#Wrap.0#Box.0: rejected disjoint: another path of the same argument reaches it
+  demands 141: accepted 91 (fresh 0, call 0, param 91, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 50
+total 141: accepted 91 (fresh 0, call 0, param 91, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 50
+cause disjoint 47
+cause exclusive 3
