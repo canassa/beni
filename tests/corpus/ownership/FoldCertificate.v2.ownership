@@ -46,9 +46,9 @@ module FoldCertificate
   195:10 FoldCertificate.incAll <call FoldCertificate.swap>#Node.2⟨Tree⟩#Node.1: accepted param
   195:10 FoldCertificate.incAll <call FoldCertificate.swap>#Node.2#Node.1: accepted param
   195:10 FoldCertificate.incAll <call FoldCertificate.swap>#Node.1: accepted param
-  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
-  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.2#Node.1: accepted param
-  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.1: accepted param
+  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  199:10 FoldCertificate.incAll <call FoldCertificate.dupL>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
   203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
   203:10 FoldCertificate.incAll <call FoldCertificate.shareL>#Node.1: rejected disjoint: another path of the same argument reaches it
@@ -82,9 +82,9 @@ module FoldCertificate
   231:11 FoldCertificate.incP <call FoldCertificate.both>#P.0#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
   231:11 FoldCertificate.incP <call FoldCertificate.both>#P.0#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
   231:11 FoldCertificate.incP <call FoldCertificate.both>#P.0#Node.1: rejected disjoint: another path of the same argument reaches it
-  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
-  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.2#Node.1: accepted param
-  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.1: accepted param
+  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  240:21 FoldCertificate.incAll <call FoldCertificate.wrapR>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   255:21 FoldCertificate.incAll <call FoldCertificate.wrapL>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
   255:21 FoldCertificate.incAll <call FoldCertificate.wrapL>#Node.2#Node.1: accepted param
   255:21 FoldCertificate.incAll <call FoldCertificate.wrapL>#Node.1: rejected disjoint: another path of the same argument reaches it
@@ -140,7 +140,7 @@ module FoldCertificate
   375:5 FoldCertificate.incPW <PW …>#PW.1#NodeW.2⟨TreeW⟩#NodeW.1#Wrap.0#Box.0: rejected disjoint: another path of the same argument reaches it
   375:5 FoldCertificate.incPW <PW …>#PW.1#NodeW.2#NodeW.1#Wrap.0#Box.0: rejected disjoint: another path of the same argument reaches it
   375:5 FoldCertificate.incPW <PW …>#PW.1#NodeW.1#Wrap.0#Box.0: rejected disjoint: another path of the same argument reaches it
-  demands 141: accepted 91 (fresh 0, call 0, param 91, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 50
-total 141: accepted 91 (fresh 0, call 0, param 91, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 50
-cause disjoint 47
-cause exclusive 3
+  demands 141: accepted 87 (fresh 0, call 0, param 87, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 54
+total 141: accepted 87 (fresh 0, call 0, param 87, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 54
+cause disjoint 53
+cause exclusive 1

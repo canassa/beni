@@ -1824,7 +1824,7 @@ pub const Views = struct {
     /// The fold certificate's readers (§8 slice 4, #1485), set on `conds`
     /// once, as `resolver` is.
     pub fn hyp(v: *Views) Cond.Table.Hyp {
-        return .{ .ctx = v, .envOf = hypEnvOf, .keys = hypKeys };
+        return .{ .ctx = v, .envOf = hypEnvOf, .keys = hypKeys, .class = hypClass };
     }
 
     /// A view's environment when its class is a hypothesis: a port of the
@@ -1838,6 +1838,13 @@ pub const Views = struct {
         if (v.sums.certified(class)) return e;
         const g = v.group orelse return null;
         return if (g.isPort(g.ctx, class)) e else null;
+    }
+
+    /// The `res` and snapshot of the class at environment `e`.
+    fn hypClass(ctx: *anyopaque, e: u32) Cond.Table.HypClass {
+        const v = of(ctx);
+        const c = v.sums.get(v.envs.items[e].class);
+        return .{ .res = c.res, .kappas = c.kappas };
     }
 
     /// The certificate's keys `cells` at environment `e`, each with its
