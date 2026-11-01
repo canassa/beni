@@ -800,7 +800,7 @@ pub const Table = struct {
         env.conds.hyp_knots.clear();
         defer env.conds.hyp_knots.clear();
         for ([_]NodeId{ a, b }) |m| try env.conds.hyp_knots.put(env.gpa, m, {});
-        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj_ok);
+        const w = try env.conds.widenValueOf(env.gpa, env.charge, env.view(), j, mj_ok, &.{ a, b }, &.{ ka, kb });
         return .{ .node = w.node, .kappas = w.kappas };
     }
 
