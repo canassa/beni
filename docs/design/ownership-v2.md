@@ -2585,12 +2585,24 @@ Where κ is set, always **at the selected path p**:
   - **The rule.** One call makes three passes.
     1. *The state graph.* Each state of `Σ` is read once: its slice, its entry, its `kept` entry, its
        link and its children, exactly as one frame of today's walk reads them. #1425's memos by run stay.
-       The pass records the edges. It builds no position.
+       The pass records the edges. It builds no position. *It stops at a clean-memo hit:* a state whose
+       node has finite rank, with no traversal, whose clean-memo key holds an entry, is recorded and not
+       expanded. Nothing below it is cyclic (rank falls along every edge) and no node below it is in a
+       node-graph cycle, so no cycle bit depends on it. Pass 3 expands it lazily, by resuming pass 1 from
+       it, when the hit cannot be used: when it shares a set with other states, stands at a position
+       that is not clean, or lies in a fold's closure. Today's walk expands such a state in exactly
+       those cases, so pass 1 reads exactly the states that today's walk expands at least once.
     2. *The cycle bit.* The pass computes Tarjan's components of `Σ`, and the components of its node
        graph, which has one vertex per joined node and an edge for each edge of `Σ`. A state whose node
        is on no cycle of the node graph is not cyclic. A state in a nontrivial component of `Σ` is
-       cyclic. For every other state, one bit for each node on a node-graph cycle is propagated bottom up
-       over the components of `Σ`, and the state is cyclic when its node's bit is set below it.
+       cyclic. A component of one state with an edge to itself is nontrivial: a period-1 knot is a
+       self-loop of `Σ`, and without this its state would read as acyclic, the rule would differ from
+       the reference and its open sets need not end. For every other state the bits are numbered per
+       component `K` of the node graph: one bit for each node of `K`, propagated bottom up only along the
+       edges of `Σ` whose two ends have nodes in `K`, since a way back to a node of `K` never leaves `K`.
+       The state is cyclic when its node's bit is set below it. This costs `Σ_K |E_K| · ⌈|K|/64⌉` words,
+       where `E_K` holds those edges. One large knot makes it quadratic: `|E_K|` near `|E_Σ|` and `|K|`
+       near the node count.
     3. *Positions by their set of states.* The root's set is `{root state}`. A set that holds a cyclic
        state is a *fold*. Its position is an exact fold:
        - its entries are the join per node of the entries of every state in the set's closure in `Σ`;
@@ -2664,20 +2676,33 @@ Where κ is set, always **at the selected path p**:
     Both memos belong to one call. They are exact by 3 and 4, and the cross-check below compares them
     with the reference.
   - **Cost.** For one call, every unit below is a charged record:
-    - pass 1: `O(|Σ| + |E_Σ|)` state and edge reads, each as one frame of today's walk reads it;
-    - pass 2: `O(|Σ| + |E_Σ|)` for the two component passes, and `O(|E_Σ| · ⌈|Q|/64⌉)` words for the
-      bits, where `Q` holds the nodes on node-graph cycles;
-    - pass 3: for each distinct open set, its size and its edges; for each distinct fold set, its
-      closure and the closure's edges.
+    - pass 1: `O(|Σ| + |E_Σ|)` state and edge reads, each as one frame of today's walk reads it, where
+      `Σ` stops at clean-memo hits (pass 1);
+    - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits;
+    - pass 3: for each distinct open set, its interning (a record per state) and its edges; for each
+      distinct fold set, its closure and the closure's edges, so `O(fold sets · |E_Σ|)` in all.
 
     In §4.1's terms this is within the row of joins and shape comparisons, `O(N_f log(N_f + 2))`
     relative to the records it charges. A polynomial bound in `|Σ|` fails at exactly one place: the
-    number of distinct open sets. Along one path, the open sets have disjoint nodes (a node met twice
-    makes the first set's state cyclic), so a path has at most `|nodes|` open sets. But their number
-    across paths is a subset construction over `Σ`. It can be exponential in `|Σ|` when a state has two
-    children along one step (a recast and its inner, `via`) and two sets share states in many
-    combinations. No such program is known. The largest measured count is 185 sets in one call. Today's
-    walk has no bound there either: its positions are a path count (the sibling witness).
+    number of distinct open sets.
+    - *Along one path* there are at most `|nodes|` open sets. Each state of an open set at depth `d` is
+      the end of a chain of `d` states, each the child of the one before, all in open sets. Such a chain
+      repeats no node, since a repeat would make the earlier state cyclic. (The sets along a path need
+      not have disjoint nodes: two different states of one node may stand in two of them.)
+    - *Across paths* the number is a subset construction over `Σ`, and it is exponential in the worst
+      case (the review of 2a1882b9a). With `k` tokens in `k` layers, `Σ` has `k²` states, none of them
+      cyclic, and there are `2^k` open sets: `O(2^√|Σ|)`, the subset construction's known worst case.
+      In beni it needs `via` children: a union of `k` recasts at one place, whose members' cursors
+      link those steps (a member whose cursor is an exact fold links every step). It is not built yet
+      (#1541, with the cursor construction it needs). No program measured comes near it: the largest
+      count is 185 open sets in one call.
+    - *It ends loudly.* Each set is charged when it is interned, a record per state, and its edges when
+      it is built. So a family that makes many sets meets the declaration's `ownership_summary_size`
+      limit. It is never merged silently into a coarser set.
+    - *It is reported.* `dump --stage=ownership --ownership-propagate`, a hidden and test-only flag,
+      prints one line per `propagate` call with its states, edges, open sets and fold sets.
+
+    Today's walk has no bound there either: its positions are a path count (the sibling witness).
   - **Where an unfolded position is semantically needed: nowhere outside `propagate`.** Every reader
     that the coordinator's list names reads the snapshot that `propagate` returns, never its walk:
     - route counting by canonical path (#1438);
@@ -2687,10 +2712,9 @@ Where κ is set, always **at the selected path p**:
 
     The rule returns the reference's snapshot id, so each of them reads the same thing.
   - **`proj`'s side effects.** `proj` records origins (`addOrigin`), constructions (`addConstruction`) and
-    its memo. Pass 1 makes the projections that today's walk makes, because today's walk expands every
-    reachable state at least once and pass 1 expands each exactly once. Below a clean-memo hit, today's
-    walk projects nothing, and pass 1 meets only `memo_proj` hits there: the call that wrote the clean
-    entry made those projections. Only the order differs. That can change the order of a node's origins
+    its memo. Pass 1 makes the projections that today's walk makes, because both expand exactly the states
+    that today's walk expands at least once: pass 1 stops where a clean-memo hit is used, as today's
+    walk does. Only the order differs. That can change the order of a node's origins
     and which projection made a node first (`fresh`, `base_epoch`), as any change of the walk's order can.
     The corpus shows no change from it.
   - **The `runtime_safety` check.** Under `-Downership-full-cross-check`, `propagateFrom` walks each
@@ -2703,6 +2727,20 @@ Where κ is set, always **at the selected path p**:
     input before #1526. The reference walk is exponential in its routes. A call whose reference walk
     passes 2²² frames is not compared, and the check prints a line that names the call. On every case
     measured and on the corpus, no call reached that cap.
+  - **Counted tests** (for the build slice). Each one is a unit fixture in `Cond.zig` with records
+    counted, in the owner's 1 s:
+    - *The shared DAG.* An acyclic DAG `D` of `N` nodes, and `C` calls of `propagate` whose roots
+      differ, are of finite rank and are open. Each call holds, alone at a clean position one step below
+      the root, the same state over `D` (the join of `D` with a second DAG `D′`, as one run). From the
+      second call on, that state is a clean-memo hit. Pass 1 must stop there, so the records of
+      `C = 16` minus those of `C = 1` are the same at `N = 16` and at `N = 64`, within 10 %. A pass 1
+      that reads below the hit makes the difference grow with `N`: `O(C·N)` instead of `O(N + C)`.
+    - *The sibling.* The period-2 knot with a 2^d-path sibling (*Measured*): its states grow as
+      `2d + 9` and its positions do not grow with `2^d`.
+    - *The self-loop.* A period-1 knot, a self-edge of `Σ`: its state is cyclic and the root is a fold.
+    - *The coprime knots.* One component of `Σ`, with the same id in both frontier orders.
+    - *The exponential family* (#1541): `2^k` open sets for `k` layers, charged, and ending at
+      `ownership_summary_size`.
   - **Measured.** A prototype in scratch on master `169bab548`, which has #1526's fix and no 4e. It is
     Debug, self-hosted, with `dump --stage=ownership --ownership=v2 --jobs=1` and the module allowance at
     10⁸. Today's walk (with #1526's fix) against the rule, total records of the declaration, with growth
@@ -2744,8 +2782,12 @@ Where κ is set, always **at the selected path p**:
     *What is left.* The rule removes repetition, and very little repetition is left. In `removeMin`,
     walk 2's joins fall from 7.3 M records to 391 k, so the group goes on to walks 3, 4 and 5. Their
     largest joins hold 1 354, 2 918, 6 638 and 14 670 states of `Σ`, with up to 495 673 edges, and cost
-    up to 27.8 M records. Pass 1 is about 80 % of each of those calls: one read of each distinct state,
-    which today's walk also makes. They have at most 142 open sets and 43 folds. So `removeMin` is still
+    up to 27.8 M records. Pass 1 is about 80 % of each of those calls: one read of each distinct state.
+    The prototype read all of `Σ`, below clean-memo hits too, so its figures are an upper bound on the
+    rule. On the accumulator, 6 of its largest call's 403 states have finite rank, so the bound is
+    close there; on `removeMin` the share was not measured. The cycle bits are small: the largest join
+    of walk 3 has 40 of its 221 nodes on node-graph cycles (`|Q|`, one word), and walks 4 and 5 have 70
+    to 102 of 207 to 371 (two words). The per-component sizes `|K|` were not measured. They have at most 142 open sets and 43 folds. So `removeMin` is still
     a limit at 10⁸. What grows is the number of distinct states, and it grows with the port (§2.3,
     #1372), not with the walk. `descend`'s growth falls by 14 %, and it is still over the default
     allowance of 65 536. `propagate` takes 135 600 of its records, against 163 260 before.
@@ -6056,11 +6098,14 @@ These are bounds for the specified completed algorithms, not measurements provin
 them. `Cond.lower` must index arrivals by original base so W distinct-base insertions do not rescan W
 members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
 need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
-(2026-11-01). Per call, it is linear in its state graph `Σ` and its edges, plus `⌈|Q|/64⌉` words an edge for
-the cycle bit, plus the size and edges of each distinct open set and the closure of each distinct fold set.
+(2026-11-01). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
+`Σ_K |E_K| · ⌈|K|/64⌉` words for the cycle bits over the node-graph components `K` (quadratic for one large
+knot), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
+closures.
 Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
-polynomial bound in `|Σ|` fails only at the number of distinct open sets, which a subset construction over
-`Σ` can make exponential (§2.9 *Fold first*, *Cost*). Block refinement and shared place
+polynomial bound in `|Σ|` fails only at the number of distinct open sets, which is exponential in the worst
+case (`O(2^√|Σ|)`, a subset construction). Each set is charged, so such a family ends at
+`ownership_summary_size` (§2.9 *Fold first*, *Cost*). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
 
 **Read-off and run-wide reads: the source continuation** (the owner's decision, 2026-10-29, §4.4's *Source work
