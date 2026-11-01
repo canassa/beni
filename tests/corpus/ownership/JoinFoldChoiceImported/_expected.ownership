@@ -1,6 +1,6 @@
 module Main
   12:14 call Roses.incAll <call Roses.same>#Rose.0: accepted call (Roses.incAll writes π1#Rose.0)
-  12:14 call Roses.incAll <call Roses.same>⟨Rose⟩⁺#Rose.0: accepted fresh (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
+  12:14 call Roses.incAll <call Roses.same>⟨Rose⟩⁺#Rose.0: accepted call (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
   18:5 call Roses.incAll <call Roses.twoDepths>#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Roses.incAll writes π1#Rose.0)
   18:5 call Roses.incAll <call Roses.twoDepths>⟨Rose⟩⁺#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
   24:5 call Roses.incAll <call Roses.sharedOr>#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Roses.incAll writes π1#Rose.0)
@@ -14,7 +14,7 @@ module Main
   summary sharedArm: res #Rose.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}
   summary depthArms: res #Rose.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}
   summary distinctArms: res #Rose.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}
-  demands 10: accepted 6 (fresh 1, call 5, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+  demands 10: accepted 6 (fresh 0, call 6, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 module Roses
   12:19 call Roses.incList <call List.push>[*]#Rose.0: accepted param (Roses.incList writes π1[*]#Rose.0)
   12:19 call Roses.incList <call List.push>[*]⟨Rose⟩⁺#Rose.0: accepted param (Roses.incList writes π1[*]⟨Rose⟩⁺#Rose.0)
@@ -31,5 +31,5 @@ module Roses
   summary depthOr: π2 RA; res #Rose.0 fresh1{excl π2}r{excl π2}, ⟨Rose⟩⁺#Rose.0 fresh2{excl π2}r{excl π2} π2
   summary distinctOr: π2 RA, π3 RA; res #Rose.0 fresh2{excl π2, excl π3}r{excl π2, excl π3}, ⟨Rose⟩⁺#Rose.0 fresh1{excl π3}r{excl π3} π2 π3
   demands 7: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-total 17: accepted 13 (fresh 1, call 5, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 17: accepted 13 (fresh 0, call 6, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause exclusive 4

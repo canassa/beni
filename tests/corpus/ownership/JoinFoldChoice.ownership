@@ -7,7 +7,7 @@ module JoinFoldChoice
   29:26 call JoinFoldChoice.incList rest[*]#Rose.0: accepted param (JoinFoldChoice.incList writes π1[*]#Rose.0)
   29:26 call JoinFoldChoice.incList rest[*]⟨Rose⟩⁺#Rose.0: accepted param (JoinFoldChoice.incList writes π1[*]⟨Rose⟩⁺#Rose.0)
   44:14 call JoinFoldChoice.incAll <call JoinFoldChoice.same>#Rose.0: accepted call (JoinFoldChoice.incAll writes π1#Rose.0)
-  44:14 call JoinFoldChoice.incAll <call JoinFoldChoice.same>⟨Rose⟩⁺#Rose.0: accepted fresh (JoinFoldChoice.incAll writes π1⟨Rose⟩⁺#Rose.0)
+  44:14 call JoinFoldChoice.incAll <call JoinFoldChoice.same>⟨Rose⟩⁺#Rose.0: accepted call (JoinFoldChoice.incAll writes π1⟨Rose⟩⁺#Rose.0)
   54:5 call JoinFoldChoice.incAll <call JoinFoldChoice.twoDepths>#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (JoinFoldChoice.incAll writes π1#Rose.0)
   54:5 call JoinFoldChoice.incAll <call JoinFoldChoice.twoDepths>⟨Rose⟩⁺#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (JoinFoldChoice.incAll writes π1⟨Rose⟩⁺#Rose.0)
   68:5 call JoinFoldChoice.incAll <call JoinFoldChoice.sharedOr>#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (JoinFoldChoice.incAll writes π1#Rose.0)
@@ -28,6 +28,6 @@ module JoinFoldChoice
   summary depthArms: res #Rose.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}
   summary distinctOr: π2 RA, π3 RA; res #Rose.0 fresh2{excl π2, excl π3}r{excl π2, excl π3}, ⟨Rose⟩⁺#Rose.0 fresh1{excl π3}r{excl π3} π2 π3
   summary distinctArms: res #Rose.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}
-  demands 17: accepted 13 (fresh 1, call 5, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
-total 17: accepted 13 (fresh 1, call 5, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+  demands 17: accepted 13 (fresh 0, call 6, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 17: accepted 13 (fresh 0, call 6, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause exclusive 4

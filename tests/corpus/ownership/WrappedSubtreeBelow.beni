@@ -1,0 +1,46 @@
+-- ownership: a subtree stored two levels down in a new tree that a writer
+-- of the levels below writes (#1562). `incBelow` pushes onto the labels of
+-- every `Node` strictly below its argument. `wrapSub s` writes `s`'s
+-- labels at every level. With `s` read after (`subRead`) the write is
+-- refused; with `s` dead (`subDead`) it is accepted. v1 once accepted the
+-- read: a projection along `⟨Tree⟩⁺` kept `#Node.1⟨Tree⟩#Node.1`'s rest
+-- `#Node.1` and dropped it, though the rest is a `Tree` itself
+-- (`ownership-checker.md` §16.7). A `--sanitize-lists` run showed the
+-- stale read.
+type Tree
+    = Node (List Int) Tree Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l a b →
+            Node (List.push l 1) (incAll a) (incAll b)
+
+        Leaf →
+            Leaf
+
+
+incBelow : Tree → Tree
+incBelow t =
+    case t of
+        Node l a b →
+            Node l (incAll a) (incAll b)
+
+        Leaf →
+            Leaf
+
+
+wrapSub : Tree → Tree
+wrapSub s = incBelow (Node [] (Node [] s Leaf) Leaf)
+
+
+pub subRead : ⊤ → Tree × Tree
+subRead ⊤ =
+    s = Node [ 0 ] (Node [ 0 ] Leaf Leaf) Leaf
+    ( wrapSub s, s )
+
+
+pub subDead : ⊤ → Tree
+subDead ⊤ = wrapSub (Node [ 0 ] (Node [ 0 ] Leaf Leaf) Leaf)

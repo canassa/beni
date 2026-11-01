@@ -6,18 +6,18 @@ module Main
   35:13 call Roses.incAll <call Roses.deep>#Rose.0: accepted call (Roses.incAll writes π1#Rose.0)
   35:13 call Roses.incAll <call Roses.deep>⟨Rose⟩⁺#Rose.0: accepted param (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
   45:15 call Roses.incAll <call Roses.deep>#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Roses.incAll writes π1#Rose.0) (approx)
-  45:15 call Roses.incAll <call Roses.deep>⟨Rose⟩⁺#Rose.0: rejected exclusive: the callee needs the list's elements not to share, and they may (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0) (approx)
+  45:15 call Roses.incAll <call Roses.deep>⟨Rose⟩⁺#Rose.0: rejected element: xs[*]⟨Rose⟩#Rose.0 holds it and is read at 45:13 (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0) (approx)
   55:15 call Roses.incAll <call Roses.ident>#Rose.0: accepted call (Roses.incAll writes π1#Rose.0)
-  55:15 call Roses.incAll <call Roses.ident>⟨Rose⟩⁺#Rose.0: accepted fresh (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
+  55:15 call Roses.incAll <call Roses.ident>⟨Rose⟩⁺#Rose.0: accepted call (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
   62:17 call Roses.incAll <call Roses.deeper>#Rose.0: accepted call (Roses.incAll writes π1#Rose.0)
   62:17 call Roses.incAll <call Roses.deeper>⟨Rose⟩⁺#Rose.0: accepted call (Roses.incAll writes π1⟨Rose⟩⁺#Rose.0)
-  summary viewRead: π1 RAW[storage]; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1; xreq excl π1
-  summary viewIdent: π1 RAW[storage]; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1; xreq excl π1
-  summary viewDead: π1 RW[storage]; res #Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}; xreq excl π1
-  summary copyRead: π1 RA, π1[*] R; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1
+  summary viewRead: π1 RAW[storage], π1[*]⟨Rose⟩#Rose.0 W[storage]; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1; xreq excl π1
+  summary viewIdent: π1 RAW[storage], π1[*]⟨Rose⟩#Rose.0 W[storage]; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1; xreq excl π1
+  summary viewDead: π1 RW[storage], π1[*]⟨Rose⟩#Rose.0 W[storage]; res #Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}; xreq excl π1
+  summary copyRead: π1 RA, π1[*] R, π1[*]⟨Rose⟩#Rose.0 W[storage]; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1
   summary freshRead: π1 RA; res .0#Rose.0 fresh7 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0#Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, .0⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, .0⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}, .1 π1
   summary freshDeeper: res #Rose.0 ~fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, #Rose.0[*] ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh5) ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 ~condition(fresh4) ~condition(fresh5) ~fresh2 ~fresh3{shared}r{lost} ~fresh6{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] ~condition(fresh5) ~fresh3{shared}r{lost}
-  demands 12: accepted 8 (fresh 1, call 6, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+  demands 12: accepted 8 (fresh 0, call 7, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 module Roses
   12:19 call Roses.incList <call List.push>[*]#Rose.0: accepted param (Roses.incList writes π1[*]#Rose.0)
   12:19 call Roses.incList <call List.push>[*]⟨Rose⟩⁺#Rose.0: accepted param (Roses.incList writes π1[*]⟨Rose⟩⁺#Rose.0)
@@ -32,6 +32,7 @@ module Roses
   summary deep: π1 RA; res #Rose.0 fresh1{excl π1}r{excl π1}, ⟨Rose⟩⁺#Rose.0 π1
   summary deeper: π1 RA; res #Rose.0 fresh2{excl π1}r{excl π1}, ⟨Rose⟩⁺#Rose.0 fresh1{excl π1}r{excl π1} π1
   demands 7: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-total 19: accepted 15 (fresh 1, call 6, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 19: accepted 15 (fresh 0, call 7, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause alias 2
-cause exclusive 2
+cause element 1
+cause exclusive 1
