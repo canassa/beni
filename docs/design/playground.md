@@ -547,6 +547,18 @@ single-threaded compiler on the remaining guarded code. Every test has the same
   (`fast-compiler.md` §10, *The word size*). It failed on the old code (89 against 99 on
   `KeySubscription`) and passes now.
 
+*Amended 2026-11-01, issue #1573.* Item 4 runs a **hand-picked set** of programs, not every
+program of the corpus. The whole corpus was about 930 programs and 2 600 commands, each a Node
+process that compiles the 13.8 MB module, with the native compiler beside it: 12 minutes of
+processor time, and 14 minutes of the `playground` job on a CI runner, the longest job of every
+pull request. The owner asked for seconds. Each program in `tests/blackbox/playground_test.zig`'s
+list reaches something that a wasm32 build by LLVM at `ReleaseSmall` can write differently: the
+page's samples, number text and numeric edges, 32-bit hashing, Unicode text, `Dict` order, a deep
+alias chain and deep recursion, the release optimiser, schemas, markup, both browser platforms,
+diagnostics, and TodoMVC with its dumps. The sweep test stays as it is. A defect that only one
+program of the corpus shows on the shipped binary is no longer found before a merge; the
+self-hosted `.wasm` in the gates (item 1) and the native corpus still run.
+
 *Why Node runs the `.wasm` with `--liftoff-only`.* V8 compiles a hot function a second time with
 TurboFan, on background threads. For one short compile that costs more than it saves: the
 `ReleaseSmall` build of a printing program cost 2.6 billion instructions with tiering and 1.0

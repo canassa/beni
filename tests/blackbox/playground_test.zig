@@ -3,24 +3,24 @@
 //!
 //! The `.wasm` that `zig build playground` ships (`ReleaseSmall`, LLVM) runs
 //! under Node on the playground's own WASI host (`tests/wasm/beni.mjs`), on
-//! every single-file program the page can be given:
+//! a hand-picked set of single-file programs (`programs`), each run the way
+//! the page runs a program of its kind:
 //!
-//!   - the page's own samples, `playground/samples/<platform>/*.beni`;
-//!   - `tests/corpus/run/*.beni`: built for `node` as the page builds, with
-//!     the cache and source maps, and with `--release` (the printing sample);
-//!   - `tests/corpus/browser/tea/*.beni` and `tests/corpus/browser/inline/*.beni`:
-//!     built for `browser-tea` and `browser-inline` the same three ways;
-//!   - `tests/corpus/check/bad/*.beni`: checked, for the diagnostics, in
-//!     both renderers (the page reads the JSON);
-//!   - `bench/todomvc/apps/beni/*.beni`: built for `browser-tea` as the
-//!     page builds and with `--release`, and the two dumps the page shows.
+//!   - a printing program: built for `node` as the page builds, with the
+//!     cache and source maps, and with `--release`;
+//!   - a page: built for `browser-tea` or `browser-inline` the same three
+//!     ways;
+//!   - a program with errors: checked, for the diagnostics, in both
+//!     renderers (the page reads the JSON);
+//!   - TodoMVC: built for `browser-tea` as the page builds and with
+//!     `--release`, and the two dumps the page shows.
 //!
 //! Each command runs with the native threaded compiler too, on a copy of the
 //! same project, and the two must agree on the exit code, both streams and
 //! every output file (`wasm.zig`). A command both refuse is compared like
 //! one both accept: the claim is the same bytes, not a clean build.
 //!
-//! The programs are split over `parts` tests by their index in sorted order,
+//! The programs are split over `parts` tests by their index in the list,
 //! and `build.zig` runs one process per test. The step is not a gate. A part
 //! is a suite, so the hang guard (`tests/hang_guard.zig`) times each program
 //! on its own, as the corpus times each case.
@@ -49,40 +49,46 @@ const Kind = enum {
     todomvc,
 };
 
-const directories = [_]struct { path: []const u8, kind: Kind }{
-    .{ .path = "playground/samples/browser-tea", .kind = .page_tea },
-    .{ .path = "playground/samples/node", .kind = .print },
-    .{ .path = "tests/corpus/run", .kind = .print },
-    .{ .path = "tests/corpus/browser/tea", .kind = .page_tea },
-    .{ .path = "tests/corpus/browser/inline", .kind = .page_inline },
-    .{ .path = "tests/corpus/check/bad", .kind = .diagnostics },
-    .{ .path = "bench/todomvc/apps/beni", .kind = .todomvc },
+/// The programs, hand-picked: each reaches something a wasm32 build by
+/// LLVM at `ReleaseSmall` could write differently from the native one —
+/// a word size, a number's text, a hash, an order, a deep stack, an
+/// optimiser pass. The whole corpus took 14 minutes of CI for every pull
+/// request (issue #1573); the gates' `wasm_test.zig` and the corpus hold
+/// the rest.
+const programs = [_]Program{
+    // The page's own samples.
+    .{ .path = "playground/samples/browser-tea/Counter.beni", .kind = .page_tea },
+    .{ .path = "playground/samples/node/Print.beni", .kind = .print },
+    // Numbers, hashes and 32-bit words.
+    .{ .path = "tests/corpus/run/NumericEdge.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/CoreNumericExtremes.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/Int32Hash.beni", .kind = .print },
+    // Text by code point, and order.
+    .{ .path = "tests/corpus/run/CoreStringUnicode.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/Dictionaries.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/DerivedDeepPaths.beni", .kind = .print },
+    // Deep trees and the release optimiser.
+    .{ .path = "tests/corpus/run/ReleaseAliasChain1000.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/ReleaseEverything.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/SuspendDeepRecursion.beni", .kind = .print },
+    // Schemas and markup.
+    .{ .path = "tests/corpus/run/JsonDerivedArticle.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/SchemaShapeThreshold.beni", .kind = .print },
+    .{ .path = "tests/corpus/run/MarkupFor.beni", .kind = .print },
+    // Pages, on both browser platforms.
+    .{ .path = "tests/corpus/browser/tea/TodoRouting.beni", .kind = .page_tea },
+    .{ .path = "tests/corpus/browser/tea/HttpTrack.beni", .kind = .page_tea },
+    .{ .path = "tests/corpus/browser/inline/FormLocal.beni", .kind = .page_inline },
+    .{ .path = "tests/corpus/browser/inline/SelectedOperators.beni", .kind = .page_inline },
+    // Diagnostics, one with a column past non-ASCII text.
+    .{ .path = "tests/corpus/check/bad/WideRecordEqFunction.beni", .kind = .diagnostics },
+    .{ .path = "tests/corpus/check/bad/LetHelperOverTheCapTwice.beni", .kind = .diagnostics },
+    .{ .path = "tests/corpus/check/bad/CallStyleMethodNeedsArgument.beni", .kind = .diagnostics },
+    // TodoMVC, with the two dumps the page shows.
+    .{ .path = "bench/todomvc/apps/beni/Sandbox.beni", .kind = .todomvc },
 };
 
 const Program = struct { path: []const u8, kind: Kind };
-
-/// Every `.beni` file directly in each directory, in sorted order within
-/// each directory.
-fn programs(arena: std.mem.Allocator) ![]const Program {
-    var out: std.ArrayList(Program) = .empty;
-    for (directories) |d| {
-        var dir = try std.Io.Dir.cwd().openDir(testing.io, d.path, .{ .iterate = true });
-        defer dir.close(testing.io);
-        var names: std.ArrayList([]const u8) = .empty;
-        var it = dir.iterate();
-        while (try it.next(testing.io)) |entry| {
-            if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
-            try names.append(arena, try arena.dupe(u8, entry.name));
-        }
-        std.mem.sort([]const u8, names.items, {}, struct {
-            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.lessThan);
-        for (names.items) |name| try out.append(arena, .{ .path = try std.fs.path.join(arena, &.{ d.path, name }), .kind = d.kind });
-    }
-    return out.items;
-}
 
 /// The commands run on `name`, for a program of `kind`, in `arena`: the
 /// argument lists hold `name`, so none may live on this frame. The first
@@ -125,11 +131,8 @@ fn commands(arena: std.mem.Allocator, kind: Kind, name: []const u8) ![]const []c
 
 /// Every program whose index is `part` modulo `parts`.
 fn runPart(part: usize) !void {
-    var scratch: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer scratch.deinit();
-    const all = try programs(scratch.allocator());
     var compared: usize = 0;
-    for (all, 0..) |program, i| {
+    for (programs, 0..) |program, i| {
         if (i % parts != part) continue;
         var guard: @import("root").HangGuard = .{};
         try guard.start(program.path);
@@ -144,7 +147,7 @@ fn runPart(part: usize) !void {
         }
         compared += 1;
     }
-    // Every part has programs: an empty one means the directories moved.
+    // Every part has programs.
     try testing.expect(compared != 0);
 }
 
