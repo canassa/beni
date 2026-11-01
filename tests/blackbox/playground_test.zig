@@ -80,7 +80,7 @@ const programs = [_]Program{
     .{ .path = "tests/corpus/browser/tea/HttpTrack.beni", .kind = .page_tea },
     .{ .path = "tests/corpus/browser/inline/FormLocal.beni", .kind = .page_inline },
     .{ .path = "tests/corpus/browser/inline/SelectedOperators.beni", .kind = .page_inline },
-    // Diagnostics, one with a column past non-ASCII text.
+    // Diagnostics.
     .{ .path = "tests/corpus/check/bad/WideRecordEqFunction.beni", .kind = .diagnostics },
     .{ .path = "tests/corpus/check/bad/LetHelperOverTheCapTwice.beni", .kind = .diagnostics },
     .{ .path = "tests/corpus/check/bad/CallStyleMethodNeedsArgument.beni", .kind = .diagnostics },
