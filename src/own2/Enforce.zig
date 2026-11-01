@@ -171,6 +171,7 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .interner = &session.interner,
         .order_check = session.options.ownership_order_check,
         .rewalk_check = session.options.ownership_rewalk_check,
+        .contracts = session.options.ownership_contracts,
         .propagate_dump = session.options.ownership_propagate,
     };
 }

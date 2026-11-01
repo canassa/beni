@@ -597,6 +597,8 @@ pub const Frame = struct {
     /// Walk every instruction in order: bind the parameters, evaluate, bind
     /// `let` values and match patterns where they complete, mark computed
     /// operands pending, record the body's value as a whole use (a return).
+    pub const inst_profile = false;
+
     pub fn walk(f: *Frame) Error!void {
         try f.prepare();
         const params = f.bir.extraSlice(.{ .start = f.decl.params_start, .end = f.decl.params_end }, Inst.Index);
@@ -619,6 +621,11 @@ pub const Frame = struct {
             defer f.account().leave(kernel);
             const r = f.rel(i);
             const t = f.tag(i);
+            const t0 = f.account().total();
+            defer if (inst_profile) {
+                const dt = f.account().total() - t0;
+                if (dt >= 1000) std.debug.print("inst {d} {t}: {d} records\n", .{ i, t, dt });
+            };
             if (f.matches[r] != none) {
                 // A case arm's pattern root: match the scrutinee here.
                 try f.bind(i, f.val(f.matches[r]).value, i);
