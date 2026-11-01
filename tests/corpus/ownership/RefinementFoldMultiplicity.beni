@@ -6,8 +6,8 @@
 -- writes `Rose [ a ]`, so it writes `a`'s kids list and those below it.
 -- Over a fresh tree it is accepted (`freshOne`). Over `a` taken two
 -- levels down in `t`, with `t` read after, it is refused
--- (`takenOneBeside`): v1 accepts it (its `nestOne` reads `a` only), a
--- known entry for v1, and a `--sanitize-lists` run shows the stale read.
+-- (`takenOneBeside`); v1 once accepted it, losing the write below the new
+-- node, and a `--sanitize-lists` run showed the stale read (#1562).
 -- With `t` not read after it is accepted (`takenOne`). `nestTwo a b`
 -- writes `Rose [ a, Rose [ b ] ]`: one taken element given twice is
 -- refused (`takenTwice`), and so is `regraft t`'s answer, `t` with its

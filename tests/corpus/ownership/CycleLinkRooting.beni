@@ -7,8 +7,8 @@
 -- under two (`underTwo`) or written by `incKids` under its parent
 -- (`kidsOfWrapped`); over separately built kids each accepts. The same
 -- through `Maybe` children and a mutual pair `A`/`B`. Known entries: v1
--- refuses `underOneApart` at its level limit; v2 refuses `underTwoApart`,
--- a list answered from below the first return (#1495). Under
+-- refuses `underOneApart` at its level limit; both refuse `underTwoApart`,
+-- a list answered from below the first return (#1495, #1562). Under
 -- `wrap2 [ r, r ]` the top's one kid is exclusive though the kids below
 -- it share, but both checkers read the top's kids with the levels below
 -- them and refuse `siblingsApart` (#1495).

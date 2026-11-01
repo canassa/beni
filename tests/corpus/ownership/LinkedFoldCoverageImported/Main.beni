@@ -3,7 +3,7 @@
 -- the S3b half with a group writer; R-3.1, R-5.7.4). The block keeps what
 -- `withKids` and `twoTrees` owe their callers, so the verdicts are the
 -- same-module fixture's: a kids list taken from the tree beside it, one
--- tree twice, and a tree read after it is written (which v1 accepts) are
+-- tree twice, and a tree read after it is written (v1 accepted it before #1562) are
 -- refused, directly and through `ident`; fresh values are accepted.
 import Roses exposing (Rose)
 

@@ -8733,7 +8733,15 @@ const Walker = struct {
             try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
             return;
         };
-        if (first.kind == s.kind and first.arg == s.arg) return;
+        if (first.kind == s.kind and first.arg == s.arg) {
+            // §16.7: `⟨T⟩⁺`, the canonical form's `T`s strictly below,
+            // picks no one level: a cell at `⟨T⟩⁺r` may be `r` of a `T`
+            // below the one picked, so the entry is kept whole,
+            // approximately, as `underMarker` keeps it along a region step.
+            // Dropped, `innerKids (wrap2 xs)` lost `xs`'s lists (#1562).
+            if (s.kind == .level and w.o.markerType(s.arg) != fn_type and w.o.markerKind(s.arg) == .under) try out.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = approx_level, .grown = e.grown });
+            return;
+        }
         if (first.kind == .level) {
             try w.underMarker(out, e, first, s);
         } else if (s.kind == .level) {
@@ -8858,6 +8866,24 @@ const Walker = struct {
         // a path the entry does not show.
         if (w.o.markerAny(arg)) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap, .grown = e.grown });
         const st = w.o.steps(e.path);
+        // A `T` the entry's path reaches below the root with no marker of
+        // its own — `Rose [ t ]`'s `t`, at `#Rose.0[*]` — is one of the `T`s
+        // the marker stands for, and so is every `T` below it: the entry's
+        // cell at its own marker. A canonical place stands for the places
+        // it replaces (§16.7, *The canonical form*), so `⟨Rose⟩⁺#Rose.0` of
+        // `Rose [ t ]` is `t`'s lists at every level, as the expanded
+        // `#Rose.0[*]⟨Rose⟩#Rose.0` is (#1562).
+        const t = w.o.markerType(arg);
+        if (t != fn_type and !w.o.markerAny(arg) and st.len > 0 and st[0].kind == .ctor and w.o.ctorType(w.o.stepCtor(st[0].arg)) == t) {
+            const at_t = switch (try w.o.levelOf(st[0].arg)) {
+                .here => st.len == 1,
+                .below => try w.o.anchoredAt(w.o.pathNodes(e.path)[0], e.path),
+                .none, .unknown => false,
+            };
+            if (at_t) if (try w.projCell(e.cell, .{ .kind = .level, .arg = try w.o.markerId(t, .at) }, null)) |c| {
+                try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = e.grown });
+            };
+        }
         for (st, 0..) |x, i| if (x.kind == .level and w.o.markerType(x.arg) == w.o.markerType(arg)) {
             var at: u32 = eps;
             for (st[i + 1 ..]) |y| at = try w.o.child(at, y.kind, y.arg);

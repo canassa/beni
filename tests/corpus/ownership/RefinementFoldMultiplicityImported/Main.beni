@@ -2,7 +2,7 @@
 -- writer and the helpers in another module (ownership-v2.md Appendix B,
 -- R×F, the S3b half with a group writer; R-4.6.9, R-4.7.5). The verdicts
 -- are the same-module fixture's: a taken element written while its tree
--- is read after is refused (v1 accepts it, a known entry for v1), and
+-- is read after is refused (v1 accepted it before #1562), and
 -- accepted with the tree dead; one element twice, a regrafted first kid
 -- and a tree whose two kids are one value are refused; two distinct taken
 -- elements are refused by both checkers (#1503).
