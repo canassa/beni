@@ -4283,8 +4283,11 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        member `f` under an environment `E`, or the forced answer of one (`Shape.answered` maps it back).
        A `union`, a `positions` node, a recast or a delta at `L` is not a `V`. (d3) Every position of `q`
        after `L` lies in one class `K` of `C`. That is, `Fold.classAt` over the rest of `q`'s steps, with
-       each `⟲` taken as every return of its place's cycle in `C`'s fold, gives `K` and only `K`. And
-       `A(f, K)` is certified (published, or a goal of the Prover, below).
+       each `⟲` taken as every return of its place's cycle in `C`'s fold, gives `K` and only `K`. A
+       member of a class that may hold an object below it and has no child at the step (a leaf with
+       cells, a view, a recast) puts the positions below it in no class, so (d3) fails there (§8 slice
+       4, *As built, part 3*: `wrapN`'s `a | Node …`). And `A(f, K)` is certified (published, or a
+       goal of the Prover, below).
      - **The items inside `V`.** The items of the walk that descend from the spine's item at `V` are the
        positions of that one occurrence of `V`. Each such item carries its class in `C`: `V`'s root class,
        then one step of `C`'s fold per step of the walk (the fold's `(image, step)` map). An item below
@@ -7184,7 +7187,7 @@ L0  Ids
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 450 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 080 before #1485 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `shareImages`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
-| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`, `ownContents`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 700 (#1485 parts A and B together: C7's checks, §8 slice 4 *As built, part 2*, beside part B's; 1 600 for part B alone: `Canon`, the reach scanned once per `keepReach`, and the spine-first switch, §8 slice 4 *As built, part B*); 1 540 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 1 240 before #1485 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines; 1 240 since #1492: a written position's own contents below it, `ownContents`, 1 231 lines) |
+| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`, `ownContents`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 790 (#1485 part 3: (d3) below a leaf with cells, and a knot's view compared by cells marked approximate, `foldedView` and `foldOcc`, §8 slice 4 *As built, part 3*); 1 700 for parts A and B together (#1485 parts A and B together: C7's checks, §8 slice 4 *As built, part 2*, beside part B's; 1 600 for part B alone: `Canon`, the reach scanned once per `keepReach`, and the spine-first switch, §8 slice 4 *As built, part B*); 1 540 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 1 240 before #1485 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines; 1 240 since #1492: a written position's own contents below it, `ownContents`, 1 231 lines) |
 | `TransferArms.zig` | 10 | the runs of a write's other-paths walk (§2.11 item 3, *a choice's arms*, #1439): the graph's arms and what each node keeps per run (`Arms`), the whole argument's nodes on the write's path (`Synthetic`), the written positions per run (`frontierMax`, `routesMax`), and the reads and re-entries one node at a time (`readStep`, `expandOne`) | `Frame`'s methods and types of this part | Ids, Place, Calls | ≤ 710 (#1439: 704 lines; it and `TransferBeside` call each other, the walk and its runs) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
 | `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
@@ -8248,7 +8251,7 @@ stay refused.
 | 7 | `incAll (same (Node a xs a))` | refused `disjoint` | unsafe, 25 of 26 | Rule 4 groups by occurrence: `a` at `#Node.0` and at `#Node.2` are two groups, so `a#Node.1` is repeated and κ̂ is `shared`. |
 | 8 | `incAll (same (Node a xs b))` | accepted, with `excl` of `a`'s and `b`'s lists below their roots in `xreq` | safe, 26 of 26 | One group per subtree, each arrival once. |
 | 9 | `incAll (if c then same t else same t2)` | accepted | safe (each arm is row `incAll (same t)`) | (d2) splits the choice, and each arm reads its own κ̂. |
-| 10 | `both a b = P (same a) (same b)`, `incP (both t t)` | refused `disjoint` | unsafe | `both` is in no group, so its result is `P` of two views of `t`. |
+| 10 | `both a b = P (same a) (same b)`, `incP (both t t)` | refused `disjoint (approx)` | unsafe | `both` is in no group, so its result is `P` of two copies of `same`'s knot, and no certificate is read in them. The walk compares their cells, and two positions of a knot name one cell, so the conflict is approximate (*As built, part 3*; it was `disjoint` before). |
 | 11 | `incTs [ same t ]`, where `incTs` writes the lists of every tree in a list | refused `(approx)`, unchanged | safe | A precision gap. `L` crosses `[*]`, which (d2) excludes, as rule 3's *Below `[*]`* does. |
 | 12 | `T2 = N T2 (List Int) (List Int) T2 \| E`, `mix t = N (mix l) ys xs (mix r)`, and a writer of every list over `mix t` | refused `(approx)` | safe | A precision gap. A list moves between the classes `#N.1` and `#N.2` with depth, so a `⟲` rest is in no single class ((d3)), and the walk compares cells. |
 | 13 | `J = J (List Int) (List J) (List J)`, `sameJ`/`sameJs` and `incJ`/`incJs` by explicit recursion, `incJ (sameJ j)` | accepted (predicted) | safe | Join names below `#J.1[*]#J.1` are keys and images, never expanded, and alias-apart from the other keys. The fixture pins the verdict, or records the other reason if it is refused. |
@@ -8700,6 +8703,61 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   the model reports UNSAFE: 13 of 23, 4 of 8 and 7 of 13 programs. Five refused programs are safe on
   every input, and are precision gaps: row 4 and row 14 with its twin (known), row 4 imported, and
   `swap (same t)`, two certified views nested, refused as a plain `disjoint`.
+
+*As built, part 3 (#1485: C7's crash, refusals by cells inside a knot).* Self-hosted ReleaseSafe,
+`dump --stage=ownership --ownership=v2 --jobs=1`.
+- **C7's drop check was right, and the walk was wrong.** On a recursive producer whose base returns a
+  raw parameter, or builds a node around one (`wrapN n a = if n == 0 then a else Node (wrapN (n − 1) a)
+  [] Leaf`; `acc8`, `accL`, `accA`, `accR` and `sw3` in `o/FoldCertificateRawBase`), C7's drop check
+  panicked in every safety build. The class's template is `a | Node … [] …`: a union whose one side is
+  a leaf holding the parameter's cell. `TransferBeside.certKid` read a class one step below by the
+  sides that have a child there, and skipped a side with no child map. So it gave the write's rest
+  the built side's class `K` alone, and (d3) held. But the positions below the leaf are the
+  parameter's own (`a`'s lists), and they lie in no class of the fold. An item off the spine at `K`
+  then dropped `K` and read its reach by class, which missed `a`'s lists, and the check found them in
+  the item's forced value. That is a real drop of cells the certificate does not name, so a soundness
+  defect of (d3), not of the check. The fix is in the premise: `certKid` answers none at a member that
+  may hold an object below it and has no child there (a leaf with cells, a view, a recast:
+  `heldBelow`), and at a `⟲` it answers none when such a member stands in the cycle's component. The
+  write is then compared by cells. At `wrapN` the occurrence's κ̂ read `lost` (`Occ.fail` 2), so its
+  items kept `K` approximately and the write was refused anyway; no build reached a verdict past the
+  panic, and the oracle sweep below finds no unsafe acceptance with the fix. On a `lost` certificate (d) now drops nothing: its
+  items keep every class, `K` included, approximately, and C7's check, which still runs on every
+  dropping item, finds every exact cell of the item's forced value among them or aliased by them.
+  Verdicts: `wrapN`, `acc8`, `accL`, `accR` and `sw3` are safe on every input and refused (precision
+  gaps); `accA` (`Node a [] a`) is unsafe and refused. Their accepted lines are each producer's fresh
+  root list.
+- **A refusal by cells inside a knot is approximate.** Where the walk meets a view of a knot (a
+  template with a cycle, `TransferBeside.foldedView`) that (d) does not read, the walk compares its
+  cells, and two positions of a knot name one cell: the same cell found at the write's path and at
+  another path of one knot is no evidence of one object at both. Such a view starts an occurrence of
+  its own (`foldOcc`, `Occ.fail` 3): its items carry its tag, so they are other items than those
+  outside it (the tag is in every key), and every cell they keep is approximate (`approxAll`). It
+  drops nothing, so it accepts nothing more. On the spine it is any knot's view that (d) does not
+  read: an uncertified class, a premise that fails, or a view below `[*]` (row 11). Off the spine it
+  is an uncertified knot's view only, since a certificate names its arrivals: `P (same t) (same t)`
+  and `P w w` keep their plain `disjoint`. Changes: row 3 (`shareL`) and row 10 (`both`) read
+  `disjoint (approx)` on every line, as the table says for row 3 and as it now says for row 10 (both
+  hold copies of `same`'s knot, which carry no certificate); row 11 reads `disjoint (approx)`, as the
+  table says; and the raw-base rows above read `disjoint (approx)`.
+- **A wrapper is not certified.** `wsame t = same t` is in no group, so no stop rule proves a
+  certificate for it, and its class is published without the mark. `incAll (wsame t)` is refused
+  `disjoint (approx)`, in one module and through a re-exporting module (`o/FoldCertificateWrapper`:
+  `viaLocal`, `viaMid`, `twoMid`, `apartMid`; `direct`, the certified call, is accepted). A
+  certificate for a non-recursive declaration whose result is a certified view is not specified:
+  #1558.
+- **The oracle sweep, again** (a Node model, not committed). 57 programs: the witnesses, rows 1–10,
+  14, 14's twin, 15, 17, 18 and 19, rows 1–6 imported, `o/FoldedKnotCall`, the six raw-base
+  producers, the five wrapper probes, and rows 11, 12 and 13. Each runs on every tree of height 3 or
+  less with distinct lists (26 trees, or 676 pairs; boxed and wrapped for rows 15 and 17), both
+  `Bool`s and `n` ∈ {0, 1, 2}: 11 725 runs. A program runs in place when the dump accepts every line
+  of its function. **0 unsafe**, 16 programs accepted. With every verdict forced to accepted, it
+  reports 26 programs UNSAFE. Refused and safe on every input (precision gaps): rows 4, 14 and 14's
+  twin, row 4 imported, the five safe raw-base producers, the three wrapper refusals, and rows 11, 12
+  (`incAll2` reaches its summary-size limit) and 13.
+- **Not rebased.** #1538's atom rule splits `same`'s knot into three classes, two of them `lost`,
+  and the witnesses turn red on master: #1559, a decision.
+- **Cost.** The fold fixtures take 2 to 12 s per case in the safety build: #1560.
 
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it
