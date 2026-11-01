@@ -3082,6 +3082,9 @@ const Case = struct {
             if (p.digest != null) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
             if (p.skip) continue;
             try c.pageVerdict(p, runs[j], shown[j]);
+            // Verified: recorded from the transcript the verdict compared,
+            // as `runPage` records its pages (its note on a blessing run).
+            if (p.digest != null) try run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, p.out, @tagName(p.pass), p.golden, (shown[j] orelse runs[j]).stdout, try browser.page(c.arena, h, scripts[j].bytes)));
         }
     }
 
