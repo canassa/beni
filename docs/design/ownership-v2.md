@@ -2677,14 +2677,29 @@ Where κ is set, always **at the selected path p**:
        runs over the resumed subgraph, its components and its `K`-bits, before pass 3 uses any of its
        states. That is exact, because nothing in the subgraph reaches above the hit. Without it, the
        self-loop above would read as an open set that is its own child set: the rule would not end, or it
-       would differ from the reference. *Resumed passes stay linear.* A resumed pass 2 numbers only the
+       would differ from the reference. *Resumed passes read only new states.* A resumed pass 2 numbers only the
        newly read states, continuing the call's numbering. A state classified before is a sink whose
        component, cycle bit and bit set are kept. That is exact: an earlier state reaches a new one only
        through a hit, and no bit above a hit depends on anything below it. The kept bit sets need a shared
        numbering. Each node takes one bit index for the whole call when it first enters a component `K`,
-       and `K`'s bits are its nodes' indices. So a later pass that adds node-graph edges, even one that
-       merges two components, leaves every kept set valid. `k` resumed hits that share a sub-DAG `D` read
-       `D` once, not `k` times. Pass 1 reads the states that today's walk expands at least once,
+       and `K`'s bits are its nodes' indices. A later pass that adds node-graph edges leaves every kept set
+       valid as far as it goes. *A merge reopens kept sets.* Bits propagate only within `K`, so a kept set
+       holds only the bits of the nodes that were in its state's component when its pass ran. When a
+       resumed pass's new edges merge components that hold earlier states, the pass first propagates the
+       merged `K`'s bits again, bottom up over the earlier states in `K` along the edges of `Σ` inside
+       `K`. Only then do new states read those sets. The earlier states' cycle bits do not change (by the
+       rank argument), only their sets widen. Without this, the merged component's other bits are
+       missing. Take two `{⊤}` leaves at rank 0: `c` at place `p` and `d` at place `q`, with
+       `child(p, s) = q` and `child(q, s′) = p`.
+       - Earlier, `X = (d, rX)` reaches `Z = (c, rZ)`. `Z`'s cursors do not link `s`, so there is no
+         edge `c → d`, and `c`'s bit is not in `X`'s set.
+       - In the resumed pass, `Y = (c, rY)` links `s` and has the child `X`. That merges `c` and `d`.
+         `Y` reaches `Z`, which has `Y`'s node, so `Y` is cyclic.
+
+       Read from `X`'s old set, `Y` would not be cyclic. That costs only precision, but it breaks
+       rule = reference. A merge costs `|E_K| · ⌈|K|/64⌉` words for the merged `K`. Each merge lowers the
+       number of node-graph components, so a call has fewer merges than nodes. `k` resumed hits that share
+       a sub-DAG `D` still read `D` once. Pass 1 reads the states that today's walk expands at least once,
        plus the lazily expanded hits. Today's walk links a clean hit even where its position is shared.
     2. *The cycle bit.* The pass computes Tarjan's components of `Σ`, and the components of its node
        graph, which has one vertex per joined node and an edge for each edge of `Σ`. A state whose node
@@ -2773,7 +2788,8 @@ Where κ is set, always **at the selected path p**:
     - pass 1: `O(|Σ| + |E_Σ|)` state and edge reads, each as one frame of today's walk reads it, where
       `Σ` stops at clean-memo hits (pass 1);
     - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits,
-      summed over the whole call with its resumed passes, which number only new states;
+      summed over the whole call with its resumed passes, which number only new states, plus
+      `|E_K| · ⌈|K|/64⌉` for each merge that reopens kept sets (fewer merges than nodes);
     - pass 3: for each distinct open set, its interning (a record per state) and its edges; for each
       distinct fold set, its closure and the closure's edges, so `O(fold sets · |E_Σ|)` in all.
 
@@ -2839,6 +2855,9 @@ Where κ is set, always **at the selected path p**:
     - *The resumed hit.* A clean hit is expanded lazily because it shares a set with another state. Below
       it stands a `{⊤}` leaf at a `List` place whose member cursor is an exact fold, a self-loop of `Σ`.
       The call must end, and it must give the reference's id.
+      A two-leaf variant: period 2 (`child(p, s) = q`, `child(q, s′) = p`), where only the resumed run's
+      cursor links `s`, so the resumed pass merges the two leaves' components. It must give the
+      reference's id.
     - *The sibling.* The period-2 knot with a 2^d-path sibling (*Measured*): its states grow as
       `2d + 9` and its positions do not grow with `2^d`.
     - *The self-loop.* A period-1 knot, a self-edge of `Σ`: its state is cyclic and the root is a fold.
@@ -6220,7 +6239,8 @@ members (#1054); exact same-base comparisons remain individually charged. `Cond.
 need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
 (2026-11-01). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
 `Σ_K |E_K| · ⌈|K|/64⌉` words for the cycle bits over the node-graph components `K` (quadratic for one large
-knot), summed over the call: a resumed pass numbers only new states, plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
+knot), summed over the call (a resumed pass numbers only new states, and each merge of components that
+hold earlier states adds `|E_K| · ⌈|K|/64⌉`, with fewer merges than nodes), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
 closures.
 Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
 polynomial bound in `|Σ|` fails only at the number of distinct open sets, which is exponential in the worst
