@@ -1239,9 +1239,128 @@ Operations, memoised on their node arguments:
     `runtime_safety`, the check reads every group-2 reader on the raw value and on the quotient, on a scratch
     account. Then build it, and run the oracle sweep (copy against in-place over Dict-like insert and remove
     programs, shown to report UNSAFE with every verdict forced to accepted).
-  - **Other ways out, for the decision** (not measured here): a widen that folds a knot image held under a
-    recast into the knot of its canonical path, where #1368's *A widen that folds no-cycle nesting* changes
-    κ and this one may not, because every κ here is `lost`; or core's `Dict` as a known limit (Q8).
+  - **The two ways out, measured** (below, *A widen that folds held knot images* and *The pointwise form
+    when every κ is `lost`*). Neither is exact. Core's `Dict` stays a known limit until the owner decides.
+
+  **A widen that folds held knot images, prototyped (#1372)** [M 2026-11-01, master `e5b6da864`, self-hosted
+  Debug, scratch prototype in `Widen`, nothing built].
+  - **Where the images are held.** Every earlier-round knot in `removeMin`'s port is the inner of a *whole*
+    recast (`recastWhole`, b = 1). `Calls`' graft makes it at a `⟲` step (`Grafter.argAt`'s `recastWhole` for a
+    level): a callee whose `res` holds its parameter at `π#Node.3⟲` (`balance`, `moveRedLeft`, `removeMin`
+    itself) is applied to an actual that is a view of the port, so the graft wraps the port's image of that
+    round. Widen walks no recast. It keeps the recast as a side of the root class, and a projection of it
+    at the key or value place is a whole recast of the same image (`proj`'s `recastWhole`). So the image
+    lives on in every later round, at the root and below the kept unions at the key and value places.
+  - **The rule, as prototyped.** In a group's rounds (`widen_rounds`), when `widen` emits a class's side, it
+    rebuilds the side's kept unions, choices and positions nodes. Each whole recast `W_P(I)` met there whose
+    inner `I` stands at the root's place and whose union DAG reaches a `node` at that place becomes
+    `W_P(K)`. `K` is the root class's `node` record, not its `union`: `map` gives a cycle its image only at a
+    node or a delta, and a cycle of unions and recasts alone made `shapeMove`'s `map` loop without a charge
+    until the process ran out of memory (an unguarded loop, a finding of its own). The cells of `W_P(K)` are
+    `K`'s reach, all approximate. The prototype reads that reach from a first emission and emits again.
+  - **It is sound for γ, measured.** At each fold in `removeMin`'s first three rounds (4 widens that fold,
+    each run twice by the module's two passes), `Shape.leq(raw, folded)` holds. The fold drops no key of the image's reach: the reach of every folded inner is inside `K`'s.
+  - **It is not exact. The reader that tells is every reader of a path below a folded recast** (`cellsAt`,
+    `leq`'s γ, `Calls.preimage`, and so a caller's instantiation). The image held at the walk's read-off is
+    the port of round k as the call at `π1#Node.3` instantiated it, so it holds the left subtree's cells and
+    not the root parameter's own: `π1`, its key and its value (3 to 5 cells missing of 14 to 16). The fold
+    puts those cells, approximate, at every path below the recast. `Shape.leq(folded, raw)` fails at the
+    walk's read-offs (2 of the 4 widens); it holds at the port joins after them. With the fold allowed only where
+    it is γ-equal to the raw value, no fold is left on `removeMin`. So "the later knot subsumes the earlier
+    one" holds for the port (`x_{k+1} ⊒ x_k`), not for a read-off, whose root (`F(x_k)`) need not be above
+    `x_k`.
+  - **The lemma, and what a check would read.** Let φ map each folded `W_P(I)` to `W_P(K)`. A whole recast
+    is read through `approxReach` of its inner (every set reader, and `proj`, which keeps it whole), through
+    its inner's structure at the recast's own path (`Holders`' cast walk, `KappaRead.innersOf`), and as `⊤`
+    below it (`Calls`). If `reach(I) ⊆ reach(K)` and `I ⊑ K` at the recast's path, every reader's answer
+    on φ(v) is at least as weak as on v (sound). It is the same answer only if, in addition, `reach(K) ⊆
+    reach(I)` modulo the cells already approximate at each path below. The `runtime_safety` check is the two
+    `Shape.leq` calls of the prototype: `leq(raw, folded)` must hold at every fold (soundness), and
+    `leq(folded, raw)` decides whether the fold is exact. `Holders`' cast walk reads the inner's structure,
+    which γ does not compare, so its half of the check is a walk of the holds at the recast's path on both
+    values. That was not prototyped. *Cost:* one more emission of the classes whose side holds a candidate,
+    one reach and two `leq` calls (memoised by pair). Over the corpus, where no root folds, the prototype's
+    extra emission costs +0.28 % of the records (10 030 550 → 10 058 279).
+  - **It does not bound `removeMin`.** Unguarded, at 10⁸, the group settles: 4 rounds, the port 25 / 98 /
+    224 / 471 nodes (raw: 25 / 107 / 292 / 752, and a limit in walk 7), 5 walks, growth 35 559 005, in 2 min
+    32 s against the raw run's 7 min 36 s. That growth is about 540 times the default allowance of 65 536,
+    so `removeMin` is still a limit at the default. What grows now is the key and value place: of round 4's
+    471 nodes, 341 are unions and 25 choices there. That place lies on no cycle, so no widen folds its
+    nesting. `descend` makes no fold and does not change (84 112 records against 83 649, the prototype's
+    extra emission).
+  - **The corpus and the sweep.** All 2 131 roots of `bench/ownership-roots.mjs` (`allOwnership`) were dumped
+    under `--ownership-everywhere --ownership=v2`, with and without the fold. No root folds, and every
+    verdict, summary and block line is byte-identical (`account` and `crossing` left out). The oracle sweep
+    (a scratch copy of `bench/ownership-dup-oracle.mjs` over `type T = N (List Int) T T | L`, raised to
+    4 194 304) has 60 programs: ten rebalancing writers (`removeMin`, a rotation, `balance`, `moveRedLeft`,
+    a subtree kept twice, …) and twenty `removeMin`-shaped ones, five bodies that pass their recursive
+    call's result to one of four helpers (`balance`'s rotation, `moveRedLeft`'s borrow, a rotation that
+    writes, a helper that keeps a subtree twice). Each is local and imported, with 14 drivers and 7 inputs.
+    - Without the fold, 36 of the 60 are limits. With it, 20 are, and the prototype folds 753 times. The
+      16 that the fold checks are all of the second kind: the insert that rebalances with three of the
+      helpers (6), and 10 of the removals, 8 of them with `moveRedLeft`'s borrow as the helper.
+    - The 24 programs checked on both sides dump byte-identical lines (`account` and `crossing` left out).
+    - No run differs: 2 352 runs without the fold and 3 920 with it, copy against in place where the
+      verdicts allow it. No accepted driver is unsafe.
+    - The control: with every write in place, 826 of the 3 920 runs differ, and 8 partial drivers are
+      unsafe.
+    So the fold checks programs that were limits and makes no accepted program unsafe on this sweep. That
+    is evidence of soundness, not of exactness: a program that was a limit has no raw verdict to compare.
+
+  **The pointwise form when every κ is `lost` (#1372)** [M 2026-11-01, read from master `e5b6da864`'s
+  `Demands`, `Holders` and `TransferArms`; not prototyped]. The question: when the class's κ reads `lost` at
+  every position of a value v, and at every position that holds v later, does each co-occurrence reader give
+  the same answer on v's pointwise join as on its arms? **The verdicts: yes, by the argument below. The
+  diagnostics: no.** So the pointwise form is not exact.
+  - **The κ readers are blind.** The path multiset, `apartImage`, the repeating split and the fold
+    certificate each produce a condition, and the condition is joined or conjoined into the κ read at a
+    position of v or above it. `lost` absorbs both, so their answer is `lost` on both forms.
+  - **Condition 6 refuses every write into v.** A demand whose base is a position of v relies on κ there
+    (`Demands.after`: `relied` starts from `dm.relies`), and `CondAlgebra.rely(lost)` is `refused`,
+    approximate. A split that condition 4 or 5 adds to `relied` (`under`, `under_kappa`, `Holders`'
+    `lost`) is conjoined with `lost` and changes nothing.
+  - **The other-path check (condition 4) can refuse earlier, with another cause.** `TransferArms` splits only
+    a choice on the write's exact prefix, so it reads v's arms only for a write into v. Take #1587's
+    example: arm A holds `c` at `.2`, arm B holds `c` at `.3.2`, and a caller's writer writes `.2` of v. Per
+    arm, no other path of the argument holds `c` beside `.2`, so condition 4 passes, and condition 6
+    refuses: `exclusive (approx)`. On the pointwise join, `.2` and `.3.2` hold `c` in one value, so condition
+    4 refuses first: `disjoint`, "another path of the same argument". The verdict is the same. The cause and
+    the message are not, and the message names a sharing that no run has. So `lost` does force the refusal
+    in the example, but not the same refusal.
+  - **`Holders` (condition 5) can change the word.** A hold read through a choice is one of several
+    alternatives (`alt`), so `holdExact` calls it inexact, and the cause can be `element`. The pointwise form
+    has no choice at a merged path, so the same hold is exact, and the cause becomes `later-use` or `alias`
+    without `(approx)`. Holders pairs, covers and reliance read the cells at each path, which the pointwise
+    form keeps. So the verdict does not change, but the message says *is held* where every run has *may be*.
+  - **A demand on another base.** Condition 4 reads an operand, or another path of the argument, as the set of
+    cells at each path. Only a choice on the write's own prefix is split, and that prefix is not in v. So the
+    pointwise form gives the same answer there.
+  - **The fixpoint.** Like 4d's rule, the form changes the rounds, so a group can settle at another
+    fixpoint, or settle where the arms did not. The stop rule still checks it with `leq`, so this is sound,
+    but the published class can differ.
+
+  So the answer to the question is a counterexample, and it is the worked example itself. `lost` does make
+  every verdict the same (a lemma whose cases are above; it was not checked by a run). But the pointwise form
+  changes a refusal's cause and its exactness, and the new text is false: the shared path, or the exact
+  hold, belongs to no execution. A `runtime_safety` check of the verdict half is cheap: at each join that
+  takes the pointwise form, assert that every κ entry the class reaches is `lost`; and in `Demands.after`,
+  assert that a demand whose `dm.relies` is `lost` is refused. A check of the diagnostic half would need the
+  arms' form, which is what the rule removes.
+
+  **The decision (#1372, §8 Q8).** Neither way out is exact, so the owner must choose between keeping
+  `Dict.removeMin` a known limit and a rule that is not exact. The trade-off:
+  - *(b), the fold, is not worth taking.* It is sound for γ, but it adds the root parameter's cells,
+    approximate, at every path below a folded recast, and it still leaves `removeMin` 540 times over the
+    default allowance. Its remaining growth is the key and value place, which no fold reaches.
+  - *(a), the pointwise form under `lost`, keeps every verdict* (by the lemma above) and approaches a bound (4
+    to 22 nodes over six rounds, measured by the analyser, not by a prototype). Its price is diagnostics: a
+    refusal of a write into such a value can say `disjoint` or an exact `later-use` where the arms say
+    `exclusive (approx)` or `element`. Those are refusals of writes that are refused anyway, and only in
+    classes whose κ is already `lost` everywhere.
+  - *Keeping the limit* changes nothing: `Dict.remove` and its callers stay `unchecked` (limit), as on master.
+  *Recommendation:* keep `Dict` as a known limit, and do not take (b). If the owner accepts (a)'s price,
+  the next slice is a prototype of (a) behind the two assertions above, with the oracle sweep of
+  *A widen that folds held knot images* and its control.
 
   **Options not taken.**
   - *A widen that folds no-cycle nesting into a knot.* Round k + 1's `res[*]` holds round k's `res[*]`
@@ -8997,7 +9116,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    calls. A record that doubles at 11 levels costs 2 670 records, where the walk before it is a limit.
    #1289's chain is linear (since #1538 under that walk too). `descend` costs 122 867 records
    (137 891 before) and is still over the default allowance. `removeMin` is still a limit at 10⁸: its largest
-   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*). *Measured (2026-11-01, a quotient of the port's arms):* no quotient that keeps which cells occur together in one arm bounds `removeMin` (its minimal forms still grow 1.5 to 2.5 times a round to round 6), and the pointwise form that does approach a bound is not shown exact for `Holders` and the other-path check (§2.3, *A quotient of a port's arms that no reader tells apart*). So this is the owner's decision: a proof or check that makes the pointwise form exact when every κ is `lost`, a widen that folds a knot image held under a recast, or `Dict` as a known limit.
+   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*). *Measured (2026-11-01, a quotient of the port's arms):* no quotient that keeps which cells occur together in one arm bounds `removeMin` (its minimal forms still grow 1.5 to 2.5 times a round to round 6), and the pointwise form that does approach a bound is not shown exact for `Holders` and the other-path check (§2.3, *A quotient of a port's arms that no reader tells apart*). So this is the owner's decision: a proof or check that makes the pointwise form exact when every κ is `lost`, a widen that folds a knot image held under a recast, or `Dict` as a known limit. *Measured (2026-11-01, the two ways out):* the widen that folds held knot images is sound for γ but not exact: it adds the root parameter's cells, approximate, below each folded recast. With it `removeMin` settles at 10⁸ with 35 559 005 growth, so it is still a limit at the default allowance. The pointwise form under `lost` keeps every verdict but changes a refusal's cause and exactness (§2.3, *A widen that folds held knot images*, *The pointwise form when every κ is `lost`*). *Recommendation:* keep `Dict` as a known limit and do not take the fold. Take the pointwise form only if the owner accepts its diagnostics.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
