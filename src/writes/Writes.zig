@@ -911,6 +911,7 @@ view_arms: std.HashMapUnmanaged(VHoleKey, bool, std.hash_map.AutoContext(VHoleKe
 next_root: u32 = 0,
 
 ctx: Ctx = .{ .mode = .closed },
+command_probe: ?*CommandProbe = null,
 inst_depth: u32 = 0,
 active: std.ArrayList(u64) = .empty,
 split_ctors: std.ArrayList(u32) = .empty,
@@ -2963,12 +2964,12 @@ fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64
         if (a.termTag(t) != .tup or a.termLen(t) < 3) return .{ .class = .unknown };
         return a.commandIn(a.termWord(t, 2), false, memo);
     }
-    const bodies = a.effectParts(t, .cmd) orelse return .{ .class = .unknown };
+    const bodies = try a.arena().dupe(u32, a.effectParts(t, .cmd) orelse return .{ .class = .unknown });
     if (bodies.len == 0) return .{ .class = .none };
     for (bodies) |body| {
         if (a.termTag(body) != .fun) return .{ .class = .unknown };
         const at = a.funSite(body);
-        if (a.funSuspends(body)) return .{ .class = .suspends, .module = at.m, .inst = at.inst };
+        if (try a.commandBodySuspends(body)) return .{ .class = .suspends, .module = at.m, .inst = at.inst };
     }
     return .{ .class = .runs };
 }
@@ -2987,15 +2988,45 @@ fn funSite(a: *const Writes, t: u32) struct { m: u32, inst: u32 } {
 
 /// Whether calling the function term may suspend, by the checker's answer
 /// (`checker-v2.md` §26): `yes`, or `poly` — yes in the body that suspends.
-fn funSuspends(a: *const Writes, t: u32) bool {
+fn funSuspendMode(a: *const Writes, t: u32) Dispatch.Suspend {
     const kind: FunKind = @fromBackingInt(a.termWord(t, 1));
     const m = a.termWord(t, 2);
-    const dt = a.dispatchOf(m) orelse return true;
+    const dt = a.dispatchOf(m) orelse return .yes;
     return switch (kind) {
-        .top => dt.effectDecl(a.termWord(t, 3)).own != .no,
-        .ctor => false,
-        .lambda, .letdef => dt.effectAt(@fromBackingInt(a.termWord(t, 4))).own != .no,
+        .top => dt.effectDecl(a.termWord(t, 3)).own,
+        .ctor => .no,
+        .lambda, .letdef => dt.effectAt(@fromBackingInt(a.termWord(t, 4))).own,
     };
+}
+
+const CommandProbe = struct { sender: u32, suspends: bool = false };
+
+/// Resolve a polymorphic command with its real synchronous sender. Reuse the
+/// value evaluator so captured callbacks and helper arguments keep their values.
+fn commandBodySuspends(a: *Writes, body: u32) Allocator.Error!bool {
+    switch (a.funSuspendMode(body)) {
+        .no => return false,
+        .yes => return true,
+        .poly => {},
+    }
+    const sender = a.mkSame(try a.mintRoot(.eps, 0, true)) catch |err| switch (err) {
+        error.WorkCap => return true,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    var probe: CommandProbe = .{ .sender = sender };
+    const saved_probe = a.command_probe;
+    const saved_ctx = a.ctx;
+    a.command_probe = &probe;
+    a.ctx = .{ .mode = .closed };
+    defer {
+        a.command_probe = saved_probe;
+        a.ctx = saved_ctx;
+    }
+    _ = a.apply(body, &.{probe.sender}, 0) catch |err| switch (err) {
+        error.WorkCap => return true,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    return probe.suspends;
 }
 
 /// Whether a term is made of literals and constructors alone.
@@ -3158,6 +3189,19 @@ fn applicationSubscriptions(a: *Writes, frame: *Frame, fs: Fields, sub: u32) Err
 /// program's own functions, and otherwise its summary instantiated.
 fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32) Error!u32 {
     const decl = a.bir(m).decls[d];
+    if (a.command_probe) |probe| {
+        const dispatch = a.dispatchOf(m);
+        const own = if (dispatch) |dt| dt.effectDecl(d).own else .yes;
+        if (own == .yes) probe.suspends = true;
+        if (own == .poly) {
+            // Core rows already apply their callbacks. Other helpers need
+            // the actual arguments here, rather than a cached generic summary.
+            const row = if (a.in.packages[m] == .core) Core.row(a.in.module_names[m], a.declName(m, d)) else null;
+            if (decl.kind == .foreign_value) {
+                probe.suspends = true;
+            } else if (row == null and decl.params > 0) return a.direct(m, d, args, g);
+        }
+    }
     if (a.in.effects) |fx| if (try a.effectCall(fx, m, d, args)) |t| return t;
     if (!a.isOwn(m)) {
         // The rows are core's: a platform module of the same name is not `List`.
@@ -3219,6 +3263,7 @@ fn opaqueCall(a: *Writes, args: []const u32, m: u32, site_m: u32, site: Inst.Ind
 
 /// Apply a function value (§4.2's reductions).
 fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
+    if (a.command_probe) |probe| if (fun == probe.sender) return a.mkLit(lit_unit, 0, 0);
     switch (a.termTag(fun)) {
         .fun => {
             const kind: FunKind = @fromBackingInt(a.termWord(fun, 1));
@@ -3245,10 +3290,14 @@ fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
         },
         .same => {
             const r = a.rootOf(a.termWord(fun, 1));
-            if (a.pathKind(r) == .pi) return a.mkApp(fun, args);
+            if (a.pathKind(r) == .pi) {
+                if (a.command_probe) |probe| probe.suspends = true;
+                return a.mkApp(fun, args);
+            }
         },
         else => {},
     }
+    if (a.command_probe) |probe| probe.suspends = true;
     var all = try a.arena().alloc(u32, args.len + 1);
     all[0] = fun;
     @memcpy(all[1..], args);
@@ -3256,6 +3305,9 @@ fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
 }
 
 fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
+    if (a.command_probe) |probe| if (a.funSuspendMode(fun) == .yes) {
+        probe.suspends = true;
+    };
     const kind: FunKind = @fromBackingInt(a.termWord(fun, 1));
     const m = a.termWord(fun, 2);
     const d = a.termWord(fun, 3);
@@ -3263,6 +3315,7 @@ fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     const b = a.bir(m);
     const key: u64 = (@as(u64, m) << 32) | inst.int();
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) {
+        if (a.command_probe) |probe| probe.suspends = true;
         if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true else try a.noteRecursive(key);
         return a.freshCall(args);
     }
@@ -3321,6 +3374,7 @@ fn noteRecursive(a: *Writes, key: u64) Allocator.Error!void {
 fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
     const key = directKey(m, d);
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) {
+        if (a.command_probe) |probe| probe.suspends = true;
         if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true else try a.noteRecursive(key);
         return a.freshCall(args);
     }

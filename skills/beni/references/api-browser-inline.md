@@ -23,22 +23,22 @@ module Browser.Navigation
     CrossOrigin
     Throttled
   alias Key
-  value back : Key, Int, (Error → msg) → Cmd msg
+  value back : Key, Int, (Error → msg) → Cmd msg  -- impure
   value currentUrl : ⊤ → Maybe Url  -- impure
-  value forward : Key, Int, (Error → msg) → Cmd msg
+  value forward : Key, Int, (Error → msg) → Cmd msg  -- impure
   value goBack : Key, Int → Result Error ⊤  -- impure
   value goForward : Key, Int → Result Error ⊤  -- impure
   value key : ⊤ → Key
-  value load : String, (Error → msg) → Cmd msg
+  value load : String, (Error → msg) → Cmd msg  -- impure
   value loadPage : String → Result Error ⊤  -- impure
   value onUrlChange : (Url → msg) → Sub msg
   value onUrlRequest : (UrlRequest → msg) → Sub msg
   value push : Key, String → Result Error ⊤  -- impure
-  value pushUrl : Key, String, (Error → msg) → Cmd msg
-  value reload : ⊤ → Cmd msg
+  value pushUrl : Key, String, (Error → msg) → Cmd msg  -- impure
+  value reload : ⊤ → Cmd msg  -- impure
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
-  value replaceUrl : Key, String, (Error → msg) → Cmd msg
+  value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
 module Cmd
   type Cmd a
     None
