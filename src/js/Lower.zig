@@ -76,6 +76,7 @@ const SchemaLower = @import("SchemaLower.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Hoists = @import("../own/Hoists.zig");
+const Channel = @import("../own2/Hoists.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -269,6 +270,11 @@ pub const Input = struct {
     dispatches: []const Dispatch = &.{},
     /// The checked or installed module-local ownership facts (§31.10).
     ownership: Hoists.Table = .empty,
+    /// Under `--ownership=v2` in a build that enforces, the module's v2
+    /// lowering channel (`own2/Hoists.zig`, `ownership-v2.md` §3.7): the
+    /// list writes v2 accepted, which `sanitize_lists` wraps one by one.
+    /// Null: v1's `ownership.clean` says it, for every write of the module.
+    list_writes: ?*const Channel.Table = null,
     /// The session's type table, read as a **name, declaration and
     /// derivability service** and as nothing else.
     ///
@@ -1287,6 +1293,13 @@ pub const Lowerer = struct {
     /// `a ++ b ++ c` likewise), so they are not sanitised. A column by
     /// instruction, made on the first mark.
     sanitize_chain: []bool = &.{},
+    /// Under v2's channel (`Input.list_writes`), per instruction the root
+    /// of the spread chain whose first spread item it is, or `maxInt`: v2
+    /// names a chain's write by its root (§2.13.2), which is the `List.cons`
+    /// of its leading items when it has some, and the write is the
+    /// `List.append` of that item. A column by instruction, made on the
+    /// first question.
+    spread_roots: []u32 = &.{},
     /// The padded nullary constructors this module has written in value
     /// position, each one module-level constant (`backend.md` §4, *A
     /// nullary constructor is one object*). Discovered like `needs`, so
@@ -5140,8 +5153,49 @@ pub const Lowerer = struct {
     /// accepted by a build that enforces, so that every write it lowers is
     /// an accepted one (`ownership-v2.md` §7.3, R-8.9). Core and the
     /// platforms are not such modules.
+    /// Under `--ownership=v2` (`Input.list_writes`) it is a module whose
+    /// accepted writes v2's channel lists, each judged by `sanitizesAt`.
     fn sanitizesLists(l: *const Lowerer) bool {
-        return l.in.sanitize_lists and l.in.ownership.clean;
+        return l.in.sanitize_lists and (l.in.ownership.clean or l.in.list_writes != null);
+    }
+
+    /// Whether the list write at `inst` goes through the sanitiser: under
+    /// v1 every write of a module `sanitizesLists` holds of; under v2 the
+    /// writes its channel lists, its demand's instruction (§3.7), and no
+    /// other: a write in a declaration v2 did not build was judged by no
+    /// one.
+    fn sanitizesAt(l: *const Lowerer, inst: Inst.Index) bool {
+        if (!l.sanitizesLists()) return false;
+        const channel = l.in.list_writes orelse return true;
+        return channel.accepted(inst.int());
+    }
+
+    /// `sanitizesAt` for a spread's `List.append` call `inst` whose first
+    /// operand is `first`: under v2 the channel names the chain by its root
+    /// (`spread_roots`), which is `inst` itself only when no item leads.
+    fn sanitizesSpreadAt(l: *Lowerer, inst: Inst.Index, first: Inst.Index) Allocator.Error!bool {
+        if (l.sanitizesAt(inst)) return true;
+        const channel = l.in.list_writes orelse return false;
+        if (!l.sanitizesLists() or !l.isSpreadAppend(inst)) return false;
+        if (l.spread_roots.len == 0) {
+            l.spread_roots = try l.scratch.alloc(u32, l.bir.insts.len);
+            @memset(l.spread_roots, std.math.maxInt(u32));
+            for (l.bir.decls) |d| for (l.bir.spreads(d)) |s| for (l.bir.spreadItems(s)) |it| if (it[1] == 1) {
+                if (it[0] < l.spread_roots.len) l.spread_roots[it[0]] = s.root;
+                break;
+            };
+        }
+        if (first.int() >= l.spread_roots.len) return false;
+        const root = l.spread_roots[first.int()];
+        return root != std.math.maxInt(u32) and channel.accepted(root);
+    }
+
+    /// Whether a list writer handed to a call as a value is sanitised: v1's
+    /// `value` demand. v2 makes no demand of a writer value (it judges the
+    /// write where the callee calls it, a callback parameter's), so under
+    /// v2 the value is passed as it is: a limit of this instrument (§7.3).
+    fn sanitizesWriterValues(l: *const Lowerer) bool {
+        return l.sanitizesLists() and l.in.list_writes == null;
     }
 
     /// The writer of core's `List` that `callee` names — `set`, `update`,
@@ -9855,7 +9909,7 @@ pub const Lowerer = struct {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
                 // `xs.push x` is `List.push xs x`, a write of its receiver.
-                if (target == .ext and evidence.len == 0 and l.sanitizesLists()) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
+                if (target == .ext and evidence.len == 0 and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
                     const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
                     return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p));
                 };
@@ -10420,7 +10474,7 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesLists() and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
             return l.suspension(out, inst, try l.call(append, values, p));
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -10544,7 +10598,7 @@ pub const Lowerer = struct {
         const written = values[1 .. values.len - l.unwrittenArgs(callee_inst, arg_insts)];
         // A list writer handed to the callee as a value writes wherever the
         // callee calls it (v1's `value` demand at this call).
-        if (l.sanitizesLists()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
+        if (l.sanitizesWriterValues()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
             w.* = try l.sanitizedWriterValue(w.*, writer, p);
         };
         l.region = inst;
@@ -10554,7 +10608,7 @@ pub const Lowerer = struct {
         const evidence = try l.evidenceArguments(roots, p);
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
-            if (l.sanitizesLists() and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
+            if ((if (arg_insts.len != 0) try l.sanitizesSpreadAt(inst, arg_insts[0]) else l.sanitizesAt(inst)) and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
                 return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p));
             return l.suspension(out, inst, try l.call(callee, written, p));
         }

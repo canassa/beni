@@ -1,0 +1,76 @@
+-- Every list writer v2 builds, each on a list nothing reads again, built
+-- once more under `--ownership=v2` and the list stale-read sanitiser
+-- (`ownership-v2.md` §7.3): v2's lowering channel names each write it
+-- accepted, each runs on a copy and poisons the list it wrote, so the
+-- program prints the same only if no holder older than a write reads it.
+-- The harness checks that the sanitised build wraps exactly the list
+-- writes v2 accepts.
+import List
+import Node exposing (Program)
+import String
+
+
+writes : Int → List (List Int)
+writes n =
+    pushed = List.push [ 1, 2 ] n
+    dotted = pushed.push 4
+    set = List.set [ 1, 2, 3 ] 1 n
+    swapped = List.swap [ 1, 2, 3 ] 0 2
+    popped = List.pop [ 1, 2, 3 ]
+    inserted = List.insertAt [ 1, 2, 3 ] 1 n
+    removed = List.removeAt [ 1, 2, 3 ] 0
+    appended = List.append [ 1 ] [ 2, 3 ]
+    middle = [ 2 ]
+    after = [ 5 ]
+    [ dotted
+    , set
+    , swapped
+    , popped
+    , inserted
+    , removed
+    , appended
+    , [ 4, 5 ] ++ [ 6 ]
+    , [ …[ 7, 8 ], 9 ]
+    , [ …[ 1 ], …middle, 3 ]
+    , [ 4 ] ++ after ++ [ 6 ]
+    , middle
+    , after
+    ]
+
+
+grown : Int, List Int → List Int
+grown n acc =
+    if n == 0 then
+        acc
+    else
+        grown (n - 1) (List.push acc n)
+
+
+bump : List Int → List Int
+bump xs = List.push xs 0
+
+
+rest : List Int → List Int
+rest xs =
+    case xs of
+        [ _, …tail ] →
+            List.push tail 9
+
+        [] →
+            []
+
+
+long : Int → Int
+long n = List.length (List.push (List.range 1 n) 41)
+
+
+lines : Int → List (List Int)
+lines n = List.append (writes n) [ grown 5 [], bump [ 3 ], rest [ 1, 2, 3 ], [ long 40 ] ]
+
+
+show : List Int → String
+show xs = "[" ++ String.join (List.map xs λx → String.fromInt x) "," ++ "]"
+
+
+main : Program
+main = Node.printLines (List.map (lines 3) λxs → show xs)

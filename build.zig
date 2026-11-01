@@ -791,6 +791,13 @@ pub fn build(b: *std.Build) void {
     const lists_step = b.step("test-lists-in-place", "Build every run/ program and browser/inline/ page under the list stale-read sanitiser, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
     lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "lists" }).step);
     lists_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "lists" }).step);
+    // The same under `--ownership=v2`: its channel (`src/own2/Hoists.zig`,
+    // ownership-v2.md §3.7) names the writes the sanitiser wraps, so a v2
+    // accept the program contradicts traps. Not a gate; the gates run the
+    // `.sanitize-lists-v2` fixtures.
+    const lists_v2_step = b.step("test-lists-in-place-v2", "Build every run/ program and browser/inline/ page under --ownership=v2 and the list stale-read sanitiser, and compare its output with its golden (ownership-v2.md §7.3); not a gate");
+    lists_v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "lists-v2" }).step);
+    lists_v2_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .in_place = "lists-v2" }).step);
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast }).step);

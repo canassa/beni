@@ -214,7 +214,8 @@ const layers = [_]Entry{
     // way round is the reader's projection (`sameDag`).
     .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1300 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
-    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 330 },
+    // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
+    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
     .{ .file = "Enforce.zig", .layer = 17, .max_lines = 500 },
