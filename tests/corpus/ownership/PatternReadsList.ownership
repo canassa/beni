@@ -1,0 +1,33 @@
+module PatternReadsList
+  120:7 List.push kids: rejected call: w#Rose.0[*]⟨Rose⟩#Rose.0 may hold it through the call at 119:12, and is read at 120:28 (approx)
+  129:7 List.push kids: rejected call: w#Rose.0[*]⟨Rose⟩#Rose.0 may hold it through the call at 128:12, and is read at 129:28 (approx)
+  144:7 List.push kids: rejected level: w#Rose.0[*]⟨Rose⟩#Rose.0 may hold it at another level, and is read at 144:28 (approx)
+  153:7 List.push kids: rejected call: w#Rose.0[*]⟨Rose⟩#Rose.0 may hold it through the call at 152:12, and is read at 153:28 (approx)
+  160:7 List.push inner: rejected alias: xs[*] holds it and is read at 160:26
+  167:7 List.push inner: rejected alias: p.1[*] holds it and is read at 167:26
+  174:7 List.push inner: rejected alias: m#Just.0[*] holds it and is read at 174:26
+  181:7 List.push kids: rejected call: k[*]#Rose.0 may hold it through the call at 180:12, and is read at 181:36 (approx)
+  189:7 List.push kids: accepted call
+  summary skip2c: π1 R
+  summary d3: π1 R
+  summary deepLen: π1 R, π1⟨Rose⟩#Rose.0[*] R
+  summary evenR: π1 R, π1⟨Rose⟩#Rose.0[*] R
+  summary oddR: π1 R, π1⟨Rose⟩#Rose.0[*] R
+  summary nested: π1 R
+  summary inTuple: π1 R
+  summary inMaybe: π1 R
+  summary firstKids: π1 R, π1⟨Rose⟩⁺#Rose.0 RA; res fresh1 π1⟨Rose⟩⁺#Rose.0{excl π1#Rose.0}r{excl π1#Rose.0}
+  summary skipped: res .0 ~fresh1, .0[*] ~fresh2
+  summary deep: res .0 ~fresh1, .0[*] ~fresh2
+  summary three: res .0 fresh2 ~fresh1, .0[*]⟨Rose⟩#Rose.0 ~fresh1, .0⟨Rose⟩#Rose.0 ~fresh1
+  summary mutual: res .0 ~fresh1, .0[*] ~fresh2
+  summary nestedList: res .0 fresh1
+  summary tupled: res .0 fresh1
+  summary maybe: res .0 fresh1
+  summary rebuilt: res .0 ~fresh1, .0[*] ~fresh2
+  summary unread: res .0 ~fresh1, .0[*] ~fresh2
+  demands 9: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 9: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause alias 3
+cause call 4
+cause level 1

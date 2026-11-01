@@ -4790,6 +4790,22 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    constructor's arguments are plain projections. `List.tail`/`List.drop` are views because their bodies call the
    `view` primitive, whose words say `returned` at `ε` (R-4.5.1). Rebuilding the matched shape is a prepend over
    the view (R-2.14).
+   **A list pattern reads its list** [M 2026-11-01, #1530]. A list pattern tests the length of the list it
+   matches (`[]`, `[ x, …_ ]`, `[ a, b ]`, `[ …_, z ]`), so the match reads that list at the case's point,
+   whatever its depth below the scrutinee. The scrutinee's `whole` use (§2.7) is the frame's read of it and
+   of everything below it, so a hold in this frame needs nothing more. But read-off (§2.10) takes `R` from
+   uses at their own paths, and the scrutinee's use is at its root: `skip2c r = case r of Rose [ Rose [ x,
+   …_ ], …_ ] → 7` was `π1 R` alone. A caller that wrote the inner `[]` in place before calling `skip2c` on a
+   value that still holds it was accepted, and the answer changed from 0 to 7; v1 refuses it. So a list
+   pattern reads the parameter parts of the value it matches, as a consumed value's are read
+   (`Transfer.Frame.readsOf`), and read-off marks `R` at each: `skip2c` is `π1 R, π1#Rose.0 R,
+   π1#Rose.0[*]#Rose.0 R`. A refined cell reads at its canonical path, so a match below a recursive child
+   reads at `⟲`, and a recursive or mutual reader's `R` closes through its group's fixpoint as any other
+   mark does. `[ …rest ]` alone tests nothing and reads nothing. A constructor pattern's tag test and a
+   literal pattern record no read of their own: a constructor is rebuilt, never written (item 1), the list
+   that holds an element is read by the list pattern that reached the element, and a record pattern binds
+   locals, whose uses are their own. Fixtures: `ownership/PatternReadsList`,
+   `ownership/PatternReadsListImported`.
 4. **Program entry** (R-2.10, R-5.8): a declaration with `entry` on a record parameter gives its constructor an
    entry class; at a call whose record's functions have classes: protocol by the callbacks' types (hosted with
    `settle`); `M₀ = res(init)[flags, Host := crossing]`, a top-level value `init` returns stays `shared`
