@@ -6639,7 +6639,11 @@ is tracked:
   shared κ positions an added arm rewrites.
 
 No part bounds a group whose class itself grows per round (`removeMin`: about four times the arms a round, every κ `lost`;
-#1590), nor `propagate`'s states per node (`descend`).
+#1590), nor `propagate`'s states per node (`descend`). *One walk of `removeMin`* (§8 slice 4, 2026-11-01) adds two
+facts. A walk costs about 13 000 to 16 000 records per node of the port it reads, 85 % of it in `propagate`, which is
+linear in its Σ while Σ has no bound in the joined DAG: its edges through recast inners grow with the inners at a path
+(#1620). And walk 2, the validation walk over a 15-node port, costs 2 538 records per written instruction, so K = 1 024
+is not "an order of magnitude past every measurement" for a recursive group: that is the owner's finding to judge.
 
 **Read-off and run-wide reads: the source continuation** (the owner's decision, 2026-10-29, §4.4's *Source work
 versus growth*; #1188; it replaces the per-request read-off continuation this paragraph specified before). Each
@@ -9153,6 +9157,118 @@ are not read in these groups.
 - `descend`: states per node in `propagate` after §2.9 *Fold first* (#1543), not rounds.
 - So core's `Dict` stays a known limit after the rule (Q8).
 
+*One walk of `removeMin`, attributed (#1372, #1590)* [M 2026-11-01, master `212f366bb`, self-hosted Debug,
+`dump --stage=ownership --ownership=v2 --jobs=1`, the module allowance at 4 194 304; scratch instrumentation
+that tagged every committed record with its walk, its phase and its innermost reader, and counted the state
+graph Σ of every `propagate` call; nothing built]. The module is `removeMin` with copies of `balance` and
+`moveRedLeft`. `removeMin` has I_f = 93 written instructions, so its source continuation K·I_f is 95 232
+records. A port's size is the distinct nodes and edges reachable from its `res`, views not forced. Records
+are all records the walk and its pass commit (its port join, deliveries and `shapeMove`): lanes, continuation
+and growth.
+
+| walk | the port it reads: nodes / edges (unions, recasts, choices) | records | of which growth |
+|---|---|---|---|
+| 1 | ⊥ | 39 355 | 15 |
+| 2 | 15 / 18 (6, 1, 0) | 236 025 | 178 636 |
+| 3 | 86 / 135 (55, 5, 5) | 1 107 126 | 1 107 126 |
+| 4 | 247 / 457 (191, 15, 15) | the limit, after 2 908 712 | all |
+
+At walk 2's port join the account holds 173 792 growth and the whole continuation, 95 232: 269 024 records
+past the lanes. That matches #1590's 267 047 (master `7257db683`) if that figure counts the
+continuation with the growth; the growth alone is 2.7 times the default allowance.
+
+- **By phase (walk 2).** The four `case` joins of the body: 129 588 (54.9 %; 1 806, 67 821, 59 533 and 428).
+  The port join: 49 148 (20.8 %). The read-off: 43 756 (18.5 %). The calls of `balance`, `removeMin` and
+  `moveRedLeft` (instantiation, routes and their demands): 3 800, 2 914 and 527 (3.1 % in all). Deliveries
+  2 650, `shapeMove` 2 138, the rest 1 504.
+- **By reader (walk 2).** A reader that a pass of `propagate` calls is counted in that pass.
+
+  | reader | records | share |
+  |---|---|---|
+  | `propagate` pass 1 | 168 125 | 71.2 % |
+  | — its own reads (slices, frontiers, runs, states) | 106 981 | 45.3 % |
+  | — κ reads in it (`kappaOf`, `kappaRead`: `Cond.machine`) | 40 579 | 17.2 % |
+  | — `Shape.join` of a member's recast inners (`side`) | 17 647 | 7.5 % |
+  | — `eqOn`, aggregates, path multiset | 2 918 | 1.2 % |
+  | `propagate` pass 2 | 12 294 | 5.2 % |
+  | `propagate` pass 3 (open sets, folds, `kappaMerge`) | 19 412 | 8.2 % |
+  | outside `propagate` | 36 194 | 15.3 % |
+  | — `kappaRelabel` (mostly the read-off's) | 12 458 | 5.3 % |
+  | — `Shape.leq`, `Shape.map`, `Shape.widen`, `widenValue` | 5 934 | 2.5 % |
+  | — `Cond.machine`, `kappaMerge`, `eqOn`, aggregates, `kappaLeq` | 6 023 | 2.6 % |
+  | — path multiset; `Calls.apply`; `Holders` | 2 066; 1 426; 1 | 1.5 % |
+  | — the rest (transfer, liveness, demands, read-off bookkeeping) | 8 286 | 3.5 % |
+
+  `Shape.proj` is 45 277 records and views are 14 533 of these, inside the readers above. In walks 3 and 4,
+  pass 1 is 74.5 % and 73.9 %, pass 2 6.8 % and 5.5 %, pass 3 11.9 % and 13.3 %, and the rest 6.7 % and 7.3 %.
+- **Inside pass 1 (walk 2).** A state's head, κ and entry: 47 321. Its frontier (the steps of its node and of
+  each recast inner at its path, a `proj` per step): 60 211. The edges out of a recast's inner (`via`), with
+  `side` and `proj` per member: 47 268. The other edges: 7 540. Walk 3: 114 889, 249 516, 409 954 and 27 286.
+- **Σ, per large call.**
+
+  | walk, call | states | edges (via) | joined nodes | cyclic states | open / fold sets | records | per edge |
+  |---|---|---|---|---|---|---|---|
+  | 1, the largest `case` join | 19 | 19 (4) | 19 | 0 | 16 / 0 | 7 755 | 408 |
+  | 2, `case` joins | 233, 235 | 1 249 (1 054), 1 415 (1 220) | 83, 83 | 29, 29 | 34 / 7 | 66 900, 58 794 | 54, 42 |
+  | 2, read-off | 99 | 569 (439) | 23 | 23 | 25 / 7 | 23 664 | 42 |
+  | 2, port join | 194, 233 | 780 (615), 945 (755) | 23, 19 | 30, 37 | 10 / 3 | 23 793, 23 289 | 31, 25 |
+  | 3, `case` joins | 762, 828 | 6 169 (5 219), 6 985 (5 955) | 107, 115 | 162, 178 | 58 / 15 | 255 391, 285 826 | 41 |
+  | 4, `case` joins | 1 966, 2 244 | 24 914 (22 459), 29 185 (26 385) | 152, 179 | 420, 480 | 82 / 23 | 945 131, 1 132 330 | 38, 39 |
+
+What this shows:
+1. **A call is linear in Σ**, as §4.1 says: 21 to 54 records per edge of Σ in walks 2 to 4, falling as Σ grows.
+2. **Σ is not linear in the joined DAG.** In the `case` joins, states per joined node go 2.8, 7.1, 12.9 in walks
+   2 to 4, and edges per state 5.4, 8.1, 12.7. Of the edges, 84 to 90 % leave through a recast's inner. A
+   state's frontier holds the steps of every recast inner at its path, and each such child is a state of its
+   own, with its own run of the members' `side`s. So the edges grow about as the joined nodes times the square
+   of the inners at a path, and the inners at a path grow with the port's held knot images (§2.3, #1594).
+   §4.1 and §2.9 bound a call in `|Σ|`, and bound `|Σ|` by nothing.
+3. **Per walk, about 13 000 to 16 000 records per node of the port it reads** (236 025 / 15 and
+   1 107 126 / 86): about 140 to 170 records per port node per written instruction. A walk reads the port's
+   view at its two recursive calls and joins it into `balance`'s arms in four `case` joins, the read-off and
+   the port join, each of which builds its own Σ. So a walk costs about c · I_f · |port|, the product that
+   §4.1's *A later walk of a group* names growth. Against the class it reads off (82 nodes and 130 edges after
+   walk 2), it is about 1 100 records per DAG element with κ entries not counted. #1587 counted κ entries as
+   elements too and found about 300 per element.
+4. **Not cycles.** 12 to 23 % of Σ's states are cyclic, and pass 3, which the open-set and fold memos serve,
+   is 8 to 13 % of a walk. #1590's guess that every state is on a cycle was about its prototype's knots; on
+   master it does not hold.
+5. **Little repeats across calls.** No state of a `case` join's Σ was in an earlier call's Σ in the same walk.
+   Only the port join's second call (the widened value's) repeats the first: 177 of 233 states in walk 2,
+   1 145 of 1 372 in walk 3. A memo across calls would save at most 23 289 records of walk 2 (9.9 %).
+
+*F2's status.* F2 is #1465's cyclic join memo (§2.9, *The cyclic join memo*, 2026-10-31). §2.9 *Fold first*
+supersedes it, and its class memo (an open set built once) and region memo (a fold set built once) are F2's
+memo of a position. Both are built (#1543). Both belong to one call, as F2's did; a memo across calls is not
+specified (§2.9) and, by point 5, would not reach this function. So F2 is not owed, and it is not the gate.
+
+*Against §4.1.* §4.1 claims no bound on one walk in I_f, linear or n log n. It bounds the account by
+O(N_f log N_f) in the records it charges, `propagate` by its Σ (point 1 holds), and source-shaped work by K·I_f.
+A group walk over a port that grows is growth. Nothing measured here breaks a stated bound. Two things are
+missing or false:
+- **No bound on `|Σ|`** in the joined DAG, the port or the source (point 2). The only blow-up §2.9 names is
+  the number of open sets.
+- **K is not huge for this function.** §4.1 calls K = 1 024 "an order of magnitude past every measurement".
+  Walk 2 is 2 538 records per written instruction. It is the validation walk, and the port it reads is
+  source-sized: 15 nodes, made by walk 1. So a recursive group of 93 instructions in core spends 2.5 times
+  its continuation on one validation walk, before any round that grows.
+
+*What would make `Dict.removeMin` check under the default allowance.*
+- **No allowance does.** At 10⁸ the group still grows at its seventh walk (#1594), and walks 3 and 4 cost
+  4.7 and at least 2.6 times the walk before.
+- **Convergence alone does not.** Suppose the port settled at round 1, so that walk 2 were the last. Walks 1
+  and 2 cost 275 380 records: about 1 500 in lanes, 95 229 from the continuation and about 178 650 growth,
+  2.7 times R_f. So #1590's arm quotient, or any rule at the port join, is needed but not enough.
+- **F2 does not.** It is built (above).
+- **So both are needed:** a port that settles in a round or two (#1590), and a walk-2 cost over the 15-node
+  round-1 port cut by at least 2.7 times. The cost to cut is pass 1's fan-out by recast inners: its frontiers
+  and its `via` edges are 107 479 of its 162 340 records in walk 2 (66 %). That needs a bound on Σ per
+  joined node, or a reason why none exists. It is a new question for §2.9, filed as #1620.
+- **K·I_f is too small for a recursive group's validation walk** (*Against §4.1*). Under the owner's rule
+  of one huge, named, loud limit, that is a finding for the owner: either a walk costs a few hundred records
+  per instruction, as every other measurement says, or §4.1's claim for K is amended. The allowance is not
+  raised here.
+
 4a carries the required fixtures that #1159, #1199 and #1219 owe through real calls: their actuals
 are literals, so they are acyclic, and only the callee recurses. 4c carries #1159's cyclic-source
 probe.
@@ -9555,7 +9671,10 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    `propagate`'s states per node. Slice 4's rule (*The cost of a later walk, attributed*) changes neither
    by more than 2 %. So core needs a new decision, on a quotient of a port's arms that no reader can tell
    apart (#1590; §2.3, where its spec belongs). That question is not (b), which is decided above. S3b still
-   cannot close on the rule alone.
+   cannot close on the rule alone. *Attributed (2026-11-01):* slice 4's *One walk of `removeMin`* finds the quotient
+   needed but not enough. With the port settled at round 1, walks 1 and 2 would still take about 178 650 growth, 2.7
+   times the default, almost all of it `propagate`'s pass 1 fanning out by recast inners (#1620). F2 is built
+   (#1543) and is not the gate.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
