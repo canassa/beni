@@ -71,8 +71,9 @@ const layers = [_]Entry{
     // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
     // 2 730 since #1473, on top of #1420: §2.9 *Two positions of one image* in `apartImage` and `sep`, and the
     // repeating split (`repeatingSplit`, `exclOf`, #1478).
-    // 2 980 since #1485: the fold certificate's readers, rule 4 and (d).
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2980 },
+    // 2 980 since #1485: the fold certificate's readers, rule 4 and (d);
+    // 3 020 for its part 2: a certificate's class κ read at a position (`ClassPos`).
+    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 3020 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },

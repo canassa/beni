@@ -237,7 +237,7 @@ pub fn build(b: *std.Build) void {
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     // The v2 checker broken one way on purpose, to show that a `runtime_safety`
     // check fires (ownership-v2.md §2.9 rule 3). Hidden; never given to the gates.
-    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, cert-rule4-sum, cert-view-cells, cert-untagged, cert-stop-early, cert-unmarked, cert-keys-only, cert-drop-key, cert-drop-any, cert-saturate-side); `gates` refuses it") orelse "none";
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, cert-rule4-sum, cert-view-cells, cert-untagged, cert-stop-early, cert-unmarked, cert-keys-only, cert-keys-only-reader1, cert-keys-only-reader2, cert-drop-key, cert-drop-any, cert-saturate-side); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
     // The v2 checker's order reversed on purpose, to show that a verdict does
     // not depend on it (ownership-v2.md §2.9 rule 4 (a′), §2.11 item 3 (d)):
