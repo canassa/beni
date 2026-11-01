@@ -12499,7 +12499,9 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
     // round that first closed the ring read `lost` at the root. Under the
     // atom rule (§2.3) that round keeps the root's lists `yes`, and the
     // next delivery brings the ring's fold to them: one more class
-    // version, the same fixpoint.
+    // version, and a more precise fixpoint (sound): at k = 2 the
+    // cell-free `{lost}` at `#T0.1[*]#T1.1[*]` and below goes, and at
+    // k = 3 and 4 the root's lists read `fresh1 fresh3`, not `{lost}`.
     const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
     const walks = [_]u64{ 6, 8 };
     // 1.5 and 1.9 times the measured records: a doubled cost per walk fails.

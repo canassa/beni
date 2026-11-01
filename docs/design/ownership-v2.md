@@ -1365,7 +1365,7 @@ Operations, memoised on their node arguments:
   nodes, which the block never writes, so the #1157 review test compares reads per path, not text. (3) A
   group may take one class version more: R-7.4's ring at k = 2 walks 6 times, not 5, because the empty
   value at the kids' `[*]` no longer makes the round that closes the ring read `lost` at the root; the
-  next delivery brings the ring's fold there, and the fixpoint is the same. (4) #1128's block test folds
+  next delivery brings the ring's fold there. The fixpoint is more precise, and sound: at k = 2 the cell-free `{lost}` at `#T0.1[*]#T1.1[*]` and `…#T0.1[*]` goes, and at k = 3 and 4 the root's lists read `fresh1 fresh3` instead of `fresh1 fresh3{lost}`. (4) #1128's block test folds
   `k` at the first return and the level below it, the re-entry's fold, not the atom's.
   Over a non-recursive type it is the
   identity (no re-entering step), so `w5`'s DAG is untouched. Compute the quotient by a canonical-path
