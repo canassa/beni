@@ -8786,6 +8786,14 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   `-Downership-full-cross-check` is clean. With #1538's atom rule reverted it goes. Both conflict
   resolutions show it, so it does not come from either. C5 stays (rule 10), so the gates are red on
   `LevelFresh` until #1582 is fixed.
+- **R-7.4's ring walks once less (#1588).** Rebased, `m0` walks 5 and 7 times at k = 2 and 3, not
+  6 and 8, and at k = 3 `m1`'s continuation is not spent, so the test's growth check there fails.
+  The fixpoint is more precise than master's (the root's lists lose `{lost}` at k = 2, the cell-free
+  `{lost}` at `#T0.1[*]` goes at k = 3). It is neither rule 4 across classes nor the union sides at a
+  fold. Until its soundness is shown, the test is left as it is, and red.
+- **Rows 15, 17 and 19's unit tests** take the atom rule's paths: rows 15 and 17 refuse five lines,
+  the two `#Node.0` lines added, and row 19 accepts its two `#Node.0` lines (`same s`'s), as §8's
+  table says.
 - **The oracle sweep** (a Node model, not committed): 50 programs, the witnesses, rows 1–10, 14,
   14's twin and 18–22, rows 1–6 and the witnesses imported, the imported pair, the six raw-base
   producers and the five wrapper probes, every tree of height 3 or less with distinct lists, `n` ∈
