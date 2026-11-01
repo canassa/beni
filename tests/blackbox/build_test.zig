@@ -10478,7 +10478,7 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try doublingCalls(a, &src, "g");
+    try doublingCalls(a, &src, "g", 11);
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -11723,7 +11723,7 @@ test "the checker v2 says why a summary is not printed" {
     defer w.deinit();
     var body: std.ArrayList(u8) = .empty;
     defer body.deinit(a);
-    try doublingCalls(a, &body, "h");
+    try doublingCalls(a, &body, "h", 11);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │
@@ -11959,58 +11959,69 @@ fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const 
 }
 
 /// `name`'s module text: `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )`
-/// and `name x = w11 (w11 x)`. Each call applies a callee whose result
-/// doubles, so `name`'s work, about 110 000 records from 6 source atoms, is a
-/// genuine product: past the source continuation it is growth (§4.1, #1188).
-/// It took `doublingProduct`'s place when §2.9 *Fold first* (#1543) made that
-/// one linear.
-fn doublingCalls(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8) !void {
+/// and `name x = w_n (w_n x)`. Each call applies a callee whose result
+/// doubles, so `name`'s work, about 110 000 records at n = 11 and 23 000 at
+/// n = 9 from 6 source atoms, is a genuine product: past the source
+/// continuation it is growth (§4.1, #1188). It took `doublingProduct`'s place
+/// when §2.9 *Fold first* (#1543) made that one linear.
+fn doublingCalls(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8, n: usize) !void {
     try src.appendSlice(a, "w1 x = ( x, x )\n");
-    for (2..12) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try src.print(a, "\n\n{s} x =\n    w11 (w11 x)\n", .{name});
+    for (2..n + 1) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try src.print(a, "\n\n{s} x =\n    w{d} (w{d} x)\n", .{ name, n, n });
 }
 
-/// A declaration a few hundredths below its summary-size limit (`h`,
-/// `doublingCalls`, under an allowance 5 % above its growth `growth`),
-/// after another (`g`) or before it: its dump in that order (#1104). With
-/// `growth` null, under a roomy allowance, to measure it.
-fn nearLimitDump(w: *World, h_first: bool, growth: ?u64) !world.Result {
-    const a = testing.allocator;
-    var h: std.ArrayList(u8) = .empty;
-    defer h.deinit(a);
-    try doublingCalls(a, &h, "h");
-    const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
-    const size = if (growth) |x| x + x / 20 else 4_194_304;
-    const head = try std.fmt.allocPrint(w.arena.allocator(), "@ownership_summary_size(module, {d})\n\n\n", .{size});
-    const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items });
-    try w.write("Main.beni", src);
-    return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
-}
-
-fn expectNearLimitAccepted(h_first: bool) !void {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
+/// `h`, `( w10 (w10 x), w10 (w9 x) )` over `doublingCalls`' `w_k` to 10 (about
+/// 82 000 records of growth, so an allowance a few hundredths from it is
+/// above the default), after another declaration `g` or before it, under a
+/// module allowance of `size` (#1104): `h`'s growth, and whether it reached
+/// its limit.
+fn nearLimitRun(h_first: bool, size: u64) !struct { growth: u64, limit: bool } {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    const a = w.arena.allocator();
+    var h: std.ArrayList(u8) = .empty;
+    try h.appendSlice(a, "w1 x = ( x, x )\n");
+    for (2..11) |k| try h.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try h.appendSlice(a, "\n\nh x =\n    ( w10 (w10 x), w10 (w9 x) )\n");
+    const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
+    const head = try std.fmt.allocPrint(a, "@ownership_summary_size(module, {d})\n\n\n", .{size});
+    try w.write("Main.beni", try std.mem.concat(a, u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items }));
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const limit = std.mem.indexOf(u8, dump.stdout, "limit h: ownership_summary_size") != null;
+    return .{ .growth = if (limit) 0 else try accountField(dump.stdout, "h", "growth"), .limit = limit };
+}
 
+test "the checker v2 charges a declaration near its limit the same in either order, and accepts it there" {
     // ┌─────────────────────────────────────────┐
-    // │ EXECUTE                                 │
+    // │ PREPARE / EXECUTE                       │
     // └─────────────────────────────────────────┘
-    // The growth under a roomy allowance, then the same walk under an
-    // allowance it fills to about 95 %.
-    const roomy = try nearLimitDump(&w, h_first, null);
-    try testing.expectEqual(@as(u8, 0), roomy.exit_code);
-    const growth = try accountField(roomy.stdout, "h", "growth");
-    try testing.expect(growth > 65_536);
-    const dump = try nearLimitDump(&w, h_first, growth);
+    // #1104: a table both declarations share once charged its first miss to
+    // whichever declaration met it first, so a declaration near its limit
+    // passed after another and failed before it. `h`'s growth is measured
+    // with `h` first; then both orders run under one allowance 5 % above it,
+    // and each must be accepted with that growth.
+    const measured = try nearLimitRun(true, 4_194_304);
+    try testing.expect(!measured.limit and measured.growth > 65_536);
+    const size = measured.growth + measured.growth / 20;
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h:") == null);
-    try testing.expectEqual(growth, try accountField(dump.stdout, "h", "growth"));
+    for ([_]bool{ false, true }) |h_first| {
+        const r = try nearLimitRun(h_first, size);
+        try testing.expect(!r.limit);
+        try testing.expectEqual(measured.growth, r.growth);
+    }
+}
+
+test "the checker v2 refuses a declaration just over its limit in the other order" {
+    // The other side of the test above: `h`'s growth measured with `h`
+    // first, and `h` after `g` under an allowance 5 % below it stops at
+    // `ownership_summary_size`.
+    const measured = try nearLimitRun(true, 4_194_304);
+    try testing.expect(!measured.limit and measured.growth - measured.growth / 20 >= 65_536);
+    try testing.expect((try nearLimitRun(false, measured.growth - measured.growth / 20)).limit);
 }
 
 test "dump --stage=ownership --ownership=v2 walks each module once" {
@@ -12050,14 +12061,6 @@ test "dump --stage=ownership --ownership=v2 walks each module once" {
         }
         try testing.expectEqual(@as(u32, 1), walks);
     }
-}
-
-test "the checker v2 accepts a declaration near the summary-size limit after another" {
-    try expectNearLimitAccepted(false);
-}
-
-test "the checker v2 accepts a declaration near the summary-size limit before another" {
-    try expectNearLimitAccepted(true);
 }
 
 /// `ownership-v2.md` §4.1: a wide run supplies its own written atoms, and a
