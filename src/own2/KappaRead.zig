@@ -1996,52 +1996,38 @@ pub fn Of(comptime Table: type) type {
             if (t.hyp_image) |hi| for (keys.items) |*k| {
                 k.image = try hi.image(hi.ctx, k.image);
             };
-            // A group whose keys overlap (`Cell.alias` not `no` for some pair)
-            // is dropped, and its keys add as before (§2.9 rule 4, in every
-            // build). Pairwise here; the spec's trie is owed (#1485).
-            var over: Ids.FixedDict(1) = .{};
-            defer over.deinit(gpa);
-            for (keys.items, 0..) |x, i| if (x.group != Ids.none_int) for (keys.items[i + 1 ..]) |y| {
-                try charge.reserve(gpa, .inspection, 1);
-                if (y.group == x.group and y.key != x.key and cells.alias(v.places, x.key, y.key) != .no) (try over.getOrPut(gpa, .{x.group})).value_ptr.* = 0;
+            // (a′), before any maximum or `exclOf` (§2.9 rule 4, in every
+            // build): a group whose keys overlap is dropped, and its keys add
+            // as before. The test is `Cell.keysOverlap`'s trie over the
+            // group's key set, memoised by that set.
+            var group_keys: Ids.FixedDict(1) = .{};
+            defer group_keys.deinit(gpa);
+            for (keys.items) |k| if (k.group != Ids.none_int) {
+                const got = try group_keys.getOrPut(gpa, .{k.group});
+                if (!got.found_existing) got.value_ptr.* = SetId.none.int();
+                got.value_ptr.* = (try cells.sets.insert(gpa, charge, .from(got.value_ptr.*), k.key.int(), 0)).int();
             };
-            for (keys.items) |*k| if (k.group != Ids.none_int and over.get(.{k.group}) != null) {
+            for (group_keys.values.items) |*s| s.* = @intFromBool(try cells.keysOverlap(gpa, charge, v.places, .from(s.*)));
+            for (keys.items) |*k| if (k.group != Ids.none_int and group_keys.get(.{k.group}).? == 1) {
                 k.group = Ids.none_int;
             };
             var a: Agg = .{};
-            // The keys of a group already at each image: `merged` maps
-            // `(group, image)` to the head of a run in `runs`.
-            var runs: std.ArrayList([2]u32) = .empty;
-            defer runs.deinit(gpa);
+            // `merged`: `(group, image)` met; `met`: `(group, image, key)`.
+            // A group's keys are pairwise alias-apart now, so another key of
+            // the group at an image is one more position of it, and owes
+            // `exclOf`; the same key again adds nothing.
+            var met: Ids.FixedDict(3) = .{};
+            defer met.deinit(gpa);
             for (keys.items) |k| {
                 try charge.reserve(gpa, .inspection, 1);
                 if (k.group != Ids.none_int) {
+                    if ((try met.getOrPut(gpa, .{ k.group, k.image.int(), k.key.int() })).found_existing) continue;
                     const got = try merged.getOrPut(gpa, .{ k.group, k.image.int() });
                     if (got.found_existing) {
-                        // One more position of the image only when the key is
-                        // alias-apart from every key of its group already there:
-                        // route separation, tested in every build (§2.9 rule 4).
-                        // The same key again adds nothing; an aliasing key is a
-                        // repeat, as by cell.
-                        var same = false;
-                        var routes_apart = true;
-                        var r = got.value_ptr.*;
-                        while (r != Ids.none_int) : (r = runs.items[r][1]) {
-                            try charge.reserve(gpa, .inspection, 1);
-                            const y: CellId = .from(runs.items[r][0]);
-                            if (y == k.key) same = true else if (cells.alias(v.places, y, k.key) != .no) routes_apart = false;
-                        }
-                        if (same) continue;
-                        if (routes_apart) {
-                            try runs.append(gpa, .{ k.key.int(), got.value_ptr.* });
-                            got.value_ptr.* = @intCast(runs.items.len - 1);
-                            a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.exclOf(gpa, charge, cells, k.image));
-                            continue;
-                        }
-                    } else {
-                        try runs.append(gpa, .{ k.key.int(), Ids.none_int });
-                        got.value_ptr.* = @intCast(runs.items.len - 1);
+                        a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.exclOf(gpa, charge, cells, k.image));
+                        continue;
                     }
+                    got.value_ptr.* = 0;
                 }
                 a = try t.aggAdd(gpa, charge, cells, v.places, a, k.image, k.approx, true);
             }
