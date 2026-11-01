@@ -11224,6 +11224,7 @@ pub const Lowerer = struct {
             W.null => l.nullNode(p),
             W.undefined => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.from, W.to => v[0],
+            W.invoke => l.hostCall(v[0], &.{v[1]}, p),
             W.same => l.binary(.strict_eq, v[0], v[1], p),
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),

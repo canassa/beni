@@ -189,6 +189,7 @@ module Js
   value global : name → Value  -- impure
   value gt : a, a → bool
   value instanceOf : Value, Value → bool  -- impure
+  value invoke : (a → b), a → b  -- impure
   value isNull : Value → bool
   value isNullish : Value → bool
   value isUndefined : Value → bool

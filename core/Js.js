@@ -41,6 +41,7 @@ export const set = (o, name, v) => {
 };
 export const call = (o, name, xs) => o[name](...args(xs));
 export const apply = (f, xs) => f(...args(xs));
+export const invoke = (work, value) => work(value);
 export const construct = (c, xs) => new c(...args(xs));
 export const array = (xs) => args(xs);
 // A call is always written as the object literal (backend.md §4, *`Js.object`

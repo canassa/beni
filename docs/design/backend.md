@@ -2602,6 +2602,20 @@ that may suspend adds an edge to the two (Â§9, `Reach.effectEdges`), whether `
 `foreign` or writes them in beni: a program whose own code suspends but that reaches no kernel
 function calling `andThen` still needs it.
 
+**Owner decision, 2026-11-01 (#1295, #1612): typed completion callbacks.**
+The suspending path may use an internal CPS calling convention: a hidden typed
+completion callback accompanies each suspendable call. Core's `Task.callback`
+has a private typed accessor for that callback. Closed unit jobs capture the
+matching typed input, continuation and result destination; the runtime stores
+no heterogeneous value or callable in `Js.Value` for this purpose. The unique
+sentinel comparison and cancellation/finalizer order remain unchanged. This
+adds no user syntax or public API and no generated continuation union.
+**Functions that cannot suspend must emit byte-identical output to the prior
+protocol.** The compiler supplies and checks the hidden callback; it cannot be
+manufactured or read by application code. `workers-task-storage.md` owns the
+migration order. This decision supersedes the proposal's §16.1 erased continuation list
+where the typed implementation replaces it; sections are not renumbered.
+
 ### `Js.regExp` is a literal
 
 *Added 2026-10-01.* `Js.regExp pattern flags`, both string literals (`boundary.md` Â§4.2), is a

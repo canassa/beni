@@ -1,0 +1,13 @@
+-- A callback stored in a typed recursive queue still runs when its result
+-- is ignored. The release lowering must preserve its effect through the ref.
+import Node
+import TypedQueue
+
+
+main : Node.Program
+main =
+    TypedQueue.push λ⊤ →
+        Debug.log "callback" ⊤
+        True
+    TypedQueue.run ⊤
+    Node.print "done"
