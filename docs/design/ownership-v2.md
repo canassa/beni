@@ -2845,8 +2845,18 @@ claims they may be one object. Four rules use this.
       `c`'s left child's list. The maximum and `excl X` would let one position count once where it
       arrives twice. The trie test refuses that group, so `X` is repeated (near-miss row 18).
     - *Cost.* O(Σ |k|) over the group's keys, at most 3·|places| steps each (§2.1). It is memoised per
-      `(certificate, group prefix L)`, because the partition into groups depends on the actual only
-      through `L`. It is charged to the instantiation's account like the walk.
+      `(certificate and its version, parameter i, group prefix L)`. The partition into groups depends on
+      the actual only through `L`, and the keys of a group are those of one parameter. The parameter is in
+      the key because `Place.rootPath` is keyed by place, so two parameters of one type share their root
+      prefixes, and a memo without `i` would serve one parameter's answer to the other (the second
+      independent review of #1519). In one certificate, `π1` may hold `π1#Node.1` and
+      `π1#Node.0#Node.1`, which are apart, while `π2` holds `π2#Node.0#Node.1` and `π2⟲#Node.1`, which
+      overlap. Through a caller's `c = π1#Node.0`, `π2`'s two keys both image to
+      `π1#Node.0⟲#Node.1`. So a cached success from `π1` would merge them, and a cached failure from
+      `π2` would refuse `π1`'s safe group: the answer would depend on the order of the parameters
+      (near-miss row 19). An equivalent key is the immutable set of the group's keys. Either way the
+      memo is a function of the group, and it never depends on the order in which groups are tested. It
+      is charged to the instantiation's account like the walk.
   - **The read.** For each member cell `c` of the group's node, the image of a key `L·r` is the symbolic
     projection `c·r`, canonical, through `⟲` as well. This is not `Grafter.argAt`'s answer: at a level
     step `argAt` takes the whole reach of the node so far (`recastWhole`, `Calls.zig`), even for a leaf.
@@ -3632,7 +3642,10 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        persistent union over `C`'s fold, memoised, and one κ̂. The premises on the write cost one walk of
        the spine, as `leafDepth` does (O(|q|)), and one `classAt` of its rest. So a K-wide tree writer
        stays linear in the walk's items per call (`same`'s class has three classes for any K), and the rule adds Σ over the classes `K′` of
-       `C` of O(W_K′ + M_K′ log M_K′) per `(call, V, K)`.
+       `C` of O(W_K′ + M_K′ log M_K′) per `(call, V, K)`. The sum runs per `(call, V, K)`, and where views
+       nest (an actual of `E` that is itself a certified view), each `W_K′` includes the nested view's
+       traversal and instantiation work. So the bound is a sum over every `(call, V, K)` that a walk
+       meets, nested ones included. It is not a total that is independent of the nesting depth.
 4. **E**: `cellsAt(aᵢ, q)` escape deeply, one escape per route as item 3 reads them. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
@@ -7372,6 +7385,7 @@ stay refused.
 | 16 | Row 15 with the list in a record field, `Node Tree { xs : List Int } Tree` | refused `disjoint` | unsafe | An S5 row: a record field inside a constructor is S5's (record demands). The same tag argument applies, because a record place is on no cycle either. |
 | 17 | `Box = Box (List Int)`, `Wrap = Wrap Box`, `Tree = Node Tree Wrap Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag in the read map (§2.11 item 3 (d)). `Wrap` is on no cycle, so the held `Box` inside `w` (class `#Node.1#Wrap.0`) and the held `Box` of the `#P.1` occurrence share one read node without the tag. If the item inside `V` made that read node first, the `#P.1` route lost `t`'s lists (the second re-review of #1519). |
 | 18 | `h2 n t = if n == 0 then (case t of Node l _ _ → case l of Node _ ys _ → Node (same (Node t [] Leaf)) ys Leaf; … Leaf → Leaf) else h2 (n − 1) t`, called as `case t of Node l _ _ → incAll (h2 n l)` | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | `A(h2, #Node.1)` holds `a = π1#Node.0#Node.1` (`ys`) and `b = π1⟲#Node.1` (the root join, through `same`), two bases, so its condition keeps `apart{a, b}` and is not `lost`. Through the leaf `l` both image to `π1#Node.0⟲#Node.1` in one group. The trie test finds `a` under `b`'s `⟲` (`#Node.0` is on `Tree`'s cycle), so the group is no group and the image is repeated. Without the test, rule 4 would merge them (the independent review of #1519). |
+| 19 | One certificate over two parameters of type `Tree`, with `π1`'s keys `π1#Node.1` and `π1#Node.0#Node.1` (apart) and `π2`'s keys `π2#Node.0#Node.1` and `π2⟲#Node.1` (overlapping): `g2 n a b = if n == 0 then Node (same a) [] (h2 0 b) else g2 (n − 1) a b`, called as `case t of Node l _ _ → incAll (g2 n s l)` with `s` a list-distinct second tree | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | The overlap memo is keyed by `(certificate, version, i, L)` (§2.9 rule 4 (a′)). `π1`'s group (through `s`) merges nothing it should not, and `π2`'s group (through `l`) overlaps, so it is no group, and its image is repeated, in either order. A unit test in `build_test.zig` runs both orders of the groups (a test-only switch that reverses the parameter order of the instantiation) and must give the same verdict and the same certificate read. `g2`'s own condition may already fail (if the substituted `apart` of `h2` reads `lost` in `g2`'s frame), which would refuse the line whatever the memo does. So the unit test also builds this certificate directly, as an aggregate with these four keys and a condition that is not `lost`, and checks both orders on it. |
 
 Rows 4, 11 and 12 are accepted debt (#1518). Row 4 is not a hole in rule 4. It is the
 limit that rule 4 shares with rule 1: positions are told apart below one object, and never across two
@@ -7410,7 +7424,7 @@ tree of height 4 or less, and derived on paper for the item form of (d) and the 
 
 **What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
 instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
-- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15, 17 and 18 in one module, and the counted test with N alternatives in
+- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17–19 in one module, and the counted test with N alternatives in
   `build_test.zig`.
 - `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
   library module, so the certified mark crosses a block (C4).
