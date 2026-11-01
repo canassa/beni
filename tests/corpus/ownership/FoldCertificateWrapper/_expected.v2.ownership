@@ -24,26 +24,40 @@ module Main
   39:12 Main.incAll <call Lib.same>#Node.2⟨Tree⟩#Node.1: accepted param
   39:12 Main.incAll <call Lib.same>#Node.2#Node.1: accepted param
   39:12 Main.incAll <call Lib.same>#Node.1: accepted param
+  39:12 Main.incAll <call Lib.same>#Node.0⟨Tree⟩#Node.1: accepted param
+  39:12 Main.incAll <call Lib.same>#Node.0#Node.1: accepted param
   43:12 Main.incAll <call Mid.wsame>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   43:12 Main.incAll <call Mid.wsame>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  43:12 Main.incAll <call Mid.wsame>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  43:12 Main.incAll <call Mid.wsame>#Node.1: accepted param
+  43:12 Main.incAll <call Mid.wsame>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  43:12 Main.incAll <call Mid.wsame>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   47:14 Main.incAll <call Main.local>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   47:14 Main.incAll <call Main.local>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  47:14 Main.incAll <call Main.local>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  47:14 Main.incAll <call Main.local>#Node.1: accepted param
+  47:14 Main.incAll <call Main.local>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  47:14 Main.incAll <call Main.local>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   51:12 Main.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   51:12 Main.incP <P …>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   51:12 Main.incP <P …>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  51:12 Main.incP <P …>#P.1#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  51:12 Main.incP <P …>#P.1#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   51:12 Main.incP <P …>#P.0#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   51:12 Main.incP <P …>#P.0#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   51:12 Main.incP <P …>#P.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  51:12 Main.incP <P …>#P.0#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  51:12 Main.incP <P …>#P.0#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   55:16 Main.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   55:16 Main.incP <P …>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  55:16 Main.incP <P …>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  55:16 Main.incP <P …>#P.1#Node.1: accepted param
+  55:16 Main.incP <P …>#P.1#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  55:16 Main.incP <P …>#P.1#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   55:16 Main.incP <P …>#P.0#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   55:16 Main.incP <P …>#P.0#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  55:16 Main.incP <P …>#P.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  demands 41: accepted 23 (fresh 0, call 0, param 23, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 18
+  55:16 Main.incP <P …>#P.0#Node.1: accepted param
+  55:16 Main.incP <P …>#P.0#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  55:16 Main.incP <P …>#P.0#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 55: accepted 29 (fresh 0, call 0, param 29, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 26
 module Mid
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-total 41: accepted 23 (fresh 0, call 0, param 23, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 18
-cause disjoint 18
+total 55: accepted 29 (fresh 0, call 0, param 29, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 26
+cause disjoint 26
