@@ -1636,11 +1636,8 @@ const Group = struct {
     scratch: Calls.Scratch = .{},
     /// The first group call at another instantiation than its member's own.
     poly: u32 = none,
-    /// Per member, its port at ⊥: the base of the induction's check.
-    bottoms: std.ArrayList(ClassId) = .empty,
 
     fn deinit(g: *Group, gpa: Allocator) void {
-        g.bottoms.deinit(gpa);
         g.index.deinit(gpa);
         g.ports.deinit(gpa);
         g.param_runs.deinit(gpa);
@@ -1810,7 +1807,6 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         @memset(uses, .none);
         const nothing = try mod.shapes.nothing(gpa, mod.account, res);
         try g.ports.append(gpa, .{ .class = try mod.sums.add(mod.env(), .{ .params = uses, .res = nothing }), .version = 0, .shape_res = nothing });
-        try g.bottoms.append(gpa, g.ports.items[k].class);
     }
     var inference = true;
     while (true) {
@@ -2099,26 +2095,17 @@ fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r:
 
 /// C5, the induction checked again (§8 slice 4, *The proof is the stop
 /// rule's*, #1485), `runtime_safety` only: each member walked once more on
-/// an account of its own, its walk counts and edges untouched. Against the
-/// settled ports x*, its read-off is below its port (the step, F(A) ⊑ A);
-/// against every port at ⊥, it is too (the base: what an activation that
-/// makes no group call answers). The certificates are the ports' own `res`,
-/// so these are the claims every reader of a certified knot rests on.
+/// an account of its own, its walk counts and edges untouched, against the
+/// settled ports x*: its read-off is below its port (the step, F(A) ⊑ A).
+/// The base is the step's depth-1 case and is not walked apart: a walk
+/// over ports at ⊥ makes views a later walk of the module meets, which
+/// moves that walk's records (the chain's counted test).
 fn checkInduction(mod: *Module, g: *Group, prepass: *const Facts.Prepass) Error!void {
     const gpa = mod.gpa;
-    const settled = try gpa.dupe(ClassId, g.out);
-    defer gpa.free(settled);
-    for (g.ports.items, 0..) |p, k| settled[k] = p.class;
-    for (g.members, 0..) |di, k| for ([_]bool{ false, true }) |base| {
+    for (g.members, 0..) |di, k| {
         var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
         defer scratch.deinit(gpa);
         charging(mod, &scratch);
-        if (base) for (g.ports.items, g.bottoms.items) |*p, b| {
-            p.class = b;
-        };
-        defer if (base) for (g.ports.items, settled) |*p, c| {
-            p.class = c;
-        };
         const d = mod.in.bir.decls[di];
         mod.cur_locals = d.locals_start;
         scratch.source = d.inst_end.int() - d.inst_start.int();
@@ -2139,9 +2126,9 @@ fn checkInduction(mod: *Module, g: *Group, prepass: *const Facts.Prepass) Error!
         });
         defer res.deinit(gpa);
         if (res.unbuilt != none) std.debug.panic("ownership v2: a settled group's member is unbuilt when walked again (C5, #1485)", .{});
-        if (!try mod.sums.leq(mod.env(), res.class, settled[k]))
-            std.debug.panic("ownership v2: the fold certificate's {s} fails: a member's read-off is not below its settled port (C5, #1485)", .{if (base) "base" else "step"});
-    };
+        if (!try mod.sums.leq(mod.env(), res.class, g.ports.items[k].class))
+            std.debug.panic("ownership v2: the fold certificate's step fails: a member's read-off is not below its settled port (C5, #1485)", .{});
+    }
 }
 
 /// `⊤call` over `d`'s places (O10).
