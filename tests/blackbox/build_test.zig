@@ -10470,16 +10470,15 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §4.1: a value whose type's positions are not the declaration's source
-    // is work past K·I_f, which is growth, and past the allowance the loud
-    // `ownership_summary_size`. `doublingProduct` with no extra list costs
-    // about 126 000.
+    // §4.1: work that is not the declaration's source is past K·I_f, which
+    // is growth, and past the allowance the loud `ownership_summary_size`.
+    // `doublingCalls` costs about 110 000.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try doublingProduct(a, &src, "g", 0);
+    try doublingCalls(a, &src, "g");
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
@@ -11715,16 +11714,16 @@ test "the checker v2 says why a summary is not printed" {
     // so it can pass the allowance the walk stayed under. The dump dropped
     // that error, and the `summary` line was simply missing. Only an
     // allowance of the walk's growth up to the print's cost shows it, so the
-    // test measures the growth (`doublingProduct` with no extra list, about
-    // 126 000, twice the default allowance; it does not depend on the
-    // allowance) and sets the allowance to it, rather than to a count
-    // picked by hand (#1477). The print costs at least one record.
+    // test measures the growth (`doublingCalls`, about 110 000, more than
+    // the default allowance; it does not depend on the allowance) and sets
+    // the allowance to it, rather than to a count picked by hand (#1477).
+    // The print costs at least one record.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
     var body: std.ArrayList(u8) = .empty;
     defer body.deinit(a);
-    try doublingProduct(a, &body, "h", 0);
+    try doublingCalls(a, &body, "h");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │
@@ -11942,9 +11941,9 @@ test "the checker v2 settles an accumulator of two equal subtrees in three walks
 
 /// `name`'s module text: a record that doubles at each of 11 levels, three
 /// fields of it and `wide` more lists in `T`, read twice in a list literal.
-/// Its positions, 3·2¹¹ paths, are not its source: a genuine product, so its
-/// work past the source continuation is growth (§4.1, #1188). Each extra
-/// list adds source and takes about 960 records off the growth. A record of
+/// Its positions are 3·2¹¹ paths, but its record DAG is 11 levels deep. It
+/// was a genuine product until §2.9 *Fold first* (#1543) built each set of
+/// states once: two fields that hold one record hold one set. A record of
 /// records re-read at many positions was the product until #1372's memos
 /// made a repeated run cost once per call.
 fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8, wide: usize) !void {
@@ -11959,16 +11958,31 @@ fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const 
     try src.appendSlice(a, " }\n    [ t, t ]\n");
 }
 
-/// A declaration a few hundredths below the default summary-size limit (`h`, its
-/// cold growth about 62 300 of 65 536, `doublingProduct` with 67 lists),
-/// after another (`g`) or before it: its dump in that order (#1104).
-fn nearLimitDump(w: *World, h_first: bool) !world.Result {
+/// `name`'s module text: `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )`
+/// and `name x = w11 (w11 x)`. Each call applies a callee whose result
+/// doubles, so `name`'s work, about 110 000 records from 6 source atoms, is a
+/// genuine product: past the source continuation it is growth (§4.1, #1188).
+/// It took `doublingProduct`'s place when §2.9 *Fold first* (#1543) made that
+/// one linear.
+fn doublingCalls(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const u8) !void {
+    try src.appendSlice(a, "w1 x = ( x, x )\n");
+    for (2..12) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try src.print(a, "\n\n{s} x =\n    w11 (w11 x)\n", .{name});
+}
+
+/// A declaration a few hundredths below its summary-size limit (`h`,
+/// `doublingCalls`, under an allowance 5 % above its growth `growth`),
+/// after another (`g`) or before it: its dump in that order (#1104). With
+/// `growth` null, under a roomy allowance, to measure it.
+fn nearLimitDump(w: *World, h_first: bool, growth: ?u64) !world.Result {
     const a = testing.allocator;
     var h: std.ArrayList(u8) = .empty;
     defer h.deinit(a);
-    try doublingProduct(a, &h, "h", 67);
+    try doublingCalls(a, &h, "h");
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
-    const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ h.items, "\n\n", g } else &.{ g, "\n\n", h.items });
+    const size = if (growth) |x| x + x / 20 else 4_194_304;
+    const head = try std.fmt.allocPrint(w.arena.allocator(), "@ownership_summary_size(module, {d})\n\n\n", .{size});
+    const src = try std.mem.concat(w.arena.allocator(), u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items });
     try w.write("Main.beni", src);
     return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
 }
@@ -11983,15 +11997,20 @@ fn expectNearLimitAccepted(h_first: bool) !void {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try nearLimitDump(&w, h_first);
+    // The growth under a roomy allowance, then the same walk under an
+    // allowance it fills to about 95 %.
+    const roomy = try nearLimitDump(&w, h_first, null);
+    try testing.expectEqual(@as(u8, 0), roomy.exit_code);
+    const growth = try accountField(roomy.stdout, "h", "growth");
+    try testing.expect(growth > 65_536);
+    const dump = try nearLimitDump(&w, h_first, growth);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h:") == null);
-    const growth = try accountField(dump.stdout, "h", "growth");
-    try testing.expect(growth > 60_000 and growth <= 65_536);
+    try testing.expectEqual(growth, try accountField(dump.stdout, "h", "growth"));
 }
 
 test "dump --stage=ownership --ownership=v2 walks each module once" {
@@ -12865,6 +12884,97 @@ test "the checker v2 walks the mutual group wa and wb the same in either frontie
 test "the checker v2 walks the quadtree and the rose tree the same in either frontier order" {
     try orderChecked("tests/corpus/ownership/QuadChildren.beni", null);
     try orderChecked("tests/corpus/ownership/RoseAlias.beni", null);
+}
+
+/// #1289's chain published: `t_k = insert t_{k-1} k` for `n` calls, `t_n`
+/// returned. `chain`'s account total and whether it reached a limit.
+const ChainRun = struct { total: u64, limit: bool };
+
+fn publishedChain(n: u32) !ChainRun {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "type Tree\n    = Leaf\n    | Node Tree (List Int)\n\n\ninsert : Tree, Int → Tree\ninsert t k =\n    case t of\n        Leaf →\n            Node Leaf [ k ]\n\n        Node l xs →\n            Node (insert l k) xs\n\n\npub chain : Tree → Tree\nchain t0 =\n");
+    for (1..n + 1) |i| try src.print(a, "    t{d} = insert t{d} {d}\n", .{ i, i - 1, i });
+    try src.print(a, "    t{d}\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    return .{ .total = try accountTotal(dump.stdout, "chain"), .limit = std.mem.indexOf(u8, dump.stdout, "limit chain") != null };
+}
+
+test "the checker v2 publishes #1289's chain of inserts in records about linear in its calls" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE / EXECUTE                       │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9 *Fold first*, #1289: each call's view added a
+    // knot to the published value, and a walk that built the positions a
+    // fold collapses multiplied them: 18 401 / 91 040 / 1 035 422 records at
+    // 4 / 6 / 8 calls (a limit at 8), 15 848 / 31 213 / 52 447 under the
+    // rule. Since #1538's atom rule both walks take 7 603 / 13 392 / 20 468;
+    // the doubling record below is the black-box witness of fold first.
+    var runs: [3]ChainRun = undefined;
+    for (&runs, [_]u32{ 4, 6, 8 }) |*r, n| r.* = try publishedChain(n);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (runs) |r| try testing.expect(!r.limit);
+    // Two more calls cost at most twice what the two before cost.
+    try testing.expect(runs[2].total - runs[1].total <= 2 * (runs[1].total - runs[0].total));
+}
+
+test "the checker v2 builds a doubling record once per set of states" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.9 *Fold first*, the class memo: `{ l = s, r = s }` puts one set of
+    // states at `.l` and `.r`, so 11 doublings build 11 levels of positions,
+    // not 3·2¹¹ (190 868 records before, 2 670 since, the same summary).
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try doublingProduct(a, &src, "g", 0);
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit g") == null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "g", "growth"));
+    try testing.expect(try accountTotal(dump.stdout, "g") <= 2_940);
+}
+
+test "dump --ownership-propagate prints each propagate call's states, edges and sets" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §2.9 *Fold first*, *It is reported*: a hidden, test-only flag, one line
+    // per call on standard error. `RoseAlias`'s join of a tree's two arms.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-propagate", "tests/corpus/ownership/RoseAlias.beni" }, .{ .cwd = .inherit, .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stderr, ": 5 states, 4 edges, 5 open sets, 0 fold sets, 0 resumed\n") != null);
+    var lines = std.mem.splitScalar(u8, dump.stderr, '\n');
+    while (lines.next()) |l| if (l.len > 0) try testing.expect(std.mem.startsWith(u8, l, "propagate "));
 }
 
 /// The `{…}` conditions of `summary <name>:`'s line in `dump`, in order:
