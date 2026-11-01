@@ -1522,7 +1522,6 @@ pub const Table = struct {
         return out;
     }
 
-
     /// C1 (§8 slice 4, *Lemmas*, #1485), `runtime_safety` only: a positions
     /// node `saturate` made has the aggregate of the two sides it saw, each
     /// cell's multiplicity capped at 2, counted by a reader that keeps no
@@ -1531,22 +1530,25 @@ pub const Table = struct {
     fn assertSaturation(t: *Table, gpa: Allocator, cellsets: *Cell.Radix, l: NodeId, r: NodeId, out: NodeId) Error!void {
         var scratch: Account = .{ .allowance = std.math.maxInt(u32) };
         defer scratch.deinit(gpa);
-        var raw: std.AutoHashMapUnmanaged(u32, u2) = .empty;
+        var raw: Ids.FixedDict(1) = .{};
         defer raw.deinit(gpa);
-        var sat: std.AutoHashMapUnmanaged(u32, u2) = .empty;
+        var sat: Ids.FixedDict(1) = .{};
         defer sat.deinit(gpa);
-        try t.cellCounts(gpa, &scratch, cellsets, l, &raw);
-        try t.cellCounts(gpa, &scratch, cellsets, r, &raw);
-        try t.cellCounts(gpa, &scratch, cellsets, out, &sat);
-        var ok = raw.count() == sat.count();
-        var it = raw.iterator();
-        while (it.next()) |e| if ((sat.get(e.key_ptr.*) orelse 0) != e.value_ptr.*) {
+        var keys: std.ArrayList(u32) = .empty;
+        defer keys.deinit(gpa);
+        try t.cellCounts(gpa, &scratch, cellsets, l, &raw, &keys);
+        try t.cellCounts(gpa, &scratch, cellsets, r, &raw, &keys);
+        var sat_keys: std.ArrayList(u32) = .empty;
+        defer sat_keys.deinit(gpa);
+        try t.cellCounts(gpa, &scratch, cellsets, out, &sat, &sat_keys);
+        var ok = keys.items.len == sat_keys.items.len;
+        for (keys.items) |k| if ((sat.get(.{k}) orelse 0) != raw.get(.{k}).?) {
             ok = false;
         };
         if (!ok) std.debug.panic("ownership v2: a saturated positions node changes its aggregate (C1, #1485)", .{});
     }
 
-    fn cellCounts(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, out: *std.AutoHashMapUnmanaged(u32, u2)) Error!void {
+    fn cellCounts(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, out: *Ids.FixedDict(1), keys: *std.ArrayList(u32)) Error!void {
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, n);
@@ -1558,7 +1560,8 @@ pub const Table = struct {
             }
             var it = cellsets.iterate(try t.cellsOf(gpa, account, cellsets, x));
             while (it.next()) |e| {
-                const got = try out.getOrPut(gpa, e.key);
+                const got = try out.getOrPut(gpa, .{e.key});
+                if (!got.found_existing) try keys.append(gpa, e.key);
                 got.value_ptr.* = if (got.found_existing) 2 else 1;
             }
         }

@@ -10921,7 +10921,9 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // directory names `w2` and whether an importer may apply its class
     // (1 776 → 1 796 bytes, #1316). The block version 13 (#1328) changes
     // the hash, not the size.
-    // Version 14 (#1335) changes the hash only.
+    // Version 14 (#1335) changes the hash only. Version 15 (#1485): each
+    // position carries its fold obligation on its own, one word for each of
+    // the 26 (1 796 → 1 900 bytes).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -10936,7 +10938,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1796 bytes, hash 1aa74a369ee9b203\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1900 bytes, hash 019f542663260235\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {

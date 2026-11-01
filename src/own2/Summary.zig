@@ -920,7 +920,6 @@ pub const Table = struct {
         return .{ .node = root, .kappas = k };
     }
 
-
     /// C3 (§8 slice 4, *Lemmas*, #1485), `runtime_safety` only: an arm
     /// `x` dropped under `o` keeps every fold certificate below it, read by
     /// a reader the cover test does not share: every exact cell `x` reaches
