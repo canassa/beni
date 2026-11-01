@@ -3925,6 +3925,10 @@ pub const Table = struct {
                     // Nothing explicit at all: the class IS its side. Parents
                     // name `id`, so `id`'s record becomes a copy of it.
                     w.t.nodes.set(id.int(), w.t.nodes.get(side.?.int()));
+                    // The copy keeps the side's reach memo, so its `short` bit too (#1517).
+                    const sb = &w.t.reach_short[0];
+                    if (sb.bit_length <= id.int()) try sb.resize(w.gpa, @max(w.t.nodes.len, 2 * sb.bit_length), false);
+                    sb.setValue(id.int(), side.?.int() < sb.bit_length and sb.isSet(side.?.int()));
                     continue;
                 }
                 w.t.nodes.items(.cells)[id.int()] = c;
