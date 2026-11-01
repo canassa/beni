@@ -61,7 +61,8 @@ const layers = [_]Entry{
     // reach leaves out its own cells, checked under runtime safety (§2.3).
     // 3 990 since 4e: `map`'s trail and its knot's move (§2.3, stable images).
     // 4 025 since #1483: the atom rule, `isAtom` and `settle` (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4025 },
+    // 4 075 since #1485 part 2: C1, the saturation check.
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4075 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -150,6 +151,7 @@ const layers = [_]Entry{
     // 1 240 since #1492: a written position's own contents below it
     // (`ownContents`, `without`).
     // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
+    // 1 600 since #1485 part 2: C7, the drop and the tag checks.
     .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1600 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
@@ -203,9 +205,10 @@ const layers = [_]Entry{
     // 2 220 since #1566: a block read's re-interning memo, read outside the
     // call's lane.
     // 2 270 since #1485: the fold certificate's readers, rule 4 and (d).
-    // 2 310 since #1582: `--ownership-rewalk-check` walks each member
+    // 2 310 since #1485 part 2: C5, the induction walked again.
+    // 2 350 since #1582: `--ownership-rewalk-check` walks each member
     // again at the fixpoint and compares the read-off.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2310 },
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2350 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -225,7 +228,8 @@ const layers = [_]Entry{
     // a forward name only on a cycle, and the safety check of each reach.
     // 1 280 since #1399: a projection decoded with its DAG's sides the other
     // way round is the reader's projection (`sameDag`).
-    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1300 },
+    // 1 320 since #1485 part 2: the certified mark and a fold obligation.
+    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1320 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
     // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
     .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },

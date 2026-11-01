@@ -545,7 +545,6 @@ pub fn Of(comptime Frame: type) type {
             return c.intern(f.gpa, @intCast(c.occs.items.len - 1), root);
         }
 
-
         /// `Arms.read`, with C7's edge check on the read map (row 17 of
         /// *The two walls*): a read node an item of one certified view made is
         /// read again only by an item of the same view, `runtime_safety` only.
@@ -586,8 +585,23 @@ pub fn Of(comptime Frame: type) type {
             const cells = f.env.cells;
             const t = c.tags.items[it.tag];
             const occ = c.occs.items[t[0]];
+            // The walk's own reads, on an account of their own and into memos
+            // of their own: a check costs the walk no record (§4.1).
             var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
             defer scratch.deinit(gpa);
+            const saved = f.env.charge;
+            f.env.charge = .growth(&scratch);
+            defer f.env.charge = saved;
+            var reach: @TypeOf(c.reach) = .{};
+            var inst: @TypeOf(c.inst) = .{};
+            std.mem.swap(@TypeOf(c.reach), &reach, &c.reach);
+            std.mem.swap(@TypeOf(c.inst), &inst, &c.inst);
+            defer {
+                std.mem.swap(@TypeOf(c.reach), &reach, &c.reach);
+                std.mem.swap(@TypeOf(c.inst), &inst, &c.inst);
+                reach.deinit(gpa);
+                inst.deinit(gpa);
+            }
             const covered = try cells.sets.unionWith(gpa, f.env.charge, try f.certReach(it.tag, null), try f.certCells(t[0], occ.k));
             const plain = try f.env.shapes.reach(gpa, &scratch, &cells.sets, try f.env.shapes.force(gpa, &scratch, it.v));
             var pt = cells.sets.iterate(plain);
