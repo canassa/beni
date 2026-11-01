@@ -1980,6 +1980,11 @@ title (`prerender.md` §7.5) and an application's route (§7.3).
 | `Browser` | adds `UrlRequest` (`Internal Url`, `External String`) |
 | `Browser.Navigation` | `Key`, `key`, `Error`, `currentUrl`; the commands `pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload`; their direct forms `push`, `replace`, `goBack`, `goForward`, `loadPage`, `reloadPage`; `onUrlRequest`, `onUrlChange` |
 
+*Specified 2026-10-29, not built (#1211, slice P4b):* `Browser.Navigation` adds `DataError` and
+`fetchData`, a command that fetches another route's build-time value on a prerendered data site
+and decodes it with a schema: [`prerender.md`](prerender.md) §8.12. It has no direct form, since
+its answer arrives after the body returns.
+
 `Browser.Navigation` is a port of `browser`'s, over `Js`, not an import of it: the platform still
 depends on `html` alone (§1). Two things differ, both because this platform has no task kernel:
 there is no `eachUrlRequest` and no `eachUrlChange`, which run in a fiber, and a command's tagger
