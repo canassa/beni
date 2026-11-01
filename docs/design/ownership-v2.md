@@ -3415,6 +3415,8 @@ claims they may be one object. Four rules use this.
       (near-miss row 19). An equivalent key is the immutable set of the group's keys. Either way the
       memo is a function of the group, and it never depends on the order in which groups are tested. It
       is charged to the instantiation's account like the walk.
+    - *As built* (#1485, part B): `Cell.keysOverlap`, memoised by the key set, with every pair checked
+      by `alias` under `runtime_safety` (§8 slice 4, *As built, part B*).
   - **The read.** For each member cell `c` of the group's node, the image of a key `L·r` is the symbolic
     projection `c·r`, canonical, through `⟲` as well. This is not `Grafter.argAt`'s answer: at a level
     step `argAt` takes the whole reach of the node so far (`recastWhole`, `Calls.zig`), even for a leaf.
@@ -7162,7 +7164,7 @@ L0  Ids
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 760 (S3b slice 4a: which copy of the source lanes a walk takes) |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 210 (since #1566: `equals` skips the pairs an earlier walk proved; since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
-| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 240 (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
+| `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 390 (#1485 part B: rule 4's overlap trie `keysOverlap`, its memo and its unit test, §8 slice 4 *As built, part B*); 1 240 before (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Stable.zig` | 2 | stable images (§2.3 *The two pieces that (b) adds, prototyped (4e)*): a graph's canonical form by partition refinement, the move onto an equal graph made before and its precondition, `map`'s knot and `widen`'s components; the shape table is given as `anytype` | `Store`, `Redirect`, `canon`, `moveHolds`, `mapKnot`, `widened`, `sideFact` | Ids | ≤ 500 (4e) |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
@@ -7182,7 +7184,7 @@ L0  Ids
 | `Calls.zig` | 9 | instantiation, callback edges, keep edges, function values' classes | `apply`, `classesOf`, `callParam`, `keepEdges` | Ids, Facts, Cell, Shape, Cond, Summary, Rows, Holders | ≤ 2 450 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 080 before #1485 (1 830 until #1195: §2.9 rule 3 over k sides, `positionsThroughLevels`, `shareImages`, `onePositionAlong`, `onePosition` and its traced check; #1350: a view's instantiated place; #1386: a `sep` side below a constructor; #1393: a taken result materialised at the call; S3b slice 4b: `positionsAt` and `reentries`, moved from `Transfer` for a delivery's marks; #1412: a write route's stop at a parameter's leaf; #1439: the keys a `Beside` spine's children are listed under, `keysOf`) |
 | `Demands.zig` | 9 | conditions 1–4 and 6, escapes, causes, verdicts; condition 5 is the holder index's | `resolve` | Ids, Facts, Cell, Cond, Summary, Holders | ≤ 450 (since #1214: the frame types, candidates and condition 5 moved to `Holders`) |
 | `TransferFrame.zig` | 10 | the transfer frame's accessors and value helpers (the instruction reads, the lanes, `nothing`, `topValue`, `opaqueOf`, the κ setters) and its uses: `consume` at the consumer, `readsOf`, `paramReads`, the pending operands, the bindings (§2.6, §2.7) | `Val`, and `Frame`'s methods of this part | Ids, Facts, Place, Cond, Demands, Calls | ≤ 260 (#1457: split out of `Transfer.zig`, 247 lines: every other part of the frame calls it, and it calls none) |
-| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`, `ownContents`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 540 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 1 240 before #1485 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines; 1 240 since #1492: a written position's own contents below it, `ownContents`, 1 231 lines) |
+| `TransferBeside.zig` | 10 | a write's other paths and what is beside it (§2.11 item 3): `otherPaths`, the written position by canonical path (`routePath`, `frontierAt`, `routesBelow`), the reads beside the write (`reachBeside`, `keepBeside`, `splitBeside`, `atWritten`, `ownContents`), `positionsAt`, `extendPath` | `Frame`'s methods of this part | Ids, Place, Cond, Demands, Calls | ≤ 1 600 (#1485 part B: `Canon`, the reach scanned once per `keepReach`, and the spine-first switch, §8 slice 4 *As built, part B*); 1 540 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 1 240 before #1485 (#1457: split out of `Transfer.zig`, 936 lines: the call and the groups both make a write's operand of other paths, and it calls only `TransferFrame`; 1 140 since #1439: the walk is a graph of its items and reads, by position, whose runs `TransferArms` keeps, 1 134 lines; 1 160 since #1253's item 2 (5c): the route toward a written path keeps its path, 1 154 lines; 1 240 since #1492: a written position's own contents below it, `ownContents`, 1 231 lines) |
 | `TransferArms.zig` | 10 | the runs of a write's other-paths walk (§2.11 item 3, *a choice's arms*, #1439): the graph's arms and what each node keeps per run (`Arms`), the whole argument's nodes on the write's path (`Synthetic`), the written positions per run (`frontierMax`, `routesMax`), and the reads and re-entries one node at a time (`readStep`, `expandOne`) | `Frame`'s methods and types of this part | Ids, Place, Calls | ≤ 710 (#1439: 704 lines; it and `TransferBeside` call each other, the walk and its runs) |
 | `TransferPattern.zig` | 10 | patterns and splits: `bind`, the projections below a pattern (`project`, `projectAt`, a step a place does not have, §2.11), a list pattern's split of its container (`bindList`, `splitTargets`, §2.13.3) | `Frame`'s methods of this part | Ids, Place, Cell, Demands | ≤ 340 (#1457: split out of `Transfer.zig`, 330 lines: it calls only `TransferFrame`, and the constructions read its `projectAt`) |
 | `TransferConstruct.zig` | 10 | constructions: literals, containers, a construction over its base, its demand, spread chains, prepends and `++` chains (§2.3, §2.9, §2.13.2) | `Frame`'s methods of this part | Ids, Facts, Place, Shape, Cond, Demands | ≤ 450 (#1457: split out of `Transfer.zig`, 338 lines: the call and the groups make their demands through its `demand`; #1420: `carryDropped`, §2.3 *The entries of a dropped node*) |
@@ -8467,6 +8469,75 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   unit tests of rows 15 and 17; the counted test; the two-order test of row 19; `o/FoldedKnotCall`;
   the oracle sweep; the mutation tests. A settled group's classes are taken as certified when the
   stop rule ends (`Summary.certs`). That is not yet argued in this document, so it is no proof yet.
+
+*As built, part B (#1485: the overlap trie and the cost tests).* Self-hosted Debug unless stated.
+- **(a′) is `Cell.keysOverlap`, in every build.** The group's keys go into a trie over the path
+  table's own nodes, keyed by `(origin, index, c, path)`. The test is O(Σ |k|). The keys overlap when
+  a key's node is already in the trie or is above another key, or when a trie node has a `⟲` child and
+  another child whose place is on that `⟲`'s cycle (`Place.sameCycle`). That is `pathsMayAlias`'s
+  relation at the divergence node, so the verdict equals "some pair has `alias` not `no`".
+  `KappaRead.certClassAgg` and `Grafter.ruleFourSides` both call it, once per group and before any
+  maximum or `exclOf`. An overlapping group is dropped whole. The pairwise loops they used before are
+  gone. So is the per-image run check, because a group that passes has no two keys that alias.
+  - *Memo.* By the group's key set, a hash-consed `SetId` (`Cell.Table.overlap_memo`), so the
+    answer is a function of the group and never of the order in which groups are tested. Each call
+    reserves the test's Σ (depth + 1) steps, as an inspection charged to the instantiation's account,
+    whether the memo hits or not. So no account depends on which call built the entry (§4.1).
+  - *Check* (`runtime_safety`, on every call): the verdict is compared with `Cell.alias` on every pair
+    of the set, which shares nothing with the trie. A difference panics. No ownership fixture fires it.
+    This is C6's pairwise half. Part A's `assertRoutesApart` (the traced preimage walk) is separate.
+- **A second quadratic term, found by the counted test and fixed.** `TransferBeside.keepReach`
+  asked `holdsCanonical` once per parameter cell of the base, and each ask scanned the whole reach:
+  O(|params| × |reach|). At `same (if … tN)` both are about 5N, and the beside read at
+  `reachBeside` cost 51 680 / 205 280 / 819 680 inspections at N = 16 / 32 / 64. Now the reach is
+  scanned once per `keepReach` (`Canon`). Its parameter cells, with their canonical cells, are kept
+  in the reach's order and bucketed by `(origin, index, c)`, and each ask reads its own bucket.
+  `Cell.below` and equality hold only within one bucket, so the answer is the same first cell in
+  the reach's order. No verdict changes anywhere in the ownership corpus.
+- **The counted test** (`build_test.zig`, *a fold certificate over N alternatives*). `incAll (same
+  (if n == 1 then t1 else … tN))` is accepted at every N, and twice N may cost at most twice the
+  records plus the cost at N = 8 (`f`'s account):
+
+  | build | N = 8 | 16 | 32 | 64 |
+  |---|---|---|---|---|
+  | this branch | 52 390 | 107 602 | 218 336 | 456 077 |
+  | groups tested by pairs (the checkpoint's `certClassAgg`) | 57 080 | 128 336 | 304 758 | 808 275, fails |
+  | `holdsCanonical` once per parameter cell | 57 830 | 131 282 | 316 896 | 857 997, fails |
+  | both (the checkpoint) | 62 345 | 151 841 | 403 143 | `ownership_summary_size` |
+  | `Shape.proj`'s memo hits disabled | 61 973 | 119 809 | 235 791 | 485 340, passes |
+  | each image's `⟲` expanded to its level paths (`expandLevels`) | 53 478 | 109 778 | 222 688 | 464 781, passes |
+
+  The last two rows are local mutants measured for the spec's claim that the test catches them.
+  It does not, and the measurement shows why. Every key's walk meets the choice at the root (`L = ε`),
+  so no projection is made, and `Tree` has one level path per `⟲`, so an expansion costs a constant
+  factor. A witness for either mutant needs keys that walk through built nodes and a type with several
+  level paths. N = 128 costs 969 351 (2.13×, the radix sets' log factor). The test takes about 2 s in
+  ReleaseSafe: about 0.4 s per process at N = 8, and 1.0 s at N = 64. Four processes cannot fit the
+  1 s budget for a black-box test.
+- **Rows 18 and 19** are in `o/FoldCertificate` (part 1) and refused `disjoint (approx)`. Neither
+  needs the trie today: `h2`'s and `g2`'s classes read `lost`, because `h2` calls `same` on a built
+  node (`same (Node t [] Leaf)`, row 14's open root `lost`). So the trie is tested directly:
+  - `Cell.zig`, *rule 4 (a′): the trie …*: row 18's keys overlap and `same`'s five keys do not. Prefix
+    and off-cycle siblings are covered. Row 19's `π1` group is apart and its `π2` group overlaps,
+    in both orders.
+  - `Calls.zig`, *row 19's certificate reads the same in either order*: the four-key certificate
+    built as `HypKey`s, read by `certClassAgg` and `certRead` with the keys in both orders. `X` is a
+    repeat in both, the read fails in both, and the two reads are one condition. Both tests fail when
+    the overlap test answers `no`.
+- **Switches** (`-Downership-v2-switch`, comma-separated, test-only, refused by `gates`).
+  - `cert-params-reversed` instantiates a certificate's keys, and an `apart` atom's sides, in reverse.
+    Over `o/FoldCertificate` every verdict and every summary is unchanged; only account records
+    move. `build_test.zig`'s row 19 test passes in both orders.
+  - `otherPaths-spine-first` reverses each item's pushes in `otherPaths`.
+- **Rows 15 and 17 do not show the tag (#1532).** `build_test.zig`'s two tag tests pass in the walk's
+  order and under `otherPaths-spine-first`: both rows are refused `disjoint`. Under the switch plus
+  `cert-untagged` they expect acceptance, as this section says, and they are red. Both rows stay
+  refused, with records identical to the default build's. Measured: (d) never fires there. `certKid`
+  finds no class at `#Box.0` below `same`'s leaf class at `#Node.1`, so no occurrence is tagged and
+  the walk compares cells. A variant whose `same` rebuilds the `Box` reaches (d): one view and two
+  trees are accepted. But `P w w` stays refused under the switch plus the mutation, so no two items
+  share a key without the tag there either. Which program shows the tag is a spec question (#1532).
+  C7's panic, the other half of that test, is pending on part A.
 
 *Failure.* A group is built whole or unbuilt whole. Its members call each other, so if a walk is
 unbuilt for any other reason (a construct not built, an unbuilt callee), no member has a class it
