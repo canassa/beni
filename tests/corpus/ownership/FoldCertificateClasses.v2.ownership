@@ -1,0 +1,31 @@
+module FoldCertificateClasses
+  18:19 FoldCertificateClasses.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  18:19 FoldCertificateClasses.incAll l#Node.2#Node.1: accepted param
+  18:19 FoldCertificateClasses.incAll l#Node.1: accepted param
+  18:19 FoldCertificateClasses.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  18:19 FoldCertificateClasses.incAll l#Node.0#Node.1: accepted param
+  18:30 List.push xs: accepted param
+  18:47 FoldCertificateClasses.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  18:47 FoldCertificateClasses.incAll r#Node.2#Node.1: accepted param
+  18:47 FoldCertificateClasses.incAll r#Node.1: accepted param
+  18:47 FoldCertificateClasses.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  18:47 FoldCertificateClasses.incAll r#Node.0#Node.1: accepted param
+  75:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.twin>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  75:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.twin>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.twin>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.twin>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.twin>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.pairUp>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.pairUp>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.pairUp>#Node.1: accepted param
+  79:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.pairUp>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.pairUp>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.split>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.split>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.split>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.split>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:11 FoldCertificateClasses.incAll <call FoldCertificateClasses.split>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 26: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 14
+total 26: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 14
+cause disjoint 13
+cause exclusive 1

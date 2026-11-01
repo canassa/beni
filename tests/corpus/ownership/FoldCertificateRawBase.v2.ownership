@@ -18,9 +18,11 @@ module FoldCertificateRawBase
   79:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.acc8>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   79:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.acc8>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   79:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.acc8>#Node.1: accepted fresh
-  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.2#Node.1: accepted fresh
   83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.1: accepted fresh
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   87:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accA>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   87:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accA>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   87:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accA>#Node.1: accepted fresh
@@ -29,11 +31,12 @@ module FoldCertificateRawBase
   91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.2#Node.1: accepted param
   95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
   95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
-  demands 35: accepted 14 (fresh 3, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 21
-total 35: accepted 14 (fresh 3, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 21
-cause disjoint 21
+  demands 37: accepted 16 (fresh 4, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 21
+total 37: accepted 16 (fresh 4, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 21
+cause disjoint 19
+cause exclusive 2
