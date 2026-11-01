@@ -3616,7 +3616,10 @@ claims they may be one object. Four rules use this.
         group's included: it counts one for each landing class whose instantiation images the key to
         `X`, and inside one class one for each member cell of a union or a choice that images it there,
         because a key in no group adds every image occurrence as before. So a key in no group that two
-        classes hold is a repeat, as it is in the rule. The check requires that `X` is a repeat in the
+        classes hold is a repeat, as it is in the rule. The count for each member applies only to a dropped
+        group's keys, whose images `groupImages` makes one per member cell. A key that was never in a
+        group counts each distinct image once per landing class, because its images come from
+        `cellsOf`, which is a set. The check requires that `X` is a repeat in the
         rule's multiset exactly when this count is two or more. It also requires that `exclOf(X)` is in
         the rule's condition when two or more distinct keys of one group land at `X`. That is R4′ as a
         check.
