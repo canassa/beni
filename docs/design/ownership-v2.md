@@ -2529,6 +2529,139 @@ Where κ is set, always **at the selected path p**:
   nowhere above their root. In `removeMin`'s module, the states fell only from 282 703 to 280 820.
   The quadtree, T3 and `descend` grew by 8 %, 2 % and 14 %, mostly from the walks that it repeated.
 
+  **Fold first: the walk builds no position a fold collapses** [M 2026-11-01, #1372, #1368, #1289;
+  specified and prototyped, not built; it needs #1526 first]. This is the manager's (b) of §2.3 *What 4e
+  measured*. The measurements are on master `46ede32b6` with 4e (#1513), Debug and self-hosted.
+  - **The finding.** Almost every position that `propagate` builds is one that a fold collapses into an
+    owner. `owner` (above) gives each position below a fold target to the highest target on its way, so
+    those positions are never output. The depth-first walk builds them anyway: it walks a frame's first
+    child whole before it meets the sibling that folds back onto the frame's position. Measured on master
+    `46ede32b6` with 4e:
+    - `removeMin` (copied): walk 2's `case` join builds 74 134 positions, and 73 948 of them collapse.
+    - #1289's published chain at 8 calls: 30 227 positions, and 30 223 collapse.
+    - `descend`: 1 153 positions, and 976 collapse.
+
+    #1289's exponential is exactly this. Its joined DAG grows by 11 nodes a call, and each call adds a
+    knot whose position collapses everything the walk built below it.
+  - **The rule.** A frame that is not folded first looks up every child of its frontier in its route.
+    Each child that the route holds marks its fold target (`fold_at`), as the walk would when it pushed
+    that child. The frame then finds the highest fold target on its way, itself included. If there is
+    one, `T`, every other child is walked **in `T`'s region**:
+    - its position is `T`, and the step it takes is a step that `T`'s fold saw (`fold_steps`);
+    - its route is extended with the child at `T`, so a later return to a node inside the region folds
+      at `T`, and a return to a node above `T` still marks that node's position;
+    - it is deduplicated by `(node, bits, run, T, s)`, where `s` is its route restricted to the
+      strongly connected component of its node in the joined graph;
+    - it is never a memo candidate and keeps no entries (`kept`).
+    A frame that is already in a region does the same with its region.
+  - **It is exact.** The owner of a position below `T` is `T` or a target above it, in the walk and in the
+    rule alike. That owner gets the same entries (`outs` join per node at their owner), the same steps
+    (each of the walk's sub-positions gave its step to its owner; the region gives the same steps through
+    `fold_steps`), and the same links. Folds onto ancestors are found from the same routes.
+    - *Why `s` is the right key.* A frame can fold only onto a route node that it can reach again, and
+      that node is in its own component. Two frames whose routes agree there meet the same folds.
+    - *Measured exact.* A scratch build ran each `propagate` call twice with `no_memo`, once as the
+      depth-first walk and once with the rule, and compared the two results' ids:
+      - 0 differences over every call of DerivedDeepPaths' `rose`, the quadtree, `wa`/`wb`, `descend`,
+        the accumulator, #1489's insert and #1289's chain at 4, 6 and 8 calls;
+      - two calls of `removeMin`'s walk 3 that differ in both directions (`kappaLeq` either way).
+        Pinned down below: the cause is a defect of the walk itself, not of the rule.
+    - *The two differing calls, pinned down (#1526).* The depth-first walk on its own is not a function
+      of its input. Walked again with every frame's frontier in reverse order, it gives a snapshot that
+      is not comparable with the forward one. This happens on `removeMin`'s call 18, and on smaller
+      calls of #1513's `ins`, `wa`/`wb` and #1489's insert.
+      - *Not the cause:* first-arrival deduplication by position. Keying states by their whole route,
+        and keying folded arrivals apart from delivered ones, still gives the reversed walk a
+        different snapshot.
+      - *The cause:* `slice_at` keys a frame's slice by `f.first` alone, the index where its member run
+        starts in `runs`. A below run with no members appends nothing, so the next below run starts at
+        the same index. The first frame of the two to arrive fixes, for both, the slice's interned run,
+        its cached `k` and its cursor words. In `ins`, the same parent `(node 777, run 216)` gives
+        its child `node 800` run 217 in one order and the empty run in the other, at a shared
+        `first 283`.
+      - *The effect.* A frame with members can read `k = lost` (weaker), and a frame with none can take
+        its neighbour's `k` (stronger). So the walk is order-dependent and, in the second case, can
+        be unsound.
+      - *With the slice keyed by `(first, len)`:*
+        - the reversed walk equals the forward one on every call of `ins`, `wa`/`wb`, #1489, the
+          quadtree and `rose`, and so does the rule;
+        - over the corpus, no line changes (records +0.03 %);
+        - #1497's *a memoised propagation differs from its walk* panic on `wa`/`wb` goes away.
+        RM26_RESULT
+    - *The reference semantics.* With #1526 fixed, the depth-first walk is a function of its input:
+      reversing every frontier changes nothing measured. The rule gives the same snapshot. The
+      reference is that walk: the set of states closed under transitions, each output position the
+      join of what reaches it, with folds and owners as above.
+      - First-arrival deduplication drops an arrival only when its state equals one already walked at
+        that position, so nothing measured depends on it.
+      - F2's position-major order agrees with it too: a folded arrival never removes a delivered one,
+        and it adds nothing that the delivered one does not.
+      - The rule, F2's memo and the region memo are exact against this reference, and each is checked
+        against it below.
+    - *The corpus and the sweep.* Over the 2 107 corpus roots, no verdict, condition, summary or block
+      line changes, and records fall 0.19 %. Over the 400 random programs, no verdict changes except 5
+      limits that become checked, no set of conditions changes in any other summary, and the limits go
+      from 171 to 169.
+    - *Memo against no memo.* An earlier comparison ran the rule with the memo and the walk without it.
+      It differed in 4 calls of `wa`/`wb` (equal under `kappaLeq` both ways) and in 14 of #1489's (not
+      comparable). Both walks without the memo agree. The memo's differences go with #1526's: a slice
+      shared by an empty and a full run is a different slice in another order.
+  - **Where an unfolded position is semantically needed: nowhere outside `propagate`.** Every reader
+    that the coordinator's list names reads the snapshot that `propagate` returns, never its walk:
+    - route counting by canonical path (#1438);
+    - `routesMax` and `frontierAt`;
+    - the 5f trie;
+    - `apartImage`'s per-image sides.
+
+    The rule returns the same snapshot id, so each of them reads the same thing. Inside `propagate`,
+    only two things need positions: the output positions themselves (the survivors, which the rule
+    builds as before) and the route's map from a node to a position. In a region, every node maps to
+    `T`, and `T` is the owner of every position the walk would have made there.
+  - **The `runtime_safety` check.** Under `-Downership-full-cross-check`, `propagateFrom` already walks
+    each call again with `no_memo` and compares ids. With the rule, it also walks once with the rule
+    off, with `no_memo`, on its own account, and compares that id with the id the rule gives with
+    `no_memo`. The two must be equal. A third walk with every frontier reversed must give the same id
+    too. That is the order-independence that #1526 restores, and the check pins it.
+  - **Measured.** Growth, or total records where marked:
+
+    | case | depth-first | fold first |
+    |---|---|---|
+    | #1289's chain, published, 4 / 6 / 8 calls (total) | 18 443 / 91 114 / 1 035 528 | 15 776 / 31 448 / 53 498 |
+    | `removeMin`, walk 2's joins (each) | 2 686 592, 2 723 720, 599 493, 867 662, 387 412 | 141 259, 141 718, 95 331, 68 927, 52 915 |
+    | `descend` (total) | 137 924 | 127 073 |
+    | the accumulator, one list (total) | 691 681 | 650 530 |
+    | `wa` / `wb` (total) | 81 087 / 90 066 | 75 693 / 90 336 |
+    | quadtree (total) | 239 870 | 235 201 |
+    | #1489 at 1 048 576 | limit | limit; its last join 175 504 → 155 378 |
+
+    `removeMin` now reaches walk 3, where its two joins cost 1 304 826 and 1 509 279 records (21 562
+    states, 1 706 positions). It is still a limit at 4 194 304.
+  - **What is left, and what subsumes F2.** After the rule, almost every position the walk builds is
+    a survivor: an output position (walk 3 of `removeMin`, 1 626 of 1 706). The work repeats in two ways:
+    - Over survivors: walk 3's join holds **105 distinct sets of states at a position** over its 1 706
+      positions. Walk 2's holds 57 over 186, `descend`'s 28 over 177, the accumulator's 101 over 237,
+      and #1489's 49 over 125.
+    - Over regions: the join has 1 626 regions, but only **23 distinct region contents**. Walk 2 has
+      11 over 186, `descend` 4, the accumulator 18, and #1489 12. A region's content is a function of the
+      frames that enter it. Each such frame is a `(node, bits, run, s)`, and the region does not depend
+      on `T`'s position, because the rule keys the region by `T` only for its route lookups.
+
+    So (b) is two memos on top of the rule:
+    - F2's memo of a survivor position by its run. Its fold signature reduces to `s`, because a fold can
+      only land in the frame's own component, and the measured `s` is empty for every state outside the
+      knots. On the cases above, `s` never split a run.
+    - A memo of a region by the set of frames that enter it, which replays its entries, steps, and the
+      upward fold marks it found (as route nodes, resolved in the entering frame's route).
+
+    *Projection, not measured:* walk 3's joins then walk about 105 positions and 23 regions, not 1 706
+    and 1 626. Scaled by the states they hold, they would cost about 40 000 records each, and walk 2's
+    about 20 000. That leaves `removeMin` within a factor of about 2 of the default allowance over its
+    walks. So it still needs the measurement once the memos are built.
+  - **Not taken.** A walk keyed per DAG node alone. It is not exact: the states at one position are
+    merged (`outs` join per node at the owner), so a position's result is a function of its set of states,
+    not of each state (F2's finding). The rule above keeps that set and only stops building collapsed
+    positions.
+
   `kappaMerge` uses `(operator, unordered cursor pair, map/correlation context)` as its key;
   `operator` is choice or coexistence. Cursor identity includes its immutable per-class arrival and
   coverage roots. Composition is commutative for a fixed operator and context, not independent of
@@ -8003,7 +8136,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    (2026-10-31, 4e):* arm sets and stable knot images change neither function's joined DAGs nor their
    states. F2 probably makes `descend` pass. It does not make `removeMin` pass: walk 2 has 741
    distinct sets of states at a position, about 180 000 records even with no signature split. So core
-   needs F2 and a decision on §2.3's question (b), *What 4e measured*.
+   needs F2 and a decision on §2.3's question (b), *What 4e measured*. *Decided (b), 2026-11-01:* §2.9 *Fold first*, then F2's memo and a region memo; #1526 first, which makes the walk order-independent.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
