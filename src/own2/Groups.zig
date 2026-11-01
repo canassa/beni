@@ -50,6 +50,7 @@ const Graph = @import("../resolve/Graph.zig");
 const InternPool = @import("../InternPool.zig");
 const stamped = @import("../stamped.zig");
 const Ast = @import("../parse/Ast.zig");
+const Fork = @import("Fork.zig");
 
 pub const PlaceId = Ids.PlaceId;
 pub const ClassId = Ids.ClassId;
@@ -1179,6 +1180,7 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
     const prepass = try Prepass.run(gpa, mod.prepass_arena.allocator(), .{ .bir = in.bir, .dispatch = in.dispatch });
     var pool: ColdPool = .{};
     defer pool.deinit(gpa);
+    if (cold_accounts) pool.plan = try coldPlan(mod, &prepass);
     var members: std.ArrayList(u32) = .empty;
     defer members.deinit(gpa);
     for (0..prepass.starts.len - 1) |gi| {
@@ -1291,31 +1293,123 @@ fn solve(mod: *Module, members: []const u32, recursive: bool, prepass: *const Fa
     try solveGroup(mod, members, prepass, rs);
 }
 
-/// The cold run's tables (§4.4, #1104): a module holding exactly the walks
-/// of a set of declarations, each once. A cold run whose callees include
-/// that set reuses it and walks only what is missing; any other starts
-/// afresh. So a dump's cold accounts cost each walk once along a chain of
-/// calls, and each cold run's tables hold exactly its callees' walks.
+/// The cold runs' tables (§4.4, #1104, #1623). `live` is the pool the last
+/// cold run solved its group in: its callee groups' walks, then the group's
+/// own. A cold run whose callees include everything `live` holds continues
+/// it. Any other needs tables that hold exactly its callee groups' walks,
+/// made in group order from fresh tables: it forks the saved pool whose
+/// groups are the longest prefix of its own, and walks only the rest. A pool
+/// is saved where a later cold run of `plan` will fork it, so sibling groups
+/// walk their shared callees once.
 const ColdPool = struct {
-    mod: ?*Module = null,
-    walked: []bool = &.{},
+    live: ?Pool = null,
+    saved: std.ArrayList(Pool) = .empty,
+    /// The dump's cold runs, in group order (`coldPlan`). Empty for a check,
+    /// whose cold runs are not known in advance: it saves no pool.
+    plan: []Planned = &.{},
+    /// Forks so far, for the safety builds' sample (`forkCheck`).
+    forks: u32 = 0,
 
     fn deinit(p: *ColdPool, gpa: Allocator) void {
-        if (p.mod) |m| {
-            m.deinit();
-            gpa.destroy(m);
-        }
-        gpa.free(p.walked);
+        if (p.live) |*l| l.deinit(gpa);
+        for (p.saved.items) |*s| s.deinit(gpa);
+        p.saved.deinit(gpa);
+        for (p.plan) |pl| gpa.free(pl.groups);
+        gpa.free(p.plan);
         p.* = .{};
+    }
+
+    /// Whether a later cold run that starts afresh (after group `g0`) has
+    /// `groups` as a prefix of its callee groups.
+    fn wanted(p: *const ColdPool, g0: u32, groups: []const u32) bool {
+        for (p.plan) |pl| {
+            if (pl.group > g0 and pl.fresh and std.mem.startsWith(u32, pl.groups, groups)) return true;
+        }
+        return false;
+    }
+
+    /// The saved pool whose groups are the longest prefix of `groups`.
+    fn best(p: *const ColdPool, groups: []const u32) ?usize {
+        var out: ?usize = null;
+        for (p.saved.items, 0..) |s, k| {
+            if (!std.mem.startsWith(u32, groups, s.groups)) continue;
+            if (out == null or s.groups.len > p.saved.items[out.?].groups.len) out = k;
+        }
+        return out;
     }
 };
 
-/// Group `ds` solved cold on `colds`' accounts, after every group earlier
-/// than it that it reaches by calls (`.top` references and dispatched
-/// method calls), each solved whole. A callee group the warm run stopped at
-/// a limit, or left unbuilt, is not walked: the cold run applies no class
-/// for it either.
-fn coldRun(mod: *Module, pool: *ColdPool, ds: []const u32, recursive: bool, prepass: *const Facts.Prepass, colds: []DeclResult) Allocator.Error!void {
+/// A pool's module and its walked declarations; a saved pool's callee
+/// groups, in group order.
+const Pool = struct {
+    mod: *Module,
+    walked: []bool,
+    groups: []u32 = &.{},
+
+    fn deinit(p: *Pool, gpa: Allocator) void {
+        p.mod.deinit();
+        gpa.destroy(p.mod);
+        gpa.free(p.walked);
+        gpa.free(p.groups);
+    }
+
+    fn fresh(in: *const Input) Allocator.Error!Pool {
+        const gpa = in.gpa;
+        const m = try gpa.create(Module);
+        errdefer gpa.destroy(m);
+        try initModule(in, m);
+        errdefer m.deinit();
+        const walked = try gpa.alloc(bool, in.bir.decls.len);
+        @memset(walked, false);
+        return .{ .mod = m, .walked = walked };
+    }
+
+    /// A copy of `p` with `groups` as its key (§4.4, *The fork of a cold pool*).
+    fn fork(p: *const Pool, gpa: Allocator, groups: []const u32) Allocator.Error!Pool {
+        const m = try forkModule(p.mod);
+        errdefer {
+            m.deinit();
+            gpa.destroy(m);
+        }
+        const walked = try gpa.dupe(bool, p.walked);
+        errdefer gpa.free(walked);
+        return .{ .mod = m, .walked = walked, .groups = try gpa.dupe(u32, groups) };
+    }
+};
+
+/// One cold run of the dump: its group, its callee groups in group order,
+/// and whether it starts afresh rather than continuing the previous one.
+const Planned = struct { group: u32, groups: []u32, fresh: bool };
+
+/// The dump's cold runs (`checkModule` with `cold_accounts`): one per group
+/// with a walked declaration, in group order. Only which pools are worth
+/// saving depends on it: a cold run's tables never do.
+fn coldPlan(mod: *Module, prepass: *const Facts.Prepass) Allocator.Error![]Planned {
+    const gpa = mod.gpa;
+    var out: std.ArrayList(Planned) = .empty;
+    errdefer {
+        for (out.items) |pl| gpa.free(pl.groups);
+        out.deinit(gpa);
+    }
+    var ms: std.ArrayList(u32) = .empty;
+    defer ms.deinit(gpa);
+    var groups: std.ArrayList(u32) = .empty;
+    defer groups.deinit(gpa);
+    var prev: ?u32 = null;
+    for (0..prepass.starts.len - 1) |gi| {
+        try groupMembers(gpa, mod.in, prepass, gi, null, &ms);
+        if (ms.items.len == 0) continue;
+        try calleeGroups(mod, prepass, ms.items, &groups);
+        const fresh = prev == null or std.mem.indexOfScalar(u32, groups.items, prev.?) == null;
+        try out.append(gpa, .{ .group = @intCast(gi), .groups = try gpa.dupe(u32, groups.items), .fresh = fresh });
+        prev = @intCast(gi);
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+/// The groups earlier than `ds`'s that `ds` reaches by calls (`.top`
+/// references and dispatched method calls), in group order.
+fn calleeGroups(mod: *const Module, prepass: *const Facts.Prepass, ds: []const u32, out: *std.ArrayList(u32)) Allocator.Error!void {
     const gpa = mod.gpa;
     const in = mod.in;
     const bir = in.bir;
@@ -1340,59 +1434,252 @@ fn coldRun(mod: *Module, pool: *ColdPool, ds: []const u32, recursive: bool, prep
             };
         }
     }
-    // Reuse the pool only when everything it holds is a callee of `ds`.
-    if (pool.mod != null) for (pool.walked, 0..) |w, x| if (w and !reached[x]) {
-        pool.deinit(gpa);
-        break;
-    };
-    if (pool.mod == null) {
-        const m = try gpa.create(Module);
-        errdefer gpa.destroy(m);
-        try initModule(in, m);
-        pool.mod = m;
-        pool.walked = try gpa.alloc(bool, bir.decls.len);
-        @memset(pool.walked, false);
+    out.clearRetainingCapacity();
+    for (0..g0) |gi| {
+        if (reached[prepass.order[prepass.starts[gi]]]) try out.append(gpa, @intCast(gi));
     }
-    const alone = pool.mod.?;
+}
+
+/// Callee group `gi` walked into pool `p`, unless `p` holds it already. A
+/// group the warm run stopped at a limit, or left unbuilt, is not walked:
+/// the cold run applies no class for it either.
+fn walkCallee(mod: *Module, p: *Pool, gi: u32, prepass: *const Facts.Prepass, ms: *std.ArrayList(u32)) Allocator.Error!void {
+    const gpa = mod.gpa;
+    const alone = p.mod;
+    try groupMembers(gpa, mod.in, prepass, gi, p.walked, ms);
+    for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |x| p.walked[x] = true;
+    if (ms.items.len == 0) return;
+    const start = alone.results.items.len;
+    var copied = false;
+    for (ms.items) |x| {
+        const warm = mod.results.items[mod.result_of[x]];
+        copied = copied or warm.failure != null or warm.unbuilt != none;
+        try alone.results.append(gpa, .{ .decl = x, .account = .{ .allowance = warm.account.allowance } });
+        alone.result_of[x] = @intCast(alone.results.items.len - 1);
+    }
+    const rs = alone.results.items[start..];
+    if (copied) {
+        for (ms.items, rs) |x, *r| {
+            const warm = mod.results.items[mod.result_of[x]];
+            r.failure = warm.failure;
+            r.unbuilt = warm.unbuilt;
+            r.polymorphic = warm.polymorphic;
+        }
+        return;
+    }
+    try solve(alone, ms.items, prepass.recursive[gi], prepass, rs);
+}
+
+/// Group `ds` solved cold on `colds`' accounts, in a pool holding the walks
+/// of every group earlier than it that it reaches by calls, each solved
+/// whole.
+fn coldRun(mod: *Module, pool: *ColdPool, ds: []const u32, recursive: bool, prepass: *const Facts.Prepass, colds: []DeclResult) Allocator.Error!void {
+    const gpa = mod.gpa;
+    const g0 = prepass.group_of[ds[0]];
+    var groups: std.ArrayList(u32) = .empty;
+    defer groups.deinit(gpa);
+    try calleeGroups(mod, prepass, ds, &groups);
     var ms: std.ArrayList(u32) = .empty;
     defer ms.deinit(gpa);
-    for (0..g0) |gi| {
-        const first = prepass.order[prepass.starts[gi]];
-        if (!reached[first]) continue;
-        try groupMembers(gpa, in, prepass, gi, pool.walked, &ms);
-        for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |x| pool.walked[x] = true;
-        if (ms.items.len == 0) continue;
-        const start = alone.results.items.len;
-        var copied = false;
-        for (ms.items) |x| {
-            const warm = mod.results.items[mod.result_of[x]];
-            copied = copied or warm.failure != null or warm.unbuilt != none;
-            try alone.results.append(gpa, .{ .decl = x, .account = .{ .allowance = warm.account.allowance } });
-            alone.result_of[x] = @intCast(alone.results.items.len - 1);
+    // Continue `live` only when everything it holds is a callee of `ds`.
+    if (pool.live) |*l| for (l.walked, 0..) |w, x| {
+        if (w and std.mem.indexOfScalar(u32, groups.items, prepass.group_of[x]) == null) {
+            l.deinit(gpa);
+            pool.live = null;
+            break;
         }
-        const rs = alone.results.items[start..];
-        if (copied) {
-            for (ms.items, rs) |x, *r| {
-                const warm = mod.results.items[mod.result_of[x]];
-                r.failure = warm.failure;
-                r.unbuilt = warm.unbuilt;
-                r.polymorphic = warm.polymorphic;
-            }
-            continue;
+    };
+    var reference: ?Pool = null;
+    defer if (reference) |*r| r.deinit(gpa);
+    if (pool.live) |*l| {
+        for (groups.items) |gi| try walkCallee(mod, l, gi, prepass, &ms);
+    } else {
+        try freshRun(mod, pool, g0, groups.items, prepass, &ms);
+        if (pool.live.?.groups.len != 0 and forkCheck(pool)) {
+            // The safety builds' sample: the same pool rebuilt from nothing.
+            reference = try Pool.fresh(mod.in);
+            for (groups.items) |gi| try walkCallee(mod, &reference.?, gi, prepass, &ms);
+            sameOrPanic(&pool.live.?, &reference.?);
         }
-        try solve(alone, ms.items, prepass.recursive[gi], prepass, rs);
     }
+    const live = &pool.live.?;
+    const alone = live.mod;
     try solve(alone, ds, recursive, prepass, colds);
+    if (reference) |*r| {
+        const again = try gpa.alloc(DeclResult, colds.len);
+        defer {
+            for (again) |*c| {
+                gpa.free(c.lines);
+                c.account.deinit(gpa);
+            }
+            gpa.free(again);
+        }
+        for (again, colds) |*a, c| a.* = .{ .decl = c.decl, .account = .{ .allowance = c.account.allowance } };
+        try solve(r.mod, ds, recursive, prepass, again);
+        for (again, colds) |*a, *c| {
+            if (!Forked.same(DeclResult, a, c)) @panic("a forked cold pool's cold run differs from the run in a pool rebuilt from nothing (ownership-v2.md §4.4)");
+        }
+    }
     // `ds` itself, for the next cold run that calls it.
+    gpa.free(live.groups);
+    live.groups = &.{};
     for (ds, colds) |di, *c| {
         gpa.free(c.lines);
         c.lines = &.{};
-        pool.walked[di] = true;
+        live.walked[di] = true;
         try alone.results.append(gpa, .{ .decl = di, .class = c.class, .unbuilt = c.unbuilt, .polymorphic = c.polymorphic, .failure = c.failure });
         alone.result_of[di] = @intCast(alone.results.items.len - 1);
     }
     alone.account = &alone.base_account;
     alone.adapter.account = &alone.base_account;
+    // Saved pools no later cold run forks.
+    var k: usize = 0;
+    while (k < pool.saved.items.len) {
+        if (pool.wanted(g0, pool.saved.items[k].groups)) {
+            k += 1;
+        } else {
+            var s = pool.saved.orderedRemove(k);
+            s.deinit(gpa);
+        }
+    }
+}
+
+/// `pool.live` made for a cold run of group `g0` that starts afresh: the
+/// walks of `groups`, in order, from fresh tables. The longest saved
+/// prefix is forked (or taken, when no later run wants it), and a pool is
+/// saved at each prefix a later run starting afresh shares with this one
+/// and no saved pool covers.
+fn freshRun(mod: *Module, pool: *ColdPool, g0: u32, groups: []const u32, prepass: *const Facts.Prepass, ms: *std.ArrayList(u32)) Allocator.Error!void {
+    const gpa = mod.gpa;
+    const from = pool.best(groups);
+    const depth = if (from) |b| pool.saved.items[b].groups.len else 0;
+    const save = try gpa.alloc(bool, groups.len + 1);
+    defer gpa.free(save);
+    @memset(save, false);
+    for (pool.plan) |pl| {
+        if (pl.group <= g0 or !pl.fresh) continue;
+        const shared = std.mem.indexOfDiff(u32, groups, pl.groups) orelse groups.len;
+        const covered = if (pool.best(pl.groups)) |b| pool.saved.items[b].groups.len else 0;
+        if (shared > covered and shared > depth) save[shared] = true;
+    }
+    if (from != null) pool.forks += 1;
+    var live: Pool = if (from) |b| live: {
+        if (pool.wanted(g0, pool.saved.items[b].groups)) {
+            break :live try pool.saved.items[b].fork(gpa, pool.saved.items[b].groups);
+        }
+        break :live pool.saved.orderedRemove(b);
+    } else try Pool.fresh(mod.in);
+    errdefer live.deinit(gpa);
+    for (depth..groups.len + 1) |j| {
+        if (save[j]) {
+            var s = try live.fork(gpa, groups[0..j]);
+            errdefer s.deinit(gpa);
+            try pool.saved.append(gpa, s);
+        }
+        if (j < groups.len) try walkCallee(mod, &live, groups[j], prepass, ms);
+    }
+    // The key of the pool it was forked from, for the safety check.
+    gpa.free(live.groups);
+    live.groups = &.{};
+    if (depth != 0) live.groups = try gpa.dupe(u32, groups[0..depth]);
+    pool.live = live;
+}
+
+/// Whether the safety builds check this fork against a rebuild: the first
+/// of a module and every sixteenth after it.
+fn forkCheck(pool: *const ColdPool) bool {
+    return std.debug.runtime_safety and pool.forks % 16 == 1;
+}
+
+fn sameOrPanic(a: *const Pool, b: *const Pool) void {
+    if (!std.mem.eql(bool, a.walked, b.walked) or !sameModule(a.mod, b.mod))
+        @panic("a forked cold pool differs from the pool rebuilt from nothing (ownership-v2.md §4.4)");
+}
+
+/// Whether two modules hold the same tables (`Fork.same`), the imports
+/// they read included.
+fn sameModule(a: *const Module, b: *const Module) bool {
+    if (!Forked.same(Module, a, b)) return false;
+    if (a.imported_owned.items.len != b.imported_owned.items.len) return false;
+    for (a.imported_owned.items, b.imported_owned.items) |x, y| if (!std.mem.eql(ClassId, x, y)) return false;
+    if (a.imported.gen != b.imported.gen or a.imported.slots.items.len != b.imported.slots.items.len) return false;
+    for (a.imported.slots.items, b.imported.slots.items) |x, y| {
+        if (x.stamp != y.stamp) return false;
+        if (x.stamp != a.imported.gen) continue;
+        if ((x.value == null) != (y.value == null)) return false;
+        if (x.value) |v| if (!std.mem.eql(ClassId, v, y.value.?)) return false;
+    }
+    return true;
+}
+
+/// Every pointer field of the module's tables, for `Fork` (§4.4, *The fork of a
+/// cold pool*): memory they own, memory outside them, a pointer `wire` sets,
+/// or a field null between two solves.
+fn forkPolicy(comptime S: type, comptime name: []const u8) Fork.Policy {
+    const eq = std.mem.eql;
+    if (S == Module) {
+        if (eq(u8, name, "in")) return .alias;
+        if (eq(u8, name, "account") or eq(u8, name, "prepass_arena")) return .wired;
+        if (eq(u8, name, "group")) return .idle;
+        if (eq(u8, name, "result_of") or eq(u8, name, "comparison") or eq(u8, name, "cmp_decl")) return .owned;
+        // `imported` points into `imported_owned`: `forkModule` copies both.
+        if (eq(u8, name, "imported") or eq(u8, name, "imported_owned")) return .wired;
+    }
+    if (S == Adapter) {
+        if (eq(u8, name, "in")) return .alias;
+        if (eq(u8, name, "places") or eq(u8, name, "account")) return .wired;
+    }
+    if (S == DeclResult and eq(u8, name, "lines")) return .owned;
+    if (S == Cond.Table) {
+        if (eq(u8, name, "shapes_hook") or eq(u8, name, "resolver") or eq(u8, name, "hyp")) return .wired;
+        if (eq(u8, name, "hyp_image") or eq(u8, name, "trace")) return .idle;
+    }
+    if (S == Shape.Table and eq(u8, name, "instantiation")) return .wired;
+    if (S == Calls.Views) {
+        if (eq(u8, name, "group")) return .idle;
+        if (eq(u8, name, "places") or eq(u8, name, "cells") or eq(u8, name, "shapes") or eq(u8, name, "conds") or eq(u8, name, "sums")) return .wired;
+    }
+    return .deep;
+}
+
+const Forked = Fork.With(forkPolicy);
+
+/// A deep copy of `src`'s tables (§4.4, *The fork of a cold pool*): the
+/// same entries under the same ids, the same accounts, the same memos and
+/// scratch pools, its internal pointers wired to the copy. Nothing is
+/// charged: the copy makes no record.
+fn forkModule(src: *const Module) Allocator.Error!*Module {
+    const gpa = src.gpa;
+    std.debug.assert(src.group == null);
+    const m = try gpa.create(Module);
+    errdefer gpa.destroy(m);
+    m.* = try Forked.copy(Module, gpa, src);
+    m.prepass_arena = .init(gpa);
+    m.imported_owned = try .initCapacity(gpa, src.imported_owned.capacity);
+    for (src.imported_owned.items) |cs| m.imported_owned.appendAssumeCapacity(try gpa.dupe(ClassId, cs));
+    m.imported = .{ .gen = src.imported.gen, .slots = try src.imported.slots.clone(gpa) };
+    for (m.imported.slots.items) |*s| {
+        if (s.stamp != m.imported.gen) continue;
+        const v = s.value orelse continue;
+        const at = for (src.imported_owned.items, 0..) |x, k| {
+            if (x.ptr == v.ptr) break k;
+        } else unreachable;
+        s.value = m.imported_owned.items[at];
+    }
+    wire(m);
+    m.account = accountOf(src, m, src.account);
+    m.adapter.account = accountOf(src, m, src.adapter.account);
+    return m;
+}
+
+/// `m`'s account for what `src.account` names: its base account, or the
+/// same result's. Anything else is a result's account that `results` has
+/// since moved (a copied callee group appends and walks nothing): no read
+/// meets it before the next walk names its own (`charging`).
+fn accountOf(src: *const Module, m: *Module, a: *Ids.Account) *Ids.Account {
+    if (a == &src.base_account) return &m.base_account;
+    for (src.results.items, m.results.items) |*x, *y| if (a == &x.account) return &y.account;
+    return &m.base_account;
 }
 
 /// Empty tables for `in`'s module.
@@ -1411,17 +1698,28 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
         else => unreachable,
     };
     mod.adapter = .{ .in = in, .gpa = in.gpa, .places = &mod.places, .account = &mod.base_account };
-    mod.views = .{ .places = &mod.places, .cells = &mod.cells, .shapes = &mod.shapes, .conds = &mod.conds, .sums = &mod.sums };
-    mod.shapes.instantiation = mod.views.instantiation();
-    mod.conds.shapes_hook = &mod.shapes;
     mod.conds.order_check = in.order_check;
     mod.conds.propagate_dump = in.propagate_dump;
-    mod.conds.resolver = mod.views.resolver();
-    mod.conds.hyp = mod.views.hyp();
+    mod.views = .{ .places = &mod.places, .cells = &mod.cells, .shapes = &mod.shapes, .conds = &mod.conds, .sums = &mod.sums };
+    wire(mod);
     mod.shapes.trackRelevance();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.result_of, none);
     mod.comparison = try comparisonWalks(in);
+}
+
+/// The module's tables' pointers to one another.
+fn wire(mod: *Module) void {
+    mod.adapter.places = &mod.places;
+    mod.views.places = &mod.places;
+    mod.views.cells = &mod.cells;
+    mod.views.shapes = &mod.shapes;
+    mod.views.conds = &mod.conds;
+    mod.views.sums = &mod.sums;
+    mod.shapes.instantiation = mod.views.instantiation();
+    mod.conds.shapes_hook = &mod.shapes;
+    mod.conds.resolver = mod.views.resolver();
+    mod.conds.hyp = mod.views.hyp();
 }
 
 /// `mod` charging `account` from here on.

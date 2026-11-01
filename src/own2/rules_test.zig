@@ -36,6 +36,8 @@ const layers = [_]Entry{
     // table is amended to 700 with the slice's design commit.
     // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 760 },
+    // #1623: the fork of a cold pool, generic over the tables' types.
+    .{ .file = "Fork.zig", .layer = 0, .max_lines = 260 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
@@ -217,7 +219,9 @@ const layers = [_]Entry{
     // 2 310 since #1485 part 2: C5, the induction walked again.
     // 2 350 since #1582: `--ownership-rewalk-check` walks each member
     // again at the fixpoint and compares the read-off.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2350 },
+    // 2 640 since #1623: the fork of a cold pool, its plan and its safety
+    // check.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2640 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -518,7 +522,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 41), layers.len);
+    try testing.expectEqual(@as(usize, 42), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
