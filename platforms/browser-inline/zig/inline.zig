@@ -2824,8 +2824,8 @@ const Page = struct {
         }
     };
 
-    /// A scalar class is an attribute for HTML and SVG, not className's
-    /// host-dependent property type. Keep the binding's compare and evaluate
+    /// A scalar String class is an HTML attribute. Keep its binding compare
+    /// and evaluate
     /// its target and desired value exactly once, including effectful helpers.
     fn writeStringAttribute(pg: *Page, blk: m.Block, target: m.Expr, attribute: []const u8, value: m.Expr) m.Error!void {
         const cx = pg.cx;
