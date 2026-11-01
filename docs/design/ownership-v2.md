@@ -2587,17 +2587,45 @@ Where κ is set, always **at the selected path p**:
           quadtree and `rose`, and so does the rule;
         - over the corpus, no line changes (records +0.03 %);
         - #1497's *a memoised propagation differs from its walk* panic on `wa`/`wb` goes away.
-        RM26_RESULT
-    - *The reference semantics.* With #1526 fixed, the depth-first walk is a function of its input:
-      reversing every frontier changes nothing measured. The rule gives the same snapshot. The
-      reference is that walk: the set of states closed under transitions, each output position the
-      join of what reaches it, with folds and owners as above.
-      - First-arrival deduplication drops an arrival only when its state equals one already walked at
-        that position, so nothing measured depends on it.
-      - F2's position-major order agrees with it too: a folded arrival never removes a delivered one,
-        and it adds nothing that the delivered one does not.
-      - The rule, F2's memo and the region memo are exact against this reference, and each is checked
-        against it below.
+        - on `removeMin`'s cold re-run, the call that differed (walk 3's first join, about 2 000
+          states) now agrees, and so do the calls before it. The check stopped at 3 500 s inside the next
+          join (39 504 states), which a check that walks every call twice without the memo cannot finish.
+    - **The reference semantics** (decided here). `propagate`'s result is the closure of the states
+      under transitions. A state is `(node, bits, run, position, s)`, where `s` is the state's route
+      restricted to its node's strongly connected component in the joined graph. A position's
+      snapshot is the join of what every state reaching it contributes. Each fold target owns the
+      positions below it, as `owner` says. A slice is a function of its run's content, which is
+      #1526's fix: keyed by `(first, len)`, or by the interned run.
+      - *It is order-independent by construction.* The states are a set closed under transitions,
+        and each transition is a function of the state. The outputs are joins, which are commutative
+        and idempotent. Fold marks and fold steps are sets. Nothing depends on which arrival came
+        first.
+      - *It is sound.* Every run of the value through a position is the run of some state that
+        reaches it:
+        - the closure walks every lineage that the route can tell apart;
+        - `s` is all of a route that can matter, because a fold returns only to a node that reaches
+          the frame again, and that node is in the frame's component;
+        - so every fold that some lineage makes is made.
+
+        A position's entry is therefore the join over every state that reaches it, which is above
+        each one. A fold owner's entry is the join over every position it collapses, which is above
+        each of those.
+      - *Today's walk against it.*
+        - The depth-first walk keys a state without `s`: the first arrival at a position decides the
+          route of the states equal to it there. That drops a fold only when two arrivals' `s`
+          differ. On every call measured, `s` is empty for every state outside the knots, so the two
+          keys walk the same states.
+        - With #1526 fixed, reversing every frontier changes no snapshot. So the walk without `s`
+          equals the reference on everything measured. Where `s` is not empty, the reference keys by
+          it, and the walk without it may be less precise or less sound, depending on which arrival
+          came first.
+        - #1526 itself is not a precision trade-off but a defect. A frame with members can read the
+          empty run's `k = lost` (weaker), and a frame with none can take a full run's `k`
+          (stronger, unsound).
+      - *The rule and the memos are exact against the reference.*
+        - The rule keeps every state and changes only where the collapsed ones are recorded.
+        - F2's memo by run and the region memo replay a function of their key, the run and `s`.
+        - The check below compares each with the reference walk.
     - *The corpus and the sweep.* Over the 2 107 corpus roots, no verdict, condition, summary or block
       line changes, and records fall 0.19 %. Over the 400 random programs, no verdict changes except 5
       limits that become checked, no set of conditions changes in any other summary, and the limits go
