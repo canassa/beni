@@ -115,7 +115,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             var frame = frame_base;
             frame.decl = d;
             for (dr.lines) |l| {
-                try channel.add(arena, l.demand.point, l.demand.kind, l.outcome.verdict == .refused);
+                try channel.add(arena, l.demand.point, l.demand.kind, l.outcome.verdict == .refused, Hoists.reliesOnCallers(l.outcome.accepted));
                 const op = if (l.demand.callee_inst != Ids.none_int) (try Message.calleeName(frame, arena, l.demand.callee_inst)) orelse "call" else "";
                 try lines.append(arena, try Message.line(frame, arena, l, op));
             }

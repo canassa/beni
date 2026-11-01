@@ -7060,12 +7060,19 @@ are identical and nothing is written (R-7.11).
    Element-supply lines such as `rows[*].1` are checked at the callback's actual writer site. A missing or
    extra wrapper fails; a module not emitted is not compared. `test-records-in-place` and its list twin run
    every `run/` program and `browser/inline/` page; normal gates include the marked fixtures. The intended
-   S8b/S9 coverage is §8.2. A trap on an accepted program is a soundness defect regardless of any oracle.
+   S8b/S9 coverage is §8.2. A trap on an accepted program is a soundness defect regardless of any oracle,
+   once every caller of the trapped write was checked: under v2 (*As built under v2* below) a `param`
+   verdict is a condition on callers that may sit in a declaration v2 has not built, and the trap's site
+   says which case it is.
 
    **Specified limits of this instrument:**
 
-   - A plain array's `length` is non-configurable: it retains its old number. Indexed reads/methods trap,
-     but a stale length-only read does not. Do not claim complete stale-read detection from a green run.
+   - A plain array's `length` is non-configurable, so it cannot trap. As built (#1547) the poisoned array
+     takes the written list's length, the number an in-place write leaves there: a stale length-only read
+     (`List.length`, a pattern's `[]` or `[ _, …_ ]` test) then answers as the in-place run answers, and
+     the output differs from the golden instead of trapping. Indexed reads/methods trap. A stale length
+     read the written list's length does not change (`List.set`) changes nothing in place either. Do not
+     claim complete stale-read detection from a green run.
    - Persistent `Dict` writes have no v1 demand to justify poisoning. Add Dict storage poisoning with
      #961 at S8; until then it is outside this instrument's coverage.
    - v1's clean table covers application modules, not core/platform bodies. Writers escaping sight inside
@@ -7084,26 +7091,51 @@ are identical and nothing is written (R-7.11).
 
    **As built under v2 (#1547).** Under `--ownership=v2` the sanitiser follows v2's verdicts through the
    list half of §3.7's lowering channel, `src/own2/Hoists.zig` (format 2), whose producer is
-   `Ownership.run` and whose consumer S8b will be. Per application module the channel holds R-1.12's clean
-   bit (every declaration built, no limit, no refusal) and each accepted `writer`, `construction` and
-   `append` demand by its instruction; a refused or limited module publishes no write. The Driver keeps
-   one table per module (`Check.channels`) and `Emit` hands it to the lowering in a build that enforces.
-   There `sanitize_lists` wraps a writer call or a `++` whose instruction the channel lists, and a spread's
-   `List.append` whose chain root it lists (§2.13.2: a chain's demand is at its root, which is the `cons`
-   of its leading items when it has some). The sanitiser judges verdicts, not stores, so it reads the
-   writes and not the clean bit: a write v2 accepted in a module where another declaration is not built
-   yet is wrapped, and a write in a declaration v2 did not build is not (no one judged it). v2 makes no
-   `value` demand, so a writer handed as a value is not wrapped under v2: a limit of this instrument
-   until v2 builds callback writes. v1's path is unchanged. Fixtures carry `.sanitize-lists-v2` (and
-   `-crash`); `checkSanitisedSites` compares the wrapped sites with v2's dump.
-   `ListSanitiserHiddenHolderV2` traps, `ListSanitiserV2Writes` runs clean, and
-   `zig build test-lists-in-place-v2` runs every `run/` program and `browser/inline/` page so. Measured at
-   #1547: all 652 `run/` cases and the browser pages run clean (one wiring defect, the spread root above,
-   found and fixed). The coverage is v2's: of the 491 single-file `run/` programs, v2 accepts 34 list
-   writes (33 emitted and wrapped, in 9 programs) where v1 accepts 164; the rest sit in declarations v2
-   does not build yet (their `.v2.unchecked`). `bench/ownership-v2-sanitiser.mjs` is the generated sweep (#1516's generic `wrap`
-   and `idl`, #1530's pattern rest, writers, spreads, `++`): 6,000 programs over two seeds, 1,158
-   accepted, 1,268 writes wrapped, no trap.
+   `Ownership.run` and whose consumer S8b will be. Per module the channel holds R-1.12's clean bit (every
+   declaration built, no limit, no refusal) and, for an application module, each accepted `writer`,
+   `construction` and `append` demand by its instruction, with whether its verdict rests on the
+   declaration's callers (any ground but `fresh` and `call`: `param` above all); a refused or limited
+   module publishes no write. The Driver keeps one table per module (`Check.channels`) and `Emit` hands it
+   to the lowering in a build that enforces. There `sanitize_lists` wraps a writer call or a `++` whose
+   instruction the channel lists, and a spread's `List.append` whose chain root it lists (§2.13.2: a
+   chain's demand is at its root, which is the `cons` of its leading items when it has some). The
+   sanitiser judges verdicts, not stores, so it reads the writes and not the clean bit: a write v2
+   accepted in a module where another declaration is not built yet is wrapped, and a write in a
+   declaration v2 did not build is not (no one judged it).
+
+   So a trap is not always a v2 defect. A `param` verdict holds only where every caller hands the
+   declaration a list it owns, and v2 checks that at the callers; a caller in a declaration v2 did not
+   build, in this module or another, was never checked (`Lib.grow xs = List.push xs 9` is clean and
+   accepted `param` while an unbuilt `Main.main` pushes `xs` and reads it again). Each wrapped site
+   therefore says which case it is: `(at byte N, whatever its callers)` for a verdict that rests on no
+   caller, where a trap is a v2 defect; `(at byte N, every caller checked)` when every module of the
+   program was checked whole, the same; and `(at byte N, a caller may be unchecked)` otherwise, where a
+   trap is either a v2 defect or a caller v2 has not built yet, to tell apart by hand.
+
+   **What S8b may store** (the manager's decision, 2026-11-01, on #1555's review): a write is emitted in
+   place only when its module **and every module that calls it, directly or transitively, are clean**.
+   The channel's per-module clean bit is necessary, not sufficient. Until v2 records which modules call
+   which declaration, that is the whole program clean — every module, core and the platforms included,
+   checked whole. A write short of that is authorised no store, as a refused or unchecked module's is
+   (S8b's row); it is not a copy chosen behind the program's back.
+
+   v2 makes no `value` demand, so a writer handed as a value is not wrapped under v2: a coverage gap of
+   this instrument until v2 builds callback writes. v1's path is unchanged. Fixtures carry
+   `.sanitize-lists-v2` (and `-crash`); `checkSanitisedSites` compares the wrapped sites with v2's dump.
+   A fixture with `.sanitize-lists-v2-refuses` is a fixed v2 defect: v2 must refuse it, and when v2
+   accepts it again the case fails with the sanitised run as the evidence. `ListSanitiserHiddenHolderV2`
+   traps, `ListSanitiserV2Writes` runs clean, `SanitiserGenericResult` (#1516, a `List.length`-only read
+   among them), `SanitiserPatternReadsList` (#1530) and `SanitiserLevelRead` (#1523) are refused, and
+   each traps or prints another answer when its fix is reverted. `zig build test-lists-in-place-v2` runs
+   every `run/` program and `browser/inline/` page so. Measured at #1547: all `run/` cases and the
+   browser pages run clean (one wiring defect, the spread root above, found and fixed). The coverage is
+   v2's: of the 491 single-file `run/` programs, v2 accepts 34 list writes (33 emitted and wrapped, in 9
+   programs) where v1 accepts 164; the rest sit in declarations v2 does not build yet (their
+   `.v2.unchecked`). `bench/ownership-v2-sanitiser.mjs` is the generated sweep: flat lists and lists of
+   lists (a generic `wrap` of a list, `idl`, an element handed out, writers, spreads, `++`) read whole,
+   by length or by a pattern's shape alone, and trees under a recursive writer and recursive or
+   pattern-only readers. 1,500 programs at seed 1: 473 accepted, 449 writes wrapped, no trap; with
+   #1516's fix reverted 6 traps, #1530's 59 (one by output alone), #1523's 32.
 4. **Differential fuzzing.** The Lean bridge's generator (`proofs/ownership/BRIDGE.md`, recorded seeds) extended to
    records, `Dict`, patterns and callbacks: each program checked by v1 and v2, run under the sanitiser where both
    accept, judged by Lean where modelled; v2 accepts ∧ sanitiser traps is a stop. `zig build fuzz` grows an `own`
@@ -7193,7 +7225,7 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and counted grouping (#1065, built in S2b's writer), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 |
 | S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast`  Resolve sender alias roles before expansion from BIR/interface terms, preserve capability through expanded-type wrappers and cached packages; add a role column only where the existing terms lose it (§2.13.5). Model feedback uses the same observed κ frontier; view/command roots join before any final authorization. Repeat instrumentation. | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 |
 | S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` slot state and ordered transforms, deep no-loan ◆/consumed/escape checks, ordinary stored loan propagation and depth-correct copy diagnostics, `Ref.modify` loan returns, unknown refs=top, call-boundary suspension liveness via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified  Complete cross-package pin closure through Task.callback/resume and all asserted helpers (#1061); specify ownership metadata independently of frozen v1 for Log.once, Task.keepLogContext, Js.maySuspend and Dict (#1053, §9); word `Dict.focus` with callback `stored` in its `dict`/Maybe form (§2.13.6, #1021). Implement selected cellmodify .1 write-back, ordinary stored loans and region/effect serialization (§2.13.7); no blanket ownership demand on .0. | DictFocus, DictValueWritten, DictTupleFocus*, DictUpdateStoredAnswer, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; all new loan twins in Appendix B | S5, S7, #961 | S6 |
-| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 |
+| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel (`src/own2/Hoists.zig`, #1547): emit a write in place only when its module and every module that calls it, directly or transitively, are clean — for now the whole program clean, core and platforms included (the manager's decision, 2026-11-01, §7.3); a write short of that is authorised no store, as a refused or unchecked module's is; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 |
 | S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S8b | — |
 | S10 | **Switch-over and deletion** | §8.2 pre-migration criteria met; nominal Send/Send.to migration of platforms/callers, compare migrated v2 results to the frozen alias-form corpus results; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 checked current (attribute updated in S2b, words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — |
 

@@ -275,6 +275,10 @@ pub const Input = struct {
     /// list writes v2 accepted, which `sanitize_lists` wraps one by one.
     /// Null: v1's `ownership.clean` says it, for every write of the module.
     list_writes: ?*const Channel.Table = null,
+    /// Under v2, whether every module of the program was checked whole, so
+    /// that every caller of a write was (§7.3): what a sanitised site says
+    /// of a verdict that rests on its callers.
+    callers_checked: bool = false,
     /// The session's type table, read as a **name, declaration and
     /// derivability service** and as nothing else.
     ///
@@ -5266,10 +5270,23 @@ pub const Lowerer = struct {
     /// a write of a list under the sanitiser (`sanitize_runtime.mjs`). The
     /// callee and the operands are evaluated in the order the plain call
     /// evaluates them, and only then is the base copied and poisoned.
-    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+    /// `inst` is the write's instruction and `first` a spread's first
+    /// operand: under v2 the site also says whether the verdict rests on
+    /// callers v2 did not all check (§7.3), so that a trap there is told
+    /// from an unsound verdict.
+    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32, inst: Inst.Index, first: ?Inst.Index) Allocator.Error!Node.Index {
         if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and args.len != 0);
         l.needs.sanitize = true;
-        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const note: []const u8 = if (l.in.list_writes) |channel| note: {
+            const w = channel.find(inst.int()) orelse root: {
+                const f = first orelse break :root null;
+                if (f.int() >= l.spread_roots.len) break :root null;
+                break :root channel.find(l.spread_roots[f.int()]);
+            } orelse break :note "";
+            if (!w.callers) break :note ", whatever its callers";
+            break :note if (l.in.callers_checked) ", every caller checked" else ", a caller may be unchecked";
+        } else "";
+        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d}{s})", .{ writer_name, l.interner.slice(l.module_name), p, note });
         const all = try l.scratch.alloc(Node.Index, args.len + 2);
         all[0] = try l.stringNode(site, p);
         all[1] = writer;
@@ -9911,7 +9928,7 @@ pub const Lowerer = struct {
                 // `xs.push x` is `List.push xs x`, a write of its receiver.
                 if (target == .ext and evidence.len == 0 and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
                     const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
-                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p));
+                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p, inst, null));
                 };
                 const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
                 const value = try l.suspension(out, inst, called);
@@ -10474,7 +10491,7 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p));
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p, inst, null));
             return l.suspension(out, inst, try l.call(append, values, p));
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -10609,7 +10626,7 @@ pub const Lowerer = struct {
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
             if ((if (arg_insts.len != 0) try l.sanitizesSpreadAt(inst, arg_insts[0]) else l.sanitizesAt(inst)) and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
-                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p));
+                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null));
             return l.suspension(out, inst, try l.call(callee, written, p));
         }
         // How the evidence is passed is the callee's convention

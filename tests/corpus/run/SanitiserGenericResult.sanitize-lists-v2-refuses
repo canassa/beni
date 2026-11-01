@@ -1,0 +1,1 @@
+v2 refuses the push of a generic call's result that is read again (#1516).

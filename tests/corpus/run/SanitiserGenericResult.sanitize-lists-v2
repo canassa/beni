@@ -1,0 +1,2 @@
+A runtime catch for #1516 (ownership-v2.md §7.3): built again under --ownership=v2 and the list stale-read
+sanitiser. v2 refuses the program; were it to accept it, the sanitised run would show the stale reads.
