@@ -264,6 +264,8 @@ first, in one module; §8.4–§8.6 after.*
 
 ### 8.2 The page
 
+Scalar String `class` bindings use the attribute rules in §5 in this page lowering.
+
 **One HTML string per unit** — the program's `view`, or a piece's root (§8.4) — written into the
 mount once, with `insertAdjacentHTML`. It holds every element of the unit, the elements of an eager
 `when`'s arm included, every constant attribute and every text that never changes: a constant, or
