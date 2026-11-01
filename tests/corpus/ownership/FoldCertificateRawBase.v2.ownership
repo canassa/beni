@@ -1,0 +1,39 @@
+module FoldCertificateRawBase
+  18:19 FoldCertificateRawBase.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  18:19 FoldCertificateRawBase.incAll l#Node.2#Node.1: accepted param
+  18:19 FoldCertificateRawBase.incAll l#Node.1: accepted param
+  18:19 FoldCertificateRawBase.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  18:19 FoldCertificateRawBase.incAll l#Node.0#Node.1: accepted param
+  18:30 List.push xs: accepted param
+  18:47 FoldCertificateRawBase.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  18:47 FoldCertificateRawBase.incAll r#Node.2#Node.1: accepted param
+  18:47 FoldCertificateRawBase.incAll r#Node.1: accepted param
+  18:47 FoldCertificateRawBase.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  18:47 FoldCertificateRawBase.incAll r#Node.0#Node.1: accepted param
+  75:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.wrapN>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.wrapN>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.wrapN>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.wrapN>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  75:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.wrapN>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.acc8>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.acc8>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  79:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.acc8>#Node.1: accepted fresh
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  83:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accL>#Node.1: accepted fresh
+  87:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accA>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  87:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accA>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  87:19 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accA>#Node.1: accepted fresh
+  91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  91:18 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.accR>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  95:15 FoldCertificateRawBase.incAll <call FoldCertificateRawBase.sw3>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 35: accepted 14 (fresh 3, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 21
+total 35: accepted 14 (fresh 3, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 21
+cause disjoint 21

@@ -154,7 +154,9 @@ const layers = [_]Entry{
     // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
     // 1 600 since #1485 part 2: C7, the drop and the tag checks; 1 700 with
     // part B's `Canon` and switch beside them.
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1700 },
+    // 1 790 since #1485 part 3: (d3) below a leaf, and a knot's view
+    // compared by cells marked approximate (`foldedView`, `foldOcc`).
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1790 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.

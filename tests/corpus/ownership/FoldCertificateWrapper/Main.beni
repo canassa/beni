@@ -1,0 +1,55 @@
+-- ownership (project): a one-line wrapper of a certified call (ownership-v2.md
+-- §8 slice 4, *As built, part 3*; #1485). `Lib.same` is certified, so
+-- `incAll (Lib.same t)` is accepted. A wrapper of it, in this module
+-- (`local`) or re-exported by `Mid` (`Mid.wsame`), publishes the knot
+-- without the mark: no certificate is read there, the walk compares
+-- cells, and two positions of the knot name one cell. So every refusal
+-- through a wrapper is `(approx)`, the safe one (`viaMid`, `apartMid`)
+-- and the unsafe one (`twoMid`, one tree written twice) alike.
+import Lib exposing (Leaf, Node, Tree)
+import Mid
+
+
+type P
+    = P Tree Tree
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+incP : P → P
+incP p =
+    case p of
+        P a b →
+            P (incAll a) (incAll b)
+
+
+local : Tree → Tree
+local t = Lib.same t
+
+
+pub direct : Tree → Tree
+direct t = incAll (Lib.same t)
+
+
+pub viaMid : Tree → Tree
+viaMid t = incAll (Mid.wsame t)
+
+
+pub viaLocal : Tree → Tree
+viaLocal t = incAll (local t)
+
+
+pub twoMid : Tree → P
+twoMid t = incP (P (Mid.wsame t) (Mid.wsame t))
+
+
+pub apartMid : Tree, Tree → P
+apartMid t u = incP (P (Mid.wsame t) (Mid.wsame u))
