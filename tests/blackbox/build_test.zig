@@ -12899,30 +12899,32 @@ fn shapeRing(w: *World, n: usize, k: usize) !world.Result {
     return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
 }
 
-test "the checker v2 walks a member again whole once per new res.shape of its callee, and reserves it as growth (R-7.4)" {
+test "the checker v2 walks a member again whole once per new res.shape of its callee (R-7.4)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // R-7.4: "K shape changes affecting N transfer nodes can require Θ(NK)
     // tasks". The ring takes K `res.shape` versions, and each one walks
     // `m0`'s N statements again (the owner's Q1 decision, §8 slice 4's
-    // plan). Measured: `m0` walks 6 times at k = 2 and 8 at k = 3 (10 at 4),
-    // whatever n is; its records are 28 766 at (n, k) = (10, 2) and 45 907
-    // at (10, 3) (68 494 at (40, 2)). A small member's walks pass its two
-    // lanes at k = 3, and the rest is growth (5 042 records of `m1`), so a
-    // larger k exhausts R_f loudly (k = 8 is `ownership_summary_size`).
-    // k = 2 walked 5 times while the empty value at the kids' `[*]`, one
-    // interned atom at every level, united the levels' classes, so the
-    // round that first closed the ring read `lost` at the root. Under the
-    // atom rule (§2.3) that round keeps the root's lists `yes`, and the
-    // next delivery brings the ring's fold to them: one more class
-    // version, and a more precise fixpoint (sound): at k = 2 the
-    // cell-free `{lost}` at `#T0.1[*]#T1.1[*]` and below goes, and at
-    // k = 3 and 4 the root's lists read `fresh1 fresh3`, not `{lost}`.
+    // plan). Measured: `m0` walks 5 times at k = 2, 7 at k = 3 and 9 at
+    // k = 4, whatever n is (0 to 40); its records are 23 440 at (n, k) =
+    // (10, 2) and 36 381 at (10, 3) (56 456 at (40, 2)). A larger k
+    // exhausts R_f loudly (k = 8 is `ownership_summary_size`).
+    // History: k = 2 walked 5 times while the empty value at the kids'
+    // `[*]`, one interned atom at every level, united the levels' classes,
+    // and 6 under the atom rule (§2.3), whose extra class version was the
+    // ring's fold reaching the root's lists as `{lost}`. Since the fold
+    // certificate (#1485, #1588), a group call's view of a port is a
+    // hypothesis node: its folded classes are read by their certificates,
+    // so that `lost` never reaches the root, and the version and its walk
+    // are gone at every k. With hypothesis nodes off, the walks are 6 and 8
+    // again and the root reads `fresh1 fresh3{lost}`. The fixpoint is more
+    // precise and sound: the root's two lists are `m0`'s own literals,
+    // each held once in the value (`#T0.0 fresh1 fresh3`, no `{lost}`).
     const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
-    const walks = [_]u64{ 6, 8 };
+    const walks = [_]u64{ 5, 7 };
     // 1.5 and 1.9 times the measured records: a doubled cost per walk fails.
-    const ceilings = [_]u64{ 42_000, 88_000 };
+    const ceilings = [_]u64{ 35_200, 69_200 };
     var total: [cases.len]u64 = undefined;
     for (cases, walks, ceilings, 0..) |c, want, ceiling, i| {
         var w = try World.init(testing.allocator, testing.io);
@@ -12944,22 +12946,44 @@ test "the checker v2 walks a member again whole once per new res.shape of its ca
             std.debug.print("ring at (n, k) = ({d}, {d}): {d} records, past {d}\n", .{ c[0], c[1], total[i], ceiling });
             return error.TestUnexpectedResult;
         }
-        if (c[1] == 3) {
-            // `m1`'s continuation is spent, and what is past it is growth.
-            const at = std.mem.indexOf(u8, dump.stdout, "account m1: ").?;
-            const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
-            const cont = std.mem.indexOf(u8, line, "continuation ").? + "continuation ".len;
-            const of = std.mem.indexOfPos(u8, line, cont, " of ").?;
-            const top = line[of + " of ".len ..][0..std.mem.indexOfScalar(u8, line[of + " of ".len ..], ' ').?];
-            try testing.expectEqualStrings(line[cont..of], std.mem.trimEnd(u8, top, ","));
-            try testing.expect(try accountField(dump.stdout, "m1", "growth") > 0);
-        }
     }
-    // More versions, more walks, each over a larger class: 1.6 times the
-    // records from k = 2 to 3 (1.33 times the walks). A cost per walk that
-    // grows with K² (2.25 times the class, 3.6 times the records) fails.
+    // More versions, more walks, each over a larger class: 1.55 times the
+    // records from k = 2 to 3 (1.4 times the walks). A cost per walk that
+    // grows with K² (2.25 times the class, 3.5 times the records) fails.
     try testing.expect(total[1] * 2 >= 3 * total[0]);
     try testing.expect(total[1] <= 3 * total[0]);
+}
+
+test "the checker v2 reserves a small member's walks past its lanes as growth (R-7.4)" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The ring of the test above at k = 4 (it was k = 3 until #1588 took a
+    // walk off every k): `m1`'s 9 walks pass its two lanes, so its
+    // continuation is spent and the rest is growth (9 493 records), within
+    // R_f.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try shapeRing(&w, 10, 4);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit") == null);
+    try testing.expectEqual(@as(u64, 9), try accountField(dump.stdout, "m0", "walks"));
+    // `m1`'s continuation is spent, and what is past it is growth.
+    const at = std.mem.indexOf(u8, dump.stdout, "account m1: ").?;
+    const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
+    const cont = std.mem.indexOf(u8, line, "continuation ").? + "continuation ".len;
+    const of = std.mem.indexOfPos(u8, line, cont, " of ").?;
+    const top = line[of + " of ".len ..][0..std.mem.indexOfScalar(u8, line[of + " of ".len ..], ' ').?];
+    try testing.expectEqualStrings(line[cont..of], std.mem.trimEnd(u8, top, ","));
+    try testing.expect(try accountField(dump.stdout, "m1", "growth") > 0);
 }
 
 /// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
