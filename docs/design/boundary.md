@@ -639,6 +639,16 @@ suspend. Unchecked, like every `Js` declaration: a body that returns an ordinary
 costs its callers a comparison and nothing else, and only `Task` holds the sentinel. Written with a
 lambda, it is the lambda's body (`backend.md` §4, *`Js.suspending` is its body*).
 
+**Typed protocol invocation** (owner, 2026-11-01; #1295, #1612) is an
+approved core-private rule-6 extension for Task's typed callback storage.
+It invokes a typed possibly-suspending callback as one synchronous protocol
+step, returning the callback's value or the parked sentinel. The callback's
+real type and inferred summary remain visible; this is not a `Js.Value`
+conversion or an exemption from realm checking. Unlike ordinary invocation,
+it does not suspend the driver before the driver consumes the sentinel.
+This intrinsic is core-only like `Js.suspending`, adds no user surface or
+source syntax, and is specified further in `workers-task-storage.md`.
+
 **The operators core's arithmetic is written over** (2026-10-01): `bitOr`, `bitXor`, `shiftLeft`,
 `shiftRight`, `shiftRightZero` and `rem` — `|`, `^`, `<<`, `>>`, `>>>` and `%` on two `Int`s, as
 `bitAnd` is `&` — and `typeOf : Value -> Value` and `instanceOf : Value, Value -> Bool`, `typeof v`

@@ -1,51 +1,56 @@
 # Typed Task storage
 
 Draft for #1295 and #1612, following the owner's 2026-11-01 directive:
-build first, optimize later. This replaces the earlier proposed generated
-continuation union. It adds no measurement prerequisite.
+build first, optimize later. No generated union or measurement prerequisite.
 
-Task currently erases callbacks and whole runtime records into `Js.Value` to
-keep its manual suspension protocol out of effect inference. HostFree forbids
-that erasure. A callback's real type and inferred callable summary must survive
-even when its captures are plain and only its body calls the DOM.
+Task erases callbacks and runtime records into `Js.Value` to keep its manual
+suspension protocol out of effect inference. HostFree forbids that erasure.
+Real callback types and summaries must survive, including DOM calls in bodies
+whose captures are plain data.
 
-Use **closed unit jobs**, with typed values captured by their closures. The
-scheduler stores `⊤ → Bool` (False for a stale wake); macro/shutdown queues store
-`⊤ → ⊤`. Keep common fiber control separate from a typed `Exit a` result slot;
-completion and observer closures capture that slot instead of putting an
-arbitrary value in the control record. Continuation adapters must likewise
-retain the matching input/output types. Keep the unique sentinel fast path,
-iterative resumption, child-first cancellation and LIFO finalizer boundaries.
-Do not substitute a universal `Value → Value` callback or generated union.
+Use **closed unit jobs** capturing their typed values. The scheduler stores
+`⊤ → Bool` (False for a stale wake); macro/shutdown work runs as unit jobs.
+Separate fiber control from a typed `Exit a` slot captured by its completion
+and observer closures. Continuation adapters retain matching input/output
+types. Keep the sentinel fast path, iterative resume, child-first cancellation
+and LIFO finalizer boundaries. No universal `Value → Value` callback replaces
+those types.
 
-Storage to migrate: Task pending/continuation stacks and fork/begin work;
-program/custom-scheduler/macro queues; wait records and Resume/Fiber outcomes;
-observers, cancellers, finalizers, deferred releases and shutdown hooks;
-scheduler run/more/drain/idle/count callbacks; clock sleepers, log sinks and
-inherited/restored context slots. Their control registries must be typed too:
-a typed queue inside an erased record still loses its type. Generic core Ref,
-Deferred, Queue, Semaphore, Latch and Schema callback records also need typed
-representations before HostFree can cover their consumers.
+Migrate scheduler jobs → continuations → finalizers/observers → context slots
+→ renderer queues → native shims. Task families include pending/stack and
+fork/begin work; program/custom/macro queues; wait/Resume/Fiber result storage;
+cancellers and deferred releases; scheduler run/more/drain/idle/count hooks;
+clock sleepers, log sinks and inherited/restored contexts. Their control
+registries need typed handles too. A typed queue in an erased record still
+loses its type. Generic core Ref, Deferred, Queue, Semaphore, Latch and Schema
+callback records must migrate before HostFree covers their consumers.
 
-Order: scheduler jobs → continuations → finalizers/observers → context slots →
-renderer queues → native shims. The later renderer work includes Inline's
-dispatch/undo/listener/event/loader storage, Rt's render/row/event/after-render
-storage, and Hosted/Browser command, subscription, send and message storage.
-DOM handles stay page-only; portable Task and coordination storage is also on
-the worker path. Http/socket/timer/native callback shims retain their host types.
+Later renderer work includes Inline dispatch/undo/listener/event/loader
+storage, Rt render/row/event/after-render storage, and Hosted/Browser commands,
+subscriptions, sends and messages. DOM handles stay page-only; portable Task,
+coordination and matching fetch/socket/timer shims are also worker paths.
 
-The first implementation replaces the program queue with a typed linked FIFO
-using existing `Js.Ref`, so it needs no `Js.Buffer` or foreign widening. A job
-is removed before invocation, and reentrant enqueue preserves FIFO order.
-Custom schedulers and continuation/value storage still need migration; this
-first change alone does not make Task HostFree-complete.
+The first implementation uses a typed linked FIFO over existing `Js.Ref` for
+the program queue, shutdown work and MessageChannel jobs, and a typed optional
+scheduler-turn hook. Dequeue happens before invocation; reentrant enqueue
+preserves FIFO order. Custom schedulers, native shims and continuation/value
+storage remain to migrate. This is not yet a HostFree-complete Task.
 
-No language change is chosen. One possible owner decision is a typed protocol
-invocation operation: ordinary invocation propagates the callback's suspension
-to the drain, whereas Task must consume its sentinel itself. If existing
-compiler operations cannot express that boundary while retaining callable
-summaries, request the exact rule-6 extension with a reduced example. Likewise,
-request a private mutable typed Buffer only if the implementation needs one;
-retain element types and explain its aliasing contract. Keep building until
-such a concrete decision is necessary. Correctness comes from the Task/effects
-and browser/tea behavior corpus and the final unfiltered gates.
+**Owner decision, 2026-11-01:** the core-private typed protocol invocation
+intrinsic is approved as a rule-6 extension. It invokes a typed possibly
+suspending callback as one synchronous step, returning its value or the parked
+sentinel, and retains the callback's real type and summary. It is core-only,
+like `Js.suspending`; no user surface or source syntax is added. Ordinary
+invocation would suspend the driver before it could inspect the sentinel;
+`Js.pure`, `finally` and `suspending` demand sync callbacks and cannot express
+this boundary. The compiler and Task use the new intrinsic together.
+
+**Owner decision, 2026-11-01:** hidden typed completion callbacks and a
+core-only Task.callback accessor are approved. Only suspendable calls use this
+internal CPS convention. Functions that cannot suspend emit byte-identical
+output; no user syntax or API is added. The suspension contracts in
+`transparent-effects-proposal.md` §16 and `backend.md` record this decision.
+
+No Buffer is needed for the current FIFOs. Continue the full migration;
+correctness is the Task/effects and browser/tea corpus, then unfiltered gates.
+Performance belongs to a later slice.

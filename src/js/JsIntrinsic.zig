@@ -53,6 +53,8 @@ pub const Which = enum {
     set,
     call,
     apply,
+    /// Typed synchronous protocol invocation; the callback may park.
+    invoke,
     construct,
     each,
     array,

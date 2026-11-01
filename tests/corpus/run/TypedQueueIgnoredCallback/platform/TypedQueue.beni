@@ -1,0 +1,40 @@
+import Js
+
+
+type Jobs
+    = End
+    | Next (⊤ → Bool) (Js.Ref Jobs)
+
+
+type alias Queue =
+    first : Js.Ref (Js.Ref Jobs)
+    last : Js.Ref (Js.Ref Jobs)
+
+
+new : ⊤ → Queue
+new ⊤ =
+    end = Js.ref End
+    { first = Js.ref end, last = Js.ref end }
+
+
+queue : Queue
+queue = new ⊤
+
+
+pub push : sync (⊤ → Bool) → ⊤
+push work =
+    end = Js.ref End
+    Js.write (Js.read queue.last) (Next work end)
+    Js.write queue.last end
+
+
+pub run : ⊤ → ⊤
+run ⊤ =
+    case Js.read (Js.read queue.first) of
+        End →
+            ⊤
+
+        Next work next →
+            Js.write queue.first next
+            _ = work ⊤
+            ⊤
