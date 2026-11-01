@@ -1186,3 +1186,11 @@ external application. The enforcing `check` and ownership dump use that same
 source directory and the project's `.platform` entries; the intent `.beni`
 file only lets the walker discover the project. Conduit pins its complete
 report this way, independently of its still-pending document helper lowering.
+
+Dedicated module worker pages under `browser/dedicated/` use the test-only
+`tests/platforms/worker` platform. An `_expected.chrome-only` file explains why
+a case needs Chrome: the gates still build development and release, then skip
+execution in happy-dom, which has no Worker. `test-browser` executes both.
+`click-wait <button selector> <text selector> "expected text"` clicks once and
+waits at most five seconds for that element's text before taking its snapshot.
+This waits for native worker replies without relying on scheduler settling.

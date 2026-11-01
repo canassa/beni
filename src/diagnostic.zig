@@ -514,6 +514,7 @@ pub const Code = enum {
     /// upstream diagnostics. Cached ordinals are compiler-build-key scoped.
     invalid_entry_kind,
     entry_runtime_suspends,
+    worker_entry_not_static,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -617,6 +618,7 @@ pub fn title(code: Code) []const u8 {
         .duplicate_main => "TWO MAINS",
         .main_not_program => "MAIN IS NOT A PROGRAM",
         .invalid_entry_kind => "INVALID ENTRY KIND",
+        .worker_entry_not_static => "WORKER ENTRY NOT STATIC",
         .entry_runtime_suspends => "ENTRY RUNTIME SUSPENDS",
         .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",
         .duplicate_where_constraint => "DUPLICATE CONSTRAINT",

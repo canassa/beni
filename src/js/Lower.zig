@@ -244,6 +244,8 @@ pub const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
+    worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
+    worker_definition: ?u32 = null,
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
     token_starts: []const u32,
@@ -3474,6 +3476,14 @@ pub const Lowerer = struct {
             // The parser already reported it and there is no body.
             .annotation_only => return,
         }
+        if (l.in.worker_definition == null or l.in.worker_definition.? != index) {
+            for (l.in.worker_descriptors) |descriptor| {
+                if (descriptor.module != l.in.module or descriptor.decl != index) continue;
+                if (!l.liveDecl(index)) return;
+                try l.constDecl(out, try l.topName(index), try l.workerDescriptor(descriptor, Node.no_pos), Node.no_pos);
+                return;
+            }
+        }
         if (d.body == .none) return;
         // The direct record opens before the consumed check, so the unit
         // the check drops carries the answer: a build whose program hook
@@ -6421,7 +6431,26 @@ pub const Lowerer = struct {
     /// machinery that makes `?` evaluate in written order makes this do so
     /// too. A branch of a short circuit or of a `case` has an `out` of its
     /// own, so nothing is ever evaluated that the source would not have.
+    fn workerDescriptor(l: *Lowerer, descriptor: @import("WorkerEntry.zig").Descriptor, p: u32) Allocator.Error!Node.Index {
+        const global = try l.add(.global_this, p, 0, 0);
+        const ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "URL"), p);
+        const path = try l.stringNode(descriptor.url, p);
+        const base = try l.add(.import_meta_url, p, 0, 0);
+        const url = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{ path, base }))));
+        return l.object(&.{
+            try l.property(try l.interner.getOrPut(l.gpa, "id"), try l.stringNode(descriptor.id, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
+        }, p);
+    }
+
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (l.in.worker_descriptors.len != 0) {
+            if (l.declTarget(l.in.module.int(), inst)) |ref| {
+                for (l.in.worker_descriptors) |descriptor| {
+                    if (descriptor.module.int() == ref[0] and descriptor.decl == ref[1]) return l.workerDescriptor(descriptor, l.pos(inst));
+                }
+            }
+        }
         const saved = l.evidence_out;
         l.evidence_out = out;
         defer l.evidence_out = saved;

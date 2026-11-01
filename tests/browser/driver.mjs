@@ -1059,6 +1059,23 @@ async function load({ url, runtime }) {
 // Run one step. Returns null, or why the step could not run — or, for
 // `advance`, a promise of one.
 function step(s) {
+  // One action and one observable completion, guarded by a real deadline.
+  // Native workers are outside the scheduler tracked by settle().
+  if (s.command === "click-wait") {
+    const clicked = step({ ...s, command: "click" });
+    if (clicked !== null) return clicked;
+    const now = globalThis.performance.now();
+    return new Promise((resolve) => {
+      const poll = () => {
+        const target = document.querySelector(s.target);
+        if (target !== null && target.textContent === s.text) return resolve(null);
+        if (globalThis.performance.now() - now >= 5000) return resolve(`click-wait: ${s.target} did not become ${JSON.stringify(s.text)}`);
+        globalThis.__beniHarness.clock.real(poll, 5);
+      };
+      poll();
+    });
+  }
+
   // An `early` step acts on a prerendered page before its program loads; a
   // page with no prerendered unit has nothing to act on.
   if (s.early && document.querySelector("[data-beni]") === null) return null;
@@ -2260,6 +2277,11 @@ function parseStep(written, where) {
           else usage(`${where}: \`socket <n> wait\` takes a number of messages, \`open\` or \`closed\``);
         } else if (rest !== undefined) usage(`${where}: \`socket <n> ${s.action}\` takes nothing more`);
       }
+    } else if (command === "click-wait") {
+      const match = (argument ?? "").match(/^(\S+)\s+("(?:[^"\\]|\\.)*")$/);
+      if (match === null) usage(`${where}: \`click-wait\` takes a click selector, a target selector and JSON text`);
+      s.target = match[1];
+      s.text = JSON.parse(match[2]);
     } else if (command === "flush") {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
     } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur" || command === "press") {

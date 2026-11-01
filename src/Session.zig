@@ -2535,6 +2535,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         &session.interner,
         .{
             .build_id = session.build_id_bytes,
+            .entry_constructors = try session.entryConstructors(worker.arena.allocator()),
             .informational = session.options.informational,
             .explain = session.options.explain,
             .pattern_budget = session.options.pattern_budget,
@@ -2585,6 +2586,18 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 /// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
 pub const check_stack_size = Check.stack_size;
 
+/// Raw constructor selectors are only an early cycle-analysis input. Their
+/// checked identities and signatures are validated by Emit's entry contract.
+fn entryConstructors(session: *const Session, a: Allocator) Allocator.Error![]const []const u8 {
+    const chain = session.options.chain orelse return &.{};
+    var out: std.ArrayList([]const u8) = .empty;
+    for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (kind.launches.len == 0) continue;
+        for (kind.constructors) |c| try out.append(a, c.name);
+    };
+    return out.toOwnedSlice(a);
+}
+
 fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded, cutoff: *Check.Cutoff) RunError!Check {
     var ins = try Enforce.inputs(session.gpa, session, cached);
     defer ins.deinit(session.gpa);
@@ -2611,6 +2624,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         cutoff: *Check.Cutoff,
         ownership: *const Enforce.Context,
         ownership2: *const Enforce2.Context,
+        entry_constructors: []const []const u8,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -2627,6 +2641,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .ownership = if (r.session.options.ownership_v2) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
+                    .entry_constructors = r.entry_constructors,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,
@@ -2643,7 +2658,9 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    const entry_constructors = try session.entryConstructors(session.gpa);
+    defer session.gpa.free(entry_constructors);
+    var runner: Runner = .{ .session = session, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

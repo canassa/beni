@@ -29,9 +29,12 @@ pub const Kind = struct {
 };
 pub const Constructor = struct { value: Value, parameter: u32, protocol: Protocol };
 pub const Launch = struct { value: Value, parameter: u32 };
+// Canonically sorted executable worker roots, resolved before emission.
+pub const Entry = struct { module: Graph.Index, decl: u32, kind: KindIndex, id: u64 };
 pub const Role = struct { index: u32, kind: RoleKind, path: Range };
 
 kinds: std.MultiArrayList(Kind) = .empty,
+entries: std.MultiArrayList(Entry) = .empty,
 constructors: std.MultiArrayList(Constructor) = .empty,
 launches: std.MultiArrayList(Launch) = .empty,
 roles: std.MultiArrayList(Role) = .empty,
@@ -43,6 +46,7 @@ validated: bool = false,
 /// called both on a new Session run and before contract revalidation.
 pub fn reset(plan: *Plan) void {
     plan.kinds.clearRetainingCapacity();
+    plan.entries.clearRetainingCapacity();
     plan.constructors.clearRetainingCapacity();
     plan.launches.clearRetainingCapacity();
     plan.roles.clearRetainingCapacity();
@@ -53,6 +57,7 @@ pub fn reset(plan: *Plan) void {
 
 pub fn deinit(plan: *Plan, gpa: Allocator) void {
     plan.kinds.deinit(gpa);
+    plan.entries.deinit(gpa);
     plan.constructors.deinit(gpa);
     plan.launches.deinit(gpa);
     plan.roles.deinit(gpa);
@@ -92,6 +97,7 @@ test "resolved entry plan reset removes every checked-store reference" {
     const program: Types.TypeId = @fromBackingInt(5);
     try plan.constructors.append(gpa, .{ .value = value, .parameter = 0, .protocol = .handlers });
     try plan.launches.append(gpa, .{ .value = value, .parameter = 1 });
+    try plan.entries.append(gpa, .{ .module = value.module, .decl = value.decl, .kind = @fromBackingInt(0), .id = 1 });
     try plan.appendRole(gpa, 2, .wire, &.{@fromBackingInt(6)});
     plan.selected = try plan.appendKind(gpa, .{
         .program = program,
@@ -110,6 +116,7 @@ test "resolved entry plan reset removes every checked-store reference" {
     try std.testing.expectEqualDeep(@as(?Value, value), plan.runtime());
     plan.reset();
     try std.testing.expectEqual(@as(usize, 0), plan.kinds.len);
+    try std.testing.expectEqual(@as(usize, 0), plan.entries.len);
     try std.testing.expectEqual(@as(usize, 0), plan.constructors.len);
     try std.testing.expectEqual(@as(usize, 0), plan.launches.len);
     try std.testing.expectEqual(@as(usize, 0), plan.roles.len);

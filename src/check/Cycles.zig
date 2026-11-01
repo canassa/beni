@@ -85,6 +85,10 @@ pub fn run(
     interner: *const InternPool.Global,
     reporter: *Diagnostics.Reporter,
 ) Error!void {
+    return runDeferred(scratch, bir, dispatch, interner, reporter, &.{});
+}
+
+pub fn runDeferred(scratch: Allocator, bir: *const Bir, dispatch: *const Dispatch, interner: *const InternPool.Global, reporter: *Diagnostics.Reporter, descriptors: []const bool) Error!void {
     const count: u32 = @intCast(bir.decls.len);
     if (count == 0) return;
     // Nothing can be reported about a module with no constant in it, and a
@@ -94,7 +98,7 @@ pub fn run(
     // modules and this is what keeps the pass off its check time.
     if (!anyRuns(bir, dispatch)) return;
 
-    var g: Graph = .{ .scratch = scratch, .bir = bir, .dispatch = dispatch };
+    var g: Graph = .{ .scratch = scratch, .bir = bir, .dispatch = dispatch, .descriptors = descriptors };
     try g.build(count);
     // The overwhelmingly common answer: no declaration of this module names
     // any other, so there is nothing to decompose.
@@ -132,6 +136,7 @@ const Graph = struct {
     targets: std.ArrayList(u32) = .empty,
     /// Whether nothing of this declaration runs at module load.
     defers: []bool = &.{},
+    descriptors: []const bool = &.{},
     /// Whether it is a value with a body at all: a `type`, a `foreign`
     /// value and an annotation with no definition emit no initialiser and
     /// are not nodes.
@@ -162,7 +167,7 @@ const Graph = struct {
             for (stream.items) |edge| switch (edge) {
                 // A poisoned index is dropped rather than followed: the
                 // node arrays are sized from this same declaration table.
-                .top => |target| if (target < count) try g.targets.append(g.scratch, target),
+                .top => |target| if (target < count and !(target < g.descriptors.len and g.descriptors[target])) try g.targets.append(g.scratch, target),
                 // Cross-module or synthesised; neither can close a cycle
                 // between two declarations of this module.
                 .ext, .derived, .ext_derived, .primitive, .undetermined, .codec => {},

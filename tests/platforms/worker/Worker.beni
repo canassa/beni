@@ -1,0 +1,65 @@
+-- Test-only transport until realm and Wire checks enable the public API.
+import Js
+import Task
+
+
+pub type Program
+    = Program
+        { init : (⊤, ⊤ → ⊤)
+        , start : (⊤, ⊤ → ⊤)
+        , handle : (String, ⊤, ⊤ → String)
+        , stream : (⊤, ⊤, ⊤, ⊤ → ⊤)
+        }
+
+
+pub type OpenError
+    = BadUrl
+    | SecurityError
+
+
+pub foreign type Handle
+
+
+pub program :
+      { init : (⊤, ⊤ → ⊤)
+      , start : (⊤, ⊤ → ⊤)
+      , handle : (String, ⊤, ⊤ → String)
+      , stream : (⊤, ⊤, ⊤, ⊤ → ⊤)
+      }
+    → Program
+program callbacks = Program callbacks
+
+
+pub open : Program → Result OpenError Handle
+open definition = nativeOpen (Js.from definition)
+
+
+foreign impure nativeOpen : Js.Value → Result OpenError Handle
+
+
+pub foreign impure send : Handle, String → ⊤
+
+
+pub foreign impure receive : Handle, sync (String → ⊤) → ⊤
+
+
+pub run : Program → ⊤
+run definition =
+    case definition of
+        Program callbacks →
+            listen λmessage → Task.start (λ⊤ → reply (callbacks.handle message ⊤ ⊤)) λ_ → ⊤
+            Task.start
+                (λ⊤ →
+                    callbacks.init ⊤ ⊤
+                    callbacks.start ⊤ ⊤
+                )
+                λ_ → ⊤
+
+
+foreign impure listen : sync (String → ⊤) → ⊤
+
+
+foreign impure reply : String → ⊤
+
+
+pub foreign impure initializer : String → String

@@ -1,0 +1,10 @@
+globalThis.addEventListener("error", event => { globalThis.console.error(event.error ?? event.message); });
+globalThis.addEventListener("unhandledrejection", event => { globalThis.console.error(event.reason); });
+const pending = [];
+const hold = event => { event.stopImmediatePropagation(); pending.push(event.data); };
+globalThis.addEventListener("message", hold);
+const runtime = await import("./_platform/WorkerRuntime.mjs");
+const program = await import("./TwoEntries.mjs");
+runtime.WorkerRuntime$run(program.TwoEntries$worker);
+globalThis.removeEventListener("message", hold);
+for (const data of pending) globalThis.dispatchEvent(new MessageEvent("message", { data }));

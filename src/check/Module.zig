@@ -84,6 +84,7 @@ const Var = TypeStore.Var;
 
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
+    entry_constructors: []const []const u8 = &.{},
     gpa: Allocator,
     scratch: *Arena,
     patterns: *Arena,
@@ -495,7 +496,8 @@ pub fn check(in: Input) Error!Check.Counters {
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (in.roundtrip_dispatch) try roundtripKeys(in, &report);
     if (!quiet) {
-        try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
+        const deferred = try @import("../entry/Static.zig").definitions(scratch, bir, in.module, in.graph, in.interfaces, in.interner, in.entry_constructors);
+        try Cycles.runDeferred(scratch, bir, in.dispatch, in.interner, report.staging(), deferred);
         try report.flush();
         // Last, so every error the module has gates it.
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6);
