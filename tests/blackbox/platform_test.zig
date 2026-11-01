@@ -966,3 +966,40 @@ test "browser-inline named by its directory keeps a program's keys apart" {
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(by_name, by_dir);
 }
+
+test "entry rejects an application type with the platform Program name" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"program":"Start.Program","runtime":"runtime.js"}
+    );
+    try w.write("platform/runtime.js", "export function run(program) {}\n");
+    try w.write("platform/Start.beni",
+        \\pub type Program = Program String
+        \\pub make : String → Program
+        \\make text = Program text
+        \\
+    );
+    try w.write("Start.beni",
+        \\pub type Program = Program String
+        \\pub make : String → Program
+        \\make text = Program text
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Start
+        \\main : Start.Program
+        \\main = Start.make "shadow"
+        \\
+    );
+    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni", "Start.beni" });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .main_not_program,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 1 }, .end = .{ .line = 3, .col = 5 } },
+        .title = "MAIN IS NOT A PROGRAM",
+        .message = "`main` must use the platform's `Start.Program`.\n\nThis annotation names `Start.Program` from a different package. Matching names\nare not the same nominal type. Rename the local module so it does not shadow\nthe platform module.",
+    }}, result.diagnostics);
+    try testing.expect(!w.exists("out"));
+}
