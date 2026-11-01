@@ -254,6 +254,12 @@ pub fn build(b: *std.Build) void {
     const emit_opts = b.addOptions();
     emit_opts.addOption(bool, "lower_reuse_cross_check", lower_reuse_check);
     emit_options = emit_opts.createModule();
+    // The owner, 2026-11-01: the safety allocator is off unless a memory
+    // problem is being debugged. It costs 15-20% of CPU (#1586).
+    const safe_allocator = b.option(bool, "safe-allocator", "Run every beni this build makes on the safety allocator, which catches leaks, double frees and use-after-free (default off; costs 15-20% CPU)") orelse false;
+    const alloc_opts = b.addOptions();
+    alloc_opts.addOption(bool, "safe_allocator", safe_allocator);
+    alloc_options = alloc_opts.createModule();
     // `diagnostic` is a NAMED module because two roots need the same schema:
     // the compiler renders it and the black-box suite parses it back. A field
     // added or renamed in production then fails the tests at compile time
@@ -333,6 +339,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "beni", .module = exe_beni },
                 .{ .name = "diagnostic", .module = diagnostic_mod },
+                .{ .name = "alloc_options", .module = alloc_options.? },
             },
         }),
     });
@@ -1077,6 +1084,7 @@ pub fn build(b: *std.Build) void {
                         .imports = &.{
                             .{ .name = "beni", .module = measured.beni },
                             .{ .name = "diagnostic", .module = measured.diagnostic },
+                            .{ .name = "alloc_options", .module = alloc_options.? },
                         },
                     }) },
                     .{ .name = "coverage_options", .module = runtime_options.createModule() },
@@ -1364,6 +1372,7 @@ fn compiler(
             .imports = &.{
                 .{ .name = "beni", .module = beni },
                 .{ .name = "diagnostic", .module = diagnostic },
+                .{ .name = "alloc_options", .module = alloc_options.? },
             },
         }),
     });
@@ -1974,6 +1983,10 @@ var ownership_options: ?*std.Build.Module = null;
 /// `-Demit-lower-reuse-cross-check`, as the module `emit_options` every
 /// build of the compiler imports (`src/js/Emit.zig`).
 var emit_options: ?*std.Build.Module = null;
+
+/// `-Dsafe-allocator`, as the module `alloc_options` every `src/main.zig`
+/// root imports.
+var alloc_options: ?*std.Build.Module = null;
 
 /// One platform package compiled into beni (`docs/design/boundary.md`
 /// §9.5): a directory under `platforms/`, or one `-Dplatform=<dir>` adds.
