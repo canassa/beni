@@ -80,6 +80,7 @@ const Session = @import("../Session.zig");
 const SourceStore = @import("../SourceStore.zig");
 const fs_read = @import("../fs_read.zig");
 const Lower = @import("Lower.zig");
+const CheckedTypes = @import("../check/Types.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 const JsIr = @import("JsIr.zig");
@@ -2701,9 +2702,26 @@ const Emitter = struct {
         ,
             .{try e.writtenProgramName(entry.module)},
         );
+        const program = e.options.platform.program orelse "";
+        const expected = e.session.checked.types.find(
+            e.graph(),
+            .platform,
+            try e.session.interner.getOrPut(e.gpa, platformModule(program)),
+            try e.session.interner.getOrPut(e.gpa, shortName(program)),
+        );
         if (e.expandedTypeName(entry.module, b, annotation, null, 0)) |t| {
-            if (std.mem.eql(u8, t.module, platformModule(e.options.platform.program orelse "")) and
-                std.mem.eql(u8, t.name, shortName(e.options.platform.program orelse ""))) return;
+            if (expected != .none and t.id == expected) return;
+            if (std.mem.eql(u8, t.module, platformModule(program)) and
+                std.mem.eql(u8, t.name, shortName(program)))
+            {
+                return e.report(.main_not_program, file, d.name_token,
+                    \\`main` must use the platform's `{s}`.
+                    \\
+                    \\This annotation names `{s}` from a different package. Matching names
+                    \\are not the same nominal type. Rename the local module so it does not shadow
+                    \\the platform module.
+                , .{ try e.writtenProgramName(entry.module), e.writtenTypeName(entry.module, t) });
+            }
         }
         // The message names the type as it was WRITTEN, alias and all: that
         // is the name the reader can find above the definition.
@@ -2726,7 +2744,7 @@ const Emitter = struct {
     }
 
     /// A resolved type reference, split into the two halves a message needs.
-    const TypeRef = struct { module: []const u8, name: []const u8 };
+    const TypeRef = struct { module: []const u8, name: []const u8, id: CheckedTypes.TypeId = .none };
 
     /// An alias being looked through by `expandedTypeName`: its parameters,
     /// and the arguments of the use being expanded, which are instructions
@@ -2788,6 +2806,7 @@ const Emitter = struct {
             return .{
                 .module = e.session.interner.slice(named.module_name),
                 .name = e.session.interner.slice(named.name),
+                .id = id,
             };
         }
         const alias_bir = e.bir(named.module);

@@ -1,7 +1,7 @@
 # Platforms
 
 A program is built for one platform. The platform owns `Program`, the type of `main`, and supplies
-the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or with
+the host modules. An application type with the same name is different. Name the platform in `beni.json` (`"build": { "platform": "…" }`) or with
 `--platform=<name>`. Six ship in the compiler.
 
 | Platform | `main` | Runs where | Adds |
