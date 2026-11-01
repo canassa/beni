@@ -2343,6 +2343,27 @@ every verdict, summary and block of the corpus and of core is byte for byte the 
 `-Downership-full-cross-check` walks each call again with no memo and compares the snapshots. A branch
 join of a record that doubles at 8 levels costs 12 975 records, 20 883 before (`build_test.zig`); its
 states stay one per path, since the join memo is written only once the call has finished.
+*As built (#1526):* a slice is found by its run's exact extent, `(first, len)` in the call's runs, never by
+`first` alone. A run with no members appends nothing, so the run cut next starts at the same index: keyed
+by `first`, the two frames shared one slice, and the one walked first fixed the other's run id, κ and
+cursors. A frame with no members could so read its neighbour's stronger κ, and a frame with members `lost`;
+the snapshot depended on the order the frontier was walked in. The memo-free walk keys the run one step
+below the same way. It is the only memo of the call keyed by an index into an array that grows (`below_at`
+keys by the run under the memo; `front_at` by the slice; `path_index` by a path, which is never reused).
+The order check, `--ownership-order-check` (hidden, test-only; also on under `-Downership-full-cross-check`),
+walks each call again with no memo and every frontier's children pushed in reverse, and stops when the
+two snapshots are not equal under `kappaLeq` both ways. It reads and interns in the module's tables, so it
+may move record counts, and the plain gates do not run it: `build_test.zig` runs it on
+`ownership/EmptyRunFrontierOrder`, #1513's and #1489's two-branch inserts, `wa`/`wb`, the quadtree and
+`RoseAlias`, of which all but the last two failed it before. Corpus (2 120 roots): no verdict, summary,
+limit or block change; three roots' records move, +0.03 % in all. `wa`/`wb`'s memoised and memo-free
+walks now agree under the full cross-check (#1497). A walk with `no_memo` set neither reads nor writes the
+join memo: before, it wrote `memo_prop` as a memoised walk does. Outside the two checks that is the walks of
+`moveIsBisimulation` (4e's move check, every safety build), a construction's carried-entry test
+(`TransferConstruct.carryDropped`, any `propagate` it reaches), and two unit tests of `Cond.zig`. The order
+check skips those walks: `propagateFrom` returns at once under `no_memo`, and the move check calls the walk
+directly. Measured, the change moves no record: with those writes kept and the new key, the corpus is the
+same as this build root for root, so the +0.03 % above is the key's alone.
 Visited states use exact interned member-and-snapshot runs, never equality of a hash. A hash may index an
 exact equality check. Store run offsets/ids, not slices that an append can invalidate. Different contexts
 at the same node remain separate states; revisiting a completed identical state reuses its answer.
@@ -2643,7 +2664,7 @@ Where κ is set, always **at the selected path p**:
   The quadtree, T3 and `descend` grew by 8 %, 2 % and 14 %, mostly from the walks that it repeated.
 
   **Fold first: the walk builds no position a fold collapses** [M 2026-11-01, #1372, #1368, #1289;
-  specified and prototyped, not built; it needs #1526 first]. This is the manager's (b) of §2.3 *What 4e
+  specified and prototyped; it needs #1526 first; built in #1543, *As built* below]. This is the manager's (b) of §2.3 *What 4e
   measured*. *Revised 2026-11-01 after #1535's review:* the first draft walked regions keyed by the route
   restricted to a strongly connected component. That key named a graph it did not define, missed folds
   longer than one step and was exponential in the component's width. The rule below has no route in any
@@ -2822,7 +2843,11 @@ Where κ is set, always **at the selected path p**:
       `Σ` stops at clean-memo hits (pass 1);
     - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits,
       summed over the whole call with its resumed passes, which number only new states, plus
-      `|E_K| · ⌈|K|/64⌉` for each merge that reopens kept sets (fewer merges than nodes);
+      `|E_K| · ⌈|K|/64⌉` for each component that a resumed pass merges and so reopens. The merges of one
+      resumed pass are batched: it takes the node graph's components once, on its final graph, and
+      reopens each merged `K` once. Each reopening is at most `|E_Σ| · ⌈|K|/64⌉` words, and the reopened
+      components of one pass are disjoint, so the reopenings cost `O(resumed passes · |E_Σ| · ⌈|K|/64⌉)`
+      in all, not `O(|nodes| · |E_Σ| · ⌈|K|/64⌉)` (the review of 2d21144d6, #1543);
     - pass 3: for each distinct open set, its interning (a record per state) and its edges; for each
       distinct fold set, its closure and the closure's edges, so `O(fold sets · |E_Σ|)` in all.
 
@@ -2947,6 +2972,89 @@ Where κ is set, always **at the selected path p**:
     a limit at 10⁸. What grows is the number of distinct states, and it grows with the port (§2.3,
     #1372), not with the walk. `descend`'s growth falls by 14 %, and it is still over the default
     allowance of 65 536. `propagate` takes 135 600 of its records, against 163 260 before.
+  - **As built (#1543).** The rule is `Propagate.zig` (L5, §5), methods of `Cond.Table` bound there by
+    name; the walk before it is gone, and `widenValue`'s bisimulation check reads its two images with the
+    rule alone (`propagatePlain`). Where the build had to choose:
+    - *Pass 1.* A state reads its head first, as a frame did: the link test, its `kept` entry, and then
+      the clean memo. A link or a hit stops there; anything else reads its body (κ, its entry, its
+      children). A state is *clean* when its node has a finite rank of at least 1 and the call has no
+      traversal, a function of the state, so a hit no longer needs a clean route above it. A hit is linked
+      only where it stands alone at an open position; elsewhere it is expanded. The clean memo's key gains
+      one bit: whether the call keeps a lone member's entries (alternatives over one member), so an entry
+      written by a call of one member is never read by a call of two.
+    - *Pass 2.* Each pass, the first and every resumed one, takes the node graph's components once, on
+      the whole graph as it then is. A component whose node set and nontriviality are those of a component
+      of the last pass keeps its id and its nodes' bit indices. Any other component is numbered again and,
+      when it holds earlier states, reopened: its earlier states' bit sets are propagated again, bottom up
+      along Σ's edges inside it, before the new states read them. That covers a merge and also a component
+      that new nodes join, which is the same work and no more than the bound below. Then Tarjan runs over
+      the new states alone, the earlier ones read as sinks. Under `runtime_safety` a reopened component
+      must leave every earlier state's cycle bit as it was, and a bit set is never read across components.
+    - *Pass 3.* A set is a cons list of state ids, interned per call with a record per state. Open sets
+      are built post-order on an explicit stack; an open set met again while it is still open panics,
+      since the bits make that impossible. A fold's closure is a breadth-first walk that expands each hit
+      it meets, then one resumed pass 2 over what that read. The clean memo is written only for an open
+      set of one state, so no fold writes it: #1537's empty snapshot cannot be recorded. Nor could the
+      walk before the rule record it: a clean frame's whole route has finite rank of at least 1, so it
+      met no recast's inner (no `via`), and each position on it held one unfolded state. A fold lands only
+      on a position its own lineage passed, so a fold at or above a clean frame would repeat a node of
+      positive finite rank, which projection cannot do. #1537 was latent in the code, never reachable.
+      The kept bit was a real gap: on the walk before the rule, a call of one member wrote a clean entry
+      with the member's `kept` entries, and a call of two whose second member has no child there read it
+      (*a clean entry written by a call of one member is not read by a call of two*, which fails without
+      the bit and on that walk).
+    - *The reference and the checks.* `reference` walks frames over the fully read Σ (no memo), with
+      §2.3's owners and output built as the walk before the rule built them, and stops at 2²² frames. Under
+      `-Downership-full-cross-check` each call compares the memoised rule with the rule without its memo
+      and with the reference, in both frontier orders. `--ownership-order-check` (#1526) now compares the
+      rule reversed for an equal id, no longer two snapshots under `kappaLeq`. `--ownership-propagate`
+      prints `propagate N: S states, E edges, O open sets, F fold sets, R resumed` per call on standard
+      error.
+    - *Mutations* (`-Downership-v2-mutation`, which `gates` refuses): `propagate-full-read` (pass 1 reads
+      below a hit), `propagate-no-fold-first` (the reference stands for the rule), `propagate-no-resumed-pass2`
+      and `propagate-no-merge-reopen`. The first fails the shared DAG, the second the doubling record and
+      the sibling (by their records), the third the resumed hit and the two-leaf merge, the fourth the
+      two-leaf merge. The self-loop and the coprime knots pin exactness against the reference, which the
+      second mutation leaves equal. A self-edge also sets its state's own bit here, so the self-loop rule
+      of pass 2 is not what makes that state cyclic.
+    - *Counted tests.* In `Cond.zig`: the shared DAG (C = 16 less C = 1 within 10 % at N = 16 and 64), the
+      sibling (2d + 7 states and one fold at d = 4, 8, 12, linear records; this fixture's `B` names one
+      list, the prototype's two), the period-1 self-loop, the coprime knots (14 states, one fold), the
+      resumed hit and the two-leaf merge, each against the reference in both orders. In `build_test.zig`:
+      #1289's chain published at 4 / 6 / 8 calls, and a record that doubles at 11 levels: 2 670 records
+      with the same summary, where the walk before the rule is a limit (190 868 records at a raised
+      allowance). The chain cost 15 848 / 31 213 / 52 447 records under the rule and 18 401 / 91 040 /
+      1 035 422 under the walk before it; since #1538's atom rule both take 7 603 / 13 392 / 20 468, so
+      the doubling record and the sibling fixture are what fail without fold first. That record was the "genuine product" of four tests of §4.1 (the source continuation,
+      the summary that is not printed, near-limit acceptance in either order); they use the doubling calls
+      `w_k x = w_{k-1} (w_{k-1} x)` now, which still are one: `h` makes ten calls of `w9`, about 78 000
+      records from a few atoms. The near-limit test is one run of three modules: `h` first and `g` first
+      under one allowance above `h`'s growth, accepted with equal growth, and a third under one below it,
+      which stops at the limit; the run checks that both allowances lie within 5 % of the growth it
+      reports. It fails under a deliberate charge to whichever declaration meets a shared table's first
+      misses (#1104's kind). Each of these tests takes under 1 s: a dump of `h` costs about 0.35 s, so a
+      test runs at most two dumps in a row, and puts its other cases in parallel modules of one run.
+      `w10` cannot be shared from a module of its own: its type nests past the interface's 512 levels, and
+      `h` over an imported `w9` stops at a `call_view` lane's ceiling (`ownership_accounting_invariant`).
+    - *Measured* (self-hosted ReleaseSafe, `dump --stage=ownership --ownership=v2`, against master
+      `8faad6453`). Over the 2 125 roots of `allOwnership` under `--ownership-everywhere`: no verdict or
+      limit line changes; records rise 0.14 % (9 972 608 → 9 986 751). Four roots' summaries number their fresh labels in another order
+      (`CycleLinkRooting` and its imported twin, `FoldedPreimageCall`, `RoseKidsHeld`), the same summaries
+      once renamed, and their blocks with them (`RoseKidsHeld` 3 412 → 2 672 bytes, `FoldedPreimageCall`
+      9 716 → 9 768): `proj` is called in another order, as *`proj`'s side effects* allows. A scratch
+      build that ran the walk before the rule beside the rule on every call found the same id in all 30 533
+      calls of those roots (on master before #1538). An oracle in scratch made 600 probe modules over tree
+      writers, keyed inserts, accumulators, `removeMin`-like rotations and mutual writers, each judged by
+      the dump and run by a model twice, pushes copying and pushes in place where the module was
+      accepted whole: 0 unsafe accepts, with 178 accepted at the default allowance and 283 at 4 Mi, as
+      master accepts; forced to accept every probe, the model finds 218 unsafe. Under `-Downership-full-cross-check`, the 440 cases of
+      `tests/corpus/ownership/` give no propagate panic and reach no reference cap (their other lines are
+      the base's under the same flag, fresh labels aside). The rest of the corpus passes, but for what fails
+      there under the flag before this change too: v1's own §16.7 check panics on 15 fixtures, and
+      `CrossDepthKids`' `incAs` is a limit. `descend`:
+      137 891 → 122 867 records, growth 83 649, still over 65 536. `removeMin` is still a limit at 10⁸: its
+      largest joins read 29 545 states and 681 815 edges. The dump's peak memory falls from 3.6 GB to
+      450 MB; its time, on a shared machine, went 194 → 179 s in one run and 243 → 313 s in another.
   - **Not taken.**
     - *A walk keyed per DAG node alone.* It is not exact: the states at one position are merged (`outs`
       join per node at the owner), so a position's result is a function of its set of states, not of each
@@ -6284,10 +6392,11 @@ These are bounds for the specified completed algorithms, not measurements provin
 them. `Cond.lower` must index arrivals by original base so W distinct-base insertions do not rescan W
 members (#1054); exact same-base comparisons remain individually charged. `Cond.propagate`/`kappaLeq`
 need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
-(2026-11-01). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
+(2026-11-01; built in #1543, `Propagate.zig`). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
 `Σ_K |E_K| · ⌈|K|/64⌉` words for the cycle bits over the node-graph components `K` (quadratic for one large
 knot), summed over the call (a resumed pass numbers only new states, and each merge of components that
-hold earlier states adds `|E_K| · ⌈|K|/64⌉`, with fewer merges than nodes), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
+hold earlier states adds `|E_K| · ⌈|K|/64⌉`; a resumed pass takes the components once on its final graph and
+reopens each merged `K` once, so the reopenings cost `O(resumed passes · |E_Σ| · ⌈|K|/64⌉)` in all), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
 closures.
 Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
 polynomial bound in `|Σ|` fails only at the number of distinct open sets, which is exponential in the worst
@@ -6861,10 +6970,11 @@ L0  Ids
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
 | `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Shape, CondAlgebra | ≤ 700 (#1308: split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Cell, Shape, CondAlgebra, Kappa | ≤ 2 730 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
-| `Cond.zig` | 6 | the condition table: its columns, the binding of the three parts' methods to one `Table`, `propagate` (a joined node's κ from its members, with its per-call slice and frontier memos) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the three parts above | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead | ≤ 1 290 (4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
+| `Cond.zig` | 6 | the condition table: its columns, the binding of the four parts' methods to one `Table` (`Propagate`'s `propagate` among them) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the four parts | Ids, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead, Propagate | ≤ 830 (#1543: `propagate` moved to `Propagate.zig`; #1526: `propagate`'s order check, §2.9; 4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 925 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |
 | `Liveness.zig` | 5 | the use index and queries | `Index`, `build`, `useAfter`, `useUnder`, `lastUse`, `rangeOf`, `childRange`, `firstAfter`, `groupEnd` | Ids, Facts, Place, Regions, Shape | ≤ 750 (since #1214: a path's uses grouped for a filter, and a child's range found by its one step) |
 | `Joins.zig` | 5 | the join index (§2.8 *As built*, #1510): a deep node's joins at its path flattened once, with their route-flag combinations, a tree of their reach unions and the folded members' cells by hold | `Index.get`, `Index.hits`, `folded`, `sides` | Ids, Cell, Shape | ≤ 230 |
+| `Propagate.zig` | 5 | `propagate` of `Cond.Table` (§2.9 *Fold first*, #1543): the state graph Σ read once and stopped at clean-memo hits, the cycle bit by components of Σ and of its node graph with resumed passes, positions by their set of states (open sets and exact folds, both memos), the reference walk, and their `runtime_safety` cross-check | `Mode`, `Stats`, `propagate`, `propagateFrom`, `propagatePlain`, `propagateReference` (`Cond.Table`'s methods) | Ids, Shape, CondAlgebra, Kappa | ≤ 1 280 (#1543: out of `Cond.zig`, which bound it; its types come in from `Cond` as parameters, so it imports no file of its own layer) |
 | `Exits.zig` | 5 | a use's exits on a cycle of the place graph and the cover of a hold by a use with them (§2.7, *A read that leaves its path on a cycle*) | `Memo`, `covers`, `exits` | Ids, Place, Cell, Shape, Facts | ≤ 250 |
 | `Rows.zig` | 8 | words → classes; constructor, derived-method, markup and schema classes; entry shapes; `Send` | `fromWords`, `ctorClass`, `derivedClass`, `entryShape`, `schemaRow`, `markupRow` | Ids, Place, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Holders.zig` | 8 | the holder index (§2.8, #1214): pairs from each holder's life, light and heavy pairs, the best-hold query, the per-group sweep (two minima, top-2 split tags, the pending tree, reliance counters), the naive cross-check; the frame types (`Demand`, `Holder`, `Frame`, `Value`) | `answer`, `closureOf`, the frame types | Ids, Facts, Cell, Shape, Cond, Summary, Liveness, Regions, Exits, Joins | ≤ 2 280 (#1510: closures and hold listings read from the join index, each checked against the walk under runtime safety, §2.8 *As built*; 2 070 since #1467: a pair whose holder has no later use walks no cover, §2.8 *As built*; 1 900 as built, #1214: the frame types moved from Demands, the naive scan, the fallback hold listing for folded paths, the memoised same-path closure and the own-split chain counters, §2.8 *As built*; 2 010 since #1335: the closure by the cycle walk; 2 030 since #1366: a candidate stops at a `◆` barrier) |
@@ -6880,15 +6990,15 @@ L0  Ids
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferArms, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 640 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule) |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 200 (S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; 2 205 since #1543: `--ownership-propagate`'s two lines) |
 | `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
 | `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 300 (S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
-| `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 |
+| `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 (#1547: the list half, `Table` and `Builder`, 108 lines; `write`/`read` land with v2's cache) |
 | `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
-| `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 330 (S3b slice 4a: a group member's walks on its account line; #1459: a block not published for a limit is that limit, said) |
+| `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 340 (S3b slice 4a: a group member's walks on its account line; #1459: a block not published for a limit is that limit, said; #1547: the lowering channel from the verdicts) |
 | `Enforce.zig` | 17 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 450 |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
@@ -7047,12 +7157,19 @@ are identical and nothing is written (R-7.11).
    Element-supply lines such as `rows[*].1` are checked at the callback's actual writer site. A missing or
    extra wrapper fails; a module not emitted is not compared. `test-records-in-place` and its list twin run
    every `run/` program and `browser/inline/` page; normal gates include the marked fixtures. The intended
-   S8b/S9 coverage is §8.2. A trap on an accepted program is a soundness defect regardless of any oracle.
+   S8b/S9 coverage is §8.2. A trap on an accepted program is a soundness defect regardless of any oracle,
+   once every caller of the trapped write was checked: under v2 (*As built under v2* below) a `param`
+   verdict is a condition on callers that may sit in a declaration v2 has not built, and the trap's site
+   says which case it is.
 
    **Specified limits of this instrument:**
 
-   - A plain array's `length` is non-configurable: it retains its old number. Indexed reads/methods trap,
-     but a stale length-only read does not. Do not claim complete stale-read detection from a green run.
+   - A plain array's `length` is non-configurable, so it cannot trap. As built (#1547) the poisoned array
+     takes the written list's length, the number an in-place write leaves there: a stale length-only read
+     (`List.length`, a pattern's `[]` or `[ _, …_ ]` test) then answers as the in-place run answers, and
+     the output differs from the golden instead of trapping. Indexed reads/methods trap. A stale length
+     read the written list's length does not change (`List.set`) changes nothing in place either. Do not
+     claim complete stale-read detection from a green run.
    - Persistent `Dict` writes have no v1 demand to justify poisoning. Add Dict storage poisoning with
      #961 at S8; until then it is outside this instrument's coverage.
    - v1's clean table covers application modules, not core/platform bodies. Writers escaping sight inside
@@ -7068,6 +7185,54 @@ are identical and nothing is written (R-7.11).
      is not caught (#1035). S8b's array/view representation must remove this coverage gap and add the
      corresponding trapping twin. A whole-trie recursive poison is forbidden: it makes long push loops
      quadratic. The existing hidden-holder/trie-holder fixtures must trap on covered storage.
+
+   **As built under v2 (#1547).** Under `--ownership=v2` the sanitiser follows v2's verdicts through the
+   list half of §3.7's lowering channel, `src/own2/Hoists.zig` (format 2), whose producer is
+   `Ownership.run` and whose consumer S8b will be. Per module the channel holds R-1.12's clean bit (every
+   declaration built, no limit, no refusal) and, for an application module, each accepted `writer`,
+   `construction` and `append` demand by its instruction, with whether its verdict rests on the
+   declaration's callers (any ground but `fresh` and `call`: `param` above all); a refused or limited
+   module publishes no write. The Driver keeps one table per module (`Check.channels`) and `Emit` hands it
+   to the lowering in a build that enforces. There `sanitize_lists` wraps a writer call or a `++` whose
+   instruction the channel lists, and a spread's `List.append` whose chain root it lists (§2.13.2: a
+   chain's demand is at its root, which is the `cons` of its leading items when it has some). The
+   sanitiser judges verdicts, not stores, so it reads the writes and not the clean bit: a write v2
+   accepted in a module where another declaration is not built yet is wrapped, and a write in a
+   declaration v2 did not build is not (no one judged it).
+
+   So a trap is not always a v2 defect. A `param` verdict holds only where every caller hands the
+   declaration a list it owns, and v2 checks that at the callers; a caller in a declaration v2 did not
+   build, in this module or another, was never checked (`Lib.grow xs = List.push xs 9` is clean and
+   accepted `param` while an unbuilt `Main.main` pushes `xs` and reads it again). Each wrapped site
+   therefore says which case it is: `(at byte N, whatever its callers)` for a verdict that rests on no
+   caller, where a trap is a v2 defect; `(at byte N, every caller checked)` when every module of the
+   program was checked whole, the same; and `(at byte N, a caller may be unchecked)` otherwise, where a
+   trap is either a v2 defect or a caller v2 has not built yet, to tell apart by hand.
+
+   **What S8b may store** (the manager's decision, 2026-11-01, on #1555's review): a write is emitted in
+   place only when its module **and every module that calls it, directly or transitively, are clean**.
+   The channel's per-module clean bit is necessary, not sufficient. Until v2 records which modules call
+   which declaration, that is the whole program clean — every module, core and the platforms included,
+   checked whole. A write short of that is authorised no store, as a refused or unchecked module's is
+   (S8b's row); it is not a copy chosen behind the program's back.
+
+   v2 makes no `value` demand, so a writer handed as a value is not wrapped under v2: a coverage gap of
+   this instrument until v2 builds callback writes. v1's path is unchanged. Fixtures carry
+   `.sanitize-lists-v2` (and `-crash`); `checkSanitisedSites` compares the wrapped sites with v2's dump.
+   A fixture with `.sanitize-lists-v2-refuses` is a fixed v2 defect: v2 must refuse it, and when v2
+   accepts it again the case fails with the sanitised run as the evidence. `ListSanitiserHiddenHolderV2`
+   traps, `ListSanitiserV2Writes` runs clean, `SanitiserGenericResult` (#1516, a `List.length`-only read
+   among them), `SanitiserPatternReadsList` (#1530) and `SanitiserLevelRead` (#1523) are refused, and
+   each traps or prints another answer when its fix is reverted. `zig build test-lists-in-place-v2` runs
+   every `run/` program and `browser/inline/` page so. Measured at #1547: all `run/` cases and the
+   browser pages run clean (one wiring defect, the spread root above, found and fixed). The coverage is
+   v2's: of the 491 single-file `run/` programs, v2 accepts 34 list writes (33 emitted and wrapped, in 9
+   programs) where v1 accepts 164; the rest sit in declarations v2 does not build yet (their
+   `.v2.unchecked`). `bench/ownership-v2-sanitiser.mjs` is the generated sweep: flat lists and lists of
+   lists (a generic `wrap` of a list, `idl`, an element handed out, writers, spreads, `++`) read whole,
+   by length or by a pattern's shape alone, and trees under a recursive writer and recursive or
+   pattern-only readers. 1,500 programs at seed 1: 473 accepted, 449 writes wrapped, no trap; with
+   #1516's fix reverted 6 traps, #1530's 59 (one by output alone), #1523's 32.
 4. **Differential fuzzing.** The Lean bridge's generator (`proofs/ownership/BRIDGE.md`, recorded seeds) extended to
    records, `Dict`, patterns and callbacks: each program checked by v1 and v2, run under the sanitiser where both
    accept, judged by Lean where modelled; v2 accepts ∧ sanitiser traps is a stop. `zig build fuzz` grows an `own`
@@ -7157,7 +7322,7 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and counted grouping (#1065, built in S2b's writer), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 |
 | S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast`  Resolve sender alias roles before expansion from BIR/interface terms, preserve capability through expanded-type wrappers and cached packages; add a role column only where the existing terms lose it (§2.13.5). Model feedback uses the same observed κ frontier; view/command roots join before any final authorization. Repeat instrumentation. | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels | S5 | S6 |
 | S8 | **`Dict`, `Ref`, `Log`** | #961 rebased onto v2 with its `Dict` rows as words; `Ref`/`Deferred` slot state and ordered transforms, deep no-loan ◆/consumed/escape checks, ordinary stored loan propagation and depth-correct copy diagnostics, `Ref.modify` loan returns, unknown refs=top, call-boundary suspension liveness via `effectAt`, P-sync pinned per platform; `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified  Complete cross-package pin closure through Task.callback/resume and all asserted helpers (#1061); specify ownership metadata independently of frozen v1 for Log.once, Task.keepLogContext, Js.maySuspend and Dict (#1053, §9); word `Dict.focus` with callback `stored` in its `dict`/Maybe form (§2.13.6, #1021). Implement selected cellmodify .1 write-back, ordinary stored loans and region/effect serialization (§2.13.7); no blanket ownership demand on .0. | DictFocus, DictValueWritten, DictTupleFocus*, DictUpdateStoredAnswer, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/RefOwnsContents`, `p/LogAnnotateUpdate`; R-5.10.12's fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; all new loan twins in Appendix B | S5, S7, #961 | S6 |
-| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 |
+| S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel (`src/own2/Hoists.zig`, #1547): emit a write in place only when its module and every module that calls it, directly or transitively, are clean — for now the whole program clean, core and platforms included (the manager's decision, 2026-11-01, §7.3); a write short of that is authorised no store, as a refused or unchecked module's is; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 |
 | S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S8b | — |
 | S10 | **Switch-over and deletion** | §8.2 pre-migration criteria met; nominal Send/Send.to migration of platforms/callers, compare migrated v2 results to the frozen alias-form corpus results; v2 default; `src/own/`, `--ownership=v1`, `--ownership-everywhere` and the `"lists"` key deleted; `src/own2/` renamed; goldens' v2-own lines blessed; `skills/beni/` and `language.md` §10 checked current (attribute updated in S2b, words, `Send.to`); O4a (#320) and O4b (#978) on v2 | gates green with every R-8.1 flip; `-Dllvm` green | S9 | — |
 
@@ -8481,6 +8646,11 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    53 147 records, and walk 2's joins of `removeMin` fall from 7.3 M to 391 k. But `removeMin` and
    `descend` stay limits. What is left is one read for each distinct state, and `removeMin`'s states grow
    with its port (§2.3, #1372). So (b) alone does not make core checked, and S3b still cannot close on it.
+   *Built (#1543):* the corpus's verdicts do not change, and the rule gives the walk's id in each of its 30 533
+   calls. A record that doubles at 11 levels costs 2 670 records, where the walk before it is a limit.
+   #1289's chain is linear (since #1538 under that walk too). `descend` costs 122 867 records
+   (137 891 before) and is still over the default allowance. `removeMin` is still a limit at 10⁸: its largest
+   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*).
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is

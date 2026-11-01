@@ -247,6 +247,7 @@ pub const own2 = struct {
     pub const Walk = @import("own2/Walk.zig");
     pub const Groups = @import("own2/Groups.zig");
     pub const Message = @import("own2/Message.zig");
+    pub const Hoists = @import("own2/Hoists.zig");
     pub const Report = @import("own2/Report.zig");
     pub const Ownership = @import("own2/Ownership.zig");
     pub const Enforce = @import("own2/Enforce.zig");

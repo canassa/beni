@@ -81,6 +81,9 @@ const layers = [_]Entry{
     .{ .file = "Exits.zig", .layer = 5, .max_lines = 250 },
     // 230 since #1510: the join index, a deep node's joins flattened once (§2.8 *As built*).
     .{ .file = "Joins.zig", .layer = 5, .max_lines = 230 },
+    // #1543: `propagate` by §2.9 *Fold first* (the state graph, the cycle
+    // bit, positions by their set of states) and its reference, out of Cond.
+    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1280 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
@@ -106,7 +109,9 @@ const layers = [_]Entry{
     // projection correspondence (§2.9 *Keyed where a reader looks*).
     // 1 290 since 4e: `widenValue` interns its image by canonical form,
     // and its cross-check (§2.3, stable images).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 1290 },
+    // 1 300 since #1526: `propagate`'s order check (§2.9).
+    // 830 since #1543: `propagate` moved to `Propagate.zig` (§2.9 *Fold first*).
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 830 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
@@ -186,8 +191,8 @@ const layers = [_]Entry{
     // 1 930: the well-known shape with type variables, and an imported
     // alias chain taken hop by hop.
     // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
-    // wake rule.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2200 },
+    // wake rule. 2 205 since #1543: `--ownership-propagate`'s plumbing.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2205 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -209,7 +214,8 @@ const layers = [_]Entry{
     // way round is the reader's projection (`sameDag`).
     .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1300 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
-    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 330 },
+    // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
+    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
     .{ .file = "Enforce.zig", .layer = 17, .max_lines = 500 },
@@ -485,7 +491,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 40), layers.len);
+    try testing.expectEqual(@as(usize, 41), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

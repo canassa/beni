@@ -123,3 +123,13 @@ entry-root suites remain required. Actual counts and failures go in the diary.
 The manager reviews the source freeze then runs full unfiltered gates and any
 necessary cost checks; Debug development builds only in the author lane unless
 separately authorized. No budget increase or output-byte regression is accepted.
+
+## Upstream sanitiser coverage input (2026-11-01)
+
+The whole-program caller-coverage flag supplied to list sanitisation is mutable
+per-emission lowering input. Keep it in Projection alongside clean_modules,
+initialized to false for each fresh projection. Preserve upstream computation
+from checked channels and its exact Lower.Input.callers_checked use. The new
+list-write channel borrow retains upstream ownership-v2/enforcement guards and
+module bounds. This integration neither changes ownership verdicts nor creates
+a new worker or ownership certificate.

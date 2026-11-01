@@ -279,11 +279,25 @@ wrote is checked against its `dump --stage=ownership`: the sites the build
 wraps must be exactly the `List.<writer>`, `construction`, `++` and
 `value List.<writer>` lines v1 accepts, by position and writer.
 
+A `<name>.sanitize-lists-v2` file (and its `<name>.sanitize-lists-v2-crash`)
+gives the same pass under `--ownership=v2`: the sanitiser wraps the writes
+v2's lowering channel lists (`src/own2/Hoists.zig`, `ownership-v2.md` §3.7),
+and the sites are checked against v2's `dump --stage=ownership`. A write in a
+declaration v2 did not build is not wrapped, and v2 makes no
+`value List.<writer>` demand, so a writer handed as a value is not wrapped.
+Each wrapped site says whether its verdict rests on callers v2 may not have
+checked (`ownership-v2.md` §7.3), which a trap's message then repeats. With a
+`<name>.sanitize-lists-v2-refuses` file the fixture is a fixed v2 defect: v2
+must refuse it under the pass's flags, and when it accepts the program instead
+the sanitised build is run anyway and the case fails, its trap or its other
+output the evidence.
+
 Both files hold their reason, are written by hand and never blessed, and their
 passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build
 test-records-in-place`) gives every `run/` fixture and every
 `browser/inline/` page the record passes, and `BENI_IN_PLACE=lists` (`zig
-build test-lists-in-place`) the list pass; there a program the ownership
+build test-lists-in-place`) the list pass, `BENI_IN_PLACE=lists-v2` (`zig
+build test-lists-in-place-v2`) its v2 twin; there a program the ownership
 checker refuses under the pass's flags is skipped, and nothing is recorded.
 
 ### A Worker

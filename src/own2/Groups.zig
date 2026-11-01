@@ -81,6 +81,8 @@ pub const Input = struct {
     interner: ?*const InternPool.Global = null,
     /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
     imports: ?Imports = null,
+    order_check: bool = false, // `--ownership-order-check` (test-only)
+    propagate_dump: bool = false, // `--ownership-propagate` (test-only)
 
     pub fn isCore(in: *const Input, m: u32) bool {
         return m < in.core.len and in.core[m];
@@ -1395,6 +1397,8 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.views = .{ .places = &mod.places, .cells = &mod.cells, .shapes = &mod.shapes, .conds = &mod.conds, .sums = &mod.sums };
     mod.shapes.instantiation = mod.views.instantiation();
     mod.conds.shapes_hook = &mod.shapes;
+    mod.conds.order_check = in.order_check;
+    mod.conds.propagate_dump = in.propagate_dump;
     mod.conds.resolver = mod.views.resolver();
     mod.shapes.trackRelevance();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);

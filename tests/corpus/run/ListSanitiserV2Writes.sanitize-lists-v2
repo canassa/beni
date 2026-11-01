@@ -1,0 +1,3 @@
+The lists differential corpus under --ownership=v2 (ownership-v2.md §7.3): every list writer v2 builds,
+built again under the list stale-read sanitiser with v2's accepted writes wrapped, against the answers of
+the plain build.

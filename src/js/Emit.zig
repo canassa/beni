@@ -739,6 +739,11 @@ pub fn run(
         for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
         e.projection.clean_modules = clean;
     }
+    // Whether v2 checked every module of the program whole: then every
+    // caller of every write was checked (§7.3, the sanitiser's trap says so).
+    e.projection.v2_whole = for (e.session.checked.channels) |c| {
+        if (!c.clean) break false;
+    } else true;
     // The write-set pass, for a lowering that compiles programs whole
     // (`boundary.md` §9.4.6, version 1.7), before reachability: the pieces
     // it lifts are nodes of the walk (`browser-inline.md` §7).
@@ -1424,6 +1429,8 @@ const Emitter = struct {
         core_private: Lower.CorePrivate = @splat(true),
         /// `Lower.Input.clean_modules`, the same for every module of the build.
         clean_modules: []const bool = &.{},
+        /// `Lower.Input.callers_checked`, the same for every module.
+        v2_whole: bool = false,
         /// §9 item 2's whole-program namespace: one table for the BUILD, so that
         /// an `import` specifier in one file and the `export` in another are
         /// given the same short name. Empty and unused in a dev build.
@@ -6727,6 +6734,13 @@ const Emitter = struct {
                     table.clean = table.clean and e.session.enforce_ownership;
                     break :own table;
                 },
+                // v2's channel (`own2/Hoists.zig`): the list writes v2
+                // accepted, in a build that enforces, for the sanitiser.
+                .list_writes = if (e.session.options.ownership_v2 and e.session.enforce_ownership and m.int() < e.session.checked.channels.len)
+                    &e.session.checked.channels[m.int()]
+                else
+                    null,
+                .callers_checked = e.projection.v2_whole,
                 .types = &e.session.checked.types,
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,

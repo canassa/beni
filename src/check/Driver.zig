@@ -73,6 +73,9 @@ dispatch: []Dispatch,
 type_keys: []TypeKeys.Artifact,
 plans: []SchemaPlan,
 hoists: []@import("../own/Hoists.zig").Table,
+/// v2's lowering channel per module (`own2/Hoists.zig`), written by the
+/// worker that checked it; empty unless `--ownership=v2`.
+channels: []@import("../own2/Hoists.zig").Table = &.{},
 /// Per module, written by the worker that checked it before `finish`
 /// releases its dependents: whether an error reached it — its own (an
 /// earlier phase's, which quiets it, or its check's), or any dependency's,

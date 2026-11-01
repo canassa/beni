@@ -1030,10 +1030,11 @@ const Config = struct {
     /// `.in-place` fixture has, records written in place
     /// (`ownership-checker.md` §31.12 slice 3). `lists`
     /// (`zig build test-lists-in-place`): the pass a `.sanitize-lists`
-    /// fixture has, under the list sanitiser (`ownership-v2.md` §7.3).
+    /// fixture has, under the list sanitiser (`ownership-v2.md` §7.3);
+    /// `lists-v2` (`zig build test-lists-in-place-v2`) its v2 twin.
     in_place: InPlace = .none,
 
-    const InPlace = enum { none, records, lists };
+    const InPlace = enum { none, records, lists, lists_v2 };
 
     const RunHashes = enum {
         /// Unset: a build whose digest is recorded is not run under Node.
@@ -1123,7 +1124,8 @@ const Config = struct {
         const in_place: InPlace = if (envOr(arena, "BENI_IN_PLACE")) |text| blk: {
             if (std.mem.eql(u8, text, "all")) break :blk .records;
             if (std.mem.eql(u8, text, "lists")) break :blk .lists;
-            std.debug.print("BENI_IN_PLACE must be `all` or `lists` (or unset), not `{s}`\n", .{text});
+            if (std.mem.eql(u8, text, "lists-v2")) break :blk .lists_v2;
+            std.debug.print("BENI_IN_PLACE must be `all`, `lists` or `lists-v2` (or unset), not `{s}`\n", .{text});
             return error.BadInPlace;
         } else .none;
         var cfg: Config = .{
@@ -2115,19 +2117,41 @@ const Case = struct {
     /// Whether a JSON diagnostic list names the ownership checker's codes
     /// and no others (`ownership-checker.md` §28.6).
     /// Whether the ownership checker refuses the fixture's program when it
-    /// is built with `flag`, which makes the build enforce, and for nothing
+    /// is built with `flags`, which make the build enforce, and for nothing
     /// else: a differential pass has then nothing to run.
-    fn ownershipRefuses(c: Case, platform_arg: []const u8, flag: []const u8, sources: []const []const u8) !bool {
+    /// The list sanitiser's passes of a `run/` fixture (`ownership-v2.md`
+    /// §7.3): under v1, and under v2 through its channel. Each has its
+    /// reason golden, its crash golden, its run-hash line and its
+    /// `BENI_IN_PLACE` mode.
+    const ListsPass = struct {
+        golden: []const u8,
+        crash: []const u8,
+        refuses: []const u8,
+        out: []const u8,
+        flags: []const []const u8,
+        mode: Config.InPlace,
+        slot: usize,
+        checker: []const u8,
+    };
+    const lists_passes = [_]ListsPass{
+        .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .refuses = "sanitize-lists-refuses", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 7, .checker = "v1" },
+        .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .refuses = "sanitize-lists-v2-refuses", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 8, .checker = "v2" },
+    };
+
+    fn ownershipRefuses(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8) !bool {
         var probe: std.ArrayList([]const u8) = .empty;
-        try probe.appendSlice(c.arena, &.{ "build", platform_arg, flag, "--diagnostics=json", "--out=out-probe" });
+        try probe.appendSlice(c.arena, &.{ "build", platform_arg });
+        try probe.appendSlice(c.arena, flags);
+        try probe.appendSlice(c.arena, &.{ "--diagnostics=json", "--out=out-probe" });
         try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
         const tried = try c.inProject(probe.items);
         return tried.exit_code == 1 and ownershipOnly(tried.stderr);
     }
 
-    /// The list sanitiser's coverage, checked against v1 (`ownership-v2.md`
-    /// §7.3): in every module the sanitised build in `out` wrote, every list
-    /// write v1 accepted — a `List.<writer>`, `construction` or `++` line of
+    /// The list sanitiser's coverage, checked against the checker that
+    /// accepted (`checker`, v1 or v2; `ownership-v2.md` §7.3): in every
+    /// module the sanitised build in `out` wrote, every list
+    /// write it accepted — a `List.<writer>`, `construction` or `++` line of
     /// the ownership dump whose base is the operand itself, or a
     /// `value List.<writer>` one — must be a site the build wraps, at the
     /// same position and for the same writer, and every wrapped site must be
@@ -2137,7 +2161,7 @@ const Case = struct {
     /// which this module's other lines cover. `flags` are the build's own, so
     /// the dump reports under its rows. A module the build did not write is
     /// not compared.
-    fn checkSanitisedSites(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8, out: []const u8) !void {
+    fn checkSanitisedSites(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8, out: []const u8, checker: []const u8) !void {
         // The program's own modules, alone in a directory: the project's
         // may hold an earlier fixture's files, which a dump of it would read.
         const dir = "sanitised-sites";
@@ -2174,7 +2198,7 @@ const Case = struct {
             const source = try std.fmt.allocPrint(c.arena, "{s}.beni", .{path});
             const bytes = c.w.read(source) catch continue;
             const written = c.w.read(try std.fmt.allocPrint(c.arena, "{s}/{s}.mjs", .{ out, path })) catch continue;
-            // v1's accepted list writes, by "line:col [value ]List.<writer>".
+            // The checker's accepted list writes, by "line:col [value ]List.<writer>".
             var wanted: std.StringArrayHashMapUnmanaged(u32) = .empty;
             var lines = std.mem.splitScalar(u8, section[header_end + 1 ..], '\n');
             while (lines.next()) |raw| {
@@ -2213,7 +2237,8 @@ const Case = struct {
                 const value = std.mem.startsWith(u8, piece[tick + 1 ..], " value in ");
                 const at = std.mem.indexOf(u8, piece, "(at byte ") orelse continue;
                 const digits = piece[at + "(at byte ".len ..];
-                const offset = std.fmt.parseUnsigned(u32, digits[0 .. std.mem.indexOfScalar(u8, digits, ')') orelse continue], 10) catch continue;
+                // v2 notes after the byte whether a caller was checked.
+                const offset = std.fmt.parseUnsigned(u32, digits[0 .. std.mem.indexOfAny(u8, digits, "),") orelse continue], 10) catch continue;
                 // Line and column as a diagnostic counts them: from 1, a
                 // column in code points.
                 var l_no: u32 = 1;
@@ -2231,16 +2256,16 @@ const Case = struct {
             // As sets: a lowering may write one site twice (a `browser-inline`
             // arm is also its lifted piece), each a wrap of the one write.
             for (wanted.keys(), wanted.values()) |k, n| if (!got.contains(k)) {
-                detail("{s}: {s}: v1 accepts the list write {s} ({d}), which the sanitised build does not wrap\n", .{ c.fixture.name, source, k, n });
+                detail("{s}: {s}: {s} accepts the list write {s} ({d}), which the sanitised build does not wrap\n", .{ c.fixture.name, source, checker, k, n });
                 failed = true;
             };
             for (got.keys(), got.values()) |k, n| if (!wanted.contains(k)) {
-                detail("{s}: {s}: the sanitised build wraps {s} ({d}), which is no list write v1 accepted\n", .{ c.fixture.name, source, k, n });
+                detail("{s}: {s}: the sanitised build wraps {s} ({d}), which is no list write {s} accepted\n", .{ c.fixture.name, source, k, n, checker });
                 failed = true;
             };
         }
         if (failed) {
-            because("[{s}] the sanitised sites are not v1's accepted list writes", .{out});
+            because("[{s}] the sanitised sites are not {s}'s accepted list writes", .{ out, checker });
             return error.SanitisedSitesMismatch;
         }
     }
@@ -2428,7 +2453,7 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [8]?[]const u8 = @splat(null);
+        var verified: [9]?[]const u8 = @splat(null);
         // Recording runs both builds whatever the first did, so one failing
         // build does not cost the other its line.
         var first_error: ?anyerror = null;
@@ -2462,7 +2487,7 @@ const Case = struct {
                 // Every fixture, under `BENI_IN_PLACE=all`: one the ownership
                 // checker refuses under the flag has nothing to run in place.
                 if (c.cfg.in_place == .records and !c.goldenExists("in-place")) {
-                    if (try c.ownershipRefuses(platform_arg, "--records-in-place", sources)) break :in_place;
+                    if (try c.ownershipRefuses(platform_arg, &.{"--records-in-place"}, sources)) break :in_place;
                 }
                 var in_place: std.ArrayList([]const u8) = .empty;
                 try in_place.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--sanitize-records", "--out=out-in-place" });
@@ -2508,25 +2533,46 @@ const Case = struct {
             // as its `.sanitize-lists-crash` says. Lists are not written in
             // place yet, so this is the one list pass (§8, S8b adds the
             // stores). `BENI_IN_PLACE=lists` records none and runs every one.
-            if (c.cfg.in_place == .lists or c.goldenExists("sanitize-lists")) lists: {
-                const lists_record = if (c.cfg.in_place == .lists) "" else record;
-                if (c.cfg.in_place == .lists and !c.goldenExists("sanitize-lists")) {
-                    if (try c.ownershipRefuses(platform_arg, "--ownership-everywhere", sources)) break :lists;
+            // Its v2 twin (`.sanitize-lists-v2`, `BENI_IN_PLACE=lists-v2`)
+            // builds under `--ownership=v2`, whose channel names the writes
+            // to wrap (`own2/Hoists.zig`, §3.7).
+            for (lists_passes) |lp| if (c.cfg.in_place == lp.mode or c.goldenExists(lp.golden)) lists: {
+                const lists_record = if (c.cfg.in_place == lp.mode) "" else record;
+                // A fixture whose `.sanitize-lists-v2-refuses` says the checker
+                // must refuse it: a fixed soundness defect, whose program the
+                // sanitiser catches when the checker accepts it again. Refused,
+                // the pass is done; accepted, the sanitised run is the evidence,
+                // and the case fails whatever it prints.
+                const refuses = c.goldenExists(lp.refuses);
+                if (refuses and try c.ownershipRefuses(platform_arg, lp.flags, sources)) break :lists;
+                if (c.cfg.in_place == lp.mode and !c.goldenExists(lp.golden)) {
+                    if (try c.ownershipRefuses(platform_arg, lp.flags, sources)) break :lists;
                 }
                 var lists: std.ArrayList([]const u8) = .empty;
-                try lists.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--sanitize-lists", "--out=out-lists" });
+                try lists.appendSlice(c.arena, &.{ "build", platform_arg });
+                try lists.appendSlice(c.arena, lp.flags);
+                try lists.appendSlice(c.arena, &.{ "--sanitize-lists", try std.fmt.allocPrint(c.arena, "--out={s}", .{lp.out}) });
                 if (c.cfg.mode == .pending) try lists.append(c.arena, "--diagnostics=json");
                 try lists.appendSlice(c.arena, try buildPaths(c.arena, sources));
-                const crash = if (c.goldenExists("sanitize-lists-crash")) "sanitize-lists-crash" else "crash";
-                verified[7] = c.runOnceCrash("out-lists", .dev, lists.items, "expected", false, lists_record, crash) catch |err| blk: {
+                const crash = if (c.goldenExists(lp.crash)) lp.crash else "crash";
+                if (refuses) {
+                    _ = c.runOnceCrash(lp.out, .dev, lists.items, "expected", false, "", crash) catch |err| {
+                        detail("{s}: {s} accepts a program it must refuse, and the sanitised run above shows the stale read\n", .{ c.fixture.name, lp.checker });
+                        return err;
+                    };
+                    detail("{s}: {s} accepts a program it must refuse ({s}), and the sanitised run prints its golden\n", .{ c.fixture.name, lp.checker, lp.refuses });
+                    because("[{s}] {s} accepts a program it must refuse", .{ lp.out, lp.checker });
+                    return error.SanitisedRefusalAccepted;
+                }
+                verified[lp.slot] = c.runOnceCrash(lp.out, .dev, lists.items, "expected", false, lists_record, crash) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
                     if (first_error == null) first_error = err;
                     break :blk null;
                 };
-                // And it wrapped exactly the writes v1 accepted.
-                if (!recording or verified[7] != null) try c.checkSanitisedSites(platform_arg, &.{"--ownership-everywhere"}, sources, "out-lists");
-            }
+                // And it wrapped exactly the writes the checker accepted.
+                if (!recording or verified[lp.slot] != null) try c.checkSanitisedSites(platform_arg, lp.flags, sources, lp.out, lp.checker);
+            };
         }
         if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
             var forced: std.ArrayList([]const u8) = .empty;
@@ -3264,7 +3310,7 @@ const Case = struct {
         const passes: []const Pass = switch (c.cfg.in_place) {
             .none => return plans,
             .records => blk: {
-                if (try c.ownershipRefuses(platform_arg, "--records-in-place", sources)) return plans;
+                if (try c.ownershipRefuses(platform_arg, &.{"--records-in-place"}, sources)) return plans;
                 break :blk &.{
                     .{ .pass = .dev, .out = "out-in-place", .flags = &.{ "--records-in-place", "--sanitize-records" } },
                     .{ .pass = .dev, .out = "out-stores", .flags = &.{"--records-in-place"} },
@@ -3274,6 +3320,7 @@ const Case = struct {
             // `browser-inline` enforces as an in-place platform: no flag
             // makes it.
             .lists => &.{.{ .pass = .dev, .out = "out-lists", .flags = &.{"--sanitize-lists"} }},
+            .lists_v2 => &.{.{ .pass = .dev, .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--sanitize-lists" } }},
         };
         for (passes, 0..) |d, i| {
             var args: std.ArrayList([]const u8) = .empty;
@@ -3283,7 +3330,8 @@ const Case = struct {
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
             var plan = try c.builtPage(d.pass, d.out, args.items);
             plan.bless = false;
-            if (c.cfg.in_place == .lists) try c.checkSanitisedSites(platform_arg, &.{}, sources, d.out);
+            if (c.cfg.in_place == .lists) try c.checkSanitisedSites(platform_arg, &.{}, sources, d.out, "v1");
+            if (c.cfg.in_place == .lists_v2) try c.checkSanitisedSites(platform_arg, &.{"--ownership=v2"}, sources, d.out, "v2");
             plans[i] = plan;
         }
         return plans;
