@@ -7131,6 +7131,56 @@ exhausts R_f too; its account is then the cold run's. The dump prints every decl
 what it prints never depends on declaration order. A declaration whose warm run stays within R_f is not
 re-checked.
 
+**The fork of a cold pool** (#1623). A cold run solves its group in a *pool*: a module whose tables hold
+the walks of the group's callee groups. A cold run whose callees include all that the previous cold run's
+pool holds continues that pool (a caller right after its callee). Any other cold run needs a pool made
+from fresh tables that holds exactly its callee groups' walks, made in group order. Before #1623 it made
+that pool again, walk by walk, so sibling groups each solved their shared callees again. Now it forks it.
+
+*What is forked, and when.* A pool made from fresh tables has a *key*: the callee groups walked in it, in
+group order. The dump knows its cold runs in advance: one for each group with a walked declaration, each
+with its callee groups by the same reach the cold run uses. Before a cold run that starts afresh walks its
+callee groups, it marks each prefix of its key that a later such cold run shares and that no saved pool
+covers yet. When its pool reaches a marked prefix, it saves a deep copy of the pool. A cold run that starts
+afresh starts from the saved pool whose key is the longest prefix of its own key. It takes a copy, or the
+saved pool itself when no later cold run can start from it. Then it walks only the callee groups that are
+left. A saved pool that no later cold run can start from is freed. A check makes cold runs only for
+groups the limit stopped. It does not know them in advance, so it saves nothing and makes its pools as
+before. The plan decides only which pools are saved. It never decides what a cold run sees.
+
+*Why a fork is a rebuild.* A pool's tables are a function of the walks made in them, in their order, from
+fresh tables. A walk is deterministic. It reads only the module's constant inputs and the imported blocks,
+which it reads into the module's own tables. (The type store's path compression changes no answer.) A
+saved pool and a rebuild of its key are the same walks in the same order, so they have the same tables:
+the same entries under the same ids, the same memos and scratch pools, and the same accounts and failure
+markers in their results. The fork copies all of it: places, cells, shapes, conditions, summaries, views,
+the adapter, the stable store, the imports read, the results, and the scratch pools with their objects.
+The copy is generic over the tables' types, so a field added later is copied with the rest. A pointer that
+no copy rule names is a compile error. The tables read a hash map only by key and by its count, so a
+copy keeps its entries but not its slot order. The fork wires the internal pointers to the copy, as
+`initModule` wires them. The account pointer names the same result in the copy. If it names a result
+that `results` has since moved, the copy names the base account: no read meets that pointer before the
+next walk names its own account.
+
+*Ids.* The fork makes no id. It copies every table's ids and counters as they are, so the next ids a cold
+run makes are the ones a rebuild would make. Which pools are saved depends only on the module's group
+order and call graph (§3.8), and one thread makes a module's cold runs. So thread timing changes nothing.
+
+*Cost.* The copy is not charged. A charge is a record that a declaration's walk makes or reserves (§4.1).
+A rebuild charges the callee walks' own accounts in the pool, and no dump prints those. The group's cold
+account is made after its pool is ready, and it meets the same memos in a fork as in a rebuild. A copy
+makes no record. To charge it would make the cold account differ from a rebuild's, and the cold run
+exists to prevent that. The copy costs time and memory in proportion to the tables' size, once for each
+saved pool and once for each fork. It spends no limit. At any time, the saved pools are at most the
+distinct prefixes that later cold runs share.
+
+*The safety check.* In builds with `std.debug.runtime_safety`, the first fork of a module, and every
+sixteenth fork after it, is checked. The same pool is rebuilt from fresh tables and compared with the
+fork, table by table (stamped slots only while they are live). Then the group is solved cold in both, and
+the two results are compared, accounts included. A difference stops the compiler. The re-walk check
+(#1582) still runs on every solve that is made. A fork removes only solves that repeat an earlier solve
+in the same table state, so each check that it removes repeats a check that was already made.
+
 **Raise attribute (new language feature).** A standalone line at column 1:
 
 ```text
@@ -7217,6 +7267,7 @@ L0  Ids
 | File | L | Responsibility | Public API | Imports (own2) | Lines |
 |---|---|---|---|---|---|
 | `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1 | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce` | — | ≤ 760 (S3b slice 4a: which copy of the source lanes a walk takes) |
+| `Fork.zig` | 0 | the fork of a cold pool (§4.4): a deep copy of a module's tables and their deep comparison, generic over their types under a policy that names every pointer field | `Policy`, `With` | — | ≤ 260 (#1623) |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 210 (since #1566: `equals` skips the pairs an earlier walk proved; since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 390 (#1485 part B: rule 4's overlap trie `keysOverlap`, its memo and its unit test, §8 slice 4 *As built, part B*); 1 240 before (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
@@ -7247,7 +7298,7 @@ L0  Ids
 | `Transfer.zig` | 11 | one case per BIR tag; the frame state: its fields, the binding of the six parts' methods to one `Frame`, the preliminary passes and the walk (`eval`) | `eval`, `Frame`, and every name of the six parts above | Ids, Facts, Place, Cond, Summary, Regions, Demands, Calls, TransferFrame, TransferBeside, TransferArms, TransferPattern, TransferConstruct, TransferCall, TransferGroups | ≤ 660 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 640 before #1485 (2 380 after #1350: a missing step's fallback; #1383: a held or deep value above the base, and a refined base; #1386: two positions of one split beside a write; #1367: an answered value on the write's path, read beside the path; #1390: a match on a rest splits its positions; #1253: the written position, by canonical path, and the routes that tell a node at one position of it, §2.11 item 3; 3 050 since #1412: a use below a parameter's leaf, expanded after the walk by state, and the plain-step `sig`; 640 since #1457: the seven-file split leaves here the fields, 72 bindings, the preliminary passes and the walk, 614 lines) |
 | `Fix.zig` | 10 | the two fixpoint shapes, closure dependency cycles, charged delivery/notification tasks and validation; since S4-verifier (#1180) the recursive-proof verifier of §2.12 (obligation graph, base/step decision by component, settled generations, traversal marks, `within` emission and discharge by route, keyed closure families, once-token uses) | `worklist(Instance)`, `propagate(Edges)`; `Prover.{prove, bump, port, invariant, foldWithin, prefixWithin, joinSupply, handOff, translate}`, `Expansion.{gen, inv, within, apartCalls, writesCaptures}`, `genAt`, `Route`, `Guard`, `Marks`, `Families`, `Uses`, `diverge` | Ids, Facts, Cell, Shape, Cond, Summary | ≤ 1 200 |
 | `Walk.zig` | 12 | one frame: walk, index, resolve, keep edges, read off | `walk(decl) → {Class, []Demand}` | Ids, Transfer, Demands, Fix, Liveness, Calls, Summary, Facts, Regions | ≤ 1 500 |
-| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts | ≤ 2 350 (#1582: under `--ownership-rewalk-check`, each member walked again at the fixpoint against the ports it settled at, its read-off compared both ways with its last walk's; #1485 part 2: C5, the induction walked again under `runtime_safety`, §8 slice 4 *As built, part 2*); 2 270 for part 1 (the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 220 before #1485 (#1566: a block read's re-interning memo, outside the first call's lane; S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; #1543: `--ownership-propagate`'s two lines) |
+| `Groups.zig` | 13 | the module: source/signature adapters, pre-pass, order, limits, transfer, summary table | `checkModule`, `ensureClass` | Ids, Place, Rows, Walk, Fix, Prepass, Summary, Facts, Fork | ≤ 2 640 (#1623: the fork of a cold pool, its plan and its safety check, §4.4); 2 350 for #1582 (#1582: under `--ownership-rewalk-check`, each member walked again at the fixpoint against the ports it settled at, its read-off compared both ways with its last walk's; #1485 part 2: C5, the induction walked again under `runtime_safety`, §8 slice 4 *As built, part 2*); 2 270 for part 1 (the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 2 220 before #1485 (#1566: a block read's re-interning memo, outside the first call's lane; S3b: calls of walked declarations, the cold run's callees; slice 3: imported classes and the re-interning of a block's places; #1324: comparisons through their components; slice 4a: the recursive group's solver and its cold re-check; slice 5e: calls through function aliases and their published classes, a type's comparison told by its signature for R-5.13.1; slice 4b: the group's edges, `propagate` and the wake rule; #1543: `--ownership-propagate`'s two lines) |
 | `Entry.zig` | 13 | the entry protocol at a constructor call | `check(Obligation.entry)` | Ids, Calls, Fix, Demands, Rows, Cond, Shape | ≤ 900 |
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
