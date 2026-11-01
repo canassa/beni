@@ -1,0 +1,19 @@
+-- ownership v2 (§2.9, #1526): `propagate` walks the recursive call's
+-- result one step below each frontier position. A run below with no
+-- members appends nothing, so the next run starts at the same index;
+-- each must be a run of its own, and the walk the same whichever child
+-- it takes first (`build_test`'s order check runs this file under
+-- `--ownership-order-check`).
+type T
+    = N (List Int) T T
+    | L
+
+
+pub ins : T → T
+ins t =
+    case t of
+        N v lt rt →
+            N (List.push v 1) (ins lt) rt
+
+        L →
+            N [] L L

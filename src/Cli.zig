@@ -200,6 +200,12 @@ pub const Common = struct {
     /// its list lines byte for byte those of the ordinary run. On `Common`
     /// for `--ownership-everywhere`'s reason; absent from `usage`.
     ownership_records_lost: bool = false,
+    /// `--ownership-order-check` — **hidden** and test-only
+    /// (`ownership-v2.md` §2.9, *The order check*): the checker v2 walks
+    /// each `propagate` call again with every frontier in reverse and
+    /// stops when the two snapshots differ. On `Common` for
+    /// `--ownership-everywhere`'s reason; absent from `usage`.
+    ownership_order_check: bool = false,
     /// `--ownership=v1|v2` — **hidden** and test-only (`ownership-v2.md`
     /// §7.2, §8): which ownership checker `check`, `build` and `dump` run.
     /// `v1` is `src/own/`, frozen, and the default; `v2` is the checker
@@ -767,6 +773,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--ownership-records-lost")) {
         if (value != null) return noValue(name);
         common.ownership_records_lost = true;
+        return null;
+    }
+    // Hidden and test-only (see `Common.ownership_order_check`).
+    if (std.mem.eql(u8, name, "--ownership-order-check")) {
+        if (value != null) return noValue(name);
+        common.ownership_order_check = true;
         return null;
     }
     // Hidden and test-only (see `Common.ownership`).

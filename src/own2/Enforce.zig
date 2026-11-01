@@ -168,6 +168,7 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .ranks = ins.ranks,
         .core = ins.core,
         .interner = &session.interner,
+        .order_check = session.options.ownership_order_check,
     };
 }
 
