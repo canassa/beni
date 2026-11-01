@@ -402,7 +402,11 @@ pub fn Of(comptime Frame: type) type {
             inst: Ids.FixedDict(2) = .{},
             /// Per node of the walk's graph (`Arms`), its tag, for C7.
             node_tags: Ids.FixedDict(1) = .{},
-            pub const Occ = struct { env: u32, k: NodeId, spine: u32 };
+            /// `fail`: κ̂(V, K) failed, `shared` (1) or `lost` (2). The items are
+            /// still the occurrence's, and each keeps every class, `K` included,
+            /// exact or approximate, so the write is refused `disjoint` or
+            /// `disjoint (approx)` (§2.11 item 3 (d)).
+            pub const Occ = struct { env: u32, k: NodeId, spine: u32, fail: u2 = 0 };
             pub fn deinit(c: *Cert, gpa: Allocator) void {
                 c.occs.deinit(gpa);
                 c.ids.deinit(gpa);
@@ -513,7 +517,8 @@ pub fn Of(comptime Frame: type) type {
         /// exact prefix, and the rest of the write's path lies in one class
         /// `K` of the view's template. Then the call relies on κ̂(V, K), and
         /// the item is the occurrence: its tag. None when a premise fails or
-        /// κ̂ fails (the walk then compares cells).
+        /// a premise fails (the walk then compares cells). A κ̂ that fails still
+        /// tags the occurrence, whose items then keep `K` (`Occ.fail`).
         pub fn certDetect(f: *Frame, it: Item, idx: u32, rest: []const Step, relied: *CondId) Error!u32 {
             const c = certOf(f) orelse return none;
             const shapes = f.env.shapes;
@@ -524,9 +529,9 @@ pub fn Of(comptime Frame: type) type {
             var k = root;
             for (rest) |s| k = try f.certKid(k, s) orelse return none;
             const kh = try f.env.conds.certRead(f.gpa, f.env.charge, f.env.view(), e, k);
-            if (Cond.Table.fails(kh)) return none;
-            relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, kh);
-            try c.occs.append(f.gpa, .{ .env = e, .k = k, .spine = idx });
+            const fail: u2 = if (kh == Cond.shared) 1 else if (kh == Cond.lost) 2 else 0;
+            if (fail == 0) relied.* = try f.env.conds.@"and"(f.gpa, f.env.charge, relied.*, kh);
+            try c.occs.append(f.gpa, .{ .env = e, .k = k, .spine = idx, .fail = fail });
             return c.intern(f.gpa, @intCast(c.occs.items.len - 1), root);
         }
 
@@ -571,7 +576,7 @@ pub fn Of(comptime Frame: type) type {
             const cls: NodeId = .from(t[1]);
             if (skip) |s| {
                 // The class itself and its children off the write's step.
-                if (cls != occ.k) acc = try f.env.cells.sets.unionWith(gpa, f.env.charge, acc, try f.certCells(t[0], cls));
+                if (occ.fail != 0 or cls != occ.k) acc = try f.env.cells.sets.unionWith(gpa, f.env.charge, acc, try f.certCells(t[0], cls));
                 (try seen.getOrPut(gpa, .{cls.int()})).value_ptr.* = 0;
                 var kids: std.ArrayList(NodeId) = .empty;
                 defer kids.deinit(gpa);
@@ -581,10 +586,16 @@ pub fn Of(comptime Frame: type) type {
             while (stack.pop()) |x| {
                 try f.env.charge.reserve(gpa, .inspection, 1);
                 if ((try seen.getOrPut(gpa, .{x.int()})).found_existing) continue;
-                if (x != occ.k) acc = try f.env.cells.sets.unionWith(gpa, f.env.charge, acc, try f.certCells(t[0], x));
+                if (occ.fail != 0 or x != occ.k) acc = try f.env.cells.sets.unionWith(gpa, f.env.charge, acc, try f.certCells(t[0], x));
                 try f.certKidsAll(x, &stack);
             }
             _ = shapes;
+            if (occ.fail == 2) {
+                var approx: SetId = .none;
+                var it = f.env.cells.sets.iterate(acc);
+                while (it.next()) |e| approx = try f.env.cells.sets.insert(gpa, f.env.charge, approx, e.key, 1);
+                acc = approx;
+            }
             if (skip == null) (try c.reach.getOrPut(gpa, .{tag})).value_ptr.* = acc.int();
             return acc;
         }
