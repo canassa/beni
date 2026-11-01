@@ -1366,7 +1366,12 @@ Operations, memoised on their node arguments:
   group may take one class version more: R-7.4's ring at k = 2 walks 6 times, not 5, because the empty
   value at the kids' `[*]` no longer makes the round that closes the ring read `lost` at the root; the
   next delivery brings the ring's fold there. The fixpoint is more precise, and sound: at k = 2 the cell-free `{lost}` at `#T0.1[*]#T1.1[*]` and `…#T0.1[*]` goes, and at k = 3 and 4 the root's lists read `fresh1 fresh3` instead of `fresh1 fresh3{lost}`. (4) #1128's block test folds
-  `k` at the first return and the level below it, the re-entry's fold, not the atom's.
+  `k` at the first return and the level below it, the re-entry's fold, not the atom's. (5) A knot's
+  class splits, so a group member has one certificate per class, and one instantiation can put
+  several of them into one class of the caller: at `same l`, `same`'s `#Node.1`, `#Node.0#Node.1` and
+  `#Node.2#Node.1` all land in the caller's `#Node.0#Node.1`. Rule 4 reads them together (§2.9 rule
+  4, *Across the classes of one certificate*, #1559). Read class by class, `same`'s two subtree
+  classes read `lost`, and every witness of the fold certificate is refused.
   Over a non-recursive type it is the
   identity (no re-entering step), so `w5`'s DAG is untouched. Compute the quotient by a canonical-path
   worklist and congruence closure: union node classes on re-entry, merge their step maps, enqueue the
@@ -3269,7 +3274,9 @@ claims they may be one object. Four rules use this.
     cell and no cell under a repeating split. The group also asks that the node stand at the parameter's
     place at `L`: a recast there is in no group. Different calls, different parameters, and different
     occurrences of one node are different groups: `Node a xs a` meets `a` at `#Node.0` and at `#Node.2`.
-    A key whose walk meets no such node is in no group, and it adds as before.
+    A key whose walk meets no such node is in no group, and it adds as before. A group names no
+    class: the keys of every class of one certificate that lands in one class of the caller form
+    one group per `(call, i, L, node)` (*Across the classes of one certificate*, below).
   - **(a′) The keys of a group are pairwise alias-apart, tested in every build.** Before rule 4 takes a
     maximum or replaces an atom, it tests the group's keys for overlap, and a group in which two keys
     overlap is no group: all its keys add as before. Two keys overlap when `Cell.alias` says `yes`: one
@@ -3326,7 +3333,9 @@ claims they may be one object. Four rules use this.
        `c` may be a summary cell; `o` is then one of its positions. The callee's route `L·ρ` is the
        caller's route `β·ρ`, and `β·ρ = β·ρ′` only when `ρ = ρ′`. So keys with disjoint routes reach
        disjoint caller positions, and each caller position gets the occurrences of at most one key. Its
-       multiplicity is therefore at most the maximum. This does not depend on how the images are named:
+       multiplicity is therefore at most the maximum, over the distinct keys, of each key's
+       multiplicity summed over the certificate's classes that land in that caller class (step 5,
+       *Across the classes of one certificate*). This does not depend on how the images are named:
        a join name and a level path both name a set of positions that holds the image's routes.
     3. Two keys whose images are one `X` stand at two disjoint sets of positions of `X`. `exclOf(X)` says
        that distinct positions of `X` hold objects apart in their whole reach (§2.2), so it implies the
@@ -3355,6 +3364,9 @@ claims they may be one object. Four rules use this.
     - An image is a canonical path, computed by `extend` from paths alone.
     - The rule is monotone. A representation that over-approximates more (a built node or a `positions`
       node in place of a leaf) makes no group, and then the keys add, which is weaker.
+    - The read at a caller class is a function of the sum of the certificates of the classes that
+      land there, so how widen's quotient splits a knot into classes does not change it (Lemma R4′,
+      *Across the classes of one certificate*, below).
   - *`runtime_safety` check* (`Grafter.assertRoutesApart`). It runs when a group merges two or more
     keys onto one image, and it shares no walk with the rule.
     - The merged keys are compared pairwise by `Cell.alias`, computed again from their paths and not read
@@ -3381,7 +3393,118 @@ claims they may be one object. Four rules use this.
     `runtime_safety` only, quadratic in the keys that one image merges.
   - *Built as rule 1 is.* `Agg.sides` keeps, per image, the group and the keys of it that reached the
     image. An arrival of the same group with another key is one more position of the image. An arrival
-    of another group, or with the same key, is a repeat.
+    of another group, or with the same key, is a repeat. This holds across the classes of one
+    certificate (below): the same key from a second class is a repeat.
+  - **Across the classes of one certificate** [specified 2026-11-01, #1559; prototyped on #1529 merged
+    with master `3460de8d3`, self-hosted Debug; not built]. The atom rule (§2.3, #1483) splits a
+    knot's class. `same`'s `res` was one class, `K = #Node.1`, because the shared `Leaf` put the root on
+    the knot. Now it has three classes, each with its own certificate: `#Node.1` holds `π1#Node.1`,
+    `#Node.0#Node.1` holds `π1#Node.0#Node.1` and `π1#Node.0⟲#Node.1`, and `#Node.2#Node.1` holds
+    `π1#Node.2#Node.1` and `π1#Node.2⟲#Node.1`. At `same l` all three land in one class of the caller's
+    fold, `#Node.0#Node.1`, because `l`'s subtrees fold onto `l` (§2.1). The five keys are the five of
+    *Wall 1* (§8). They image to `π1#Node.0#Node.1` once and to `X = π1#Node.0⟲#Node.1` four times, as
+    before.
+    #1529 builds the read class by class:
+    - `hypKeys` numbers the groups afresh for each class;
+    - `certClassAgg` takes the maximum within one class;
+    - `classesMerge` then adds the classes.
+
+    So `X` comes once from `#Node.0#Node.1` and once from `#Node.2#Node.1`. It is a repeat, and both
+    subtree classes read `lost`. This was traced at `hypAggs`: `same`'s read-off visits the three template
+    classes at one caller class, and the merge puts `X` in `dups`. The group `(call, i, L, node)` never
+    named a class, and the argument above does not need one. Only the build scoped the group to a class.
+    The rule:
+    - *Where it applies.* It applies wherever an instantiation puts several classes of one
+      certificate into one multiset. In reader 1 (`hypAggs`), these are a hypothesis node's classes
+      that land in one class of the caller's fold. In reader 2 (`certView`), they are a certified
+      view's classes that meet at one canonical path. Rule 4 runs once for each such caller class `C′`,
+      over the keys of every class `K` of the certificate that lands at `C′`. A read of one class has
+      nothing to merge: κ̂ (§2.11 item 3 (d)), reader 3, and an atom's sides in `ruleFourSides`.
+    - *The group* is `(call, i, L, node)` as above, whatever class its keys come from. Its id is
+      stable across the classes of one instantiation. It is keyed by `(environment, i, L, node)`, and it
+      is never a count restarted for each class.
+    - *(a′)* runs on the union of the group's keys over those classes, as a set. One key that two
+      classes hold is one key, not an overlap.
+    - *A key's multiplicity at `C′`* is the sum, saturated at two, of its multiplicities in the
+      certificates `A(f, K)` of the classes `K` that land at `C′`. A class's keys are a set, so a key
+      counts one for each landing class that holds it, and a repeat inside one class is that class's
+      condition, as before.
+    - *An image* takes the maximum of those multiplicities over the distinct keys of its group that
+      land on it. It enters `C′`'s multiset once with that maximum, and twice when it is 2+. Each further
+      distinct key of the group at the image owes `exclOf(X)`, whatever class it comes from.
+    - Everything else adds as before: the images of two groups (two calls, or two occurrences of one
+      node), an image beside the caller's own arrivals, and keys in no group. A key that one class
+      holds exactly and another class holds approximately is in the group for the first and adds for
+      the second.
+    - Each class's own condition (`classCond`, its `fold_cond`) is joined in at `C′`, as before.
+    - *Why it is sound across classes.* It is steps 1–4 above, with two more steps.
+      5. Two positions of one result in two classes are two positions. `Fold.classAt` is a function
+         of the position, so a position is in one class. A key's occurrences in two classes that land at
+         `C′` therefore coexist, and they add. That is the sum.
+      6. Steps 1–3 never use the class. (a′) is tested on the union, so the routes of any two distinct
+         keys of the group are disjoint. Each caller position then gets the occurrences of at most one
+         key, whichever class that key's certificate is for. The maximum is therefore taken over distinct
+         keys, of their summed multiplicities. Two distinct keys at one image stand at two disjoint sets
+         of its positions, and `exclOf(X)` keeps those positions apart.
+    - *Why each part is needed.* Unit cases (i)–(iv) build each certificate directly. Each program in
+      §8's near-miss rows 20–22 is also refused by its own frame's κ, which reads the repeat through
+      the eager graft. So the rows pin the verdicts, and only the unit cases pin the rule. Each mutation
+      below fails exactly its case:
+      - (i) **The sum.** One key in two classes lands at one caller class. In
+        `twin t = Node (twin l) xs (Node Leaf xs Leaf)` (row 20), `π1#Node.1` is in the root's class
+        and in `#Node.2#Node.1`, and at `twin l` both land at `#Node.0#Node.1`. That is one list at two
+        positions. A maximum across classes with no sum reads it once.
+      - (ii) **`L` in the group.** Inside a producer, `same (Node a ys a)` puts `a`'s lists in the
+        view's `#Node.0#Node.1` (group `L = #Node.0`) and in its `#Node.2#Node.1` (group `L = #Node.2`),
+        and both land at one caller class (row 21). A group without `L` merges them.
+      - (iii) **(a′) on the union.** Row 18's pair, `π1#Node.0#Node.1` and `π1⟲#Node.1`, now sits in
+        two classes, the root's and `#Node.0#Node.1`. Through a leaf, both land at one caller class on
+        one image (row 22). A trie run for each class alone finds no overlap and merges them.
+      - (iv) **The precision.** The four apart keys of `same l` lie over two classes. They give one
+        image `X`, once, with `exclOf(X)`.
+    - *Lemma R4′ (the representation change: the quotient).* The read at `C′` is a function of two
+      things: the actual, and the sum `Σ_{K→C′} A(f, K)` of the certificates that land there, which is
+      a multiset of keys with the conditions joined.
+      - The groups and (a′) are functions of the keys and of the actual.
+      - The sum for each key is associative and commutative, and it agrees with saturation at two (C1).
+      - The maximum is as in R4.
+  
+      So a quotient that splits a class `K` into classes `K₁ … Kₙ`, all landing at `C′`, reads at `C′`
+      what `K` read, when `A(f, K) = Σ A(f, Kⱼ)`. That equation holds, because a certificate counts the
+      source occurrences that the fold maps into its class, and the occurrences of `K` are those of
+      the `Kⱼ`. The conditions agree too. An `apart` between keys of two `Kⱼ`, which `K`'s condition
+      held, is what the multiset owes for two distinct images; for one image of one group it is
+      `exclOf(X)`. Where the `Kⱼ` land at different caller classes, each caller class reads exactly its
+      own occurrences, which is more precise and sound. #1538 is this case. At `same l` the read under
+      the atom rule equals the read of the one class before it: `π1#Node.0#Node.1` once, and `X` once with
+      `exclOf(X)`. Only the root's list leaves the subtree classes. That is the precision #1538 bought
+      (`dupL`, `shareL` and `deeper` accept their safe lines, `returnedKids` is accepted), and it stays.
+      The quotient itself is unchanged, so no atom becomes a class member again.
+    - *The memo of (a′).* A group's key set now also depends on which classes land at `C′`. Two caller
+      classes can take different sets of one certificate's classes for one group, so
+      `(certificate and its version, i, L)` is no longer a complete key. The memo is keyed by the
+      immutable set of the group's keys. That key was named above as an equivalent one, and it is now
+      the key. `(certificate, version, i, L, the classes that land at C′)` is an equivalent key.
+    - *`runtime_safety` check* (C6, extended in `Grafter.assertRoutesApart`, and the new
+      `Cond.assertClassesSum`). These run where a group merges keys that come from two or more classes.
+      - The merged keys are pairwise distinct cells. `Cell.alias` is `no` for every pair of distinct
+        keys of the group across all its classes, computed again from their paths.
+      - The read at `C′` is computed again from the sum certificate as one class. The keys of all the
+        landing classes go in one list, and a key that two classes hold goes in twice. They are read by
+        the one-class read, with multiplicities, through `certClassAgg`'s code and not the per-class
+        walk. The two reads must be equal. That is R4′ as a check.
+    - *Cost.* The keys are instantiated once for each `(class, caller class)` pair that the walk
+      visits, as before, so M counts the same image occurrences. One sort of the visited pairs brings
+      together the classes at one caller class: O(P log P), with P at most M plus the number of classes.
+      The maps for each image are keyed by `(group, image)` and by `(group, image, key)`, with one
+      insertion per image occurrence. (a′) runs once per distinct key set, O(Σ |k|) over its distinct keys,
+      memoised by the set. So rule 4 stays O(W + M log M). *Measured* on the prototype; records are
+      deterministic:
+      - The counted family `same (if c1 then t1 else … tN)` costs 31 073, 59 067, 123 302 and 259 797
+        records at N = 6, 12, 24 and 48. The ratios are 1.90, 2.09 and 2.11, which is the log factor.
+        This is within the counted test's bound from 6 to 12 (64 088).
+      - `same`'s own account is 17 137 records in 5 walks. Read class by class it is 10 775 in 4,
+        because there the certificate reads `lost` and the group stops one class version earlier.
 
 *The cases.*
 - *Parts below two heads, and below a head and its rest.* The sides are two disjoint index ranges, and
@@ -4000,6 +4123,14 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
      `incRoot (same t)`, with `incRoot t = case t of Node l xs r → Node l (List.push xs 1) r`, is
      refused, though it is safe and v1 accepts it. The rule works on what `otherPaths` already walks, an
      item at a time, and never on pairs of paths.
+     *Amended (#1559).* Under the atom rule (§2.3, #1483), `same`'s `res` widens to three classes, not
+     one: `#Node.1`, `#Node.0#Node.1` and `#Node.2#Node.1`. The rule below does not change, because `K`
+     is the class of the write's rest (d3). The write at `π1#P.0#Node.1` is in `#Node.1`, and the other
+     path `π1#P.0#Node.0#Node.1` is in `#Node.0#Node.1`. That path is then an item of another class,
+     which keeps its cells (`t`'s keys of that class, by reader 3), and those are apart from the write's.
+     κ̂(V, K) reads one class, so it merges no classes. The split changed only the certificates. They
+     read `lost` until rule 4 read the classes of one certificate together (§2.9 rule 4, *Across the
+     classes of one certificate*).
      - **The premises, on the write.** (d1) The write's path `q` is not approximate. (d2) Its spine (the
        walk's route along `q`) meets one node `V` at an exact prefix `L` (no `[*]` or `⟲` in `L`). Views
        are tested before they are forced, built nodes and deltas are projected one step at a time, and a
@@ -7814,6 +7945,21 @@ position what the certificate already claims, where the reader read it by cell.
   parameter, which the frame takes as apart and its callers check through the marks (§2.11 item 3 (c)).
   `incAll` has the same derivation, since its `List.push xs 1` answers `π1#Node.1`. Counted by cell
   (`aggAdd` today), `X` and `Y` read 2+, and the certificate reads `lost`.
+  *Amended (#1559), under the atom rule* (§2.3, #1483). There are now three certificates, one per
+  class, and the five keys split among them:
+  - `A(same, #Node.1)` is `{π1#Node.1}`;
+  - `A(same, #Node.0#Node.1)` is `{π1#Node.0#Node.1, π1#Node.0⟲#Node.1}`;
+  - `A(same, #Node.2#Node.1)` is `{π1#Node.2#Node.1, π1#Node.2⟲#Node.1}`.
+
+  At `same l` all three land in the caller's `#Node.0#Node.1`, so the table above is the read there.
+  It holds only when rule 4 reads the three classes together (§2.9 rule 4, *Across the classes of
+  one certificate*). Read class by class, `X` arrives from two classes, and both subtree classes read
+  `lost`. With the rule, the prototype measures `same` as `res #Node.0#Node.1 π1#Node.0#Node.1
+  π1#Node.0⟲#Node.1{apart [π1#Node.0#Node.1] [π1#Node.0⟲#Node.1], excl π1#Node.0⟲, excl
+  π1#Node.0⟲#Node.1}, #Node.1 π1#Node.1, #Node.2#Node.1 π1#Node.2#Node.1 π1#Node.2⟲#Node.1{apart
+  [π1#Node.2#Node.1] [π1#Node.2⟲#Node.1], excl π1#Node.2⟲, excl π1#Node.2⟲#Node.1}; cert`. The same
+  change takes `incAll`'s subtree classes from `{lost}` to `{apart …, excl …}` in `ReturnedKids`,
+  `LevelRecursiveUpdates`, `MarkerAcross` and `WriteOneLevel`, with no verdict changed there.
 - **Wall 2 is §2.11 item 3 (d).** At `incP (P (same t) (same t2))`, each write of `incP` below `#P.0` has
   its spine meet the one view `V₁ = same t` at the prefix `#P.0`, with its rest in `K`. Every item that
   the walk meets inside `V₁` drops `K`, whether it stands at `K` (`π1#P.0#Node.0#Node.1` beside the
@@ -7877,10 +8023,71 @@ stay refused.
 | 17 | `Box = Box (List Int)`, `Wrap = Wrap Box`, `Tree = Node Tree Wrap Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag in the read map (§2.11 item 3 (d)). `Wrap` is on no cycle, so the held `Box` inside `w` (class `#Node.1#Wrap.0`) and the held `Box` of the `#P.1` occurrence share one read node without the tag. If the item inside `V` made that read node first, the `#P.1` route lost `t`'s lists (the second re-review of #1519). |
 | 18 | `h2 n t = if n == 0 then (case t of Node l _ _ → case l of Node _ ys _ → Node (same (Node t [] Leaf)) ys Leaf; … Leaf → Leaf) else h2 (n − 1) t`, called as `case t of Node l _ _ → incAll (h2 n l)` | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | `A(h2, #Node.1)` holds `a = π1#Node.0#Node.1` (`ys`) and `b = π1⟲#Node.1` (the root join, through `same`), two bases, so its condition keeps `apart{a, b}` and is not `lost`. Through the leaf `l` both image to `π1#Node.0⟲#Node.1` in one group. The trie test finds `a` under `b`'s `⟲` (`#Node.0` is on `Tree`'s cycle), so the group is no group and the image is repeated. Without the test, rule 4 would merge them (the independent review of #1519). |
 | 19 | One certificate over two parameters of type `Tree`, with `π1`'s keys `π1#Node.1` and `π1#Node.0#Node.1` (apart) and `π2`'s keys `π2#Node.0#Node.1` and `π2⟲#Node.1` (overlapping): `g2 n a b = if n == 0 then Node (same a) [] (h2 0 b) else g2 (n − 1) a b`, called as `case t of Node l _ _ → incAll (g2 n s l)` with `s` a list-distinct second tree | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | The overlap memo is keyed by `(certificate, version, i, L)` (§2.9 rule 4 (a′)). `π1`'s group (through `s`) merges nothing it should not, and `π2`'s group (through `l`) overlaps, so it is no group, and its image is repeated, in either order. A unit test in `build_test.zig` runs both orders of the groups (a test-only switch that reverses the parameter order of the instantiation) and must give the same verdict and the same certificate read. `g2`'s own condition may already fail (if the substituted `apart` of `h2` reads `lost` in `g2`'s frame), which would refuse the line whatever the memo does. So the unit test also builds this certificate directly, as an aggregate with these four keys and a condition that is not `lost`, and checks both orders on it. |
+| 20 | `twin t = case t of Node l xs _ → Node (twin l) xs (Node Leaf xs Leaf); Leaf → Leaf`, `incAll (twin t)` | refused `disjoint (approx)` | unsafe (each list is written twice) | One key in two classes (§2.9 rule 4, *Across the classes of one certificate*, case (i), #1559). `π1#Node.1` is in the root's class and in `#Node.2#Node.1`. At `twin l` both classes land at `#Node.0#Node.1`, so the image `π1#Node.0#Node.1` is a repeat by the sum for each key. A maximum across classes would read it once. The frame's own κ also reads the two positions (`lost`), so the row pins the verdict, and unit case (i) pins the rule. |
+| 21 | `pairUp t = case t of Node l xs r → (case l of Node a ys _ → Node (same (Node a ys a)) xs (pairUp r); Leaf → Node Leaf xs (pairUp r)); Leaf → Leaf`, `incAll (pairUp t)` | refused `disjoint (approx)` (the root's line is accepted) | unsafe (`a`'s lists are written twice) | One object of the actual at positions of two classes, through two occurrences (case (ii)). In the view, `a` at `#Node.0` and `a` at `#Node.2` are two groups, and both of `same`'s subtree classes land at one class of `pairUp`. A group without `L` would merge them. |
+| 22 | `split t = case t of Node l _ _ → (case l of Node _ ys _ → Node (same (Node t [] Leaf)) ys (split l); Leaf → Leaf); Leaf → Leaf`, `incAll (split t)` | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | Row 18's pair, now in two classes that the atom rule split (case (iii)). `ys` (`π1#Node.0#Node.1`) is in the root's class, and the root join `π1⟲#Node.1` is in `#Node.0#Node.1`. At `split l`, both land at `#Node.2#Node.1` through the leaf `l`, on one image, and they overlap. (a′) on the union of the classes' keys finds the overlap. A trie run for each class alone does not. |
 
 Rows 4, 11 and 12 are accepted debt (#1518). Row 4 is not a hole in rule 4. It is the
 limit that rule 4 shares with rule 1: positions are told apart below one object, and never across two
 calls whose actuals one summary cell names.
+
+*The witnesses and near misses under the atom rule* [M 2026-11-01, #1559]. These were measured on #1529's
+head merged with master `3460de8d3`. The measurement used self-hosted Debug, `dump --stage=ownership
+--ownership=v2 --jobs=1`, and the prototype of §2.9 rule 4 *Across the classes of one certificate*.
+"By class" is #1529 as built, and "With the rule" is the prototype. Each cell is the call's verdict
+and the number of its lines accepted. The atom rule changes `incAll`'s written paths, so a call
+has 5 lines (10 for `incP`), where #1529's old base had 3 (6). *Concrete* is the oracle's control:
+every line written in place, on every tree of height 3 or less with pairwise distinct lists.
+
+| Probe | #1529 (old base) | By class | With the rule | Concrete |
+|---|---|---|---|---|
+| `incP (P (same t) (same t))` | refused `disjoint` | refused `disjoint` | refused `disjoint`, 0 of 10 | unsafe |
+| `incP (P (same t) (same t2))` | accepted | refused `(approx)`, 2 of 10 | **accepted**, 10 of 10 | safe |
+| `incAll (same t)` | accepted | refused `(approx)`, 1 of 5 | **accepted**, 5 of 5 | safe |
+| `incRoot (same t)` | accepted | accepted | accepted | safe |
+| `incRoot (unroll t)`, `incAll (unroll t)` | refused `(approx)` | refused `(approx)` | refused `(approx)`, 0 of 1, 0 of 5 | unsafe |
+| `w = same t; incP (P w w)` | refused `disjoint` | refused `disjoint` | refused `disjoint`, 0 of 5 | unsafe |
+| 1 `swap` | accepted | refused `(approx)`, 1 of 5 | **accepted**, 5 of 5 | safe |
+| 2 `dupL` | refused `(approx)` | refused, the root's line accepted | refused, the root's line accepted | unsafe |
+| 3 `shareL` | refused `(approx)` | refused, 2 of 5 (`#Node.2#Node.1`, `#Node.0⟨Tree⟩#Node.1`) | the same | unsafe |
+| 4 `deeper` | refused `(approx)` | refused, the root's line accepted | the same | safe (debt, #1518) |
+| 5 | refused `disjoint`, the root's line accepted | the same | the same | unsafe |
+| 6 | accepted | refused `exclusive (approx)`, 4 of 5 | **accepted**, 5 of 5 | safe |
+| 7 | refused `disjoint` | refused `disjoint (approx)`, 1 of 5 | refused `disjoint`, 1 of 5 | unsafe |
+| 8, 9 | accepted | refused `(approx)`, 1 of 5 | **accepted**, 5 of 5 | safe |
+| 10 | refused `disjoint (approx)` | the same | the same | unsafe |
+| 14, 14 with a list | refused `(approx)` | refused, 2 of 5 | the same | safe (the open gap at `#Node.0`) |
+| 15, 17 | refused `disjoint` | the same | the same | unsafe |
+| 18 | refused `(approx)` | refused, 1 of 5 (the `Leaf` side) | the same | unsafe |
+| 19 | refused `(approx)` | refused, 0 of 5 | refused, 2 of 5 (`same s`'s lines) | unsafe |
+| 20, 21, 22 | — | refused, 0 / 1 / 0 of 5 | the same | unsafe |
+| `FoldedKnotCall` `oneView`, `belowView` | accepted | refused `(approx)` | **accepted** | safe |
+
+- The witnesses and rows 1, 6, 8 and 9 are green again, and row 7 is exact again. #1538's lines stay
+  accepted.
+- Every other verdict of the 448 ownership fixtures is unchanged by the rule. 46 lines move from
+  refused to accepted, 0 move from accepted to refused, and 5 change their reason, all in
+  `FoldCertificate`, `FoldCertificateImported`, `FoldCertificateWrapper` and `FoldedKnotCall`.
+- `o/FoldCertificateImported` still refuses its `#Node.2…` lines, and that is not this rule.
+  Under the atom rule a subtree class is a plain leaf of cells, which another producer's class can
+  equal. The block reader joins every such class's `fold_cond` onto one interned node (#1570). With
+  only `same` in `Lib`, `oneView` is accepted on all 5 lines.
+
+*The oracle.* It is a Node model of the 24 probes above (rows 11–13, 15–17 and the wrappers
+aside). It runs each probe copying every write, and again in place at every line the dump
+accepts, then compares the results. It uses every tree of height 3 or less with pairwise distinct
+lists, both `Bool`s and `n` ∈ {0, 1, 2}: 42 744 runs.
+- **0 unsafe with the rule**: 17 of the 24 probes have an accepted line.
+- With every line forced to be accepted, it reports UNSAFE on 14 of the probes: those marked unsafe
+  above.
+- The verdicts by class, and the three unsound variants below, also give 0 unsafe on these programs.
+  Each of them is refused by the frame's own κ too. So only the unit cases tell the variants apart:
+  - the unit cases pass with the rule;
+  - case (i) fails without the sum for each key;
+  - case (iii) fails with the trie run for each class alone;
+  - case (ii) checks that two groups add. `L` in the group's key is `ruleFourKey`'s, so a unit test of
+    the group ids pins it: `a` at `#Node.0` and `a` at `#Node.2` of `Node a ys a` get two ids, and
+    one key in two classes gets one id.
 
 **Lemmas for the walls.** They extend C1–C5. Each has a `runtime_safety` check through a reader that does
 not share its walk.
@@ -7888,6 +8095,12 @@ not share its walk.
   It compares the merged keys by `Cell.alias` and traces the one-position walk, and it unrolls nothing.
   C2's check computes the step aggregate again with every view forced and every choice flattened, and
   that computation applies rule 4 too, so C2 also tests R4 on the forced representation.
+  *Extended (#1559).* Lemma R4′ (§2.9 rule 4, *Across the classes of one certificate*) is checked
+  where a group merges keys from two or more classes:
+  - the merged keys are pairwise distinct cells;
+  - `Cell.alias` is `no` over the group's distinct keys across all the landing classes;
+  - `Cond.assertClassesSum` computes the read at the caller class again, from the sum certificate
+    as one class, and requires it to be equal.
 - **C7, Disjoint by certificate.** The read of §2.11 item 3 (d). *Check:*
   `TransferBeside.assertCertifiedDrop` wherever the rule drops `K` at an item. Inside a group being
   solved the check is deferred to publication, and it runs only if the verdict it covers is final.
@@ -7915,7 +8128,7 @@ tree of height 4 or less, and derived on paper for the item form of (d) and the 
 
 **What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
 instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
-- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17–19 in one module, and the counted test with N alternatives in
+- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17–22 in one module, and the counted test with N alternatives in
   `build_test.zig`.
 - `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
   library module, so the certified mark crosses a block (C4).
@@ -7930,6 +8143,20 @@ instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as 
   rows 15 and 17 under the switch. With the tag, both are refused in either order. Under the switch with
   `cert-untagged`, both are accepted, and C7's edge check panics. `gates` refuses both switches, as it
   refuses every mutation.
+- *Added (#1559): rule 4 across the classes of one certificate* (§2.9 rule 4).
+  - It is built in readers 1 and 2, with the group's id kept for each `(environment, i, L, node)`
+    across the classes of one instantiation, and (a′)'s memo keyed by the key set.
+  - Rows 20–22 go in `o/FoldCertificate`.
+  - A unit test in `Calls.zig` builds a certificate of two classes directly, for cases (i)–(iv): a
+    repeat for (i)–(iii), and one image with `exclOf` for (iv). A unit test of the group ids covers
+    `L`.
+  - Three mutations:
+    - `cert-rule4-per-class` reads class by class, as #1529 built it. It must turn the accepted
+      witnesses and rows 1, 6, 8 and 9 red.
+    - `cert-rule4-no-key-sum` takes the maximum with no sum for each key. It must fail case (i).
+    - `cert-rule4-trie-per-class` runs (a′) for each class alone. It must fail case (iii).
+  - C6 is extended as above.
+  - The witnesses of `o/FoldCertificateImported` also need #1570.
 - Measure what #1485's stop report left open: the approximate `~…⟲` cells that `Grafter.argAt`'s
   `recastWhole` puts at `#Node.1[*]` (and at each class below `K`) in each member's own recursion
   (`same`, `incAll`, `unroll`), once rule 4 projects a leaf through `⟲` symbolically. Record which of
