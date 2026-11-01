@@ -2587,11 +2587,18 @@ Where κ is set, always **at the selected path p**:
        link and its children, exactly as one frame of today's walk reads them. #1425's memos by run stay.
        The pass records the edges. It builds no position. *It stops at a clean-memo hit:* a state whose
        node has finite rank, with no traversal, whose clean-memo key holds an entry, is recorded and not
-       expanded. Nothing below it is cyclic (rank falls along every edge) and no node below it is in a
-       node-graph cycle, so no cycle bit depends on it. Pass 3 expands it lazily, by resuming pass 1 from
-       it, when the hit cannot be used: when it shares a set with other states, stands at a position
-       that is not clean, or lies in a fold's closure. Today's walk expands such a state in exactly
-       those cases, so pass 1 reads exactly the states that today's walk expands at least once.
+       expanded. Its rank is at least 1, so nothing below it reaches it or any state above it: no cycle bit
+       above the hit depends on anything below it. The states below it are not all acyclic, though. A
+       rank-0 node projects to rank 0 (`Shape.rank`), `projectLeaf` maps `⊤` and mark cells to
+       themselves, and on a knot-tied place `child(p, s) = p`. So a `{⊤}` leaf at a `List` place whose
+       member cursor is an exact fold is a self-loop of `Σ` below a hit of rank 1 or more. Pass 3 expands
+       a hit lazily, by resuming pass 1 from it, when the hit cannot be used: when it shares a set with
+       other states, stands at a position that is not clean, or lies in a fold's closure. Pass 2 then
+       runs over the resumed subgraph, its components and its `K`-bits, before pass 3 uses any of its
+       states. That is exact, because nothing in the subgraph reaches above the hit. Without it, the
+       self-loop above would read as an open set that is its own child set: the rule would not end, or it
+       would differ from the reference. Pass 1 reads the states that today's walk expands at least once,
+       plus the lazily expanded hits. Today's walk links a clean hit even where its position is shared.
     2. *The cycle bit.* The pass computes Tarjan's components of `Σ`, and the components of its node
        graph, which has one vertex per joined node and an edge for each edge of `Σ`. A state whose node
        is on no cycle of the node graph is not cyclic. A state in a nontrivial component of `Σ` is
@@ -2712,9 +2719,9 @@ Where κ is set, always **at the selected path p**:
 
     The rule returns the reference's snapshot id, so each of them reads the same thing.
   - **`proj`'s side effects.** `proj` records origins (`addOrigin`), constructions (`addConstruction`) and
-    its memo. Pass 1 makes the projections that today's walk makes, because both expand exactly the states
-    that today's walk expands at least once: pass 1 stops where a clean-memo hit is used, as today's
-    walk does. Only the order differs. That can change the order of a node's origins
+    its memo. Pass 1 makes the projections that today's walk makes, plus those below a lazily expanded hit.
+    Those extra ones are `memo_proj` hits only, because the call that wrote the clean entry made them:
+    they cost records, not results. Otherwise only the order differs. That can change the order of a node's origins
     and which projection made a node first (`fresh`, `base_epoch`), as any change of the walk's order can.
     The corpus shows no change from it.
   - **The `runtime_safety` check.** Under `-Downership-full-cross-check`, `propagateFrom` walks each
@@ -2729,12 +2736,21 @@ Where κ is set, always **at the selected path p**:
     measured and on the corpus, no call reached that cap.
   - **Counted tests** (for the build slice). Each one is a unit fixture in `Cond.zig` with records
     counted, in the owner's 1 s:
-    - *The shared DAG.* An acyclic DAG `D` of `N` nodes, and `C` calls of `propagate` whose roots
-      differ, are of finite rank and are open. Each call holds, alone at a clean position one step below
-      the root, the same state over `D` (the join of `D` with a second DAG `D′`, as one run). From the
-      second call on, that state is a clean-memo hit. Pass 1 must stop there, so the records of
-      `C = 16` minus those of `C = 1` are the same at `N = 16` and at `N = 64`, within 10 %. A pass 1
-      that reads below the hit makes the difference grow with `N`: `O(C·N)` instead of `O(N + C)`.
+    - *The shared DAG.* Its mode is pinned: no traversal (with one, no frame is clean and the test says
+      nothing) and alternatives (in together mode the correct rule also grows with `N`).
+      - There is an acyclic DAG `D` of `N` nodes, and `C` calls of `propagate` whose roots differ, are of
+        finite rank and are open.
+      - The roots' members project, one step down, to the same `(D, D′)` with the same contexts, so a
+        root's own work does not depend on `N`. So each call holds, alone at a clean position one step
+        below the root, the same state over `D`: the join of `D` with a second DAG `D′`, as one run.
+      - From the second call on, that state is a clean-memo hit, and pass 1 must stop there.
+
+      The test counts the account's total: the records of `C = 16` minus those of `C = 1` must be the
+      same at `N = 16` and at `N = 64`, within 10 %. A pass 1 that reads below the hit makes the
+      difference grow with `N`, `O(C·N)` instead of `O(N + C)`.
+    - *The resumed hit.* A clean hit is expanded lazily because it shares a set with another state. Below
+      it stands a `{⊤}` leaf at a `List` place whose member cursor is an exact fold, a self-loop of `Σ`.
+      The call must end, and it must give the reference's id.
     - *The sibling.* The period-2 knot with a 2^d-path sibling (*Measured*): its states grow as
       `2d + 9` and its positions do not grow with `2^d`.
     - *The self-loop.* A period-1 knot, a self-edge of `Σ`: its state is cyclic and the root is a fold.
