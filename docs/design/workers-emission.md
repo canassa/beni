@@ -148,14 +148,6 @@ The raw table remains available for diagnostics and later implementation stages;
 its mere presence never certifies Wire, callback ownership or realm availability.
 
 Tests pin plan clearing and replacement, runtime removal and rejected rechecks,
-nominal identity under app-module shadowing, and the same check and build
-diagnostics. Existing runtime execution tests and byte comparisons cover both
-output modes. This establishes a used build-wide metadata boundary before
+and agreement between check and build diagnostics. Existing runtime execution
+tests and byte comparisons cover both output modes. This establishes a used build-wide metadata boundary before
 independent projections and finite entry discovery are added.
-
-## Selected-entry mutable-state boundary
-
-The next extraction is specified in [workers-selected-emission.md](https://github.com/canassa/beni/issues/1612).
-It freezes the existing selected top entry's build inputs and separates its
-mutable projection, with unchanged root policy and development/release bytes.
-It does not activate finite-discovery results or multiple executable entries.

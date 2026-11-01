@@ -148,6 +148,20 @@ exported and still a root, because Â§5's export list has the entry declaration
 library at its export list; Â§9's "Roots" says why at length. It is not a second output mode; a
 library build emits the same `.mjs` per module as any other.
 
+**A generic entry runtime is selected by the platform's `entryKinds` row.**
+The top-level `program` names the nominal type; `main` may have an applied type
+such as `Start.Program String`, or an alias of it. The selected runtime is a
+beni module with a public, synchronous `run` taking that Program and returning
+unit. The entry imports it and calls `run(main)`; release output makes the same
+call in its hoisted scope. No markup lowering or legacy runtime file is required.
+A chain with an `entryKinds` row may omit `runtime`. Check and build report
+`invalid_entry_kind` for invalid metadata or runtime signatures, and
+`entry_runtime_suspends` when `run` itself may suspend. Initialization may suspend
+inside a root fiber started by `run`. A library validates rows but does not
+require a runtime for the top Program or write an entry. The contract is
+`boundary.md` §5.2 and
+[`workers-entry-implementation.md`](workers-entry-implementation.md).
+
 Development output is **one ESM file per source module**, mirroring the source tree, with readable
 names â but not with everything the source declared. Release output is **reachability chunks**. Both
 read one declaration graph (Â§9.1 of the design doc) and **both eliminate against it**: a dev build

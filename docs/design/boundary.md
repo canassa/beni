@@ -921,9 +921,27 @@ module supplies `run` and every export of §9.4.5's union, and each one it does 
 `pub` value with a body is `foreign_export_mismatch`, reported against the manifest that named the
 module at `1:1` (a markup primitive at its declaration, as with a file) — there is no file to hold
 it instead. A build writes no runtime file, and the entry file imports `run` (and `start`) from the
-module's output. A chain that names neither is refused before a source is read, as before. A chain
-with no `"program"` asks the module for no `run`. `browser` is such a platform since this
+module's output. A chain with neither runtime form nor an `"entryKinds"` row is refused
+before a source is read. A chain with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
+
+**A platform may select a beni entry runtime with `"entryKinds"`** (added 2026-11-01).
+Each row names a nominal `programType`, `realm`, runtime module in `runtime`, and
+explicit `constructors`, `launches` and `parameters` arrays. Rows combine across
+the platform chain. The top-level `"program"` selects its row by nominal identity;
+`main` may apply that type, for example `main : Start.Program String`, including
+through an alias. `"runtime"` is optional when the chain has an entry-kind row.
+Check and build validate all rows; a program build with no legacy runtime and no
+row for its top Program reports `invalid_entry_kind`. A `--library` build does
+not require a runtime for that top Program and writes no entry file.
+
+The selected module supplies a public beni `run : Program a → ⊤` (with the
+Program's declared type parameters), independent of markup. The entry calls
+`run(main)` synchronously. An invalid row or runtime signature is
+`invalid_entry_kind`; a `run` whose own arrow may suspend is
+`entry_runtime_suspends`. It may start a root fiber whose initialization suspends,
+then return. The full metadata and runtime contract is
+[`workers-entry-implementation.md`](workers-entry-implementation.md).
 
 **Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
 2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the

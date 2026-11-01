@@ -296,4 +296,4 @@ payload each event carries (`onInput` gives the input's value as a `String`; `on
 `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this platform;
 the others include it.
 
-Sources: `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12; `platforms/*/beni.json`; the modules' doc comments.
+Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12; `platforms/*/beni.json`; the modules' doc comments.

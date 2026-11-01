@@ -1,6 +1,6 @@
 # Native binding generation and indexed metadata
 
-**Specified 2026-10-30; implementation proceeds in stages on PR #1304.**
+**Specified 2026-10-30; implementation proceeds in stages under #1612.**
 This expands the owner's decided C mechanism in [workers.md](workers.md) §4.
 It adds no beni grammar. Generated native objects have ordinary nominal foreign
 types. HostFree, Host.Raw, inferred realm summaries and the precise-error rule

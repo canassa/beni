@@ -111,11 +111,3 @@ paths remain in the original metadata as obligations for later instantiation.
 None of these shallow shape checks certifies Wire or native realm availability.
 The later source-entry, realm, wire and ownership v2 passes must consume the
 retained rows before a public worker launcher can ship.
-
-## Compact source discovery follow-on
-
-[workers-entry-compact.md](https://github.com/canassa/beni/issues/1612) specifies the reviewed finite
-symbolic source template/observation kernel, declaration sealing, paired capture
-obligations and explicit residual boundary before its replacement implementation.
-It remains a partial diagnostic foundation: no public worker launch, multi-entry
-emission or completed C/EntryHost/Wire/ownership proof follows from that artifact.
