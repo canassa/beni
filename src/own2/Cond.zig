@@ -124,6 +124,11 @@ pub const Table = struct {
     /// it, read only by that call (each call its own number, #1372).
     prop_slice: std.ArrayList([2]u32) = .empty,
     prop_calls: u32 = 0,
+    /// Set while `widenValue` propagates (#1485): a union or choice that a
+    /// fold position keys also keys each of its built sides there that no
+    /// state keys, since widen made them and no member snapshot holds them
+    /// (§2.9 *Keyed where a reader looks*).
+    widen_sides: bool = false,
     /// `withoutImpliedJoins`' answers by `(key, condition, position)`: all
     /// three immutable, so never stale.
     memo_implied: Ids.FixedDict(3) = .{},
@@ -639,7 +644,20 @@ pub const Table = struct {
     /// through the fold) and distinct arrivals owe `apart`, while one value
     /// in either arm of a choice stays one (`propagate` conjoins them at
     /// the class, `fold_cond`). The widened node and its κ.
-    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!struct { node: NodeId, kappas: Kappas } {
+    pub const Widened = struct { node: NodeId, kappas: Kappas };
+
+    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!Widened {
+        return t.widenValueOf(gpa, charge, v, x, kx, &.{x}, &.{kx});
+    }
+
+    /// `widenValue` of `x`, a join of `members` whose snapshot is `kx`: the
+    /// widened node's κ propagated from the members, each at its own
+    /// snapshot, not from `kx` (#1485). `kx` merges the members' snapshots,
+    /// and a member's knot (an exact fold) merged with another member's
+    /// position there is a collapsed fold, where every built node reads
+    /// `lost` (§2.9); `propagate` reads a join of its members, widened or
+    /// not, in lockstep with each.
+    pub fn widenValueOf(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas, members: []const NodeId, member_ctxs: []const Kappas) Error!Widened {
         var fold: Shape.Table.Fold = .{};
         defer fold.deinit(gpa);
         const w = try v.shapes.widenFold(gpa, charge.account, v.places, v.cells, x, &fold);
@@ -654,7 +672,10 @@ pub const Table = struct {
         }
         // One member: `propagate` keeps its entries at each position it walks
         // outside a fold (§2.9 *Keyed where a reader looks*).
-        return .{ .node = w, .kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null) };
+        const saved = t.widen_sides;
+        t.widen_sides = true;
+        defer t.widen_sides = saved;
+        return .{ .node = w, .kappas = try t.propagate(gpa, charge, v, .none, w, members, member_ctxs, .alternatives, false, null) };
     }
 
     /// `out` merged with a snapshot that sets κ at every position of
@@ -731,6 +752,9 @@ pub const Table = struct {
         const Write = struct { path: u32, node: NodeId, k: CondId };
         var outs: std.ArrayList(Write) = .empty;
         defer outs.deinit(gpa);
+        // A widened knot's union sides (`widen_sides`), keyed at the end.
+        var side_outs: std.ArrayList(Write) = .empty;
+        defer side_outs.deinit(gpa);
         // The positions that are a member's own snapshot, linked as they are.
         const Linked = struct { path: u32, at: Kappas };
         // A lone member's positions the walk passes outside a fold: its own
@@ -928,6 +952,7 @@ pub const Table = struct {
             if (!redundant) {
                 try charge.reserve(gpa, .inspection, 1);
                 try outs.append(gpa, .{ .path = f.path, .node = f.node, .k = k });
+                if (t.widen_sides and mode == .alternatives) try unionSides(gpa, charge, v, f.path, f.node, k, &side_outs);
             }
             // Children: the joined node's frontier, the members projected
             // along each step of it, each at its position one step below.
@@ -1051,6 +1076,25 @@ pub const Table = struct {
             try t.keyed(gpa, charge, w.node);
             here[at] = try t.mapPut(gpa, charge, here[at], w.node.int(), val.int());
         }
+        // A fold's union side that no state keyed reads its union's κ, the
+        // join over every member met there: an object at the fold through
+        // that side is one of those members' (widen's quotient), so the join
+        // covers it. Without it a built side reads `lost` (O13), and so does
+        // the union, which joins its sides' reads.
+        if (side_outs.items.len > 0) {
+            var written: Ids.FixedDict(2) = .{};
+            defer written.deinit(gpa);
+            for (outs.items) |w| _ = try written.getOrPut(gpa, .{ owner[w.path], w.node.int() });
+            for (side_outs.items) |w| {
+                try charge.reserve(gpa, .inspection, 1);
+                const at = owner[w.path];
+                if (!fold_at.items[at] or written.get(.{ at, w.node.int() }) != null) continue;
+                const old = t.mapGet(here[at], w.node.int());
+                const val = if (old) |o| try t.join(gpa, charge, .from(o), w.k) else w.k;
+                try t.keyed(gpa, charge, w.node);
+                here[at] = try t.mapPut(gpa, charge, here[at], w.node.int(), val.int());
+            }
+        }
         // The linked positions by the output position they are at.
         const link_head = try gpa.alloc(u32, paths.items.len);
         defer gpa.free(link_head);
@@ -1088,6 +1132,26 @@ pub const Table = struct {
         }
         const result = try t.kappaMerge(gpa, charge, out, pos[0]);
         return result;
+    }
+
+    /// The built sides of union or choice `u` (through nested unions and
+    /// choices), each with `k` at `path`, into `out` (`widen_sides`).
+    fn unionSides(gpa: Allocator, charge: Charge, v: View, path: u32, u: NodeId, k: CondId, out: anytype) Error!void {
+        const shapes = v.shapes;
+        const uk = shapes.kind(u);
+        if (uk != .@"union" and uk != .choice) return;
+        var stack: std.ArrayList(NodeId) = .empty;
+        defer stack.deinit(gpa);
+        try stack.append(gpa, u);
+        while (stack.pop()) |x| {
+            try charge.reserve(gpa, .inspection, 1);
+            const d = shapes.get(x);
+            switch (d.kind) {
+                .@"union", .choice => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                .node, .delta => try out.append(gpa, .{ .path = path, .node = x, .k = k }),
+                else => {},
+            }
+        }
     }
 
     /// A memo state's bits: its class, the mode, and whether it is the
