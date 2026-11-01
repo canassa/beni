@@ -6576,6 +6576,16 @@ case (`O(2^√|Σ|)`, a subset construction). Each set is charged, so such a fam
 `ownership_summary_size` (§2.9 *Fold first*, *Cost*). Block refinement and shared place
 keys meet §3.6 since #1065, with pre-work reservations since #1066. Charged superlinear work is never made source-linear by the limit.
 
+*A later walk of a group, measured (#1372, 2026-11-01).* The row *recursive groups, feedback, entry* is a bound
+on the account, not on a round. A later walk or delivery costs about c · |x_r| records, where |x_r| is the whole
+port it reads and c is 100 to 330 records per DAG element or κ entry, not c · |Δ_r| for what the round added: a
+view environment is new per call and a κ position is shared by every arm at its path, so the node- and
+position-keyed memos miss for the arms that did not change. §8 slice 4, *The cost of a later walk,
+attributed*, has the table and the rule (interned view environments, a cover test that carries once, and a
+delivery of new arms only). The rule bounds a GroupFieldShift-like group by c · |Δ_r| per round. It does not
+bound a group whose class itself grows per round (`removeMin`: about four times the arms a round, every κ
+`lost`), nor `propagate`'s states per node (`descend`).
+
 **Read-off and run-wide reads: the source continuation** (the owner's decision, 2026-10-29, §4.4's *Source work
 versus growth*; #1188; it replaces the per-request read-off continuation this paragraph specified before). Each
 owning declaration's account holds a *source continuation* of K·I_f records. K is `continuation_per_atom` =
@@ -8535,6 +8545,138 @@ RecursiveSummaryGeneration's reorderings).
   excl π1[*][*], excl π1[*][*][*]`), the only verdict change is `mergeSort`'s, and the records are
   6 049 652 (+0.15 % over 4d alone, −5.7 % against master).
 
+*The cost of a later walk, attributed (#1372)* [M 2026-11-01, master `1b3068f50`, self-hosted Debug,
+`dump --stage=ownership --ownership=v2 --jobs=1`, the allowance at 4 194 304; scratch instrumentation that
+charged every committed record to the innermost reader on a stack of tags, and counted each port's `res`
+DAG and κ snapshot after every walk, join and delivery; nothing built]. Since 4b a "later walk" is mostly
+deliveries: GroupFieldShift and `descend` settle in two walks, and `removeMin` stops in its fourth.
+
+| case | walks / deliveries | records | in deliveries | in walks 2+ | in the joins |
+|---|---|---|---|---|---|
+| GroupFieldShift n = 4 / 8 / 16 | 2 / 6, 2 / 10, 2 / 18 | 35 667 / 188 402 / 1 444 551 | 76 % / 87 % / 93 % | 20 % / 12 % / 7 % | 1 % |
+| `descend` (copied) | 2 / 5 | 122 867 | 61 % | 31 % | 8 % |
+| `removeMin` (copied) | 4 / 9 (the fourth walk stops at the limit) | limit (4.29 M spent) | under 1 % | 83 % | 16 % |
+
+By reader (innermost charged reader; views are the records `force` and `view` charge inside it):
+
+| reader | GFS 16, deliveries | GFS 16, walk 2 | `descend`, deliveries | `descend`, walk 2 | `removeMin`, walks 2–4 |
+|---|---|---|---|---|---|
+| `kappaRelabel` (in GFS's deliveries, all of it `dropCovered`'s `carryTo`) | 36 % | 5 % | 6 % | 14 % | 3 % |
+| κ reads: `Cond.machine` | 29 % | 52 % | 12 % | 6 % | 9 % |
+| κ reads: aggregates (`setAgg`, `aggJoin`, `derivedCells`, `eqOn`) | 16 % | 25 % | 1 % | 1 % | 1 % |
+| `propagate` passes 1 / 2 / 3 | 2 / 0 / 1 % | 4 / 0 / 1 % | 35 / 3 / 7 % | 55 / 6 / 8 % | 38 / 6 / 13 % |
+| `Shape.leq` / `kappaLeq` (the cover tests and `Summary.leq`) | 4 / 3 % | 0 | 15 / 15 % | 0 | 0 |
+| `Shape.join` (the walk's `case` joins) | 0 | 0 | 0 | 6 % | 27 % |
+| read-off, `Calls.apply`, `Shape.map` (their own records) | 8 % | 8 % | 5 % | 3 % | 2 % |
+| path multiset (`arrivalAggs`, `classesOf`, `preimage`) | 0 | 0 | 0.5 % | 0 | 0.2 % |
+| `Holders` | 0 | 0 | 0 | 0 | 0 |
+| views, inside the readers above | 8 % | 14 % | 4 % | 15 % | 20 % |
+
+- **GroupFieldShift: every delivery reads the whole port.** The port is a choice that keeps one arm per
+  round (§2.3), so after round r it has r + 1 arms, and about 2.4 n² κ entries at the end (611 at n = 16, with
+  53 nodes, 322 edges and 17 choice nodes). A round adds one arm, 18 edges and 22 to 51 κ entries. A
+  delivery costs about c_r · K_r records, where K_r is the port's κ entries and c_r rises from 140 to 244
+  (n = 16, rounds 1 to 17), about 133 + 6.5 r. So one delivery is about 200 times the entries its round adds
+  in round 2, and about 6 800 times in round 17. Two readers
+  read the whole port where they could read the round's arm:
+  - **`dropCovered`'s cover test** carries the choice's entries onto each arm with `carryTo`, a relabel of
+    the whole snapshot, once per arm. That is A_r · K_r for A_r arms, the quadratic part of c_r.
+  - **The read-off of the delivered class.** `Calls.apply` relabels the callee's whole κ eagerly, and the
+    read-off (`withoutImpliedJoins`, `propagate`, `widenValue`) reads every node of the view. Of
+    `Cond.memoAt`'s lookups in a late delivery, 9 % hit, 1 % hit at another position that reads alike, and
+    90 % find no entry for the node at any position: the nodes are new. `Views.add` appends an environment
+    per call, so each delivery's views of the arms that did not change are new nodes, and every memo keyed
+    by a node misses. Nothing reads a view environment's `class`: a view is a function of its template, its
+    actuals and its label.
+  - Propagate, the path multiset and `Holders` are not the cost here (3 %, 0, 0).
+- **`descend`: not rounds.** Two walks and four deliveries that move the port, which ends at 25 nodes, 32
+  edges and 135 κ entries; it has no choice node. Pass 1 of `propagate` is the largest reader: walk 2's
+  one `propagate` call reads 151 states and 788 edges for an `F` of 28 nodes, about 140 records a state,
+  and each delivery's read-off and join read 5 to 79 states again. A state costs its frontier times its run
+  (a `proj` and a `below_at` lookup per member per step). So `descend`'s cost is states per node, which
+  §2.3's question (b) and #1465 own, times a small number of reads.
+- **`removeMin`: the class grows, not the reader.** The port has 25 nodes and 35 κ entries after round 1,
+  107 nodes, 173 edges and 445 entries (4 choice nodes) after round 2, and 292 nodes, 542 edges and 1 804
+  entries (16 choice nodes) after round 3; every condition its summary prints is `{lost}` from round 1. A
+  walk costs about 300 records per element of the class it reads off (walk 2: 307 317 records for an `F` of
+  101 nodes, 164 edges and 850 entries; walk 3: 1 269 175 for 255, 469 and 3 232), or about 330 records per
+  state of its `propagate` calls (3 855 states and 44 275 edges in walk 3). That is linear in the class.
+  The arms multiply by about four a round: each walk nests the port's arms inside the arms of
+  `balance` and `moveRedLeft`, and widen keeps each arm (#1362).
+
+**Which readers read the whole port when the round's delta would do.** The port's `res` is an immutable,
+hash-consed DAG whose arms persist from round to round; what changes is the snapshot's positions, which all
+arms at one path share, and the view environments, which are new per call. So every reader whose memo key
+holds a view node or a position misses for the arms that did not change: `force` and `eager`, `Cond.machine`
+(its `inner` and `dag` memos), the aggregates, `propagate`'s clean memo (keyed by its run's positions),
+`kappaRelabel` (memoised per call only), and `dropCovered` (once per arm). `Holders` and the path multiset
+are not read in these groups.
+
+**The rule (proposed): a round reads its delta.** Three parts.
+1. **A view's environment is interned by content** `(label, actuals)`. `Views.add` returns the existing
+   environment for an equal pair, so a delivery along one edge, round after round, and a group call against
+   an unchanged arm, make the same view nodes, and every node-keyed memo above hits for every arm the round
+   did not add.
+   - *Soundness.* A memo keyed by immutable ids is a pure function of its key; a cross-round entry is never
+     stale, because a changed input is a different key, so no invalidation rule is needed. The obligation
+     is that the key holds all that the computation reads: no instantiation callback reads the environment's
+     `class` (checked: its one use is the field's write), and the place a structured template stands at under
+     an environment (`places_of`) is a function of the call's label, whose result place is fixed. The
+     coarse read vector (*Why coarse*) is unchanged: it is recorded at the group call, whatever a memo does,
+     and a memo entry derived from an arm is reached only through a template of the current class. The
+     `inst` atoms an interned environment shares are hash-consed already; `drainTo` must resolve by
+     creation order, not environment index, once an atom of an older environment can be made later.
+   - *`runtime_safety` check.* Under `-Downership-full-cross-check`, every `Views.add` that reuses an
+     environment also builds a fresh one, and compares the call's answer under both: the forced image of
+     each view, structurally, and the relabelled κ read at every position of the answer.
+   - *Prototype* (scratch): an interned environment in `Views.add`. GroupFieldShift 35 667 → 31 098 /
+     188 402 → 158 975 / 1 444 551 → 1 166 467 records; `descend` 122 867 → 120 803; `removeMin` still a
+     limit (walk 2 307 317 → 303 611). Verdicts, summaries and blocks byte-identical on all five; only the
+     crossing counters move.
+2. **A cover test carries the choice's entries once.** `dropCovered` builds one snapshot that carries every
+   choice node's entry onto the projection of every arm (`kappaRelabel` with one image per arm, the
+   relabel's per-call memos shared), and tests each arm against it, instead of one relabel of the whole
+   snapshot per arm.
+   - *Lemma (carry-once).* The entry `carryTo` puts at `proj(x, q)` is the entry of `proj(u, q)` for a
+     choice node u, which does not depend on the arm x. So the carried snapshots of two arms differ only at
+     nodes that are another arm's projections. A read of arm x meets such a node only below `proj(x, q)` at
+     the same position, inside a DAG node whose own entry already holds the same carried condition, and the
+     machine's `inner` read joins a node's entry with its sides' reads: the extra entry is absorbed. So
+     `kappaLeq` of x reads the same under both snapshots, and the cover test answers the same.
+   - *`runtime_safety` check:* each arm's test is also run against its own `carryTo` snapshot on a scratch
+     account, and the two answers must be equal.
+   - *Cost:* one relabel of K_r plus the projected entries times the arms, against A_r · K_r.
+   - *Prototype* (scratch, with part 1): GroupFieldShift 28 637 / 136 031 / 922 825 records (−20 %, −28 %,
+     −36 % against master); `descend` unchanged (no choice). The check ran 864 arm tests over the three
+     sizes with no difference; verdicts, summaries and blocks byte-identical. Over the 258 single-file
+     roots of `tests/corpus/ownership/` (parts 1 and 2 together), 257 dump identically, `account` and
+     `crossing` lines left out; `WriteOneLevel`'s block re-encodes (3 600 → 3 480 bytes) with every
+     summary and verdict line unchanged.
+3. **A delivery reads only the arms its edge has not received** (specified, not prototyped). The callee's
+   port `x_v` has a top choice of arms `A_v`; the edge records the arms it delivered. A new version
+   delivers `choice(A_v ∖ A_delivered)` with the κ home carried as `dropCovered` carries it.
+   - *What it needs:* `delivered(choice(A)) ≡ choice(delivered(a) for a ∈ A)` under `Summary.eq`.
+     4b's departure 1 measured the opposite for fact deltas (κ and widen's folds do not distribute over a
+     join), but an arm is a choice member, not a fact: §2.3 keeps each alternative's κ (#1128) and widen
+     widens each arm on its own (#1362). Until that is proved, the full delivery is computed beside it
+     under `runtime_safety` and compared with `Summary.eq`.
+   - *Cost:* a delivery reads its new arms, O(|N_r|·c), plus O(A_r) cover tests of size |N_r|; with parts
+     1 and 2, the read-off's `withoutImpliedJoins` and `propagate` hit for the old arms.
+
+**What the rule does not reach.**
+- `removeMin`: the per-walk cost is already linear in the class (about 300 records per element). The class
+  is what grows, by about four times a round in arms, so no reader rule bounds it. A bound per walk in the
+  size of the source is impossible for this program within the design as it stands: each round's arms are
+  distinct in γ (round 3 still adds cells at paths where round 2 had none: two at `res#Node.0`), so
+  `dropCovered` cannot drop them, and a choice keeps them for κ (§2.3). A scratch rule that replaced a port
+  join's choice by the pointwise union where the two are `Summary.eq` did not reach the growth either: it is
+  made inside the walk, by the `case` join of `balance`'s arms over the port's view, not at the port join.
+  The fix needs a quotient of arms that no reader tells apart, which §2.3's arm sets were not (4e); with
+  every κ at `lost`, as here, the arms differ only in γ, and the pointwise join is exact. That is a design
+  decision (§2.3, *What 4e measured*, question (b)), not part of this rule.
+- `descend`: states per node in `propagate` (§2.3 question (b), #1465), not rounds.
+- So core's `Dict` stays a known limit after the rule (Q8).
+
 4a carries the required fixtures that #1159, #1199 and #1219 owe through real calls: their actuals
 are literals, so they are acyclic, and only the callee recurses. 4c carries #1159's cyclic-source
 probe.
@@ -8869,7 +9011,7 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
 | Issue | What | Recommendation |
 |---|---|---|
 | #1406 | A joined DAG's side that no member holds reads its own derivation, not the join's κ. A wrong accept is not shown. | **Must land before S3b closes**, in 5a. It is a possible unsoundness in the κ transport that 5a rebuilds. |
-| #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. *2026-10-31 (4e):* stable images are exact for every condition read, save 0.42 % of the corpus and 29.5 % of a random sweep. Arm sets are withdrawn. Neither piece touches `removeMin` or `descend`, #1289's exponential or #1489's walk cost (§2.3, *What 4e measured*). | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
+| #1372 | *2026-10-31:* §2.3 *A port keeps no round that its last round covers* (4d) cuts the corpus's records by 5.5 % and `descend` by 59 %, but core's `removeMin` and `descend` stay limits. Their cost is `propagate`'s unfolding by position (#1465's F2), not the port. A group walk costs about 60 records per element of the port's shape. GroupFieldShift, the A/B writers, a quadtree and a three-list tree writer are loud. Core's `Dict.removeMin` and `Dict.descend` are known limits on 4a, so `Dict` publishes no block. *2026-10-31 (4e):* stable images are exact for every condition read, save 0.42 % of the corpus and 29.5 % of a random sweep. Arm sets are withdrawn. Neither piece touches `removeMin` or `descend`, #1289's exponential or #1489's walk cost (§2.3, *What 4e measured*). *2026-11-01 (attribution):* since 4b a later walk is mostly deliveries, each reading the whole port; slice 4's *The cost of a later walk, attributed* gives the readers and a rule that takes GroupFieldShift at n = 16 from 1 444 551 to 922 825 records with two of its three parts. `removeMin`'s class grows about four times in arms a round, so no reader rule reaches it; `descend` is `propagate`'s states per node. | **Must land before S3b closes**, at least the part that makes core checked: a limit in core hides every demand of every caller of `Dict` and `Set`, and S4 starts from those callers. The GroupFieldShift n = 64 figure may stay loud with the plan amended, as the issue allows. |
 | #1368 | *2026-10-31:* fixed by 4d (§2.3 *A port keeps no round that its last round covers*): 168 829 → 38 477 records, growth 0, exact for the join, and no corpus verdict lost. `run/TailModConsMerge`'s `mergeSort` is loud at the default allowance. The spec proposal is §2.3 *Saturation at two*: a merged positions node, exact once a dropped node's entries are carried onto the node it returns (*The entries of a dropped node*). It does not fix `mergeSort`. On master it never fires, and with #1459 it saves 11 %. What is left is choices that projection and relabelling do not flatten, and rounds that nest `res[*]` in place (§2.3, *What is left of #1368*). | **Fix before S3b closes.** It is an ordinary program, not a length family, and neither remaining cause needs S4's labels. 4b's validation walk still reads the whole class, so 4b alone does not fix it. The saturation lands as its own slice for #1420 (`Rose [ r, r ]` 215 175 → 31 620 records at 40). |
 | #1412 | A caller reads a callee's use over a parameter by path. It blocks #1357's precision. | **Land in S3b (5f).** It is §2.11 item 3's call rule, and S4's callbacks reuse that rule. It does not block 4b, 4c or S4's start. |
 | #1274 | Four #1214 holder-index families are not source-sized. | **Does not gate S3b.** Its title gives it to S9, and each family is loud, never silent. |
@@ -8930,7 +9072,13 @@ recursion lines. The other reasons belong to other slices (`local` 848, `lambda`
    calls. A record that doubles at 11 levels costs 2 670 records, where the walk before it is a limit.
    #1289's chain is linear (since #1538 under that walk too). `descend` costs 122 867 records
    (137 891 before) and is still over the default allowance. `removeMin` is still a limit at 10⁸: its largest
-   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*).
+   joins read 29 545 states with 681 815 edges (§2.9 *Fold first*, *As built*). *Measured again (2026-11-01, #1372's attribution):*
+   on master `removeMin`'s port grows from 25 nodes and 35 κ entries (round 1) to 107 and 445 (round 2) and
+   292 and 1 804 (round 3), with every condition `lost`, and a walk costs about 300 records per element of the
+   class it reads off: linear in the class, which is what grows. `descend` takes two walks and is
+   `propagate`'s states per node. Slice 4's rule (*The cost of a later walk, attributed*) changes neither
+   by more than 2 %. So core needs a design decision on a quotient of arms that no reader tells apart
+   (§2.3, *What 4e measured*, question (b)), and S3b still cannot close on the rule alone.
 9. **Can S3b close with `TailModConsMerge` loud?** *Recommendation:* no, for the reason given at #1368
    above. If the spec proposal shows that a fix needs S4's labels, the manager records that, and the
    known limit names S4. *Proposal (2026-10-31, §2.3 *Saturation at two*):* it does not. The saturation is
