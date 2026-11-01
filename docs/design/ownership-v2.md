@@ -2677,7 +2677,14 @@ Where κ is set, always **at the selected path p**:
        runs over the resumed subgraph, its components and its `K`-bits, before pass 3 uses any of its
        states. That is exact, because nothing in the subgraph reaches above the hit. Without it, the
        self-loop above would read as an open set that is its own child set: the rule would not end, or it
-       would differ from the reference. Pass 1 reads the states that today's walk expands at least once,
+       would differ from the reference. *Resumed passes stay linear.* A resumed pass 2 numbers only the
+       newly read states, continuing the call's numbering. A state classified before is a sink whose
+       component, cycle bit and bit set are kept. That is exact: an earlier state reaches a new one only
+       through a hit, and no bit above a hit depends on anything below it. The kept bit sets need a shared
+       numbering. Each node takes one bit index for the whole call when it first enters a component `K`,
+       and `K`'s bits are its nodes' indices. So a later pass that adds node-graph edges, even one that
+       merges two components, leaves every kept set valid. `k` resumed hits that share a sub-DAG `D` read
+       `D` once, not `k` times. Pass 1 reads the states that today's walk expands at least once,
        plus the lazily expanded hits. Today's walk links a clean hit even where its position is shared.
     2. *The cycle bit.* The pass computes Tarjan's components of `Σ`, and the components of its node
        graph, which has one vertex per joined node and an edge for each edge of `Σ`. A state whose node
@@ -2765,7 +2772,8 @@ Where κ is set, always **at the selected path p**:
   - **Cost.** For one call, every unit below is a charged record:
     - pass 1: `O(|Σ| + |E_Σ|)` state and edge reads, each as one frame of today's walk reads it, where
       `Σ` stops at clean-memo hits (pass 1);
-    - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits;
+    - pass 2: `O(|Σ| + |E_Σ|)` for the component passes, and `Σ_K |E_K| · ⌈|K|/64⌉` words for the bits,
+      summed over the whole call with its resumed passes, which number only new states;
     - pass 3: for each distinct open set, its interning (a record per state) and its edges; for each
       distinct fold set, its closure and the closure's edges, so `O(fold sets · |E_Σ|)` in all.
 
@@ -6212,7 +6220,7 @@ members (#1054); exact same-base comparisons remain individually charged. `Cond.
 need the observable frontier and exact states of §2.9 (#1063/#1064). `Cond.propagate`'s walk is §2.9 *Fold first*
 (2026-11-01). Per call, it is linear in its state graph `Σ` (which stops at clean-memo hits) and its edges, plus
 `Σ_K |E_K| · ⌈|K|/64⌉` words for the cycle bits over the node-graph components `K` (quadratic for one large
-knot), plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
+knot), summed over the call: a resumed pass numbers only new states, plus the interning and edges of each distinct open set, plus `O(fold sets · |E_Σ|)` for the folds'
 closures.
 Each unit is a charged record, so it is within the row of joins above relative to what it charges. A
 polynomial bound in `|Σ|` fails only at the number of distinct open sets, which is exponential in the worst
