@@ -1922,10 +1922,12 @@ pub fn Of(comptime Table: type) type {
         /// `res`, a union's or choice's sides one class with it) gives its
         /// certificate's arrival keys, instantiated through the view's
         /// environment by rule 4, at the class of the caller's fold that the
-        /// view's answer puts it in (the fold's steps, in lockstep). A group's
-        /// keys enter once per image (the maximum), each pair of them merged
-        /// onto one image owing `exclOf`; keys in no group, and the classes
-        /// of the template, add. Null where the caller's fold has no class
+        /// view's answer puts it in (the fold's steps, in lockstep). The
+        /// classes that land at one image are read together, one multiset of
+        /// their keys (`certClassesAggs`, #1559): a group's keys enter once
+        /// per image (the maximum over distinct keys of each key's classes),
+        /// each further key of the group there owing `exclOf`; keys in no
+        /// group, and classes at distinct images, add. Null where the caller's fold has no class
         /// for a template class: the walk then saturates, as before.
         pub fn hypAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, e: u32) Error!?ClassAggs {
             const shapes = v.shapes;
@@ -1934,16 +1936,13 @@ pub fn Of(comptime Table: type) type {
             const img0 = fold.image.get(n) orelse fold.image.get(try shapes.force(gpa, charge.account, view)) orelse {
                 return null;
             };
-            var out: ClassAggs = .{};
             var seen: Ids.FixedDict(2) = .{};
             defer seen.deinit(gpa);
             const Entry = struct { tn: NodeId, img: NodeId, pos: ClassPos };
             var stack: std.ArrayList(Entry) = .empty;
             defer stack.deinit(gpa);
-            var keys: std.ArrayList(HypKey) = .empty;
-            defer keys.deinit(gpa);
-            var merged: Ids.FixedDict(2) = .{};
-            defer merged.deinit(gpa);
+            var items: std.ArrayList(CertItem) = .empty;
+            defer items.deinit(gpa);
             var sides: std.ArrayList(NodeId) = .empty;
             defer sides.deinit(gpa);
             const pos0: ClassPos = if (e == identity_env) undefined else t.classPos(v, e);
@@ -1953,10 +1952,12 @@ pub fn Of(comptime Table: type) type {
                 if ((try seen.getOrPut(gpa, .{ x.tn.int(), x.img.int() })).found_existing) continue;
                 const tn = x.tn;
                 const img = x.img;
-                var a = try t.certClassAgg(gpa, charge, v, e, tn, &keys, &merged);
-                // The certificate's condition at the class, its κ (#1485).
-                if (e != identity_env and !mutated("cert-keys-only-reader1")) a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.classCond(gpa, charge, v, x.pos, tn, e));
-                if (a.all_len > 0 or a.pairs != yes) out = try t.classesMerge(gpa, charge, v, out, .{ .map = try t.mapPut(gpa, charge, Ids.none_int, img.int(), try t.agg(gpa, a)), .len = 1 }, true);
+                // The class at its image, with the certificate's condition
+                // there, its κ (#1485). The classes that land at one image
+                // are read together (§2.9 rule 4, *Across the classes of one
+                // certificate*, #1559).
+                const cond = if (e != identity_env and !mutated("cert-keys-only-reader1")) try t.classCond(gpa, charge, v, x.pos, tn, e) else yes;
+                try items.append(gpa, .{ .at = img.int(), .tn = tn, .cond = cond });
                 // The class's children, each another class.
                 sides.clearRetainingCapacity();
                 try sides.append(gpa, tn);
@@ -1981,7 +1982,7 @@ pub fn Of(comptime Table: type) type {
                     }
                 }
             }
-            return out;
+            return try t.certClassesAggs(gpa, charge, v, e, items.items);
         }
 
         /// One class `tn` of a certificate at environment `e` (`identity_env`:
@@ -1990,9 +1991,23 @@ pub fn Of(comptime Table: type) type {
         /// of them merged onto one image owing `exclOf` (#1485). `keys` and
         /// `merged` are scratch.
         pub fn certClassAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, tn: NodeId, keys: *std.ArrayList(HypKey), merged: *Ids.FixedDict(2)) Error!Agg {
+            keys.clearRetainingCapacity();
+            try t.classKeys(gpa, charge, v, e, tn, keys);
+            merged.deinit(gpa);
+            merged.* = .{};
+            var tagged: std.ArrayList(ClassKey) = .empty;
+            defer tagged.deinit(gpa);
+            for (keys.items) |k| try tagged.append(gpa, .{ .k = k, .class = 0 });
+            return t.ruleFourAgg(gpa, charge, v, tagged.items);
+        }
+
+        /// The arrival keys of class `tn` of a certificate at environment
+        /// `e`, appended to `keys`, each image as the caller names it (in a
+        /// read-off the class's cell, `hyp_image`): `certClassAgg`'s input.
+        pub fn classKeys(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, tn: NodeId, keys: *std.ArrayList(HypKey)) Error!void {
             const h = t.hyp.?;
             const cells = v.cells;
-            keys.clearRetainingCapacity();
+            const first = keys.items.len;
             const own = try v.shapes.cellsOf(gpa, charge.account, &cells.sets, tn);
             if (e == identity_env) {
                 // A class's own knot: each of its cells once, its repeats
@@ -2001,48 +2016,221 @@ pub fn Of(comptime Table: type) type {
                 while (it.next()) |c| if (cells.origin(.from(c.key)) != .mark)
                     try keys.append(gpa, .{ .key = .from(c.key), .image = .from(c.key), .approx = c.value == 1, .group = Ids.none_int });
             } else try h.keys(h.ctx, gpa, charge, e, own, keys);
-            merged.deinit(gpa);
-            merged.* = .{};
-            // In a read-off, an image is the class's cell (`ReadOff.image`).
-            if (t.hyp_image) |hi| for (keys.items) |*k| {
+            if (t.hyp_image) |hi| for (keys.items[first..]) |*k| {
                 k.image = try hi.image(hi.ctx, k.image);
             };
-            // (a′), before any maximum or `exclOf` (§2.9 rule 4, in every
-            // build): a group whose keys overlap is dropped, and its keys add
-            // as before. The test is `Cell.keysOverlap`'s trie over the
-            // group's key set, memoised by that set.
-            var group_keys: Ids.FixedDict(1) = .{};
+        }
+
+        /// An arrival key with the index of the class of the certificate it
+        /// comes from (§2.9 rule 4, *Across the classes of one certificate*).
+        pub const ClassKey = struct { k: HypKey, class: u32 };
+
+        /// §2.9 rule 4 over the keys of the classes of one certificate that
+        /// land in one class of the caller (#1485, #1559). A group is
+        /// `(call, i, L, node)` and names no class. (a′) tests the union of
+        /// its keys over the classes, as a set: a group whose keys overlap is
+        /// no group, and its keys add as before (`Cell.keysOverlap`'s trie,
+        /// memoised by the key set). A key's multiplicity at an image is the
+        /// number of landing classes that hold it, saturated at two: the
+        /// same key from one class again (two member cells of a union or a
+        /// choice reaching one image) is a set of alternatives and adds
+        /// nothing, and from a second class it is a repeat. An image takes
+        /// the maximum over the distinct keys of its group, and each further
+        /// distinct key there owes `exclOf`. Keys in no group add.
+        pub fn ruleFourAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, keys: []const ClassKey) Error!Agg {
+            var dropped = try t.ruleFourDropped(gpa, charge, v, keys);
+            defer dropped.deinit(gpa);
+            if (std.debug.runtime_safety) {
+                var classes: Ids.FixedDict(1) = .{};
+                defer classes.deinit(gpa);
+                for (keys) |x| _ = try classes.getOrPut(gpa, .{x.class});
+                const a = try t.ruleFourCount(gpa, charge, v, keys, &dropped);
+                if (classes.count() > 1) try t.assertClassesSum(gpa, v, keys, &dropped, a);
+                return a;
+            }
+            return t.ruleFourCount(gpa, charge, v, keys, &dropped);
+        }
+
+        /// (a′) over `keys` (§2.9 rule 4, in every build): the groups whose
+        /// keys overlap, as a set of group ids. Each group's keys are tested
+        /// as one set over all the classes, by `Cell.keysOverlap`'s trie,
+        /// memoised by that set.
+        pub fn ruleFourDropped(t: *Table, gpa: Allocator, charge: Charge, v: View, keys: []const ClassKey) Error!Ids.FixedDict(1) {
+            _ = t;
+            const cells = v.cells;
+            // (a′), before any maximum or `exclOf`, in every build. The
+            // mutation tests each class's keys alone (#1559, case (iii)).
+            const per_class = mutated("cert-rule4-trie-per-class");
+            var group_keys: Ids.FixedDict(2) = .{};
             defer group_keys.deinit(gpa);
-            for (keys.items) |k| if (k.group != Ids.none_int) {
-                const got = try group_keys.getOrPut(gpa, .{k.group});
+            for (keys) |x| if (x.k.group != Ids.none_int) {
+                const got = try group_keys.getOrPut(gpa, .{ x.k.group, if (per_class) x.class else 0 });
                 if (!got.found_existing) got.value_ptr.* = SetId.none.int();
-                got.value_ptr.* = (try cells.sets.insert(gpa, charge, .from(got.value_ptr.*), k.key.int(), 0)).int();
+                got.value_ptr.* = (try cells.sets.insert(gpa, charge, .from(got.value_ptr.*), x.k.key.int(), 0)).int();
             };
-            for (group_keys.values.items) |*s| s.* = @intFromBool(try cells.keysOverlap(gpa, charge, v.places, .from(s.*)));
-            for (keys.items) |*k| if (k.group != Ids.none_int and group_keys.get(.{k.group}).? == 1) {
-                k.group = Ids.none_int;
+            var dropped: Ids.FixedDict(1) = .{};
+            errdefer dropped.deinit(gpa);
+            for (group_keys.values.items, 0..) |s, i| if (try cells.keysOverlap(gpa, charge, v.places, .from(s))) {
+                _ = try dropped.getOrPut(gpa, .{group_keys.keys.items[2 * i]});
             };
+            return dropped;
+        }
+
+        /// `ruleFourAgg`'s multiset, the groups in `dropped` read as no group.
+        pub fn ruleFourCount(t: *Table, gpa: Allocator, charge: Charge, v: View, keys: []const ClassKey, dropped: *const Ids.FixedDict(1)) Error!Agg {
+            const cells = v.cells;
             var a: Agg = .{};
-            // `merged`: `(group, image)` met; `met`: `(group, image, key)`.
-            // A group's keys are pairwise alias-apart now, so another key of
-            // the group at an image is one more position of it, and owes
-            // `exclOf`; the same key again adds nothing.
-            var met: Ids.FixedDict(3) = .{};
-            defer met.deinit(gpa);
-            for (keys.items) |k| {
+            // `seen`: `(group, image, key, class)` met; `count`: the classes
+            // met per `(group, image, key)`; `at`: per `(group, image)`, bit 1
+            // met and bit 2 its repeat added. The mutation counts a key once
+            // whatever its classes (#1559, case (i)).
+            const no_sum = mutated("cert-rule4-no-key-sum");
+            var seen: Ids.FixedDict(4) = .{};
+            defer seen.deinit(gpa);
+            var count: Ids.FixedDict(3) = .{};
+            defer count.deinit(gpa);
+            var at: Ids.FixedDict(2) = .{};
+            defer at.deinit(gpa);
+            for (keys) |x| {
+                const k = x.k;
                 try charge.reserve(gpa, .inspection, 1);
-                if (k.group != Ids.none_int) {
-                    if ((try met.getOrPut(gpa, .{ k.group, k.image.int(), k.key.int() })).found_existing) continue;
-                    const got = try merged.getOrPut(gpa, .{ k.group, k.image.int() });
+                if (k.group != Ids.none_int and dropped.get(.{k.group}) == null) {
+                    if ((try seen.getOrPut(gpa, .{ k.group, k.image.int(), k.key.int(), if (no_sum) 0 else x.class })).found_existing) continue;
+                    const n = try count.getOrPut(gpa, .{ k.group, k.image.int(), k.key.int() });
+                    n.value_ptr.* = if (n.found_existing) n.value_ptr.* + 1 else 1;
+                    const got = try at.getOrPut(gpa, .{ k.group, k.image.int() });
                     if (got.found_existing) {
-                        a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.exclOf(gpa, charge, cells, k.image));
-                        continue;
-                    }
-                    got.value_ptr.* = 0;
+                        if (n.value_ptr.* == 1) {
+                            // Another distinct key of the group: one more
+                            // position of the image.
+                            a.pairs = try t.@"and"(gpa, charge, a.pairs, try t.exclOf(gpa, charge, cells, k.image));
+                            continue;
+                        }
+                        // One key in two classes: a repeat, read once.
+                        if (n.value_ptr.* > 2 or got.value_ptr.* & 2 != 0) continue;
+                        got.value_ptr.* |= 2;
+                    } else got.value_ptr.* = 1;
                 }
                 a = try t.aggAdd(gpa, charge, cells, v.places, a, k.image, k.approx, true);
             }
             return a;
+        }
+
+        /// A class of a certificate that lands at `at` of a caller's
+        /// multiset (a class of its fold, or a canonical path), with its own
+        /// condition there (`classCond`).
+        pub const CertItem = struct { at: u32, tn: NodeId, cond: CondId };
+
+        /// The classes of one certificate at environment `e`, read together
+        /// at each `at` they land at (§2.9 rule 4, *Across the classes of one
+        /// certificate*, #1559): their keys go through `ruleFourAgg` as one
+        /// multiset, and their conditions are conjoined there. Distinct `at`s
+        /// add, as distinct positions of one result. `items` is sorted here.
+        pub fn certClassesAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, items: []CertItem) Error!ClassAggs {
+            const Order = struct {
+                fn lt(_: void, x: CertItem, y: CertItem) bool {
+                    return x.at < y.at;
+                }
+            };
+            std.sort.block(CertItem, items, {}, Order.lt);
+            try charge.reserve(gpa, .inspection, @intCast(items.len));
+            var out: ClassAggs = .{};
+            var keys: std.ArrayList(HypKey) = .empty;
+            defer keys.deinit(gpa);
+            var tagged: std.ArrayList(ClassKey) = .empty;
+            defer tagged.deinit(gpa);
+            // The mutation reads class by class, as #1529 first built it.
+            const per_class = mutated("cert-rule4-per-class");
+            var i: usize = 0;
+            while (i < items.len) {
+                var j = i + 1;
+                if (!per_class) {
+                    while (j < items.len and items[j].at == items[i].at) j += 1;
+                }
+                tagged.clearRetainingCapacity();
+                var pairs: CondId = yes;
+                for (items[i..j], 0..) |it, c| {
+                    keys.clearRetainingCapacity();
+                    try t.classKeys(gpa, charge, v, e, it.tn, &keys);
+                    for (keys.items) |k| try tagged.append(gpa, .{ .k = k, .class = @intCast(c) });
+                    pairs = try t.@"and"(gpa, charge, pairs, it.cond);
+                }
+                var a = try t.ruleFourAgg(gpa, charge, v, tagged.items);
+                a.pairs = try t.@"and"(gpa, charge, a.pairs, pairs);
+                if (a.all_len > 0 or a.pairs != yes) out = try t.classesMerge(gpa, charge, v, out, .{ .map = try t.mapPut(gpa, charge, Ids.none_int, items[i].at, try t.agg(gpa, a)), .len = 1 }, true);
+                i = j;
+            }
+            return out;
+        }
+
+        /// R4′ as a check (C6, extended; §2.9 rule 4, *Across the classes of
+        /// one certificate*, #1559): the read `got` of the keys of several
+        /// classes, computed again from the sum certificate as one class by a
+        /// count that shares no map with `ruleFourAgg`. (a′) is `alias` on
+        /// every pair of a group's distinct keys over all the classes; a
+        /// key's multiplicity is the number of distinct classes that hold it
+        /// at an image; an image is added once, again when some key of its
+        /// group has two classes, and owes `exclOf` when the group has two
+        /// keys there. The two reads must be equal. `runtime_safety` only, on
+        /// an account of its own; quadratic in the keys.
+        pub fn assertClassesSum(t: *Table, gpa: Allocator, v: View, keys: []const ClassKey, dropped: *const Ids.FixedDict(1), got: Agg) Error!void {
+            t.classes_sum_checks += 1;
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const ch: Charge = .growth(&scratch);
+            const cells = v.cells;
+            const n = keys.len;
+            // A key's group, none for a group (a′) dropped: its keys are then
+            // keys in no group, each entry once.
+            const grp = try gpa.alloc(u32, n);
+            defer gpa.free(grp);
+            for (keys, 0..) |x, i| grp[i] = if (x.k.group != Ids.none_int and dropped.get(.{x.k.group}) == null) x.k.group else Ids.none_int;
+            // A group that passed is pairwise alias-apart over every class.
+            for (keys, 0..) |x, i| if (grp[i] != Ids.none_int) for (keys[i + 1 ..], i + 1..) |y, l| {
+                if (grp[l] == grp[i] and y.k.key != x.k.key and cells.alias(v.places, x.k.key, y.k.key) != .no)
+                    std.debug.panic("ownership v2: rule 4 merges two keys of one group that may alias (C6, #1559)", .{});
+            };
+            var a: Agg = .{};
+            for (keys, 0..) |x, i| {
+                if (grp[i] == Ids.none_int) {
+                    a = try t.aggAdd(gpa, ch, cells, v.places, a, x.k.image, x.k.approx, true);
+                    continue;
+                }
+                // The first entry of its `(group, image)` decides it.
+                var first = true;
+                for (keys[0..i], 0..) |y, l| if (grp[l] == grp[i] and y.k.image == x.k.image) {
+                    first = false;
+                };
+                if (!first) continue;
+                var keys_n: u32 = 0;
+                var twice: ?usize = null;
+                for (keys[i..], i..) |y, l| {
+                    if (grp[l] != grp[i] or y.k.image != x.k.image) continue;
+                    var earlier_key = false;
+                    var other_class = false;
+                    for (keys[i..l], i..) |z, m| if (grp[m] == grp[i] and z.k.image == x.k.image and z.k.key == y.k.key) {
+                        earlier_key = true;
+                        if (z.class != y.class) other_class = true;
+                    };
+                    if (!earlier_key) keys_n += 1;
+                    // The entry where some key first stands in a second
+                    // class: the image's repeat.
+                    if (other_class and twice == null) {
+                        var before = false;
+                        for (keys[i..l], i..) |z, m| if (grp[m] == grp[i] and z.k.image == x.k.image and z.k.key == y.k.key and z.class == y.class) {
+                            before = true;
+                        };
+                        if (!before) twice = l;
+                    }
+                }
+                a = try t.aggAdd(gpa, ch, cells, v.places, a, x.k.image, x.k.approx, true);
+                if (twice) |l| a = try t.aggAdd(gpa, ch, cells, v.places, a, x.k.image, keys[l].k.approx, true);
+                if (keys_n > 1) a.pairs = try t.@"and"(gpa, ch, a.pairs, try t.exclOf(gpa, ch, cells, x.k.image));
+            }
+            const want = try t.foldCond(gpa, ch, cells, v.places, a);
+            const have = try t.foldCond(gpa, ch, cells, v.places, got);
+            if (!try t.leq(gpa, ch, want, have) or !try t.leq(gpa, ch, have, want))
+                std.debug.panic("ownership v2: rule 4 across the classes of one certificate reads otherwise than its sum read as one class (R4′, C6, #1559)", .{});
         }
 
         /// κ̂(V, K) (§2.11 item 3 (d), #1485): the certificate of class `k`

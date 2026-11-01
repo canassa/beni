@@ -128,6 +128,9 @@ pub const Table = struct {
     /// state keys, since widen made them and no member snapshot holds them
     /// (§2.9 *Keyed where a reader looks*).
     widen_sides: bool = false,
+    /// How many times `assertClassesSum` ran (C6 extended, #1559), in safety
+    /// builds: a unit test asserts that its cases reach the check.
+    classes_sum_checks: u32 = 0,
     /// `withoutImpliedJoins`' answers by `(key, condition, position)`: all
     /// three immutable, so never stale.
     memo_implied: Ids.FixedDict(3) = .{},
@@ -464,6 +467,14 @@ pub const Table = struct {
     pub const hypEnv = reads.hypEnv;
     pub const hypAggs = reads.hypAggs;
     pub const certClassAgg = reads.certClassAgg;
+    pub const classKeys = reads.classKeys;
+    pub const ClassKey = reads.ClassKey;
+    pub const ruleFourAgg = reads.ruleFourAgg;
+    pub const ruleFourDropped = reads.ruleFourDropped;
+    pub const ruleFourCount = reads.ruleFourCount;
+    pub const CertItem = reads.CertItem;
+    pub const certClassesAggs = reads.certClassesAggs;
+    pub const assertClassesSum = reads.assertClassesSum;
     pub const certRead = reads.certRead;
     pub const ClassPos = reads.ClassPos;
     pub const classPos = reads.classPos;
