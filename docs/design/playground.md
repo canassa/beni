@@ -494,7 +494,7 @@ native threaded build. Items 1 and 4 prove it; items 2 and 3 test the page itsel
    JavaScript tabs show their output, Share after an edit makes a link that opens the edited
    source and platform, and a damaged link opens the first sample.
 4. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
-   every program of `tests/corpus/run/` and `tests/corpus/browser/direct/`, and on TodoMVC, and
+   the hand-picked programs of `tests/blackbox/playground_test.zig` (amended 2026-11-01, below), and
    compares every output file, both streams and the exit code with the native compiler's.
 
 *Amended 2026-10-15, issue #143* (§4.6). Item 2 also checks: the link's round trip with CSS, a
