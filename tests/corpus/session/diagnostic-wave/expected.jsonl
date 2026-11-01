@@ -1,0 +1,4 @@
+[{"code":"unit_discarded","severity":"warning","span":{"file":"Main.beni","start":{"line":3,"col":5},"end":{"line":3,"col":8}},"title":"UNIT DISCARDED","message":"This `_ =` throws away a `⊤`, which a statement line does already. Write the\nline without it."}]
+[{"code":"unit_discarded","severity":"warning","span":{"file":"Main.beni","start":{"line":3,"col":5},"end":{"line":3,"col":8}},"title":"UNIT DISCARDED","message":"This `_ =` throws away a `⊤`, which a statement line does already. Write the\nline without it."}]
+[{"code":"type_mismatch","severity":"error","span":{"file":"Main.beni","start":{"line":2,"col":9},"end":{"line":2,"col":10}},"title":"TYPE MISMATCH","message":"Something is off with the body of this definition:\n\nThe body is:\n\n    a → b\n\nBut the type annotation says it should be:\n\n    ⊤\n\nHint: beni does not implicitly convert `Int` to `Float`. Use `toFloat` to go\none way and `round`, `floor`, `ceiling` or `truncate` to go the other.\n"}]
+[]

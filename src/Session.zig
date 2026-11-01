@@ -691,6 +691,9 @@ pub const RunError = error{
 /// Enumerate `paths`, run `phases.per_file` over every file on
 /// `options.jobs` workers, merge, sort, and render diagnostics to `stderr`.
 pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr: *Io.Writer) RunError!Summary {
+    // Drop borrowed messages before releasing the previous worker wave.
+    session.diagnostics.clearRetainingCapacity();
+    for (session.workers) |*worker| worker.truncateDiagnostics(session.gpa, 0);
     const gpa = session.gpa;
 
     // 1. Enumerate — serial, sorted, numbered.

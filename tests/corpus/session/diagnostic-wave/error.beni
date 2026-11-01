@@ -1,0 +1,2 @@
+pub value : ⊤
+value = λx → x
