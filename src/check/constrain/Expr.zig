@@ -57,6 +57,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
         return g.equal(expected, try g.fresh(.err), inst, category);
     }
 
+    if (g.cx.realm_record) |r| r.expression(@backingInt(g.decl), inst.int(), g.ambient_site, expected);
     // For `dump --stage=ownership` only (`ownership-checker.md` §2.3).
     if (inst.int() < g.cx.inst_type.len) g.cx.inst_type[inst.int()] = expected.toOptional();
     const bir = g.cx.bir;
@@ -197,7 +198,10 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             defer parts.deinit(g.cx.scratch);
             try parts.append(g.cx.scratch, try g.equal(expected, try g.primitive(wk.string), inst, category));
             for (bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index)) |part| {
-                if (bir.instTag(part) == .chunk) continue;
+                if (bir.instTag(part) == .chunk) {
+                    if (g.cx.realm_record) |r| r.specialLiteral(@backingInt(g.decl), part.int(), g.ambient_site, .interpolation_chunk);
+                    continue;
+                }
                 const t = try g.freshFlex();
                 try parts.append(g.cx.scratch, try expr(g, part, t, .{ .tag = .interp_part }));
                 try parts.append(g.cx.scratch, try g.add(.interpolatable, part, @backingInt(t), 0, .{ .tag = .interp_part }));
@@ -460,6 +464,13 @@ fn objectFields(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
     const bir = g.cx.bir;
     if (JsIntrinsic.objectFault(bir, arg) != null) return null;
     const fields = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index);
+    if (g.cx.realm_record) |r| {
+        r.specialLiteral(@backingInt(g.decl), arg.int(), g.ambient_site, .object_list);
+        for (fields) |field| {
+            r.specialLiteral(@backingInt(g.decl), field.int(), g.ambient_site, .object_pair);
+            r.specialLiteral(@backingInt(g.decl), JsIntrinsic.objectKey(bir, field).?.int(), g.ambient_site, .object_key);
+        }
+    }
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
     for (fields, 0..) |field, i| {
@@ -475,8 +486,12 @@ fn objectFields(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
 fn inPlaceLiteral(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
     const bir = g.cx.bir;
     switch (bir.instTag(arg)) {
-        .string => return try g.true_(),
+        .string => {
+            if (g.cx.realm_record) |r| r.specialLiteral(@backingInt(g.decl), arg.int(), g.ambient_site, .literal_string);
+            return try g.true_();
+        },
         .list => {
+            if (g.cx.realm_record) |r| r.specialLiteral(@backingInt(g.decl), arg.int(), g.ambient_site, .literal_list);
             const elements = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index);
             const element = try g.freshFlex();
             var parts: std.ArrayList(Constraint) = .empty;
@@ -522,6 +537,7 @@ fn lambda(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Va
     g.ambient = arrow;
     g.ambient_site = @backingInt(inst);
     if (g.cx.effects) |e| try e.function(@backingInt(inst), arrow);
+    if (g.cx.realm_record) |r| r.function(@backingInt(g.decl), inst.int(), arrow);
     defer {
         g.ambient = outer;
         g.ambient_site = outer_site;

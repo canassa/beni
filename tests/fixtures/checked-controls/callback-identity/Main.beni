@@ -1,0 +1,6 @@
+import Task
+
+pub choose : sync (Int → Int), (Int → Int), Int → Int
+choose synchronous poly value =
+    Task.yieldNow ⊤
+    poly value

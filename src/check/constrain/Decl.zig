@@ -227,6 +227,7 @@ fn displayReading(g: *Generator, annotation: Bir.Inst.Index, rigids: []const Typ
 fn declBody(g: *Generator, d: Bir.Decl, target: Var) Error!Constraint {
     const bir = g.cx.bir;
     const body = d.body.unwrap() orelse return g.true_();
+    if (g.cx.realm_record) |r| r.declaration(@backingInt(g.decl), target);
     const params = bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
     const annotated = d.annotation != .none;
     const category: Category = .{ .tag = if (annotated) .annotation else .general };
@@ -438,6 +439,7 @@ fn defineBinding(g: *Generator, m: Bir.Inst.Index, check: Var) Error!Constraint 
             g.ambient = arrow;
             g.ambient_site = @backingInt(m);
             if (g.cx.effects) |e| try e.function(@backingInt(m), arrow);
+            if (g.cx.realm_record) |r| r.function(@backingInt(g.decl), m.int(), arrow);
             defer {
                 g.ambient = outer;
                 g.ambient_site = outer_site;

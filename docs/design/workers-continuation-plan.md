@@ -295,3 +295,10 @@ beside the original dependency diagnostic. Clear prior worker evidence before
 fallible module setup and on escaping allocation errors. Quiet, poisoned, locally
 erroneous and dependency-tainted modules retain absent evidence. Restoring valid
 source may reuse the original clean cache entry through the ordinary rules.
+
+## 8. Checked body implementation boundary
+
+The next bounded producer/ordinary-checker/inspector milestone is specified in
+[workers-checked-control-bodies.md](workers-checked-control-bodies.md). It adds
+ordered actual source-body/capture provenance and ordinary generated body checks;
+its receipt is neither full Task migration nor sentinel/runtime certification.

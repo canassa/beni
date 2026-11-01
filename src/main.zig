@@ -222,6 +222,7 @@ fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Write
     // facts of the module that declares it, so `--ownership-flips` checks
     // core from source.
     options.no_pack = dump.stage == .ownership and dump.ownership_flips != null;
+    options.native_realms = dump.stage == .entries;
     // The chain is read before any source, as `check` and `build` read it
     // (platform.zig): a `--platform` that names nothing is the same exit 2
     // and the same line.

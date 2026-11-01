@@ -263,3 +263,10 @@ allocation policy remain explicit runtime costs. No performance budget is
 waived, and this does not claim that typed callback storage alone proves realms.
 The typed primitive emit golden independently pins the direct array operations
 and early break, with no type box, proxy or registration table.
+
+## Checked generated body prerequisite
+
+[workers-checked-control-bodies.md](workers-checked-control-bodies.md) specifies
+the next actual source-body producer/ordinary-checker milestone. Typed signatures
+or current Ref wrappers alone do not certify callback storage, ownership or the
+sentinel ABI; production migration remains gated by section 3 above.

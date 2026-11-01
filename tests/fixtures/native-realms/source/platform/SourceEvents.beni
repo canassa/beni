@@ -1,0 +1,26 @@
+import Helper as H
+import Js
+
+
+pub initial : ⊤
+initial = H.work ⊤
+
+
+pub deferred : ⊤ → ⊤
+deferred = λ⊤ → H.work ⊤
+
+
+pub forward : ⊤ → ⊤
+forward = H.work
+
+
+pub literal = Js.global "Math"
+
+
+pub object = Js.object [ ( "key", "value" ) ]
+
+
+word = "world"
+
+
+pub text = "hello ${word}"

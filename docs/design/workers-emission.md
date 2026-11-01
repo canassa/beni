@@ -152,3 +152,10 @@ nominal identity under app-module shadowing, and the same check and build
 diagnostics. Existing runtime execution tests and byte comparisons cover both
 output modes. This establishes a used build-wide metadata boundary before
 independent projections and finite entry discovery are added.
+
+## Selected-entry mutable-state boundary
+
+The next extraction is specified in [workers-selected-emission.md](workers-selected-emission.md).
+It freezes the existing selected top entry's build inputs and separates its
+mutable projection, with unchanged root policy and development/release bytes.
+It does not activate finite-discovery results or multiple executable entries.

@@ -1,0 +1,4 @@
+import Start
+
+main : Start.Program
+main = Start.make "generic runtime"

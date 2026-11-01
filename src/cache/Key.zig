@@ -595,13 +595,17 @@ fn ownTermsOf(
         });
     } else markup_text;
 
+    const authority_options = if (store.nativeOrigin(file) != .none)
+        try std.fmt.allocPrint(scratch, "{s};{s}", .{ option_text, @import("../native/Source.zig").provenance })
+    else
+        option_text;
     var bytes: std.ArrayList(u8) = .empty;
     errdefer bytes.deinit(gpa);
     try writeOwn(gpa, &bytes, .{
         .build_id = options.build_id,
         .package = module.package,
         .name = interner.slice(module.name),
-        .options = option_text,
+        .options = authority_options,
         .source_hash = iface_bytes.hash(store.bytes(file)),
         .sibling_hash = try siblingHash(scratch, store, artifacts, options, file),
     });

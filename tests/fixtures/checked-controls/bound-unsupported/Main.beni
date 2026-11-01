@@ -1,0 +1,11 @@
+import Task
+
+pub poly : (Int, Int → Int), Task.Fiber Int, Int → Int
+poly next fiber fallback =
+    value = Task.join fiber
+    next value fallback
+
+pub generic : sync (a → Int), Task.Fiber a → Int
+generic next fiber =
+    value = Task.join fiber
+    next value

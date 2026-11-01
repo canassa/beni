@@ -340,6 +340,7 @@ pub const Generator = struct {
     /// made by instruction `site`.
     pub fn called(g: *Generator, callee: Var, site: Bir.Inst.Index) Error!void {
         const ambient = g.ambient orelse return;
+        if (g.cx.realm_record) |r| r.call(@backingInt(g.decl), site.int(), g.ambient_site);
         const effects = g.cx.effects orelse return;
         try effects.call(callee, ambient, .{ .call = @backingInt(site), .ambient = g.ambient_site });
     }

@@ -37,6 +37,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const fs_read = @import("fs_read.zig");
+const NativeSource = @import("native/Source.zig");
 
 const SourceStore = @This();
 
@@ -87,6 +88,8 @@ pub const File = struct {
     /// The bytes are `@embedFile`d into the binary and must not be read or
     /// freed. Only ever true for `core` files.
     embedded: bool,
+    /// Follows the actual byte supplier, never the strongest package.
+    native_origin: NativeSource.Origin = .none,
     /// The file was enumerated from an argument path — some pending entry
     /// for it came in as package `app` — whatever package it ended up in.
     /// A core module the user named (`beni check core`) is a root of the
@@ -112,6 +115,7 @@ const Pending = struct {
     layer: u8,
     /// Embedded bytes, for a `core` file compiled into the binary.
     source: ?[:0]const u8,
+    native_origin: NativeSource.Origin = .none,
     /// `File.named`, decided by `finish`'s collapse.
     named: bool = false,
 };
@@ -174,6 +178,11 @@ pub fn packages(store: *const SourceStore) []const Package {
 /// under the directory the user pointed at.
 pub fn isEmbedded(store: *const SourceStore, index: Index) bool {
     return store.files.items(.embedded)[index.int()];
+}
+
+/// A supplier tag only; native binding validation is still required.
+pub fn nativeOrigin(store: *const SourceStore, index: Index) NativeSource.Origin {
+    return store.files.items(.native_origin)[index.int()];
 }
 
 /// Whether the file came from an argument path (`File.named`).
@@ -324,6 +333,13 @@ pub fn addEmbedded(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start
     try store.addPendingSource(gpa, p, rel_start, pkg, source);
 }
 
+/// Compiler generated supplier. This does not grant callable/type authority;
+/// the common binding installer must validate the canonical checked artifact.
+pub fn addGenerated(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32, pkg: Package, source: [:0]const u8, origin: NativeSource.Origin) Allocator.Error!void {
+    try store.addPendingSource(gpa, p, rel_start, pkg, source);
+    store.pending.items[store.pending.items.len - 1].native_origin = origin;
+}
+
 fn addPendingSource(store: *SourceStore, gpa: Allocator, p: []const u8, rel_start: ?u32, pkg: Package, source: ?[:0]const u8) Allocator.Error!void {
     const owned = try gpa.dupe(u8, p);
     errdefer gpa.free(owned);
@@ -453,7 +469,10 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
                 p.rel_start = dup.rel_start;
                 p.layer = dup.layer;
             }
-            if (dup.source == null) p.source = null;
+            if (dup.source == null) {
+                p.source = null;
+                p.native_origin = .none;
+            }
             gpa.free(dup.path);
             dup.path = &.{};
         }
@@ -480,6 +499,7 @@ pub fn finish(store: *SourceStore, gpa: Allocator) Allocator.Error!void {
             .module_path_valid = derived == .valid,
             .package = p.package,
             .embedded = p.source != null,
+            .native_origin = if (p.source != null) p.native_origin else .none,
             .named = p.named,
             .bytes = p.source orelse empty_source,
             .line_starts = &.{},
@@ -731,5 +751,58 @@ test "a source that grows or shrinks while it is read is read whole, never a tra
         try store.read(testing.allocator, io, @fromBackingInt(@intCast(0)));
         try testing.expectEqualSlices(u8, &source, store.bytes(@fromBackingInt(@intCast(0))));
         try testing.expectEqual(@as(u8, 0), store.bytes(@fromBackingInt(@intCast(0)))[source.len]);
+    }
+}
+
+test "native supplier origin follows physical winner in either enumeration order" {
+    const gpa = std.testing.allocator;
+    for ([_]bool{ false, true }) |physical_first| {
+        var store: SourceStore = .{};
+        defer store.deinit(gpa);
+        if (physical_first) try store.addPending(gpa, "core/Browser/Host/TextEncoder.beni", 5, .app);
+        try store.addGenerated(gpa, "core/Browser/Host/TextEncoder.beni", 5, .core, "pub foreign type TextEncoder\n", .text_encoder_v1);
+        if (!physical_first) try store.addPending(gpa, "core/Browser/Host/TextEncoder.beni", 5, .app);
+        try store.finish(gpa);
+        const file = store.find("core/Browser/Host/TextEncoder.beni").?;
+        try std.testing.expectEqual(Package.core, store.package(file));
+        try std.testing.expect(!store.isEmbedded(file));
+        try std.testing.expectEqual(NativeSource.Origin.none, store.nativeOrigin(file));
+        try std.testing.expectEqualStrings(empty_source, store.bytes(file));
+    }
+}
+
+test "native supplier origin is not granted by ordinary embedded identical bytes" {
+    const gpa = std.testing.allocator;
+    var store: SourceStore = .{};
+    defer store.deinit(gpa);
+    const source = "pub foreign type TextEncoder\n";
+    try store.addEmbedded(gpa, "core/Ordinary.beni", 5, .core, source);
+    try store.addGenerated(gpa, "core/Generated.beni", 5, .core, source, .text_encoder_v1);
+    try store.finish(gpa);
+    try std.testing.expectEqual(NativeSource.Origin.none, store.nativeOrigin(store.find("core/Ordinary.beni").?));
+    try std.testing.expectEqual(NativeSource.Origin.text_encoder_v1, store.nativeOrigin(store.find("core/Generated.beni").?));
+}
+
+test "native supplier origin follows selected embedded bytes not strongest package" {
+    const gpa = std.testing.allocator;
+    for ([_]bool{ false, true }) |ordinary_first| {
+        for ([_]bool{ false, true }) |ordinary_is_app| {
+            var store: SourceStore = .{};
+            defer store.deinit(gpa);
+            const source = "pub foreign type TextEncoder\n";
+            const p = "core/Browser/Host/TextEncoder.beni";
+            const ordinary_package: Package = if (ordinary_is_app) .app else .core;
+            const generated_package: Package = if (ordinary_is_app) .core else .app;
+            if (ordinary_first) try store.addEmbedded(gpa, p, 5, ordinary_package, source);
+            try store.addGenerated(gpa, p, 5, generated_package, source, .text_encoder_v1);
+            if (!ordinary_first) try store.addEmbedded(gpa, p, 5, ordinary_package, source);
+            try store.finish(gpa);
+            const file = store.find(p).?;
+            try std.testing.expectEqual(Package.core, store.package(file));
+            try std.testing.expect(store.isEmbedded(file));
+            try std.testing.expectEqualStrings(source, store.bytes(file));
+            // finish retains the first embedded supplier (APP precedes core).
+            try std.testing.expectEqual(if (ordinary_is_app) NativeSource.Origin.none else NativeSource.Origin.text_encoder_v1, store.nativeOrigin(file));
+        }
     }
 }

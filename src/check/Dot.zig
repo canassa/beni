@@ -114,7 +114,13 @@ fn arrow(s: *Solve, receiver: Var, result: Var, effect_edge: u32) Error!Var {
     const params = try s.store().addVars(&.{receiver});
     const v = try s.fresh(.{ .structure = .{ .func = .{ .params = params, .result = result } } });
     if (effect_edge != Effects.none) {
-        if (s.cx.effects) |effects| effects.edges.items[effect_edge].a = v;
+        if (s.cx.effects) |effects| {
+            effects.edges.items[effect_edge].a = v;
+            if (s.cx.realm_record) |r| {
+                const site = effects.sites.items[effect_edge];
+                r.activatedCall(site.call, site.ambient);
+            }
+        }
     }
     return v;
 }

@@ -117,6 +117,8 @@ resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
 /// included the check step.
 checked: Check = .empty,
+/// Rebuilt from actual supplier plus ordinary checked artifacts, never cache claims.
+native_bindings: @import("native/Bindings.zig").Registry = .{},
 /// Resolved entry facts refer only to the current checked store.
 entry_plan: EntryPlan = .{},
 /// Diagnostic-only source discovery; reset before replacing its checked store.
@@ -228,6 +230,9 @@ pub fn freeOwnershipBlocks(session: *Session) void {
 }
 
 pub const Options = struct {
+    /// Request source-owned native realm evidence; child Sessions default off.
+    native_realms: bool = false,
+    checked_controls: bool = false,
     /// Borrowed qualified names for explicit entryKinds callers; live through run.
     entry_root_requests: []const @import("entry/Selection.zig").Request = &.{},
     /// Worker count, at least 1. `1` runs on the calling thread.
@@ -622,9 +627,10 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     if (options.ownership_v2) session.options.cache = null;
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
-    if (options.ownership) if (options.chain) |c| {
-        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or c.inPlace();
-    };
+    if (options.ownership) {
+        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or
+            (if (options.chain) |c| c.inPlace() else false);
+    }
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
@@ -685,7 +691,7 @@ pub const RunError = error{
     /// An argument path could not be enumerated, or a file could not be
     /// read. `io_failure` says which.
     InputPath,
-} || Allocator.Error || std.Thread.SpawnError || Io.Writer.Error;
+} || Check.Error || std.Thread.SpawnError || Io.Writer.Error;
 
 /// Enumerate `paths`, run `phases.per_file` over every file on
 /// `options.jobs` workers, merge, sort, and render diagnostics to `stderr`.
@@ -693,6 +699,7 @@ pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr:
     // Even an early input failure must not leave facts from an older store.
     session.entry_graph.reset();
     session.entry_plan.reset();
+    session.native_bindings = .{};
     const gpa = session.gpa;
 
     // 1. Enumerate — serial, sorted, numbered.
@@ -1154,6 +1161,10 @@ fn enumerateCore(session: *Session) RunError!void {
         };
         return;
     }
+    // A single indexed compiler-owned candidate; normal lazy import waves decide
+    // whether its ordinary module is checked. No catalogue-wide check/load.
+    const native_source = @import("native/Source.zig");
+    try session.store.addGenerated(gpa, "core/Browser/Host/TextEncoder.beni", 5, .core, native_source.source, .text_encoder_v1);
     var buffer: [std.fs.max_path_bytes]u8 = undefined;
     for (core_package.files) |f| {
         const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ core_package.dir, f.rel }) catch return error.OutOfMemory;
@@ -2282,6 +2293,9 @@ fn checkSerial(session: *Session) RunError!void {
     // `solve` and `exhaustive` nested inside each.
     const slots_before = stamped.slots_made.load(.monotonic);
     session.checked = try runCheckOnBigStack(session, quiet, cached, &cutoff);
+    // Both cached and fresh ordinary results must attest the exact generated
+    // source/type/callable. A failed build cannot retain the preceding registry.
+    try session.native_bindings.install(&session.store, &session.graph, &session.checked.types, &session.artifacts, session.resolution.interfaces, &session.interner);
     session.profile.addCounter(.scratch_slots, stamped.slots_made.load(.monotonic) - slots_before);
     // Move installed facts before the cache entries are freed. Fresh modules'
     // slots were filled on their checking worker, without rewriting BIR.
@@ -2598,10 +2612,18 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     const ownership2: Enforce2.Context = .{ .session = session, .ins = &ins2 };
     const chain_requests = try @import("entry/Selection.zig").fromChain(session.gpa, session.options.chain);
     defer session.gpa.free(chain_requests);
+    const control_required_modules: []bool = if (session.options.checked_controls) try session.gpa.alloc(bool, session.graph.count()) else &.{};
+    defer if (control_required_modules.len != 0) session.gpa.free(control_required_modules);
+    for (control_required_modules, 0..) |*required, mi| required.* = session.graph.modulePackage(@fromBackingInt(@intCast(mi))) == .app;
+    const realm_required_modules: []bool = if (session.options.native_realms) try session.gpa.alloc(bool, session.graph.count()) else &.{};
+    defer if (session.options.native_realms) session.gpa.free(realm_required_modules);
+    @memset(realm_required_modules, true);
     const entry_requests = try std.mem.concat(session.gpa, @import("entry/Selection.zig").Request, &.{ chain_requests, session.options.entry_root_requests });
     defer session.gpa.free(entry_requests);
     const Runner = struct {
         entry_requests: []const @import("entry/Selection.zig").Request,
+        control_required_modules: []const bool,
+        realm_required_modules: []const bool,
         session: *Session,
         quiet: []const bool,
         cached: []?CacheEntry.Loaded,
@@ -2622,6 +2644,9 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 &r.session.interner,
                 .{
                     .entry_root_requests = r.entry_requests,
+                    .control_required_modules = r.control_required_modules,
+                    .realm_required_modules = r.realm_required_modules,
+                    .native_sources = &r.session.store,
                     .ownership = if (r.session.options.ownership_v2) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
@@ -2641,7 +2666,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .entry_requests = entry_requests, .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    var runner: Runner = .{ .realm_required_modules = realm_required_modules, .control_required_modules = control_required_modules, .entry_requests = entry_requests, .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {
@@ -3430,4 +3455,77 @@ test "mergeInterners numbers symbols in file order, whichever worker lexed the f
             if (local < InternPool.WellKnown.count) try testing.expectEqual(@as(u32, @intCast(local)), @backingInt(g));
         }
     }
+}
+
+fn checkedNativeCandidate(ordinary_override: bool) !void {
+    const gpa = std.testing.allocator;
+    const native = @import("native/Source.zig");
+    const Bindings = @import("native/Bindings.zig");
+    var session = try Session.init(gpa, std.testing.io, .{ .core_package = true, .jobs = 1, .native_realms = !ordinary_override });
+    defer session.deinit();
+    try session.store.addEmbedded(gpa, "Main.beni", 0, .app, "import Browser.Host.TextEncoder as TextEncoder\n\npub make : ⊤ → TextEncoder.TextEncoder\nmake = TextEncoder.new\n");
+    // Another actual ordinary foreign nominal, equal kind/arity but distinct owner.
+    try session.store.addEmbedded(gpa, "core/Other.beni", 5, .core, "pub foreign type TextEncoder\n");
+    try session.store.addEmbedded(gpa, "OtherUse.beni", 0, .app, "import Other\n\npub identity : Other.TextEncoder → Other.TextEncoder\nidentity value = value\n");
+    if (ordinary_override) try session.store.addEmbedded(gpa, "core/Browser/Host/TextEncoder.beni", 5, .app, native.source);
+    var diagnostics: Io.Writer.Allocating = .init(gpa);
+    defer diagnostics.deinit();
+    const summary = try session.run(&.{}, check_phases, &diagnostics.writer);
+    try std.testing.expectEqual(@as(u32, 0), summary.errors);
+    try std.testing.expectEqualStrings("", diagnostics.written());
+    if (ordinary_override) {
+        try std.testing.expectEqualDeep(Bindings.Registry{}, session.native_bindings);
+        return;
+    }
+    const installed = session.native_bindings.text_encoder orelse return error.MissingNativeAttestation;
+    try std.testing.expectEqualDeep(native.candidate, installed.candidate);
+    try std.testing.expectEqual(native.Status.awaiting_realm, installed.checked.status);
+    const iface = &session.resolution.interfaces[installed.module.int()];
+    const scheme = iface.schemes[@backingInt(installed.checked.scheme)];
+    const block = iface.effectBlock(scheme).?;
+    try std.testing.expectEqualDeep(Interface.EffectBlock.Class{ .rung = 1, .sync = false, .deps = &.{} }, block.class(0));
+    const file = session.graph.moduleFile(installed.module);
+    const bir = session.artifacts.bir(file);
+    try std.testing.expect(Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+    // Same ordinary source supplier, structurally valid effect-rung corruption:
+    // a checksum-only cache guard would miss this independent contract mismatch.
+    const word = @constCast(iface.extra)[scheme.effects + 1];
+    @constCast(iface.extra)[scheme.effects + 1] = 2;
+    try std.testing.expect(!Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+    @constCast(iface.extra)[scheme.effects + 1] = word;
+    // A structurally valid class with the wrong root sync contract is denied.
+    @constCast(iface.extra)[scheme.effects + 1] = word | Interface.EffectBlock.sync_bit;
+    try std.testing.expect(!Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+    @constCast(iface.extra)[scheme.effects + 1] = word;
+    // Nominal identity is the declaring owner, not foreign kind or matching name.
+    const function = iface.term(scheme.body);
+    const result = iface.term(@fromBackingInt(@intCast(function.rhs)));
+    const ref = iface.type_refs[result.lhs];
+    const other = session.interner.find("Other") orelse return error.MissingOtherOwner;
+    const name = iface.symbol(ref.name);
+    try std.testing.expect(session.checked.types.find(&session.graph, .core, other, name) != .none);
+    const original_module = iface.symbol(ref.module);
+    @constCast(iface.symbols)[@backingInt(ref.module)] = other;
+    try std.testing.expect(!Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+    @constCast(iface.symbols)[@backingInt(ref.module)] = original_module;
+    // Move the effect site off the callable root without changing any class.
+    const sites = block.sites();
+    const root_at = sites.at + 1;
+    const root = @constCast(iface.extra)[scheme.effects + root_at];
+    @constCast(iface.extra)[scheme.effects + root_at] = 1;
+    try std.testing.expect(!Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+    @constCast(iface.extra)[scheme.effects + root_at] = root;
+    const kind = @constCast(iface.types)[0].kind;
+    @constCast(iface.types)[0].kind = .adt;
+    try std.testing.expect(!Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+    @constCast(iface.types)[0].kind = kind;
+    try std.testing.expect(Bindings.acceptsCached(&session.store, &session.graph, installed.module, bir, iface, &session.interner));
+}
+
+test "native candidate attests actual ordinary nominal and impure class before install" {
+    try checkedNativeCandidate(false);
+}
+
+test "native candidate ordinary identical embedded supplier has no attestation" {
+    try checkedNativeCandidate(true);
 }

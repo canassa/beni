@@ -294,6 +294,8 @@ pub const Cache = struct {
     type_keys: bool = false,
     /// Hidden cached-artifact inspector, check only; no default output change.
     continuations: bool = false,
+    checked_controls: bool = false,
+    checked_controls_tamper: ?[]const u8 = null,
     /// Hidden compact cached-artifact inspector, check only.
     entries: bool = false,
 };
@@ -876,6 +878,20 @@ const CheckSpecific = struct {
         if (std.mem.eql(u8, name, "--entries")) {
             if (value != null) return noValue(name);
             self.cache.entries = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--checked-controls")) {
+            if (value != null) return noValue(name);
+            self.cache.checked_controls = true;
+            self.consumed = true;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "--checked-controls-tamper")) {
+            const v = value orelse return needsValue(name, "wrong-slot|same-type-operand");
+            if (!std.mem.eql(u8, v, "wrong-input-slot") and !std.mem.eql(u8, v, "direct-input") and !std.mem.eql(u8, v, "parked-input") and !std.mem.eql(u8, v, "wrong-slot") and !std.mem.eql(u8, v, "same-type-operand") and !std.mem.eql(u8, v, "scaffold-return-slot") and !std.mem.eql(u8, v, "drop-region") and !std.mem.eql(u8, v, "duplicate-region") and !std.mem.eql(u8, v, "suspending-job") and !std.mem.eql(u8, v, "ownership-conflict")) return needsValue(name, "wrong-input-slot|direct-input|parked-input|wrong-slot|same-type-operand|scaffold-return-slot|drop-region|duplicate-region|suspending-job|ownership-conflict");
+            self.cache.checked_controls = true;
+            self.cache.checked_controls_tamper = v;
             self.consumed = true;
             return null;
         }

@@ -1815,9 +1815,37 @@ test "ownership entry: Page.sandbox reports its row without the enforcement flag
 test "ownership everywhere: tuple DAG keeps every path without repeated comparisons" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const checked = try w.runWith(&.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
+    // The positive DAG stops at s. The unchanged t fixture below already
+    // exceeded the same enforced limit on the accepted platform route.
+    try w.copyTree("tests/fixtures/ownership-annotation-dag", "_excluded.");
+    const checked = try w.run(&.{ "check", "--ownership-everywhere", "--no-cache", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqualStrings("", checked.stdout);
+    try testing.expectEqualStrings("", checked.stderr);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}
+
+test "ownership everywhere: original tuple DAG retains its logical limit with and without a platform" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // #1509: chain-null used to skip enforcement. Preserve the actual large
+    // fixture and its logical cap instead of treating that false pass as a
+    // promise to discard guard paths or enlarge the summary allowance.
+    for ([_][]const []const u8{
+        &.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" },
+        &.{ "check", "--ownership-everywhere", "--no-cache", "--platform=node", "tests/corpus/check/good/OwnershipAnnotationDag.beni" },
+    }) |args| {
+        const checked = try w.runWith(args, .{ .cwd = .inherit });
+        try testing.expectEqual(@as(u8, 1), checked.exit_code);
+        try testing.expectEqualStrings("", checked.stdout);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+            .code = .ownership_limit,
+            .severity = .@"error",
+            .span = .{ .file = "tests/corpus/check/good/OwnershipAnnotationDag.beni", .start = .{ .line = 16, .col = 1 }, .end = .{ .line = 16, .col = 2 } },
+            .title = "OWNERSHIP CHECK TOO LARGE",
+            .message = "`OwnershipAnnotationDag.t`'s ownership summary needs 1276786 entries, more than\nthe checker's limit of 262144 (ownership-checker.md §16.7).\n\nThis is a limit of the compiler, not sharing in your code: the checker\ncannot tell which lists `t` changes or keeps, so it refuses the build\nrather than guess.",
+        }}), checked.diagnostics);
+    }
 }
 
 fn expectRendererIndependentEntry(platform: []const u8, path: []const u8) !void {

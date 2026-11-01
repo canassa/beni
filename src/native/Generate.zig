@@ -2,6 +2,7 @@
 //! operation until its exact error adapter and lowering recipe are checked.
 const std = @import("std");
 const Idl = @import("Idl.zig");
+pub const CallableSource = @import("Source.zig");
 const Allocator = std.mem.Allocator;
 pub const source = .{
     .package = "@webref/idl",
@@ -35,6 +36,8 @@ pub const NativeType = struct {
     exposed: []const []const u8,
     globals: []const []const u8,
     parent: ?u32 = null,
+    /// Only pinned generation may publish a candidate ordinary callable.
+    callable: CallableSource.Origin = .none,
 };
 pub const Upcast = struct { from: u32, to: u32, lowering: enum { identity } = .identity };
 pub const Include = struct { target: u32, mixin_declaration: u32 };
@@ -50,6 +53,8 @@ pub const Catalogue = struct {
     native_types: []NativeType,
     upcasts: []const Upcast,
     includes: []const Include,
+    /// Candidates are not lowerable before ordinary validation and realm proof.
+    callable_candidates: []const CallableSource.Row = &.{},
 };
 pub const Code = enum { source_mismatch, invalid_archive, invalid_idl, duplicate_identity, unresolved_reference, incompatible_partial, inheritance_cycle, unsupported_beni_name };
 pub const Diagnostic = struct { code: Code, file: ?[]const u8 = null, offset: u32 = 0, detail: []const u8 = "" };
@@ -67,7 +72,25 @@ pub fn generate(arena: Allocator, archive: []const u8) Allocator.Error!Result {
         error.OutOfMemory => return error.OutOfMemory,
         error.InvalidInput => return .{ .failure = .{ .code = .invalid_archive } },
     };
-    return index(arena, files);
+    var result = try index(arena, files);
+    if (result == .failure) return result;
+    const c = &result.success;
+    for (c.native_types) |*native| {
+        if (!std.mem.eql(u8, native.idl_name, "TextEncoder")) continue;
+        const decl = c.declarations[native.declaration];
+        const file = c.files[decl.file];
+        if (!std.mem.eql(u8, file.path, "encoding.idl")) return .{ .failure = .{ .code = .unresolved_reference, .detail = "TextEncoder source identity" } };
+        for (c.members[decl.members_start..decl.members_end]) |member| {
+            if (!std.mem.eql(u8, member.source_span.text(file.source), "constructor();")) continue;
+            const rows = try arena.alloc(CallableSource.Row, 1);
+            rows[0] = CallableSource.row(decl.file, member.source_span.start, member.source_span.end);
+            c.callable_candidates = rows;
+            native.callable = .text_encoder_v1;
+            return result;
+        }
+        return .{ .failure = .{ .code = .unresolved_reference, .detail = "TextEncoder constructor signature" } };
+    }
+    return .{ .failure = .{ .code = .unresolved_reference, .detail = "TextEncoder identity" } };
 }
 
 fn readArchive(arena: Allocator, archive: []const u8) Error![]const File {
@@ -238,6 +261,7 @@ fn beniName(name: []const u8) ?[]const u8 {
 }
 
 pub fn moduleSource(arena: Allocator, native: NativeType) Allocator.Error![]const u8 {
+    if (native.callable == .text_encoder_v1) return arena.dupe(u8, CallableSource.source);
     return std.fmt.allocPrint(arena, "-- Generated from @webref/idl 3.86.0. Native identity; no public acquisition yet.\npub foreign type {s}\n", .{native.name});
 }
 

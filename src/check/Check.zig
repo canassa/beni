@@ -45,7 +45,7 @@ const Check = @This();
 pub const Exhaustive = @import("Exhaustive.zig");
 pub const Var = TypeStore.Var;
 pub const Symbol = InternPool.Symbol;
-pub const Error = Allocator.Error;
+pub const Error = Allocator.Error || error{ InvalidControlSelection, InvalidRealmSelection, InvalidNativeBinding };
 
 /// What `--self-profile` reports, and what the incrementality tests can
 /// assert did NOT move when only a body changed (checker.md §9).
@@ -168,6 +168,11 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
 }
 
 pub const Options = struct {
+    /// Borrowed until Check.run returns; empty disables capture, else Graph.count.
+    realm_required_modules: []const bool = &.{},
+    /// Current actual source suppliers; never reconstructed from cache claims.
+    native_sources: ?*const @import("../SourceStore.zig") = null,
+    control_required_modules: []const bool = &.{},
     entry_root_requests: []const @import("../entry/Selection.zig").Request = &.{},
     /// Where the per-module `constrain` and `solve` events go (checker.md
     /// §9). The two halves are timed separately because the
@@ -335,6 +340,8 @@ pub fn run(
     interner: *const InternPool.Global,
     options: Options,
 ) Error!Check {
+    if (options.realm_required_modules.len != 0 and options.realm_required_modules.len != graph.count()) return error.InvalidRealmSelection;
+    if (options.control_required_modules.len != 0 and options.control_required_modules.len != graph.count()) return error.InvalidControlSelection;
     var check: Check = .empty;
     errdefer check.deinit(gpa);
     // Inside a profile event: on a project of long alias chains this step

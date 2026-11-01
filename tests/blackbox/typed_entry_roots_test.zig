@@ -18,6 +18,26 @@ fn typed(text: []const u8) ![]const u8 {
     const end = std.mem.indexOfPos(u8, text, start, "nominal-module ") orelse text.len;
     return text[start..end];
 }
+const source_header = "native-realm-source schema=1 proof=source-records realmProved=false entryComplete=false\n";
+/// The old evidence remains exact. A known, uniquely delimited new source
+/// section is checked separately; an unknown suffix is never silently dropped.
+fn beforeSource(text: []const u8) ![]const u8 {
+    const at = std.mem.indexOf(u8, text, source_header) orelse return error.MissingRealmSource;
+    try testing.expect(at == 0 or text[at - 1] == '\n');
+    try testing.expect(std.mem.indexOfPos(u8, text, at + source_header.len, "native-realm-source ") == null);
+    try testing.expect(std.mem.endsWith(u8, text, "\n"));
+    var modules: usize = 0;
+    var lines = std.mem.splitScalar(u8, text[at + source_header.len ..], '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        const module = std.mem.startsWith(u8, line, "  realm-module ");
+        try testing.expect(module or std.mem.startsWith(u8, line, "  realm-scope ") or std.mem.startsWith(u8, line, "  realm-literal ") or std.mem.startsWith(u8, line, "  realm-call ") or std.mem.startsWith(u8, line, "  realm-reference "));
+        modules += @intFromBool(module);
+    }
+    try testing.expect(modules > 0);
+    return text[0..at];
+}
+
 fn moduleChecks(w: *World, trace: []const u8) !u64 {
     const Event = struct { args: struct { modules_checked: ?u64 = null } = .{} };
     const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read(trace), .{ .ignore_unknown_fields = true });
@@ -128,9 +148,9 @@ test "typed entry roots reject stale malformed absent and wrong-owner private ca
     const key = try entryFor(&w);
     const good = try w.read(key);
     const sidecar = word(good, 40);
-    try testing.expectEqual(@as(u32, 18), word(good, sidecar + 8));
+    try testing.expectEqual(@as(u32, 21), word(good, sidecar + 8));
     const columns = word(good, sidecar + 12);
-    const column = sidecar + 16 + (columns - 2) * 8;
+    const column = sidecar + 16 + (columns - 4) * 8;
     const roots = sidecar + word(good, column);
     try testing.expectEqualStrings("BENIENT\x00", good[roots..][0..8]);
     try testing.expect(word(good, roots + 12) > 1);
@@ -289,13 +309,14 @@ test "typed entry roots distinguish complete empty cached selection from absent 
     const manifest = try w.read("platform/beni.json");
     const start = std.mem.indexOf(u8, manifest, "\"entryKinds\":") orelse return error.MissingKinds;
     try w.write("platform/beni.json", try std.fmt.allocPrint(w.arena.allocator(), "{s}\"entryKinds\": []}}\n", .{manifest[0..start]}));
-    const empty = try w.run(&.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=empty.json", "Main.beni" });
+    const empty = try w.run(&.{ "check", "--entries", "--platform=platform", "--cache-dir=cache", "--self-profile=empty.json", "Main.beni" });
     try clean(empty);
+    _ = try beforeSource(empty.stdout);
     const key = try entryFor(&w);
     const before = try w.read(key);
     const sidecar = word(before, 40);
     const columns = word(before, sidecar + 12);
-    const column = sidecar + 16 + (columns - 2) * 8;
+    const column = sidecar + 16 + (columns - 4) * 8;
     const roots = sidecar + word(before, column);
     // VERIFY OUTPUT: an explicit complete-empty header was installed, not 0 bytes.
     try testing.expectEqual(@as(u32, 24), word(before, column + 4));
@@ -435,9 +456,9 @@ fn packWitness(bytes: []const u8) !PackWitness {
         const entry = bytes[word(bytes, at + 20)..][0..word(bytes, at + 24)];
         try testing.expectEqualStrings("BENICAC\x00", entry[0..8]);
         const sidecar = word(entry, 40);
-        try testing.expectEqual(@as(u32, 18), word(entry, sidecar + 8));
+        try testing.expectEqual(@as(u32, 21), word(entry, sidecar + 8));
         const columns = word(entry, sidecar + 12);
-        const column = sidecar + 16 + (columns - 2) * 8;
+        const column = sidecar + 16 + (columns - 4) * 8;
         const root_bytes = entry[sidecar + word(entry, column) ..][0..word(entry, column + 4)];
         try testing.expectEqualStrings("BENIENT\x00", root_bytes[0..8]);
         if (word(root_bytes, 12) == 0) continue;
@@ -507,6 +528,6 @@ test "typed entry consumer keeps validated legacy plans without typed graph or i
         \\field-work indexRows=0 lookups=0 edges=0 localWalk=0
         \\builder-work shapePorts=0 shapeEdges=0 shapeSelectors=0 metadataRows=0 metadataIndexWork=0 metadataLookups=0 metadataMatches=0
         \\
-    , dump.stdout);
+    , try beforeSource(dump.stdout));
     try testing.expect(!w.exists("out"));
 }

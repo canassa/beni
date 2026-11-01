@@ -95,7 +95,7 @@ pub const magic = "BENIDSP\x00";
 /// 13 since scalar dictionary keys (#294) carry key domains.
 /// 14 adds checked render identity facts and their local paths.
 /// 15: effect declaration byte 2 carries the totality proof.
-pub const format_version: u32 = 18;
+pub const format_version: u32 = 21;
 
 pub const Column = enum(u32) {
     terms,
@@ -126,6 +126,8 @@ pub const Column = enum(u32) {
     decl_heads,
     entry_roots,
     nominal_layouts,
+    control_sources,
+    realm_sources,
 
     pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
@@ -156,7 +158,7 @@ pub const Column = enum(u32) {
             .symbols => 4,
             .module_refs => 8,
             .type_refs => 12,
-            .strings, .continuations, .entry_roots, .nominal_layouts => 1,
+            .strings, .continuations, .entry_roots, .nominal_layouts, .control_sources, .realm_sources => 1,
             .decl_heads => 4,
         };
     }
@@ -225,6 +227,23 @@ pub const Loaded = struct {
     pub fn prepareNominalCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, types: *const Types, module: Graph.Index, interner: *const InternPool.Global, own_interface: *const Interface, work: ?*@import("../check/NominalLayouts.zig").Work) Allocator.Error!bool {
         return l.table.nominal_layouts.covers(gpa, bir, graph, types, module, interner, own_interface, work);
     }
+    pub fn prepareRealmCoverage(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph) Allocator.Error!bool {
+        return l.prepareRealmCoverageWithIntrinsics(gpa, bir, graph, null);
+    }
+    pub fn prepareRealmCoverageWithIntrinsics(l: *const Loaded, gpa: Allocator, bir: *const Bir, graph: *const Graph, intrinsics: ?@import("../check/RealmSource.zig").IntrinsicContext) Allocator.Error!bool {
+        const Context = struct {
+            loaded: *const Loaded,
+            graph: *const Graph,
+            fn module(c: @This(), raw: Graph.Index) Graph.Index {
+                return resolveModule(c.loaded, c.graph, raw.int(), @intCast(c.loaded.module_refs.len));
+            }
+        };
+        for (0..l.table.realm_sources.refs.len) |i| {
+            const ref = l.table.realm_sources.refs.get(i);
+            if (ref.kind == .external and resolveModule(l, graph, ref.module.int(), @intCast(l.module_refs.len)).int() >= graph.count()) return false;
+        }
+        return l.table.realm_sources.verifyAgainstBirWithModulesAndIntrinsics(gpa, bir, &l.table, Context{ .loaded = l, .graph = graph }, Context.module, intrinsics);
+    }
     pub fn deinit(l: *Loaded, gpa: Allocator) void {
         l.table.deinit(gpa);
         gpa.free(l.module_refs);
@@ -252,6 +271,16 @@ pub fn write(
     var w: Writer = .{ .gpa = gpa, .graph = graph, .types = types, .interner = interner };
     defer w.deinit();
 
+    const realm_module_refs = try gpa.alloc(u32, d.realm_sources.refs.len);
+    defer gpa.free(realm_module_refs);
+    for (realm_module_refs, 0..) |*id, i| {
+        const ref = d.realm_sources.refs.get(i);
+        id.* = if (ref.kind == .external) try w.moduleRef(ref.module) else no_ref;
+    }
+    const realm_sources = try @import("realm_source_bytes.zig").write(gpa, &d.realm_sources, interner, realm_module_refs);
+    defer gpa.free(realm_sources);
+    const control_sources = try @import("../check/ControlSourcePlan.zig").write(gpa, &d.control_sources, interner);
+    defer gpa.free(control_sources);
     const continuations = try ContinuationPlan.write(gpa, &d.continuations, interner);
     defer gpa.free(continuations);
 
@@ -490,6 +519,8 @@ pub fn write(
         decl_heads,
         entry_roots,
         nominal_layouts,
+        control_sources,
+        realm_sources,
     };
     const lengths = [Column.count]u32{
         @intCast(d.terms.len),
@@ -520,6 +551,8 @@ pub fn write(
         @intCast(d.decl_heads.len),
         @intCast(entry_roots.len),
         @intCast(nominal_layouts.len),
+        @intCast(control_sources.len),
+        @intCast(realm_sources.len),
     };
 
     var offsets: [Column.count]u32 = undefined;
@@ -1059,6 +1092,30 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         else => return error.BadSidecar,
     };
 
+    const control_bytes = col(bytes, offsets, .control_sources)[0..lengths[@backingInt(Column.control_sources)]];
+    out.table.control_sources = (switch (in.*) {
+        .find => |pool| @import("../check/ControlSourcePlan.zig").read(gpa, control_bytes, pool),
+        .get_or_put => |pool| @import("../check/ControlSourcePlan.zig").readGrowing(gpa, control_bytes, pool.pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownSymbol => return error.UnknownSymbol,
+        else => return error.BadSidecar,
+    };
+
+    const realm_bytes = col(bytes, offsets, .realm_sources)[0..lengths[@backingInt(Column.realm_sources)]];
+    out.table.realm_sources = (switch (in.*) {
+        .find => |pool| @import("realm_source_bytes.zig").read(gpa, realm_bytes, pool),
+        .get_or_put => |pool| @import("realm_source_bytes.zig").readGrowing(gpa, realm_bytes, pool.pool),
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownSymbol => return error.UnknownSymbol,
+        else => return error.BadSidecar,
+    };
+    for (0..out.table.realm_sources.refs.len) |i| {
+        const ref = out.table.realm_sources.refs.get(i);
+        if (ref.kind == .external and ref.module.int() >= out.module_refs.len) return error.BadSidecar;
+    }
+
     const root_bytes = col(bytes, offsets, .entry_roots)[0..lengths[@backingInt(Column.entry_roots)]];
     out.table.entry_roots = (switch (in.*) {
         .find => |pool| EntryRoots.read(gpa, root_bytes, pool),
@@ -1299,6 +1356,14 @@ fn rangeOk(r: Dispatch.Range, limit: usize) bool {
 /// the term would have carried anyway — `.none` for a type, and a module
 /// index of `graph.count()`, which every accessor already treats as absent.
 pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
+    for (0..l.table.realm_sources.refs.len) |i| {
+        var ref = l.table.realm_sources.refs.get(i);
+        if (ref.kind == .external) {
+            ref.module = resolveModule(l, graph, ref.module.int(), @intCast(l.module_refs.len));
+            l.table.realm_sources.refs.set(i, ref);
+        }
+    }
+
     const modules = @as(u32, @intCast(l.module_refs.len));
     const type_count = @as(u32, @intCast(l.type_refs.len));
     for (@constCast(l.table.decl_heads)) |*head| head.* = l.headId(graph, types, head.*);
@@ -2038,4 +2103,70 @@ test "declaration totality dispatch rows reject old versions and non-bit bytes" 
     bytes[start + 2] = 1;
     std.mem.writeInt(u32, bytes[8..12], format_version - 1, .little);
     try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+}
+
+test "realm source outer codec resolves actual checked module identity before admission" {
+    const gpa = testing.allocator;
+    var p = try TestProject.initWith(gpa, &.{
+        .{ .path = "NativeSource.beni", .source = "pub f : ⊤ → ⊤\nf x = x\n" },
+        .{ .path = "User.beni", .source = "import NativeSource\n\npub f : ⊤ → ⊤\nf x = NativeSource.f x\n" },
+    }, .{ .phases = Session.check_phases });
+    defer p.deinit();
+    try testing.expectEqualStrings("", p.stderr.written());
+    const module = p.module("User") orelse return error.MissingUser;
+    const file = p.session.graph.moduleFile(module);
+    const bir = p.session.artifacts.bir(file);
+    const table = &p.session.checked.dispatch[module.int()];
+    table.realm_sources = try @import("../check/RealmSource.zig").scan(gpa, bir, table);
+    try testing.expect(try table.realm_sources.verifyAgainstBir(gpa, bir, table));
+    const bytes = try write(gpa, table, &p.session.graph, &p.session.checked.types, &p.session.interner);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &p.session.interner);
+    defer loaded.deinit(gpa);
+    try testing.expect(try loaded.prepareRealmCoverage(gpa, bir, &p.session.graph));
+    var external_count: usize = 0;
+    for (0..loaded.table.realm_sources.refs.len) |i| {
+        const r = loaded.table.realm_sources.refs.get(i);
+        if (r.kind == .external) {
+            external_count += 1;
+            try testing.expect(r.module.int() < loaded.module_refs.len);
+            try testing.expectEqualStrings("NativeSource", p.session.interner.slice(loaded.module_refs[r.module.int()].name));
+        }
+    }
+    try testing.expect(external_count != 0);
+    resolve(&loaded, &p.session.graph, &p.session.checked.types);
+    try testing.expect(try loaded.table.realm_sources.verifyAgainstBir(gpa, bir, &loaded.table));
+    for (0..loaded.table.realm_sources.refs.len) |i| try testing.expectEqualDeep(table.realm_sources.refs.get(i), loaded.table.realm_sources.refs.get(i));
+    const again = try write(gpa, &loaded.table, &p.session.graph, &p.session.checked.types, &p.session.interner);
+    defer gpa.free(again);
+    try testing.expectEqualSlices(u8, bytes, again);
+    // Re-intern and rebind the same bytes in an independently checked graph
+    // with another source module: no serialized Graph.Index may survive.
+    var relocated = try TestProject.initWith(gpa, &.{
+        .{ .path = "AAA.beni", .source = "pub first : ⊤\nfirst = ⊤\n" },
+        .{ .path = "NativeSource.beni", .source = "pub f : ⊤ → ⊤\nf x = x\n" },
+        .{ .path = "User.beni", .source = "import NativeSource\n\npub f : ⊤ → ⊤\nf x = NativeSource.f x\n" },
+    }, .{ .phases = Session.check_phases });
+    defer relocated.deinit();
+    try testing.expectEqualStrings("", relocated.stderr.written());
+    const new_module = relocated.module("User") orelse return error.MissingUser;
+    const new_bir = relocated.session.artifacts.bir(relocated.session.graph.moduleFile(new_module));
+    try testing.expect(module != new_module);
+    var moved = try readGrowing(gpa, bytes, &relocated.session.interner);
+    defer moved.deinit(gpa);
+    try testing.expect(try moved.prepareRealmCoverage(gpa, new_bir, &relocated.session.graph));
+    resolve(&moved, &relocated.session.graph, &relocated.session.checked.types);
+    try testing.expect(try moved.table.realm_sources.verifyAgainstBir(gpa, new_bir, &moved.table));
+    const target = relocated.module("NativeSource") orelse return error.MissingTarget;
+    for (0..moved.table.realm_sources.refs.len) |i| {
+        const ref = moved.table.realm_sources.refs.get(i);
+        if (ref.kind == .external) try testing.expectEqual(target, ref.module);
+    }
+    // Every reader allocation, including partially decoded source rows, unwinds.
+    try testing.checkAllAllocationFailures(gpa, struct {
+        fn run(a: Allocator, input: []const u8, pool: *const InternPool.Global) !void {
+            var item = try read(a, input, pool);
+            defer item.deinit(a);
+        }
+    }.run, .{ bytes, &p.session.interner });
 }

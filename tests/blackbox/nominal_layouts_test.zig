@@ -71,7 +71,7 @@ fn record(bytes: []const u8) []const u8 {
 }
 fn layoutBytes(bytes: []const u8) []const u8 {
     const side = word(bytes, 40);
-    const column = side + 16 + (word(bytes, side + 12) - 1) * 8;
+    const column = side + 16 + (word(bytes, side + 12) - 3) * 8;
     return bytes[side + word(bytes, column) ..][0..word(bytes, column + 4)];
 }
 fn layoutRecord(bytes: []const u8) []const u8 {
@@ -172,8 +172,8 @@ test "nominal layouts refuse missing malformed private owners constructors scope
     const path = try entry(&w, "Main");
     const good = try w.read(path);
     const side = word(good, 40);
-    try testing.expectEqual(@as(u32, 18), word(good, side + 8));
-    const column = side + 16 + (word(good, side + 12) - 1) * 8;
+    try testing.expectEqual(@as(u32, 21), word(good, side + 8));
+    const column = side + 16 + (word(good, side + 12) - 3) * 8;
     const layout = side + word(good, column);
     try testing.expectEqualStrings("BENINOM\x00", good[layout..][0..8]);
     const ctors = layout + 32 + word(good, layout + 12) * 24;
@@ -212,7 +212,7 @@ test "nominal layouts reject private kind metadata contradicting a present ordin
     const path = try entry(&w, "Library");
     const good = try w.read(path);
     const side = word(good, 40);
-    const column = side + 16 + (word(good, side + 12) - 1) * 8;
+    const column = side + 16 + (word(good, side + 12) - 3) * 8;
     const layout = side + word(good, column);
     try testing.expectEqual(@as(u32, 6), word(good, layout + 12));
     // PublicKey is the fifth declaring owner; its exact public fact says dict_key.
@@ -374,7 +374,7 @@ test "nominal layouts in an actual generated pack include unused private constru
         try testing.expectEqual(@as(u32, 3), word(layout, 16));
         // Same normal sidecar also proves there were no selected entry schemes.
         const side = word(bytes, 40);
-        const roots_column = side + 16 + (word(bytes, side + 12) - 2) * 8;
+        const roots_column = side + 16 + (word(bytes, side + 12) - 4) * 8;
         const roots = side + word(bytes, roots_column);
         try testing.expectEqualStrings("BENIENT\x00", bytes[roots..][0..8]);
         try testing.expectEqual(@as(u32, 0), word(bytes, roots + 12));
@@ -441,8 +441,29 @@ test "nominal layouts discard dependency-tainted error terms without adding inte
     try testing.expectEqualSlices(u8, original, try w.read(try entry(&w, "Main")));
 }
 
+const source_header = "native-realm-source schema=1 proof=source-records realmProved=false entryComplete=false\n";
+/// The old evidence remains exact. A known, uniquely delimited new source
+/// section is checked separately; an unknown suffix is never silently dropped.
+fn beforeSource(text: []const u8) ![]const u8 {
+    const at = std.mem.indexOf(u8, text, source_header) orelse return error.MissingRealmSource;
+    try testing.expect(at == 0 or text[at - 1] == '\n');
+    try testing.expect(std.mem.indexOfPos(u8, text, at + source_header.len, "native-realm-source ") == null);
+    try testing.expect(std.mem.endsWith(u8, text, "\n"));
+    var modules: usize = 0;
+    var lines = std.mem.splitScalar(u8, text[at + source_header.len ..], '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        const module = std.mem.startsWith(u8, line, "  realm-module ");
+        try testing.expect(module or std.mem.startsWith(u8, line, "  realm-scope ") or std.mem.startsWith(u8, line, "  realm-literal ") or std.mem.startsWith(u8, line, "  realm-call ") or std.mem.startsWith(u8, line, "  realm-reference "));
+        modules += @intFromBool(module);
+    }
+    try testing.expect(modules > 0);
+    return text[0..at];
+}
+
 fn cursorSection(text: []const u8) ![]const u8 {
-    return text[std.mem.indexOf(u8, text, "type-cursor schema=") orelse return error.MissingCursorInspector ..];
+    const prefix = try beforeSource(text);
+    return prefix[std.mem.indexOf(u8, prefix, "type-cursor schema=") orelse return error.MissingCursorInspector ..];
 }
 test "cross artifact cursor keeps exact nominal prefix and complete owned graph across cache jobs roundtrip relocation" {
     // PREPARE: golden captured from the real checked basic source; its old A

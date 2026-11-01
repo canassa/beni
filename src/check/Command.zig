@@ -35,6 +35,7 @@ const Digest = @import("../cache/Digest.zig");
 const TypeKeysDump = @import("../dump/typekeys.zig");
 const ContinuationsDump = @import("../dump/continuations.zig");
 const EntriesDump = @import("../dump/entries.zig");
+const Controls = @import("../dump/checked_controls.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -45,6 +46,13 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // `check` resolves names across modules, and every module resolves
     // against core (checker.md §4): the package is part of the input.
     options.core_package = true;
+    options.checked_controls = check.cache.checked_controls;
+    options.native_realms = check.cache.entries;
+    if (options.checked_controls) {
+        options.ownership = true;
+        options.ownership_everywhere = true;
+        if (options.ownership_v2) options.ownership_v2_dump = .{ .summaries = true };
+    }
     // `check` and `build` are the two subcommands that emit the
     // informational warnings of static-dispatch-spike.md §10 (A.83); a
     // `dump` or a `fmt` of the same file stays silent about them.
@@ -74,7 +82,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // run after `run` returns — and two renders on one stream are two JSON
     // arrays, which is not the format (§1.1). Without one there is no second
     // wave and `run` renders as it always has.
-    options.defer_render = check.platform != null;
+    options.defer_render = check.platform != null or check.cache.checked_controls;
 
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
@@ -145,8 +153,22 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         _ = session.renderLate(&.{}, stderr) catch return 2;
         return 1;
     }
+    var prepared: ?Controls.Prepared = null;
+    defer if (prepared) |*product| product.deinit(gpa);
+    if (check.cache.checked_controls) {
+        const tamper: @import("ControlBuild.zig").Tamper = if (check.cache.checked_controls_tamper) |t| (if (std.mem.eql(u8, t, "wrong-input-slot")) .wrong_input_slot else if (std.mem.eql(u8, t, "direct-input")) .direct_input else if (std.mem.eql(u8, t, "parked-input")) .parked_input else if (std.mem.eql(u8, t, "wrong-slot")) .wrong_slot else if (std.mem.eql(u8, t, "same-type-operand")) .same_type_operand else if (std.mem.eql(u8, t, "scaffold-return-slot")) .scaffold_return_slot else if (std.mem.eql(u8, t, "drop-region")) .drop_region else if (std.mem.eql(u8, t, "ownership-conflict")) .ownership_conflict else if (std.mem.eql(u8, t, "suspending-job")) .suspending_job else .duplicate_region) else .none;
+        var failure_reported = false;
+        prepared = Controls.prepare(gpa, arena, io, &session, tamper, stderr, &failure_reported) catch |err|
+            return reportControlFailure(&session, err, failure_reported, stderr);
+        session.foreign = prepared.?.foreign;
+    }
     const requested = check.platform orelse {
         if (check.cache.entries) return fail(stderr, "beni: --entries requires --platform", .{});
+        if (check.cache.checked_controls) {
+            const errors = session.renderLate(&.{}, stderr) catch return 2;
+            if (errors != 0) return 1;
+        }
+        if (prepared) |product| stdout.writeAll(product.bytes) catch return 2;
         return 0;
     };
 
@@ -178,8 +200,26 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
     }
     const errors = session.renderLate(late, stderr) catch return 2;
-    if (errors == 0 and check.cache.entries) EntriesDump.write(stdout, &session) catch return 2;
-    return if (errors > 0) 1 else 0;
+    if (errors != 0) return 1;
+    if (check.cache.entries) EntriesDump.write(stdout, &session) catch return 2;
+    if (prepared) |product| stdout.writeAll(product.bytes) catch return 2;
+    return 0;
+}
+
+fn controlFailureExit(err: Controls.Error) u8 {
+    return switch (err) {
+        error.MissingEvidence, error.InvalidControlProvenance, error.GeneratedCheckFailed, error.MissingGeneratedRoot, error.InvalidRuntimeSource => 1,
+        else => 2, // usage, allocator, input, thread and writer failures
+    };
+}
+
+fn reportControlFailure(session: *Session, err: Controls.Error, reported: bool, stderr: *Io.Writer) u8 {
+    const exit = controlFailureExit(err);
+    if (reported or err == error.WriteFailed) return exit;
+    var message: [256]u8 = undefined;
+    const text = std.fmt.bufPrint(&message, "Checked-control preparation failed ({s}). No checked-control receipt was printed.", .{@errorName(err)}) catch return 2;
+    _ = session.renderLate(&.{.{ .code = .internal, .file = @fromBackingInt(0), .token = 0, .message = text, .at = .{ .path = "<checked-controls>" } }}, stderr) catch return 2;
+    return exit;
 }
 
 /// `--iface-hash`: one `<package>:<Module> <32 hex digits>` line per module
@@ -410,4 +450,54 @@ fn printContinuations(stdout: *Io.Writer, session: *Session) !void {
         }
     }
     try stdout.flush();
+}
+
+test "checked control command failures preserve structured diagnostics and exit classes" {
+    var session = try Session.init(std.testing.allocator, std.testing.io, .{ .jobs = 1, .diagnostics = .json, .defer_render = true });
+    defer session.deinit();
+    const Case = struct { err: Controls.Error, exit: u8 };
+    for ([_]Case{
+        .{ .err = error.UnsupportedTamper, .exit = 2 },
+        .{ .err = error.MissingEvidence, .exit = 1 },
+        .{ .err = error.OutOfMemory, .exit = 2 },
+        .{ .err = error.InputPath, .exit = 2 },
+    }) |case| {
+        var diagnostics: Io.Writer.Allocating = .init(std.testing.allocator);
+        defer diagnostics.deinit();
+        try std.testing.expectEqual(case.exit, reportControlFailure(&session, case.err, false, &diagnostics.writer));
+        const parsed = try std.json.parseFromSlice([]const @import("diagnostic").Diagnostic, std.testing.allocator, diagnostics.written(), .{});
+        defer parsed.deinit();
+        try std.testing.expectEqual(@as(usize, 1), parsed.value.len);
+        const item = parsed.value[0];
+        try std.testing.expectEqual(.internal, item.code);
+        try std.testing.expectEqual(.@"error", item.severity);
+        try std.testing.expectEqualStrings("<checked-controls>", item.span.file);
+        try std.testing.expect(std.mem.indexOf(u8, item.message, @errorName(case.err)) != null);
+    }
+    var rendered: Io.Writer.Allocating = .init(std.testing.allocator);
+    defer rendered.deinit();
+    try rendered.writer.writeAll("[]\n");
+    try std.testing.expectEqual(@as(u8, 1), reportControlFailure(&session, error.GeneratedCheckFailed, true, &rendered.writer));
+    try std.testing.expectEqualStrings("[]\n", rendered.written());
+}
+
+test "checked control command failure rendering preserves allocation failure exit and cleanup" {
+    var session = try Session.init(std.testing.allocator, std.testing.io, .{ .jobs = 1, .diagnostics = .json, .defer_render = true });
+    defer session.deinit();
+    var allocation_failure = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    const original = session.gpa;
+    session.gpa = allocation_failure.allocator();
+    defer session.gpa = original;
+    var diagnostics: Io.Writer.Allocating = .init(std.testing.allocator);
+    defer diagnostics.deinit();
+    try std.testing.expectEqual(@as(u8, 2), reportControlFailure(&session, error.MissingEvidence, false, &diagnostics.writer));
+    try std.testing.expectEqualStrings("", diagnostics.written());
+}
+
+test "checked control command failure rendering preserves exhausted writer exit" {
+    var session = try Session.init(std.testing.allocator, std.testing.io, .{ .jobs = 1, .diagnostics = .json, .defer_render = true });
+    defer session.deinit();
+    var buffer: [0]u8 = .{};
+    var diagnostics: Io.Writer = .fixed(&buffer);
+    try std.testing.expectEqual(@as(u8, 2), reportControlFailure(&session, error.MissingEvidence, false, &diagnostics));
 }

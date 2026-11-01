@@ -1,0 +1,4 @@
+-- Generated from pinned TextEncoder constructor metadata; awaiting realm proof.
+pub foreign type TextEncoder
+
+pub foreign impure new : ⊤ → TextEncoder

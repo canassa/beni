@@ -1,0 +1,6 @@
+import Task
+
+pub joined : sync (Int, Int → Int), Task.Fiber Int, Int → Int
+joined next fiber fallback =
+    value = Task.join fiber
+    next value fallback

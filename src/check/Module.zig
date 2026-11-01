@@ -84,6 +84,8 @@ const Var = TypeStore.Var;
 
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
+    realm_required: bool = false,
+    control_required: bool = false,
     gpa: Allocator,
     entry_selection: *const @import("../entry/Selection.zig") = &.{},
     scratch: *Arena,
@@ -127,6 +129,8 @@ fn clearEntryEvidence(gpa: Allocator, table: *Dispatch) void {
     gpa.free(table.decl_heads);
     table.decl_heads = &.{};
     table.continuations.deinit(gpa);
+    table.control_sources.deinit(gpa);
+    table.realm_sources.deinit(gpa);
     table.entry_roots.deinit(gpa);
     table.nominal_layouts.deinit(gpa);
 }
@@ -206,6 +210,9 @@ pub fn check(in: Input) Error!Check.Counters {
         .keep_display = in.keep != null,
         .inst_type = inst_type,
     };
+    var realm_record: ?@import("RealmRecord.zig") = if (in.realm_required) try .init(gpa, bir) else null;
+    defer if (realm_record) |*r| r.deinit();
+    cx.realm_record = if (realm_record) |*r| r else null;
     // Effect inference records beside every phase and solves after P5
     // (transparent-effects-proposal.md §14, checker-v2.md §26).
     var effects: Effects = try .init(gpa, store, in.types, in.interner, bir.decls.len);
@@ -626,6 +633,36 @@ pub fn check(in: Input) Error!Check.Counters {
         };
         if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
     }
+    in.dispatch.control_sources.deinit(gpa);
+    if (in.control_required and !quiet and !in.dependency_errors and report.errors == 0) {
+        in.dispatch.control_sources = @import("ControlSourcePlan.zig").build(.{
+            .source = .{ .cx = &cx, .gpa = gpa, .scratch = scratch, .store = store, .types = in.types, .interner = in.interner, .bir = bir, .effects = &effects, .dispatch = in.dispatch, .crossing = if (type_keys) |t| t.crossing else &.{}, .decl_scheme = decl_scheme, .decl_body = decl_display, .inst_type = inst_type },
+            .local_type = local_type,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                const message = try std.fmt.allocPrint(scratch, "this clean module's control source evidence could not be captured ({s})", .{@errorName(err)});
+                try report.internal(@fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    }
+    in.dispatch.realm_sources.deinit(gpa);
+    if (!in.dependency_errors and report.errors == 0) if (realm_record) |*record| {
+        in.dispatch.realm_sources = record.freeze(store, in.dispatch, .{ .graph = in.graph, .interner = in.interner, .interfaces = in.interfaces }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => blk: {
+                const message = if (record.failure) |f|
+                    try std.fmt.allocPrint(scratch, "this clean module's original realm source events could not be captured ({s}): {t} scope={d} decl={d} inst={d} tag={t} role={t} expectedAmbient={d} observedDecl={d} observedAmbient={d} observedType={}", .{ @errorName(err), f.kind, f.scope, f.declaration, f.instruction, f.tag, f.role, f.expected_ambient, f.observed_declaration, f.observed_ambient, f.observed_type })
+                else
+                    try std.fmt.allocPrint(scratch, "this clean module's original realm source events could not be captured ({s})", .{@errorName(err)});
+                try report.internal(if (record.failure) |f| @fromBackingInt(f.instruction) else @fromBackingInt(0), message);
+                break :blk .empty;
+            },
+        };
+        if (in.roundtrip_dispatch and report.errors == 0) try roundtripTable(in, &report);
+    };
     if (report.errors != 0 or in.dependency_errors) clearEntryEvidence(gpa, in.dispatch);
 
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);

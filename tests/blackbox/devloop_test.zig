@@ -307,6 +307,96 @@ test "build --watch rebuilds after an edit, reports a failed build, and stops on
     try w.expectProgram("out/_main.mjs", .{ .stdout = "two, after an edit\n" });
 }
 
+/// Full pending-output state must be discarded after an emitter refusal, even
+/// when the ordinary checker succeeds and the resident Session is reused.
+const EmissionTree = struct {
+    paths: []const []const u8,
+    bytes: []const []const u8,
+
+    fn read(w: *World, root: []const u8) !EmissionTree {
+        const paths = try w.listFiles(root);
+        const bytes = try w.arena.allocator().alloc([]const u8, paths.len);
+        for (paths, bytes) |path, *text| text.* = try w.read(try std.fs.path.join(w.arena.allocator(), &.{ root, path }));
+        return .{ .paths = paths, .bytes = bytes };
+    }
+};
+
+fn projectionMain(comptime text: []const u8) []const u8 {
+    return
+    \\import Io
+    \\import Node
+    \\import String
+    \\
+    \\
+    \\prefix : String
+    \\prefix = String.fromInt 41
+    \\
+    \\
+    \\main : Node.Program
+    \\main =
+    \\    Io.run λ⊤ →
+    \\        Io.sleep 0
+    \\        Node.print (prefix ++ "
+    ++ text ++
+        \\")
+        \\
+    ;
+}
+
+fn watchProjectionRecovery(comptime release: bool) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni", projectionMain(" before"));
+    const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
+    const arena = w.arena.allocator();
+    const watch_args = try std.mem.concat(arena, []const u8, &.{ &.{ "build", "--watch", "--poll-interval=10", "--platform=node", "--jobs=8", "--diagnostics=json", "--source-maps", "src" }, flags });
+    var live = try Live.start(&w, watch_args);
+    defer live.deinit();
+    try live.waitFor("beni: built in ", 1);
+    const record = try w.read("out/_manifest.txt");
+    try w.write("out/_manifest.txt", "my own notes\n");
+    const before_refusal = try EmissionTree.read(&w, "out");
+    // The source is type-clean; readRecord refuses only after module lowering,
+    // entry generation and pending-output/path preflight have all completed.
+    try w.write("src/Main.beni", projectionMain(" blocked"));
+    try live.waitFor("beni: build failed; waiting for changes\n", 1);
+    try testing.expectEqualDeep(before_refusal, try EmissionTree.read(&w, "out"));
+    try w.write("out/_manifest.txt", record);
+    try w.write("src/Main.beni", projectionMain(" repaired"));
+    try live.waitFor("beni: built in ", 2);
+    try testing.expectEqual(std.process.Child.Term{ .exited = 0 }, try live.stop());
+    const parsed = try std.json.parseFromSlice([]diagnostic.Diagnostic, arena, live.err.items, .{ .allocate = .alloc_always });
+    const expected = [_]diagnostic.Diagnostic{.{
+        .code = .unknown_output_record,
+        .severity = .@"error",
+        .span = .{ .file = "out/_manifest.txt", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNKNOWN FILE IN THE OUTPUT DIRECTORY",
+        .message = "The output directory already holds a `_manifest.txt` that beni did not write.\n" ++
+            "\n" ++
+            "A build records the files it writes in `out/_manifest.txt` and, on the next\n" ++
+            "build, removes the ones that build no longer writes (`docs/design/backend.md`\n" ++
+            "§2). This file does not begin with `beni-manifest 1`, or has a line that is not\n" ++
+            "a record line, so it is somebody else's, and writing the record would overwrite\n" ++
+            "it. Nothing was written. Move the file, or build into another directory with\n" ++
+            "`--out`.",
+    }};
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &expected), parsed.value);
+    const fresh_args = try std.mem.concat(arena, []const u8, &.{ &.{ "build", "--platform=node", "--jobs=1", "--source-maps", "--out=fresh", "src" }, flags });
+    const fresh = try w.run(fresh_args);
+    try testing.expectEqual(@as(u8, 0), fresh.exit_code);
+    try testing.expectEqualStrings("", fresh.stderr);
+    try testing.expectEqualDeep(try EmissionTree.read(&w, "fresh"), try EmissionTree.read(&w, "out"));
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "41 repaired\n" });
+}
+
+test "selected entry projection recovers after emitter preparation refusal in resident development Session" {
+    try watchProjectionRecovery(false);
+}
+
+test "selected entry projection recovers after emitter preparation refusal in resident release Session" {
+    try watchProjectionRecovery(true);
+}
+
 test "serve answers from the output directory, falls back to index.html, and counts builds for reload" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

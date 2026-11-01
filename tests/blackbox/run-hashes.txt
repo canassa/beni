@@ -133,6 +133,8 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
+devloop_test.test.selected entry projection recovers after emitter preparation refusal in resident development Session #0 682c60e608adfda3680a08a59d60d7269411f0745002ea7985b8b900e8d81ea9
+devloop_test.test.selected entry projection recovers after emitter preparation refusal in resident release Session #0 42755e83e33b9c7650376d5289239483ab6e48862e16d73e5ca78adcb6066cbb
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 6f6577880e663ccefa508fec190be3f3daf4c19657a9f29f469c96ff234e32e4
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5

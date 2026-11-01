@@ -1,0 +1,5 @@
+pub type Marker = Marker
+
+
+pub work : ⊤ → ⊤
+work ⊤ = ⊤

@@ -292,6 +292,7 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     if (in.record_owner) |owner| {
         in.record_owner = null;
         if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..], @backingInt(in.origin));
+        if (in.cx.realm_record) |r| r.copy(owner, @backingInt(in.origin), root, in.copied.items[start..]);
     }
     // While the memo still maps a generalised variable to its copy.
     try in.noteCastImages(start);

@@ -675,23 +675,20 @@ pub fn run(
 ) Error!Result {
     session.entry_graph.reset();
     session.entry_plan.reset();
+    const input: Emitter.BuildInput = .{ .options = options };
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
         .session = session,
-        .options = options,
+        .input = &input,
         .io_failure = io_failure,
     };
+    defer e.projection.deinit(gpa);
+    defer e.diagnostics.deinit(gpa);
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
-    defer {
-        // The write-set pass is freed by `buildDirect`; a refusal before it
-        // leaves the pass alive.
-        if (e.writes) |w| w.deinit();
-        for (e.owned.items) |text| gpa.free(text);
-        e.owned.deinit(gpa);
-        for (e.piece_arenas.items) |arena| arena.deinit();
-        e.piece_arenas.deinit(gpa);
-    }
+
+    try e.refusePendingNative();
+    if (e.hasErrors()) return e.nothingWritten(gpa);
 
     // §2's rule 1, on the one part of the output shape a platform declares
     // (`boundary.md` §5.2). First, and before the entry-point search: a
@@ -714,23 +711,36 @@ pub fn run(
     const entry = if (options.library) null else try e.findEntry();
     if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
 
+    // No worker or projection pass observes a partially validated selection.
+    const selected_input: Emitter.BuildInput = .{
+        .options = options,
+        .selected = .{
+            .entry = entry,
+            .plan = &session.entry_plan,
+            .runtime_module = e.contract.runtime_module,
+            .entry_program = e.contract.entry_program,
+        },
+    };
+    e.input = &selected_input;
+    const selected_entry = selected_input.selected.?.entry;
+
     // §9's reachability walk, between `findEntry` and `emitModules` and
     // BEFORE lowering: an unreachable declaration is then never lowered at
     // all, so the pass pays for itself in emit time rather than costing
     // anything.
     var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
     defer pool.deinit();
-    e.pool = &pool;
-    e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
+    e.projection.pool = &pool;
+    e.projection.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
     // Which of `core/List`'s core-private values this build's core
     // declares: every module that would import one it lacks says so.
-    if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
+    if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.projection.core_private = Lower.corePrivateDeclared(e.bir(list));
     // Which modules write their record updates in place (§31.10).
     {
         const hs = e.session.checked.hoists;
         const clean = try e.scratch.alloc(bool, hs.len);
         for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
-        e.clean_modules = clean;
+        e.projection.clean_modules = clean;
     }
     // The write-set pass, for a lowering that compiles programs whole
     // (`boundary.md` §9.4.6, version 1.7), before reachability: the pieces
@@ -740,7 +750,7 @@ pub fn run(
         try e.findLifts();
         try e.cutPrerender();
     };
-    try e.eliminate(entry);
+    try e.eliminate(selected_entry);
     try e.shareValidators();
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -765,7 +775,7 @@ pub fn run(
     // (backend.md §1) and says so — and a build that wrote half its modules
     // before finding out would leave an `out/` that looks fresh and is not.
     // Nothing is emitted until the whole project is known to emit.
-    try e.emitModules(entry);
+    try e.emitModules(selected_entry);
     // `prerender.md` §8.4: the schema of a page's value, statically known and
     // pure.
     try e.checkDataSchema();
@@ -774,12 +784,12 @@ pub fn run(
     if (e.hasErrors()) return e.nothingWritten(gpa);
     // A scope-hoisted build wrote the hand-written files and the entry into
     // its one file already (§9, *One scope-hoisted file under `--release`*).
-    if (!e.hoisted) {
+    if (!e.projection.hoisted) {
         try e.copyAssets();
-        if (entry) |at| try e.emitEntry(at);
+        if (selected_entry) |at| try e.emitEntry(at);
     }
     // §2's page shell, beside the entry file, in either layout.
-    if (entry) |at| try e.emitShell(at);
+    if (selected_entry) |at| try e.emitShell(at);
     try e.emitDirectPlan();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
@@ -796,13 +806,7 @@ pub fn run(
     const write_token = session.profile.begin();
     try e.flush(previous);
     session.profile.end(0, write_token, .write, Profile.Event.no_file, 0);
-    return .{
-        .diagnostics = try e.diagnostics.toOwnedSlice(gpa),
-        .files_written = e.files_written,
-        .bytes_written = e.bytes_written,
-        .points_to = try e.points_to.toOwnedSlice(gpa),
-        .rep_keys = try e.rep_key_text.toOwnedSlice(gpa),
-    };
+    return e.projection.takeResult(gpa, &e.diagnostics, true);
 }
 
 /// `boundary.md` §4's four checks with nothing emitted: what
@@ -821,14 +825,19 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     var io_failure: ?Session.IoFailure = null;
     session.entry_graph.reset();
     session.entry_plan.reset();
+    const input: Emitter.BuildInput = .{ .options = options };
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
         .session = session,
-        .options = options,
+        .input = &input,
         .io_failure = &io_failure,
     };
+    defer e.projection.deinit(gpa);
+    defer e.diagnostics.deinit(gpa);
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
+    try e.refusePendingNative();
+    if (e.hasErrors()) return e.diagnostics.toOwnedSlice(gpa);
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
     try e.checkEntryFileName();
@@ -855,11 +864,11 @@ pub fn inspectEntry(gpa: Allocator, scratch: Allocator, session: *Session, optio
     const contract = try checkContract(gpa, scratch, session, options);
     for (contract) |item| if (item.severity == .@"error") return .{ .diagnostics = contract };
     var io_failure: ?Session.IoFailure = null;
-    var e: Emitter = .{ .gpa = gpa, .scratch = scratch, .session = session, .options = options, .io_failure = &io_failure };
-    errdefer {
-        for (e.diagnostics.items) |item| gpa.free(item.message);
-        e.diagnostics.deinit(gpa);
-    }
+    const input: Emitter.BuildInput = .{ .options = options };
+    var e: Emitter = .{ .gpa = gpa, .scratch = scratch, .session = session, .input = &input, .io_failure = &io_failure };
+    defer e.projection.deinit(gpa);
+    defer e.diagnostics.deinit(gpa);
+    errdefer for (e.diagnostics.items) |item| gpa.free(item.message);
     e.diagnostics = .fromOwnedSlice(@constCast(contract));
     const found = if (!options.library) try e.findEntry() else null;
     if (e.hasErrors() or found == null) return .{ .diagnostics = try e.diagnostics.toOwnedSlice(gpa) };
@@ -1348,131 +1357,186 @@ const Emitter = struct {
     gpa: Allocator,
     scratch: Allocator,
     session: *Session,
-    options: Options,
+    input: *const BuildInput,
     io_failure: *?Session.IoFailure,
     diagnostics: std.ArrayList(Item) = .empty,
-    /// §9's answer: which declarations and derived rows this build ships.
-    /// Scratch-owned, filled by `eliminate` before the first module is
-    /// lowered.
-    live: Reach.Result = .empty,
-    /// `Lower.Input.core_private`, the same for every module of the build.
-    core_private: Lower.CorePrivate = @splat(true),
-    /// `Lower.Input.clean_modules`, the same for every module of the build.
-    clean_modules: []const bool = &.{},
-    /// §9 item 2's whole-program namespace: one table for the BUILD, so that
-    /// an `import` specifier in one file and the `export` in another are
-    /// given the same short name. Empty and unused in a dev build.
-    globals: Rename.Globals = .{},
-    /// `--release` of an application: the ordinals of `globals` that some
-    /// file of the build imports — another module's `import`, or the entry
-    /// file's of `main` (`markImported`). A module's `export` list is cut
-    /// to them. Scratch-owned; empty and unused otherwise.
-    imported: Print.Imported = .{},
-    /// `--release`: the whole-program ordinals of names the build imports
-    /// from a hand-written file — a `foreign`'s sibling export, the platform's
-    /// runtime — which `Print.resolve` never writes in place of an arrow
-    /// (`backend.md` §9 item 6; `markHandWritten`).
-    hand_written: Print.Imported = .{},
-    /// What the build produced, path and bytes, before any of it reaches
-    /// the disk. Scratch-owned.
-    pending: std.ArrayList(Output) = .empty,
-    /// Whether a module written imports the markup runtime, which the
-    /// build then copies (`backend.md` §15.1).
-    uses_markup_runtime: bool = false,
-    /// The runtime module (`boundary.md` §9.2, *A runtime module*), the
-    /// exports it supplies, and what the markup runtime imports from it:
-    /// every name, and the names its kept part mentions. Found by
-    /// `checkMarkupRuntime` and `preciseRuntimeRoots`; scratch-owned.
-    runtime_module: ?Graph.Index = null,
-    /// Diagnostic-only identity survives a rejected contract within this
-    /// fresh emitter. Invalid Session plans retain no checked-store facts.
-    entry_program: CheckedTypes.TypeId = .none,
-    /// The write-set pass, between `runWrites` and `buildDirect`.
-    writes: ?*Writes = null,
-    writes_calls: []const Writes.Call = &.{},
-    writes_effects: ?Writes.Effects = null,
-    writes_birs: []const *const Bir = &.{},
-    /// `browser-inline.md` §7: every lifted piece of the build, and the
-    /// instruction ranges reachability does not follow.
-    lifts: []const Lift.Piece = &.{},
-    /// `browser-inline.md` §8.4: the arenas the owners of view pieces write
-    /// their facts with, one per piece, freed with the emitter.
-    piece_arenas: std.ArrayList(*std.heap.ArenaAllocator) = .empty,
-    cuts: []const Reach.Cut = &.{},
-    lift_roots: []const Reach.Node = &.{},
-    supplied: []const Lower.Markup.Supplied = &.{},
-    program_names: []const []const u8 = &.{},
-    program_uses: []const []const u8 = &.{},
-    /// The supplied exports some module's lowering took, by name.
-    module_uses: std.ArrayList([]const u8) = .empty,
-    /// Reachability's roots beside the build's own (`Reach.Input`).
-    extra_roots: []const Reach.Node = &.{},
-    /// The validators the build shares across its schemas, as roots
-    /// (`SchemaShare`): decided after the first walk, kept by every walk
-    /// after it (`withShareRoots`).
-    share_roots: []const Reach.Node = &.{},
-    /// What every walk of the build reads (`walk`): the input `eliminate`
-    /// built the edge lists from, and the lists, in the workers' `edges`
-    /// arenas. A walk from other roots reads the same lists (§9,
-    /// *Incrementality (M4) and chunking (§10)*).
-    reach: Reach.Input = undefined,
-    edges: []const Reach.ModuleEdges = &.{},
-    /// Per module, whether its edge list was read from the embedded pack,
-    /// which is made with no shape run (`Reach.Input.schema_shapes`).
-    edges_read: []const bool = &.{},
-    forwarding_foreigns: [][]Reach.ForeignProof = &.{},
-    /// `--release` of an application that does not reach `Debug`: what
-    /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
-    /// Null renames no field and gives no type integer tags.
-    boundary: ?Fields.Boundary = null,
-    /// What a typed `Debug.toString` reads its type's constructors from
-    /// (§4, *`Debug.toString` reads the argument's type*): set before
-    /// lowering when some module has a debug row, null otherwise.
-    debug_context: ?DebugShape.Context = null,
-    /// What a program lowering reads of the write-set pass
-    /// (`Lower.Direct`), when the build's lowering compiles programs whole.
-    direct: ?Lower.Direct = null,
-    /// `--fuzz --release`: the message types JavaScript sees (`fuzzSeeds`).
-    fuzz_seeds: []const Fields.Seed = &.{},
-    /// The fields' short spellings, assigned after the optimiser.
-    field_table: ?Fields.Table = null,
-    /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
-    /// file under `--release`*), decided after lowering.
-    hoisted: bool = false,
-    /// §11: where the output tree is, in a build with maps. The hoisted
-    /// file's map is placed against it at the join (§11.2).
-    map_root: ?MapRoot = null,
-    /// The host globals a hoisted hand-written file binds as written, which
-    /// emitted code may not then write bare (`bareBlocked`).
-    bare_blocked: []const []const u8 = &.{},
-    /// What specialisation took as its roots, by name: `pruneOptimised`'s.
-    spec_roots: []const Rename.Globals.Key = &.{},
-    /// The markup runtime's exports the modules written import, in
-    /// module order and with repeats: what `--release` cuts the runtime file
-    /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
-    markup_exports: std.ArrayList([]const u8) = .empty,
-    /// The program start data every module's markup lowering contributed
-    /// (`boundary.md` §9.4.5), in module order. Scratch-owned.
-    start: std.ArrayList(Lower.StartPair) = .empty,
-    /// The printed modules in `pending`, gpa-owned: they are handed over
-    /// rather than copied, and freed when the phase ends.
-    owned: std.ArrayList([]u8) = .empty,
-    /// The threads of every parallel step from reachability on, made by
-    /// `run` before the first of them.
-    pool: *Workers = undefined,
-    /// The build's schema plans, read by reachability and by every
-    /// module's lowering (`schema.md` §6). Set by `eliminate`.
-    schema_graph: ?SchemaGraph = null,
-    files_written: u32 = 0,
-    bytes_written: u64 = 0,
-    /// `Result.points_to`, as it is written (gpa).
-    points_to: std.ArrayList(u8) = .empty,
-    /// `Result.rep_keys`, as it is written (gpa).
-    rep_key_text: std.ArrayList(u8) = .empty,
-    /// `--release`: the build's representation keys (`RepKeys`), made
-    /// once before lowering from every module's type-key artifact and
-    /// read by every lowering.
-    rep_keys: ?RepKeys = null,
+    /// Contract-only scratch is not authority for a later projection.
+    contract: Contract = .{},
+    projection: Projection = .{},
+
+    const Contract = struct {
+        runtime_module: ?Graph.Index = null,
+        entry_program: CheckedTypes.TypeId = .none,
+    };
+    const Selected = struct {
+        entry: ?Entry,
+        plan: *const EntryPlan,
+        runtime_module: ?Graph.Index,
+        entry_program: CheckedTypes.TypeId,
+    };
+    /// Immutable options/selection; Session remains an explicit mutable service.
+    const BuildInput = struct {
+        options: Options,
+        selected: ?Selected = null,
+    };
+    const Projection = struct {
+        /// §9's answer: which declarations and derived rows this build ships.
+        /// Scratch-owned, filled by `eliminate` before the first module is
+        /// lowered.
+        live: Reach.Result = .empty,
+        /// `Lower.Input.core_private`, the same for every module of the build.
+        core_private: Lower.CorePrivate = @splat(true),
+        /// `Lower.Input.clean_modules`, the same for every module of the build.
+        clean_modules: []const bool = &.{},
+        /// §9 item 2's whole-program namespace: one table for the BUILD, so that
+        /// an `import` specifier in one file and the `export` in another are
+        /// given the same short name. Empty and unused in a dev build.
+        globals: Rename.Globals = .{},
+        /// `--release` of an application: the ordinals of `globals` that some
+        /// file of the build imports — another module's `import`, or the entry
+        /// file's of `main` (`markImported`). A module's `export` list is cut
+        /// to them. Scratch-owned; empty and unused otherwise.
+        imported: Print.Imported = .{},
+        /// `--release`: the whole-program ordinals of names the build imports
+        /// from a hand-written file — a `foreign`'s sibling export, the platform's
+        /// runtime — which `Print.resolve` never writes in place of an arrow
+        /// (`backend.md` §9 item 6; `markHandWritten`).
+        hand_written: Print.Imported = .{},
+        /// What the build produced, path and bytes, before any of it reaches
+        /// the disk. Scratch-owned.
+        pending: std.ArrayList(Output) = .empty,
+        /// Whether a module written imports the markup runtime, which the
+        /// build then copies (`backend.md` §15.1).
+        uses_markup_runtime: bool = false,
+        /// The write-set pass, between `runWrites` and `buildDirect`.
+        writes: ?*Writes = null,
+        writes_calls: []const Writes.Call = &.{},
+        writes_effects: ?Writes.Effects = null,
+        writes_birs: []const *const Bir = &.{},
+        /// `browser-inline.md` §7: every lifted piece of the build, and the
+        /// instruction ranges reachability does not follow.
+        lifts: []const Lift.Piece = &.{},
+        /// `browser-inline.md` §8.4: the arenas the owners of view pieces write
+        /// their facts with, one per piece, freed with the emitter.
+        piece_arenas: std.ArrayList(*std.heap.ArenaAllocator) = .empty,
+        cuts: []const Reach.Cut = &.{},
+        lift_roots: []const Reach.Node = &.{},
+        supplied: []const Lower.Markup.Supplied = &.{},
+        program_names: []const []const u8 = &.{},
+        program_uses: []const []const u8 = &.{},
+        /// The supplied exports some module's lowering took, by name.
+        module_uses: std.ArrayList([]const u8) = .empty,
+        /// Reachability's roots beside the build's own (`Reach.Input`).
+        extra_roots: []const Reach.Node = &.{},
+        /// The validators the build shares across its schemas, as roots
+        /// (`SchemaShare`): decided after the first walk, kept by every walk
+        /// after it (`withShareRoots`).
+        share_roots: []const Reach.Node = &.{},
+        /// What every walk of the build reads (`walk`): the input `eliminate`
+        /// built the edge lists from, and the lists, in the workers' `edges`
+        /// arenas. A walk from other roots reads the same lists (§9,
+        /// *Incrementality (M4) and chunking (§10)*).
+        reach: Reach.Input = undefined,
+        edges: []const Reach.ModuleEdges = &.{},
+        /// Per module, whether its edge list was read from the embedded pack,
+        /// which is made with no shape run (`Reach.Input.schema_shapes`).
+        edges_read: []const bool = &.{},
+        forwarding_foreigns: [][]Reach.ForeignProof = &.{},
+        /// `--release` of an application that does not reach `Debug`: what
+        /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
+        /// Null renames no field and gives no type integer tags.
+        boundary: ?Fields.Boundary = null,
+        /// What a typed `Debug.toString` reads its type's constructors from
+        /// (§4, *`Debug.toString` reads the argument's type*): set before
+        /// lowering when some module has a debug row, null otherwise.
+        debug_context: ?DebugShape.Context = null,
+        /// What a program lowering reads of the write-set pass
+        /// (`Lower.Direct`), when the build's lowering compiles programs whole.
+        direct: ?Lower.Direct = null,
+        /// `--fuzz --release`: the message types JavaScript sees (`fuzzSeeds`).
+        fuzz_seeds: []const Fields.Seed = &.{},
+        /// The fields' short spellings, assigned after the optimiser.
+        field_table: ?Fields.Table = null,
+        /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
+        /// file under `--release`*), decided after lowering.
+        hoisted: bool = false,
+        /// §11: where the output tree is, in a build with maps. The hoisted
+        /// file's map is placed against it at the join (§11.2).
+        map_root: ?MapRoot = null,
+        /// The host globals a hoisted hand-written file binds as written, which
+        /// emitted code may not then write bare (`bareBlocked`).
+        bare_blocked: []const []const u8 = &.{},
+        /// What specialisation took as its roots, by name: `pruneOptimised`'s.
+        spec_roots: []const Rename.Globals.Key = &.{},
+        /// The markup runtime's exports the modules written import, in
+        /// module order and with repeats: what `--release` cuts the runtime file
+        /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
+        markup_exports: std.ArrayList([]const u8) = .empty,
+        /// The program start data every module's markup lowering contributed
+        /// (`boundary.md` §9.4.5), in module order. Scratch-owned.
+        start: std.ArrayList(Lower.StartPair) = .empty,
+        /// The printed modules in `pending`, gpa-owned: they are handed over
+        /// rather than copied, and freed when the phase ends.
+        owned: std.ArrayList([]u8) = .empty,
+        /// The threads of every parallel step from reachability on, made by
+        /// `run` before the first of them.
+        pool: *Workers = undefined,
+        /// The build's schema plans, read by reachability and by every
+        /// module's lowering (`schema.md` §6). Set by `eliminate`.
+        schema_graph: ?SchemaGraph = null,
+        files_written: u32 = 0,
+        bytes_written: u64 = 0,
+        /// `Result.points_to`, as it is written (gpa).
+        points_to: std.ArrayList(u8) = .empty,
+        /// `Result.rep_keys`, as it is written (gpa).
+        rep_key_text: std.ArrayList(u8) = .empty,
+        /// `--release`: the build's representation keys (`RepKeys`), made
+        /// once before lowering from every module's type-key artifact and
+        /// read by every lowering.
+        rep_keys: ?RepKeys = null,
+
+        /// Publish owned buffers together: any later allocation failure frees
+        /// earlier transfers while the emitter still owns all remaining lists.
+        fn takeResult(p: *Projection, gpa: Allocator, items: *std.ArrayList(Item), written: bool) Allocator.Error!Result {
+            const diagnostics = try items.toOwnedSlice(gpa);
+            errdefer {
+                for (diagnostics) |item| gpa.free(item.message);
+                gpa.free(diagnostics);
+            }
+            const points_to = try p.points_to.toOwnedSlice(gpa);
+            errdefer gpa.free(points_to);
+            const rep_keys = try p.rep_key_text.toOwnedSlice(gpa);
+            return .{
+                .diagnostics = diagnostics,
+                .files_written = if (written) p.files_written else 0,
+                .bytes_written = if (written) p.bytes_written else 0,
+                .points_to = points_to,
+                .rep_keys = rep_keys,
+            };
+        }
+
+        /// Scratch tables die with the caller arena; only these owners use gpa.
+        fn deinit(p: *Projection, gpa: Allocator) void {
+            if (p.writes) |writes| writes.deinit();
+            for (p.owned.items) |text| gpa.free(text);
+            p.owned.deinit(gpa);
+            for (p.piece_arenas.items) |arena| arena.deinit();
+            p.piece_arenas.deinit(gpa);
+            p.points_to.deinit(gpa);
+            p.rep_key_text.deinit(gpa);
+            p.* = .{};
+        }
+    };
+
+    fn entryPlan(e: *const Emitter) *const EntryPlan {
+        return if (e.input.selected) |selected| selected.plan else &e.session.entry_plan;
+    }
+    fn runtimeModule(e: *const Emitter) ?Graph.Index {
+        return if (e.input.selected) |selected| selected.runtime_module else e.contract.runtime_module;
+    }
+    fn entryProgram(e: *const Emitter) CheckedTypes.TypeId {
+        return if (e.input.selected) |selected| selected.entry_program else e.contract.entry_program;
+    }
 
     /// One file the build will write. `origin` is the SOURCE file the
     /// output was produced for — a module's `.beni`, a sibling's or the
@@ -1483,13 +1547,7 @@ const Emitter = struct {
     const Output = struct { path: []const u8, bytes: []const u8, origin: []const u8 };
 
     fn nothingWritten(e: *Emitter, gpa: Allocator) Allocator.Error!Result {
-        return .{
-            .diagnostics = try e.diagnostics.toOwnedSlice(gpa),
-            .files_written = 0,
-            .bytes_written = 0,
-            .points_to = try e.points_to.toOwnedSlice(gpa),
-            .rep_keys = try e.rep_key_text.toOwnedSlice(gpa),
-        };
+        return e.projection.takeResult(gpa, &e.diagnostics, false);
     }
 
     /// A `foreign` value's name and the token that declared it, so a
@@ -1543,7 +1601,7 @@ const Emitter = struct {
     /// into this binary, checked when the platform is loaded — by `check
     /// --platform` as by `build` — against the manifest that names it.
     fn checkLowering(e: *Emitter) !void {
-        const name = e.options.platform.lowering orelse return;
+        const name = e.input.options.platform.lowering orelse return;
         if (findLowering(name) != null) return;
         var known: std.ArrayList(u8) = .empty;
         for (lowerings, 0..) |l, i| {
@@ -1552,7 +1610,7 @@ const Emitter = struct {
         }
         try e.reportInFile(
             .unknown_markup_lowering,
-            .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+            .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.lowering_root, Manifest.file_name }) },
             \\This platform names the markup lowering `{s}`, which this beni does not have.
             \\
             \\A markup lowering is Zig compiled into the compiler (`docs/design/boundary.md`
@@ -1568,15 +1626,15 @@ const Emitter = struct {
     /// primitive's implementation is the lowering's runtime, the root's
     /// compilation is the lowering's, and there is none.
     fn refuseMarkupWithoutLowering(e: *Emitter) !void {
-        if (e.options.platform.lowering != null) return;
+        if (e.input.options.platform.lowering != null) return;
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             const b = e.bir(m);
             for (b.decls, 0..) |d, index| {
-                if (!e.live.decl(m, index)) continue;
+                if (!e.projection.live.decl(m, index)) continue;
                 if (d.kind.isValue() and writesMarkup(b, d)) return e.reportInFile(
                     .unknown_markup_lowering,
-                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name }) },
+                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.root, Manifest.file_name }) },
                     \\This build writes markup in `{s}.{s}`, but the platform `{s}` names no markup
                     \\lowering to compile it.
                     \\
@@ -1584,12 +1642,12 @@ const Emitter = struct {
                     \\§9.4), which a platform names in its manifest's `"markup"` `"lowering"`, or
                     \\inherits from a platform it depends on.
                 ,
-                    .{ e.session.store.moduleName(e.graph().moduleFile(m)), e.session.interner.slice(b.symbol(d.name)), e.options.platform.name },
+                    .{ e.session.store.moduleName(e.graph().moduleFile(m)), e.session.interner.slice(b.symbol(d.name)), e.input.options.platform.name },
                 );
                 if (d.kind != .vocab_markup) continue;
                 return e.reportInFile(
                     .unknown_markup_lowering,
-                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.root, Manifest.file_name }) },
+                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.root, Manifest.file_name }) },
                     \\This build uses the markup primitive `{s}.{s}`, but the platform `{s}` names no
                     \\markup lowering to implement it.
                     \\
@@ -1597,7 +1655,7 @@ const Emitter = struct {
                     \\(`docs/design/boundary.md` §9.3), which a platform names in its manifest's
                     \\`"markup"` `"lowering"`, or inherits from a platform it depends on.
                 ,
-                    .{ e.session.store.moduleName(e.graph().moduleFile(m)), e.session.interner.slice(b.symbol(d.name)), e.options.platform.name },
+                    .{ e.session.store.moduleName(e.graph().moduleFile(m)), e.session.interner.slice(b.symbol(d.name)), e.input.options.platform.name },
                 );
             }
         }
@@ -1748,6 +1806,15 @@ const Emitter = struct {
     /// `foreign now : Float` — is indistinguishable from `pi` by type
     /// alone. What the check buys is real but narrower than advertised: no
     /// `foreign` may be polymorphic in a way that lets it fabricate a value.
+    /// An attested candidate must never fall through to an arbitrary sibling.
+    /// Phase1 deliberately has no executable native lowering authority.
+    fn refusePendingNative(e: *Emitter) !void {
+        const native = e.session.native_bindings.text_encoder orelse return;
+        const file = e.graph().moduleFile(native.module);
+        const decl = e.bir(native.module).decls[native.checked.declaration];
+        try e.report(.not_implemented, file, decl.name_token, "The generated TextEncoder constructor is awaiting its checked realm and direct-lowering implementation. No native callable was emitted.", .{});
+    }
+
     fn checkForeignShapes(e: *Emitter) !void {
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
@@ -1780,8 +1847,8 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn checkSiblings(e: *Emitter) !void {
-        e.forwarding_foreigns = try e.scratch.alloc([]Reach.ForeignProof, e.graph().count());
-        @memset(e.forwarding_foreigns, &.{});
+        e.projection.forwarding_foreigns = try e.scratch.alloc([]Reach.ForeignProof, e.graph().count());
+        @memset(e.projection.forwarding_foreigns, &.{});
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
@@ -1840,11 +1907,11 @@ const Emitter = struct {
                 } else false;
                 for (b.decls, 0..) |decl, di| {
                     if (decl.kind == .foreign_value and std.mem.eql(u8, export_.name, e.session.interner.slice(b.symbol(decl.name)))) {
-                        if (e.forwarding_foreigns[m.int()].len == 0) {
-                            e.forwarding_foreigns[m.int()] = try e.scratch.alloc(Reach.ForeignProof, b.decls.len);
-                            @memset(e.forwarding_foreigns[m.int()], .{});
+                        if (e.projection.forwarding_foreigns[m.int()].len == 0) {
+                            e.projection.forwarding_foreigns[m.int()] = try e.scratch.alloc(Reach.ForeignProof, b.decls.len);
+                            @memset(e.projection.forwarding_foreigns[m.int()], .{});
                         }
-                        e.forwarding_foreigns[m.int()][di] = .{ .inert = true, .parameter = if (plain) export_.forwarded_parameter else null };
+                        e.projection.forwarding_foreigns[m.int()][di] = .{ .inert = true, .parameter = if (plain) export_.forwarded_parameter else null };
                     }
                 }
             };
@@ -2102,10 +2169,10 @@ const Emitter = struct {
     /// The markup runtime's source path, when the chain names a lowering
     /// this binary has and a runtime for it.
     fn markupRuntimePath(e: *Emitter) !?[]const u8 {
-        const name = e.options.platform.lowering orelse return null;
+        const name = e.input.options.platform.lowering orelse return null;
         if (findLowering(name) == null) return null;
-        const rel = e.options.platform.markup_runtime orelse return null;
-        return try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, rel });
+        const rel = e.input.options.platform.markup_runtime orelse return null;
+        return try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.lowering_root, rel });
     }
 
     /// Whether the chain names no runtime file at all, program or markup,
@@ -2113,7 +2180,7 @@ const Emitter = struct {
     /// then the whole runtime, and supplies every export, `run` among them
     /// (`boundary.md` §5.2 and §9.2, amended 2026-10-02).
     fn moduleIsRuntime(e: *const Emitter) bool {
-        const p = e.options.platform;
+        const p = e.input.options.platform;
         if (p.runtime != null or p.markup_runtime != null or p.markup_module == null) return false;
         return findLowering(p.lowering orelse return false) != null;
     }
@@ -2123,7 +2190,7 @@ const Emitter = struct {
     /// runtime module being both (`moduleIsRuntime`).
     fn markupRuntimeIsProgramRuntime(e: *Emitter) bool {
         if (e.genericRuntimeSelected()) return false;
-        const p = e.options.platform;
+        const p = e.input.options.platform;
         if (e.moduleIsRuntime()) return true;
         const markup = p.markup_runtime orelse return false;
         const program = p.runtime orelse return false;
@@ -2146,12 +2213,12 @@ const Emitter = struct {
     fn checkMarkupRuntime(e: *Emitter) !void {
         const runtime_file = try e.markupRuntimePath();
         if (runtime_file == null and !e.moduleIsRuntime()) return;
-        const lowering = findLowering(e.options.platform.lowering.?).?;
+        const lowering = findLowering(e.input.options.platform.lowering.?).?;
         var expected: std.ArrayList(Expected) = .empty;
         for (lowering.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
         // With no runtime file, `run` is asked of the module only when the
         // chain declares a `program` for it to run.
-        const runs = e.markupRuntimeIsProgramRuntime() and (!e.moduleIsRuntime() or e.options.platform.program != null);
+        const runs = e.markupRuntimeIsProgramRuntime() and (!e.moduleIsRuntime() or e.input.options.platform.program != null);
         if (runs) try expected.append(e.scratch, .{ .name = "run", .arity = 1 });
         // A lowering with no run-time value of the markup type refuses
         // every use of a primitive (§9.4.6, version 1.6), so its runtime
@@ -2207,7 +2274,7 @@ const Emitter = struct {
         const bytes = e.readAsset(path) orelse {
             try e.reportInFile(
                 .foreign_sibling_missing,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.lowering_root, Manifest.file_name }) },
                 \\I cannot find the markup runtime `{s}`.
                 \\
                 \\A platform that names a markup lowering names the JavaScript file its emitted
@@ -2329,8 +2396,8 @@ const Emitter = struct {
     /// against the manifest that named the module.
     fn reportUnsupplied(e: *Emitter, unsupplied: []const Expected, lowering_name: []const u8) !void {
         // A module that is not there was reported by `takeSupplied`.
-        if (e.runtime_module == null) return;
-        const module_name = e.options.platform.markup_module.?;
+        if (e.runtimeModule() == null) return;
+        const module_name = e.input.options.platform.markup_module.?;
         for (unsupplied) |want| {
             if (want.primitive) |p| {
                 try e.report(
@@ -2350,7 +2417,7 @@ const Emitter = struct {
             }
             try e.reportInFile(
                 .foreign_export_mismatch,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.lowering_root, Manifest.file_name }) },
                 \\The runtime module `{s}` declares no `pub` value `{s}`, which {s}, and this
                 \\platform names no runtime file to supply it.
                 \\
@@ -2376,19 +2443,19 @@ const Emitter = struct {
     /// Checked interface view, including alias arguments. No checker inference
     /// runs in emit: this reads the immutable schemes it already proved.
     fn genericRuntimeSelected(e: *const Emitter) bool {
-        if (e.session.entry_plan.validated) return e.session.entry_plan.runtime() != null;
+        if (e.entryPlan().validated) return e.entryPlan().runtime() != null;
         // Before validation this selects the legacy markup export request,
         // not an executable or trusted runtime. Publication follows below.
-        const program = e.options.platform.program orelse return false;
-        for (e.options.platform.entry_kinds) |kind| {
+        const program = e.input.options.platform.program orelse return false;
+        for (e.input.options.platform.entry_kinds) |kind| {
             if (std.mem.eql(u8, program, kind.definition.programType)) return true;
         }
         return false;
     }
 
     fn entryRun(e: *const Emitter) ?struct { module: Graph.Index, decl: u32 } {
-        if (e.session.entry_plan.runtime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
-        const module = e.runtime_module orelse return null;
+        if (e.entryPlan().runtime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
+        const module = e.runtimeModule() orelse return null;
         const runner = e.suppliedAs("run") orelse return null;
         return .{ .module = module, .decl = runner.decl };
     }
@@ -2535,19 +2602,19 @@ const Emitter = struct {
         const plan = &e.session.entry_plan;
         plan.reset();
         errdefer plan.reset();
-        if (e.options.platform.program) |program| {
-            e.entry_program = e.session.checked.types.find(
+        if (e.input.options.platform.program) |program| {
+            e.contract.entry_program = e.session.checked.types.find(
                 e.graph(),
                 .platform,
                 try e.session.interner.getOrPut(e.gpa, platformModule(program)),
                 try e.session.interner.getOrPut(e.gpa, shortName(program)),
             );
-            plan.top_program = e.entry_program;
+            plan.top_program = e.entryProgram();
         }
         const Identity = struct { module: Graph.Index, type: Interface.TypeIndex };
-        const identities = try e.scratch.alloc(?Identity, e.options.platform.entry_kinds.len);
+        const identities = try e.scratch.alloc(?Identity, e.input.options.platform.entry_kinds.len);
         @memset(identities, null);
-        for (e.options.platform.entry_kinds, 0..) |kind, kind_index| {
+        for (e.input.options.platform.entry_kinds, 0..) |kind, kind_index| {
             const row = kind.definition;
             const errors_before = e.diagnostics.items.len;
             const realm = std.meta.stringToEnum(EntryPlan.Realm, row.realm);
@@ -2699,7 +2766,7 @@ const Emitter = struct {
                 try e.report(.entry_runtime_suspends, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` may suspend, but the generated entry calls it synchronously. Install listeners, start an owned root fiber, then return; initialization may suspend inside that fiber.", .{row.runtime});
                 continue;
             }
-            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+            if (e.input.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
                 if (e.exportsProgram()) {
                     try e.entryKindError(kind, "The generic entry runtime for `{s}` returns `⊤`, so it cannot also supply the result required by exports program.", .{row.programType});
                     continue;
@@ -2728,12 +2795,12 @@ const Emitter = struct {
                 .launches = .{ .start = launch_start, .len = @intCast(launches.items.len) },
                 .roles = .{ .start = role_start, .len = @intCast(row.parameters.len) },
             });
-            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+            if (e.input.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
                 plan.selected = resolved;
             };
         }
-        if (!e.hasErrors() and e.options.platform.entry_kinds.len != 0 and e.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
-            if (e.options.platform.program) |program| try e.reportInFile(.invalid_entry_kind, .{ .path = try e.manifestPath() }, "The platform has no runtime file or entryKinds row for its top Program `{s}`.", .{program});
+        if (!e.hasErrors() and e.input.options.platform.entry_kinds.len != 0 and e.input.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
+            if (e.input.options.platform.program) |program| try e.reportInFile(.invalid_entry_kind, .{ .path = try e.manifestPath() }, "The platform has no runtime file or entryKinds row for its top Program `{s}`.", .{program});
         }
         if (e.hasErrors()) plan.reset() else plan.finish();
     }
@@ -2743,13 +2810,13 @@ const Emitter = struct {
     /// The runtime module the chain names, or null (`boundary.md` §9.2, *A
     /// runtime module*).
     fn markupModule(e: *Emitter) !?Graph.Index {
-        const name = e.options.platform.markup_module orelse return null;
+        const name = e.input.options.platform.markup_module orelse return null;
         return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
     }
 
     /// `beni:<Module>`, the specifier the markup runtime imports it by.
     fn programSpecifier(e: *Emitter) !?[]const u8 {
-        const name = e.options.platform.markup_module orelse return null;
+        const name = e.input.options.platform.markup_module orelse return null;
         return try std.fmt.allocPrint(e.scratch, "beni:{s}", .{name});
     }
 
@@ -2770,11 +2837,11 @@ const Emitter = struct {
     /// 4 counts a sibling's. A markup primitive is supplied likewise, and
     /// its uses then read the module's value (`Lower.primitiveName`).
     fn takeSupplied(e: *Emitter, expected: *std.ArrayList(Expected), lowering_name: []const u8) !void {
-        const name = e.options.platform.markup_module orelse return;
+        const name = e.input.options.platform.markup_module orelse return;
         const module = try e.markupModule() orelse {
             try e.reportInFile(
                 .foreign_sibling_missing,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.lowering_root, Manifest.file_name }) },
                 \\I cannot find the runtime module `{s}`.
                 \\
                 \\A platform's manifest may name, in `"markup"` `"module"`, a beni module of its
@@ -2822,13 +2889,13 @@ const Emitter = struct {
             const value = iface.findValue(&e.session.interner, b.symbol(d.name)) orelse continue;
             try supplied.append(e.scratch, .{ .name = want.name, .decl = index, .value = @backingInt(value) });
         }
-        e.runtime_module = module;
-        e.supplied = supplied.items;
+        e.contract.runtime_module = module;
+        e.projection.supplied = supplied.items;
     }
 
     /// The runtime module's export `name` supplies, or null.
     fn suppliedAs(e: *const Emitter, name: []const u8) ?Lower.Markup.Supplied {
-        for (e.supplied) |s| if (std.mem.eql(u8, s.name, name)) return s;
+        for (e.projection.supplied) |s| if (std.mem.eql(u8, s.name, name)) return s;
         return null;
     }
 
@@ -2837,7 +2904,7 @@ const Emitter = struct {
     /// (`boundary.md` §9.2). The names are the file's coarse roots.
     fn checkProgramImports(e: *Emitter, path: []const u8, bytes: []const u8) !void {
         const spec = try e.programSpecifier() orelse return;
-        const module = e.runtime_module orelse return;
+        const module = e.runtimeModule() orelse return;
         const tokens = Minify.tokenize(e.scratch, bytes) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             // Copied as written; an import it holds is then check 3's.
@@ -2872,7 +2939,7 @@ const Emitter = struct {
                 try names.append(e.scratch, n.name);
             }
         }
-        e.program_names = names.items;
+        e.projection.program_names = names.items;
     }
 
     /// The runtime module's roots (`backend.md` §15.1, *The runtime
@@ -2880,10 +2947,10 @@ const Emitter = struct {
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
-        if (e.session.entry_plan.runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
-        const module = e.runtime_module orelse return out.items;
-        for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
-        for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
+        if (e.entryPlan().runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtimeModule() orelse return out.items;
+        for (e.projection.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
+        for (e.projection.program_names) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
         };
         return out.items;
@@ -2894,10 +2961,10 @@ const Emitter = struct {
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
-        if (e.session.entry_plan.runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
-        const module = e.runtime_module orelse return out.items;
+        if (e.entryPlan().runtime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtimeModule() orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
-        try names.appendSlice(e.scratch, e.module_uses.items);
+        try names.appendSlice(e.scratch, e.projection.module_uses.items);
         if (entry != null) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
@@ -2914,7 +2981,7 @@ const Emitter = struct {
         }
         const uses = try e.programUses(entry);
         try names.appendSlice(e.scratch, uses);
-        e.program_uses = uses;
+        e.projection.program_uses = uses;
 
         for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
@@ -2929,16 +2996,16 @@ const Emitter = struct {
         const spec = try e.programSpecifier() orelse return &.{};
         const source = try e.markupRuntimePath() orelse return &.{};
         const program_runtime = e.markupRuntimeIsProgramRuntime();
-        if (!e.uses_markup_runtime and !program_runtime) return &.{};
+        if (!e.projection.uses_markup_runtime and !program_runtime) return &.{};
         const bytes = e.readAsset(source) orelse return &.{};
-        if (!e.options.release) return e.program_names;
+        if (!e.input.options.release) return e.projection.program_names;
         var keep: std.ArrayList([]const u8) = .empty;
-        try keep.appendSlice(e.scratch, e.markup_exports.items);
+        try keep.appendSlice(e.scratch, e.projection.markup_exports.items);
         if (program_runtime and entry != null) {
             if (e.suppliedAs("run") == null) try keep.append(e.scratch, "run");
             if (e.suppliedAs("start") == null) try keep.append(e.scratch, "start");
         }
-        return try Minify.programUses(e.scratch, bytes, spec, keep.items) orelse e.program_names;
+        return try Minify.programUses(e.scratch, bytes, spec, keep.items) orelse e.projection.program_names;
     }
 
     /// The whole-program name of the runtime module's value `name`.
@@ -2954,9 +3021,9 @@ const Emitter = struct {
     /// file imports it: `Rt$first` in a development build, its short name
     /// under `--release`.
     fn moduleSpelling(e: *Emitter, module: Graph.Index, name: []const u8) ![]const u8 {
-        if (e.options.release) {
+        if (e.input.options.release) {
             // Rooted, so live, so its module named it and the table has it.
-            const ordinal = e.globals.lookup(try e.moduleName(module, name)).?;
+            const ordinal = e.projection.globals.lookup(try e.moduleName(module, name)).?;
             var buf: [8]u8 = undefined;
             return try e.scratch.dupe(u8, Rename.spell(ordinal, &buf));
         }
@@ -2973,7 +3040,7 @@ const Emitter = struct {
     /// from the module's file (`backend.md` §15.1, *The runtime module*).
     fn rewriteProgramImports(e: *Emitter, bytes: []const u8, out: []const u8) ![]const u8 {
         const spec = try e.programSpecifier() orelse return bytes;
-        const module = e.runtime_module orelse return bytes;
+        const module = e.runtimeModule() orelse return bytes;
         const tokens = Minify.tokenize(e.scratch, bytes) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.Unsupported => return bytes,
@@ -2987,7 +3054,7 @@ const Emitter = struct {
             try text.appendSlice(e.scratch, bytes[at..imp.bytes_start]);
             var first = true;
             for (imp.names) |n| {
-                const used = for (e.program_uses) |u| {
+                const used = for (e.projection.program_uses) |u| {
                     if (std.mem.eql(u8, u, n.name)) break true;
                 } else false;
                 if (!used) continue;
@@ -3131,8 +3198,8 @@ const Emitter = struct {
         ,
             .{try e.writtenProgramName(entry.module)},
         );
-        const program = e.options.platform.program orelse "";
-        const expected = if (e.session.entry_plan.validated) e.session.entry_plan.top_program else e.entry_program;
+        const program = e.input.options.platform.program orelse "";
+        const expected = if (e.entryPlan().validated) e.entryPlan().top_program else e.entryProgram();
         if (e.expandedTypeName(entry.module, b, annotation, null, 0)) |t| {
             if (expected != .none and t.id == expected) return;
             if (std.mem.eql(u8, t.module, platformModule(program)) and
@@ -3325,7 +3392,7 @@ const Emitter = struct {
     /// then the manifest's own module-qualified spelling, which is always
     /// readable.
     fn writtenProgramName(e: *Emitter, scope: ?Graph.Index) ![]const u8 {
-        const qualified = e.options.platform.program orelse "";
+        const qualified = e.input.options.platform.program orelse "";
         const at = scope orelse e.firstAppModule() orelse return qualified;
         return e.writtenTypeName(at, .{
             .module = platformModule(qualified),
@@ -3413,7 +3480,7 @@ const Emitter = struct {
             if (params.len == 0) return false;
             try seeds.append(a, .{ .module = @fromBackingInt(@intCast(prog.update_module)), .inst = params[0] });
         }
-        e.fuzz_seeds = seeds.items;
+        e.projection.fuzz_seeds = seeds.items;
         return true;
     }
 
@@ -3424,10 +3491,10 @@ const Emitter = struct {
     /// every type the payloads name, and both platforms must run the arms.
     /// `roots`, and the shared validators' (`share_roots`).
     fn withShareRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
-        if (e.share_roots.len == 0) return roots;
+        if (e.projection.share_roots.len == 0) return roots;
         var out: std.ArrayList(Reach.Node) = .empty;
         try out.appendSlice(e.scratch, roots);
-        try out.appendSlice(e.scratch, e.share_roots);
+        try out.appendSlice(e.scratch, e.projection.share_roots);
         return out.items;
     }
 
@@ -3437,14 +3504,14 @@ const Emitter = struct {
     /// `core/Schema` values and nothing that reaches a worker, so the
     /// decision the second walk would make is the first's.
     fn shareValidators(e: *Emitter) !void {
-        const sg = if (e.schema_graph) |*g| g else return;
+        const sg = if (e.projection.schema_graph) |*g| g else return;
         // A size optimisation, priced on what ships: a development build
         // writes every branch in place, as it did.
-        if (e.options.schema_library or !e.options.release) return;
-        sg.share = try SchemaShare.decide(e.scratch, sg, &e.live);
-        e.share_roots = try SchemaShare.roots(e.scratch, sg, sg.share);
-        if (e.share_roots.len == 0) return;
-        e.extra_roots = try e.withShareRoots(e.extra_roots);
+        if (e.input.options.schema_library or !e.input.options.release) return;
+        sg.share = try SchemaShare.decide(e.scratch, sg, &e.projection.live);
+        e.projection.share_roots = try SchemaShare.roots(e.scratch, sg, sg.share);
+        if (e.projection.share_roots.len == 0) return;
+        e.projection.extra_roots = try e.withShareRoots(e.projection.extra_roots);
         try e.walk();
     }
 
@@ -3453,17 +3520,17 @@ const Emitter = struct {
     /// only drop worker sets, so the new set is a subset of the old and one
     /// more walk settles it.
     fn reshareValidators(e: *Emitter) !bool {
-        const sg = if (e.schema_graph) |*g| g else return false;
-        if (e.options.schema_library or !e.options.release) return false;
-        const again = try SchemaShare.decide(e.scratch, sg, &e.live);
+        const sg = if (e.projection.schema_graph) |*g| g else return false;
+        if (e.input.options.schema_library or !e.input.options.release) return false;
+        const again = try SchemaShare.decide(e.scratch, sg, &e.projection.live);
         if (again.set.eql(sg.share.set)) return false;
         sg.share = again;
-        e.share_roots = try SchemaShare.roots(e.scratch, sg, again);
+        e.projection.share_roots = try SchemaShare.roots(e.scratch, sg, again);
         return true;
     }
 
     fn withFuzzRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
-        if (!e.options.fuzz) return roots;
+        if (!e.input.options.fuzz) return roots;
         var out: std.ArrayList(Reach.Node) = .empty;
         try out.appendSlice(e.scratch, roots);
         for (0..e.graph().count()) |i| {
@@ -3495,12 +3562,12 @@ const Emitter = struct {
     fn ownCode(e: *Emitter, a: std.mem.Allocator, names: []const []const u8) ![]bool {
         const n = e.graph().count();
         const own = try a.alloc(bool, n);
-        const layers = e.options.platform.file_layers;
+        const layers = e.input.options.platform.file_layers;
         const chain = e.session.options.chain;
         var platform: u64 = 0;
         if (chain) |c| {
             if (c.firstMarkup("lowering")) |lw| platform |= c.layers[lw.layer].sees;
-            if (findLowering(e.options.platform.lowering orelse "")) |lowering| {
+            if (findLowering(e.input.options.platform.lowering orelse "")) |lowering| {
                 for (0..n) |i| {
                     const m: Graph.Index = @fromBackingInt(@intCast(i));
                     if (e.graph().modulePackage(m) != .platform) continue;
@@ -3549,7 +3616,7 @@ const Emitter = struct {
         }
         // Version 1.14: the platform's `Sub` and `Cmd` values, by name.
         var effects: ?Writes.Effects = null;
-        if (findLowering(e.options.platform.lowering.?).?.effects) |fx| {
+        if (findLowering(e.input.options.platform.lowering.?).?.effects) |fx| {
             var found: Writes.Effects = .{};
             for (0..n) |i| {
                 if (packages[i] != .platform) continue;
@@ -3575,12 +3642,12 @@ const Emitter = struct {
             effects = found;
         }
         // A lowering whose handlers take a key's leaf fields (`Lowering.arm_fields`).
-        const arm_fields = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false;
+        const arm_fields = if (e.input.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false;
         // Per module, whether its record updates are written in place
         // (`ownership-checker.md` §31.10), for a lowering that holds a root's
         // slice (`browser-inline.md` §8.4, amended 2026-10-22).
         const in_place = try a.alloc(bool, n);
-        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
+        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.input.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .profile = if (e.session.profile.enabled) &e.session.profile else null,
@@ -3602,10 +3669,10 @@ const Emitter = struct {
             .follow_single = arm_fields,
             .in_place = if (arm_fields) in_place else &.{},
         });
-        e.writes = w;
-        e.writes_calls = try w.runCalls();
-        e.writes_effects = effects;
-        e.writes_birs = birs;
+        e.projection.writes = w;
+        e.projection.writes_calls = try w.runCalls();
+        e.projection.writes_effects = effects;
+        e.projection.writes_birs = birs;
     }
 
     /// `browser-inline.md` §7: the pieces program sites lift — every
@@ -3621,22 +3688,22 @@ const Emitter = struct {
     /// lambda's body in every tree, so its callee is cut in each; its schema
     /// is the one the program decodes its value with, and stays.
     fn cutPrerender(e: *Emitter) !void {
-        const lowering = findLowering(e.options.platform.lowering orelse return) orelse return;
+        const lowering = findLowering(e.input.options.platform.lowering orelse return) orelse return;
         const spine = prerenders(e.session, lowering) orelse return;
-        if (e.options.prerender == .tree and !spine.data) return;
+        if (e.input.options.prerender == .tree and !spine.data) return;
         const b = e.bir(spine.module);
         const d = b.instData(spine.call);
         const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
         if (args.len != 2) return;
         var cuts: std.ArrayList(Reach.Cut) = .empty;
-        try cuts.appendSlice(e.scratch, e.cuts);
+        try cuts.appendSlice(e.scratch, e.projection.cuts);
         try cuts.append(e.scratch, .{ .module = spine.module, .lo = d.lhs, .hi = d.lhs });
         if (spine.data) {
-            e.cuts = cuts.items;
+            e.projection.cuts = cuts.items;
             return;
         }
         try cuts.append(e.scratch, .{ .module = spine.module, .lo = try Lift.low(b, e.scratch, args[1].int()), .hi = args[1].int() });
-        e.cuts = cuts.items;
+        e.projection.cuts = cuts.items;
     }
 
     /// `prerender.md` §8.4: the schema `Browser.prerenderData` is handed is
@@ -3650,7 +3717,7 @@ const Emitter = struct {
     /// the checker's answers at the calls its code makes, or the build is
     /// refused, `prerender_impure`, at the conversion.
     fn checkDataSchema(e: *Emitter) !void {
-        const lowering = findLowering(e.options.platform.lowering orelse return) orelse return;
+        const lowering = findLowering(e.input.options.platform.lowering orelse return) orelse return;
         const spine = prerenders(e.session, lowering) orelse return;
         if (!spine.data) return;
         const b = e.bir(spine.module);
@@ -3683,7 +3750,7 @@ const Emitter = struct {
                 \\here.
             , .{});
         }
-        if (e.options.prerender != .tree) return;
+        if (e.input.options.prerender != .tree) return;
         // Each `Schema.converted`'s conversion the schema's expression hands it:
         // its makers compute nothing else.
         for (convs.items) |c| if (try e.impureIn(spine.module, c)) return e.reportImpureConversion(spine.module, b.insts.items(.main_token)[c.int()]);
@@ -3903,8 +3970,8 @@ const Emitter = struct {
     }
 
     fn findLifts(e: *Emitter) !void {
-        if (e.writes_effects == null) return;
-        const w = e.writes.?;
+        if (e.projection.writes_effects == null) return;
+        const w = e.projection.writes.?;
         var pieces: std.ArrayList(Lift.Piece) = .empty;
         var cuts: std.ArrayList(Reach.Cut) = .empty;
         var roots: std.ArrayList(Reach.Node) = .empty;
@@ -3913,12 +3980,12 @@ const Emitter = struct {
         // piece again is one read, and the walk is linear in the number of
         // subscriptions (CLAUDE.md rule 5: the pieces stay in the order they
         // are met).
-        const piece_at = try e.scratch.alloc([]u32, e.writes_birs.len);
+        const piece_at = try e.scratch.alloc([]u32, e.projection.writes_birs.len);
         @memset(piece_at, &.{});
-        for (e.writes_calls) |call| {
+        for (e.projection.writes_calls) |call| {
             const prog = &call.program;
             if (prog.subscriptions_inst != Writes.none) {
-                const b = e.writes_birs[prog.subscriptions_module];
+                const b = e.projection.writes_birs[prog.subscriptions_module];
                 try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(prog.subscriptions_module)), .lo = try Lift.low(b, e.scratch, prog.subscriptions_inst), .hi = prog.subscriptions_inst });
             }
             if (prog.subscriptions.class != .set) continue;
@@ -3937,7 +4004,7 @@ const Emitter = struct {
                 // One piece per lambda; it is lowered in place only while every
                 // program that uses it is in the lambda's own module, and
                 // lifted and exported as soon as one is in another.
-                const b = e.writes_birs[info.m];
+                const b = e.projection.writes_birs[info.m];
                 if (piece_at[info.m].len == 0) {
                     piece_at[info.m] = try e.scratch.alloc(u32, b.insts.len);
                     @memset(piece_at[info.m], Writes.none);
@@ -3965,9 +4032,9 @@ const Emitter = struct {
             }
         }
         try e.findArmPieces(&pieces, &roots);
-        e.lifts = pieces.items;
-        e.cuts = cuts.items;
-        e.lift_roots = roots.items;
+        e.projection.lifts = pieces.items;
+        e.projection.cuts = cuts.items;
+        e.projection.lift_roots = roots.items;
     }
 
     /// `browser-inline.md` §8.4: the arm pieces every program's keys need —
@@ -3979,12 +4046,12 @@ const Emitter = struct {
     /// the module that declares it, after its declaration, and a root of
     /// reachability: the program site calls it.
     fn findArmPieces(e: *Emitter, pieces: *std.ArrayList(Lift.Piece), roots: *std.ArrayList(Reach.Node)) !void {
-        const w = e.writes.?;
+        const w = e.projection.writes.?;
         // Each constructor a key steps on in a module other than its
         // program's, once: sorted and deduplicated, so a constructor many
         // keys share is looked for once.
         var ctors: std.ArrayList(u32) = .empty;
-        for (e.writes_calls) |call| {
+        for (e.projection.writes_calls) |call| {
             const prog = &call.program;
             if (!prog.recognised) continue;
             for (prog.keys) |k| for (k.steps) |s| {
@@ -4004,7 +4071,7 @@ const Emitter = struct {
             for (ctors.items[0..unique]) |sc| {
                 const s = .{ .ctor = sc };
                 const place = w.ctorPlace(s.ctor);
-                const b = e.writes_birs[place.module];
+                const b = e.projection.writes_birs[place.module];
                 for (b.decls, 0..) |d, di| {
                     if (d.kind != .value or d.params < 1) continue;
                     const params = b.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
@@ -4072,14 +4139,14 @@ const Emitter = struct {
     }
     fn buildDirect(e: *Emitter) !void {
         const a = e.scratch;
-        const w = e.writes.?;
+        const w = e.projection.writes.?;
         defer {
             w.deinit();
-            e.writes = null;
+            e.projection.writes = null;
         }
-        const calls = e.writes_calls;
-        const effects = e.writes_effects;
-        const birs = e.writes_birs;
+        const calls = e.projection.writes_calls;
+        const effects = e.projection.writes_effects;
+        const birs = e.projection.writes_birs;
         const programs = try a.alloc(Lower.Direct.Program, calls.len);
         // Per program, its read sets and its keys' writes, for the root plan.
         const plan_groups = try a.alloc([]const []const u32, calls.len);
@@ -4182,14 +4249,14 @@ const Emitter = struct {
                             // A lambda of another module: the piece it is
                             // lifted as, and its captures' values here.
                             if (info.kind == .lambda and info.m != call.module) {
-                                for (e.lifts, 0..) |pc, pi| if (pc.module == info.m and pc.inst == info.inst) {
+                                for (e.projection.lifts, 0..) |pc, pi| if (pc.module == info.m and pc.inst == info.inst) {
                                     st.lift = @intCast(pi);
                                     const spelled = try a.alloc([]const u8, pc.captures.len);
                                     for (pc.captures, spelled) |local, *sp| {
                                         var text_: std.ArrayList(u8) = .empty;
                                         if (!try w.literalSpelling(w.closureLocal(dcl.start, local), &text_)) {
                                             st.captures = null;
-                                            const lb = e.writes_birs[pc.module];
+                                            const lb = e.projection.writes_birs[pc.module];
                                             const locals = lb.declLocals(lb.decls[pc.decl]);
                                             if (local < locals.len and locals[local].name != .none) st.computed = try a.dupe(u8, e.session.interner.slice(lb.symbol(locals[local].name)));
                                             break;
@@ -4379,19 +4446,19 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
             if (e.graph().modulePackage(m) != .app) continue;
             for (bir_.decls, 0..) |decl, di| {
-                if (!e.live.decl(m, di)) continue;
+                if (!e.projection.live.decl(m, di)) continue;
                 for (decl.inst_start.int()..decl.inst_end.int()) |inst| {
                     if (bir_.instTag(@fromBackingInt(@intCast(inst))) != .markup) continue;
                     try roots.append(a, .{ .module = @intCast(mi), .token = bir_.insts.items(.main_token)[inst] });
                 }
             }
         }
-        e.direct = .{ .programs = programs, .source_roots = roots.items, .lifts = e.lifts, .arm_order = try armOrder(a, e.lifts) };
+        e.projection.direct = .{ .programs = programs, .source_roots = roots.items, .lifts = e.projection.lifts, .arm_order = try armOrder(a, e.projection.lifts) };
         // Only a lowering that writes pieces has them (`Lowering.piece`).
-        const pieces = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.piece != null else false) else false;
-        if (pieces) e.direct.?.view_pieces = try e.findViewPieces(programs, birs);
-        if (pieces) try e.buildPlans(w, calls, programs, @constCast(e.direct.?.view_pieces), plan_groups, plan_writes, birs);
-        if (!e.options.release) try e.debugReach();
+        const pieces = if (e.input.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.piece != null else false) else false;
+        if (pieces) e.projection.direct.?.view_pieces = try e.findViewPieces(programs, birs);
+        if (pieces) try e.buildPlans(w, calls, programs, @constCast(e.projection.direct.?.view_pieces), plan_groups, plan_writes, birs);
+        if (!e.input.options.release) try e.debugReach();
     }
 
     /// The root plan of every program (`browser-inline.md` §8.4, amended
@@ -4405,7 +4472,7 @@ const Emitter = struct {
         const a = e.scratch;
         const rho = Writes.rho_path;
         const none = Writes.none;
-        const effects_on = e.writes_effects != null;
+        const effects_on = e.projection.writes_effects != null;
         for (calls, programs, 0..) |call, *out, pi_| {
             const pi: u32 = @intCast(pi_);
             const prog = &call.program;
@@ -4592,13 +4659,13 @@ const Emitter = struct {
                     if (fwd.field != w.pathA(slice)) continue;
                     const leaf = w.ctorPlace(k.steps[1].ctor);
                     if (leaf.module != vp.module or fwd.module != vp.module) continue;
-                    const lift = for (e.lifts, 0..) |pc, li| {
+                    const lift = for (e.projection.lifts, 0..) |pc, li| {
                         const arm = pc.arm orelse continue;
                         if (pc.module == fwd.module and arm.value == fwd.value and arm.ctor_module == leaf.module and arm.ctor_index == leaf.index) break li;
                     } else continue;
                     // The arm piece takes the branch's variables and the
                     // function's one other parameter, the field.
-                    if (e.lifts[lift].captures.len != e.lifts[lift].arm.?.fields.len + 1) continue;
+                    if (e.projection.lifts[lift].captures.len != e.projection.lifts[lift].arm.?.fields.len + 1) continue;
                     try moved.append(a, .{ .key = @intCast(ki), .ctor = .{ .module = leaf.module, .index = leaf.index, .iface = Lower.Direct.Ctor.none }, .lift = @intCast(lift) });
                 }
                 vp.moved = moved.items;
@@ -4707,7 +4774,7 @@ const Emitter = struct {
                 if (!pair) return null;
                 const items = b.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
                 if (items.len != 2) return null;
-                const fx = e.writes_effects orelse return null;
+                const fx = e.projection.writes_effects orelse return null;
                 const t = e.valueDeclOf(b, m, items[1]) orelse return null;
                 if (t[0] != fx.cmd_none.m or t[1] != fx.cmd_none.d) return null;
                 return e.forwardIn(w, b, m, msg, model, items[0], ctor, depth + 1, false);
@@ -4747,7 +4814,7 @@ const Emitter = struct {
                         if (b.instTag(arm) != .tuple) return null;
                         const items = b.extraSlice(Bir.inlineRange(b.instData(arm)), Bir.Inst.Index);
                         if (items.len != 2) return null;
-                        const fx = e.writes_effects orelse return null;
+                        const fx = e.projection.writes_effects orelse return null;
                         const t = e.valueDeclOf(b, m, items[1]) orelse return null;
                         if (t[0] != fx.cmd_none.m or t[1] != fx.cmd_none.d) return null;
                         arm = items[0];
@@ -4928,7 +4995,7 @@ const Emitter = struct {
                     null;
                 const arena = try a.create(std.heap.ArenaAllocator);
                 arena.* = .init(e.gpa);
-                try e.piece_arenas.append(e.gpa, arena);
+                try e.projection.piece_arenas.append(e.gpa, arena);
                 const facts = try a.create(beni_markup.PieceFacts);
                 facts.* = .{};
                 try out.append(a, .{
@@ -5042,7 +5109,7 @@ const Emitter = struct {
             const data = b.insts.items(.data);
             const tokens = b.insts.items(.main_token);
             for (b.decls, 0..) |d, di| {
-                if (!e.live.decl(m, di)) continue;
+                if (!e.projection.live.decl(m, di)) continue;
                 // Whether this declaration holds one of the program's
                 // roots, decided the first time it names a piece.
                 var holder: ?bool = null;
@@ -5077,8 +5144,8 @@ const Emitter = struct {
     }
 
     fn emitDirectPlan(e: *Emitter) !void {
-        const d = e.direct orelse return;
-        const lowering_name = e.options.platform.lowering orelse return;
+        const d = e.projection.direct orelse return;
+        const lowering_name = e.input.options.platform.lowering orelse return;
         const lowering = findLowering(lowering_name) orelse return;
         if (!lowering.parameterised_templates) return;
         const Site = struct { module: u32, token: u32, mode: []const u8, reason: []const u8 };
@@ -5234,8 +5301,8 @@ const Emitter = struct {
             values[i] = try a.alloc(bool, count);
             for (values[i], 0..) |*x, vi| x.* = if (provenance.?.valueDecl(vi)) |d| decls[i][d.int()] else false;
         }
-        e.direct.?.debug_decls = decls;
-        e.direct.?.debug_values = values;
+        e.projection.direct.?.debug_decls = decls;
+        e.projection.direct.?.debug_values = values;
     }
 
     // ---- backend.md §9: reachability elimination --------------------------
@@ -5252,14 +5319,14 @@ const Emitter = struct {
     /// `--allow-debug` — prints field names and tags: neither renames a
     /// field or gives a type integer tags.
     fn closeBoundary(e: *Emitter) !void {
-        e.boundary = null;
-        if (!e.options.release or e.options.library or e.reachesDebug()) return;
+        e.projection.boundary = null;
+        if (!e.input.options.release or e.input.options.library or e.reachesDebug()) return;
         // `--fuzz`: every program's message type, and what its payloads
         // name, is a type JavaScript sees (`browser-direct.md` §8.3, the
         // contract's item 2) — a message a fuzzer builds in the development
         // representation is one this build reads. A program whose message
         // type has no written annotation keeps every name.
-        if (e.options.fuzz and !try e.fuzzSeeds()) return;
+        if (e.input.options.fuzz and !try e.fuzzSeeds()) return;
         const count = e.graph().count();
         const birs = try e.scratch.alloc(*const Bir, count);
         const tables = try e.scratch.alloc(*const Dispatch, count);
@@ -5268,15 +5335,15 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
-        e.boundary = try Fields.close(.{
+        e.projection.boundary = try Fields.close(.{
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,
             .dispatch = tables,
-            .live = &e.live,
+            .live = &e.projection.live,
             .types = &e.session.checked.types,
             .interner = &e.session.interner,
-            .seeds = e.fuzz_seeds,
+            .seeds = e.projection.fuzz_seeds,
         });
     }
 
@@ -5287,22 +5354,22 @@ const Emitter = struct {
     /// (`RepKeys.build`). Lowering writes them into its two key columns, and
     /// nothing it emits depends on them.
     fn buildRepKeys(e: *Emitter) !void {
-        e.rep_keys = null;
-        if (!e.options.release) return;
+        e.projection.rep_keys = null;
+        if (!e.input.options.release) return;
         const count = e.graph().count();
         const artifacts = e.session.checked.type_keys;
         if (artifacts.len != count) return;
         const birs = try e.scratch.alloc(*const Bir, count);
         for (birs, 0..) |*b, i| b.* = e.bir(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
-        e.rep_keys = try RepKeys.build(.{
+        e.projection.rep_keys = try RepKeys.build(.{
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,
             .artifacts = artifacts,
             .types = &e.session.checked.types,
             .interner = &e.session.interner,
-            .boundary = if (e.boundary) |*b| b else null,
-            .live = &e.live,
+            .boundary = if (e.projection.boundary) |*b| b else null,
+            .live = &e.projection.live,
             .plans = e.session.checked.plans,
         });
     }
@@ -5319,14 +5386,14 @@ const Emitter = struct {
         if (!any) return;
         const birs = try e.scratch.alloc(*const Bir, count);
         for (birs, 0..) |*b, i| b.* = e.bir(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
-        e.debug_context = .{ .birs = birs, .types = &e.session.checked.types, .interner = &e.session.interner };
+        e.projection.debug_context = .{ .birs = birs, .types = &e.session.checked.types, .interner = &e.session.interner };
     }
 
     /// Whether any declaration of core's `Debug` survived elimination.
     fn reachesDebug(e: *Emitter) bool {
         const debug = e.graph().lookup(.core, InternPool.WellKnown.Debug.symbol()) orelse return false;
         for (0..e.bir(debug).decls.len) |i| {
-            if (e.live.decl(debug, i)) return true;
+            if (e.projection.live.decl(debug, i)) return true;
         }
         return false;
     }
@@ -5346,7 +5413,7 @@ const Emitter = struct {
                 try g.record(names.items, r.open);
             }
         }
-        if (e.rep_keys) |*r| for (r.nodes.items) |n| {
+        if (e.projection.rep_keys) |*r| for (r.nodes.items) |n| {
             if (n.kind != .record) continue;
             names.clearRetainingCapacity();
             for (r.labels.items[n.value..][0..n.len]) |name| try names.append(e.scratch, e.session.interner.slice(name));
@@ -5397,8 +5464,8 @@ const Emitter = struct {
     /// read it removed would still pin a field (§9, *Field names are
     /// decided after specialisation*).
     fn assignFields(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) !void {
-        e.field_table = null;
-        const boundary = &(e.boundary orelse return);
+        e.projection.field_table = null;
+        const boundary = &(e.projection.boundary orelse return);
         const ObjectFields = struct { names: []const []const u8, open: bool };
         var object_fields: std.ArrayList(ObjectFields) = .empty;
         var uses: std.StringArrayHashMapUnmanaged(u32) = .empty;
@@ -5428,7 +5495,7 @@ const Emitter = struct {
                         if (name.module == .none and name.isField()) try names.append(e.scratch, try e.scratch.dupe(u8, slot.overlay.slice(name.base)));
                     }
                     const key = ir.nodeKey(node);
-                    const closed = if (e.rep_keys) |*r| key != .wild and key.int() < r.nodes.items.len and r.nodes.items[key.int()].kind == .record else false;
+                    const closed = if (e.projection.rep_keys) |*r| key != .wild and key.int() < r.nodes.items.len and r.nodes.items[key.int()].kind == .record else false;
                     try object_fields.append(e.scratch, .{ .names = names.items, .open = spread and !closed });
                 }
                 const index: JsIr.NameIndex = switch (ir.tag(node)) {
@@ -5455,7 +5522,7 @@ const Emitter = struct {
         for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
         var conflicts = try e.fieldConflicts(counts);
         for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
-        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
+        e.projection.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
     }
 
     /// `browser-inline.md` §8.4, amended 2026-10-24: a route whose function
@@ -5466,15 +5533,15 @@ const Emitter = struct {
     /// only if something else names it — and the shape and `validShape` are
     /// roots.
     fn shapeRoutes(e: *Emitter, in: *Reach.Input, birs: []const *const Bir, tables: []const *const Dispatch) !void {
-        if (e.writes == null) return;
-        const sg = &(e.schema_graph orelse return);
+        if (e.projection.writes == null) return;
+        const sg = &(e.projection.schema_graph orelse return);
         const runner = in.coreDeclNamed(.Schema, "validShape") orelse return;
         var cuts: std.ArrayList(Reach.Cut) = .empty;
         try cuts.appendSlice(e.scratch, in.cuts);
         var pinned: std.ArrayList(Reach.Node) = .empty;
         try pinned.appendSlice(e.scratch, in.pinned);
         var any = false;
-        for (e.writes_calls) |*call| {
+        for (e.projection.writes_calls) |*call| {
             const prog = &call.program;
             // Only a program whose routes are lowered as routes (`buildPlans`).
             if (!prog.recognised or commandsRun(prog)) continue;
@@ -5561,25 +5628,25 @@ const Emitter = struct {
             .types = &e.session.checked.types,
             .interner = &e.session.interner,
             .entry = if (entry) |at| .{ .module = at.module, .kind = .decl, .index = at.decl.int() } else null,
-            .library = e.options.library,
-            .release = e.options.release,
+            .library = e.input.options.library,
+            .release = e.input.options.release,
             .vocabulary = e.graph().markup.vocabulary,
-            .extra_roots = e.extra_roots,
+            .extra_roots = e.projection.extra_roots,
             .plans = e.session.checked.plans,
-            .schema_library = e.options.schema_library,
-            .test_hooks = e.options.test_hooks,
-            .forwarding_foreigns = e.forwarding_foreigns,
-            .cuts = e.cuts,
-            .pinned = e.lift_roots,
+            .schema_library = e.input.options.schema_library,
+            .test_hooks = e.input.options.test_hooks,
+            .forwarding_foreigns = e.projection.forwarding_foreigns,
+            .cuts = e.projection.cuts,
+            .pinned = e.projection.lift_roots,
         };
         // What each lifted piece reaches (`browser-inline.md` §7).
-        if (e.lifts.len != 0) {
+        if (e.projection.lifts.len != 0) {
             var builder: Reach.Builder = .init(in, e.scratch);
-            const targets = try e.scratch.alloc([]const Reach.Target, e.lifts.len);
-            for (e.lifts, targets) |p, *t| t.* = try builder.liftTargets(@fromBackingInt(@intCast(p.module)), p.decl, p.lo, p.inst);
+            const targets = try e.scratch.alloc([]const Reach.Target, e.projection.lifts.len);
+            for (e.projection.lifts, targets) |p, *t| t.* = try builder.liftTargets(@fromBackingInt(@intCast(p.module)), p.decl, p.lo, p.inst);
             in.lift_targets = targets;
         }
-        e.schema_graph = .{
+        e.projection.schema_graph = .{
             .graph = e.graph(),
             .plans = e.session.checked.plans,
             .birs = birs,
@@ -5591,7 +5658,7 @@ const Emitter = struct {
         // core, under its module key and the two options they depend on
         // (`EdgePack`; `fast-compiler.md` §8, *The checked core, embedded*).
         const rows = try e.scratch.alloc(?[]const u8, count);
-        const options: EdgePack.Options = .{ .release = e.options.release, .schema_library = e.options.schema_library };
+        const options: EdgePack.Options = .{ .release = e.input.options.release, .schema_library = e.input.options.schema_library };
         var built_insts: usize = 0;
         for (rows, birs, 0..) |*row, b, i| {
             const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
@@ -5599,7 +5666,7 @@ const Emitter = struct {
             // No packed row holds `--test-hooks`: that build makes every
             // edge list afresh (`backend.md` §4, *`Js.testHooks` is the
             // build's test hooks*).
-            if (!e.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
+            if (!e.input.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
                 row.* = e.session.pack.find(.edges, EdgePack.key(e.session.keys.of(m), options));
             }
             if (row.* == null) built_insts += b.insts.len;
@@ -5609,15 +5676,15 @@ const Emitter = struct {
         // runs over the modules whose edges are built here, in module order,
         // serially, before any edge list is made, so it is input-derived
         // (CLAUDE.md rule 5).
-        if (!e.options.schema_library) {
+        if (!e.input.options.schema_library) {
             var runs: usize = 0;
             for (rows, birs, 0..) |row, b, i| {
                 if (row != null) continue;
                 const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, false, true);
+                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.projection.schema_graph.?, false, true);
                 runs += SchemaValid.shapeRunCount(s);
             }
-            in.schema_shapes = e.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
+            in.schema_shapes = e.input.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
             if (in.schema_shapes) try e.shapeRoutes(&in, birs, tables);
         }
         // Every module's edges on the workers, each into its own slot and
@@ -5625,18 +5692,18 @@ const Emitter = struct {
         // the walk here.
         const edges = try e.scratch.alloc(Reach.ModuleEdges, count);
         const read = try e.scratch.alloc(bool, count);
-        const builders = try e.scratch.alloc(Reach.Builder, e.pool.workers.len);
-        for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.edges.allocator());
+        const builders = try e.scratch.alloc(Reach.Builder, e.projection.pool.workers.len);
+        for (builders, e.projection.pool.workers) |*b, *w| b.* = .init(in, w.edges.allocator());
         const all = try e.scratch.alloc(u32, count);
         for (all, 0..) |*slot, i| slot.* = @intCast(i);
-        try e.pool.run(all, EdgeTask{ .edges = edges, .builders = builders, .rows = rows, .read = read, .in = in }, EdgeTask.build, e.wanted(built_insts, insts_per_edge_builder));
+        try e.projection.pool.run(all, EdgeTask{ .edges = edges, .builders = builders, .rows = rows, .read = read, .in = in }, EdgeTask.build, e.wanted(built_insts, insts_per_edge_builder));
         const from_pack: u64 = @intCast(std.mem.count(bool, read, &.{true}));
         e.session.profile.addCounter(.edge_lists, count - from_pack);
         e.session.profile.addCounter(.edge_lists_embedded, from_pack);
-        e.reach = in;
-        e.edges = edges;
-        e.edges_read = read;
-        e.live = try Reach.walk(e.scratch, in, edges);
+        e.projection.reach = in;
+        e.projection.edges = edges;
+        e.projection.edges_read = read;
+        e.projection.live = try Reach.walk(e.scratch, in, edges);
         e.session.profile.addCounter(.reach_walks, 1);
     }
 
@@ -5650,9 +5717,9 @@ const Emitter = struct {
     fn walk(e: *Emitter) !void {
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
-        var in = e.reach;
-        in.extra_roots = e.extra_roots;
-        e.live = try Reach.walk(e.scratch, in, e.edges);
+        var in = e.projection.reach;
+        in.extra_roots = e.projection.extra_roots;
+        e.projection.live = try Reach.walk(e.scratch, in, e.projection.edges);
         e.session.profile.addCounter(.reach_walks, 1);
     }
 
@@ -5663,7 +5730,7 @@ const Emitter = struct {
     /// same tree.
     ///
     /// The first lowering ran against the coarse walk, `coarse`; the second
-    /// would run against `e.live`, and against nothing else that moved:
+    /// would run against `e.projection.live`, and against nothing else that moved:
     /// the boundary, the representation keys, the write-set pass and the
     /// specifiers are made once, before either. What a module's lowering
     /// reads of the walk is the funnel's questions (`Lowerer.ask`, `backend.md`
@@ -5690,23 +5757,23 @@ const Emitter = struct {
         if (reshared) return keep;
         for (0..first.len) |k| {
             const m: Graph.Index = @fromBackingInt(@intCast(k));
-            if (!coarse.of(m).schemas.eql(e.live.of(m).schemas)) return keep;
+            if (!coarse.of(m).schemas.eql(e.projection.live.of(m).schemas)) return keep;
         }
         for (lowered) |i| {
             if (first[i].lowered == null) continue;
             const m: Graph.Index = @fromBackingInt(@intCast(i));
-            if (!sameLive(coarse.of(m), e.live.of(m))) continue;
+            if (!sameLive(coarse.of(m), e.projection.live.of(m))) continue;
             const b = e.bir(m);
             const tags = b.insts.items(.tag);
             const data = b.insts.items(.data);
             const same_ctors = for (tags, data) |tag, d| {
                 if (tag != .ext_ctor) continue;
                 const other: Graph.Index = @fromBackingInt(@intCast(d.lhs));
-                if (coarse.extCtor(other, d.rhs) != e.live.extCtor(other, d.rhs)) break false;
+                if (coarse.extCtor(other, d.rhs) != e.projection.live.extCtor(other, d.rhs)) break false;
             } else true;
             keep[i] = same_ctors;
         }
-        if (e.direct) |*d| {
+        if (e.projection.direct) |*d| {
             var changed = true;
             while (changed) {
                 changed = false;
@@ -5723,8 +5790,8 @@ const Emitter = struct {
 
     /// No walk is left to read the edge lists.
     fn dropEdges(e: *Emitter) void {
-        e.edges = &.{};
-        for (e.pool.workers) |*w| w.edges.reset(.free_all);
+        e.projection.edges = &.{};
+        for (e.projection.pool.workers) |*w| w.edges.reset(.free_all);
     }
 
     /// One module's reachability edges (`Reach.Builder.module`).
@@ -5813,7 +5880,7 @@ const Emitter = struct {
         // survived, so there is nothing to look for.
         var survived = false;
         for (0..debug_bir.decls.len) |i| {
-            if (e.live.decl(debug, i)) survived = true;
+            if (e.projection.live.decl(debug, i)) survived = true;
         }
         if (!survived) return;
 
@@ -5828,7 +5895,7 @@ const Emitter = struct {
             const data = b.insts.items(.data);
             const tokens = b.insts.items(.main_token);
             for (b.decls, 0..) |d, index| {
-                if (d.kind != .value or !e.live.decl(m, index)) continue;
+                if (d.kind != .value or !e.projection.live.decl(m, index)) continue;
                 const before = sites.items.len;
                 const start = @min(d.inst_start.int(), b.insts.len);
                 const end = @min(d.inst_end.int(), b.insts.len);
@@ -5918,7 +5985,7 @@ const Emitter = struct {
     /// and a `main` is just another exported name.
     fn entryDeclOf(e: *Emitter, m: Graph.Index, entry: ?Entry) ?u32 {
         if (entry) |at| return if (at.module == m) at.decl.int() else null;
-        if (!e.options.library) return null;
+        if (!e.input.options.library) return null;
         if (e.session.store.package(e.graph().moduleFile(m)) != .app) return null;
         return Reach.mainOf(e.bir(m));
     }
@@ -5954,7 +6021,7 @@ const Emitter = struct {
         // The build's markup lowering, with what every module's lowering of
         // its markup needs (`boundary.md` §9.4).
         const markup_output = try e.markupRuntimeOutputPath();
-        const lowering: ?*const beni_markup.Lowering = if (e.options.platform.lowering) |name| findLowering(name) else null;
+        const lowering: ?*const beni_markup.Lowering = if (e.input.options.platform.lowering) |name| findLowering(name) else null;
         const vocabulary: ?*const Interface = if (e.graph().markup.vocabulary) |v|
             (if (v.int() < e.session.resolution.interfaces.len) &e.session.resolution.interfaces[v.int()] else null)
         else
@@ -5965,8 +6032,8 @@ const Emitter = struct {
         if (lowering) |lw| if (lw.program != null) try e.buildDirect();
 
         // §11: where the output tree is, absolutely, for the source URLs.
-        const maps: ?MapRoot = if (e.options.source_maps) try e.mapRoot() else null;
-        e.map_root = maps;
+        const maps: ?MapRoot = if (e.input.options.source_maps) try e.mapRoot() else null;
+        e.projection.map_root = maps;
 
         var slots: []ModuleSlot = &.{};
         var todo: std.ArrayList(u32) = .empty;
@@ -6008,8 +6075,8 @@ const Emitter = struct {
                 // §5: a module with nothing reachable is not written at all,
                 // and nothing imports it, because imports are use-driven and a
                 // use is an edge.
-                if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
-                if (!refined and e.runtime_module != null and (m == e.runtime_module.? or e.graph().modulePackage(m) == .core)) {
+                if (!e.projection.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
+                if (!refined and e.runtimeModule() != null and (m == e.runtimeModule().? or e.graph().modulePackage(m) == .core)) {
                     skipped = true;
                     continue;
                 }
@@ -6017,7 +6084,7 @@ const Emitter = struct {
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
-                if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
+                if (e.input.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
                 // With no runtime file the module supplies every export, and
                 // nothing is imported from the file's specifier.
@@ -6025,9 +6092,9 @@ const Emitter = struct {
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
                     .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
-                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode(), .address = e.options.address },
-                    .module = e.runtime_module,
-                    .supplied = e.supplied,
+                    .build = .{ .release = e.input.options.release, .library = e.input.options.library, .fuzz = e.input.options.fuzz, .prerender = e.input.options.prerender.mode(), .address = e.input.options.address },
+                    .module = e.runtimeModule(),
+                    .supplied = e.projection.supplied,
                 };
                 try todo.append(e.scratch, @intCast(i));
                 insts += e.bir(m).insts.len;
@@ -6059,7 +6126,7 @@ const Emitter = struct {
             while (wave <= waves.last) : (wave += 1) {
                 var batch: std.ArrayList(u32) = .empty;
                 for (todo.items) |i| if (waves.of[i] == wave) try batch.append(e.scratch, i);
-                if (batch.items.len != 0) try e.pool.run(batch.items, context, Task.lower, e.wanted(lower_insts, insts_per_emitter));
+                if (batch.items.len != 0) try e.projection.pool.run(batch.items, context, Task.lower, e.wanted(lower_insts, insts_per_emitter));
             }
             e.countLowered(slots, todo.items);
 
@@ -6068,10 +6135,10 @@ const Emitter = struct {
             uses_runtime = false;
             uses_sanitizer = false;
             lowered_clean = true;
-            e.uses_markup_runtime = false;
-            e.markup_exports.clearRetainingCapacity();
-            e.start.clearRetainingCapacity();
-            e.module_uses.clearRetainingCapacity();
+            e.projection.uses_markup_runtime = false;
+            e.projection.markup_exports.clearRetainingCapacity();
+            e.projection.start.clearRetainingCapacity();
+            e.projection.module_uses.clearRetainingCapacity();
             for (todo.items) |i| {
                 const slot = &slots[i];
                 if (slot.lowered) |*lowered| if (lowered.diagnostics.len != 0) {
@@ -6080,31 +6147,31 @@ const Emitter = struct {
                 };
                 uses_runtime = uses_runtime or slot.uses_runtime;
                 uses_sanitizer = uses_sanitizer or slot.uses_sanitizer;
-                e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
-                try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
+                e.projection.uses_markup_runtime = e.projection.uses_markup_runtime or slot.uses_markup_runtime;
+                try e.projection.markup_exports.appendSlice(e.scratch, slot.markup_exports);
                 for (slot.markup_module_uses) |name| {
                     var known = false;
-                    for (e.module_uses.items) |u| known = known or std.mem.eql(u8, u, name);
-                    if (!known) try e.module_uses.append(e.scratch, try e.scratch.dupe(u8, name));
+                    for (e.projection.module_uses.items) |u| known = known or std.mem.eql(u8, u, name);
+                    if (!known) try e.projection.module_uses.append(e.scratch, try e.scratch.dupe(u8, name));
                 }
-                for (slot.start) |pair| try e.start.append(e.scratch, .{
+                for (slot.start) |pair| try e.projection.start.append(e.scratch, .{
                     .key = try e.scratch.dupe(u8, pair.key),
                     .value = try e.scratch.dupe(u8, pair.value),
                 });
             }
-            if (refined or e.runtime_module == null or !lowered_clean) break;
+            if (refined or e.runtimeModule() == null or !lowered_clean) break;
             refined = true;
             const precise = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
-            if (sameNodes(precise, e.extra_roots) and !skipped) break;
-            e.extra_roots = precise;
-            const coarse = e.live;
+            if (sameNodes(precise, e.projection.extra_roots) and !skipped) break;
+            e.projection.extra_roots = precise;
+            const coarse = e.projection.live;
             try e.walk();
             // The narrower roots may leave fewer worker sets alive, and then
             // fewer calls of a shared validator: decided again, so a helper
             // the count no longer pays for is not kept (`SchemaShare`).
             const reshared = try e.reshareValidators();
             if (reshared) {
-                e.extra_roots = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
+                e.projection.extra_roots = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
                 try e.walk();
             }
             first_slots = slots;
@@ -6114,11 +6181,11 @@ const Emitter = struct {
         defer for (slots) |*slot| slot.deinit(e.gpa);
         // `--rep-keys` (hidden): what lowering keyed, before any pass
         // rewrites a node.
-        if (e.options.rep_keys and lowered_clean) if (e.rep_keys) |*keys| try e.writeRepKeys(keys, slots, todo.items);
+        if (e.input.options.rep_keys and lowered_clean) if (e.projection.rep_keys) |*keys| try e.writeRepKeys(keys, slots, todo.items);
         const context: Task = .{ .e = e, .slots = slots, .entry = entry };
 
         var hoist: ?Hoist = null;
-        if (e.options.release) {
+        if (e.input.options.release) {
             // §9's *Whole-program specialisation*: an application's modules,
             // all at once, before the per-module optimiser plans any.
             // Whether the build will be one file is asked first: a name of
@@ -6126,7 +6193,7 @@ const Emitter = struct {
             // Specialisation only cuts what the hand-written files must
             // keep, so a build that is one file before it is one after.
             var one_scope = false;
-            if (!e.options.library and lowered_clean) if (entry) |at| {
+            if (!e.input.options.library and lowered_clean) if (entry) |at| {
                 one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime) != null;
                 try e.specialise(slots, todo.items, at, one_scope);
             };
@@ -6136,14 +6203,14 @@ const Emitter = struct {
             // the platform behind it are specialised to what the library's
             // own code makes of them (§9, *Whole-program specialisation*,
             // amended 2026-10-02).
-            if (e.options.library and lowered_clean) try e.specialise(slots, todo.items, null, false);
-            try e.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
+            if (e.input.options.library and lowered_clean) try e.specialise(slots, todo.items, null, false);
+            try e.projection.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
             if (one_scope) try e.pruneOptimised(slots, todo.items);
             // §9's *One scope-hoisted file under `--release`*: an
             // application whose every hand-written file can join one scope
             // is written as one file, and its names are numbered in that
             // file's order. Anything else is the multi-file layout.
-            if (!e.options.library and lowered_clean) if (entry) |at| {
+            if (!e.input.options.library and lowered_clean) if (entry) |at| {
                 hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime);
             };
             if (one_scope and hoist == null) @panic("a build that is one file before specialisation is one after it");
@@ -6151,11 +6218,11 @@ const Emitter = struct {
                 try e.numberHoisted(slots, h);
             } else {
                 try e.numberGlobals(slots, todo.items);
-                if (!e.options.library) try e.markImported(slots, todo.items, entry);
+                if (!e.input.options.library) try e.markImported(slots, todo.items, entry);
             }
-            e.hoisted = hoist != null;
+            e.projection.hoisted = hoist != null;
             if (lowered_clean) try e.markHandWritten(slots, todo.items);
-            if (hoist) |*h| e.bare_blocked = try e.bareBlocked(h);
+            if (hoist) |*h| e.projection.bare_blocked = try e.bareBlocked(h);
             try e.assignFields(slots, todo.items);
             // A hoisted build writes only the modules its one file holds:
             // a module nothing imports — `core/List` when every list
@@ -6170,7 +6237,7 @@ const Emitter = struct {
                 std.mem.sort(u32, printed.items, {}, std.sort.asc(u32));
             }
             const print_items = if (hoist != null) printed.items else todo.items;
-            try e.pool.run(print_items, context, Task.print, e.wanted(insts, insts_per_emitter));
+            try e.projection.pool.run(print_items, context, Task.print, e.wanted(insts, insts_per_emitter));
             for (print_items) |i| {
                 if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
             }
@@ -6340,7 +6407,7 @@ const Emitter = struct {
     fn pieceWaves(e: *Emitter) !struct { of: []u32, last: u32 } {
         const of = try e.scratch.alloc(u32, e.graph().count());
         @memset(of, 0);
-        const d = e.direct orelse return .{ .of = of, .last = 0 };
+        const d = e.projection.direct orelse return .{ .of = of, .last = 0 };
         if (d.view_pieces.len == 0) return .{ .of = of, .last = 0 };
         var last: u32 = 0;
         // Modules form a DAG of imports, and a program module imports the
@@ -6435,7 +6502,7 @@ const Emitter = struct {
             // is nothing left to do here, and a development build prints it.
             if (slot.adopted) {
                 if (emit_options.lower_reuse_cross_check and std.debug.runtime_safety) try t.crossCheck(w, i);
-                if (e.options.release) return;
+                if (e.input.options.release) return;
             }
             const token = e.session.profile.begin();
             defer e.session.profile.end(w.tid, token, .emit_module, file.int(), 0);
@@ -6467,7 +6534,7 @@ const Emitter = struct {
             };
             slot.start = start;
             const kept = w.kept.allocator();
-            if (!e.options.release) {
+            if (!e.input.options.release) {
                 // A first lowering a second follows prints nothing: the
                 // second prints this one if it takes it (#608).
                 if (t.lower_only) {
@@ -6515,10 +6582,10 @@ const Emitter = struct {
                 sameStrings(again.markup_module_uses, slot.markup_module_uses) and
                 sameStart(again.start, slot.start) and
                 std.mem.eql(JsIr.Node.Index, again.unobserved, slot.unobserved) and
-                (!e.options.release or (std.mem.eql(JsIr.Node.Index, again.effect_keep, slot.effect_keep) and
+                (!e.input.options.release or (std.mem.eql(JsIr.Node.Index, again.effect_keep, slot.effect_keep) and
                     std.mem.eql(JsIr.Node.Index, again.pure_discards, slot.pure_discards) and
                     std.mem.eql(JsIr.NameIndex, again.mutable, slot.mutable))) and
-                (e.options.release or (again.head_len == slot.head_len and again.tail_len == slot.tail_len and
+                (e.input.options.release or (again.head_len == slot.head_len and again.tail_len == slot.tail_len and
                     std.mem.eql(u8, std.mem.sliceAsBytes(again.units), std.mem.sliceAsBytes(slot.units))));
             if (!same) std.debug.panic("#608: the first lowering of `{s}` that the build kept differs from a lowering made now", .{
                 e.session.store.path(e.graph().moduleFile(@fromBackingInt(@intCast(i)))),
@@ -6543,8 +6610,8 @@ const Emitter = struct {
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
-                const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
+            if (read_rows and !t.lower_only and !e.input.options.release and !e.input.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+                const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.input.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
                         const row = try scratch.create(EmitPack.Row);
@@ -6555,10 +6622,10 @@ const Emitter = struct {
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
-                .birs = e.reach.birs,
+                .birs = e.projection.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
-                .token_tags = if (e.options.sanitize_lists) e.session.artifacts.spans(file).tags else &.{},
+                .token_tags = if (e.input.options.sanitize_lists) e.session.artifacts.spans(file).tags else &.{},
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
@@ -6575,26 +6642,26 @@ const Emitter = struct {
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,
                 .entry_decl = e.entryDeclOf(m, t.entry),
-                .public_roots = e.options.library and e.session.store.package(file) == .app,
-                .live = &e.live,
+                .public_roots = e.input.options.library and e.session.store.package(file) == .app,
+                .live = &e.projection.live,
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,
-                .direct = if (e.direct) |*d| d else null,
-                .inline_once = e.options.release,
-                .unit_results = e.options.release,
-                .development = !e.options.release,
-                .test_hooks = e.options.test_hooks,
-                .sanitize_records = e.options.sanitize_records,
-                .sanitize_lists = e.options.sanitize_lists,
+                .direct = if (e.projection.direct) |*d| d else null,
+                .inline_once = e.input.options.release,
+                .unit_results = e.input.options.release,
+                .development = !e.input.options.release,
+                .test_hooks = e.input.options.test_hooks,
+                .sanitize_records = e.input.options.sanitize_records,
+                .sanitize_lists = e.input.options.sanitize_lists,
                 .sanitize_runtime = slot.sanitize_runtime,
-                .clean_modules = e.clean_modules,
-                .boundary = if (e.boundary) |*b| b else null,
-                .schemas = if (e.schema_graph) |*g| g else null,
-                .schema_library = e.options.schema_library,
-                .schema_shapes = e.reach.schema_shapes and m.int() < e.edges_read.len and !e.edges_read[m.int()],
-                .core_private = e.core_private,
-                .debug = if (e.debug_context) |*cx| cx else null,
-                .rep_keys = if (e.rep_keys) |*k| k else null,
+                .clean_modules = e.projection.clean_modules,
+                .boundary = if (e.projection.boundary) |*b| b else null,
+                .schemas = if (e.projection.schema_graph) |*g| g else null,
+                .schema_library = e.input.options.schema_library,
+                .schema_shapes = e.projection.reach.schema_shapes and m.int() < e.projection.edges_read.len and !e.projection.edges_read[m.int()],
+                .core_private = e.projection.core_private,
+                .debug = if (e.projection.debug_context) |*cx| cx else null,
+                .rep_keys = if (e.projection.rep_keys) |*k| k else null,
                 .reuse = reuse,
             }) catch |err| switch (err) {
                 // No recorder is set here, so no ask can overflow one
@@ -6698,7 +6765,7 @@ const Emitter = struct {
             const lowered = &(slot.lowered orelse return);
             if (lowered.diagnostics.len != 0) return;
             const scratch = w.module.allocator();
-            var renamer = try Rename.begin(scratch, &lowered.ir, &e.globals);
+            var renamer = try Rename.begin(scratch, &lowered.ir, &e.projection.globals);
             const names: Print.Names = .fromOverlay(&slot.overlay);
             // §11.2: the marks of a module with a map. A hoisted module's
             // bytes are a piece of the one file, which has the comment line
@@ -6710,20 +6777,20 @@ const Emitter = struct {
                 .unobserved = slot.unobserved,
                 .rename = &renamer,
                 .compact = true,
-                .imported = if (e.options.library or e.hoisted) null else &e.imported,
-                .hand_written = &e.hand_written,
-                .hoisted = e.hoisted,
+                .imported = if (e.input.options.library or e.projection.hoisted) null else &e.projection.imported,
+                .hand_written = &e.projection.hand_written,
+                .hoisted = e.projection.hoisted,
                 .bare_globals = true,
-                .bare_blocked = e.bare_blocked,
-                .page = e.options.platform.page,
-                .fields = if (e.field_table) |*table| table else null,
+                .bare_blocked = e.projection.bare_blocked,
+                .page = e.input.options.platform.page,
+                .fields = if (e.projection.field_table) |*table| table else null,
                 .marks = if (mapped) &marks else null,
-                .footer = if (mapped and !e.hoisted) slot.map_footer else "",
+                .footer = if (mapped and !e.projection.hoisted) slot.map_footer else "",
             });
             slot.rename_failure = renamer.failure;
             if (!mapped) return;
             const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
-            if (e.hoisted) {
+            if (e.projection.hoisted) {
                 const kept = w.kept.allocator();
                 slot.marks = try kept.dupe(SourceMap.Mapping, marks.list.items);
                 const texts = try kept.alloc([]const u8, marks.names.items.len);
@@ -6826,9 +6893,9 @@ const Emitter = struct {
         // names escape.
         var escaping: std.ArrayList(u32) = .empty;
         var run_id: ?u32 = null;
-        if (e.runtime_module) |module| {
+        if (e.runtimeModule()) |module| {
             var names: std.ArrayList([]const u8) = .empty;
-            try names.appendSlice(e.scratch, e.program_uses);
+            try names.appendSlice(e.scratch, e.projection.program_uses);
             for ([_][]const u8{ "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
@@ -6837,7 +6904,7 @@ const Emitter = struct {
             }
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
-        if (e.session.entry_plan.runtime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
+        if (e.entryPlan().runtime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
             const b = e.bir(entry.module);
@@ -6869,10 +6936,10 @@ const Emitter = struct {
         }
         var entry_call: ?Spec.Entry = null;
         var indexed_exports: []const Spec.IndexedExport = &.{};
-        if (e.options.prerender == .tree) {
+        if (e.input.options.prerender == .tree) {
             // prerenderExports exports render/routes; it never calls run.
             if (main_id) |g| {
-                if (e.options.data) {
+                if (e.input.options.data) {
                     try escaping.append(e.scratch, g);
                 } else {
                     indexed_exports = try e.scratch.dupe(Spec.IndexedExport, &.{
@@ -6898,7 +6965,7 @@ const Emitter = struct {
             var keys: std.ArrayList(Rename.Globals.Key) = .empty;
             var it = ids.iterator();
             while (it.next()) |kv| if (std.mem.indexOfScalar(u32, root_ids.items, kv.value_ptr.*) != null) try keys.append(e.scratch, kv.key_ptr.*);
-            e.spec_roots = keys.items;
+            e.projection.spec_roots = keys.items;
         }
         var builtin: std.ArrayList(u32) = .empty;
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
@@ -6921,7 +6988,7 @@ const Emitter = struct {
         // that field (`backend.md` §9, *Declared-type filtering of fact 3*,
         // amended for #722): what a site of the record holds under the key.
         var field_keys: std.ArrayList(Spec.FieldKey) = .empty;
-        if (e.rep_keys) |*r| for (r.nodes.items, 0..) |n, i| {
+        if (e.projection.rep_keys) |*r| for (r.nodes.items, 0..) |n, i| {
             if (n.kind != .record or i >= r.reps.items.len or r.reps.items[i] != i) continue;
             for (r.labels.items[n.value..][0..n.len], r.args.items[n.start..][0..n.len]) |label, child| {
                 // A function is keyed by what it returns (`RepKeys`), so a
@@ -6948,9 +7015,9 @@ const Emitter = struct {
             .entry = entry_call,
             .indexed_exports = indexed_exports,
             .one_scope = one_scope,
-            .trace_largest = e.options.points_to_largest,
-            .check_call_graph = e.options.check_call_graph,
-            .rep_keys = if (e.rep_keys) |*k| k else null,
+            .trace_largest = e.input.options.points_to_largest,
+            .check_call_graph = e.input.options.check_call_graph,
+            .rep_keys = if (e.projection.rep_keys) |*k| k else null,
             .field_keys = field_keys.items,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
             .insert_before = if (props.get("insertBefore")) |id| .{
@@ -7041,7 +7108,7 @@ const Emitter = struct {
         const live = try e.scratch.alloc(bool, count);
         @memset(live, false);
         var work: std.ArrayList(u32) = .empty;
-        for (e.spec_roots) |key| if (ids.get(key)) |g| {
+        for (e.projection.spec_roots) |key| if (ids.get(key)) |g| {
             live[g] = true;
             try work.append(e.scratch, g);
         };
@@ -7239,7 +7306,7 @@ const Emitter = struct {
         declared_before: []const bool,
         stats: Spec.Stats,
     ) !void {
-        const boundary = &(e.boundary orelse return);
+        const boundary = &(e.projection.boundary orelse return);
         const declared_after = try e.scratch.alloc(bool, declared_before.len);
         @memset(declared_after, false);
         for (modules) |mod| topDeclared(mod.ir, mod.global, declared_after);
@@ -7258,8 +7325,8 @@ const Emitter = struct {
             const module = e.graph().moduleName(m).toOptional();
             gone[i] = try .initEmpty(e.scratch, b.decls.len);
             for (b.decls, 0..) |d, di| {
-                const direct = e.live.decl(m, di);
-                const twin = e.live.twin(m, di);
+                const direct = e.projection.live.decl(m, di);
+                const twin = e.projection.live.twin(m, di);
                 if (!direct and !twin) continue;
                 const base = b.symbol(d.name);
                 const dropped = direct_body: {
@@ -7292,11 +7359,11 @@ const Emitter = struct {
             .graph = e.graph(),
             .birs = birs,
             .dispatch = tables,
-            .live = &e.live,
+            .live = &e.projection.live,
             .types = &e.session.checked.types,
             .interner = &e.session.interner,
             .gone = gone,
-            .seeds = e.fuzz_seeds,
+            .seeds = e.projection.fuzz_seeds,
         }) orelse return;
         boundary.pinned = refined.pinned;
     }
@@ -7315,7 +7382,7 @@ const Emitter = struct {
     fn numberModule(e: *Emitter, slot: *ModuleSlot) Allocator.Error!void {
         const lowered = &(slot.lowered orelse return);
         if (lowered.diagnostics.len != 0) return;
-        for (slot.met) |n| _ = try e.globals.intern(e.scratch, try e.poolName(slot, n));
+        for (slot.met) |n| _ = try e.projection.globals.intern(e.scratch, try e.poolName(slot, n));
     }
 
     /// `--rep-keys`' text (`Options.rep_keys`): the table, then per module
@@ -7325,7 +7392,7 @@ const Emitter = struct {
     fn writeRepKeys(e: *Emitter, keys: *const RepKeys, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
         var text: std.Io.Writer.Allocating = .init(e.scratch);
         e.writeRepKeysTo(&text.writer, keys, slots, todo) catch return error.OutOfMemory;
-        try e.rep_key_text.appendSlice(e.gpa, text.written());
+        try e.projection.rep_key_text.appendSlice(e.gpa, text.written());
     }
 
     fn writeRepKeysTo(e: *Emitter, w: *std.Io.Writer, keys: *const RepKeys, slots: []ModuleSlot, todo: []const u32) std.Io.Writer.Error!void {
@@ -7385,7 +7452,7 @@ const Emitter = struct {
     ) Allocator.Error!void {
         var text: std.Io.Writer.Allocating = .init(e.scratch);
         e.writeLargest(&text.writer, o, sites, slots, spec_slots, ids, props) catch return error.OutOfMemory;
-        try e.points_to.appendSlice(e.gpa, text.written());
+        try e.projection.points_to.appendSlice(e.gpa, text.written());
     }
 
     fn writeLargest(
@@ -7598,7 +7665,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const b = e.bir(m);
             var surviving = false;
-            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.live.decl(m, index));
+            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.projection.live.decl(m, index));
             if (!surviving) continue;
             const source = try e.siblingPath(e.session.store.path(e.graph().moduleFile(m)));
             const bytes = e.readAsset(source) orelse return null;
@@ -7608,8 +7675,8 @@ const Emitter = struct {
         // No runtime file when the runtime module is the whole runtime
         // (`moduleIsRuntime`): it supplies `run`, `start` and `flush`.
         var runtime_index: ?u32 = null;
-        if (e.options.platform.runtime) |runtime| {
-            const runtime_source = try std.fmt.allocPrint(scratch, "{s}/{s}", .{ e.options.platform.runtime_root, runtime });
+        if (e.input.options.platform.runtime) |runtime| {
+            const runtime_source = try std.fmt.allocPrint(scratch, "{s}/{s}", .{ e.input.options.platform.runtime_root, runtime });
             runtime_index = @intCast(files.items.len);
             try files.append(scratch, .{
                 .out = try e.runtimeOutputPath(),
@@ -7623,7 +7690,7 @@ const Emitter = struct {
         var markup_index: ?u32 = null;
         if (e.markupRuntimeIsProgramRuntime()) {
             markup_index = runtime_index;
-        } else if (e.uses_markup_runtime) if (try e.markupRuntimePath()) |source| {
+        } else if (e.projection.uses_markup_runtime) if (try e.markupRuntimePath()) |source| {
             markup_index = @intCast(files.items.len);
             try files.append(scratch, .{
                 .out = (try e.markupRuntimeOutputPath()).?,
@@ -7686,11 +7753,11 @@ const Emitter = struct {
         // The entry file's own imports, in `emitEntry`'s order.
         var entry_edges: std.ArrayList(Piece) = .empty;
         if (runtime_index) |x| try entry_edges.append(scratch, .{ .file = x });
-        const module_piece: ?Piece = if (e.runtime_module) |rt|
+        const module_piece: ?Piece = if (e.runtimeModule()) |rt|
             (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
         else
             null;
-        if (e.session.entry_plan.runtime()) |runner| {
+        if (e.entryPlan().runtime()) |runner| {
             if (module_at.get(paths[runner.module.int()]) == null) return null;
             try entry_edges.append(scratch, .{ .module = runner.module.int() });
         } else if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
@@ -7906,7 +7973,7 @@ const Emitter = struct {
     /// place, and a file's own order 30 smaller than A2's most-used-first
     /// (research 41 §8).
     fn numberHoisted(e: *Emitter, slots: []ModuleSlot, h: *Hoist) !void {
-        e.globals.skip = &h.skip;
+        e.projection.globals.skip = &h.skip;
         const shared = try e.shareNullaries(slots, h);
         var avoid: std.AutoHashMapUnmanaged(Rename.Globals.Key, *const Rename.Globals.Spellings) = .empty;
         for (h.files) |*f| {
@@ -7918,7 +7985,7 @@ const Emitter = struct {
             // A runtime module's value the file reads by its own name is
             // spelled in the file as the declaration is in the one scope,
             // so it avoids what the file keeps as written, too.
-            if (e.runtime_module) |module| for (f.read.program) |imp| for (imp.names) |n| {
+            if (e.runtimeModule()) |module| for (f.read.program) |imp| for (imp.names) |n| {
                 try avoid.put(e.scratch, Rename.Globals.key(try e.moduleName(module, n.name)), &f.read.taken);
             };
         }
@@ -7935,11 +8002,11 @@ const Emitter = struct {
                     // wrote that name into it (#947): the first is numbered
                     // then.
                     if (shared.get(Rename.Globals.key(name))) |first| {
-                        const ordinal = try e.globals.internAvoiding(e.scratch, first, avoid.get(Rename.Globals.key(first)));
-                        try e.globals.map.put(e.scratch, Rename.Globals.key(name), ordinal);
+                        const ordinal = try e.projection.globals.internAvoiding(e.scratch, first, avoid.get(Rename.Globals.key(first)));
+                        try e.projection.globals.map.put(e.scratch, Rename.Globals.key(name), ordinal);
                         continue;
                     }
-                    _ = try e.globals.internAvoiding(e.scratch, name, avoid.get(Rename.Globals.key(name)));
+                    _ = try e.projection.globals.internAvoiding(e.scratch, name, avoid.get(Rename.Globals.key(name)));
                 }
             },
             .file => {},
@@ -7949,15 +8016,15 @@ const Emitter = struct {
             .file => |x| {
                 const f = &h.files[x];
                 if (f.declined) continue;
-                if (e.runtime_module) |module| for (f.read.program) |imp| for (imp.names) |n| {
-                    const ordinal = e.globals.lookup(try e.moduleName(module, n.name)) orelse continue;
+                if (e.runtimeModule()) |module| for (f.read.program) |imp| for (imp.names) |n| {
+                    const ordinal = e.projection.globals.lookup(try e.moduleName(module, n.name)) orelse continue;
                     var buf: [8]u8 = undefined;
                     try f.forced.put(e.scratch, n.name, try e.scratch.dupe(u8, Rename.spell(ordinal, &buf)));
                 };
                 for (f.read.tops) |top| {
                     if (!top.renamable) continue;
                     const name = f.primary(top.name) orelse try e.hoistedName(x, top.name);
-                    const ordinal = try e.globals.internAvoiding(e.scratch, name, &f.read.taken);
+                    const ordinal = try e.projection.globals.internAvoiding(e.scratch, name, &f.read.taken);
                     var buf: [8]u8 = undefined;
                     try f.forced.put(e.scratch, top.name, try e.scratch.dupe(u8, Rename.spell(ordinal, &buf)));
                 }
@@ -8051,7 +8118,7 @@ const Emitter = struct {
         // one file's map, and everything else the file holds is unmapped.
         var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
         var sources: std.ArrayList(SourceMap.Source) = .empty;
-        const mapped = e.map_root != null;
+        const mapped = e.projection.map_root != null;
         for (h.order) |p| switch (p) {
             .module => |i| if (slots[i].text) |text| {
                 if (mapped) try e.mapStretch(&stretches, &sources, &slots[i], i, out.items.len);
@@ -8072,7 +8139,7 @@ const Emitter = struct {
                     try out.appendSlice(scratch, if (aliased.items.len == 0) "const " else ",");
                     try aliased.append(scratch, u.local);
                     var buf: [8]u8 = undefined;
-                    try out.appendSlice(scratch, Rename.spell(e.globals.lookup(u.local).?, &buf));
+                    try out.appendSlice(scratch, Rename.spell(e.projection.globals.lookup(u.local).?, &buf));
                     try out.append(scratch, '=');
                     try out.appendSlice(scratch, f.spelling(binding));
                 }
@@ -8086,16 +8153,16 @@ const Emitter = struct {
         // `main` is a declaration of an emitted module, so the table has it.
         const main_name = e.entryName(h.entry) orelse unreachable;
         // The prerender tree's entry runs nothing (`prerender.md` §5.1).
-        if (e.options.prerender == .tree) {
+        if (e.input.options.prerender == .tree) {
             try out.appendSlice(scratch, try e.prerenderExports(main_name));
         } else if (h.start) |s| {
             const callee = if (s.file) |x| blk: {
                 const f = &h.files[x];
                 break :blk if (f.declined) "start" else f.spelling(f.read.exportBinding("start").?);
-            } else try e.moduleSpelling(e.runtime_module.?, "start");
+            } else try e.moduleSpelling(e.runtimeModule().?, "start");
             try out.print(scratch, "{s}({s});", .{ callee, s.data });
         }
-        if (e.options.prerender != .tree) {
+        if (e.input.options.prerender != .tree) {
             const run_name = if (e.entryRun()) |runner|
                 try e.moduleSpelling(runner.module, "run")
             else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
@@ -8107,7 +8174,7 @@ const Emitter = struct {
                 const prog = entry_program_binding;
                 const exp = entry_export_binding;
                 try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
-                for (e.options.platform.entry_exports, 0..) |name, i| {
+                for (e.input.options.platform.entry_exports, 0..) |name, i| {
                     try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
                 }
             } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
@@ -8123,7 +8190,7 @@ const Emitter = struct {
         // would share the file, and a module that exports one name twice
         // does not load.
         if (e.suppliedAs("flush") != null) {
-            if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "flush"))) |ordinal| {
+            if (e.projection.globals.lookup(try e.moduleName(e.runtimeModule().?, "flush"))) |ordinal| {
                 var buf: [8]u8 = undefined;
                 try out.print(scratch, "export{{{s} as flush}};", .{Rename.spell(ordinal, &buf)});
             }
@@ -8139,7 +8206,7 @@ const Emitter = struct {
         // module supplies `stop`, and the exports mode refuses a runtime
         // module, so no listed name can meet it: `stop` stays listable.
         if (e.suppliedAs("stop") != null) {
-            if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
+            if (e.projection.globals.lookup(try e.moduleName(e.runtimeModule().?, "stop"))) |ordinal| {
                 var buf: [8]u8 = undefined;
                 try out.print(scratch, "export{{{s} as stop}};", .{Rename.spell(ordinal, &buf)});
             }
@@ -8148,7 +8215,7 @@ const Emitter = struct {
         // (`appendJoined`), and a newline at the end of the file.
         if (out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
         if (mapped) {
-            const entry = e.options.platform.entry;
+            const entry = e.input.options.platform.entry;
             try out.print(scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(entry)});
             const map = try SourceMap.writeJoined(e.gpa, scratch, .{
                 .file = std.fs.path.basenamePosix(entry),
@@ -8159,7 +8226,7 @@ const Emitter = struct {
             });
             try e.produceOwned(try std.fmt.allocPrint(scratch, "{s}.map", .{entry}), map, try e.manifestPath());
         }
-        try e.produce(e.options.platform.entry, out.items, try e.manifestPath());
+        try e.produce(e.input.options.platform.entry, out.items, try e.manifestPath());
     }
 
     /// §11.2, *The join*: the stretch of the one file that module `i`'s
@@ -8177,9 +8244,9 @@ const Emitter = struct {
         if (slot.marks.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
         const store = &e.session.store;
         const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
-        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
+        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.input.options.platform.entry});
         try sources.append(e.scratch, .{
-            .url = try e.sourceUrl(e.map_root.?, map_file, file),
+            .url = try e.sourceUrl(e.projection.map_root.?, map_file, file),
             .text = store.bytes(file),
             .line_starts = store.lineStarts(file),
         });
@@ -8233,7 +8300,7 @@ const Emitter = struct {
             try out.appendSlice(scratch, if (done.items.len == 0) "import{" else ",");
             try done.append(scratch, u.local);
             var buf: [8]u8 = undefined;
-            try out.print(scratch, "{s} as {s}", .{ u.name, Rename.spell(e.globals.lookup(u.local).?, &buf) });
+            try out.print(scratch, "{s} as {s}", .{ u.name, Rename.spell(e.projection.globals.lookup(u.local).?, &buf) });
         }
         if (done.items.len != 0) try out.print(scratch, "}}from\"./{s}\";", .{f.out});
     }
@@ -8256,7 +8323,7 @@ const Emitter = struct {
     /// arguments than the lambda took (`Print.resolve`). Every release
     /// path, hoisted or not, `--library` or not.
     fn markHandWritten(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
-        e.hand_written = try .initEmpty(e.scratch, e.globals.next);
+        e.projection.hand_written = try .initEmpty(e.scratch, e.projection.globals.next);
         for (todo) |i| {
             const slot = &slots[i];
             const lowered = &(slot.lowered orelse continue);
@@ -8267,15 +8334,15 @@ const Emitter = struct {
                 const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
                 for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
                     if (spec.imported == spec.local) continue;
-                    const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
-                    e.hand_written.set(ordinal);
+                    const ordinal = e.projection.globals.lookup(ir.name(spec.local)) orelse continue;
+                    e.projection.hand_written.set(ordinal);
                 }
             }
         }
     }
 
     fn markImported(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry: ?Entry) Allocator.Error!void {
-        e.imported = try .initEmpty(e.scratch, e.globals.next);
+        e.projection.imported = try .initEmpty(e.scratch, e.projection.globals.next);
         for (todo) |i| {
             const slot = &slots[i];
             const lowered = &(slot.lowered orelse continue);
@@ -8286,34 +8353,34 @@ const Emitter = struct {
                 const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
                 for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
                     if (spec.imported != spec.local) continue;
-                    const ordinal = e.globals.lookup(ir.name(spec.local)) orelse continue;
-                    e.imported.set(ordinal);
+                    const ordinal = e.projection.globals.lookup(ir.name(spec.local)) orelse continue;
+                    e.projection.imported.set(ordinal);
                 }
             }
         }
-        if (entry != null) if (e.session.entry_plan.runtime()) |runner| {
-            if (e.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.imported.set(ordinal);
+        if (entry != null) if (e.entryPlan().runtime()) |runner| {
+            if (e.projection.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.projection.imported.set(ordinal);
         };
         // What the markup runtime and the entry file import from the
         // runtime module (`backend.md` §15.1, *The runtime module*).
-        if (e.runtime_module) |module| {
+        if (e.runtimeModule()) |module| {
             var names: std.ArrayList([]const u8) = .empty;
-            try names.appendSlice(e.scratch, e.program_uses);
+            try names.appendSlice(e.scratch, e.projection.program_uses);
             if (entry != null) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             };
             for (names.items) |n| {
-                if (e.globals.lookup(try e.moduleName(module, n))) |ordinal| e.imported.set(ordinal);
+                if (e.projection.globals.lookup(try e.moduleName(module, n))) |ordinal| e.projection.imported.set(ordinal);
             }
         }
         if (entry) |at| {
             const b = e.bir(at.module);
             if (at.decl.int() < b.decls.len) {
-                if (e.globals.lookup(.{
+                if (e.projection.globals.lookup(.{
                     .module = e.graph().moduleName(at.module).toOptional(),
                     .base = b.symbol(b.decls[at.decl.int()].name),
                     .tag = JsIr.Name.no_tag,
-                })) |ordinal| e.imported.set(ordinal);
+                })) |ordinal| e.projection.imported.set(ordinal);
             }
         }
     }
@@ -8322,7 +8389,7 @@ const Emitter = struct {
     /// markup runtime's export and not the module's (`boundary.md` §9.3),
     /// so the module has nothing to write and nothing imports it.
     fn onlyPrimitivesLive(e: *Emitter, m: Graph.Index) bool {
-        const live = e.live.of(m);
+        const live = e.projection.live.of(m);
         // A suspendable twin is a body to write, even when its direct body
         // is not.
         if (live.derived.count() != 0 or live.schemas.count() != 0 or live.twins.count() != 0) return false;
@@ -8371,7 +8438,7 @@ const Emitter = struct {
             };
             // Threads by the nodes to extract, as the other rounds size
             // theirs: each keeps its scratch for the rest of the phase.
-            try sw.e.pool.run(items, Job{ .task = task, .call = call }, Job.each, sw.e.wanted(work, nodes_per_extractor));
+            try sw.e.projection.pool.run(items, Job{ .task = task, .call = call }, Job.each, sw.e.wanted(work, nodes_per_extractor));
         }
     };
 
@@ -8544,7 +8611,7 @@ const Emitter = struct {
     /// fixed names (`import { deep as _derived$deep }`), as they name a
     /// sibling's, so renaming touches only the local side.
     fn emitDerivedRuntime(e: *Emitter) !void {
-        const text = if (e.options.release) derived_runtime_compact else derived_runtime_source;
+        const text = if (e.input.options.release) derived_runtime_compact else derived_runtime_source;
         try e.produce(derived_runtime_path, text, derived_runtime_path);
     }
 
@@ -8594,7 +8661,7 @@ const Emitter = struct {
             // sibling is cut to: the module imports exactly those.
             var surviving: std.ArrayList([]const u8) = .empty;
             for (b.decls, 0..) |d, index| {
-                if (d.kind == .foreign_value and e.live.decl(m, index)) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
+                if (d.kind == .foreign_value and e.projection.live.decl(m, index)) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
             }
             if (surviving.items.len == 0) continue;
             const source_path = e.session.store.path(e.graph().moduleFile(m));
@@ -8607,13 +8674,13 @@ const Emitter = struct {
         // The platform's runtime (§5.2). It is not a sibling of any module,
         // so nothing above would have copied it. A chain with none is one
         // only a library builds for, and a library has no entry to run it.
-        const runtime = e.options.platform.runtime orelse return;
+        const runtime = e.input.options.platform.runtime orelse return;
         const runtime_source = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{
-            e.options.platform.runtime_root,
+            e.input.options.platform.runtime_root,
             runtime,
         });
         const bytes = e.readAsset(runtime_source) orelse {
-            const manifest_path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.runtime_root, Manifest.file_name });
+            const manifest_path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.runtime_root, Manifest.file_name });
             try e.reportInFile(
                 .foreign_sibling_missing,
                 .{ .path = manifest_path },
@@ -8631,7 +8698,7 @@ const Emitter = struct {
         // the markup runtime too, what the modules do.
         var keep: std.ArrayList([]const u8) = .empty;
         try keep.appendSlice(e.scratch, &.{ "run", "start" });
-        if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.markup_exports.items);
+        if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.projection.markup_exports.items);
         const out = try e.runtimeOutputPath();
         const text = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else bytes;
         try e.produceHandWritten(out, text, runtime_source, keep.items);
@@ -8642,7 +8709,7 @@ const Emitter = struct {
     /// (§9, *Hand-written JavaScript under `--release`*). A file `Minify`
     /// cannot read exactly is copied as written in either mode.
     fn produceHandWritten(e: *Emitter, out: []const u8, bytes: []const u8, origin: []const u8, keep: []const []const u8) !void {
-        if (e.options.release) {
+        if (e.input.options.release) {
             if (try Minify.minify(e.scratch, bytes, keep, Minify.release)) |compact| return e.produce(out, compact, origin);
         }
         try e.produce(out, bytes, origin);
@@ -8652,12 +8719,12 @@ const Emitter = struct {
     /// (`backend.md` §15.1) — and not a second time when it is the program
     /// runtime, which is one file (`boundary.md` §9.2).
     fn copyMarkupRuntime(e: *Emitter) !void {
-        if (!e.uses_markup_runtime or e.markupRuntimeIsProgramRuntime()) return;
+        if (!e.projection.uses_markup_runtime or e.markupRuntimeIsProgramRuntime()) return;
         const source = try e.markupRuntimePath() orelse return;
         // A missing file was reported by `checkMarkupRuntime` already.
         const bytes = e.readAsset(source) orelse return;
         const out = (try e.markupRuntimeOutputPath()).?;
-        try e.produceHandWritten(out, try e.rewriteProgramImports(bytes, out), source, e.markup_exports.items);
+        try e.produceHandWritten(out, try e.rewriteProgramImports(bytes, out), source, e.projection.markup_exports.items);
     }
 
     /// Where the markup runtime is written: its package's output directory,
@@ -8665,8 +8732,8 @@ const Emitter = struct {
     fn markupRuntimeOutputPath(e: *Emitter) !?[]const u8 {
         if (try e.markupRuntimePath() == null) return null;
         if (e.markupRuntimeIsProgramRuntime()) return try e.runtimeOutputPath();
-        const base = std.fs.path.basename(e.options.platform.markup_runtime.?);
-        return try std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ e.options.platform.markup_runtime_dir, stripExtension(base, ".js"), foreign_extension });
+        const base = std.fs.path.basename(e.input.options.platform.markup_runtime.?);
+        return try std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ e.input.options.platform.markup_runtime_dir, stripExtension(base, ".js"), foreign_extension });
     }
 
     /// The entry file. A platform declares how `main` is invoked (§5.2) and
@@ -8684,13 +8751,13 @@ const Emitter = struct {
         // move: it is the platform manifest's runtime export, read by
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
-        if (e.options.prerender == .tree) return e.emitPrerenderEntry(module_path, imported);
+        if (e.input.options.prerender == .tree) return e.emitPrerenderEntry(module_path, imported);
         const start = try e.startData();
         // `checkEntryExports` has refused the one chain this cannot serve,
         // a runtime module, so `exportsProgram` here means a runtime file.
         if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
-        if (e.session.entry_plan.runtime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
-        if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
+        if (e.entryPlan().runtime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
+        if (e.runtimeModule()) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
         // document decided the shape of a file the user did not write. Under
@@ -8699,7 +8766,7 @@ const Emitter = struct {
         // and anything that is only there to be read goes).
         // And when `start` is the program runtime's own export, as the
         // browser platforms' is, one `import` names both (research 40).
-        const text = if (e.options.release and start != null and std.mem.eql(u8, start.?.path, runtime_path))
+        const text = if (e.input.options.release and start != null and std.mem.eql(u8, start.?.path, runtime_path))
             try std.fmt.allocPrint(e.scratch,
                 \\import{{run,start}}from"./{s}";
                 \\import{{{s}}}from"./{s}";
@@ -8707,7 +8774,7 @@ const Emitter = struct {
                 \\run({s});
                 \\
             , .{ runtime_path, imported, module_path, start.?.data, imported })
-        else if (e.options.release)
+        else if (e.input.options.release)
             try std.fmt.allocPrint(e.scratch,
                 \\import{{run}}from"./{s}";
                 \\{s}import{{{s}}}from"./{s}";
@@ -8742,7 +8809,7 @@ const Emitter = struct {
         // defaulted to `default_entry_file` by `platform.finish` and checked
         // by `checkEntryFileName`), so the manifest is what a collision
         // would have to name: no beni source asked for this file.
-        try e.produce(e.options.platform.entry, text, try e.manifestPath());
+        try e.produce(e.input.options.platform.entry, text, try e.manifestPath());
     }
 
     /// The prerender tree's entry file (`prerender.md` §5.1 item 2), named
@@ -8750,7 +8817,7 @@ const Emitter = struct {
     /// function, and the routes, exported. It starts nothing: the program
     /// runtime is not called, so nothing of a page runs.
     fn emitPrerenderEntry(e: *Emitter, module_path: []const u8, imported: []const u8) !void {
-        const text = if (e.options.release)
+        const text = if (e.input.options.release)
             try std.fmt.allocPrint(e.scratch,
                 \\import{{{s}}}from"./{s}";
                 \\{s}
@@ -8765,7 +8832,7 @@ const Emitter = struct {
                 \\{s}
                 \\
             , .{ imported, module_path, try e.prerenderExports(imported) });
-        try e.produce(e.options.platform.entry, text, try e.manifestPath());
+        try e.produce(e.input.options.platform.entry, text, try e.manifestPath());
     }
 
     /// The prerender entry's exports, `main` spelled `main_name`: the
@@ -8775,11 +8842,11 @@ const Emitter = struct {
         // A data site's `main` is the render function itself, of a route and
         // its page's text; its routes are the data program's (`prerender.md`
         // §8.5).
-        if (e.options.data) return if (e.options.release)
+        if (e.input.options.data) return if (e.input.options.release)
             std.fmt.allocPrint(e.scratch, "export const render={s};", .{main_name})
         else
             std.fmt.allocPrint(e.scratch, "export const render = {s};", .{main_name});
-        return if (e.options.release)
+        return if (e.input.options.release)
             std.fmt.allocPrint(e.scratch, "export const render={s}[0],routes={s}[1];", .{ main_name, main_name })
         else
             std.fmt.allocPrint(e.scratch, "export const render = {s}[0];\nexport const routes = {s}[1];", .{ main_name, main_name });
@@ -8789,7 +8856,7 @@ const Emitter = struct {
     /// §5.2, amended 2026-10-20): the entry file then exports what
     /// `run(main)` returns. `checkEntryExports` has refused any other mode.
     fn exportsProgram(e: *Emitter) bool {
-        return switch (e.options.platform.exports) {
+        return switch (e.input.options.platform.exports) {
             .mode => |mode| std.mem.eql(u8, mode, exports_program),
             else => false,
         };
@@ -8810,7 +8877,7 @@ const Emitter = struct {
         // writes into its `[8]u8` buffer, since the hoisted release file
         // puts them in one scope with the short names.
         comptime std.debug.assert(entry_program_binding.len > 8 and entry_export_binding.len > 8);
-        const release = e.options.release;
+        const release = e.input.options.release;
         var text: std.ArrayList(u8) = .empty;
         if (!release) try text.appendSlice(e.scratch,
             \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
@@ -8845,20 +8912,20 @@ const Emitter = struct {
             try text.print(e.scratch, "const {s}=$run($main);\nexport default {s}.default;\n", .{ prog, prog })
         else
             try text.print(e.scratch, "const {s} = $run($main);\nexport default {s}.default;\n", .{ prog, prog });
-        for (e.options.platform.entry_exports, 0..) |name, i| {
+        for (e.input.options.platform.entry_exports, 0..) |name, i| {
             if (release)
                 try text.print(e.scratch, "const {s}{d}={s}.exports(\"{s}\");\nexport{{{s}{d} as {s}}};\n", .{ exp, i, prog, name, exp, i, name })
             else
                 try text.print(e.scratch, "const {s}{d} = {s}.exports(\"{s}\");\nexport {{ {s}{d} as {s} }};\n", .{ exp, i, prog, name, exp, i, name });
         }
-        try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
+        try e.produce(e.input.options.platform.entry, text.items, try e.manifestPath());
     }
 
     /// `emitEntry` for a build with a runtime module (`backend.md` §15.1):
     /// `run` and `start` are imported from the module when it supplies
     /// them, one statement per file, `run`'s first.
     fn emitEntryWithModule(e: *Emitter, entry: Entry, module: Graph.Index, imported: []const u8, start: ?StartData) !void {
-        const release = e.options.release;
+        const release = e.input.options.release;
         const module_path = try e.outputPath(module);
         const runtime_path = try e.runtimeOutputPath();
         const Import = struct { path: []const u8, names: std.ArrayList(u8) = .empty };
@@ -8866,7 +8933,7 @@ const Emitter = struct {
         const Add = struct {
             fn one(em: *Emitter, list: *std.ArrayList(Import), path: []const u8, name: []const u8) !void {
                 for (list.items) |*i| if (std.mem.eql(u8, i.path, path)) {
-                    try i.names.appendSlice(em.scratch, if (em.options.release) "," else ", ");
+                    try i.names.appendSlice(em.scratch, if (em.input.options.release) "," else ", ");
                     try i.names.appendSlice(em.scratch, name);
                     return;
                 };
@@ -8881,7 +8948,7 @@ const Emitter = struct {
         } else try Add.one(e, &imports, runtime_path, "run");
         if (start) |s| {
             if (e.suppliedAs("start") != null) {
-                try Add.one(e, &imports, try e.outputPath(e.runtime_module.?), try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(e.runtime_module.?, "start"), as }));
+                try Add.one(e, &imports, try e.outputPath(e.runtimeModule().?), try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(e.runtimeModule().?, "start"), as }));
             } else try Add.one(e, &imports, s.path, "start");
         }
         var text: std.ArrayList(u8) = .empty;
@@ -8905,22 +8972,22 @@ const Emitter = struct {
         // The page's `flush` (§15.11), from the module the page loads when
         // the runtime module supplies it: the entry file imports `run` from
         // no program runtime, so it is the one a harness reads.
-        if (e.suppliedAs("flush")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
-            const spelled = try e.moduleSpelling(e.runtime_module.?, "flush");
+        if (e.suppliedAs("flush")) |s| if (e.projection.live.decl(e.runtimeModule().?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtimeModule().?, "flush");
             if (release)
-                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
+                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtimeModule().?) })
             else
-                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
+                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtimeModule().?) });
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17).
-        if (e.suppliedAs("stop")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
-            const spelled = try e.moduleSpelling(e.runtime_module.?, "stop");
+        if (e.suppliedAs("stop")) |s| if (e.projection.live.decl(e.runtimeModule().?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtimeModule().?, "stop");
             if (release)
-                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
+                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtimeModule().?) })
             else
-                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
+                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtimeModule().?) });
         };
-        try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
+        try e.produce(e.input.options.platform.entry, text.items, try e.manifestPath());
     }
 
     const StartData = struct { path: []const u8, data: []const u8 };
@@ -8932,12 +8999,12 @@ const Emitter = struct {
     /// A build with no markup, or a lowering with no `start`, calls none,
     /// so its entry file does not move by a byte.
     fn startData(e: *Emitter) !?StartData {
-        if (!e.uses_markup_runtime and e.module_uses.items.len == 0) return null;
-        const lowering = findLowering(e.options.platform.lowering orelse return null) orelse return null;
+        if (!e.projection.uses_markup_runtime and e.projection.module_uses.items.len == 0) return null;
+        const lowering = findLowering(e.input.options.platform.lowering orelse return null) orelse return null;
         var declares = false;
         for (lowering.runtime) |r| declares = declares or std.mem.eql(u8, r.name, "start");
         if (!declares) return null;
-        const pairs = e.start.items;
+        const pairs = e.projection.start.items;
         // No pair, no call (`boundary.md` §9.4.5, amended 2026-10-02): a
         // lowering is already correct without `start`, since a `--library`
         // build never calls it, so `start({})` does nothing a lowering may
@@ -8957,15 +9024,15 @@ const Emitter = struct {
         var i: usize = 0;
         while (i < pairs.len) {
             const key = pairs[i].key;
-            if (i != 0) try out.appendSlice(e.scratch, if (e.options.release) "," else ", ");
+            if (i != 0) try out.appendSlice(e.scratch, if (e.input.options.release) "," else ", ");
             try jsString(e.scratch, &out, key);
-            try out.appendSlice(e.scratch, if (e.options.release) ":[" else ": [");
+            try out.appendSlice(e.scratch, if (e.input.options.release) ":[" else ": [");
             var first = true;
             var previous: ?[]const u8 = null;
             while (i < pairs.len and std.mem.eql(u8, pairs[i].key, key)) : (i += 1) {
                 if (previous) |p| if (std.mem.eql(u8, p, pairs[i].value)) continue;
                 previous = pairs[i].value;
-                if (!first) try out.appendSlice(e.scratch, if (e.options.release) "," else ", ");
+                if (!first) try out.appendSlice(e.scratch, if (e.input.options.release) "," else ", ");
                 first = false;
                 try jsString(e.scratch, &out, pairs[i].value);
             }
@@ -8985,11 +9052,11 @@ const Emitter = struct {
     /// the manifest that named it; one that never names the entry, against
     /// itself — a page that loads nothing is a build that does nothing.
     fn emitShell(e: *Emitter, entry: Entry) !void {
-        const p = e.options.platform;
+        const p = e.input.options.platform;
         const html = p.html orelse {
             // A prerendering build writes its page into a shell
             // (`prerender.md` §5.3): with none, it would write nothing.
-            if (e.options.prerender != .none) return e.reportAtEntry(entry, .invalid_html_shell,
+            if (e.input.options.prerender != .none) return e.reportAtEntry(entry, .invalid_html_shell,
                 \\This program prerenders, and neither its platform nor its `beni.json` names a
                 \\page shell in "html", so the build has no page to write its first render into
                 \\(`docs/design/prerender.md` §5.3).
@@ -9029,7 +9096,7 @@ const Emitter = struct {
         // once, where the program mounts; a build that does not prerender
         // replaces any with nothing.
         const views = std.mem.count(u8, template, view_placeholder);
-        if (e.options.prerender != .none and views != 1) return e.reportInFile(
+        if (e.input.options.prerender != .none and views != 1) return e.reportInFile(
             .invalid_html_shell,
             .{ .path = path },
             \\This program prerenders, and its page shell says `{s}` {s}: the build writes
@@ -9040,7 +9107,7 @@ const Emitter = struct {
         ,
             .{ view_placeholder, if (views == 0) "nowhere" else "more than once", view_placeholder, view_placeholder },
         );
-        const pages: []const Prerender.Page = switch (e.options.prerender) {
+        const pages: []const Prerender.Page = switch (e.input.options.prerender) {
             .none => &.{},
             // The shell is checked and no page written: the client tree
             // writes them. An application's routes are `Url`s made with the
@@ -9049,7 +9116,7 @@ const Emitter = struct {
             // A data site built with `--no-prerender` has no tree, and its
             // application's `init` is handed its route's `Url` all the same
             // (§8.6).
-            .fresh => |outcome| if (e.options.routed and e.options.origin == null) return e.needsOrigin() else switch (outcome) {
+            .fresh => |outcome| if (e.input.options.routed and e.input.options.origin == null) return e.needsOrigin() else switch (outcome) {
                 .pages => |all| all,
                 .needs_node => return e.reportAtEntry(entry, .prerender_needs_node,
                     \\This program prerenders, and the build runs its data program with Node, but there
@@ -9101,7 +9168,7 @@ const Emitter = struct {
         var bad = false;
         for (pages, files) |page, *file| {
             if (routeFault(page.route)) |why| {
-                if (e.options.data) try e.reportAtEntry(entry, .invalid_route,
+                if (e.input.options.data) try e.reportAtEntry(entry, .invalid_route,
                     \\This program prerenders the route `{s}`, which its data program gave, and {s}.
                     \\
                     \\A route is a path below the base that names the file its page is written to:
@@ -9130,7 +9197,7 @@ const Emitter = struct {
         } else false;
         // A data site's page with no value could not start, so it writes
         // none (`prerender.md` §8.6).
-        if (!index_is_a_page and !e.options.data) try e.produce(html_file, try fillShell(e.scratch, with_base, "", null), path);
+        if (!index_is_a_page and !e.input.options.data) try e.produce(html_file, try fillShell(e.scratch, with_base, "", null), path);
         if (try e.routesCollide(entry, pages, files)) return;
         for (pages, files) |page, file| {
             // A data site's page holds its value's text in a script, then
@@ -9147,8 +9214,8 @@ const Emitter = struct {
     /// application, whose routes are `Url`s, in a project that names no
     /// origin to make them with.
     fn needsOrigin(e: *Emitter) !void {
-        if (!e.options.routed or e.options.origin != null) return;
-        const root = e.options.app_root;
+        if (!e.input.options.routed or e.input.options.origin != null) return;
+        const root = e.input.options.app_root;
         const app_manifest = if (root.len == 0 or std.mem.eql(u8, root, ".")) Manifest.file_name else try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
         return e.reportInFile(
             .prerender_needs_origin,
@@ -9170,7 +9237,7 @@ const Emitter = struct {
     /// Where `main`'s `Browser.prerenderData` call is (`prerender.md`
     /// §8.5), which `prerender_data_invalid` points at.
     fn dataCallAt(e: *Emitter) ?SourcePlace {
-        const lowering = findLowering(e.options.platform.lowering orelse return null) orelse return null;
+        const lowering = findLowering(e.input.options.platform.lowering orelse return null) orelse return null;
         const spine = prerenders(e.session, lowering) orelse return null;
         if (!spine.data) return null;
         const b = e.bir(spine.module);
@@ -9225,8 +9292,8 @@ const Emitter = struct {
         // a site of many routes costs what its paths' length does.
         var by_file: std.StringHashMapUnmanaged(usize) = .empty;
         var others: std.StringHashMapUnmanaged(usize) = .empty;
-        const other_folded = try e.scratch.alloc([]const u8, e.pending.items.len);
-        for (e.pending.items, other_folded, 0..) |output, *slot, k| {
+        const other_folded = try e.scratch.alloc([]const u8, e.projection.pending.items.len);
+        for (e.projection.pending.items, other_folded, 0..) |output, *slot, k| {
             slot.* = try std.ascii.allocLowerString(e.scratch, output.path);
             try others.put(e.scratch, slot.*, k);
         }
@@ -9246,7 +9313,7 @@ const Emitter = struct {
                 const slash = std.mem.indexOfScalarPos(u8, f, at, '/') orelse break;
                 if (by_file.get(f[0..slash])) |j| clash = j;
                 if (others.get(f[0..slash])) |k| {
-                    const output = e.pending.items[k];
+                    const output = e.projection.pending.items[k];
                     try e.reportAtEntry(entry, .output_path_collision,
                         \\This program prerenders the route `{s}`, whose page `{s}` and the file `{s}`,
                         \\written for `{s}`, are a file and a directory of the same name on a file
@@ -9261,7 +9328,7 @@ const Emitter = struct {
             // directory.
             for (other_folded, 0..) |g, k| {
                 if (!isDirOf(f, g)) continue;
-                const output = e.pending.items[k];
+                const output = e.projection.pending.items[k];
                 try e.reportAtEntry(entry, .output_path_collision,
                     \\This program prerenders the route `{s}`, whose page `{s}` and the file `{s}`,
                     \\written for `{s}`, are a file and a directory of the same name on a file
@@ -9307,7 +9374,7 @@ const Emitter = struct {
     /// file, the file a fault in that declaration is reported against
     /// (`boundary.md` §5.2).
     fn manifestPath(e: *Emitter) ![]const u8 {
-        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.entry_root, Manifest.file_name });
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.platform.entry_root, Manifest.file_name });
     }
 
     /// The short name `--release` gave the entry declaration, or null when
@@ -9316,10 +9383,10 @@ const Emitter = struct {
     /// in common: `Lower.topName` builds it from the module's name symbol and
     /// the declaration's own, both of which are in the session interner.
     fn entryName(e: *Emitter, entry: Entry) ?[]const u8 {
-        if (!e.options.release) return null;
+        if (!e.input.options.release) return null;
         const b = e.bir(entry.module);
         if (entry.decl.int() >= b.decls.len) return null;
-        const ordinal = e.globals.lookup(.{
+        const ordinal = e.projection.globals.lookup(.{
             .module = e.graph().moduleName(entry.module).toOptional(),
             .base = b.symbol(b.decls[entry.decl.int()].name),
             .tag = JsIr.Name.no_tag,
@@ -9371,16 +9438,16 @@ const Emitter = struct {
     /// the same extension — and that is also what keeps a platform whose
     /// runtime is called `Node.js` from overwriting the module `Node`.
     fn runtimeOutputPath(e: *Emitter) ![]const u8 {
-        const base = std.fs.path.basename(e.options.platform.runtime orelse "");
-        return std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ e.options.platform.runtime_dir, stripExtension(base, ".js"), foreign_extension });
+        const base = std.fs.path.basename(e.input.options.platform.runtime orelse "");
+        return std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ e.input.options.platform.runtime_dir, stripExtension(base, ".js"), foreign_extension });
     }
 
     /// The output directory of a platform file: the top platform's modules
     /// go to `_platform/`, a dependency's to `_platform/_<name>/`
     /// (`boundary.md` §9.1), so a one-platform build's tree does not move.
     fn platformDir(e: *Emitter, file: SourceStore.Index) []const u8 {
-        const layers = e.options.platform.file_layers;
-        const dirs = e.options.platform.layer_dirs;
+        const layers = e.input.options.platform.file_layers;
+        const dirs = e.input.options.platform.layer_dirs;
         if (file.int() >= layers.len) return platform_dir;
         const layer = layers[file.int()];
         return if (layer < dirs.len) dirs[layer] else platform_dir;
@@ -9389,7 +9456,7 @@ const Emitter = struct {
     /// The bytes of an asset: the embedded copy when the compiler carries
     /// one, else the file on disk.
     fn readAsset(e: *Emitter, path: []const u8) ?[]const u8 {
-        for (e.options.embedded) |asset| {
+        for (e.input.options.embedded) |asset| {
             if (std.mem.eql(u8, asset.path, path)) return asset.bytes;
         }
         return fs_read.readFileAlloc(e.session.io, Io.Dir.cwd(), path, e.scratch, .limited(max_asset_bytes)) catch null;
@@ -9431,7 +9498,7 @@ const Emitter = struct {
     fn sourceUrl(e: *Emitter, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
         const store = &e.session.store;
         if (store.isEmbedded(file)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
-        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
+        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.out_dir, map_file }));
         const source_path = try SourceMap.absolute(e.scratch, root.cwd, store.path(file));
         return SourceMap.relativeUrl(e.scratch, map_path, source_path);
     }
@@ -9439,9 +9506,9 @@ const Emitter = struct {
     fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {
         {
             errdefer e.gpa.free(bytes);
-            try e.owned.append(e.gpa, bytes);
+            try e.projection.owned.append(e.gpa, bytes);
         }
-        try e.pending.append(e.scratch, .{
+        try e.projection.pending.append(e.scratch, .{
             .path = try e.scratch.dupe(u8, relative_path),
             .bytes = bytes,
             .origin = try e.scratch.dupe(u8, origin),
@@ -9449,7 +9516,7 @@ const Emitter = struct {
     }
 
     fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8, origin: []const u8) Allocator.Error!void {
-        try e.pending.append(e.scratch, .{
+        try e.projection.pending.append(e.scratch, .{
             .path = try e.scratch.dupe(u8, relative_path),
             .bytes = try e.scratch.dupe(u8, bytes),
             .origin = try e.scratch.dupe(u8, origin),
@@ -9468,7 +9535,7 @@ const Emitter = struct {
     /// resolved: `_a/_b.mjs` would put the entry inside a directory subject
     /// to the same rule, and one segment is all any platform has wanted.
     fn checkEntryFileName(e: *Emitter) !void {
-        const name = e.options.platform.entry;
+        const name = e.input.options.platform.entry;
         if (entryNameIsLegal(name)) return;
         try e.reportInFile(
             .invalid_entry_file,
@@ -9507,7 +9574,7 @@ const Emitter = struct {
     /// is reported against the manifest that holds it, at 1:1 with no
     /// excerpt, as `invalid_entry_file` is.
     fn checkEntryExports(e: *Emitter) !void {
-        const p = e.options.platform;
+        const p = e.input.options.platform;
         const platform_manifest = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ p.exports_root, Manifest.file_name });
         switch (p.exports) {
             .none => {
@@ -9600,7 +9667,7 @@ const Emitter = struct {
     /// `<app root>/beni.json`, the file an app manifest fault is reported
     /// against.
     fn appManifestPath(e: *Emitter) ![]const u8 {
-        const root = e.options.platform.app_root;
+        const root = e.input.options.platform.app_root;
         if (root.len == 0 or std.mem.eql(u8, root, ".")) return Manifest.file_name;
         return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
     }
@@ -9628,9 +9695,9 @@ const Emitter = struct {
     fn checkOutputPaths(e: *Emitter) !void {
         const Folded = struct { key: []const u8, index: u32 };
         // A build a diagnostic stopped may have produced nothing at all.
-        if (e.pending.items.len < 2) return;
-        const folded = try e.scratch.alloc(Folded, e.pending.items.len);
-        for (e.pending.items, folded, 0..) |output, *slot, index| {
+        if (e.projection.pending.items.len < 2) return;
+        const folded = try e.scratch.alloc(Folded, e.projection.pending.items.len);
+        for (e.projection.pending.items, folded, 0..) |output, *slot, index| {
             const key = try e.scratch.dupe(u8, output.path);
             for (key) |*c| c.* = std.ascii.toLower(c.*);
             slot.* = .{ .key = key, .index = @intCast(index) };
@@ -9646,8 +9713,8 @@ const Emitter = struct {
         }.lessThan);
         for (1..folded.len) |i| {
             if (!std.mem.eql(u8, folded[i - 1].key, folded[i].key)) continue;
-            const first = e.pending.items[folded[i - 1].index];
-            const second = e.pending.items[folded[i].index];
+            const first = e.projection.pending.items[folded[i - 1].index];
+            const second = e.projection.pending.items[folded[i].index];
             try e.reportInFile(
                 .output_path_collision,
                 .{ .path = first.origin },
@@ -9682,9 +9749,9 @@ const Emitter = struct {
     /// (`OutputRecord.removeStale`).
     fn flush(e: *Emitter, old: []const OutputRecord.Entry) Error!void {
         const io = e.session.io;
-        const out_dir = e.options.out_dir;
-        const new = try e.scratch.alloc(OutputRecord.Entry, e.pending.items.len);
-        for (e.pending.items, new) |output, *entry| entry.* = .{ .hash = OutputRecord.hash(output.bytes), .path = output.path };
+        const out_dir = e.input.options.out_dir;
+        const new = try e.scratch.alloc(OutputRecord.Entry, e.projection.pending.items.len);
+        for (e.projection.pending.items, new) |output, *entry| entry.* = .{ .hash = OutputRecord.hash(output.bytes), .path = output.path };
         const both = try std.mem.concat(e.scratch, OutputRecord.Entry, &.{ old, new });
         try e.writeRecord(both);
         try e.writeOutputs();
@@ -9700,18 +9767,18 @@ const Emitter = struct {
     /// and a build that silently wrote its record elsewhere could never find
     /// it again.
     fn readRecord(e: *Emitter) Error![]const OutputRecord.Entry {
-        switch (try OutputRecord.read(e.scratch, e.session.io, e.options.out_dir)) {
+        switch (try OutputRecord.read(e.scratch, e.session.io, e.input.options.out_dir)) {
             .none => return &.{},
             .record => |entries| return entries,
             // A file that cannot be read says nothing about whose it is:
             // the read failure is the answer, as for any file beni reads,
             // and nothing is written.
             .unreadable => |err| {
-                e.io_failure.* = .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name }), .err = err };
+                e.io_failure.* = .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.out_dir, OutputRecord.file_name }), .err = err };
                 return error.OutputRecordUnreadable;
             },
             .unrecognised => {
-                const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name });
+                const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.out_dir, OutputRecord.file_name });
                 try e.reportInFile(
                     .unknown_output_record,
                     .{ .path = path },
@@ -9741,11 +9808,11 @@ const Emitter = struct {
     /// the paths (the record first, then `pending`, which is module order).
     fn refuseLinks(e: *Emitter) !void {
         const io = e.session.io;
-        const out_dir = e.options.out_dir;
+        const out_dir = e.input.options.out_dir;
         var named: std.StringHashMapUnmanaged(void) = .empty;
-        const paths = try e.scratch.alloc([]const u8, e.pending.items.len + 1);
+        const paths = try e.scratch.alloc([]const u8, e.projection.pending.items.len + 1);
         paths[0] = OutputRecord.file_name;
-        for (e.pending.items, paths[1..]) |output, *p| p.* = output.path;
+        for (e.projection.pending.items, paths[1..]) |output, *p| p.* = output.path;
         for (paths) |path| {
             const link = try OutputRecord.firstLink(e.scratch, io, out_dir, path) orelse continue;
             if ((try named.getOrPut(e.scratch, link)).found_existing) continue;
@@ -9771,11 +9838,11 @@ const Emitter = struct {
 
     fn writeRecord(e: *Emitter, entries: []const OutputRecord.Entry) Error!void {
         const io = e.session.io;
-        Io.Dir.cwd().createDirPath(io, e.options.out_dir) catch |err| {
-            e.io_failure.* = .{ .path = e.options.out_dir, .err = err };
+        Io.Dir.cwd().createDirPath(io, e.input.options.out_dir) catch |err| {
+            e.io_failure.* = .{ .path = e.input.options.out_dir, .err = err };
             return error.OutputPath;
         };
-        const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, OutputRecord.file_name });
+        const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.out_dir, OutputRecord.file_name });
         OutputRecord.write(e.scratch, io, path, entries) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
@@ -9792,10 +9859,10 @@ const Emitter = struct {
         // directory that cannot be made is the one the first file needing
         // it would have named.
         var made: std.StringHashMapUnmanaged(void) = .empty;
-        for (e.pending.items) |output| {
+        for (e.projection.pending.items) |output| {
             const dir = std.fs.path.dirname(output.path) orelse continue;
             if ((try made.getOrPut(e.scratch, dir)).found_existing) continue;
-            const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, dir });
+            const path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.input.options.out_dir, dir });
             Io.Dir.cwd().createDirPath(e.session.io, path) catch |err| {
                 e.io_failure.* = .{ .path = path, .err = err };
                 return error.OutputPath;
@@ -9804,23 +9871,23 @@ const Emitter = struct {
         // The files on the emit workers: every one has its own path, so no
         // two writes touch one file, and the failure reported is the first
         // in `pending` order whichever worker met it.
-        const failures = try e.scratch.alloc(?anyerror, e.pending.items.len);
+        const failures = try e.scratch.alloc(?anyerror, e.projection.pending.items.len);
         @memset(failures, null);
-        const all = try e.scratch.alloc(u32, e.pending.items.len);
+        const all = try e.scratch.alloc(u32, e.projection.pending.items.len);
         for (all, 0..) |*slot, i| slot.* = @intCast(i);
-        try e.pool.run(all, WriteTask{ .e = e, .failures = failures }, WriteTask.write, e.wanted(all.len, files_per_writer));
-        for (e.pending.items, failures) |output, failure| {
+        try e.projection.pool.run(all, WriteTask{ .e = e, .failures = failures }, WriteTask.write, e.wanted(all.len, files_per_writer));
+        for (e.projection.pending.items, failures) |output, failure| {
             if (failure) |err| {
                 e.io_failure.* = .{ .path = try e.outputFilePath(e.scratch, output.path), .err = err };
                 return error.OutputPath;
             }
-            e.files_written += 1;
-            e.bytes_written += output.bytes.len;
+            e.projection.files_written += 1;
+            e.projection.bytes_written += output.bytes.len;
         }
     }
 
     fn outputFilePath(e: *const Emitter, arena: Allocator, relative: []const u8) Allocator.Error![]const u8 {
-        return std.fmt.allocPrint(arena, "{s}/{s}", .{ e.options.out_dir, relative });
+        return std.fmt.allocPrint(arena, "{s}/{s}", .{ e.input.options.out_dir, relative });
     }
 
     /// Write one of `pending`, recording a failure rather than stopping:
@@ -9830,7 +9897,7 @@ const Emitter = struct {
         failures: []?anyerror,
 
         fn write(t: WriteTask, w: *Worker, i: u32) Allocator.Error!void {
-            const output = t.e.pending.items[i];
+            const output = t.e.projection.pending.items[i];
             const path = try t.e.outputFilePath(w.module.allocator(), output.path);
             Io.Dir.cwd().writeFile(t.e.session.io, .{ .sub_path = path, .data = output.bytes }) catch |err| {
                 t.failures[i] = err;
@@ -10162,4 +10229,46 @@ fn bracketOf(src: []const u8, start: u32) i32 {
         ')', '}', ']' => -1,
         else => 0,
     };
+}
+
+fn resultTransferCase(fail_offset: ?usize, written: bool) !void {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .resize_fail_index = 0 });
+    const gpa = failing.allocator();
+    {
+        var projection: Emitter.Projection = .{ .files_written = 2, .bytes_written = 31 };
+        defer projection.deinit(gpa);
+        var items: std.ArrayList(Item) = .empty;
+        defer items.deinit(gpa);
+        defer for (items.items) |item| gpa.free(item.message);
+        // Spare capacity forces every transfer to shrink, exercising the
+        // allocation fallback used when remap cannot release the unused tail.
+        try items.ensureTotalCapacity(gpa, 8);
+        const message = try gpa.dupe(u8, "retained ordinary diagnostic");
+        items.appendAssumeCapacity(.{ .code = .invalid_entry_kind, .file = @fromBackingInt(0), .token = 0, .message = message });
+        try projection.points_to.appendSlice(gpa, "points");
+        try projection.rep_key_text.appendSlice(gpa, "keys");
+        if (fail_offset) |offset| {
+            failing.fail_index = failing.alloc_index + offset;
+            try std.testing.expectError(error.OutOfMemory, projection.takeResult(gpa, &items, written));
+        } else {
+            var result = try projection.takeResult(gpa, &items, written);
+            defer result.deinit(gpa);
+            try std.testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try std.testing.expectEqualDeep(Item{ .code = .invalid_entry_kind, .file = @fromBackingInt(0), .token = 0, .message = "retained ordinary diagnostic" }, result.diagnostics[0]);
+            try std.testing.expectEqualStrings("points", result.points_to);
+            try std.testing.expectEqualStrings("keys", result.rep_keys);
+            try std.testing.expectEqual(@as(u32, if (written) 2 else 0), result.files_written);
+            try std.testing.expectEqual(@as(u64, if (written) 31 else 0), result.bytes_written);
+        }
+    }
+    try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
+}
+
+test "selected projection result releases earlier transfers on every late allocation failure" {
+    for (0..3) |offset| try resultTransferCase(offset, true);
+    try resultTransferCase(null, true);
+}
+
+test "selected projection refusal keeps diagnostics and text but publishes no write counters" {
+    try resultTransferCase(null, false);
 }

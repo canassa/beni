@@ -1,0 +1,31 @@
+import Task
+
+
+pub generic : sync (a → b), a → b
+generic next value =
+    Task.yieldNow ⊤
+    next value
+
+
+pub integer : sync (Int, Int → Int), Int, Int → Int
+integer next left right =
+    Task.yieldNow ⊤
+    next left right
+
+
+pub text : sync (String → String), String → String
+text next value =
+    Task.yieldNow ⊤
+    next value
+
+
+pub anotherInteger : sync (Int, Int → Int), Int, Int → Int
+anotherInteger next left right =
+    Task.yieldNow ⊤
+    next right left
+
+
+pub poly : (a → b), a → b
+poly next value =
+    Task.yieldNow ⊤
+    next value

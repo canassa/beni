@@ -1,0 +1,5 @@
+import Browser.Host.TextEncoder as TextEncoder
+
+
+pub make : ⊤ → TextEncoder.TextEncoder
+make = TextEncoder.new

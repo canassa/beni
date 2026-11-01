@@ -472,7 +472,13 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             const file = d.graph.moduleFile(m);
             const bir = d.artifacts.bir(file);
             const token_count: u32 = @intCast(d.artifacts.spans(file).len());
-            if (loaded.hoists.verifyAgainstBir(bir, d.interner, &loaded.sidecar.table) and loaded.plan.verifyAgainstBir(bir, token_count) and
+            const realms_required = d.options.realm_required_modules.len != 0 and d.options.realm_required_modules[m.int()];
+            const controls_required = d.options.control_required_modules.len != 0 and d.options.control_required_modules[m.int()];
+            if (@import("../native/Bindings.zig").acceptsCached(d.options.native_sources, d.graph, m, bir, &loaded.record, d.interner) and
+                (!realms_required or loaded.sidecar.table.realm_sources.present) and
+                (try loaded.sidecar.prepareRealmCoverageWithIntrinsics(d.gpa, bir, d.graph, .{ .graph = d.graph, .interner = d.interner, .interfaces = d.interfaces })) and
+                (!controls_required or loaded.sidecar.table.control_sources.present) and
+                (try loaded.sidecar.table.control_sources.verifyAgainstBir(d.gpa, bir, &loaded.sidecar.table, d.interner)) and loaded.hoists.verifyAgainstBir(bir, d.interner, &loaded.sidecar.table) and loaded.plan.verifyAgainstBir(bir, token_count) and
                 loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types) and
                 (try loaded.sidecar.table.continuations.verifyAgainstBir(d.gpa, bir, &loaded.sidecar.table, d.graph, d.types)) and
                 loaded.sidecar.verifyDeclHeads(bir, d.graph, d.types) and
@@ -495,6 +501,8 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         }
     }
     d.counters[m.int()] = try ModuleCheck.check(.{
+        .realm_required = d.options.realm_required_modules.len != 0 and d.options.realm_required_modules[m.int()],
+        .control_required = d.options.control_required_modules.len != 0 and d.options.control_required_modules[m.int()],
         .gpa = d.gpa,
         .scratch = scratch,
         .patterns = patterns,

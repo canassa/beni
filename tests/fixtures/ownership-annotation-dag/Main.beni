@@ -1,0 +1,16 @@
+-- Repeated tuple paths retain every separation guard, including repeated
+-- operands. This positive case ends at s; the original t case separately
+-- asserts the existing logical summary-entry limit. No list writes occur.
+p x = ( x, x )
+
+
+q x = p (p x)
+
+
+r x = q (q x)
+
+
+s x = r (r x)
+
+
+pub result = s 1 == s 2

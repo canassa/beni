@@ -55,6 +55,8 @@ markup: ?*Markup = null,
 /// inference solves after P5 (transparent-effects-proposal.md §14,
 /// checker-v2.md §26); null in a unit test that builds no module.
 effects: ?*Effects = null,
+/// Observer only: original source identity is independent of solver roots.
+realm_record: ?*@import("RealmRecord.zig") = null,
 /// Per `Bir.insts` index, the variable each expression instruction was
 /// constrained against — its type once solved — for
 /// `dump --stage=ownership` (`ownership-checker.md` §2.3). Empty unless the

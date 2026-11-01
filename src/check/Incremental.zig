@@ -212,7 +212,12 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
         p.end(tid, token.?, .dep_digest, @backingInt(d.graph.moduleFile(m)), 0);
     };
     const record = try iface_bytes.write(scratch.allocator(), &d.interfaces[m.int()], d.interner);
-    cutoff.iface_hash[m.int()] = iface_bytes.hash(record);
+    const native = if (d.options.native_sources) |sources| sources.nativeOrigin(d.graph.moduleFile(m)) else .none;
+    const fingerprint = if (native != .none)
+        try std.mem.concat(scratch.allocator(), u8, &.{ record, @import("../native/Source.zig").provenance })
+    else
+        record;
+    cutoff.iface_hash[m.int()] = iface_bytes.hash(fingerprint);
 
     var imports: std.ArrayList(Digest.Import) = .empty;
     defer imports.deinit(scratch.allocator());

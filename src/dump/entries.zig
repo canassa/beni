@@ -7,6 +7,7 @@ const Graph = @import("../entry/CompactGraph.zig");
 const Discover = @import("../entry/CompactDiscover.zig");
 const Emit = @import("../js/Emit.zig");
 const hashes = @import("../resolve/iface_bytes.zig");
+const RealmInspect = @import("../entry/RealmInspect.zig");
 const TypedInspect = @import("../entry/TypedInspect.zig");
 const SourceStore = @import("../SourceStore.zig");
 
@@ -17,6 +18,24 @@ pub fn inspect(a: std.mem.Allocator, scratch: std.mem.Allocator, session: *Sessi
         a.free(inspection.diagnostics);
     }
     if (inspection.reach) |reach| {
+        if (session.options.native_realms) {
+            var source = RealmInspect.prepare(a, .{ .graph = &session.graph, .interner = &session.interner, .dispatch = session.checked.dispatch }) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => {
+                    const root = reach.entry.?;
+                    const file = session.graph.moduleFile(root.module);
+                    const token = session.artifacts.bir(file).decls[root.index].name_token;
+                    const message = try std.fmt.allocPrint(a, "Native realm inspection has unavailable retained original source events ({s}). No entry graph was printed.", .{@errorName(err)});
+                    errdefer a.free(message);
+                    const items = try a.alloc(Emit.Item, inspection.diagnostics.len + 1);
+                    @memcpy(items[0..inspection.diagnostics.len], inspection.diagnostics);
+                    items[inspection.diagnostics.len] = .{ .code = .internal, .file = file, .token = token, .message = message };
+                    a.free(inspection.diagnostics);
+                    return items;
+                },
+            };
+            source.deinit(a);
+        }
         if (session.entry_plan.validated and session.entry_plan.selected != .none) {
             const root = reach.entry.?;
             const file = session.graph.moduleFile(root.module);
@@ -73,11 +92,13 @@ fn site(w: *std.Io.Writer, session: *const Session, id: Ir.SiteId) std.Io.Writer
     try w.print("{s}.{s}", .{ session.store.moduleName(file), session.interner.slice(b.symbol(b.decls[@backingInt(row.declaration)].name)) });
     if (row.instruction != .none) try w.print("@{d}", .{@backingInt(row.instruction)});
 }
-pub fn write(w: *std.Io.Writer, session: *const Session) TypedInspect.Error!void {
+pub fn write(w: *std.Io.Writer, session: *const Session) (TypedInspect.Error || RealmInspect.Error)!void {
     // Also protect direct callers: the compact prefix must not escape before
     // the typed boundary has accepted every current selected declaration.
     var prepared: ?TypedInspect.Prepared = if (session.entry_plan.validated and session.entry_plan.selected != .none) try TypedInspect.prepare(session.gpa, typedInput(session)) else null;
     defer if (prepared) |*value| value.deinit(session.gpa);
+    var realm: ?RealmInspect.Prepared = if (session.options.native_realms) try RealmInspect.prepare(session.gpa, .{ .graph = &session.graph, .interner = &session.interner, .dispatch = session.checked.dispatch }) else null;
+    defer if (realm) |*value| value.deinit(session.gpa);
     const g = &session.entry_graph;
     try w.print("entries schema=1 partial=true discoveryComplete={} inputSupported={}\n", .{ g.discovery_complete, g.input_supported });
     try w.writeAll("proofs C=unproved EntryHost=unproved Wire=unproved ownership=unproved constructionEffects=unproved execution=unproved\n");
@@ -182,6 +203,7 @@ pub fn write(w: *std.Io.Writer, session: *const Session) TypedInspect.Error!void
         try w.writeByte('\n');
     }
     if (prepared) |*value| try TypedInspect.writePrepared(session.gpa, w, typedInput(session), value);
+    if (realm) |*value| try value.write(w);
 }
 
 test "entries writer emits no compact prefix when selected typed roots are unavailable" {

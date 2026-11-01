@@ -1,0 +1,4 @@
+pub bad : List Int → List Int × List Int
+bad values =
+    changed = List.push values 1
+    ( changed, values )
