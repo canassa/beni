@@ -2819,16 +2819,34 @@ claims they may be one object. Four rules use this.
     place at `L`: a recast there is in no group. Different calls, different parameters, and different
     occurrences of one node are different groups: `Node a xs a` meets `a` at `#Node.0` and at `#Node.2`.
     A key whose walk meets no such node is in no group, and it adds as before.
-  - **(a′) The keys of a group are pairwise alias-apart.** Rule 4 runs only on a certificate whose
-    condition is neither `shared` nor `lost`. Such a certificate's symbolic keys of one base are pairwise
-    alias-apart in the callee (`Cell.alias` is `no`): `aggAdd` pairs every two same-base arrivals that
-    alias, and `KappaRead.sep` reads such a pair `lost`. Published keys are canonical cells, because
-    read-off relabels refinements, so the part exemption (`sameAnchor`) never applies to them. Two
-    alias-apart paths are not prefixes of each other and do not meet through `⟲` matching (§2.2), so
-    their routes are disjoint. This is so for a join name too, `root⟲` included: `alias` reads a `⟲` on a
-    cycle as overlapping every path of that cycle at its place. An approximate key (`~`, a recast's whole
-    reach, §2.13.9) names more than its path's routes, so it is in no group. A certificate that fails is
-    instantiated as before, keys added, and reads its failure anyway.
+  - **(a′) The keys of a group are pairwise alias-apart, tested in every build.** Before rule 4 takes a
+    maximum or replaces an atom, it tests the group's keys for overlap, and a group in which two keys
+    overlap is no group: all its keys add as before. Two keys overlap when `Cell.alias` says `yes`: one
+    path is a prefix of the other, or past their deepest common node one continues with `⟲` and the
+    other's divergent step is on that `⟲`'s cycle (§2.2, *⟲ matching*). The test needs no pairs. The
+    group's key paths are put in a trie (they are canonical paths of one parameter, so the trie shares
+    the path table's nodes). The group overlaps exactly when one key's node is an ancestor of another
+    key's node, or some trie node has a `⟲` child and another child whose step leads to a place in the
+    strongly connected component of that `⟲`'s place. That is `alias`'s relation on paths, decided at
+    the divergence node, which is where `alias` decides it. Two alias-apart paths are not prefixes of
+    each other and do not meet through `⟲` matching, so their routes are disjoint. This holds for a join
+    name too, `root⟲` included, because `alias` reads a `⟲` on a cycle as overlapping every path of
+    that cycle at its place. An approximate key (`~`, a recast's whole reach, §2.13.9) names more than
+    its path's routes, so it is in no group.
+    - *Why the certificate's condition does not give this* (the independent review of #1519, verified on
+      `259556bae`). An earlier version took (a′) from a condition that is neither `shared` nor `lost`.
+      But `Cell.base` strips refinements only (`Cell.zig`, `base`: it climbs while the origin is a
+      refinement), so two canonical parameter cells such as `a = π1#Node.0#Node.1` and `b = π1⟲#Node.1`
+      are two bases. `aggAdd` makes same-base pairs only within one base's bucket
+      (`t.mapGet(a.bases, b.int())`), so it never pairs `a` with `b`. `aggCond` then keeps
+      `apartAtom(group)`, the atom `apart{a, b}`, and the certificate's condition is not `lost`. Yet
+      `alias(a, b)` is `yes`, because the root join holds the left subtree's list. Instantiated through
+      the leaf `c = π1#Node.0`, both keys image to `X = π1#Node.0⟲#Node.1`, and their routes share
+      `c`'s left child's list. The maximum and `excl X` would let one position count once where it
+      arrives twice. The trie test refuses that group, so `X` is repeated (near-miss row 18).
+    - *Cost.* O(Σ |k|) over the group's keys, at most 3·|places| steps each (§2.1). It is memoised per
+      `(certificate, group prefix L)`, because the partition into groups depends on the actual only
+      through `L`. It is charged to the instantiation's account like the walk.
   - **The read.** For each member cell `c` of the group's node, the image of a key `L·r` is the symbolic
     projection `c·r`, canonical, through `⟲` as well. This is not `Grafter.argAt`'s answer: at a level
     step `argAt` takes the whole reach of the node so far (`recastWhole`, `Calls.zig`), even for a leaf.
@@ -2842,7 +2860,7 @@ claims they may be one object. Four rules use this.
     instantiates to `exclOf(X)`. Everything else adds in the multiset and pairs in `apart` as before:
     images of two groups, an image beside the caller's own arrivals, and keys in no group.
   - *Why it is sound.*
-    1. By (a′), the keys of a group have pairwise disjoint routes.
+    1. By (a′), tested on the keys themselves, the keys of a group have pairwise disjoint routes.
     2. In one execution the group's node holds one object `o`, at one caller route `β` of its cell `c`.
        `c` may be a summary cell; `o` is then one of its positions. The callee's route `L·ρ` is the
        caller's route `β·ρ`, and `β·ρ = β·ρ′` only when `ρ = ρ′`. So keys with disjoint routes reach
@@ -2861,7 +2879,9 @@ claims they may be one object. Four rules use this.
     *Corrected* (the review of #1519): an earlier version of step 1 claimed that every path other than
     a join names exactly the routes that canonicalise to it. That is false for a `⟲` at a root:
     `Place.extend(root, ⟲)` makes `root⟲`, `Place.levelPaths` gives no paths there, and `levelsOf(root)`
-    has several. The rule no longer needs that claim.
+    has several. The rule no longer needs that claim. The premise that replaced it, that the
+    certificate's condition makes the keys alias-apart, was false too (above), and it is replaced by the
+    trie test.
   - *Rule 3 shares the argument but not the test.* Its (a), different last named steps, makes positions
     distinct but does not make subtrees disjoint (`x#B.0` is a prefix of `x#B.0#B.1`). It stays as
     built, because no fixture pins a relaxation. Rule 3 reads a callee's `apart`/`sep` sides at a call.
@@ -2869,7 +2889,7 @@ claims they may be one object. Four rules use this.
   - *The read does not depend on the representation* (Lemma R4).
     - The groups are a function of the keys' paths and of the node that rule 3's walk meets. That node
       is the same on a view and its answer, and on a union merged or not (Lemma R3).
-    - (a′) is a function of the certificate's condition, which C1–C4 fix.
+    - (a′) is a function of the keys' paths alone.
     - The maximum is commutative, associative and idempotent, and it agrees with saturation at two (C1).
     - An image is a canonical path, computed by `extend` from paths alone.
     - The rule is monotone. A representation that over-approximates more (a built node or a `positions`
@@ -2884,13 +2904,19 @@ claims they may be one object. Four rules use this.
       the group's images. Every source state that brings a merged image to the callee's keys must stand
       at one actual path, with no summary step.
 
-    The check only checks. The rule's premises (the group's node, the certificate's condition, the
-    approximate keys) are computed in every build.
-  - *Cost.* One pass over an instantiation's keys, with a persistent map from image to `(group,
-    maximum)`: O(A log A) for A keys, inside the certificate's O(S_validation + H · A log A) (§8). The
-    walk per key is the instantiation's own walk, memoised per `(actual node, prefix)`, and the image is
-    one `extend` per step of the key. Nothing is expanded, so a key has one image per member cell of its
-    group's node. (a′) costs nothing: the certificate's condition is read once. The check is
+    The check only checks, and it tests (a′) by pairs, independently of the trie. The rule's premises
+    (the group's node, the trie test, the approximate keys) are computed in every build.
+  - *Cost.* Two counts are kept apart: the **source keys** of the certificate (A, as in §8), and the
+    **images** that an instantiation makes. A key has one image per member cell of the node its walk
+    meets, so an actual with alternatives makes more images than the certificate has keys. Let W be the
+    instantiation's traversal and projection work: the walk of the actual along each key, memoised per
+    `(actual node, prefix)`, plus one `extend` per step of each image. Let M be the number of image
+    occurrences it generates, at most A times the largest number of member cells of a group's node.
+    Rule 4 is then O(W + M log M): the trie test (O(Σ |k|), inside W) and one insertion per image into a
+    persistent map from image to `(group, maximum)`. Nothing is expanded. Scaling witness: `same`'s
+    certificate (five keys, fixed) applied to `same (if c1 then t1 else if c2 then t2 … else tN)` makes
+    M = 5N images, and the work is linear in N. It is a counted test in `build_test.zig` at
+    N = 8 / 16 / 32 / 64, whose records may at most double, plus a constant, when N doubles. The check is
     `runtime_safety` only, quadratic in the keys that one image merges.
   - *Built as rule 1 is.* `Agg.sides` keeps, per image, the group and the keys of it that reached the
     image. An arrival of the same group with another key is one more position of the image. An arrival
@@ -3601,11 +3627,12 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
        The read map is keyed by value node rather than by use node, and the same split applies to it. So the
        walk has at most `items · (1 + arms · |classes(C)|)` items and at most
        `reads · (1 + arms · |classes(C)|)` read nodes, where `items` and `reads` count today's walk. Per `(call, V, K)`: one
-       rule 4 instantiation per class of `C` (O(A log A) each), the reach of each class without `K` as one
+       rule 4 instantiation per class of `C`, O(W_K′ + M_K′ log M_K′) for class `K′` (§2.9 rule 4, *Cost*:
+       the traversal work and the images of that class's keys), the reach of each class without `K` as one
        persistent union over `C`'s fold, memoised, and one κ̂. The premises on the write cost one walk of
        the spine, as `leafDepth` does (O(|q|)), and one `classAt` of its rest. So a K-wide tree writer
-       stays linear in the walk's items per call (`same`'s class has three classes for any K), and the rule adds O(|classes(C)| · A log A) per
-       `(call, V, K)`.
+       stays linear in the walk's items per call (`same`'s class has three classes for any K), and the rule adds Σ over the classes `K′` of
+       `C` of O(W_K′ + M_K′ log M_K′) per `(call, V, K)`.
 4. **E**: `cellsAt(aᵢ, q)` escape deeply, one escape per route as item 3 reads them. **Callbacks**: per function-typed πⱼ, the actual's classes (a lambda's,
    a top-level function's, a constructor's, a class in a summary's table, the caller's own parameter → the caller's
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
@@ -7193,7 +7220,11 @@ that is (the fork, below). It refines the plan above. Nothing above is withdrawn
   validation walk's sources at `K` (each read once, as the walk already does). There is one edge per
   hypothesis node, and the aggregate work is the persistent multiset merges of §2.9 (O(log) per arrival).
   In all, O(S_validation + H · A log A), where H counts hypothesis nodes and A counts arrival keys per
-  certificate. All of it is charged growth on the member that receives it (Q2). Rounds that only raise
+  certificate. *Amended (the independent review of #1519):* that bound counts source keys, not images.
+  A hypothesis node's instantiation by §2.9 rule 4 costs O(W_h + M_h log M_h), where W_h is its traversal
+  and projection work and M_h its image occurrences. M_h exceeds A when the actual has alternatives
+  (`same (if c1 then t1 else … tN)`: M_h = 5N). So the total is
+  O(S_validation + Σ_h (W_h + M_h log M_h)). All of it is charged growth on the member that receives it (Q2). Rounds that only raise
   a multiplicity or weaken a condition are bounded by the inventory, as *Termination* says.
 
 **Soundness by cycle shape** (each with the witness that refutes the unsafe reading).
@@ -7340,6 +7371,7 @@ stay refused.
 | 15 | `type Box = Box (List Int)`, `Tree = Node Tree Box Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag (§2.11 item 3 (d)). `Box` is on no cycle, so an item inside `w` at `#P.0` and an item of the `#P.1` occurrence have one key without it, and the first one met decided for both (the re-review of #1519). With the tag they are two items, and the `#P.1` item keeps `t#Node.1#Box.0`. |
 | 16 | Row 15 with the list in a record field, `Node Tree { xs : List Int } Tree` | refused `disjoint` | unsafe | An S5 row: a record field inside a constructor is S5's (record demands). The same tag argument applies, because a record place is on no cycle either. |
 | 17 | `Box = Box (List Int)`, `Wrap = Wrap Box`, `Tree = Node Tree Wrap Tree \| Leaf`, `incAll`, `incP` and `same` over it, `bad t = (w = same t; incP (P w w))` | refused `disjoint` | unsafe (one tree's lists written twice) | The tag in the read map (§2.11 item 3 (d)). `Wrap` is on no cycle, so the held `Box` inside `w` (class `#Node.1#Wrap.0`) and the held `Box` of the `#P.1` occurrence share one read node without the tag. If the item inside `V` made that read node first, the `#P.1` route lost `t`'s lists (the second re-review of #1519). |
+| 18 | `h2 n t = if n == 0 then (case t of Node l _ _ → case l of Node _ ys _ → Node (same (Node t [] Leaf)) ys Leaf; … Leaf → Leaf) else h2 (n − 1) t`, called as `case t of Node l _ _ → incAll (h2 n l)` | refused `disjoint (approx)` | unsafe (`l`'s left child's list is written twice) | `A(h2, #Node.1)` holds `a = π1#Node.0#Node.1` (`ys`) and `b = π1⟲#Node.1` (the root join, through `same`), two bases, so its condition keeps `apart{a, b}` and is not `lost`. Through the leaf `l` both image to `π1#Node.0⟲#Node.1` in one group. The trie test finds `a` under `b`'s `⟲` (`#Node.0` is on `Tree`'s cycle), so the group is no group and the image is repeated. Without the test, rule 4 would merge them (the independent review of #1519). |
 
 Rows 4, 11 and 12 are accepted debt (#1518). Row 4 is not a hole in rule 4. It is the
 limit that rule 4 shares with rule 1: positions are told apart below one object, and never across two
@@ -7355,8 +7387,10 @@ not share its walk.
   `TransferBeside.assertCertifiedDrop` wherever the rule drops `K` at an item. Inside a group being
   solved the check is deferred to publication, and it runs only if the verdict it covers is final.
 
-**Cost.** Rule 4 is O(A log A) per instantiation, which is inside the certificate's
-O(S_validation + H · A log A) above. Rule (d) adds O(1) per item of `otherPaths`' walk (one class id
+**Cost.** Rule 4 is O(W + M log M) per instantiation, with W its traversal and projection work and M its
+image occurrences (§2.9 rule 4, *Cost*), so the certificate's total is O(S_validation + Σ_h (W_h + M_h
+log M_h)) (*Cost*, above). The counted test with N alternatives (`same (if c1 then t1 else … tN)`, N = 8 to
+64) must be linear in N. Rule (d) adds O(1) per item of `otherPaths`' walk (one class id
 carried) and, per `(call, V, K)`, one instantiation per class of `C` and one memoised union per class, so a
 K-wide tree writer stays linear per call. Neither rule expands a join or adds a walk in a release build. No verdict of today's corpus moves before #1485
 is built, because both rules read a certificate and no certificate exists yet. #1485 measures the
@@ -7376,7 +7410,8 @@ tree of height 4 or less, and derived on paper for the item form of (d) and the 
 
 **What #1485 builds with these rules.** The certificate as specified above, rule 4 at every
 instantiation, rule (d) in `otherPaths`, reader 3 at every step, and C1–C7 as `runtime_safety` checks.
-- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15 and 17 in one module.
+- `o/FoldCertificate`: the witnesses (`incRoot` included) and rows 1–10, 14, 15, 17 and 18 in one module, and the counted test with N alternatives in
+  `build_test.zig`.
 - `o/FoldCertificateImported`: the producers (`same`, `swap`, `dupL`, `unroll`, `shareL`, `deeper`) in a
   library module, so the certified mark crosses a block (C4).
 - `o/FoldedKnotCall`: reader 2. `incAll`'s `xreq excl π1#Node.0⟲#Node.1` is read at a certified view
