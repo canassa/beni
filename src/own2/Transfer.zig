@@ -178,6 +178,9 @@ pub const Frame = struct {
     /// `otherPaths`' certified views while it runs (§2.11 item 3 (d), #1485):
     /// a `TransferBeside.Cert`.
     cert: ?*anyopaque = null,
+    /// `TransferBeside.foldedView`'s answers by template root, for the
+    /// walk: 1 a knot, 0 none. Shape nodes are immutable.
+    knots: Ids.FixedDict(1) = .{},
     group_steps: std.ArrayList(Step) = .empty,
     call_snaps: std.ArrayList(CallSnap) = .empty,
     call_args: std.ArrayList(Inst.Index) = .empty,
@@ -194,6 +197,7 @@ pub const Frame = struct {
         gpa.free(f.matches);
         gpa.free(f.binds);
         gpa.free(f.binding);
+        f.knots.deinit(gpa);
         f.uses.deinit(gpa);
         f.use_tokens.deinit(gpa);
         f.param_reads.deinit(gpa);
