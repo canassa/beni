@@ -397,6 +397,10 @@ get: about 70 s of single-threaded compile after an edit, which no flag
 shortens. Run `zig build gates -Dllvm` when a change could make the two code
 generators disagree (safety checks, undefined-behaviour-shaped code, layouts,
 atomics, recursion depth), before a release, or when the owner asks.
+runs (the native one and the `wasm32-wasi` one, `playground.md` §6) with LLVM:
+three LLVM ReleaseSafe compiles, which run in parallel and each hold an LLVM
+compile's memory, so check `free -g` first. `test-perf` and `bench` always
+time a ReleaseFast LLVM beni.
 
 **The safety allocator is off by default** (the owner, 2026-11-01: "I don't see a
 reason to turn on the safety allocator unless we are running into memory
@@ -408,10 +412,6 @@ on in every beni the build makes, to debug memory issues: it catches leaks,
 double frees and use-after-free. Run `zig build gates -Dsafe-allocator=true`
 for that.
 `-Dllvm` also builds the two compilers with no threads that `wasm_test.zig`
-runs (the native one and the `wasm32-wasi` one, `playground.md` §6) with LLVM:
-three LLVM ReleaseSafe compiles, which run in parallel and each hold an LLVM
-compile's memory, so check `free -g` first. `test-perf` and `bench` always
-time a ReleaseFast LLVM beni.
 
 **Zig's two caches.** Each worktree keeps its own LOCAL cache, `.zig-cache`.
 Never share one between git worktrees: a worktree was handed a stale binary
