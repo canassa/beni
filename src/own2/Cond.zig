@@ -4213,13 +4213,14 @@ test "fold first: a period-2 knot whose top has a sibling with 2^d paths reads 2
     // 2 states a level (the prototype's fixture read 2d + 9; its `B` named
     // its second list). A walk with no fold first builds the paths.
     var runs: [3]SiblingRun = undefined;
-    for (&runs, [_]u32{ 4, 8, 12 }) |*r, d| {
-        r.* = try siblingRun(d);
+    for (&runs, [_]u32{ 4, 8, 12 }) |*r, d| r.* = try siblingRun(d);
+    // Linear in d: each four levels cost about the same. A walk with no fold
+    // first builds the 2^d paths and fails here.
+    try testing.expect(runs[2].records - runs[1].records <= (runs[1].records - runs[0].records) * 3 / 2);
+    for (runs, [_]u32{ 4, 8, 12 }) |r, d| {
         try testing.expectEqual(2 * d + 7, r.stats.states);
         try testing.expectEqual(@as(u32, 1), r.stats.folds);
     }
-    // Linear in d: each four levels cost about the same.
-    try testing.expect(runs[2].records - runs[1].records <= (runs[1].records - runs[0].records) * 3 / 2);
 }
 
 test "fold first: pass 1 stops at a clean-memo hit, so C calls over one shared DAG cost O(N + C)" {
@@ -4344,4 +4345,29 @@ test "fold first: a resumed pass that merges two leaves' components reopens thei
     try testing.expectEqual(@as(u32, 1), f.conds.prop_stats.resumed);
     try testing.expect(f.conds.prop_stats.folds >= 1);
     try expectReference(&f, out, rc, &.{ rc, rc }, &c2);
+}
+
+test "fold first: a clean entry written by a call of one member is not read by a call of two" {
+    // The clean memo's key holds whether the call keeps a lone member's
+    // entries (§2.9 *Fold first*, *As built*). Call 1 joins `{ a = j }`
+    // over one member `{ a = x }`, `x` storing `lost` for itself at `.a`: the
+    // state at `.a` keeps that entry and is written to the memo. Call 2 has a
+    // second member with no `.a` (an `Int`), so it meets the same state at
+    // `.a`; it keeps no member's entries, and with the memo it must read what
+    // it reads without it. A key without the bit hands it call 1's entry.
+    var f: Fixture = .{};
+    try f.init();
+    defer f.deinit();
+    const gpa = testing.allocator;
+    const fa = try Place.Step.field(&f.account, 10);
+    const int_leaf = try f.leaf(2, &.{});
+    const ja = try builtAt(&f, 1, 1, &.{Place.Step.elem}, &.{int_leaf});
+    const xa = try builtAt(&f, 1, 2, &.{Place.Step.elem}, &.{int_leaf});
+    const cm = try f.conds.kappaLink(gpa, f.charge(), .none, fa, try f.setK(.none, xa, lost));
+    const m = try builtAt(&f, 0, 3, &.{fa}, &.{xa});
+    _ = try f.propagate(.none, try builtAt(&f, 0, 4, &.{fa}, &.{ja}), &.{m}, &.{cm}, .alternatives, false);
+    const j2 = try builtAt(&f, 0, 5, &.{fa}, &.{ja});
+    const plain = try propagateIn(&f, j2, &.{ m, int_leaf }, &.{ cm, .none }, false, false);
+    try testing.expectEqual(plain, try propagateIn(&f, j2, &.{ m, int_leaf }, &.{ cm, .none }, true, false));
+    try testing.expect(f.conds.kappaGet(f.conds.kappaChild(plain, fa), xa) == null);
 }
