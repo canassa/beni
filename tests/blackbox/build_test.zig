@@ -8832,8 +8832,11 @@ test "the checker v2 reads row 19's certificate the same in either order of its 
     // in the walk's order and, built with `-Downership-v2-switch=
     // cert-params-reversed`, in the other, and expects one text. `g2`'s own
     // class reads `lost` already (`h2` calls `same` on a built node, near-
-    // miss row 14), so this pins the line's verdict; the memo itself is
-    // the unit test of `Calls.zig` that builds the certificate directly.
+    // miss row 14) at the lists `h2` puts there, so this pins the lines'
+    // verdicts: under the atom rule (#1559) the left subtree is `same a`'s
+    // classes alone, read across them by rule 4, and its two lines are
+    // accepted. The memo itself is the unit test of `Calls.zig` that builds
+    // the certificate directly.
     const a = testing.allocator;
     var w = try World.init(a, testing.io);
     defer w.deinit();
@@ -8889,11 +8892,13 @@ test "the checker v2 reads row 19's certificate the same in either order of its 
         \\Main.incAll <call Main.g2>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
         \\Main.incAll <call Main.g2>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
         \\Main.incAll <call Main.g2>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+        \\Main.incAll <call Main.g2>#Node.0⟨Tree⟩#Node.1: accepted param
+        \\Main.incAll <call Main.g2>#Node.0#Node.1: accepted param
         \\
     , lines);
     const read = try dumpLines(a, dump.stdout, "summary g2: ");
     defer a.free(read);
-    try testing.expectEqualStrings("summary g2: π2 R, π2#Node.0 R, π2#Node.0#Node.1 RA, π2#Node.0⟲ R, π2#Node.0⟲#Node.1 RA, π2#Node.1 RA, π2#Node.2 R, π2#Node.2#Node.1 RA, π2#Node.2⟲ R, π2#Node.2⟲#Node.1 RA, π3 R, π3#Node.0 R, π3#Node.0#Node.1 RA, π3#Node.0⟲ R, π3#Node.0⟲#Node.1 R, π3#Node.1 RA, π3#Node.2 R, π3#Node.2#Node.1 R, π3#Node.2⟲ R, π3#Node.2⟲#Node.1 R, π3⟲#Node.1 A; res #Node.0 {lost}, #Node.0#Node.1 fresh1 fresh2 fresh2 fresh3 fresh3 π2#Node.0#Node.1 π2#Node.0#Node.1 π2#Node.0⟲#Node.1 π2#Node.0⟲#Node.1 π2#Node.1 π2#Node.1 π2#Node.2#Node.1 π2#Node.2#Node.1 π2#Node.2⟲#Node.1 π2#Node.2⟲#Node.1 π3#Node.0#Node.1 π3#Node.0#Node.1 π3#Node.1 π3#Node.1 π3⟲#Node.1 π3⟲#Node.1{lost}, #Node.0#Node.1 fresh4 fresh4 π2#Node.0#Node.1 π2#Node.0#Node.1 π2#Node.0⟲#Node.1 π2#Node.0⟲#Node.1 π2#Node.1 π2#Node.1 π2#Node.2#Node.1 π2#Node.2#Node.1 π2#Node.2⟲#Node.1 π2#Node.2⟲#Node.1 π3#Node.0#Node.1 π3#Node.0#Node.1 π3#Node.1 π3#Node.1 π3⟲#Node.1{lost}, #Node.1 = #Node.0#Node.1, #Node.2 = #Node.0, {lost}; cert\n", read);
+    try testing.expectEqualStrings("summary g2: π2 R, π2#Node.0 R, π2#Node.0#Node.1 RA, π2#Node.0⟲ R, π2#Node.0⟲#Node.1 RA, π2#Node.1 RA, π2#Node.2 R, π2#Node.2#Node.1 RA, π2#Node.2⟲ R, π2#Node.2⟲#Node.1 RA, π3 R, π3#Node.0 R, π3#Node.0#Node.1 RA, π3#Node.0⟲ R, π3#Node.0⟲#Node.1 R, π3#Node.1 RA, π3#Node.2 R, π3#Node.2#Node.1 R, π3#Node.2⟲ R, π3#Node.2⟲#Node.1 R, π3⟲#Node.1 A; res #Node.0 {lost}, #Node.0#Node.1 π2#Node.0#Node.1 π2#Node.0⟲#Node.1 π2#Node.1 π2#Node.2#Node.1 π2#Node.2⟲#Node.1{apart [π2#Node.0#Node.1] [π2#Node.0⟲#Node.1], apart [π2#Node.0#Node.1] [π2#Node.0⟲#Node.1] [π2#Node.1] [π2#Node.2#Node.1] [π2#Node.2⟲#Node.1], apart [π2#Node.2#Node.1] [π2#Node.2⟲#Node.1], excl π2#Node.0, excl π2#Node.0⟲, excl π2#Node.0⟲#Node.1, excl π2#Node.2, excl π2#Node.2⟲, excl π2#Node.2⟲#Node.1}, #Node.1 fresh1 fresh4{lost}, #Node.2 {lost}, #Node.2#Node.1 fresh2 fresh3 fresh4 π3#Node.0#Node.1 π3#Node.1 π3#Node.1 π3#Node.1 π3#Node.1 π3⟲#Node.1{lost}; cert\n", read);
 }
 
 /// Near-miss rows 15 and 17 (`ownership-v2.md` §8 slice 4), in the form
@@ -8991,7 +8996,7 @@ test "the checker v2 refuses one view written twice through a wrapper, the tag o
         \\            Node (same l) (Box xs) (same r)
         \\
         \\
-    ++ tag_tail, "Main.incP <P …>", &.{ "#P.1#Node.2⟨Tree⟩#Node.1#Box.0", "#P.1#Node.2#Node.1#Box.0", "#P.1#Node.1#Box.0" });
+    ++ tag_tail, "Main.incP <P …>", &.{ "#P.1#Node.2⟨Tree⟩#Node.1#Box.0", "#P.1#Node.2#Node.1#Box.0", "#P.1#Node.1#Box.0", "#P.1#Node.0⟨Tree⟩#Node.1#Box.0", "#P.1#Node.0#Node.1#Box.0" });
 }
 
 test "the checker v2 refuses one view written twice through two wrappers, the tag or none, in either walk order (row 17)" {
@@ -9030,7 +9035,7 @@ test "the checker v2 refuses one view written twice through two wrappers, the ta
         \\            Node (same l) (Wrap (Box xs)) (same r)
         \\
         \\
-    ++ tag_tail, "Main.incP <P …>", &.{ "#P.1#Node.2⟨Tree⟩#Node.1#Wrap.0#Box.0", "#P.1#Node.2#Node.1#Wrap.0#Box.0", "#P.1#Node.1#Wrap.0#Box.0" });
+    ++ tag_tail, "Main.incP <P …>", &.{ "#P.1#Node.2⟨Tree⟩#Node.1#Wrap.0#Box.0", "#P.1#Node.2#Node.1#Wrap.0#Box.0", "#P.1#Node.1#Wrap.0#Box.0", "#P.1#Node.0⟨Tree⟩#Node.1#Wrap.0#Box.0", "#P.1#Node.0#Node.1#Wrap.0#Box.0" });
 }
 
 test "the checker v2's holder index answers a frame's demands in records linear in its holders and uses" {
