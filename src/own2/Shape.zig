@@ -3335,11 +3335,12 @@ pub const Table = struct {
             var below: ?[2]NodeId = null;
             if (top.ok) {
                 const steps = places.steps(t.place(top.n)).steps;
-                while (top.step < steps.len) {
-                    const s = steps[top.step];
+                while (top.step <= steps.len) {
+                    // Last, a use shape's `⟲` child, no step of a place; a leaf `m` stands for it (#1523).
+                    const s = if (top.step < steps.len) steps[top.step] else Step.level;
                     top.step += 1;
-                    const pn = (try t.proj(gpa, account, places, cellt, top.n, s)) orelse continue;
-                    const pm = (try t.proj(gpa, account, places, cellt, top.m, s)) orelse {
+                    const pn = (if (s.kind != .level) try t.proj(gpa, account, places, cellt, top.n, s) else if (t.kind(top.n) == .node) t.overGet(t.nodes.items(.a)[top.n.int()], s) else null) orelse continue;
+                    const pm = (if (s.kind == .level and t.kind(top.m) == .leaf) top.m else try t.proj(gpa, account, places, cellt, top.m, s)) orelse {
                         top.ok = false;
                         break;
                     };

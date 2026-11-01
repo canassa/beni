@@ -1137,7 +1137,7 @@ Operations, memoised on their node arguments:
   positions, which hold 108 distinct triples. The quadtree and T3 cost about 1 000 records per port node a
   walk, in the walk and not in the port. `incCs` likewise.
 - `leq` is **γ-inclusion and kind-blind**: `n ≤ m` iff `cells(n) ⊆ cells(m)` and `proj(n, s) ≤ proj(m, s)` at
-  every step `s` of n's place, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
+  every step `s` of n's place and at a `⟲` child of n, whatever the two nodes' kinds. So `x ≤ a` gives `x ≤ union(a, b)`, a `union` is
   below `y` when both its sides are (every member is below its join, O4), and two `positions` nodes compare by
   their cells per path, independent of their members' order and of the balanced tree's shape. Multiplicity is not
   part of γ: it is compared only through κ, by `Cond.kappaLeq` (§2.9). A structural rule — `x ≤ union(a, b)` iff
@@ -1145,6 +1145,14 @@ Operations, memoised on their node arguments:
   `F(x) ⊑ x` under `widen`: a class image is built from many members (below), so `positions(x, x) ≤ image`
   would need a member-to-member match, which fails although γ holds, and the fixpoint would keep growing. γ-inclusion settles `F(x) ⊑ x` in one step for `Rose [ x, x ]` over the widened
   value, at the coinductive pair cost and with no matching task.
+  *Amended 2026-11-01 (#1523): the `⟲` step.* A use shape keeps its canonical paths, `⟲` included (§2.10's
+  read-off), so a node of one can have a `⟲` child, and `⟲` is no step of a place. `leq` compares that child
+  too: `n`'s `⟲` child is below `proj(m, ⟲)`. Without it a group's round that added marks only below a `⟲`
+  was `leq` its port, and the fixpoint stopped one round early: `size r = case r of Rose kids → 1 + sizeList
+  kids` read `π1#Rose.0[*]⟲` but not `π1#Rose.0[*]⟲#Rose.0`, so a holder read by `size` after a call did not
+  hold the lists three levels down, and the call's write of them was accepted while the holder read them
+  (`LevelReadSummary`). Each per-path verdict stands alone for condition 5; a callee's `xreq` is reported on
+  the call's first write (§2.11 step 7), so a deeper path's `accepted` does not discharge it.
 - `widen` across kinds [M 2026-10-27, #1120]: **a `union` or `positions` node met at a re-entry (a `⟲` step: on the
   cycle being folded) is opened**. Its sides stand at its path, so they become members of its class and their own
   structure is walked like any member's. Every other union, choice or positions node (off the cycle, below) is kept as it is, and widen never

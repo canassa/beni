@@ -1,0 +1,102 @@
+-- ownership (v2; ownership-v2.md §2.10, §2.12, #1523): a recursive
+-- reader's class reads the lists of every level. `size` and `sizeList`
+-- call each other, and `sz` calls itself. Their reads below `⟲` came in
+-- one round after the `⟲` itself, and the fixpoint compared the rounds
+-- without the `⟲` child of a use shape, so it stopped one round early:
+-- `size` read `π1#Rose.0[*]⟲` but not the lists there. Then `w`, read by
+-- `size` after the call, did not hold the deepest lists, and v2 accepted
+-- the write of them. `shallow` is the program of #1523 (refused at the
+-- shallow paths). In `rebuild` and `rebuildSz` the two shallow lists are
+-- new and the deep one is `k`, which `w` still holds: v2 accepted the
+-- whole call. Each deep path is refused now.
+type Rose
+    = Rose (List Rose)
+    | Leaf
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (incList (List.push kids Leaf))
+
+        Leaf →
+            Leaf
+
+
+incList : List Rose → List Rose
+incList rs =
+    case rs of
+        [ s, …rest ] →
+            [ incAll s, …incList rest ]
+
+        [] →
+            []
+
+
+size : Rose → Int
+size r =
+    case r of
+        Rose kids →
+            1 + sizeList kids
+
+        Leaf →
+            1
+
+
+sizeList : List Rose → Int
+sizeList rs =
+    case rs of
+        [ s, …rest ] →
+            size s + sizeList rest
+
+        [] →
+            0
+
+
+sz : Rose → Int
+sz r =
+    case r of
+        Rose [ s, …rest ] →
+            sz s + sz (Rose rest)
+
+        _ →
+            1
+
+
+pub shallow : Int → Rose × Int
+shallow c =
+    k = [ Rose [] ]
+    v = Rose [ Rose [ Rose k ] ]
+    w = v
+    ( incAll v, size w )
+
+
+pub rebuild : Int → Rose × Int
+rebuild c =
+    k = [ Rose [] ]
+    v = Rose [ Rose [ Rose k ] ]
+    w = v
+    u =
+        case v of
+            Rose [ Rose [ d, …_ ], …_ ] →
+                Rose [ Rose [ d ] ]
+
+            _ →
+                Leaf
+    ( incAll u, size w )
+
+
+pub rebuildSz : Int → Rose × Int
+rebuildSz c =
+    k = [ Rose [] ]
+    v = Rose [ Rose [ Rose k ] ]
+    w = v
+    u =
+        case v of
+            Rose [ Rose [ d, …_ ], …_ ] →
+                Rose [ Rose [ d ] ]
+
+            _ →
+                Leaf
+    ( incAll u, sz w )

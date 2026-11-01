@@ -1,0 +1,40 @@
+module LevelReadSummary
+  21:19 LevelReadSummary.incList <call List.push>[*]#Rose.0: accepted param
+  21:19 LevelReadSummary.incList <call List.push>[*]#Rose.0⟨Rose⟩: accepted param
+  21:28 List.push kids: accepted param
+  31:15 LevelReadSummary.incAll s#Rose.0: accepted param
+  31:15 LevelReadSummary.incAll s#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  31:15 LevelReadSummary.incAll s#Rose.0[*]#Rose.0: accepted param
+  31:26 LevelReadSummary.incList rest[*]#Rose.0: accepted param
+  31:26 LevelReadSummary.incList rest[*]#Rose.0⟨Rose⟩: accepted param
+  72:7 LevelReadSummary.incAll v#Rose.0: rejected alias: w#Rose.0 holds it and is read at 72:17
+  72:7 LevelReadSummary.incAll v#Rose.0[*]⟨Rose⟩#Rose.0: rejected element: w#Rose.0 holds it and is read at 72:17 (approx)
+  72:7 LevelReadSummary.incAll v#Rose.0[*]#Rose.0: rejected element: w#Rose.0 holds it and is read at 72:17 (approx)
+  87:7 LevelReadSummary.incAll u#Rose.0: accepted fresh
+  87:7 LevelReadSummary.incAll u#Rose.0[*]⟨Rose⟩#Rose.0: rejected element: w#Rose.0 holds it and is read at 87:17 (approx)
+  87:7 LevelReadSummary.incAll u#Rose.0[*]#Rose.0: accepted fresh
+  102:7 LevelReadSummary.incAll u#Rose.0: accepted fresh
+  102:7 LevelReadSummary.incAll u#Rose.0[*]⟨Rose⟩#Rose.0: rejected element: w#Rose.0 holds it and is read at 102:17 (approx)
+  102:7 LevelReadSummary.incAll u#Rose.0[*]#Rose.0: accepted fresh
+  account incAll: source 22, baseline 14278, growth 0 of 65536, total 14278, continuation 14010 of 22528, demands 740, walks 5, inference 4, deliveries 8, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 2, call_view lanes 6, transfer_settlement lanes 50
+  crossing: reads 3, redone 0, base moves 24
+  summary incAll: π1 R, π1#Rose.0 RW, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RW, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 RW; res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}, {lost}; xreq excl π1#Rose.0[*], excl π1#Rose.0[*]#Rose.0, excl π1#Rose.0[*]⟲, excl π1#Rose.0[*]⟲#Rose.0
+  account incList: source 26, baseline 21988, growth 0 of 65536, total 21988, continuation 21866 of 26624, demands 2200, hold listings 18, walks 7, inference 6, deliveries 12, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incList: π1 R, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res [*] {lost}, [*]#Rose.0 fresh3 fresh3{lost}, [*]#Rose.0 fresh3{lost}, [*]#Rose.0 fresh4{lost}, [*]#Rose.0[*] {lost}, fresh1 fresh2 ~fresh3{lost}; xreq excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account size: source 20, baseline 500, growth 0 of 65536, total 500, continuation 432 of 20480, demands 2, walks 2, inference 1, deliveries 3, direct_data lanes 2, liveness_index lanes 4, call_view lanes 4, transfer_settlement lanes 46
+  summary size: π1 R, π1#Rose.0 R, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 R, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 R
+  account sizeList: source 24, baseline 796, growth 0 of 65536, total 796, continuation 680 of 24576, demands 2, walks 2, inference 1, deliveries 5, direct_data lanes 2, liveness_index lanes 6, call_view lanes 6, transfer_settlement lanes 54
+  summary sizeList: π1 R, π1[*] R, π1[*]#Rose.0 R, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ R, π1[*]#Rose.0⟲[*] R
+  account sz: source 26, baseline 918, growth 0 of 65536, total 918, continuation 732 of 26624, demands 2, walks 2, inference 1, deliveries 5, direct_data lanes 2, liveness_index lanes 6, call_view lanes 8, transfer_settlement lanes 58
+  summary sz: π1 R, π1#Rose.0 R, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 R, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 R
+  account shallow: source 31, baseline 1015, growth 0 of 65536, total 1015, continuation 947 of 31744, demands 194, hold listings 4, direct_data lanes 1, liveness_index lanes 4, call_view lanes 6, transfer_settlement lanes 33
+  summary shallow: res .0 {lost}, .0#Rose.0 fresh1{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}
+  account rebuild: source 56, baseline 1795, growth 0 of 65536, total 1795, continuation 1654 of 57344, demands 165, hold listings 2, direct_data lanes 1, liveness_index lanes 6, call_view lanes 8, transfer_settlement lanes 60
+  summary rebuild: res .0 {lost}, .0#Rose.0 fresh1{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}
+  account rebuildSz: source 56, baseline 1781, growth 0 of 65536, total 1781, continuation 1640 of 57344, demands 161, hold listings 2, direct_data lanes 1, liveness_index lanes 6, call_view lanes 8, transfer_settlement lanes 60
+  summary rebuildSz: res .0 {lost}, .0#Rose.0 fresh1{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}
+  block: 852 bytes, hash 57738e12bf37ef49
+  demands 17: accepted 12 (fresh 4, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 17: accepted 12 (fresh 4, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause alias 1
+cause element 4
