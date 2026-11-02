@@ -1442,7 +1442,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             if (validating) {
                 // Not within its candidate: an inference defect, joined and
                 // validated again (§2.12 step 3), never silent.
-                if (try mod.contracts.within(ra, c, code.contract)) {
+                if (try mod.contracts.within(ra, &mod.slots, c, code.contract)) {
                     // Within: the code's own contract is what it does under
                     // the candidates, so it is what callers read (no
                     // reliance a round of the inference made and a later

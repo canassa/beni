@@ -232,7 +232,6 @@ const Reader = struct {
         for (0..n) |_| {
             const slot = try r.rel();
             const open = try r.next() != 0;
-            if (open) try Contract.Draft.markOpen(out, r.arena, slot);
             const na = try r.next();
             if (na > r.words.len) return error.BadBlock;
             for (0..na) |_| {
@@ -251,7 +250,7 @@ const Reader = struct {
                     },
                     .fresh, .top => {},
                 }
-                _ = try Contract.Draft.addArrival(out, r.arena, slot, a);
+                _ = try Contract.Draft.addAt(out, r.arena, slot, open, a);
             }
         }
     }
