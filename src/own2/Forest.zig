@@ -313,6 +313,53 @@ fn textAt(t: *const Trees.Table, places: *const Place.Table, n: Node, ctx: *anyo
     }
 }
 
+// ---- effects as trees (§2.10, *Effects as trees*) ------------------------
+
+/// The mark of an effect tree: a plain run is a shallow effect at its slot,
+/// an open run a deep one at its slot and every slot below it.
+pub const mark: Arrival = .{ .kind = .top };
+
+/// `n` with each deep effect covering what is below it: its kids and its
+/// shallow effect dropped (a fold names the same slots).
+pub fn foldDeep(t: *Trees.Table, gpa: Allocator, memo: *Ids.FixedDict(2), n: Node) Ids.IndexError!Node {
+    if (n == 0) return 0;
+    if (t.open(n).len != 0) return t.node(gpa, &.{}, &.{mark}, &.{});
+    if (memo.get(.{ n, 1 })) |m| return m;
+    var ks: std.ArrayList([2]u32) = .empty;
+    defer ks.deinit(gpa);
+    for (t.kids(n)) |k| try ks.append(gpa, .{ k[0], try foldDeep(t, gpa, memo, k[1]) });
+    const m = try t.node(gpa, t.here(n), &.{}, ks.items);
+    try memo.put(gpa, .{ n, 1 }, m);
+    return m;
+}
+
+/// Every effect of tree `g` is one of `c`'s at its slot (a shallow one by
+/// either, a deep one by a deep one) or below a deep one of `c`'s.
+pub fn effectsWithin(t: *const Trees.Table, gpa: Allocator, memo: *Ids.FixedDict(2), g: Node, c: Node) Ids.IndexError!bool {
+    if (g == 0 or t.open(c).len != 0) return true;
+    if (memo.get(.{ g, c })) |x| return x == 1;
+    var ok = (t.here(g).len == 0 or t.here(c).len != 0) and t.open(g).len == 0;
+    if (ok) for (t.kids(g)) |k| {
+        if (!try effectsWithin(t, gpa, memo, k[1], t.kidAt(c, k[0]) orelse 0)) {
+            ok = false;
+            break;
+        }
+    };
+    try memo.put(gpa, .{ g, c }, @intFromBool(ok));
+    return ok;
+}
+
+/// Whether effect tree `n` reaches the slot `words` below its root: an
+/// effect at it or below it, or a deep one above it.
+pub fn effectReaches(t: *const Trees.Table, n0: Node, words: []const u32) bool {
+    var n = n0;
+    for (words) |w| {
+        if (t.open(n).len != 0) return true;
+        n = t.kidAt(n, w) orelse return false;
+    }
+    return t.count(n) != 0;
+}
+
 const testing = std.testing;
 
 test "a slot reader walks only its steps, and the entries come in order" {

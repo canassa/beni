@@ -379,12 +379,7 @@ const Resolver = struct {
         const h = r.e.contracts.head(call.contract);
         const rem = (try fr.slots.relBelow(g, fr.account, fr.places, u.path, q)) orelse return true;
         const rw = fr.slots.relWords(rem);
-        for (r.e.contracts.effectsOf(h.reads)) |x| {
-            if (x.j != foot[1]) continue;
-            const sw = fr.slots.relWords(x.slot);
-            if (sw.len <= rw.len and std.mem.eql(u32, sw, rw[0..sw.len]) and (x.deep or sw.len == rw.len)) return true;
-            if (rw.len < sw.len and std.mem.eql(u32, rw, sw[0..rw.len])) return true;
-        }
+        for (r.e.contracts.readsOf(h.reads)) |x| if (x[0] == foot[1] and Forest.effectReaches(&r.e.contracts.trees, x[1], rw)) return true;
         for (r.e.contracts.effectsOf(h.writes)) |x| if (x.j == foot[1]) {
             const sw = fr.slots.relWords(x.slot);
             const n = @min(sw.len, rw.len);

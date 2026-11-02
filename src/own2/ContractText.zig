@@ -11,21 +11,18 @@ const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 
-const Rel = Contract.Rel;
 const Range = Contract.Range;
 const Table = Contract.Table;
 const Id = Contract.Id;
-const StoredCond = Contract.StoredCond;
-const none: u32 = Ids.none_int;
 
-/// How a contract's text names a step, a declaration and a field.
+/// How a contract's text names a field.
 pub const Names = struct {
     ctx: *anyopaque,
     field: *const fn (ctx: *anyopaque, rank: u32) []const u8,
 };
 
 /// `rel`'s text: `.f`, `.0`, `#c.i`, `[*]`, `⟲`, `◆`, `◇`, `⟨n⟩`; `ε` for none.
-pub fn relText(slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, r: Rel) std.Io.Writer.Error!void {
+pub fn relText(slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, r: Contract.Rel) std.Io.Writer.Error!void {
     return wordsText(places, names, w, slots.relWords(r));
 }
 
@@ -49,15 +46,15 @@ fn wordsText(places: *const Place.Table, names: Names, w: *std.Io.Writer, words:
     }
 }
 
-fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, c: StoredCond) std.Io.Writer.Error!void {
+fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, c: Contract.StoredCond) std.Io.Writer.Error!void {
     if (c.no) return w.writeAll("no");
     const run = t.occsOf(c);
     if (run.len == 0) return w.writeAll("yes");
     try w.writeAll("⇐ sel");
-    var last: u32 = none;
+    var last: u32 = Ids.none_int;
     for (run) |o| {
         if (Contract.occParam(o) != last) {
-            if (last != none) try w.writeAll("}");
+            if (last != Ids.none_int) try w.writeAll("}");
             try w.print(" π{d}{{", .{Contract.occParam(o) + 1});
             last = Contract.occParam(o);
         } else try w.writeAll(",");
@@ -87,10 +84,17 @@ const Res = struct {
     names: Names,
     w: *std.Io.Writer,
     first: bool = true,
+    eff: ?u32 = null, // reads (an effect tree) of this parameter, not arrivals
 
     fn entry(ctx: *anyopaque, path: []const u32, open: bool, run: []const Contract.Arrival, as: ?[]const u32) std.Io.Writer.Error!void {
         const r: *Res = @ptrCast(@alignCast(ctx));
         const w = r.w;
+        if (r.eff) |j| {
+            try w.print(" π{d}", .{j + 1});
+            try wordsText(r.places, r.names, w, path);
+            if (as != null) try w.print(" = π{d}", .{j + 1});
+            return if (as) |o| wordsText(r.places, r.names, w, o) else if (open) w.writeAll("*");
+        }
         try w.writeAll(if (r.first) " " else ", ");
         r.first = false;
         try wordsText(r.places, r.names, w, path);
@@ -118,8 +122,8 @@ const Res = struct {
     }
 };
 
-fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node) std.Io.Writer.Error!void {
-    var r: Res = .{ .t = t, .c = c, .slots = slots, .places = places, .names = names, .w = w };
+fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node, eff: ?u32) std.Io.Writer.Error!void {
+    var r: Res = .{ .t = t, .c = c, .slots = slots, .places = places, .names = names, .w = w, .eff = eff };
     try Forest.text(&t.trees, places, root, &r, Res.entry);
 }
 
@@ -129,11 +133,12 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
     if (h.flags.pessimistic) try w.writeAll("pessimistic; ");
     if (h.flags.cross) try w.writeAll("res crossing") else if (!h.flags.returns) try w.writeAll("res ⊥") else {
         try w.writeAll("res");
-        try arrivalsText(t, c, slots, places, names, w, h.res_root);
+        try arrivalsText(t, c, slots, places, names, w, h.res_root, null);
     }
     try w.writeAll("; nondup ");
     try condText(t, slots, places, names, w, h.res_cond);
-    try effectsText(t, slots, places, names, w, "; reads", h.reads);
+    if (h.reads.len != 0) try w.writeAll("; reads");
+    for (t.readsOf(h.reads)) |x| try arrivalsText(t, c, slots, places, names, w, x[1], x[0]);
     try effectsText(t, slots, places, names, w, "; writes", h.writes);
     if (h.writes.len != 0) try w.writeAll("; req ");
     if (h.writes.len != 0) try condText(t, slots, places, names, w, h.req);
@@ -144,7 +149,7 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
         try w.print("@{d} {t}", .{ l.origin[2], l.calls });
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}:", .{s.k + 1});
-            try arrivalsText(t, c, slots, places, names, w, s.res_root);
+            try arrivalsText(t, c, slots, places, names, w, s.res_root, null);
             try effectsText(t, slots, places, names, w, " kept", s.kept);
             try w.writeAll(" sep ");
             try condText(t, slots, places, names, w, s.cond);

@@ -837,19 +837,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             if (call.contract == none) break :foot;
             const h = e.contracts.head(call.contract);
             if (h.flags.pessimistic) break :foot;
-            for (e.contracts.effectsOf(h.reads)) |x| {
-                if (x.j != ft[1]) continue;
-                var words: std.ArrayList(u32) = .empty;
-                defer words.deinit(gpa);
-                try words.appendSlice(gpa, f.slots.relWords(rel));
-                try words.appendSlice(gpa, f.slots.relWords(x.slot));
-                var qs: std.ArrayList(Relation.Proj) = .empty;
-                defer qs.deinit(gpa);
-                e.ev.pass = if (x.deep) pass else 0;
-                defer e.ev.pass = 0;
-                try e.ev.project(b.value, words.items, x.deep, 0, 0, &qs);
-                for (qs.items) |p| try paramEffects(s, p.leaf, x.deep, .reads);
-            }
+            for (e.contracts.readsOf(h.reads)) |x| if (x[0] == ft[1]) try readsThrough(s, b.value, f.slots.relWords(rel), x[1], pass);
             continue;
         }
         e.ev.pass = pass;
@@ -924,6 +912,42 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
             for (e.contracts.effectsOf(su.kept)) |kp| _ = try Contract.Draft.addEffect(&sup.kept, arena, kp);
         }
+    }
+}
+
+/// A callee's reads of an argument (tree `n`), read where value `v` is used
+/// at `at` (§2.10 *Read-off*): a parameter's subtree read by its own
+/// structure, of more than `Slots.below_min` objects, takes the tree whole,
+/// below the slot it is used at (§2.10,
+/// *a call's instantiation is a tree*); anything else is each read slot
+/// projected.
+fn readsThrough(s: *Sink, v: u32, at: []const u32, n: Contract.Node, pass: u32) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    whole: {
+        const x = f.val(try e.ev.valueAt(v, at));
+        if (x.kind != .ref or x.family != Slots.empty or f.roots.items[x.root].kind != .param) break :whole;
+        const sl = f.pos.items[x.pos].slot;
+        const k = f.places.kind(f.places.pathPlace(sl));
+        if (k == .@"var" or k == .@"opaque" or !try acyclicBelow(s, f.places.pathPlace(sl))) break :whole;
+        // A subtree written out (at most `Slots.below_min` objects) is read
+        // slot by slot: what a slot holds no object of reads nothing.
+        if (!Subtree.symbolic(f.slots, try Subtree.below(f.slots, gpa, f.account, f.places, sl))) break :whole;
+        try f.charge(.edge, 1);
+        _ = try Contract.Draft.addEffect(&s.d.reads, s.arena, .{ .j = f.roots.items[x.root].a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .node = n });
+        return;
+    }
+    var es: Forest.Entries = .{};
+    defer es.deinit(gpa);
+    try es.of(&e.contracts.trees, gpa, f.places, n, at);
+    for (es.items.items) |x| {
+        var ps: std.ArrayList(Relation.Proj) = .empty;
+        defer ps.deinit(gpa);
+        e.ev.pass = if (x.open) pass else 0;
+        defer e.ev.pass = 0;
+        try e.ev.project(v, es.wordsOf(x), x.open, 0, 0, &ps);
+        for (ps.items) |p| try paramEffects(s, p.leaf, x.open, .reads);
     }
 }
 
