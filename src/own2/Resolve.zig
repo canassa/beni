@@ -73,12 +73,9 @@ const Resolver = struct {
     e: *Eval.Evaluation,
     arena: Allocator,
     regions: *const Regions.Tree,
-    /// Locals by the roots and atoms of their values' leaves (the holder
-    /// index): `(kind, root or atom, extra)` → a run of `cands`.
-    by_key: Ids.FixedDict(3) = .{},
-    cands: std.ArrayList(std.ArrayList(u32)) = .empty,
-    /// Locals whose values reach an unknown object: candidates of every demand.
-    anywhere: std.ArrayList(u32) = .empty,
+    /// The holder index and its sweep (§2.8): locals by their values' base
+    /// keys, live while the sweep's point is between their binding and last use.
+    live: Holders.Live = .{},
     ancestry: Liveness.Ancestry = .{},
     /// Each leaf's base keys and the escape index (§2.8).
     keys: Holders.Keys = .{},
@@ -98,107 +95,73 @@ const Resolver = struct {
     }
 
     fn deinit(r: *Resolver) void {
-        r.by_key.deinit(r.gpa());
-        for (r.cands.items) |*c| c.deinit(r.gpa());
-        r.cands.deinit(r.gpa());
-        r.anywhere.deinit(r.gpa());
+        r.live.deinit(r.gpa());
         r.ancestry.deinit(r.gpa());
         r.keys.deinit(r.gpa());
         r.escapes.deinit(r.gpa());
     }
 
-    /// A leaf's base keys: the parameters, atoms and labels it comes from,
-    /// through calls and supplies.
-    fn baseKeys(r: *Resolver, li: u32, out: *std.ArrayList([3]u32), unknown: *bool) Error!void {
-        var stack: std.ArrayList(u32) = .empty;
-        defer stack.deinit(r.gpa());
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(r.gpa());
-        try stack.append(r.gpa(), li);
-        while (stack.pop()) |x| {
-            if ((try seen.getOrPut(r.gpa(), .{x})).found_existing) continue;
-            try r.f().charge(.inspection, 1);
-            const l = r.f().leafAt(x);
-            switch (l.kind) {
-                .ref => {
-                    const root = r.f().roots.items[l.root];
-                    switch (root.kind) {
-                        .param => try out.append(r.gpa(), .{ 0, root.a, 0 }),
-                        .cb => unknown.* = true,
-                        .call, .supply => {
-                            var ls: std.ArrayList(u32) = .empty;
-                            defer ls.deinit(r.gpa());
-                            try r.ev().expand(x, &ls);
-                            try stack.appendSlice(r.gpa(), ls.items);
-                        },
-                    }
-                },
-                .site => try out.append(r.gpa(), .{ 1, l.atom, 0 }),
-                .fresh => try out.append(r.gpa(), .{ 2, l.atom, 0 }),
-                .shared => try out.append(r.gpa(), .{ 3, l.atom, l.extra }),
-                .answer, .top => unknown.* = true,
-                .recons => unreachable,
-            }
+    /// The base keys of `targets` (§2.8, *Base keys*): their runs, joined.
+    fn keysOf(r: *Resolver, targets: []const u32, out: *std.ArrayList([3]u32), unknown: *bool) Error!void {
+        for (targets) |t| {
+            const ks = try r.keys.of(r.ev(), t);
+            try out.appendSlice(r.gpa(), ks.keys);
+            unknown.* = unknown.* or ks.unknown;
         }
     }
 
-    /// The holder index (§2.8): every bound local, by its value's base keys.
+    /// The holder index (§2.8): every bound local that is used after its
+    /// binding; keyed by its value's base keys only when a demand first
+    /// meets it live (`candidates`).
     fn index(r: *Resolver) Error!void {
         const w = r.e.w;
         for (w.bindings, 0..) |b, local| {
-            if (b.value == none) continue;
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(r.gpa());
-            try r.ev().leavesOf(b.value, 0, &ls);
-            var keys: std.ArrayList([3]u32) = .empty;
-            defer keys.deinit(r.gpa());
-            var unknown = false;
-            for (ls.items) |l| try r.baseKeys(l, &keys, &unknown);
-            if (unknown) {
-                try r.anywhere.append(r.gpa(), @intCast(local));
-                continue;
-            }
-            for (keys.items) |k| {
-                try r.f().charge(.edge, 1);
-                const got = try r.by_key.getOrPut(r.gpa(), k);
-                if (!got.found_existing) {
-                    got.value_ptr.* = @intCast(r.cands.items.len);
-                    try r.cands.append(r.gpa(), .empty);
-                }
-                const list = &r.cands.items[got.value_ptr.*];
-                if (list.items.len == 0 or list.items[list.items.len - 1] != local) try list.append(r.gpa(), @intCast(local));
-            }
+            if (b.value == none or b.point == none) continue;
+            const last = w.index.lastUse(@intCast(local));
+            if (last == none or last <= b.point) continue;
+            try r.live.add(r.ev(), @intCast(local), b.point, last);
         }
+        try r.live.finish(r.ev());
     }
 
-    /// The locals that may hold one of `targets`, sorted and once each.
+    /// The live locals that may hold an object of `targets` (§2.8, *The
+    /// holder index and its sweep*): the live holders not keyed yet keyed
+    /// first, by their values' leaves' base keys.
     fn candidates(r: *Resolver, targets: []const u32, out: *std.ArrayList(u32)) Error!void {
+        if (!r.live.any()) return;
+        const g = r.gpa();
         var keys: std.ArrayList([3]u32) = .empty;
-        defer keys.deinit(r.gpa());
-        var unknown = false;
-        for (targets) |t| try r.baseKeys(t, &keys, &unknown);
-        try out.appendSlice(r.gpa(), r.anywhere.items);
-        if (unknown) {
-            for (r.e.w.bindings, 0..) |b, l| if (b.value != none) try out.append(r.gpa(), @intCast(l));
-        } else for (keys.items) |k| {
-            if (r.by_key.get(k)) |c| try out.appendSlice(r.gpa(), r.cands.items[c].items);
-            // A parameter's object may be held through another parameter.
-            if (k[0] == 0) {
-                var it: usize = 0;
-                while (it < r.by_key.count()) : (it += 1) {
-                    const key = r.by_key.keyAt(@intCast(it));
-                    if (key[0] == 0 and key[1] != k[1]) try out.appendSlice(r.gpa(), r.cands.items[r.by_key.values.items[it]].items);
-                }
-            }
+        defer keys.deinit(g);
+        while (r.live.takeUnkeyed()) |hi| {
+            const b = r.e.w.bindings[r.live.holders.items[hi].local];
+            var ls: std.ArrayList(u32) = .empty;
+            defer ls.deinit(g);
+            try r.ev().leavesOf(b.value, 0, &ls);
+            keys.clearRetainingCapacity();
+            var unknown = false;
+            try r.keysOf(ls.items, &keys, &unknown);
+            try r.live.key(r.ev(), hi, try sortedKeys(&keys), unknown);
         }
-        std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+        keys.clearRetainingCapacity();
+        var unknown = false;
+        try r.keysOf(targets, &keys, &unknown);
+        try r.live.candidates(r.ev(), try sortedKeys(&keys), out);
+    }
+
+    fn sortedKeys(keys: *std.ArrayList([3]u32)) Error![]const [3]u32 {
+        std.mem.sort([3]u32, keys.items, {}, struct {
+            fn lt(_: void, a: [3]u32, c: [3]u32) bool {
+                return std.mem.order(u32, &a, &c) == .lt;
+            }
+        }.lt);
         var n: usize = 0;
-        for (out.items) |x| {
-            if (n != 0 and out.items[n - 1] == x) continue;
-            out.items[n] = x;
+        for (keys.items) |k| {
+            if (n != 0 and std.mem.eql(u32, &keys.items[n - 1], &k)) continue;
+            keys.items[n] = k;
             n += 1;
         }
-        out.shrinkRetainingCapacity(n);
+        keys.shrinkRetainingCapacity(n);
+        return keys.items;
     }
 
     /// The paths at which local `h`'s value holds an object `target` may
@@ -415,12 +378,16 @@ const Resolver = struct {
         var line: Line = .{ .demand = d, .outcome = .{} };
         const o = &line.outcome;
         const targets = w.leavesOfRun(d.targets);
-        // Known, and the ground: what the targets come from.
-        var base: std.ArrayList([3]u32) = .empty;
-        defer base.deinit(g);
-        var unknown = false;
-        for (targets) |t| try r.baseKeys(t, &base, &unknown);
-        if (unknown or targets.len == 0) {
+        // Known, and the ground: what the targets come from, by their facts
+        // (§2.8, *Base keys*).
+        var fx: Holders.Facts = .{};
+        for (targets) |t| {
+            const tf = try r.keys.factsOf(r.ev(), t);
+            fx.unknown = fx.unknown or tf.unknown;
+            fx.param = fx.param or tf.param;
+            if (std.mem.order(u32, &tf.shared, &fx.shared) == .lt) fx.shared = tf.shared;
+        }
+        if (fx.unknown or targets.len == 0) {
             refuse(o, .unknown);
             if (targets.len != 0) o.exactness = .approximate;
             return line;
@@ -428,17 +395,13 @@ const Resolver = struct {
         // The ground is what the targets come from (R-7.15): a parameter's
         // object relies on the callers, anything this activation allocated
         // (here or in a callee) is fresh.
-        var ground: Facts.Verdict.Accepted = .fresh;
-        for (base.items) |k| switch (k[0]) {
-            0 => ground = .param,
-            3 => {
-                refuse(o, .top_level);
-                o.exactness = .position;
-                o.shared = .{ k[1], k[2] };
-                return line;
-            },
-            else => {},
-        };
+        const ground: Facts.Verdict.Accepted = if (fx.param) .param else .fresh;
+        if (fx.shared[0] != none) {
+            refuse(o, .top_level);
+            o.exactness = .position;
+            o.shared = fx.shared;
+            return line;
+        }
         var relied: Cond = d.relies;
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
@@ -599,41 +562,25 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     defer r.deinit();
     try r.index();
     try r.escapes.build(r.ev(), &r.keys, regions, e.escapes.items);
-    const lines = try arena.alloc(Line, e.demands.items.len);
-    var req: Cond = .{};
-    for (e.demands.items, lines) |d, *l| {
-        e.w.f.account.in_demands = true;
-        defer e.w.f.account.in_demands = false;
-        l.* = try r.judge(d);
-        if (l.outcome.verdict == .accepted) req = try Cond.conj(e.ev.arena, e.w.f.account, req, l.demand.relies);
-    }
-    // The direct labels' kept slots and their supplies' condition.
     const f = &e.w.f;
-    var kept: std.ArrayList([3]u32) = .empty;
-    const conds = try arena.alloc(Cond, f.cbs.items.len);
-    @memset(conds, .{});
+    // Every judgement, in the walk's order: the demands, the direct labels'
+    // supplied parts, the passed-on labels' parts (§2.11.3).
+    const Job = struct { kind: enum { demand, cb, pass }, point: u32, i: u32, k: u32 = 0, t: u32 = none, at: u32 = 0, aj: u32 = 0, skip: usize = std.math.maxInt(usize), pending: Ids.Range = .{} };
+    var jobs: std.ArrayList(Job) = .empty;
+    for (e.demands.items, 0..) |d, i| try jobs.append(arena, .{ .kind = .demand, .point = d.point, .i = @intCast(i) });
     for (f.cbs.items, 0..) |cb, ci| {
         if (cb.inst == none) continue;
         for (cb.args, 0..) |a, k| {
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(f.gpa);
             try e.ev.leavesOf(a, 0, &ls);
-            for (ls.items) |t| {
-                const l = try r.judgeSupplied(t, cb.point, cb.inst, cb.args, k, std.math.maxInt(usize), cb.pending);
-                switch (l.outcome.verdict) {
-                    .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ @intCast(ci), @intCast(k), t }),
-                    .accepted => conds[ci] = try Cond.conj(e.ev.arena, f.account, conds[ci], l.demand.relies),
-                }
-            }
+            for (ls.items) |t| try jobs.append(arena, .{ .kind = .cb, .point = cb.point, .i = @intCast(ci), .k = @intCast(k), .t = t, .pending = cb.pending });
         }
     }
     // The passed-on labels: the part of a call's argument each callee
     // supply takes is what the callback may write, judged as a direct
     // label's argument is (§2.11.3): `apply f { f0 = a, f1 = a }` hands the
     // callback two names of one list.
-    var pkept: std.ArrayList([4]u32) = .empty;
-    const pconds = try arena.alloc(Cond, e.passes.items.len);
-    @memset(pconds, .{});
     for (e.passes.items, 0..) |p, pi| {
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
@@ -647,16 +594,60 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 var ls: std.ArrayList(Relation.Part) = .empty;
                 defer ls.deinit(f.gpa);
                 try e.ev.partsOf(v, es.wordsOf(rs), &ls);
-                for (ls.items) |part| {
-                    const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
-                    const l = try r.judgeSupplied(part.leaf, call.point, call.inst, call.args, a.j, lab.j, pending);
-                    switch (l.outcome.verdict) {
-                        .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ @intCast(pi), su.k, part.leaf, part.at }),
-                        .accepted => pconds[pi] = try Cond.conj(e.ev.arena, f.account, pconds[pi], l.demand.relies),
-                    }
-                }
+                const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
+                for (ls.items) |part| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending });
             };
         }
     }
+    // Judged in point order (the sweep, §2.8), kept in the walk's order.
+    const order = try arena.alloc(u32, jobs.items.len);
+    for (order, 0..) |*o, i| o.* = @intCast(i);
+    std.mem.sort(u32, order, jobs.items, struct {
+        fn lt(js: []const Job, a: u32, b: u32) bool {
+            return js[a].point < js[b].point or (js[a].point == js[b].point and a < b);
+        }
+    }.lt);
+    const got = try arena.alloc(Line, jobs.items.len);
+    for (order) |ji| {
+        const j = jobs.items[ji];
+        try r.live.advance(r.ev(), j.point);
+        got[ji] = switch (j.kind) {
+            .demand => blk: {
+                e.w.f.account.in_demands = true;
+                defer e.w.f.account.in_demands = false;
+                break :blk try r.judge(e.demands.items[j.i]);
+            },
+            .cb => blk: {
+                const cb = f.cbs.items[j.i];
+                break :blk try r.judgeSupplied(j.t, cb.point, cb.inst, cb.args, j.k, j.skip, j.pending);
+            },
+            .pass => blk: {
+                const call = f.calls.items[e.passes.items[j.i][1]];
+                break :blk try r.judgeSupplied(j.t, call.point, call.inst, call.args, j.aj, j.skip, j.pending);
+            },
+        };
+    }
+    const lines = try arena.alloc(Line, e.demands.items.len);
+    var req: Cond = .{};
+    var kept: std.ArrayList([3]u32) = .empty;
+    const conds = try arena.alloc(Cond, f.cbs.items.len);
+    @memset(conds, .{});
+    var pkept: std.ArrayList([4]u32) = .empty;
+    const pconds = try arena.alloc(Cond, e.passes.items.len);
+    @memset(pconds, .{});
+    for (jobs.items, got) |j, l| switch (j.kind) {
+        .demand => {
+            lines[j.i] = l;
+            if (l.outcome.verdict == .accepted) req = try Cond.conj(e.ev.arena, f.account, req, l.demand.relies);
+        },
+        .cb => switch (l.outcome.verdict) {
+            .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ j.i, j.k, j.t }),
+            .accepted => conds[j.i] = try Cond.conj(e.ev.arena, f.account, conds[j.i], l.demand.relies),
+        },
+        .pass => switch (l.outcome.verdict) {
+            .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
+            .accepted => pconds[j.i] = try Cond.conj(e.ev.arena, f.account, pconds[j.i], l.demand.relies),
+        },
+    };
     return .{ .lines = lines, .verdicts = .{ .req = req, .kept = kept.items, .supply_cond = conds, .pass_kept = pkept.items, .pass_cond = pconds } };
 }

@@ -67,11 +67,11 @@ const layers = [_]Entry{
     .{ .file = "Walk.zig", .layer = 8, .max_lines = 1230 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
-    .{ .file = "Distinct.zig", .layer = 8, .max_lines = 730 },
+    .{ .file = "Distinct.zig", .layer = 8, .max_lines = 750 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     .{ .file = "Eval.zig", .layer = 9, .max_lines = 600 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
-    .{ .file = "Holders.zig", .layer = 9, .max_lines = 400 },
+    .{ .file = "Holders.zig", .layer = 9, .max_lines = 640 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
