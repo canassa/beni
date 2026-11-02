@@ -31,8 +31,8 @@ module Browser.Navigation
   value key : ⊤ → Key
   value load : String, (Error → msg) → (Cmd msg)
   value loadPage : String → Result Error ⊤  -- impure
-  value onUrlChange : (Url → msg) → (Sub msg)
-  value onUrlRequest : (UrlRequest → msg) → (Sub msg)
+  value onUrlChange : (Url → msg) → Sub msg
+  value onUrlRequest : (UrlRequest → msg) → Sub msg
   value push : Key, String → Result Error ⊤  -- impure
   value pushUrl : Key, String, (Error → msg) → (Cmd msg)
   value reload : ⊤ → (Cmd msg)
@@ -48,7 +48,7 @@ module Cmd
   value batch : List (Cmd msg) → Cmd msg
   value bodies : Cmd msg → List (Send msg → ⊤)
   value none : Cmd msg
-  value perform : (Send msg → ⊤) → Cmd msg
+  value perform : ((Send msg) → ⊤) → (Cmd msg)
 module Inline
   opaque type NavigationKey
   value address : ⊤ → Url  -- impure
@@ -77,11 +77,11 @@ module Inline
   value loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value navigationKey : ⊤ → NavigationKey
-  value on : V, V, V, V → ⊤  -- impure
-  value onArm : V, V, V, V, V → ⊤  -- impure
+  value on : EventTarget, (a → ⊤), String, (Event → a) → ⊤  -- impure
+  value onArm : EventTarget, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
   value onArmTaken : V, V, V, V, V → ⊤  -- impure
   value onTaken : V, V, V, V → ⊤  -- impure
-  value own : V → ⊤  -- impure
+  value own : (⊤ → ⊤) → ⊤  -- impure
   value pageData : Schema e d, V → V  -- impure
   value pageUrl : String → Url  -- impure
   value part : V → V  -- impure
@@ -102,12 +102,13 @@ module Inline
 module Listen
   value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
 module Sub
-  type Sub a
+  type Storage a
     Sub
+  alias Sub a
   value batch : List (Sub msg) → Sub msg
-  value map : (Sub a), (a → msg) → (Sub msg)
+  value map : Sub a, (a → msg) → Sub msg
   value none : Sub msg
-  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → (Sub msg) where k.compare : k, k → Order
+  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order
 module Tea
   alias Document a
     Document

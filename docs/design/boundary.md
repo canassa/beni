@@ -403,15 +403,13 @@ third rule, *marshal to plain data*, made specific: a list crosses as a plain ar
 arrays*). A **port**'s generated codec (§3.1) follows the same two rules: a list going out is read
 through the protocol, and one coming in is a fresh array the codec built.
 
-*Amended 2026-10-23 (#877):* `platforms/node/Node.js` is gone. `Node.printLines` is beni over
-`String.join`, and tells an empty list apart by `Js.get` of its `length`, which every form of a list
-answers (`backend.md` §4, *Lists are arrays*); `print`, `printLines` and `exitWith` build the
-`Program` object with `Js.object`, whose keys are never renamed, so `runtime.js`'s `run` and
-`Io.js`'s `finish` read the two by name in every build. Its keys are `$c` and `$o` now, where the
-sibling wrote `code` and `out`: a `Js.object` key is a plain property, and a beni record field of
-the same text keeps its source name in every release build (`backend.md` §9, *field spellings*) —
-`code` and `out` are fields of many a program, `Schema`'s `Issue.code` among them, and `$` is in no
-beni identifier (`plans/core-in-beni.md`, step 4).
+*Amended 2026-11-02 (typed storage):* `Node.Program` is an opaque beni
+value containing an exit code and an output string. Its typed `NodeRuntime.run`
+entry is declared through `entryKinds`; `Io` uses the same platform-private
+readers. Generated `Browser.Host.NodeProcess` operations write the output and
+set the exit code. No Program or native process handle crosses `Js.Value`.
+`Node.printLines` uses `List.isEmpty` and `String.join`; `Node.js` and the old
+`runtime.js` entry are gone.
 
 #### What JavaScript may read of a beni value
 
@@ -675,6 +673,53 @@ suspend. Unchecked, like every `Js` declaration: a body that returns an ordinary
 costs its callers a comparison and nothing else, and only `Task` holds the sentinel. Written with a
 lambda, it is the lambda's body (`backend.md` §4, *`Js.suspending` is its body*).
 
+**Debug inspection** (owner, 2026-11-02; #1295, #1612) uses a borrowed,
+read-only Raw view, distinct from Js.Value. Only core Debug may use the
+primitives, fenced by CorePrivate.zig. The reads are kind/constructor tag,
+field names and fields, indexed elements, length and scalar string/number/Bool
+values. Data descriptors prevent getter invocation; no found function is
+called, and functions print `<function>`. Ancestor views detect cycles.
+Formatting remains beni. The borrowed input carries the existing shape-exposure
+bits so the descriptor still matches fields/tags/boxing; this carries no
+HostFree erasure obligation. Raw cannot be retained in a cell, container,
+closure, returned view or public signature; `inspection_escape` reports it.
+It cannot convert to Js.Value or cross Wire. A type-store marker triggers
+the borrow check only when a Raw type enters the module, including through
+inference.
+
+**Checked reported input** (owner, 2026-11-02; #1295, #1612) uses
+`Js.Data.checked : a → Maybe Js.Value`, one core-only checked conversion,
+fenced by `resolve/CorePrivate.zig`. It reads the whole reachable data graph
+without invoking a callback, accessor or conversion method, and returns Just
+the original value only when the graph contains no callable or native value.
+Schema calls it only on the failure path with reportInput enabled. Otherwise
+Issue.input is Nothing. Schema.Value remains plain host data and Issues remain
+Wire-safe; Any is not used for Schema's reported input.
+
+**Checked Any** (owner, 2026-11-02; #1295, #1612) replaces the
+Key-only Dynamic. It is one core/platform-only checked existential, distinct
+from Js.Value: `pack : a → Any` records the real payload and its compiler
+type identity; `unpack : Any → Maybe a` returns Just only on an exact identity
+match. Neither operation requires compare. Identity evidence travels through
+generic declarations and local helpers without a written where clause, only
+where Any is reached (checker-v2.md §33; static-dispatch-spike.md §8.6).
+Stored interface profiles preserve callback purity, suspension, sync and realm
+summaries without treating storage as invocation. Function parameters, results
+and record fields keep independent roles; a yielding factory result does not
+make the factory or a different field suspend. Wire and HostFree refuse Any,
+including in containers. CorePrivate.zig fences the primitives from applications.
+Hosted.Key, live Tap/Relay retagging and other heterogeneous runtime storage
+use this one envelope. Debug retains its read-only Raw; Schema retains its
+data-only checked conversion. `workers-task-storage.md` records the decision.
+
+**Typed List arrays** (owner, 2026-11-02; #1295, #1612) are a core-only
+rule-6 extension. Allocation, indexed get/set, length, builder completion
+and List view wrap/unwrap retain the element type, including native handles
+and callbacks. The private List declarations are fenced by
+`resolve/CorePrivate.zig` and lower directly to native array operations.
+They add no user surface or Js.Buffer. `workers-task-storage.md` records
+the decision.
+
 **Typed protocol invocation** (owner, 2026-11-01; #1295, #1612) is an
 approved core-private rule-6 extension for Task's typed callback storage.
 It invokes a typed possibly-suspending callback as one synchronous protocol
@@ -686,9 +731,11 @@ This intrinsic is core-only like `Js.suspending`, adds no user surface or
 source syntax, and is specified further in `workers-task-storage.md`.
 The matching `Js.completion` accessor is restricted to core Task; the
 core-private `Js.Runtime.parked` accessor returns the same plain sentinel.
-`Js.Runtime` also narrows the existing native timer, microtask, macrotask,
-clock, random and defect operations to typed signatures. Native resources
-stay in its sibling; callbacks keep their types and summaries. Applications
+Task's scheduling, time and random operations use generated typed native bindings
+in `Browser.Host`, reviewed through the catalogue and `native/Operations.zig`.
+The macrotask queue and timer canceller are beni. Runtime's sibling retains
+only the parked sentinel and defect: defect still throws a native Error because
+`Js.throw` accepts Js.Value (owner-approved exception, 2026-11-02). Applications
 and platforms cannot import these adapters.
 
 **The operators core's arithmetic is written over** (2026-10-01): `bitOr`, `bitXor`, `shiftLeft`,

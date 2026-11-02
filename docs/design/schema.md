@@ -750,6 +750,10 @@ user =
   record per call, because a record update writes its base: `{ Schema.defaultOptions ⊤ | maxDepth = d }`.
   A `maxDepth` below 0 or above `maxDepthCeiling` is `InvalidOptions` at the root, before the
   schema is looked at. The ceiling is the measured one of §16's *As built* note.
+  *Amended 2026-11-02, the owner:* `reportInput = True` reports plain data only:
+  JSON/Value inputs and records, lists and unions of data are retained unchanged.
+  An input containing a callable or native value gives `Issue.input = Nothing`.
+  The core-only checked conversion runs only on a failure with reporting enabled.
 - **Issues.** A path segment names a key as the operation's **input** names it: the external key
   when the input is Encoded (`decode`, `read`, `parse`), the declared name when it is a Type value
   (`encode`, `write`, `print`). A failure of what is **written** — a non-finite `Float` printed, a
@@ -759,6 +763,9 @@ user =
   on its way to the Encoded endpoint), and for a failure of what is written. A conversion's own
   issues keep their `code` and `message`; the engine puts the current path in front of theirs and
   sets `direction`, `endpoint` and `input`, and an empty `Err` is one `ConversionFailed`.
+  *Amended 2026-11-02, the owner:* input is retained only when its entire value
+  graph is plain data. A callable or native value anywhere in it makes input
+  `Nothing`, preserving the plain-data `Schema.Value` and Wire-safe Issues.
 - **Codes.** `WrongShape`: not the JSON type the schema reads (and not an object, array or `null`
   where one is needed). `InvalidValue`: a number outside the safe-integer range, or a non-finite one
   for `finiteFloat`. `MissingKey` at the key; `UnknownKey` at the key, under `Reject`, in the

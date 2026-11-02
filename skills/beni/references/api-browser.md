@@ -10,7 +10,7 @@ needs. Effects are inferred and never written; a value whose result reaches the 
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module Browser
-  type Host a
+  alias Host a
   type Program
   alias Send a
   type UrlRequest
@@ -37,13 +37,13 @@ module Browser.Events
   value eachKeyUp : (Event → ⊤) → ⊤  -- suspends
   value eachResize : (Size → ⊤) → ⊤  -- suspends
   value eachVisibilityChange : (Visibility → ⊤) → ⊤  -- suspends
-  value onAnimationFrame : (Posix → msg) → Sub msg  -- impure
-  value onAnimationFrameDelta : (Float → msg) → Sub msg  -- impure
-  value onKeyDown : (Event → msg) → Sub msg  -- impure
-  value onKeyPress : (Event → msg) → Sub msg  -- impure
-  value onKeyUp : (Event → msg) → Sub msg  -- impure
-  value onResize : (Size → msg) → Sub msg  -- impure
-  value onVisibilityChange : (Visibility → msg) → Sub msg  -- impure
+  value onAnimationFrame : (Posix → msg) → Sub msg
+  value onAnimationFrameDelta : (Float → msg) → Sub msg
+  value onKeyDown : (Event → msg) → Sub msg
+  value onKeyPress : (Event → msg) → Sub msg
+  value onKeyUp : (Event → msg) → Sub msg
+  value onResize : (Size → msg) → Sub msg
+  value onVisibilityChange : (Visibility → msg) → Sub msg
   value size : ⊤ → Size  -- impure
   value visibility : ⊤ → Visibility  -- impure
 module Browser.Navigation
@@ -62,8 +62,8 @@ module Browser.Navigation
   value key : ⊤ → Key
   value load : String, (Error → msg) → Cmd msg  -- impure
   value loadPage : String → Result Error ⊤  -- impure
-  value onUrlChange : (Url → msg) → Sub msg  -- impure
-  value onUrlRequest : (UrlRequest → msg) → Sub msg  -- impure
+  value onUrlChange : (Url → msg) → Sub msg
+  value onUrlRequest : (UrlRequest → msg) → Sub msg
   value push : Key, String → Result Error ⊤  -- impure
   value pushUrl : Key, String, (Error → msg) → Cmd msg  -- impure
   value reload : ⊤ → Cmd msg  -- impure
@@ -71,9 +71,9 @@ module Browser.Navigation
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
 module Cmd
-  type Cmd a
-    Cmd
-  type Item a
+  alias Cmd a
+  alias Item a
+  type ItemStorage a b c
     Perform
     Now
     Keyed
@@ -87,17 +87,19 @@ module Cmd
     Queue
     Concurrent
   alias Send a
-  value afterRender : (Send msg → ⊤) → Cmd msg  -- impure
+  type Storage a
+    Cmd
+  value afterRender : ((Send msg) → ⊤) → Cmd msg  -- impure
   value batch : List (Cmd msg) → Cmd msg
   value cancel : k → Cmd msg where k.compare : k, k → Order
   value cancelAll : Cmd msg
   value do : (⊤ → ⊤) → Cmd msg  -- impure
   value items : Cmd msg → List (Item msg)
-  value keyed : k, Policy, (Send msg → ⊤) → Cmd msg where k.compare : k, k → Order  -- impure
+  value keyed : k, Policy, ((Send msg) → ⊤) → Cmd msg where k.compare : k, k → Order  -- impure
   value log : Level, String → Cmd msg  -- impure
-  value map : Cmd a, k, (a → msg) → Cmd msg where k.compare : k, k → Order  -- impure
+  value map : Cmd a, k, (a → msg) → Cmd msg where k.compare : k, k → Order
   value none : Cmd msg
-  value perform : (Send msg → ⊤) → Cmd msg  -- impure
+  value perform : ((Send msg) → ⊤) → Cmd msg  -- impure
   value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
 module Dom
   alias Box
@@ -117,24 +119,24 @@ module Dom
   value exitFullscreen : ⊤ → ⊤  -- suspends
   value focus : String → Result Error ⊤  -- impure
   value fullscreenElement : ⊤ → Maybe String  -- impure
-  value onFullscreenChange : (Maybe String → msg) → Sub msg  -- impure
+  value onFullscreenChange : (Maybe String → msg) → Sub msg
   value rendered : ⊤ → ⊤  -- suspends
   value requestFullscreen : String → Result FullscreenError ⊤  -- suspends
   value scrollIntoView : String → Result Error ⊤  -- impure
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure
 module Hosted
-  type Job a
-  type Key
+  alias Job a
+  alias Key
   type Kind
     Waits
     Hears
-  type Later a
-  type Outlet a
-  type Relay a
-  type Tap a
-  value afterRender : Host msg, Later msg → ⊤  -- impure
-  value callJob : Job msg, Send msg → ⊤  -- impure
+  alias Later a
+  alias Outlet a
+  alias Relay a
+  alias Tap a
+  value afterRender : Host msg, Later msg → ⊤
+  value callJob : Job msg, (Send msg) → ⊤  -- impure
   value close : Outlet msg → ⊤  -- impure
   value closeRelay : Relay msg → ⊤  -- impure
   value compare : Key, Key → Order
@@ -143,20 +145,20 @@ module Hosted
   value eq : Key, Key → Bool
   value fibered : ⊤ → Bool  -- impure
   value hear : Relay msg → ⊤  -- impure
-  value hook : ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Tap msg  -- impure
-  value job : (Send msg → ⊤) → Job msg  -- impure
+  value hook : ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Tap msg
+  value job : ((Send msg) → ⊤) → Job msg  -- impure
   value key : k → Key where k.compare : k, k → Order
-  value later : (Send msg → ⊤) → Later msg  -- impure
+  value later : ((Send msg) → ⊤) → Later msg  -- impure
   value mapJob : Job a, (a → b) → Job b
-  value mapLater : Later a, (a → b) → Later b  -- impure
-  value mapTap : Tap a, (a → b) → Tap b  -- impure
-  value outlet : Host msg → Outlet msg  -- impure
-  value relay : Host msg, Tap msg → Relay msg  -- impure
+  value mapLater : Later a, (a → b) → Later b
+  value mapTap : Tap a, (a → b) → Tap b
+  value outlet : Host msg → Outlet msg
+  value relay : Host msg, Tap msg → Relay msg
   value retap : Relay msg, List (Tap msg) → ⊤  -- impure
-  value run : Relay msg → ⊤  -- suspends
+  value run : Relay msg → ⊤  -- impure
   value runHeard : Relay msg → ⊤  -- suspends
-  value runJob : Job msg, Send msg → ⊤  -- suspends
-  value tap : (Send a → ⊤), (a → msg) → Tap msg  -- impure
+  value runJob : Job msg, (Send msg) → ⊤  -- impure
+  value tap : ((Send a) → ⊤), (a → msg) → Tap msg
   value title : String → ⊤  -- impure
   value unhear : Relay msg → ⊤  -- impure
 module Http
@@ -210,18 +212,18 @@ module Http
   value send : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg  -- impure
   value stringBody : String, String → Body
   value stringPart : String, String → Part
-  value track : String, (Progress → msg) → Sub msg  -- impure
+  value track : String, (Progress → msg) → Sub msg
 module Listen
   value each : ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤  -- suspends
-  value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
-  value on2 : String, String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value on : String, String, (Event → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value on2 : String, String, String, (Event → a), (a → ⊤) → (⊤ → ⊤)  -- impure
 module Random
   alias Generator a
   alias Seed
   value andThen : (Generator a), (a → (Generator b)) → (Generator b)
   value constant : a → Generator a
   value float : Float, Float → Generator Float
-  value generate : Generator a, (a → msg) → Cmd msg  -- impure
+  value generate : (Generator a), (a → msg) → Cmd msg  -- impure
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
@@ -290,20 +292,21 @@ module Storage
   value save : Area, String, String, (Error → msg) → Cmd msg  -- impure
   value set : Area, String, String → Result Error ⊤  -- impure
 module Sub
-  type Sub a
+  type Storage a
     None
     Listen
+  alias Sub a
   value batch : List (Sub msg) → Sub msg
-  value listen : k, (Send a → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
-  value map : Sub a, (a → msg) → Sub msg  -- impure
+  value listen : k, ((Send a) → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order
+  value map : Sub a, (a → msg) → Sub msg
   value none : Sub msg
-  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
+  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order
   value taps : Sub msg → List (Key × Kind × Tap msg)
 module Time
   alias Duration
   type Posix
     Posix
-  value every : Duration, (Posix → msg) → Sub msg  -- impure
+  value every : Duration, (Posix → msg) → Sub msg
   value fromMillis : Int → Posix
   value inMillis : Duration → Int
   value millis : Int → Duration
@@ -335,7 +338,7 @@ module WebSocket
   value connect : String, List String, (Socket → a) → Result ConnectError a  -- suspends
   value disconnect : Socket, Close, (CloseError → msg) → Cmd msg  -- impure
   value eq : Socket, Socket → Bool
-  value listen : String, List String, (Event → msg) → Sub msg  -- impure
+  value listen : String, List String, (Event → msg) → Sub msg
   value protocol : Socket → String  -- impure
   value read : Socket → Result Close String  -- suspends
   value send : Socket, String, (WriteError → msg) → Cmd msg  -- impure

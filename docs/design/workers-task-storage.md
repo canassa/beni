@@ -35,7 +35,8 @@ FIFOs and a common control graph. `Fiber a` owns a separate typed result slot;
 closed jobs connect it to its matching continuation. Scope releases, waiters,
 finalizers, observers, virtual-clock sleepers and log-context installers retain
 their types. A native timer returns a typed canceller; native timer and channel
-resources stay in the core-private `Js.Runtime` sibling. Dequeue precedes
+resources retain the generated native binding types; Runtime retains only the
+parked sentinel and the owner-approved defect throw. Dequeue precedes
 invocation, preserving FIFO under reentry. Task has no callback or native-value
 erasure: its only `Js.Value` is the plain parked sentinel's identity. Other
 core containers and renderer queues still need their own migration.
@@ -133,3 +134,69 @@ not prevent the existing replacement of an entirely local object by lets.
 First-class constructors are emitted once in core Js's generated module.
 Every reference shares that function's identity across modules, and no
 sibling is copied for such a use. Saturated calls still inline the operation.
+
+**Owner decision, 2026-11-02:** core-only typed array primitives are approved
+for List storage: allocate room, get/set elements, read length, complete a
+builder, and wrap/unwrap a List view. Every signature retains the element
+type. They are fenced by `resolve/CorePrivate.zig`, add no user surface, and
+lower directly to native array operations. List's private builder, base,
+offset and view operations use these alongside its existing indexed reads
+and writes. No `Js.Buffer` is needed.
+
+The native queueMicrotask, timeout/clearTimeout, optional Node setImmediate,
+MessageChannel/MessagePort, Date.now and Math.random operations are generated
+from the reviewed native catalogue. Task owns the macrotask FIFO, its lazy
+channel and the typed timer canceller in beni. Runtime's sibling retains only
+the parked identity and the exact defect throw: Js.throw takes Js.Value, so it
+cannot throw a native Error without erasing that handle. No scheduler state or
+host scheduling algorithm lives in that sibling.
+
+**Owner decision, 2026-11-02 (replaces Key-only Dynamic):** one checked
+existential, Any, serves core and platform machinery. `pack : a → Any` keeps
+the real value and its compiler-supplied type identity; `unpack : Any → Maybe a`
+returns Just only on an exact identity match. There is no compare constraint.
+The compiler carries identity evidence for unconstrained quantifiers through
+generic imports, helpers and local functions, only where Any is reached.
+Existing constrained identities retain their ordering; quantifier-only slots
+use the canonical scheme quantifier order. No method requirement is invented.
+
+Stored-value effect edges retain callback purity, suspension and execution
+realms through pack/unpack and generic helpers, without invoking the payload.
+A storage type passes callback roles as type parameters: a generic carrier
+keeps its comparer, listener, body, tagger and Any payload classes separate.
+This avoids joining a dormant payload callback to the comparison function that
+never invokes it. Hosted.Key uses Any; Tap/Relay retagging uses Any for event
+payloads with no ordering requirement. CorePrivate.zig fences the envelope
+from applications; HostFree and Wire refuse it, also through containers.
+Schema's reportInput uses the data-only checked reporting conversion; reported
+input never uses Any. Any's interface profiles keep distinct callback roles
+through generic helpers and imports, including higher-order functions and
+records containing callbacks with different suspension behavior.
+
+**Owner decision, 2026-11-02:** Debug uses a borrowed read-only inspection
+view, Raw, rather than converting arbitrary values to Js.Value. Raw is
+Debug-only, cannot be retained in containers/cells/closures or returned from
+formatting helpers, and is neither HostFree nor Wire. Field-name metadata,
+kind/tag, fields/elements, length and scalar reads support formatting in
+beni. Inspection reads data descriptors and never invokes a getter or a
+function it finds; functions print `<function>`. Ancestor views identify
+cycles without retaining views in a beni collection.
+Inspection retains the existing representation-exposure bits for Debug's
+borrowed input, so field names, constructor tags and boxing still match the
+formatter's descriptor, also in the corpus's test-only release builds. This
+is shape exposure, not a Js.Value conversion or a HostFree exemption.
+
+**Worker event streams (2026-11-02):** the single-consumer stream retains
+its payload, failure and `Task.Resume` types in one generic carrier. Its queue
+uses the shared `Js.Chain` module. A synchronous typed acknowledgement callback
+runs only when a value is handed to a consumer; storing a callable payload or
+error never invokes it. The `Storage` carrier and acknowledgement installation
+are platform-private.
+
+**Node output and file waits (2026-11-02):** `Node.Program` is an opaque beni
+value. `NodeRuntime.run` and `Io` consume it through typed readers; no Program
+crosses `Js.Value`. Generated process operations perform output and exit-code
+updates. File promises, rejection reasons, directory entries and abort resources
+keep their native types. `Io` owns cancellation, directory ordering and the
+specific documented error mapping in beni. Unknown rejections are rethrown
+unchanged by the generated native operation.

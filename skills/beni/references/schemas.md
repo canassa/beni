@@ -55,7 +55,9 @@ gives `User.Type` and `User.parse`. The name `User` alone is not a type (`schema
 and not a value (`schema_used_as_value`).
 
 Every failure is a value: an `Issue` carries the path, the direction, a structured code and a
-message. A `parse` never throws.
+message. A `parse` never throws. With `reportInput = True`, an issue retains the failing input
+when it is plain data. If the input contains a callback or native value, `Issue.input` is
+`Nothing` (owner, 2026-11-02); reporting is off by default.
 
 ```beni
 import Schema exposing (Issue)

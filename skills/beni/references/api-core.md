@@ -68,30 +68,126 @@ module Basics
   value truncate : Float → Int
   value turns : Float → Float
   value xor : Bool, Bool → Bool
+module Browser.Host.AbortController
+  type AbortController
+  value abort : AbortController → ⊤  -- impure
+  value create : ⊤ → AbortController  -- impure
+  value signal : AbortController → AbortSignal  -- impure
+module Browser.Host.AbortSignal
+  type AbortSignal
+  value aborted : AbortSignal → Bool  -- impure
+module Browser.Host.DOMRect
+  type DOMRect
+  value left : DOMRect → Float  -- impure
+  value top : DOMRect → Float  -- impure
+module Browser.Host.Date
+  value now : ⊤ → Int  -- impure
 module Browser.Host.Document
   type Document
   type QueryError
     SyntaxError
+  value listen : String, (Event → ⊤) → (⊤ → ⊤)  -- impure
   value querySelector : Document, String → Result QueryError (Maybe Element)  -- impure
+  value setTitle : String → ⊤  -- impure
+  value title : ⊤ → String  -- impure
+  value visibilityState : ⊤ → String  -- impure
 module Browser.Host.Element
   type Element
   value toNode : Element → Node
+module Browser.Host.Event
+  type Event
+  value altKey : Event → Bool  -- impure
+  value button : Event → Int  -- impure
+  value clientX : Event → Float  -- impure
+  value clientY : Event → Float  -- impure
+  value code : Event → String  -- impure
+  value composedPath : Event → List EventTarget  -- impure
+  value ctrlKey : Event → Bool  -- impure
+  value currentBox : Event → DOMRect  -- impure
+  value defaultPrevented : Event → Bool  -- impure
+  value isPrimary : Event → Bool  -- impure
+  value key : Event → String  -- impure
+  value metaKey : Event → Bool  -- impure
+  value pointerId : Event → Int  -- impure
+  value pointerType : Event → String  -- impure
+  value preventDefault : Event → ⊤  -- impure
+  value shiftKey : Event → Bool  -- impure
+  value targetChecked : Event → Bool  -- impure
+  value targetValue : Event → String  -- impure
+module Browser.Host.EventTarget
+  type EventTarget
+  value asAnchor : EventTarget → Maybe HTMLAnchorElement  -- impure
+module Browser.Host.Events
+  value listen : EventTarget, String, (Event → ⊤) → (⊤ → ⊤)  -- impure
+module Browser.Host.HTMLAnchorElement
+  type HTMLAnchorElement
+  value hasAttribute : HTMLAnchorElement, String → Bool  -- impure
+  value host : HTMLAnchorElement → String  -- impure
+  value href : HTMLAnchorElement → String  -- impure
+  value protocol : HTMLAnchorElement → String  -- impure
+  value target : HTMLAnchorElement → String  -- impure
+module Browser.Host.Immediate
+  value trySchedule : (⊤ → ⊤) → Bool  -- impure
+module Browser.Host.Math
+  value random : ⊤ → Float  -- impure
+module Browser.Host.MessageChannel
+  type MessageChannel
+  value create : ⊤ → MessageChannel  -- impure
+  value port1 : MessageChannel → MessagePort  -- impure
+  value port2 : MessageChannel → MessagePort  -- impure
+module Browser.Host.MessagePort
+  type MessagePort
+  value onMessage : MessagePort, (⊤ → ⊤) → ⊤  -- impure
+  value postUnit : MessagePort → ⊤  -- impure
 module Browser.Host.Node
   type Node
   value setTextContent : Node, String → ⊤  -- impure
   value textContent : Node → Maybe String  -- impure
+module Browser.Host.NodeDirent
+  type NodeDirent
+  value isDirectory : NodeDirent → Bool  -- impure
+  value isFile : NodeDirent → Bool  -- impure
+  value isSymbolicLink : NodeDirent → Bool  -- impure
+  value name : NodeDirent → String  -- impure
+module Browser.Host.NodeFs
+  value readDir : String → Promise (List NodeDirent)  -- impure
+  value readUtf8 : String, AbortSignal → Promise String  -- impure
+module Browser.Host.NodeProcess
+  value beforeExit : (⊤ → ⊤) → ⊤  -- impure
+  value setExitCode : Int → ⊤  -- impure
+  value writeError : String → ⊤  -- impure
+  value writeOut : String → ⊤  -- impure
+module Browser.Host.Promise
+  type Promise a
+  value observe : Promise a, (a → ⊤), (Rejection → ⊤) → ⊤  -- impure
+module Browser.Host.Rejection
+  type Rejection
+  value code : Rejection → Maybe String  -- impure
+  value isError : Rejection → Bool  -- impure
+  value name : Rejection → String  -- impure
+  value raise : Rejection → a  -- impure
 module Browser.Host.TextEncoder
   type TextEncoder
   value create : ⊤ → TextEncoder  -- impure
   value encode : TextEncoder, String → Uint8Array  -- impure
 module Browser.Host.Timers
+  type Timer
+  value clear : Timer → ⊤  -- impure
+  value queueMicrotask : (⊤ → ⊤) → ⊤  -- impure
   value setTimeout : (⊤ → ⊤), Int → Int  -- impure
+  value start : (⊤ → ⊤), Int → Timer  -- impure
 module Browser.Host.Uint8Array
   type Uint8Array
   value byteLength : Uint8Array → Int
 module Browser.Host.Window
+  type Frame
   type Window
+  value cancelFrame : Frame → ⊤  -- impure
   value document : ⊤ → Document  -- impure
+  value innerHeight : ⊤ → Int  -- impure
+  value innerWidth : ⊤ → Int  -- impure
+  value listen : String, (Event → ⊤) → (⊤ → ⊤)  -- impure
+  value requestFrame : (⊤ → ⊤) → Frame  -- impure
 module Browser.Host.WorkerGlobalScope
   type WorkerGlobalScope
   value self : ⊤ → WorkerGlobalScope  -- impure
@@ -124,9 +220,9 @@ module Deferred
   opaque type Deferred a
   value complete : Deferred a, a → Bool  -- impure
   value isDone : Deferred a → Bool  -- impure
-  value make : ⊤ → Deferred a  -- impure
+  value make : ⊤ → Deferred a
   value poll : Deferred a → Maybe a  -- impure
-  value wait : Deferred a → a  -- suspends
+  value wait : (Deferred a) → a  -- suspends
 module Dict
   opaque type Dict a b
   value diff : Dict key a, Dict key b → Dict key a
@@ -257,10 +353,10 @@ module Latch
   opaque type Latch
   value close : Latch → ⊤  -- impure
   value isOpen : Latch → Bool  -- impure
-  value make : Bool → Latch  -- impure
+  value make : Bool → Latch
   value open : Latch → ⊤  -- impure
   value release : Latch → ⊤  -- impure
-  value wait : Latch → ⊤  -- suspends
+  value wait : (Latch) → ⊤  -- suspends
 module List
   type List a
   value all : List a, (a → Bool) → Bool
@@ -349,18 +445,18 @@ module Maybe
   value withDefault : Maybe a, a → a
 module Queue
   opaque type Queue a
-  value bounded : Int → Queue a  -- impure
-  value dropping : Int → Queue a  -- impure
-  value end : Queue a → ⊤  -- impure
-  value offer : Queue a, a → Bool  -- suspends
-  value offerAll : Queue a, List a → List a  -- suspends
-  value poll : Queue a → Maybe a  -- impure
+  value bounded : Int → Queue a
+  value dropping : Int → Queue a
+  value end : (Queue a) → ⊤  -- impure
+  value offer : (Queue a), a → Bool  -- suspends
+  value offerAll : (Queue a), List a → List a  -- suspends
+  value poll : (Queue a) → Maybe a  -- impure
   value size : Queue a → Int  -- impure
-  value sliding : Int → Queue a  -- impure
-  value take : Queue a → Maybe a  -- suspends
-  value takeAll : Queue a → List a  -- suspends
-  value takeN : Queue a, Int → List a  -- suspends
-  value unbounded : ⊤ → Queue a  -- impure
+  value sliding : Int → Queue a
+  value take : (Queue a) → Maybe a  -- suspends
+  value takeAll : (Queue a) → List a  -- suspends
+  value takeN : (Queue a), Int → List a  -- suspends
+  value unbounded : ⊤ → Queue a
 module Random.Pcg
   type Generator a
     Generator
@@ -388,7 +484,7 @@ module Record
 module Ref
   opaque type Ref a
   value get : Ref a → a  -- impure
-  value make : a → Ref a  -- impure
+  value make : a → Ref a
   value modify : Ref a, (a → b × a) → b  -- impure
   value set : Ref a, a → ⊤  -- impure
   value update : Ref a, (a → a) → ⊤  -- impure
@@ -562,14 +658,14 @@ module Schema
   value writeWith : Schema e a, Options, a → Result (List Issue) Value  -- impure
 module Semaphore
   opaque type Semaphore
-  value acquire : Semaphore, Int → ⊤  -- suspends
+  value acquire : (Semaphore), Int → ⊤  -- suspends
   value available : Semaphore → Int  -- impure
   value make : Int → Semaphore
   value release : Semaphore, Int → ⊤  -- impure
   value resize : Semaphore, Int → ⊤  -- impure
   value tryWithPermits : Semaphore, Int, (⊤ → a) → Maybe a  -- impure
-  value withPermit : Semaphore, (⊤ → a) → a  -- suspends
-  value withPermits : Semaphore, Int, (⊤ → a) → a  -- suspends
+  value withPermit : (Semaphore), (⊤ → a) → a  -- suspends
+  value withPermits : (Semaphore), Int, (⊤ → a) → a  -- suspends
 module Set
   opaque type Set a
   value diff : Set key, Set key → Set key

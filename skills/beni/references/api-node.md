@@ -61,11 +61,15 @@ module Io
   value run : (⊤ → Program) → Program  -- impure
   value sleep : Int → ⊤  -- suspends
 module Node
-  type Program
+  opaque type Program
   value done : Program
+  value exitCode : Program → Int
   value exitWith : String, Int → Program
+  value output : Program → String
   value print : String → Program
   value printLines : List String → Program
+module NodeRuntime
+  value run : Program → ⊤  -- impure
 module Prerender
   value pages : Schema e d, (⊤ → Result String (List (String × d))) → Program  -- impure
 module Random

@@ -10,9 +10,9 @@ needs. Effects are inferred and never written; a value whose result reaches the 
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module Html
-  type Event
+  alias Event
   type Html a
-  type Pointer
+  opaque type Pointer
   value altKey : Event → Bool  -- impure
   value clientX : Pointer → Float  -- impure
   value clientY : Pointer → Float  -- impure
@@ -20,11 +20,11 @@ module Html
   value ctrlKey : Event → Bool  -- impure
   value isPrimary : Pointer → Bool  -- impure
   value key : Event → String  -- impure
-  value localX : Pointer → Float  -- impure
-  value localY : Pointer → Float  -- impure
+  value localX : Pointer → Float
+  value localY : Pointer → Float
   value map : Html a, (a → b) → Html b
   value metaKey : Event → Bool  -- impure
-  value pointerEvent : Pointer → Event  -- impure
+  value pointerEvent : Pointer → Event
   value pointerId : Pointer → Int  -- impure
   value pointerType : Pointer → String  -- impure
   value preventDefault : Event → ⊤  -- impure

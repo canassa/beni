@@ -2138,6 +2138,34 @@ above, the row above is the contract.
 
 ### 8.6 Type identities (added 2026-10-02)
 
+**Owner amendment, 2026-11-02 — unconstrained identities for Any.** Core's
+checked existential `Js.Any` adds two seeds, `pack : a → Any` and
+`unpack : Any → Maybe a`. They need the identity of any type variable, with no
+written `where` clause and no comparison requirement. The compiler supplies
+and forwards that identity as a hidden parameter, following only the call
+paths that reach a seed. An identity-only quantifier sets the existing
+interface identity bit even when its constraint list is empty. Its dispatch
+slot is its canonical scheme quantifier index tagged with bit 31; existing
+method-rooted slots keep their original indices and evidence ordering.
+
+The pass reuses instantiation records for a module's own references and records
+unconstrained imported identity slots as the interface is read. Generic local
+functions keep the identities of their own quantified variables; a captured
+outer variable reads its enclosing identity. Publication and imports agree on
+canonical quantifier order, including when a function needs both method-rooted
+and unconstrained identities. No dummy method evidence or source restriction
+is introduced. A module that reaches no unconstrained identity seed takes the
+existing path and emits the same bytes. Any retains callback summaries in a regular graph of interface profile sites.
+Each callable keeps its own purity, suspension, sync and realm facts, including
+the independent callable roles in its parameters, result and record fields.
+Pack and unpack alias value profiles; they add no invocation dependency.
+Scheme instantiation copies the profile graph, preserving shared and cyclic
+profiles without a depth limit. The interface's effect-site path kind 7 names a
+stored profile: its index is the byte length of a sequence of NUL-separated
+structural edges, packed into the remaining words. Ordinary type paths retain
+kinds 0–6. Modules with no Any profile allocate no such graph.
+
+
 *The owner's decision of 2026-10-02 on keys (`boundary.md` §9.8.3, amended): close the hole with a
 compiler-supplied type identity, directly.* Evidence says how to compare two values of a type, and
 nothing of which type it is: it is built afresh at each call, and two types may compare alike. A
