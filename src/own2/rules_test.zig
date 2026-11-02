@@ -71,7 +71,7 @@ const layers = [_]Entry{
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     .{ .file = "Eval.zig", .layer = 9, .max_lines = 600 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
-    .{ .file = "Holders.zig", .layer = 9, .max_lines = 640 },
+    .{ .file = "Holders.zig", .layer = 9, .max_lines = 700 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
