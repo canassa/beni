@@ -86,6 +86,14 @@ pub fn calleeName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
 }
 
+/// A call's operation as written: its callee's `M.f`, or the local a
+/// function value is called through (`push 3`), or `call`.
+pub fn opName(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
+    if (try calleeName(f, a, i)) |n| return n;
+    if (tag(f, i) == .local) return localName(f, data(f, i).lhs);
+    return "call";
+}
+
 pub fn refName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     const md = f.decl_of(f.ctx, i) orelse return null;
     return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
@@ -117,7 +125,7 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
 
 /// The base as written, and below it the path a writer call writes.
 fn writtenText(f: Frame, a: Allocator, d: Walk.Demand) Allocator.Error![]const u8 {
-    const base = try baseText(f, a, d.base_inst);
+    const base = if (d.base_local != none) localName(f, d.base_local) else try baseText(f, a, d.base_inst);
     if (d.write_path == .none) return base;
     var buf: std.Io.Writer.Allocating = .init(a);
     buf.writer.writeAll(base) catch return error.OutOfMemory;
@@ -206,6 +214,7 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
     const op: []const u8 = switch (d.kind) {
         .construction => "construction",
         .append => "++",
+        .once => "once",
         else => op_name,
     };
     var detail: []const u8 = "";
