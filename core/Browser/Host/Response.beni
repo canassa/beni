@@ -1,0 +1,28 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Headers as Headers
+import Browser.Host.Promise as Promise
+import Browser.Host.ReadableStreamDefaultReader as ReadableStreamDefaultReader
+
+
+pub foreign type Response
+
+
+pub foreign impure url : borrowed Response → String
+
+
+pub foreign impure status : borrowed Response → Int
+
+
+pub foreign impure statusText : borrowed Response → String
+
+
+pub foreign impure ok : borrowed Response → Bool
+
+
+pub foreign impure headers : borrowed Response → Headers.Headers
+
+
+pub foreign impure text : borrowed Response → Promise.Promise String
+
+
+pub foreign impure reader : borrowed Response → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader

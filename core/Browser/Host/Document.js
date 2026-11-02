@@ -1,3 +1,4 @@
+export const baseURI = (_) => { return globalThis.document.baseURI; };
 export const title = (_) => { return globalThis.document.title; };
 export const visibilityState = (_) => { return globalThis.document.visibilityState; };
 export const setTitle = (title) => { globalThis.document.title = title; return null; };

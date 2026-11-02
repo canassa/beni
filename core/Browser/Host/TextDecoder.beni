@@ -1,0 +1,14 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Uint8Array as Uint8Array
+
+
+pub foreign type TextDecoder
+
+
+pub foreign impure create : ⊤ → TextDecoder
+
+
+pub foreign impure decodeMore : borrowed TextDecoder, borrowed Uint8Array.Uint8Array → String
+
+
+pub foreign impure finish : borrowed TextDecoder → String

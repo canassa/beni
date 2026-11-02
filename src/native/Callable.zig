@@ -34,7 +34,7 @@ pub fn validate(c: anytype) bool {
             return false;
         }
         // Mixin exposure belongs to the implementing native receiver.
-        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
+        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
         var exposure: u8 = 0;
         for (c.native_types) |t| {
             if (!std.mem.eql(u8, t.idl_name, receiver)) continue;
@@ -78,6 +78,15 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.NodeFs")) try w.writeAll("import Browser.Host.AbortSignal as AbortSignal\nimport Browser.Host.Promise as Promise\nimport Browser.Host.NodeDirent as NodeDirent\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Data") or std.mem.eql(u8, module, "Browser.Host.Json")) try w.writeAll("import Js\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Json")) try w.writeAll("pub type ParseError\n    = SyntaxError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.AbortController")) try w.writeAll("import Browser.Host.DOMException as DOMException\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.AbortSignal")) try w.writeAll("import Browser.Host.DOMException as DOMException\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Fetch")) try w.writeAll("import Browser.Host.Headers as Headers\nimport Browser.Host.AbortSignal as AbortSignal\nimport Browser.Host.Response as Response\nimport Browser.Host.Promise as Promise\nimport Browser.Host.FormData as FormData\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.ReadResult")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.ReadableStreamDefaultReader")) try w.writeAll("import Browser.Host.Promise as Promise\nimport Browser.Host.ReadResult as ReadResult\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Response")) try w.writeAll("import Browser.Host.Headers as Headers\nimport Browser.Host.Promise as Promise\nimport Browser.Host.ReadableStreamDefaultReader as ReadableStreamDefaultReader\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.TextDecoder")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Fetch")) try w.writeAll("pub foreign type Body\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.RegExp")) try w.writeAll("pub type CreateError\n    = SyntaxError\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -92,6 +101,43 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .url_try_create => "(text, base) => { let value; if (globalThis.URL.parse === undefined) { try { value = new globalThis.URL(text, base); } catch (error) { if (!(error instanceof globalThis.TypeError)) throw error; return { $: \"Nothing\", a: null }; } } else { value = globalThis.URL.parse(text, base); } return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .url_href => "(url) => { return url.href; }",
+            .url_username => "(url) => { return url.username; }",
+            .url_password => "(url) => { return url.password; }",
+            .document_base_uri => "(_) => { return globalThis.document.baseURI; }",
+            .headers_create => "(_) => { return new globalThis.Headers(); }",
+            .headers_append => "(headers, name, value) => { headers.append(name, value); return null; }",
+            .headers_has => "(headers, name) => { return headers.has(name); }",
+            .headers_set => "(headers, name, value) => { headers.set(name, value); return null; }",
+            .headers_get => "(headers, name) => { const value = headers.get(name); return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .headers_entries => "(headers) => { return Array.from(headers, entry => ({ a: entry[0], b: entry[1] })); }",
+            .form_create => "(_) => { return new globalThis.FormData(); }",
+            .form_append => "(form, name, value) => { form.append(name, value); return null; }",
+            .fetch_text_body => "(text) => { return text; }",
+            .fetch_form_body => "(form) => { return form; }",
+            .fetch_init => "(method, headers, body, signal, credentials) => { return { body: body.$ === \"Just\" ? body.a : undefined, credentials, headers, method, mode: \"cors\", redirect: \"follow\", signal }; }",
+            .fetch_call => "(url, init) => { return globalThis.fetch(url, init); }",
+            .response_url => "(response) => { return response.url; }",
+            .response_status => "(response) => { return response.status; }",
+            .response_status_text => "(response) => { return response.statusText; }",
+            .response_ok => "(response) => { return response.ok; }",
+            .response_headers => "(response) => { return response.headers; }",
+            .response_text => "(response) => { return response.text(); }",
+            .response_reader => "(response) => { const stream = response.body; return stream === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: stream.getReader() }; }",
+            .reader_bytes => "(reader) => { return reader.read(); }",
+            .read_result_done => "(result) => { return result.done; }",
+            .read_result_value => "(result) => { return result.value === undefined ? { $: \"Nothing\", a: null } : { $: \"Just\", a: result.value }; }",
+            .decoder_create => "(_) => { return new globalThis.TextDecoder(); }",
+            .decoder_more => "(decoder, bytes) => { return decoder.decode(bytes, { stream: true }); }",
+            .decoder_finish => "(decoder) => { return decoder.decode(); }",
+            .dom_exception_create => "(message, name) => { return new globalThis.DOMException(message, name); }",
+            .abort_with_reason => "(controller, reason) => { controller.abort(reason); return null; }",
+            .abort_reason_is => "(signal, reason) => { return signal.reason === reason; }",
+            .rejection_is_type_error => "(reason) => { return reason instanceof globalThis.TypeError; }",
+            .regexp_create => "(pattern, flags) => { try { return { $: \"Ok\", a: new globalThis.RegExp(pattern, flags) }; } catch (error) { if (!(error instanceof globalThis.SyntaxError)) throw error; return { $: \"Err\", a: \"SyntaxError\" }; } }",
+            .regexp_test => "(pattern, text) => { return pattern.test(text); }",
+            .regexp_replace => "(pattern, text, replacement) => { return text.replace(pattern, replacement); }",
             .data_is_array => "(value) => { return globalThis.Array.isArray(value); }",
             .data_is_finite => "(value) => { return globalThis.Number.isFinite(value); }",
             .data_is_integer => "(value) => { return globalThis.Number.isInteger(value); }",

@@ -1,0 +1,15 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub type CreateError
+    = SyntaxError
+
+
+pub foreign type RegExp
+
+
+pub foreign impure create : String, String → Result CreateError RegExp
+
+
+pub foreign impure test : borrowed RegExp, String → Bool
+
+
+pub foreign impure replace : borrowed RegExp, String, String → String

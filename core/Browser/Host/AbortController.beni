@@ -2,7 +2,13 @@
 import Browser.Host.AbortSignal as AbortSignal
 
 
+import Browser.Host.DOMException as DOMException
+
+
 pub foreign type AbortController
+
+
+pub foreign impure abortWith : borrowed AbortController, borrowed DOMException.DOMException → ⊤
 
 
 pub foreign impure create : ⊤ → AbortController

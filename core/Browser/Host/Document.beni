@@ -12,6 +12,9 @@ pub type QueryError
 pub foreign type Document
 
 
+pub foreign impure baseURI : ⊤ → String
+
+
 pub foreign impure title : ⊤ → String
 
 

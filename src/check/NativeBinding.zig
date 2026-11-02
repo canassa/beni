@@ -39,6 +39,43 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .url_try_create => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| native(cx, nested0, "URL") else false),
+        .url_href => a.len == 1 and native(cx, a[0], "URL") and named(cx, r, "String", "String"),
+        .url_username => a.len == 1 and native(cx, a[0], "URL") and named(cx, r, "String", "String"),
+        .url_password => a.len == 1 and native(cx, a[0], "URL") and named(cx, r, "String", "String"),
+        .document_base_uri => a.len == 1 and unit(cx, a[0]) and named(cx, r, "String", "String"),
+        .headers_create => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Headers"),
+        .headers_append => a.len == 3 and native(cx, a[0], "Headers") and named(cx, a[1], "String", "String") and named(cx, a[2], "String", "String") and unit(cx, r),
+        .headers_has => a.len == 2 and native(cx, a[0], "Headers") and named(cx, a[1], "String", "String") and named(cx, r, "Basics", "Bool"),
+        .headers_set => a.len == 3 and native(cx, a[0], "Headers") and named(cx, a[1], "String", "String") and named(cx, a[2], "String", "String") and unit(cx, r),
+        .headers_get => a.len == 2 and native(cx, a[0], "Headers") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| named(cx, nested0, "String", "String") else false),
+        .headers_entries => a.len == 1 and native(cx, a[0], "Headers") and stringPairs(cx, r),
+        .form_create => a.len == 1 and unit(cx, a[0]) and native(cx, r, "FormData"),
+        .form_append => a.len == 3 and native(cx, a[0], "FormData") and named(cx, a[1], "String", "String") and named(cx, a[2], "String", "String") and unit(cx, r),
+        .fetch_text_body => a.len == 1 and named(cx, a[0], "String", "String") and named(cx, r, "Browser.Host.Fetch", "Body"),
+        .fetch_form_body => a.len == 1 and native(cx, a[0], "FormData") and named(cx, r, "Browser.Host.Fetch", "Body"),
+        .fetch_init => a.len == 5 and named(cx, a[0], "String", "String") and native(cx, a[1], "Headers") and (if (argument(cx, a[2], "Maybe", "Maybe", 0)) |nested0| named(cx, nested0, "Browser.Host.Fetch", "Body") else false) and native(cx, a[3], "AbortSignal") and named(cx, a[4], "String", "String") and named(cx, r, "Browser.Host.Fetch", "Init"),
+        .fetch_call => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "Browser.Host.Fetch", "Init") and (if (argument(cx, r, "Browser.Host.Promise", "Promise", 0)) |nested0| native(cx, nested0, "Response") else false),
+        .response_url => a.len == 1 and native(cx, a[0], "Response") and named(cx, r, "String", "String"),
+        .response_status => a.len == 1 and native(cx, a[0], "Response") and named(cx, r, "Basics", "Int"),
+        .response_status_text => a.len == 1 and native(cx, a[0], "Response") and named(cx, r, "String", "String"),
+        .response_ok => a.len == 1 and native(cx, a[0], "Response") and named(cx, r, "Basics", "Bool"),
+        .response_headers => a.len == 1 and native(cx, a[0], "Response") and native(cx, r, "Headers"),
+        .response_text => a.len == 1 and native(cx, a[0], "Response") and (if (argument(cx, r, "Browser.Host.Promise", "Promise", 0)) |nested0| named(cx, nested0, "String", "String") else false),
+        .response_reader => a.len == 1 and native(cx, a[0], "Response") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| native(cx, nested0, "ReadableStreamDefaultReader") else false),
+        .reader_bytes => a.len == 1 and native(cx, a[0], "ReadableStreamDefaultReader") and (if (argument(cx, r, "Browser.Host.Promise", "Promise", 0)) |nested0| native(cx, nested0, "ReadResult") else false),
+        .read_result_done => a.len == 1 and native(cx, a[0], "ReadResult") and named(cx, r, "Basics", "Bool"),
+        .read_result_value => a.len == 1 and native(cx, a[0], "ReadResult") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| native(cx, nested0, "Uint8Array") else false),
+        .decoder_create => a.len == 1 and unit(cx, a[0]) and native(cx, r, "TextDecoder"),
+        .decoder_more => a.len == 2 and native(cx, a[0], "TextDecoder") and native(cx, a[1], "Uint8Array") and named(cx, r, "String", "String"),
+        .decoder_finish => a.len == 1 and native(cx, a[0], "TextDecoder") and named(cx, r, "String", "String"),
+        .dom_exception_create => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "String", "String") and native(cx, r, "DOMException"),
+        .abort_with_reason => a.len == 2 and native(cx, a[0], "AbortController") and native(cx, a[1], "DOMException") and unit(cx, r),
+        .abort_reason_is => a.len == 2 and native(cx, a[0], "AbortSignal") and native(cx, a[1], "DOMException") and named(cx, r, "Basics", "Bool"),
+        .rejection_is_type_error => a.len == 1 and native(cx, a[0], "Rejection") and named(cx, r, "Basics", "Bool"),
+        .regexp_create => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Result", "Result", 0)) |failure| named(cx, failure, "Browser.Host.RegExp", "CreateError") else false) and (if (argument(cx, r, "Result", "Result", 1)) |success| native(cx, success, "RegExp") else false),
+        .regexp_test => a.len == 2 and native(cx, a[0], "RegExp") and named(cx, a[1], "String", "String") and named(cx, r, "Basics", "Bool"),
+        .regexp_replace => a.len == 3 and native(cx, a[0], "RegExp") and named(cx, a[1], "String", "String") and named(cx, a[2], "String", "String") and named(cx, r, "String", "String"),
         .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer => a.len == 1 and named(cx, a[0], "Js", "Value") and named(cx, r, "Basics", "Bool"),
         .data_keys => a.len == 1 and named(cx, a[0], "Js", "Value") and (if (argument(cx, r, "List", "List", 0)) |element| named(cx, element, "String", "String") else false),
         .data_empty_object => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Js", "Value"),
@@ -146,4 +183,14 @@ fn unitCallback(cx: *const Context, v: Var) bool {
 fn eventCallback(cx: *const Context, v: Var) bool {
     const callback = Walk.function(cx.store, v) orelse return false;
     return callback.params.len == 1 and native(cx, callback.params[0], "Event") and unit(cx, callback.result);
+}
+
+fn stringPairs(cx: *const Context, v: Var) bool {
+    const pair = argument(cx, v, "List", "List", 0) orelse return false;
+    switch (cx.store.resolvedContent(pair)) {
+        .structure => |shape| if (shape != .tuple) return false,
+        else => return false,
+    }
+    const fields = Walk.positions(cx.store, pair);
+    return fields.len == 2 and named(cx, fields[0], "String", "String") and named(cx, fields[1], "String", "String");
 }

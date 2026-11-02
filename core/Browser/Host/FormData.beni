@@ -1,0 +1,8 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type FormData
+
+
+pub foreign impure create : ⊤ → FormData
+
+
+pub foreign impure append : borrowed FormData, String, String → ⊤

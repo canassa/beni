@@ -1,5 +1,11 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.DOMException as DOMException
+
+
 pub foreign type AbortSignal
+
+
+pub foreign impure reasonIs : borrowed AbortSignal, borrowed DOMException.DOMException → Bool
 
 
 pub foreign impure aborted : borrowed AbortSignal → Bool

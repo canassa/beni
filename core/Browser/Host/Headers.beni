@@ -1,0 +1,20 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type Headers
+
+
+pub foreign impure create : ⊤ → Headers
+
+
+pub foreign impure append : borrowed Headers, String, String → ⊤
+
+
+pub foreign impure has : borrowed Headers, String → Bool
+
+
+pub foreign impure set : borrowed Headers, String, String → ⊤
+
+
+pub foreign impure get : borrowed Headers, String → Maybe String
+
+
+pub foreign impure entries : borrowed Headers → List (String × String)

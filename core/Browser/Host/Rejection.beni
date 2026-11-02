@@ -2,6 +2,9 @@
 pub foreign type Rejection
 
 
+pub foreign impure isTypeError : borrowed Rejection → Bool
+
+
 pub foreign impure isError : borrowed Rejection → Bool
 
 

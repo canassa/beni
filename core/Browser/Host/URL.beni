@@ -1,0 +1,14 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type URL
+
+
+pub foreign impure tryCreate : String, String → Maybe URL
+
+
+pub foreign impure href : borrowed URL → String
+
+
+pub foreign impure username : borrowed URL → String
+
+
+pub foreign impure password : borrowed URL → String
