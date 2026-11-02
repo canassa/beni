@@ -1,0 +1,125 @@
+-- A runtime catch for a call's whole result read through a callback's answer
+-- (`ownership-v2.md` §2.10, *Read-off*): `wideCopy` folds a tree with a known
+-- lambda, so its result is the fold's open arrival, the lambda's answer at
+-- every slot, and the fold starts at a top-level value. Read as a whole subtree (`↓p`, §2.3.1), that answer was described at
+-- its own slot only, where the constructor holds no object, so the result was
+-- read as holding nothing of the argument's lists: the push on `t`'s list ran
+-- in place while `r`, which holds that list, was still read, and the
+-- sanitised run trapped. `Wide` has more than `below_min` objects below it,
+-- so its subtree is a symbol; `Narrow`'s is one because its type is on a
+-- cycle. Both pushes are refused now.
+import List
+import Node exposing (Program)
+import String
+
+
+type Wide
+    = W
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        (List Int)
+        Wide
+        Wide
+    | WEnd
+
+
+type Narrow
+    = N (List Int) Narrow Narrow
+    | NEnd
+
+
+wideFold : Wide, b, (List Int, b → b) → b
+wideFold t acc f =
+    case t of
+        W xs _ _ _ _ _ _ _ _ _ l r →
+            wideFold r (f xs (wideFold l acc f)) f
+
+        WEnd →
+            acc
+
+
+narrowFold : Narrow, b, (List Int, b → b) → b
+narrowFold t acc f =
+    case t of
+        N xs l r →
+            narrowFold r (f xs (narrowFold l acc f)) f
+
+        NEnd →
+            acc
+
+
+wideSum : Wide → Int
+wideSum t =
+    case t of
+        W xs _ _ _ _ _ _ _ _ _ _ _ →
+            List.sum xs
+
+        WEnd →
+            0
+
+
+narrowSum : Narrow → Int
+narrowSum t =
+    case t of
+        N xs _ _ →
+            List.sum xs
+
+        NEnd →
+            0
+
+
+wideEnd : Wide
+wideEnd = WEnd
+
+
+narrowEnd : Narrow
+narrowEnd = NEnd
+
+
+wideCopy : Wide → Wide
+wideCopy t = wideFold t wideEnd λxs acc → W xs [] [] [] [] [] [] [] [] [] acc WEnd
+
+
+narrowCopy : Narrow → Narrow
+narrowCopy t = narrowFold t narrowEnd λxs acc → N xs acc NEnd
+
+
+wide : Wide → Int
+wide t =
+    r = wideCopy t
+    n =
+        case t of
+            W xs _ _ _ _ _ _ _ _ _ _ _ →
+                List.length (List.push xs 9)
+
+            WEnd →
+                0
+    n * 1000 + wideSum r
+
+
+narrow : Narrow → Int
+narrow t =
+    r = narrowCopy t
+    n =
+        case t of
+            N xs _ _ →
+                List.length (List.push xs 9)
+
+            NEnd →
+                0
+    n * 1000 + narrowSum r
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (wide (W [ 1 ] [] [] [] [] [] [] [] [] [] WEnd WEnd))
+        , String.fromInt (narrow (N [ 1 ] NEnd NEnd))
+        ]
