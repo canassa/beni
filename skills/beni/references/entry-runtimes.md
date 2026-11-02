@@ -16,7 +16,8 @@ native handles. Generic functions retain the obligation until they are applied.
 
 Generic Program declarations keep type-variable positions in their Wire plans.
 The runtime materializes nested Lists at those positions in both realms. It skips
-known stable branches. Unused roles can remain unfixed. Concrete functions and
+known stable branches. The built-in browser runtime omits the normalization
+interpreter and plan data when all worker roles are clone-stable. Unused roles can remain unfixed. Concrete functions and
 unsupported native values still report `worker_message_not_serializable`.
 
 Sources: `docs/design/workers.md` §3, §5; `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5.

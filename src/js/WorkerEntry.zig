@@ -11,4 +11,5 @@ pub const Descriptor = struct {
     url: []const u8 = "",
     fingerprint: []const u8 = "",
     wire: ?*const @import("../check/Wire.zig").Artifact = null,
+    elide_stable_wire: bool = false,
 };

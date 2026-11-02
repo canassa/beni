@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "configrequest"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"configrequest"</output>
+  </main>
+</body>

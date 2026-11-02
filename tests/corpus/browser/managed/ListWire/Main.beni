@@ -1,0 +1,99 @@
+-- Config, requests, replies, errors and events keep selective List normalization.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Html exposing (Html)
+import List
+import Task
+
+
+type alias Protocol =
+    Worker.Protocol (List Int) (List Int) ⊥ (List Int) (List Int) ⊥
+
+
+worker : Worker.Program (List Int) ⊤ Protocol
+worker =
+    Worker.program
+        { init =
+            λcontext config →
+                _ = Worker.emit context config
+                Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λcontext _ request →
+                tail = List.drop request 1
+                _ = Worker.emit context tail
+                if List.head request == Just 0 then Err tail else Ok tail
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+next : Worker.Handle Protocol → List Int
+next handle =
+    case Events.next (Worker.events handle) of
+        Ok (Events.Item chunk) →
+            Events.take chunk
+        _ →
+            []
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    case Worker.open owner worker (List.drop [ 9, 4, 5 ] 1) Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            config = next handle
+            reply = Worker.call handle (List.drop [ 9, 1, 2, 3 ] 1)
+            event = next handle
+            failure = Worker.call handle (List.drop [ 9, 0, 6, 7 ] 1)
+            failedEvent = next handle
+            replyGood =
+                case reply of
+                    Ok values →
+                        values == [ 2, 3 ]
+                    _ →
+                        False
+            failureGood =
+                case failure of
+                    Err (Worker.Application values) →
+                        values == [ 6, 7 ]
+                    _ →
+                        False
+            cleanup = Worker.close handle
+            if
+                config == [ 4, 5 ]
+                    && replyGood
+                    && event == [ 2, 3 ]
+                    && failureGood
+                    && failedEvent == [ 6, 7 ]
+                    && cleanup == Worker.Confirmed
+            then
+                "list wire passed"
+            else
+                "list wire failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }
