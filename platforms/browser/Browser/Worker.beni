@@ -3,6 +3,7 @@ import Browser.WorkerStream exposing (Sink, Stream)
 import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
 import Js
+import Rt
 import Schema exposing (Issue)
 import Task exposing (Scope)
 
@@ -402,7 +403,7 @@ transportFailed peer failure =
 fatal : String → a
 fatal message =
     cause = Js.construct (Js.global "Error") [ Js.from message ]
-    Js.throw cause
+    if Js.isUndefined (Js.global "window") then Js.throw cause else Rt.workerDefect cause
 
 
 received : V, V → ⊤
@@ -485,6 +486,77 @@ validOptions opts =
         Ok ⊤
 
 
+installed : Js.Ref Bool
+installed = Js.ref False
+
+
+firstDefect : Js.Ref V
+firstDefect = Js.ref Js.null
+
+
+fatalDeadline : Js.Ref V
+fatalDeadline = Js.ref Js.null
+
+
+abandoned : V
+abandoned = Js.array []
+
+
+installFatal : ⊤ → ⊤
+installFatal ⊤ =
+    if Js.read installed then
+        ⊤
+    else
+        Js.write installed True
+        Task.onDefect stopRealm
+        if Js.isUndefined (Js.global "window") then
+            ⊤
+        else
+            _ =
+                Js.call (Js.global "window") "addEventListener"
+                    [ host "error"
+                    , host λevent →
+                        if Js.isNull (Js.read firstDefect) then
+                            cause = Js.get event "error"
+                            if Js.isNullish cause then
+                                ⊤
+                            else
+                                Js.write firstDefect cause
+                                Js.set cause "abandonedWorkers" abandoned
+                    ]
+            ⊤
+        Task.onShutdown λ⊤ →
+            Js.each (Js.call peers "values" []) λpeer →
+                _ = sendFrame peer "Close" 0 Js.null
+                ⊤
+            Js.write
+                fatalDeadline
+                (Js.apply (Js.global "setTimeout") [ host abandonUnfinished, host 1000 ])
+
+
+abandonUnfinished : ⊤ → ⊤
+abandonUnfinished ⊤ =
+    Js.each (Js.call peers "values" []) λpeer →
+        _ = Js.call (Js.get peer "native") "terminate" []
+        report =
+            Js.from
+                { entryId = Js.get peer "entry"
+                , instanceId = Js.get peer "generation"
+                , kind = "Dedicated"
+                , diagnosticName = Js.get (Js.get peer "options") "name"
+                , termination = "NativeTerminated"
+                }
+        _ = Js.call abandoned "push" [ report ]
+        transportFailed peer CleanupAbandoned
+        Js.set peer "phase" (host "Abandoned")
+        unlisten peer
+    _ = Js.call peers "clear" []
+    if Js.to (Js.get abandoned "length") == 0 then
+        ⊤
+    else
+        Js.to (Js.call (Js.global "console") "error" [ host "abandonedWorkers", abandoned ])
+
+
 heartbeat : V, Options → ⊤
 heartbeat peer opts =
     Task.sleep opts.heartbeatEvery
@@ -504,6 +576,7 @@ pub open :
     , Options
     → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))
 open owner definition config opts =
+    installFatal ⊤
     case validOptions opts of
         Err problem →
             Err { reason = InvalidOptions problem, cleanup = Confirmed }
@@ -1033,7 +1106,11 @@ sizeLoop pending size limit =
 
 
 stopRealm : ⊤ → ⊤
-stopRealm ⊤ = Task.shutdown 1000 λ_ → ⊤
+stopRealm ⊤ =
+    if Js.isUndefined (Js.global "window") then
+        Task.shutdown 1000 λ_ → abandonUnfinished ⊤
+    else
+        Rt.workerStop ⊤
 
 
 terminalReply : V, Int, String, V → ⊤
@@ -1080,7 +1157,7 @@ workerDefect peer report =
     Js.set cause "entryId" (Js.get peer "entry")
     Js.set cause "instanceId" (Js.get peer "generation")
     Js.set cause "realm" (host "dedicatedWorker")
-    Js.throw cause
+    if Js.isUndefined (Js.global "window") then Js.throw cause else Rt.workerDefect cause
 
 
 requireCleanup : Cleanup → ⊤
