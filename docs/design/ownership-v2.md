@@ -1025,8 +1025,13 @@ reached it, so one value placed twice is two entries):
 - Entries are **grouped by root**. Within a group, a conflict is two entries at related positions whose slots
   meet. It is found through position ancestry: each entry is indexed at `(position, slot)` for each of its
   slots, and an entry is checked against the index at its own position and each ancestor, never against every
-  other entry (a group with list steps, whose relation is not ancestry, compares its pairs; such groups are as
-  large as the literal list patterns of the source). A conflict makes the check `no`.
+  other entry. *Amended 2026-11-03 (#1714):* list steps too. Two list steps of one parent may name one element
+  (a `front` and a `back`, a `front` and a `slice` from its index or before, two `slice`s) where two `front`s,
+  two `back`s or two plain steps never do; so each entry is also indexed below every ancestor at
+  `(ancestor, kind of the list step that leads to it, slot)`, and checked, below each list step of its own path,
+  against the kinds that may name what that step names. Before, a group with list steps compared its pairs:
+  `[ p1 … pn ]` pushed inside one literal was n²/2 pairs (*live sibling positions*: 371 986 records at n = 80,
+  now 136 538). A group of at most eight still compares its pairs. A conflict makes the check `no`.
 - A group of two entries or more asks its root's separation on the union of their slots (a parameter's
   selection; a call's instantiated `res_cond`). Two parameters' groups ask the selection of both. *Amended
   2026-11-02 (#1711):* so does a group of **one entry that names more than one object** — two slots or more,
