@@ -899,7 +899,11 @@ the call's function type, as a direct label's argument does. A callee supply slo
 a write of `.f0` with nothing to read. Each part is also judged at the call as a direct label's argument is: a
 part held after the call or reached by another part or operand is kept, at its own slot, and the distinct check
 over the parts joins the supply's condition (`wrap f a b = ( apply f { f0 = a, f1 = b }, b )` refuses
-`wrap g xs xs`).
+`wrap g xs xs`). *Amended 2026-11-02 (#1712):* a part that comes partly from unknown code — a callback's answer,
+as a fold's accumulator is after the first step, or `choose c x (g ⊤)` — cannot be judged whole (it is
+`unknown`), but its known objects can: each is judged on its own, and one held after the call keeps the part's
+slot. Before this, the unknown half hid the known one, and `keepFold acc g = ( fold xs acc λ_ a → g a, acc )`
+supplied `acc` to `g` unkept.
 
 At a caller where the label's function value is **known** — a lambda, a local function, a declaration, a
 constructor, or an `alt` of them — the label is applied: for each possible code `K`, `K`'s contract is
