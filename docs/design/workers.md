@@ -305,7 +305,25 @@ Js.Value represents plain dynamic data, not erased native handles or callbacks.
 HostFree is currently off until typed Task storage (#1615) lands. Meanwhile,
 realm inference conservatively treats callable values erased by Js.from as
 called in the enclosing declaration, including the work passed to Task.start.
-This stopgap does not change purity or suspension inference.
+Writes through Ref.make, Ref.set, Ref.update, Ref.modify, Js.ref, Js.write,
+Deferred.complete, Queue.offer and Queue.offerAll likewise attribute every
+visible stored callable arrow to the writer. A local cell retains the same
+rule. A foreign callback dependency belongs to its nearest enclosing positive
+arrow; a returned callback receiver keeps the dependency when stored as a
+top-level value. These are realm-only edges and do not change purity or
+suspension inference.
+
+**Known gap — generic erasure and foreign inputs (#1663).** A flex or rigid
+type variable currently carries no callable realm class. A generic
+`eraseAny : a → Js.Value; eraseAny x = Js.from x`, or a generic
+`foreign impure keep : a → ⊤` whose sibling retains a callback, can therefore
+hide a page-only callback until instantiation. The concrete-write stopgap
+also does not discharge a stored callable hidden by a generic wrapper.
+Privileged in-tree producers include Task.host and Hosted.host; typed Task
+storage (#1615) removes Task.host. The complete fix must publish realm-only
+obligations on unknown types and discharge them at instantiation, including
+imported interfaces, without changing effect classes. HostFree remains off
+and these paths are not yet a complete realm proof.
 
 HostFree is a structural type-graph check that excludes native objects and
 callables in reachable fields, containers and opaque representations. Js.from

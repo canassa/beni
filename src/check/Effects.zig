@@ -1390,7 +1390,9 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
     var marked: std.ArrayList(u32) = .empty;
     defer marked.deinit(scratch);
     for (e.foreign_syncs.items) |f| if (f.decl == decl) try marked.append(scratch, try e.nodeFor(f.v));
-    const Item = struct { v: Var, positive: bool, evidence: bool, where_root: bool = false };
+    var realm_calls: std.ArrayList(@import("Realms.zig").ForeignCall) = .empty;
+    defer realm_calls.deinit(scratch);
+    const Item = struct { v: Var, positive: bool, evidence: bool, where_root: bool = false, realm_caller: u32 = none };
     var stack: std.ArrayList(Item) = .empty;
     defer stack.deinit(scratch);
     try stack.append(scratch, .{ .v = scheme, .positive = true, .evidence = false });
@@ -1407,8 +1409,17 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
             },
             else => {},
         }
+        var realm_caller = item.realm_caller;
         if (e.carries(r)) {
             const nd = try e.nodeFor(r);
+            if (item.positive and switch (store.content(r)) {
+                .structure => |st| st == .func,
+                else => false,
+            }) {
+                realm_caller = nd;
+            } else if (!item.positive and !item.evidence and realm_caller != none) {
+                try realm_calls.append(scratch, .{ .caller = realm_caller, .callback = nd });
+            }
             if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) {
                 try nodes.append(scratch, nd);
                 try positive.append(scratch, item.positive);
@@ -1428,7 +1439,7 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
         while (Walk.stepped(store, r, k)) |c| : (k += 1) {
             // A parameter flips the position; everything else keeps it.
             const flips = c.kind == .param;
-            try stack.append(scratch, .{ .v = c.v, .positive = if (flips) !item.positive else item.positive, .evidence = item.evidence });
+            try stack.append(scratch, .{ .v = c.v, .positive = if (flips) !item.positive else item.positive, .evidence = item.evidence, .realm_caller = realm_caller });
         }
     }
     const own = if (is_function) try e.nodeFor(own_var) else none;
@@ -1436,15 +1447,14 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
     for (nodes.items, positive.items, evidence.items, sync.items) |nd, pos, _, is_sync| {
         const deps_start: u32 = @intCast(s.deps.items.len);
         if (nd == own) {
-            for (nodes.items, evidence.items, positive.items, 0..) |other, ev, other_positive, j| {
+            for (nodes.items, evidence.items, 0..) |other, ev, j| {
                 if (other == own) continue;
                 if (ev) {
                     try s.deps.append(e.gpa, @intCast(j));
-                } else if (!other_positive) {
-                    try s.deps.append(e.gpa, @as(u32, @intCast(j)) | Interface.EffectBlock.realm_only);
                 }
             }
         }
+        try @import("Realms.zig").foreignDependencies(e, nodes.items, realm_calls.items, nd);
         const class_rung: Rung = if (pos and !isEvidence(nodes.items, evidence.items, nd)) rung else .pure;
         try s.classes.append(e.gpa, .{
             .node = nd,

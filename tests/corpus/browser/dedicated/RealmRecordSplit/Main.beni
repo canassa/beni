@@ -11,7 +11,7 @@ pageOnly _ =
 actions = { safe = λ_ → "safe", page = pageOnly }
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

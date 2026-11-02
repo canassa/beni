@@ -25,7 +25,7 @@ read _ = dom ⊤
 box = Box
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

@@ -17,7 +17,7 @@ dom _ =
 evaluated = dom ⊤
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤
