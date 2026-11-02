@@ -434,6 +434,9 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                         });
                         try s.noteCastImage(which, copy, decl);
                     }
+                    if (s.erasesCallable(node.region)) {
+                        if (s.cx.effects) |e| try e.erasures.append(s.cx.gpa, copy);
+                    }
                     if (s.debugUse(node.region)) |which| try s.debugs.append(s.cx.gpa, .{
                         .inst = node.region,
                         .copy = copy,
@@ -741,6 +744,24 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
     return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
+}
+
+/// Js.from, method and aggregate constructors can hide callable bodies while
+/// HostFree is off. Preserve their arguments' realm dependencies at each use.
+fn erasesCallable(s: *Solve, inst: Bir.Inst.Index) bool {
+    const bir = s.cx.bir;
+    if (bir.instTag(inst) != .ext_value) return false;
+    const d = bir.instData(inst);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+    if (module.int() >= s.cx.graph.count() or s.cx.graph.modulePackage(module) != .core) return false;
+    if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return false;
+    const iface = s.cx.iface(module);
+    if (d.rhs >= iface.values.len) return false;
+    const name = s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    inline for (.{ "from", "method", "array", "object" }) |erasure| {
+        if (std.mem.eql(u8, name, erasure)) return true;
+    }
+    return false;
 }
 
 /// Whether the reference at `inst` is core's `Debug.toString` or

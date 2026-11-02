@@ -49,7 +49,8 @@ pub const View = struct {
 
     fn addClass(view: *View, rung: Rung, deps: []const u32, sync: bool) Error!void {
         try view.classes.append(view.gpa, .{ .rung = rung, .deps_start = @intCast(view.deps.items.len), .deps_len = @intCast(deps.len), .dependant = false, .sync = sync });
-        try view.deps.appendSlice(view.gpa, deps);
+        for (deps) |d| if (d & Interface.EffectBlock.realm_only == 0) try view.deps.append(view.gpa, d);
+        view.classes.items[view.classes.items.len - 1].deps_len = @intCast(view.deps.items.len - view.classes.items[view.classes.items.len - 1].deps_start);
         try view.names.append(view.gpa, none);
     }
 
@@ -82,6 +83,7 @@ pub const View = struct {
             while (work.pop()) |x| {
                 var at = s.head.items[x];
                 while (at != none) : (at = s.next.items[at]) {
+                    if (s.origin.items[at] == Effects.realm_origin) continue;
                     const y = s.find(s.to.items[at]);
                     const slot = &view.reach[@as(usize, y) * view.chunks + word];
                     if (slot.* & bit != 0) continue;

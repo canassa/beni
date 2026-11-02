@@ -512,7 +512,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .page = chain.inPage(),
             .entry_host = for (chain.layers) |layer| {
                 if (layer.manifest.entryHost) |host| break @as(@import("entry/Plan.zig").Realm, @fromBackingInt(@intCast(@backingInt(host))));
-            } else .node,
+            } else .unknown,
             .obsolete_host_root = for (chain.layers) |layer| {
                 if (layer.manifest.host != null) break layer.root;
             } else null,

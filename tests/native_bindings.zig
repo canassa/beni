@@ -117,3 +117,22 @@ test "shipped native modules are exactly the pinned generator output" {
         try std.testing.expectEqualStrings(try Native.Callable.sibling(a, module), js);
     }
 }
+
+test "callable member spans match complete IDL identifiers regardless of member order" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const result = try Native.generate(a, @embedFile("webref_idl"));
+    var catalogue = result.success;
+    const reversed = try a.dupe(Native.Member, catalogue.members);
+    std.mem.reverse(Native.Member, reversed);
+    catalogue.members = reversed;
+    const bindings = try Native.Callable.bindings(a, catalogue);
+    for (bindings) |binding| {
+        if (!std.mem.eql(u8, binding.operation.module, "Browser.Host.TextEncoder") or !std.mem.eql(u8, binding.operation.name, "encode")) continue;
+        const member = catalogue.members[binding.member.?];
+        try std.testing.expectEqualStrings("[NewObject] Uint8Array encode(optional USVString input = \"\");", member.source_span.text(catalogue.files[member.file].source));
+        return;
+    }
+    return error.MissingEncodeBinding;
+}

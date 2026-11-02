@@ -294,11 +294,19 @@ callback effects, static-dispatch evidence, containers, aliases and evaluated
 module initializers retain those types and inferred realm summaries. A summary
 is the intersection of reachable native operation availability. An entry must
 prove its own realm belongs to every reachable operation's allowed set.
+§14.5's nominal callback join is conservative: a worker that uses only
+the safe field of `type Pair = Pair (⊤ → String) (⊤ → String)` is refused
+when the other field is page-only; the corresponding record split is accepted.
 Unresolved generic obligations propagate to interfaces and are discharged at
 instantiation. An unreachable declaration does not reject an entry; an evaluated
 initializer does. Recursive call components use a monotone fixed point.
 
 Js.Value represents plain dynamic data, not erased native handles or callbacks.
+HostFree is currently off until typed Task storage (#1615) lands. Meanwhile,
+realm inference conservatively treats callable values erased by Js.from as
+called in the enclosing declaration, including the work passed to Task.start.
+This stopgap does not change purity or suspension inference.
+
 HostFree is a structural type-graph check that excludes native objects and
 callables in reachable fields, containers and opaque representations. Js.from
 and Js.to require it. Unknown type variables retain obligations. Task, renderer
@@ -329,7 +337,9 @@ native proof; native reflection needs its own generated typed contract.
 
 ### Replacing host:page, diagnostics and cost
 
-EntryHost replaces the platform-wide host:page promise. Each entryKind supplies
+EntryHost replaces the platform-wide host:page promise. A platform chain
+without entryHost has an unknown realm; only operations available in every
+known realm are accepted, and a refusal asks the platform to declare entryHost. Each entryKind supplies
 its execution realm and the checked reachable graph proves availability. Only
 a proven Window lookup may print bare window. Shared chunks must be valid in
 every importing realm; otherwise specialize them. Stale host:page manifests

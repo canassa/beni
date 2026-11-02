@@ -169,7 +169,7 @@ pub const EntryKind = struct {
 
 pub const Platform = struct {
     entry_kinds: []const EntryKind = &.{},
-    entry_host: EntryPlan.Realm = .node,
+    entry_host: EntryPlan.Realm = .unknown,
     obsolete_host_root: ?[]const u8 = null,
     /// Module-qualified name of the opaque `Program` type `main` must have.
     /// Null for a chain that declares none, which only a library builds for.
@@ -2996,7 +2996,10 @@ const Emitter = struct {
                     } else true;
                     if (!own_arrow) continue;
                     const class = effects.class(site.class);
-                    may_suspend = may_suspend or class.rung == 2 or (class.deps.len != 0 and !class.sync);
+                    const effect_dependency = for (class.deps) |dependency| {
+                        if (dependency & Interface.EffectBlock.realm_only == 0) break true;
+                    } else false;
+                    may_suspend = may_suspend or class.rung == 2 or (effect_dependency and !class.sync);
                 }
             }
             if (may_suspend) {
