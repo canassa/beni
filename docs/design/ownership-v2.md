@@ -1375,6 +1375,12 @@ A label of a callee whose function slot is projected from one of the caller's pa
 the caller, its supplies projected onto the caller's arguments, its origin kept: so a callback handed through
 `List.map` to `mapHelp` and back to itself is one label, and a recursive group's labels are finite (one per
 callback call instruction reachable, per function slot).
+*Amended 2026-11-02 (#1721):* the label's `calls` adds up its sources in the frame: each direct call is one,
+each callee label it is passed on to counts that label's `calls`, and two sources that each call it are many.
+So `myMap xs f = case xs of … [ x, …rest ] → [ f x, …myMap rest f ]` calls `f` many times: the direct call
+and the recursive call's label (once, on the first round) are two. Before, the sources were joined (`once ⊔
+once = once`), so `mapHelp`'s label, and with it `List.map`'s, `List.initialize`'s and every recursive walker's,
+was once, and a closure that writes a capture was accepted there.
 Projected by structure: each part of the caller's argument arrives at its own slot below the supply slot, at
 the call's function type, as a direct label's argument does. A callee supply slot of a type variable's place
 (`apply : (a → b), a → b`) takes the whole argument, so one arrival there for `{ f0 = a, f1 = b }` would leave
