@@ -77,6 +77,8 @@ const layers = [_]Entry{
     // The holder index and its sweep, split from `Holders` (#1714): holds
     // listed once a holder, buckets by next use, the aggregated holders.
     .{ .file = "Sweep.zig", .layer = 9, .max_lines = 720 },
+    // The pending operands by clock and key, split from the walk's copies (#1714).
+    .{ .file = "Stack.zig", .layer = 9, .max_lines = 380 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
@@ -380,7 +382,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 37), layers.len);
+    try testing.expectEqual(@as(usize, 38), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

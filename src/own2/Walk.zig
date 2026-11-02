@@ -129,8 +129,8 @@ pub const Demand = struct {
     deep: bool = false,
     /// The other operands: a run of `Walk.value_runs`.
     operands: Ids.Range = .{},
-    /// The operands pending at the point: a run of `Walk.pending_runs`.
-    pending: Ids.Range = .{},
+    /// The operand stack's clock at the point (`Walk.entries`; `none`: none).
+    pending: u32 = none,
     /// What the callee's write relies on, instantiated on the arguments
     /// once the group's facts are delivered (`finishDemands`).
     relies: Cond = .{},
@@ -157,13 +157,13 @@ pub const Binding = struct { value: u32 = none, point: u32 = none, token: u32 = 
 /// An escape (§2.4): a leaf at a point.
 pub const Escape = struct { leaf: u32, point: u32, call: u32 = none };
 
-/// A pending operand: its value, its instruction.
-pub const Pending = struct { value: u32, inst: u32 };
+/// An operand on the stack (§2.4), its values a run of `pending_runs`: pending at clock `T` when `push <= T < gone`.
+pub const Entry = struct { inst: u32, vals: Ids.Range, push: u32, gone: u32 = none };
 
 /// A call's walk-time facts beside `Value.Call`.
 pub const CallSite = struct {
-    /// The pending operands at the call (a run of `pending_runs`).
-    pending: Ids.Range,
+    /// The operand stack's clock at the call (`Walk.entries`).
+    pending: u32,
     /// The call's arguments read through a footprint: the uses to filter.
     foot: Ids.Range,
 };
@@ -186,7 +186,8 @@ pub const Walk = struct {
     escapes: std.ArrayList(Escape) = .empty,
     sites: std.ArrayList(CallSite) = .empty,
     closures: std.ArrayList(Closure) = .empty,
-    pending_runs: std.ArrayList(Pending) = .empty,
+    pending_runs: std.ArrayList(u32) = .empty,
+    entries: std.ArrayList(Entry) = .empty,
     value_runs: std.ArrayList(u32) = .empty,
     leaf_runs: std.ArrayList(u32) = .empty,
     result: u32 = none,
@@ -206,7 +207,7 @@ pub const Walk = struct {
         const gpa = w.f.gpa;
         w.f.deinit();
         gpa.free(w.bindings);
-        inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs }) |l| l.deinit(gpa);
+        inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries }) |l| l.deinit(gpa);
         inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.virt, &w.derived, &w.supply_of }) |l| l.deinit(gpa);
     }
 
@@ -216,7 +217,7 @@ pub const Walk = struct {
     pub fn valuesOfRun(w: *const Walk, r: Ids.Range) []const u32 {
         return w.value_runs.items[r.start..][0..r.len];
     }
-    pub fn pendingOfRun(w: *const Walk, r: Ids.Range) []const Pending {
+    pub fn pendingOfRun(w: *const Walk, r: Ids.Range) []const u32 {
         return w.pending_runs.items[r.start..][0..r.len];
     }
 };
@@ -245,8 +246,11 @@ const Walker = struct {
     /// Spread chains by root, and the instructions a chain absorbed.
     chain: []u32,
     absorbed: []bool,
-    /// The operand stack (§2.4): instructions evaluated, consumer not yet run.
-    stack: std.ArrayList(u32) = .empty,
+    /// The operand stack (§2.4): instructions evaluated, consumer not yet run, with their push
+    /// clock and entry (the first `made` have one). The clock ticks at a removal.
+    stack: std.ArrayList([3]u32) = .empty,
+    made: usize = 0,
+    clock: u32 = 0,
     atom: *u32,
     scratch: std.ArrayList(Inst.Index) = .empty,
     early: std.ArrayList(Early) = .empty,
@@ -312,24 +316,27 @@ const Walker = struct {
     }
 
     fn pop(k: *Walker, operand: u32) void {
-        if (k.stack.items.len != 0 and k.stack.items[k.stack.items.len - 1] == operand) {
-            _ = k.stack.pop();
-            return;
-        }
-        for (k.stack.items, 0..) |x, i| if (x == operand) {
-            _ = k.stack.orderedRemove(i);
-            return;
-        };
+        var at = k.stack.items.len;
+        while (at > 0) : (at -= 1) if (k.stack.items[at - 1][0] == operand) break;
+        if (at == 0) return;
+        const x = k.stack.orderedRemove(at - 1);
+        k.clock += 1;
+        if (x[2] != none) k.w.entries.items[x[2]].gone = k.clock;
+        if (at - 1 < k.made) k.made -= 1;
     }
 
-    /// The pending operands at `point`, as a run (§2.4): an earlier arm's
-    /// value waits for its `case`, but never runs with this point.
-    fn pendingRun(k: *Walker, point: u32) Error!Ids.Range {
-        const start: u32 = @intCast(k.w.pending_runs.items.len);
-        for (k.stack.items) |i| {
+    /// The pending operands at a call (§2.4), as the clock: the stack's entries are made once
+    /// each (resolution filters them by the call's point), never a copy of the stack a call.
+    fn pendingRun(k: *Walker) Error!u32 {
+        while (k.made < k.stack.items.len) : (k.made += 1) {
+            const x = &k.stack.items[k.made];
+            const i = x[0];
             const v = k.res[k.rel(i)].v;
+            const start: u32 = @intCast(k.w.pending_runs.items.len);
+            x[2] = @intCast(k.w.entries.items.len);
+            try k.w.entries.ensureUnusedCapacity(k.gpa, 1);
+            defer k.w.entries.appendAssumeCapacity(.{ .inst = i, .vals = .{ .start = start, .len = @intCast(k.w.pending_runs.items.len - start) }, .push = x[1] });
             if (v == none) continue;
-            if (!k.w.regions.compatible(i, point)) continue;
             // A record update's base waits for a consumer that touches it
             // at every field but the updated ones (§2.6's `record_update`
             // row, §2.8 *Dead*): it holds only those fields' values.
@@ -342,13 +349,13 @@ const Walker = struct {
                         if (k.ctx.fieldRank(k.ctx.ctx, fl.name) == st.payload) break true;
                     } else false;
                     if (updated) continue;
-                    try k.w.pending_runs.append(k.gpa, .{ .value = try k.project(v, .plain, st.word(), 0), .inst = i });
+                    try k.w.pending_runs.append(k.gpa, try k.project(v, .plain, st.word(), 0));
                 }
                 continue;
             }
-            try k.w.pending_runs.append(k.gpa, .{ .value = v, .inst = i });
+            try k.w.pending_runs.append(k.gpa, v);
         }
-        return .{ .start = start, .len = @intCast(k.w.pending_runs.items.len - start) };
+        return k.clock;
     }
 
     // ---- binding ------------------------------------------------------------
@@ -891,7 +898,7 @@ const Walker = struct {
                 const cbi: u32 = @intCast(fr.cbs.items.len);
                 const root = try fr.addRoot(.cb, cbi, at);
                 for (arg_insts) |a| try k.consume(a, i);
-                try fr.cbs.append(k.gpa, .{ .j = r.a, .slot = slot, .origin = .{ k.module, k.w.code.decl_index, i - k.w.code.decl.inst_start.int() }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun(i) });
+                try fr.cbs.append(k.gpa, .{ .j = r.a, .slot = slot, .origin = .{ k.module, k.w.code.decl_index, i - k.w.code.decl.inst_start.int() }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
                 return fr.refRoot(root);
             },
             else => {},
@@ -923,7 +930,7 @@ const Walker = struct {
         const root = try fr.addRoot(.call, ci, at);
         const head: u32 = if (k.tag(i) == .call) k.data(i).lhs else i;
         try fr.calls.append(k.gpa, .{ .inst = i, .head = head, .point = i, .args = try fr.mkKids(all.items), .arg_insts = try fr.mkWords(insts.items), .root = root, .code = code, .contract = if (fixed) |c| c else none });
-        try k.w.sites.append(k.gpa, .{ .pending = try k.pendingRun(i), .foot = .{} });
+        try k.w.sites.append(k.gpa, .{ .pending = try k.pendingRun(), .foot = .{} });
         if (!Slots.holdsAny(fr.places, fr.roots.items[root].path)) return fr.scalar();
         return fr.refRoot(root);
     }
@@ -1025,7 +1032,7 @@ const Walker = struct {
             try ks.append(k.gpa, if (sp or e == base) try k.project(v, .plain, Step.elem.word(), 0) else v);
             try k.consume(e, i);
         }
-        const pend = try k.pendingRun(i);
+        const pend = try k.pendingRun();
         try k.w.demands.append(k.gpa, .{
             .point = i,
             .kind = kind,
@@ -1197,7 +1204,7 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
             try k.consume(i, i);
             continue;
         }
-        if (k.res[r].v != none and c != none) try k.stack.append(gpa, i);
+        if (k.res[r].v != none and c != none) try k.stack.append(gpa, .{ i, k.clock, none });
     }
     // The result: the body's value, with the early returns of `try`.
     const body = code.body;

@@ -348,7 +348,7 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
         .callee_inst = if (call.virtual) none else call.head,
         .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
         .deep = x.deep,
-        .pending = if (site) |st| st.pending else .{},
+        .pending = if (site) |st| st.pending else none,
         .call = q,
         .arg = x.j,
     };
