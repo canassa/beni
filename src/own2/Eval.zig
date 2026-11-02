@@ -116,42 +116,6 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     try onceDemands(e);
 }
 
-/// The value at relative steps `words` of value `v`, by the walk's projection.
-fn valueAt(e: *Evaluation, v0: u32, words: []const u32) Error!u32 {
-    const f = e.fr();
-    var v = v0;
-    for (words) |wd| {
-        const x = f.val(v);
-        const st = Step.fromWord(wd);
-        v = switch (x.kind) {
-            .ref => blk: {
-                if (x.family != Slots.empty) break :blk try f.top();
-                const p = (try f.child(x.pos, if (st.kind == .elem) .plain else .plain, wd, 0)) orelse break :blk try f.top();
-                break :blk try f.mk(.{ .kind = .ref, .root = x.root, .pos = p });
-            },
-            .built => blk: {
-                const ks = f.kidsOf(x);
-                switch (x.form) {
-                    .tuple => if (st.kind == .index and st.payload < ks.len) break :blk ks[st.payload],
-                    .ctor => if (st.kind == .ctor_arg) {
-                        const ca = f.places.ctorArgOf(st);
-                        if (ca[0] == x.head and ca[1] < ks.len) break :blk ks[ca[1]];
-                    },
-                    .record => if (st.kind == .field) for (f.wordsOf(x.extra), 0..) |r, n| {
-                        if (r == st.payload) break :blk ks[n];
-                    },
-                    .list => if (st.kind == .elem and ks.len == 1) break :blk ks[0],
-                    else => {},
-                }
-                break :blk try f.top();
-            },
-            .scalar, .bot => return v,
-            else => try f.top(),
-        };
-    }
-    return v;
-}
-
 /// Whether a type variable's or an opaque place is at or below `p`: a
 /// place no step below it can name.
 fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
@@ -182,7 +146,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
     for (e.contracts.labelsOf(h.labels), 0..) |l, li| {
         if (l.j >= call.args.len) continue;
         const arg = call.args[l.j];
-        const fv = try valueAt(e, arg, f.slots.relWords(l.slot));
+        const fv = try e.ev.valueAt(arg, f.slots.relWords(l.slot));
         const x = f.val(fv);
         if (x.kind == .built and x.form == .closure and x.head & fixed_bit == 0) {
             // A known code: a virtual call of it on the label's supplies.
@@ -1007,6 +971,11 @@ pub const Verdicts = struct {
     kept: []const [3]u32 = &.{},
     /// Per frame label: the condition its supplies' check relied on.
     supply_cond: []const Cond = &.{},
+    /// Per passed-on label (`passes`' index): the kept supply slots, as
+    /// `(pass, k, leaf, at)` (`at`: the leaf's slot in the supply), and
+    /// the condition its supplies' check relied on.
+    pass_kept: []const [4]u32 = &.{},
+    pass_cond: []const Cond = &.{},
 };
 
 /// A demand's written parameter slots (whatever its verdict).
@@ -1092,7 +1061,27 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         const dl = &d.labels.items[at];
         dl.calls = @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(lab.calls))));
+        // The supplies at this call's function type: a callee's supply slot
+        // of a type variable's place (`apply : (a → b), a → b`) takes the
+        // whole argument, whose structure this frame's type names. Each
+        // part arrives at its own slot below, as a direct label's argument
+        // does: one arrival at the variable's slot would leave a write at
+        // `.f0` of an `R` supply with nothing to read (§2.11.3).
+        var site: std.ArrayList(PlaceId) = .empty;
+        defer site.deinit(gpa);
+        const at_site = f.slots.relWords(lab.slot).len == 0 and lab.j < call.arg_insts.len and call.arg_insts[lab.j] != none and
+            (try e.ctx.siteSig(e.ctx.ctx, call.arg_insts[lab.j], &site)) != null;
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
+            if (at_site and su.k < site.items.len) for (e.contracts.resOf(su.res)) |rs| {
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+                    if (a.kind != .param or a.j >= call.args.len) continue;
+                    const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
+                    var ps: std.ArrayList(u32) = .empty;
+                    defer ps.deinit(gpa);
+                    try Slots.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, site.items[su.k]), f.slots.relWords(rs.slot), &ps);
+                    for (ps.items) |p2| try describe(s, v, .from(p2), .{ .label = at, .k = su.k });
+                }
+            };
             _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (e.contracts.resOf(su.res)) |rs| {
                 for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
@@ -1152,16 +1141,18 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         }
         for (v.kept) |kp| if (kp[0] == ci) {
             const sup = try d.labels.items[at].supplyOf(arena, kp[1]);
-            try paramKept(s, kp[2], &sup.kept);
+            try keptAt(s, kp[2], Slots.root, &sup.kept);
         };
     }
-    for (e.passes.items) |p| {
+    for (e.passes.items, 0..) |p, pi| {
         const at = try labelIndex(s, p[0]);
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
             sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSel(&e.ev, try e.contracts.cond(arena, su.cond), p[1]));
+            if (pi < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi]);
+            for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
     // A code that writes one of its captures is `once` (R-2.8).
@@ -1213,18 +1204,21 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: ResList) Error!void {
     }
 }
 
-/// A kept supply leaf as slots of the supply (relative to its own root).
-fn paramKept(s: *Sink, li: u32, out: *std.ArrayList(Contract.Effect)) Error!void {
-    const f = s.e.fr();
+/// A kept leaf at supply slot `at`: its slots below `at`.
+fn keptAt(s: *Sink, li: u32, at: Slots.Rel, out: *std.ArrayList(Contract.Effect)) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
     const l = f.leafAt(li);
     if (l.kind != .ref) {
-        _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = Slots.root, .deep = true });
+        _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = at, .deep = true });
         return;
     }
     const pslot = f.pos.items[l.pos].slot;
     for (f.slots.items(l.slots)) |sl| {
-        const rel = (try f.slots.relBelow(s.e.gpa(), f.account, f.places, pslot, .from(sl))) orelse Slots.root;
-        _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = rel, .deep = false });
+        const rel = (try f.slots.relBelow(gpa, f.account, f.places, pslot, .from(sl))) orelse Slots.root;
+        const ws = try std.mem.concat(s.arena, u32, &.{ f.slots.relWords(at), f.slots.relWords(rel) });
+        _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = try f.slots.relOfWords(gpa, f.account, f.places, ws), .deep = false });
     }
 }
 
