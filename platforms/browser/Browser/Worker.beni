@@ -163,7 +163,7 @@ pub program :
       Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
 program definition =
-    callbacks = definition
+    callbacks = { definition | start = requireSyncStart definition.start }
     Js.to
         (Js.from
             { boot =
@@ -1076,6 +1076,10 @@ serve peer owned callbacks state opts =
         "terminal"
         (Js.call (Js.global "Math") "max" [ Js.get peer "terminal", host requestId ])
     serve peer owned callbacks state opts
+
+
+requireSyncStart : sync (Context event, state → ⊤) → (Context event, state → ⊤)
+requireSyncStart callback = callback
 
 
 -- A bounded walk over managed data; no JSON conversion or user codecs run.
