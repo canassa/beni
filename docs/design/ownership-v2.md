@@ -4426,7 +4426,8 @@ effect classes are; `Calls` changes only where it looks the class up. An in-plac
    `fun` gains `S.fun(j)` translated; none → `⊤`): the **supply edge** (for each label L of πⱼ, the actual writes its `k`th
    parameter where `S.supply(L, k)` is borrowed → `supply`; owned with provenance `πᵢ·q″` → a `callsite` demand on `aᵢ` at `q″`; `cb j′`
    → the actual for πⱼ′'s result is instantiated and demanded, item 5), **need**, **keep** (below), **seen** (an actual writing a parameter handed
-   where `S` loses sight → `pending`, R-5.5.3).
+   where `S` loses sight → `pending`, R-5.5.3). A callback's `T` (a backing move, §2.13.18) is read on this supply edge as a
+   write is: on a borrowed supply it is refused, on an owned one it becomes a `transfer` demand on `aᵢ` at the supply's path (2026-11-02).
 5. **What a callback's result is**: wherever the callee relies on what its callback returned — a `need` (it writes
    the result), a feedback supply (it hands the result back), a `sep` between two of its labels, a store into an
    exclusive container — the actual's `res` is instantiated as in item 6 under the supplies published for that
@@ -5985,8 +5986,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     The workers lane's contract is `workers-callback-contracts.md`, `workers.md` §2, §5 and §8, and
     `workers-api.md` §1–§2, on the `workers` branch of PR #1616 until they land. The owner's decision #1319
     adds no language: no `entry`, `sync` or ownership word on a record field. This item uses only what a summary
-    promises (§2.10: `use`, `res`, `κ`, `fun(j)`'s needs, `classes`, `effects`, `refs`). It does not use how S3b or
-    S4 represent a summary inside, so a change to the representation of recursive summaries leaves it standing.
+    promises (§2.10: `use`, `res`, `κ`, `fun(j)`'s needs, `classes`, `effects`, `refs`), together with the `slot`
+    annotation and the `T` mark that §2.13.18 adds to that interface. It does not use how S3b or S4 represent a
+    summary inside, so a change to the representation of recursive summaries leaves it standing.
 
     **Where the protocol comes from.** Not from the `entry` word: R-5.8.1 stays as it is, and this item does not
     widen it. A platform's `entryKinds` row names a constructor symbol, the zero-based index k of its entry
@@ -6004,7 +6006,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | Protocol | Field | Obligation |
     |---|---|---|
     | handlers | `init` | **W1.** `S₀` is `res` at the `Ok` payload of the result. The `Result`-like carrier is resolved by its shape, as for `lentoptional`, with no name test. `S₀` gets a deep no-loan demand: a loan cannot outlive `init`'s region into root state (§2.13.7). A capture of `init` moves into `S₀` only when no other callback of the record keeps it (R-5.8.3). `S₀` is registered as the **root-state holder** `R`, live until root cleanup. |
-    | handlers | `start`, `handle`, `stream` | **W2.** The state parameter is **borrowed**. At every path q of `use(π₂)` that is not below a `◆`, there is no `W` (cause `write`), no `S`, no `T` (§2.13.18) and no `consumed` or once-take use. This includes what the callback's callees and the closures it makes add, through their classes and keep edges (§2.11). `R`, `A` and `E` are accepted. The root holder stays live, so a later move of a state cell that escaped or was returned is refused at that demand by Dead or Unescaped (§2.8), not here. Paths at or below a `◆` follow §2.13.7's cell contract: a slot operation on a state `Ref` is a `writer` on its `◆`, not a write of state. |
+    | handlers | `start`, `handle`, `stream` | **W2.** The state parameter is **borrowed**. At every path q of `use(π₂)` that is not below a `◆`, there is no `W` (cause `write`), no `S`, no `T` (§2.13.18) and no `consumed` or once-take use. This includes what the callback's callees and the closures it makes add, through their classes and keep edges (§2.11). `R`, `A` and `E` are accepted. The root holder stays live, so a later move of a state cell that escaped is refused at that demand by Dead or Unescaped (§2.8), not here. At or below a `◆`, §2.13.7's cell contract governs the cells: a slot operation on a state `Ref` is a `writer` on its `◆`, not a write of state. **A move is the exception** (revised 2026-11-02 after the review of #1672). A `T` below a `◆` of π₂ moves a backing taken out of a state slot. At the constructor, that is mapped onto `S₀` through `init`'s `res` and its `slot` annotations (§2.13.18). It is refused unless no other handle reachable from `S₀`, inside or outside a `◆`, may share the moved slot. Otherwise a later handler could read a detached view: `init` stores `{ slot = Ref.make (Just buf), view = Uint8Array.view buf }`, one `handle` takes `buf` out and transfers it, and the next reads `s.view`. When `S₀` is unknown at that path, the move is refused. The handler's result also counts as a move at its `transfer`-mode backing places, because the runtime commits it: a returned handle whose slot may alias a slot of `S₀` is refused (§2.13.18, *Values that a callback returns to the runtime*). |
     | machine | `init` | **W3.** `M₀` is `res` at the `.0` of the `Ok` payload, and `.1` (the commands) escapes (R-5.8.5). `M₀` gets a deep no-loan demand. Then `M₀` is exactly §2.13.4's, with R-5.8.3. |
     | machine | `update` | **W4.** §2.13.4's `update` under the role substitution: model π₃ owned, message π₂ owned. The result's `.0` is the new model, joined into the sparse fixpoint over `M` and κ(M) (R-5.8.7), and `.1` escapes (R-5.8.5). Each `W{F}` on `π₃·q` is an `entry` demand on `M@q`. A command that captures or moves a model cell is checked against the installed model: moving a buffer out of the model is accepted only when `.0` no longer holds it (Dead against the model holder). |
     | machine | `subscriptions` | **W5.** The model is `read-only` (R-5.8.6), with no `S`, `T` or `consumed` use of it. |
@@ -6085,11 +6087,13 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `WorkerStateGenericForward` | `mk h = Worker.program { …, handle = h }`, called with a moving handler; and with a reading one | refuse at the call of `mk`; accept |
     | `WorkerStateImportedAlias` | the Definition is built in another module through an imported alias | same verdicts as the direct ones |
     | `WorkerStateRecordUpdate` | `{ base \| handle = mover }`; and `{ base \| handle = reader }` | refuse; accept |
-    | `WorkerStateRefTake` | `handle` takes from a state `Ref` with `( old, Nothing )` and consumes what it took | accept, by §2.13.7 (but see open question Q2 below) |
+    | `WorkerStateRefTake` | `handle` takes a buffer from a state `Ref` with `( old, Nothing )` and transfers it; no other state path aliases the buffer | accept (but see open question Q2 below) |
+    | `WorkerStateRefTakeAliased` *(review of #1672)* | `init` stores `{ slot = Ref.make (Just buf), view = Uint8Array.view buf }`; `handle` takes `buf` out of `slot` and transfers it; the next `handle` reads `s.view` | refuse `worker_state_not_borrowed` |
+    | `WorkerStateReply` *(review of #1672)* | `handle ctx s _ = Ok s.buffer` | refuse `worker_state_not_borrowed` while the mode of the buffer place is `transfer` or unresolved (Q3) |
     | `WorkerInitLoan` | `init` returns state that holds `Ref.get r` | refuse (the loan escapes) |
     | `WorkerCallbackUnresolved` | a field whose callable is `⊤call` reaches a launched entry | refuse `worker_callback_contract_unresolved` |
     | `WorkerCtorRenamed` | the same program under a renamed constructor with the same row | same verdict |
-    | `WorkerRowChanged` (`.cached`) | the row changes from `handlers` to `machine` and the ordinary types do not change | the reverse user is checked again, with the new verdict |
+    | `WorkerRowChanged` (`.cached`) | the platform changes the row's version (it tightens an obligation of the same protocol) and the ordinary types do not change. Moving the row from `handlers` to `machine` cannot be this fixture, because the loader refuses the changed field set with `invalid_entry_kind` | the reverse user is checked again, with the new verdict |
     | `WorkerMachineInstall` | `update` moves a buffer out of the model into a command's transfer and returns a model without it | accept |
     | `WorkerMachineOldModelInCommand` | the returned model still holds the buffer that the command transfers | refuse `worker_transfer_alias_live` |
     | `WorkerMachineWriteModel` | `update` pushes onto a model list in place | accept (`entry`) |
@@ -6102,15 +6106,25 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
       `WorkerStateLost`*) disagrees with `workers.md` §2 and `workers-api.md` §1 (*there is no consuming-state
       constructor … `WorkerStateLost` is removed*). This item follows the documents: no protocol consumes state.
       Confirm that the comment was superseded.
-    - **Q2.** `workers-callback-contracts.md` says both "the callback cannot move a root-owned resource" and "using its
-      shared Ref or Semaphore capabilities follows those types' existing v2 cell contracts". W2 applies the cell
-      contract below a `◆`, so a handler may take a resource out of a state `Ref` by owning extraction and move it
-      (`WorkerStateRefTake` accepts). If a resource registered with the root's finalizers must not leave through a
-      `Ref` either, the workers lane must name that resource kind in a row. v2 will not infer it from a type name.
+    - **Q2** (narrowed after the review of #1672). The aliasing half is decided by W2: a move out of a state slot is
+      refused while any other state handle may share it (`WorkerStateRefTakeAliased`). What stays open is WB4's
+      finalizer question. A handler may still take a resource with no other alias out of a state `Ref` and move it
+      (`WorkerStateRefTake` accepts). Should a resource that is registered with the root's finalizers be allowed to
+      leave that way? `workers-callback-contracts.md` says that start's readers "cannot move resources away from the
+      root's registered finalizers". If a resource may not leave, the workers lane must name its resource kind in a
+      row. v2 will not infer it from a type name.
 
 18. **Native backing identities and transfer** (#1296, #1299; `workers.md` §5, §6 and §9, `workers-api.md` §1, §3
-    and §7, on the `workers` branch of PR #1616; #1278's owning modules). *Specified 2026-11-02; not built; slice
-    S7-workers (§8).* Like §2.13.17, it uses only what a summary promises (`use` marks, `res`, `refs`, `effects`).
+    and §7, on the `workers` branch of PR #1616; #1278's owning modules). *Specified 2026-11-02, revised after the
+    review of #1672 the same day; not built; slice S7-workers (§8).*
+
+    **What this item reads.** Unlike §2.13.17, this item is not written against the summary interface alone. It
+    adds one thing to the summary interface: a `slot` annotation on every backing leaf of `res`, its block column
+    and its instantiation rule (*In a summary*, below), plus the use mark `T`. It also reads three local internals of
+    a frame: the `backs` relation, the index from a slot to its handle cells, and the settled `contents` relation of
+    §2.13.7. And it reads the holder kinds of §2.8: binding, pending operand, capture, the entry's model holder and
+    the worker's root-state holder `R`. A change to the representation of recursive summaries must keep these
+    three relations and the slot annotation, or this item must be revised with it.
 
     **The gap in v2's terms.** Today a native type is a `pub foreign type`, and its values cross: they carry no
     cell. So no holder of an `ArrayBuffer` is tracked, and a transfer could detach a buffer that a view, a capture,
@@ -6123,70 +6137,133 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     step `⬡`. The metadata is a contextual type word, as `cell` is (§2.13.6), validated on a `pub foreign type` of
     a core or platform package. Its values are handle cells, as a `ref`'s are, but `⬡` is not a container: reach
     and Esc stop at it, and it has no contents cells. Each handle cell has a **slot** in a frame relation
-    `backs(handle) → slot`. The slot is a stable identity exactly like §2.13.7's `(handle origin, ◆)`, so the `refs`
-    machinery is reused and nothing new is needed: stable slot identities, may-alias, a strong update only for a
-    slot that is definitely identified, a weak union otherwise, and top for unknown. Shared memory (views backed by
-    a `SharedArrayBuffer`) is `backing` too, but in the clone-only mode below, and it never transfers
-    (`workers.md` §9).
+    `backs(handle) → slot`. A slot is a stable identity like §2.13.7's `(handle origin, ◆)`: may-alias, a strong
+    update only for a slot that is definitely identified, a weak union otherwise, top for unknown. **Backing slots
+    are not in `refs`.** `refs` and its re-entry rule are about `◆` contents, which a backing slot does not have, and
+    a backing has no callback that could re-enter it. A `refs=top` call touches `◆` slots only. What keeps an unknown
+    call safe for backings is different: a handle given to it escapes (O1, O10), and a handle it returns has slot
+    `⊤`. Shared memory (views backed by a `SharedArrayBuffer`) is `backing` too, but in clone mode only, and it never
+    transfers (`workers.md` §9).
+
+    **Linear tokens.** `Prepared`, `ExternalPrepared`, `Port.Prepared`, `Chunk`, `Message`, `MovedPort` and
+    `ReceivedPort` are `backing` types too. A token is a handle whose own slot is fresh when the token is made, and
+    the token can also own a set of other slots (`reserves`, below). Consuming a token moves its own slot and every
+    slot that it reserves. A token whose reserved set is empty (a `Prepared` of a message with no transferable
+    part, a `Chunk` of a clone-only value) is still linear, because its own slot moves. So a second `send`, `take`
+    or `adopt` of one token, or of an alias of it, fails Dead on the token's own slot.
 
     **Words.** These are new v2 words. The slice that introduces one updates the parser, the formatter, the
     metadata, the cache versions, the diagnostics, `language.md` and `skills/beni/` together, as §2.13.6 requires.
 
     | Word | Row |
     |---|---|
-    | result `backingfresh` | A new slot: an allocation, a receive or adopt that gives a native object to beni, the result of `Worker.clone`. |
-    | result `backingof k` | The result handle names parameter k's slot, or each of its slots: a view over a buffer, a view's `buffer`, a message's `MessageSource` ports. π_k is `R`. No new identity. |
-    | parameter `transferred` | The call moves every backing reached in this argument at a place whose Wire plan mode is `transfer`. That is a `transfer` demand (below). The argument's other cells are only `R`, because they are cloned. |
-    | result `reserves k` | The result token (`Prepared`) owns exactly the slots that parameter k's `transferred` demand moved. `send`, `post`, `discard` and `clone` take the token `consumed`. |
+    | result `backingfresh` | A new slot: an allocation, a receive that gives a native object to beni, `adopt`'s rehomed port, the result of `Worker.clone`, a new token's own slot. |
+    | result `backingof k` | The result handle names parameter k's slot, or each of its slots: a view over a buffer, a view's `buffer`, a message's `MessageSource` ports. For a token, the slots that it reserves: `Chunk.value` and `messageData` return values whose handles name the token's reserved slots. π_k is `R`. No new identity. |
+    | parameter `transferred` | The call moves every backing reached in this argument at a place whose mode is `transfer`. For a token argument, it moves the token's own slot and its reserved slots. That is a `transfer` demand (below). The argument's other cells are only `R`, because they are cloned. `send`, `post`, `discard`, `clone`, `Chunk.release`, `Chunk.take`, `releaseMessage`, `receivePort` and `adopt` carry it on their token parameter. |
+    | result `reserves k` | The result is a token with a fresh own slot that owns exactly the slots that parameter k's `transferred` demand moved. `prepare`, `prepareWith`, `prepareMove`. |
 
-    The Wire plan's mode for each place (`transfer` or `clone`) is an input, taken from the workers lane's Wire
-    evidence (`workers.md` §5) and never from a type name. Until a place has a mode, the writers that depend on it
-    stay pending (R-5.8.1's rule), and v2 does not guess one (open question Q3).
+    The mode of each place (`transfer` or `clone`) is an input from the workers lane's Wire evidence (`workers.md`
+    §5). It is never taken from a type name. Until open question Q3 sets the rule, a backing place whose mode is not
+    resolved counts as `transfer`. That is sound under either answer: if the answer is "clone", the only effect is
+    that some programs are refused that would be accepted, never the opposite. The diagnostic says that the mode is
+    unresolved.
 
     **The demand.** `transfer` is a new kind in §2.8, deep over backing identities. At the call point p, collect the
-    slot set B: every `backs(h)` for each handle cell h that is reached from the argument at a `transfer` place.
-    The walk is deep through cells and stops at `◆`, because a `Ref`'s contents are reached only through loans or
-    by owning extraction. B is deduplicated by identity: one backing reached twice in one message is one move. For
-    every β in B, and every cell h′ whose slot may alias β (found through an index from slot to handle cells,
-    beside §2.8's holder index), §2.8's conditions 1–5 must hold:
-    - **Known.** h′ is not `⊤` and not a loan. A `Ref.get` loan cannot be moved; the fix is owning extraction
-      (§2.13.7).
+    slot set B: every `backs(h)` for each handle cell h that is reached from the argument at a `transfer` place, plus
+    a token argument's own and reserved slots. The walk is deep through cells and stops at `◆`, because a `Ref`'s
+    contents are reached only through loans or by owning extraction. B is deduplicated by identity: one backing
+    reached twice in one message is one move. For every β in B, and every handle cell h′ whose slot may alias β
+    (found through the slot-to-handles index), all of the following must hold:
+    - **Known.** h′ is not `⊤` and not a loan, and its slot is not `⊤`. A `Ref.get` loan cannot be moved; the fix is
+      owning extraction (§2.13.7).
     - **Unescaped.** h′ is not escaped. The captures of a spawned fiber or of a queued command are escaped
       (R-5.12.1), as are values given to JavaScript, a `shared` top-level and a `read-only` model.
+    - **Not stored in a slot.** h′ is not in the current contents of any `◆` slot, according to the settled
+      `contents` relation of §2.13.7, with weak unions for slots that may alias. This holds whether or not the
+      `Ref` or `Deferred` is live, escaped or captured by a fiber.
     - **Not captured**, as in §2.8.
     - **Disjoint.** Inside B it is vacuous, because of deduplication; it holds against the other operands.
-    - **Dead.** No live holder of h′ is used after p: not a view, an alias, a model (the entry's model holder,
-      §2.13.4), worker state (`R`, §2.13.17) or a capture.
+    - **Dead.** No live holder of h′ is used after p. A holder can be a binding, a pending operand, a capture, the
+      entry's model holder (§2.13.4) or worker state (`R`, §2.13.17). At a call, it can also be the call's own
+      result (*Generic forwarding*, below).
 
     The refusal is `worker_transfer_alias_live`, which `workers.md` §4's table already names. It names the backing,
-    the live holder and its path, and gives the explicit-copy fix: a copy keeps the bytes locally (`workers.md` §5).
+    the live holder and its path, and gives the fix: copy to keep the bytes locally (`workers.md` §5), or take the
+    stored alias out of its `Ref` first.
 
-    **In a summary.** A callee's demand reaches its callers as a new use mark `T` at a path of `use(i)`, beside `W`
-    and `S` (§2.10). `T` means "the backing identities reached at q are moved". It is deep over backing places
-    only. That is why `S` cannot serve here: `S` consumes every cell, so a cloned list in the same message would
-    become unusable, which contradicts `workers.md` §2 (*clone-only values can be sent separately*, and clone-only
-    immutable events may be reused). At a call, `T` at q becomes a `transfer` demand at the call point over the
-    actual's backings at q. At a type-variable leaf q (generic forwarding), it covers the instantiated type's
-    backing places below q whose mode is `transfer`; Wire obligations stay with generic variables until they are
-    instantiated (`workers.md` §5). A callback's or a closure's `T` on a capture reaches the closure's creator in
-    the same way as `consumed` does. Blocks publish `T` and the `backing` place kind, and a cross-module call reads
-    `T` like any other use mark.
+    *Why "not stored in a slot" and not "live while any alias of the `Ref` is live".* `holdersOf` and Esc stop at
+    `◆` on purpose (§2.8, #1366), so following a `Ref`'s own aliases would put back the holder relation through
+    `◆` that #1366 removed, and it would still need the `Ref`'s escapes, fibers and `Deferred` waiters. The
+    `contents` relation is already settled, joined over branches and recursion, and preserved across calls and
+    blocks (§2.13.7). The rule refuses a little more, namely a dead `Ref` that still holds an alias, and it keeps
+    the owning-extraction pattern: `Ref.modify slot λold → ( old, Nothing )` is a strong update of one identified
+    slot, so afterwards the taken handle is in no slot. Its cost is one query per handle in β's class, through an
+    index from a handle to the slots that may contain it. That index is maintained at each store, during the walk
+    that the deep no-loan demand of the store already makes.
+
+    **In a summary.** There are three parts:
+    - **`slot` annotations on `res`.** Every backing leaf of `res` carries `slot σ`. σ is `πᵢ·q`, meaning the slot
+      of parameter i's handle at q; or `new n`, meaning the call's n-th fresh slot, numbered like `fresh`; or `⊤`.
+      `mk b = { buf = b, view = Uint8Array.view b }` publishes `slot π₁` on both fields. The block has a column with
+      one slot annotation per backing leaf. At a call ι, `πᵢ·q` becomes the `backs` of the actual's handle at q (each
+      of them, for a set); `new n` becomes a slot for `(ι, n)`, which is a singleton unless ι is in a folded or
+      recursive position, where it may alias itself (a weak slot); `⊤` becomes top. Without this annotation,
+      `r = mk buf; send h (Worker.prepare buf); Uint8Array.get r.view 0` would pass Dead, because `r.view` would not
+      be in `buf`'s class.
+    - **The `T` mark.** A callee's demand reaches its callers as a new use mark `T` at a path of `use(i)`, beside `W`
+      and `S` (§2.10): "the backing identities reached at q are moved". `T` is deep over backing places only. That is
+      why `S` cannot serve: `S` consumes every cell, so a cloned list in the same message would become unusable,
+      which contradicts `workers.md` §2 (*clone-only values can be sent separately*). At a call, `T` at q becomes a
+      `transfer` demand at the call point over the actual's backings at q.
+    - **Blocks.** Blocks publish `T`, the `backing` place kind and the slot column, and a cross-module call reads
+      them like any other use mark or provenance.
+
+    **Generic forwarding.** At a type-variable leaf q, `T` covers the instantiated type's backing places below q
+    whose mode is `transfer`. Wire obligations stay with generic variables until they are instantiated
+    (`workers.md` §5). Inside the generic body, B is empty at that leaf, so the body alone cannot see an alias that it
+    returns. For example, `both x = ( Worker.prepare x, x )` returns `x` beside the token. So the rule is made at
+    instantiation, and the call's own result is not excluded from the holders. When `T` is at a path q of πᵢ and
+    `res` holds πᵢ·q′ where q′ is a prefix or an extension of q, the images of q′ in the call's result are holders of
+    that call's `transfer` demand. Dead then refuses `(p, b2) = both buf; send h p; view b2` at the call of `both`,
+    because `b2` is used later. A caller that never uses that part of the result is accepted, and so is an
+    instantiation with no backing place. This does not refuse `both` itself: for `Int` there is nothing to protect
+    (rule 7).
+
+    **Callbacks** (§2.11 item 4's supply and need terms). Where the actual class of a callback has `T` at path q of
+    its k-th parameter, the supply edge treats `T` as it treats a write:
+    - If `S.supply(L, k)` is borrowed, the callee still uses what it supplied after the callback call, so the move is
+      refused with `worker_transfer_alias_live` and the cause `supply`. The message names the callee's later use.
+    - If it is owned with provenance `πᵢ·q″`, the move becomes a `transfer` demand on aᵢ at `q″·q` at the outer call
+      point.
+    - If the callback is the caller's own parameter, the caller's `fun(j)` gains it translated, as item 4 already
+      does for writes.
+
+    So `apply f b = let _ = f b in Uint8Array.length (view b)`, called as `apply (λx → send h (Worker.prepare x)) buf`,
+    is refused: `b` is a borrowed supply, because `apply` reads it after `f b`. A closure's `T` on a capture reaches
+    the closure's creator in the same way as `consumed` does.
 
     **Commit and failure.** The demand is made at the call point, unconditionally over the result's alternatives:
     the `Ok` continuation and the `Err` continuation both see B consumed. That is the specified behaviour when
     native commit fails. `workers.md` §5 says that once commit starts, the whole attempted list is consumed even
-    on failure, because an earlier native step may already have detached a resource. For preparation,
-    `prepare : transferred a → Result PrepareError (Prepared a)` carries `reserves 1`. The user's aliases are dead
-    from `prepare` on, the token owns B, and `send`, `post`, `discard` and `clone` take the token `consumed`,
-    whatever they return. So a second send of a token, or a read of a moved backing after a failed send, is
-    refused by Dead on the token. Before commit, `adopt` on a `MovedPort` rehomes it with `backingof` from the
-    reservation. A `Chunk`'s `take`, a `Message`'s `receivePort` and a `MovedPort`'s `adopt` take their token
-    `consumed`, so a second take or adoption is refused (`workers-api.md` §3, §7).
+    on failure, because an earlier native step may already have detached a resource. The user's aliases are dead
+    from `prepare` on, because `prepare` is `transferred` with `reserves 1`. The token then owns B and is consumed
+    by whichever of `send`, `post`, `discard` or `clone` runs. So a read of a moved backing after a failed send is
+    refused, and so is a second use of the token.
+
+    **Values that a callback returns to the runtime.** A handler's result (`handle`'s and `stream`'s `Result error
+    reply`) is committed by the runtime after the callback returns. So the handlers row of §2.13.17 puts `T` on the
+    callback's result at the `transfer`-mode backing places of `reply` and `error`. At the return point, that is a
+    `transfer` demand in the handler's frame, against its live holders, such as the captures of children that it
+    started. At the constructor, any returned handle whose slot is `π₂·q`, or may alias a slot of `S₀`, is
+    `worker_state_not_borrowed` (W2). So `handle ctx s _ = Ok s.buffer` is refused while the mode of `reply`'s buffer
+    place is `transfer` or unresolved. It would be accepted if Q3 made that place `clone`. Values given to `emit`,
+    `emitTo`, `Sink.write`, `respond` and `finish` are direct calls, and their parameters carry `transferred`.
 
     **Together with §2.13.7.** Owning extraction composes with this item. For
     `take slot = Ref.modify slot λold → ( old, Nothing )`, the stored `.1` holds nothing, so `.0` is proved
-    disjoint from the slot and returns with ordinary origins. Therefore `Worker.prepare (take slot)` is accepted.
-    With `( old, old )`, `.0` returns as a loan, and the `transfer` demand refuses it at Known.
+    disjoint from the slot and returns with ordinary origins. The slot's contents are then empty (a strong update),
+    so the taken handle is in no slot. Therefore `Worker.prepare (take slot)` is accepted when no other alias of the
+    buffer is live or stored. With `( old, old )`, `.0` returns as a loan, and Known refuses it.
 
     **Trusted** (pinned, R-5.10.7):
     - **WB1.** Every native operation that gives beni a native object names its slot with `backingfresh` or
@@ -6198,32 +6275,56 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
       (`workers.md` §5).
 
     **Soundness.** The guarantee: after a transfer, no beni code dereferences a handle whose backing was detached.
-    First, Lemma 1 extends to backings. Every reference to an object whose backing is β is held through a handle
-    cell whose slot may alias β: by WB1 and WB2, every handle is born with a slot; a projection or an alias keeps
-    the cell; an unknown handle aliases every slot (top). Then, by Lemma 1 (i)–(v), every reference that a
-    continuation of p may use is held by one of five kinds of holder: an escaped cell, a live local holder, a
-    pending operand, a parameter path that `use` reports, or the runtime, JavaScript, a top-level or a message.
-    Unescaped excludes (i) and (v): the fiber, JavaScript, a top-level, a model that the view reads. Dead excludes
-    (ii) and (iii). `T` in the summary carries (iv) to the caller, where the same demand is made. The failure path
-    of a commit cannot expose a partly detached backing, because the demand does not depend on the result. Tokens
-    are linear by the Dead condition of `consumed`.
+    *Slot completeness.* Every handle that a run creates for a backing β has a slot that may alias β's:
+    - WB1 and WB2 give a slot to every handle that a native row makes.
+    - A projection or an alias keeps the cell, and with it the slot.
+    - A summarised call's results carry `slot` annotations whose instantiation names the actual's slots, a fresh
+      slot or top (H3's case).
+    - An unknown handle has slot `⊤`, which aliases every slot.
 
-    **runtime_safety.** (a) Every handle cell has a slot when it is made, so no `backs` lookup misses, and the slot
-    of a `backingof` result is a slot of its argument. (b) B is not empty when a non-crossing value of the
-    argument's type reaches a `transfer` place, and deduplication is idempotent. (c) Under
-    `-Downership-full-cross-check`, the holders of each β are computed again by a scan of every live holder's
-    reach and compared with the slot index's answer. S7-workers' acceptance in the browser corpus also owes a
-    test-only twin of §7.3's list sanitiser: it poisons a transferred native object and traps any later beni read
-    of it. That twin never ships.
+    *Holder completeness.* By Lemma 1 (i)–(v), every reference that a continuation of p may use is held by one of
+    five kinds of holder: (i) an escaped cell; (ii) a live local holder; (iii) a pending operand; (iv) a parameter
+    path that `use` reports; (v) the runtime, JavaScript, a top-level or a message. To these, §2.13.7 adds one more
+    route: (vi) the contents of a `◆` slot, which `holdersOf` does not follow.
 
-    **Cost.** One slot id per handle cell, O(1) per `backingof` or `backingfresh`. Collecting B costs the
-    argument's reach at backing places, which a deep demand already pays. Dead over β costs one holder query per
-    handle in β's class, through a slot-to-handles index chained like `set_head` (dense ids): O(h log) per demand
-    for h handles in the class. Everything is charged to the owning declaration's account (§4.4). The only new
-    records are the slot index's, one per handle allocation, on the baseline lane because they are proportional
-    to the source.
+    Each route is closed:
+    - Unescaped excludes (i) and (v).
+    - Dead excludes (ii) and (iii). At a call, Dead also covers the call's own result images of a moved path, which
+      is the generic case.
+    - *Not stored in a slot* excludes (vi), from the settled `contents` relation, which covers every store, every
+      write-back and every alternative (§2.13.7).
+    - `T` carries (iv) to the caller, and a callback's `T` is carried through the supply edge, so the same demand is
+      made where the holder is visible.
 
-    **Fixtures** (`tests/corpus/ownership/Transfer*`, against the same test platform as §2.13.17):
+    The failure path of a commit cannot expose a partly detached backing, because the demand does not depend on the
+    result. Tokens are linear because their own slot moves.
+
+    **runtime_safety.** The following are asserted:
+    - Every handle cell has a slot when it is made, so no `backs` lookup misses. The slot of a `backingof` result is
+      a slot of its argument.
+    - Every backing leaf of a published `res` carries a `slot` annotation, and every `πᵢ·q` annotation names a
+      backing place of πᵢ.
+    - The handle-to-slots index agrees with the `contents` relation after each store and each write-back.
+    - B is not empty when a non-crossing value of the argument's type reaches a `transfer` place, or when the
+      argument is a token, and deduplication is idempotent.
+
+    Under `-Downership-full-cross-check`, the holders of each β are computed again by a scan of every live holder's
+    reach and of every slot's contents, and compared with the answers of the two indexes. S7-workers' acceptance in
+    the browser corpus also owes a test-only twin of §7.3's list sanitiser: it poisons a transferred native object
+    and traps any later beni read of it. That twin never ships.
+
+    **Cost.** One slot id per handle cell and per token, O(1) per `backingof` or `backingfresh`. Collecting B costs
+    the argument's reach at backing places, which a deep demand already pays. Dead over β costs one holder query
+    per handle in β's class, through the slot-to-handles index, which is chained like `set_head` (dense ids). The
+    slot check costs one query per handle through the handle-to-slots index. Both are O(h log) per demand for h
+    handles in the class. The generic-forwarding rule costs one overlap test per (`T` path, `res` path) pair of a
+    parameter, which is bounded by the size of the summary. The slot column is one record per backing leaf of `res`.
+    Everything is charged to the owning declaration's account (§4.4). The only new baseline records are the two
+    indexes' records, one per handle allocation and one per stored handle, because they are proportional to the
+    source.
+
+    **Fixtures** (`tests/corpus/ownership/Transfer*`, against the same test platform as §2.13.17). Each row that the
+    review of #1672 contributed is marked *(review)* and must be refused.
 
     | Fixture | Program | Verdict |
     |---|---|---|
@@ -6232,23 +6333,36 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `TransferAliasLive` | read `b2 = b` after `b` was sent | refuse `worker_transfer_alias_live` |
     | `TransferCaptureLive` | call a closure that captures the buffer after the send | refuse `worker_transfer_alias_live` |
     | `TransferFiberHeld` | a spawned fiber captures the buffer, then the buffer is sent | refuse `worker_transfer_alias_live` (escaped) |
+    | `TransferViewInRef` *(review)* | `v = Uint8Array.view buf; r = Ref.make v; p = Worker.prepare buf; send h p; Uint8Array.length (Ref.get r)` | refuse `worker_transfer_alias_live` (stored in a slot) |
+    | `TransferViewInRefFiber` *(review)* | the same, with `r` captured by a fiber spawned before the send | refuse `worker_transfer_alias_live` (stored in a slot) |
+    | `TransferViewInDeferred` *(review)* | `Deferred.complete d v`, then the buffer is sent, then another fiber awaits `d` | refuse `worker_transfer_alias_live` (stored in a slot) |
+    | `TransferViewTakenFromRef` | the view is taken out of `r` with `( old, Nothing )` and dropped, then the buffer is sent | accept |
+    | `TransferHelperReturnsView` *(review)* | `mk b = { buf = b, view = Uint8Array.view b }`; `r = mk buf; send h (Worker.prepare buf); Uint8Array.get r.view 0` | refuse `worker_transfer_alias_live` (slot `π₁` on `view`) |
+    | `TransferGenericReturns` *(review)* | `both x = ( Worker.prepare x, x )`; `(p, b2) = both buf; send h p; view b2` | refuse `worker_transfer_alias_live` at the call of `both` |
+    | `TransferGeneric` | a generic forwarder over `a` that prepares and does not return its argument; the caller reads the buffer after the send; and an instantiation at `Int` | refuse; accept |
+    | `TransferCallbackSupply` *(review)* | `apply f b = let _ = f b in Uint8Array.length (view b)`, called as `apply (λx → send h (Worker.prepare x)) buf` | refuse `worker_transfer_alias_live` (borrowed supply) |
     | `TransferStateField` | a handler moves a state buffer | refuse `worker_state_not_borrowed` (§2.13.17) |
-    | `TransferHelper`, `TransferGeneric`, `TransferImported` | the same moves through a helper, a generic forwarder over `a`, and an imported helper | the same verdicts as the direct moves |
+    | `TransferStateReply` *(review)* | `handle ctx s _ = Ok s.buffer` | refuse `worker_state_not_borrowed` while the mode is `transfer` or unresolved |
+    | `TransferHelper`, `TransferImported` | the same moves through a helper and an imported helper | the same verdicts as the direct moves |
     | `TransferCloneReuse` | a message holds a list and a buffer; after the send, the list is read; and the buffer is read | accept; refuse |
     | `TransferCopyKeeps` | copy the buffer, send the copy, read the original | accept |
     | `TransferFailedCommit` | `case send h p of Err _ → read buf` | refuse `worker_transfer_alias_live` |
-    | `TransferTokenTwice` | send one `Prepared` twice; `discard` after `send` | refuse; refuse |
+    | `TransferTokenTwice` | send one `Prepared` twice; `discard` after `send` | refuse `worker_transfer_alias_live` (the token's own slot moved); refuse the same |
+    | `TransferEmptyToken` | send one `Prepared` of a clone-only message twice | refuse `worker_transfer_alias_live` |
     | `TransferDedup` | one buffer reached twice in one message | accept |
-    | `TransferRefTake` | `Worker.prepare (take slot)` with `( old, Nothing )`; and with `( old, old )` | accept; refuse |
-    | `PortAdoptTwice`, `ChunkTakeTwice` | adopt one `MovedPort` twice; take one `Chunk` twice | refuse |
+    | `TransferRefTake` | `Worker.prepare (take slot)` with `( old, Nothing )`; and with `( old, old )` | accept; refuse (Known: a loan) |
+    | `PortAdoptTwice` | adopt one `MovedPort` twice, or adopt it and then its `MessageSource` alias | refuse `worker_transfer_alias_live` |
+    | `ChunkTakeTwice` | `take` one `Chunk` twice; read `Chunk.value`'s result after `release` | refuse `worker_transfer_alias_live`; refuse the same |
     | `TransferSharedMemory` | send a view backed by a `SharedArrayBuffer`, then read it | accept (clone mode) |
 
     **Open questions for the owner** (inputs from the workers lane; this item does not choose them):
     - **Q3.** What decides that a backing in a committed value moves rather than being cloned? This covers a reply
       that `handle` returns, an `emit`, a `Sink.write`, a `respond` and a `prepare`. `workers.md` §5 says "a schema
       annotation fills an identity-deduplicated collector", and `workers-api.md` §3 gives `MovedPort`
-      "transfer-only Wire evidence". v2 needs one `transfer` or `clone` mode per Wire place and will read it from
-      the Wire plan, but the rule that sets the mode is not written down.
+      "transfer-only Wire evidence", but the rule that sets each Wire place's mode is not written down. The
+      machinery depends on the answer only for which places get the demand. Every committed value, including a
+      handler's result, gets the demand either way, and an unresolved place counts as `transfer`. So the answer
+      changes verdicts (`TransferStateReply`, `TransferCloneReuse`'s list half), not soundness.
     - **Q4.** Does any path before commit give transferred inputs back to the application, other than `adopt` on a
       `MovedPort`? `workers.md` §5 says that cancellation or failure before commit "returns or disposes still-owned
       inputs by the documented API", but `PrepareError` carries no input. This item specifies "disposed": the
@@ -7865,7 +7979,7 @@ its runtime half is rebased, its ownership half rewritten as words.
 | S5 | **Records** | record cells, `delta`, `update` demands, per-field Dead with `field`/`call` use kinds, hoists and `Hoists` v2 (constructor step), record κ through the kind filter, v2 `--ownership-records-lost` (list verdicts unchanged; record conditions deliberately removed, dump/CLI parity fixtures), `Record.copy`, once closures over records, field captures  Settled-version authorization and hoist placement contract (§2.8), independent record/list mode caches. | every `Record*` fixture, `run/RecordHoistValues`, `run/RecordInPlace*`, the `.in-place` fixtures; `p/RecordSplitPushBack`, `p/RecordWriteBeforeKeep`, `p/RecordKeptInLiteral`, `p/RecordInnerKept`, `p/RecordWrapperRead`, `p/RecordProvenanceCallbackResult`, `p/RecordCopyOpen`, `p/RecordIndexExchange`, `p/ReturnedLambdaWrite`, `p/OnceLaterArgument`, `p/PrependFreshRecord`, Toplevel; R-4.8.7's fixture | S4 | — |
 | S6 | **Modules, blocks, cache, core** | `Block` completed (class tables, lazy directory, versioning), the cache entry section, firewall test, core and platform facts in the checked core, `dump` of embedded core; Backreference graph encoding, no nested class copies; resource policy and allowances in cache metadata; imports charged identically cached or fresh.  Structural re-interning (#1055), global place/position refinement and counted grouping (#1065, built in S2b's writer), exact read-frontier/owner sharing, transactional populated-table decode/remap, same-session vs disk parity and semantic-only firewall hash (§3.6). | CrossModule, ApartAcrossModules, OpaqueSlots, WideCtorBlock, SchemaCtorBlock, SchemaMemberExt, SchemaCtorCached, every `.cached` fixture, `cache_test`; R-7.6 #428 core dumps under jobs=1/8; core/platform block publication and cache parity for supported constructs; full clean-core verdict waits for S9 after S7/S8  unchanged exported reads after internal body/accounting changes do not invalidate clients; different κ does; mixed versions, corrupt labels/effects and repeated lazy imports. | S5 | S7 |
 | S7 | **Entry, sends, markup, schemas, casts** | `Entry` (both protocols, the sparse model fixpoint, the invariant), v2's dual alias-provenance/nominal `Send.to` inputs (§2.13.5), v2-only paired fixtures and cold/warm parity; existing platform API/corpus unchanged, no v1 adapter, markup rows, schema rows, `try`'s early return, `recast`  Resolve sender alias roles before expansion from BIR/interface terms, preserve capability through expanded-type wrappers and cached packages; add a role column only where the existing terms lose it (§2.13.5). Model feedback uses the same observed κ frontier; view/command roots join before any final authorization. Repeat instrumentation. | Entry*, HostedEntry*, WideModel, WideModelArms, SplitArmsJoin, OwnedSend, SendInPayload, NestedLambdaSend, SubOnShared, Http*, RandomGenerate, EntryUrlTaggers, Conduit, ViewEventPayload, Question, Schema*, core/*Cast*; `p/ConduitEntryRecords`, `p/SendRecordObjects`, `p/ListenTopLevelStart`, `p/PushTagger`, `p/RecordForItem`, `p/RecordSchemaRun`, `p/RecordVariantMove`, `p/RecordProvenance{CtorValue,EntryPage,SameVariant,TopLevelOk}`, `p/SchemaIssuesFresh`, `p/SchemaIssuesExclusive`, Initialization*, FoldLevels; `LoanSend` and R-5.12.3's model row (their loans come from S8-ref, 2026-11-02) | S5, S8-ref | S6 |
-| S7-workers | **Worker callback protocols and native backing moves (2026-11-02)** | §2.13.17: `entryKinds` rows as a source of `Obligation.entry`, the `handlers` and `machine` rows, protocol needs on function ports, their block and interface columns, and the row version in a reverse user's cache key. §2.13.18: the `backing` place kind and its slot relation, the `backingfresh`, `backingof`, `transferred` and `reserves` words, the `transfer` demand and the `T` use mark, and tokens consumed whatever their result. The workers runtime's trusted rows WP1–WP4 and WB1–WB4, pinned (R-5.10.7). | the `Worker*` and `Transfer*` fixtures of §2.13.17–§2.13.18, against a test platform with the decided rows; `.cached` twins of `WorkerRowChanged` and of an imported helper; release bytes unchanged by the checks | S7, S8-ref, S6 | S8 |
+| S7-workers | **Worker callback protocols and native backing moves (2026-11-02)** | §2.13.17: `entryKinds` rows as a source of `Obligation.entry`, the `handlers` and `machine` rows, protocol needs on function ports, their block and interface columns, and the row version in a reverse user's cache key. §2.13.18: the `backing` place kind and its slot relation, the `backingfresh`, `backingof`, `transferred` and `reserves` words, the `transfer` demand with its not-stored-in-a-slot condition, the `T` use mark on parameters, callback supplies and a handler's result, the `slot` provenance on `res` with its block column and instantiation, the generic-forwarding rule, and linear tokens consumed whatever their result. The workers runtime's trusted rows WP1–WP4 and WB1–WB4, pinned (R-5.10.7). | the `Worker*` and `Transfer*` fixtures of §2.13.17–§2.13.18, against a test platform with the decided rows; `.cached` twins of `WorkerRowChanged` and of an imported helper; release bytes unchanged by the checks | S7, S8-ref, S6 | S8 |
 | S8 | **`Dict`, `Ref`, `Log`** | *The `Ref`/`Deferred` slot-state part moved to S8-ref (2026-11-02, below the table); what remains:* #961 rebased onto v2 with its `Dict` rows as words; the loans that reach a `Dict` (`Dict.insert`'s stored loans, `Dict.copy`'s depth-correct diagnostic); `Task.callback`'s `Resume`; the worded `Js`/`Task`/`Log`/schema surfaces re-justified  Complete cross-package pin closure through Task.callback/resume and all asserted helpers (#1061); specify ownership metadata independently of frozen v1 for Log.once, Task.keepLogContext, Js.maySuspend and Dict (#1053, §9); word `Dict.focus` with callback `stored` in its `dict`/Maybe form (§2.13.6, #1021). The selected cellmodify .1 write-back, ordinary stored loans and region/effect serialization (§2.13.7) are S8-ref's. | DictFocus, DictValueWritten, DictTupleFocus*, DictUpdateStoredAnswer, Permutations, WriteExtents; `p/DictFocusGrow`, `p/DictHelperAlias`, `p/DictRecordAlias`, `p/DictTupleAlias`, `p/CopyApart`, `p/LogAnnotateUpdate`; R-5.10.12's `Task`/`Log`/`Js`/schema fixtures; Words, WordsBrowser, JsPure, TaskWords, core/JsWords; the `Dict` halves of `LoanStoredLocal` and `LoanCopyDepth` and `DictUpdateStoredAnswer` (Appendix B) | S5, S7, S8-ref, #961 | S6 |
 | S8b | **In-place list lowering (oc O5)** | consume v2's clean list-write channel (`src/own2/Hoists.zig`, #1547): emit a write in place only when its module and every module that calls it, directly or transitively, are clean — for now the whole program clean, core and platforms included (the manager's decision, 2026-11-01, §7.3); a write short of that is authorised no store, as a refused or unchecked module's is; replace trie/claimability fallback with the decided array/read-only-view representation on every platform, emit accepted writes in place, remove automatic copying paths, keep explicit `List.copy`; make refused/unchecked modules emit no writes  Authorize only channel-listed writes after all module checks; preserve operand evaluation order and views/base offsets; no claim/copy fallback, no unchecked inlining path. Re-pin every changed primitive/helper/codegen implementation, rerun unsafe-direction flips and sanitiser blind-spot #1035, and version the lowering channel. | list sanitiser and accepted-write traps on node/browser, list run/browser hashes, O5 black-box scenarios; switch-over criterion (4) demonstrated | S5, S8 | S6 |
 | S9 | **Parity, cost, gates** | the whole-corpus diff to zero unjustified differences; every pending fixture green or re-filed; `test-perf` scenarios of §7.6; the mutation suite; `own_limits_test`; the fuzz sweep's first 10⁵ programs; the full cross-check run; Fail-fast time and accounting counters of §7.6, including zero-label closure towers and non-growing unions; resource headroom report to owner. | R-8.1–R-8.8 whole; core and every platform clean under v2 (R-1.10, R-8.4); R-7.1's +10 % or a report | S6, S7, S7-workers, S8b | — |
@@ -7889,8 +8003,14 @@ S4, because the selected callback write-back is S4's and the callbacks of `Ref.u
 needs neither S5 nor S7. The tuple result of a `modify` callback, and record and tuple *literals* that hold a loan,
 and their projections, are S3a constructions. What does need S5 or S7 stays behind, and the S8-ref row names it: a
 loan that reaches a send or a model (S7's `Send` and `Entry` create those demands), and a loan put by a record
-update, with `Record.copy`'s fix (S5). Until those slices, such a declaration gets the pessimistic class, so the
-early slice accepts nothing that it would later refuse. The same workstream's two other requests, worker callback
+update, with `Record.copy`'s fix (S5). Neither kind is accepted early. For the record-update case, S3a's pessimistic
+class holds until S5. For the send and model cases, S3a's class lasts only until S5, so they need their own reason,
+and they have one: until S7, neither a send nor an entry has a protocol class. A send in the alias form is a call of
+a function value whose class is unknown (`⊤call`), so its argument escapes (O1, O10), and S8-ref's escape check
+refuses a loan in it. An entry constructor is a platform call whose callbacks have no entry class, so a model that
+`init` returns leaves its region by that return, and S8-ref's region rule refuses a loan in it. So between S5 and S7
+these programs are refused, not accepted. S7 replaces those refusals with the precise send and entry demands, and
+makes the copied-storage controls of `LoanSend` accept. The same workstream's two other requests, worker callback
 protocol obligations and native backing-identity moves, are specified in §2.13.17 and §2.13.18 and are built in
 **S7-workers**.
 
@@ -10210,11 +10330,20 @@ stays. The obstacle is the caller-side discharge: the instantiated pair is a fol
 proposal needs a new caller-side fact and its own review, and full S4 integration must retain the
 verifier's refusals before it proposes the precision change. Declaration-order independence of accounts (#1104)
 is an open owner decision; this revision specifies no policy for it. It is not an implementation shortcut or assumed lemma.
-Five input questions for the web-workers rows (2026-11-02) are the owner's, for the workers lane to answer;
-v2's machinery does not wait on them. They are §2.13.17's Q1 (whether `WorkerStateLost`'s consuming lease was
-superseded) and Q2 (whether a resource registered with the root's finalizers may leave state through a `Ref`), and
-§2.13.18's Q3 (what sets a Wire place's `transfer` or `clone` mode), Q4 (whether any path before commit gives
-transferred inputs back) and Q5 (where `backing` metadata lives for generated native types).
+Five input questions for the web-workers rows (2026-11-02) are the owner's, for the workers lane to answer.
+§2.13.17 has two:
+- Q1: was `WorkerStateLost`'s consuming lease superseded?
+- Q2: may a resource with no other alias that is registered with the root's finalizers leave state through a
+  `Ref` (WB4)? Its aliasing half is decided by W2.
+
+§2.13.18 has three:
+- Q3: what sets a Wire place's `transfer` or `clone` mode?
+- Q4: does any path before commit give transferred inputs back?
+- Q5: where does `backing` metadata live for the generated native types?
+
+Soundness does not wait on them. Q3 is the one whose answer the machinery uses: it decides which places of a
+committed value, including a handler's returned reply, get the `transfer` demand. Until Q3 is answered, an
+unresolved place counts as `transfer`, which is sound under either answer. So Q3 changes verdicts, not soundness.
 S3a–S9 must also discharge their stated adapter, accounting, import and performance obligations. A miss is
 a finding to report with a witness, not authority to merge labels, silently copy, or weaken a requirement.
 
