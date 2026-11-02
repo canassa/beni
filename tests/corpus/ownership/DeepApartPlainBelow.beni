@@ -1,0 +1,37 @@
+-- ownership: a deep apart occurrence with a plain one below it
+-- (ownership-v2.md §2.9.1). `incLabels` writes each element's label and
+-- answers the kids, so it asks its list's labels plain and everything
+-- else below its list apart. One label list at an element's label and at
+-- a kid's label is refused (`twiceDeep`, `viaParam`); fresh labels and
+-- labels that sit once are accepted (`apartDeep`, `viaParamOnce`), as
+-- when the selection is read slot by slot.
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+incLabels : List Rose → List Rose
+incLabels ks =
+    case ks of
+        [ Rose l k, …rest ] →
+            [ Rose (List.push l 1) k, …incLabels rest ]
+
+        [] →
+            []
+
+
+pub twiceDeep : ⊤ → List Rose
+twiceDeep ⊤ =
+    l = [ 7 ]
+    incLabels [ Rose l [], Rose [] [ Rose l [] ] ]
+
+
+pub apartDeep : ⊤ → List Rose
+apartDeep ⊤ = incLabels [ Rose [ 7 ] [], Rose [] [ Rose [ 7 ] [] ] ]
+
+
+pub viaParam : Rose → List Rose
+viaParam x = incLabels [ x, Rose [] [ x ] ]
+
+
+pub viaParamOnce : Rose → List Rose
+viaParamOnce x = incLabels [ x, Rose [] [] ]

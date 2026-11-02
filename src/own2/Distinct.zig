@@ -190,21 +190,95 @@ fn arrivesAtPlain(e: *Eval, res: Contract.Node, o: u64, plain: []const []const u
 pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     if (c.no) return Cond.unprovable;
     if (c.sel.len == 0) return Cond.yes;
+    const g = e.gpa();
     const cl = e.f.calls.items[call];
     var ps: std.ArrayList(Proj) = .empty;
-    defer ps.deinit(e.gpa());
+    defer ps.deinit(g);
+    // A parameter asked deep apart and plain below: its objects part by part.
+    var aps: std.ArrayList(Proj) = .empty;
+    defer aps.deinit(g);
+    var plains: std.ArrayList(Proj) = .empty;
+    defer plains.deinit(g);
+    defer e.parts = false;
     for (c.sel) |o| {
         const j = Contract.occParam(o);
         if (j >= cl.args.len) return Cond.unprovable;
         const arg = cl.args[j];
         var got: std.ArrayList(Proj) = .empty;
-        defer got.deinit(e.gpa());
+        defer got.deinit(g);
+        e.parts = mixed(c.sel, j);
         // Routes are per parameter: two parameters handed one value are
         // that value twice (the experiment's third requirement).
         try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), Contract.isDeep(o), 0, try e.routeStep(0, 0x8000_0000 | j), &got);
-        for (got.items) |p| try ps.append(e.gpa(), .{ .leaf = p.leaf, .route = p.route, .occ = o });
+        const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
+        for (got.items) |p| try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o });
     }
+    try ps.appendSlice(g, plains.items);
+    try withoutPlain(e, aps.items, plains.items, &ps);
     return distinct(e, ps.items, true);
+}
+
+/// Whether occurrences `occs` ask parameter `j` deep apart somewhere and
+/// plain somewhere.
+fn mixed(occs: []const u64, j: u32) bool {
+    var deep_apart = false;
+    var plain = false;
+    for (occs) |o| if (Contract.occParam(o) == j) {
+        if (!Contract.isApart(o)) plain = true else if (Contract.isDeep(o)) deep_apart = true;
+    };
+    return deep_apart and plain;
+}
+
+/// §2.9.1: a deep apart occurrence asks apart only the objects the plain
+/// occurrences of its condition do not ask plain. Both are read part by
+/// part, so a route names one place in the argument: an object a plain
+/// occurrence reaches at a route is taken once from the apart ones at that
+/// route (as many times as the plain ones reach it, never by leaf alone:
+/// one object at two places is two entries); a reference's slots lose the
+/// plain ones' at its route (`Subtree.without`).
+fn withoutPlain(e: *Eval, aps: []const Proj, plains: []const Proj, out: *std.ArrayList(Proj)) Error!void {
+    if (aps.len == 0) return;
+    const g = e.gpa();
+    const f = e.f;
+    var taken: Ids.FixedDict(2) = .{};
+    defer taken.deinit(g);
+    var refs: Ids.FixedDict(4) = .{};
+    defer refs.deinit(g);
+    var minus: std.ArrayList(std.ArrayList(Slots.SetId)) = .empty;
+    defer {
+        for (minus.items) |*m| m.deinit(g);
+        minus.deinit(g);
+    }
+    for (plains) |p| {
+        try e.charge(.cond, 1);
+        const l = f.leafAt(p.leaf);
+        if (l.kind == .ref) {
+            const got = try refs.getOrPut(g, .{ l.root, l.pos, l.tags, p.route });
+            if (!got.found_existing) {
+                got.value_ptr.* = @intCast(minus.items.len);
+                try minus.append(g, .empty);
+            }
+            try minus.items[got.value_ptr.*].append(g, l.slots);
+            continue;
+        }
+        const got = try taken.getOrPut(g, .{ p.leaf, p.route });
+        got.value_ptr.* = if (got.found_existing) got.value_ptr.* + 1 else 1;
+    }
+    for (aps) |p| {
+        try e.charge(.cond, 1);
+        var l = f.leafAt(p.leaf);
+        if (l.kind == .ref) {
+            if (refs.get(.{ l.root, l.pos, l.tags, p.route })) |mi| {
+                l.slots = (try Subtree.without(f.slots, g, e.account(), e.places(), l.slots, minus.items[mi].items)) orelse continue;
+                try out.append(g, .{ .leaf = try f.leaf(l), .route = p.route, .occ = p.occ });
+                continue;
+            }
+        } else if (taken.get(.{ p.leaf, p.route })) |n| if (n != 0) {
+            (try taken.getOrPut(g, .{ p.leaf, p.route })).value_ptr.* = n - 1;
+            continue;
+        };
+        try out.append(g, p);
+    }
 }
 
 /// `Sep(v)`: v's components each separated, all apart.
