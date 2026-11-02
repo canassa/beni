@@ -528,6 +528,13 @@ drainFrom count =
     if h ≥ Js.to (Js.get queue "length") then
         True
     else if count == 64 || Js.read phase == 1 then
+        -- Reuse consumed slots while busy. Copy no more than we consumed,
+        -- and only at a turn boundary, so enqueue stays allocation-free.
+        length = Js.to (Js.get queue "length")
+        if h ≥ 65536 && h ≥ length - h then
+            _ = Js.call queue "copyWithin" [ Js.from 0, Js.from h ]
+            Js.set queue "length" (Js.from (length - h))
+            Js.write head 0
         macrotask (Js.from drain)
         False
     else
