@@ -157,7 +157,10 @@ pub fn ctor(env: Env, sig: Signature, ordinal: u32) Error!Contract.Id {
         } else try env.places.ctorStep(env.gpa, env.account, ordinal, @intCast(k));
         const at = (try env.places.extend(env.gpa, .growth(env.account), r, st)) orelse continue;
         try env.identity(&d, at, @intCast(k), from);
-        for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, from))) |s| try occs.append(env.arena, Contract.occ(@intCast(k), try env.rel(.from(s))));
+        for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, from))) |s| {
+            const o = Contract.occ(@intCast(k), try env.rel(.from(s)));
+            try occs.append(env.arena, if (env.isVar(.from(s)) or env.places.kind(env.places.pathPlace(.from(s))) == .@"opaque") Contract.occDeep(o) else o);
+        }
     }
     if (env.places.kind(sig.result) == .record and !d.flags.cross) _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .fresh });
     d.res_cond = try Contract.Cond.of(env.account, occs.items);
@@ -271,7 +274,7 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
     if (!d.flags.cross and exclusive and !Env.has(rw, .fresh)) {
         // A result made of its parameters is separated when they are.
         var occs: std.ArrayList(u64) = .empty;
-        for (d.res.items) |s| for (s.arrivals.items) |a| if (a.kind == .param) try occs.append(env.arena, Contract.occ(a.j, a.slot));
+        for (d.res.items) |s| for (s.arrivals.items) |a| if (a.kind == .param) try occs.append(env.arena, if (a.deep) Contract.occDeep(Contract.occ(a.j, a.slot)) else Contract.occ(a.j, a.slot));
         d.res_cond = try Contract.Cond.of(env.account, occs.items);
     }
     return env.commit(&d);
