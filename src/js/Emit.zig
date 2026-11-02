@@ -1650,6 +1650,12 @@ const Emitter = struct {
         return worker;
     }
 
+    fn workerWirePlanOptional(e: *Emitter, kind: EntryPlan.KindIndex) bool {
+        const runtime = e.session.entry_plan.kinds.get(@backingInt(kind)).runtime;
+        const module = e.graph().find(.platform, e.session.interner.find("Browser.WorkerRuntime") orelse return false) orelse return false;
+        return runtime.module == module and e.session.store.isEmbedded(e.graph().moduleFile(module)) and e.builtinWorkerWire() != null;
+    }
+
     // A runtime shared by several connections needs the interpreter if any
     // connection in this entry can cross a representation that needs a walk.
     // Keep shared wire naming independent of this entry-local omission.
@@ -1720,7 +1726,7 @@ const Emitter = struct {
                 });
                 // Input-derived identity, independent of discovery order and jobs.
                 const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
-                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire, .elide_stable_wire = std.mem.eql(u8, e.options.platform.entry_kinds[@backingInt(kind)].definition.programType, "Browser.Worker.Program") and e.builtinWorkerWire() != null, .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{s}", .{ e.worker_fingerprint, id }) });
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire, .elide_stable_wire = e.workerWirePlanOptional(kind), .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{s}", .{ e.worker_fingerprint, id }) });
             }
         }
         std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {

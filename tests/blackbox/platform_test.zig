@@ -2138,3 +2138,77 @@ test "stable worker entries omit the Wire interpreter and plans while Lists reta
         }
     }
 }
+
+fn emittedWorkerId(w: *World, code: []const u8, name: []const u8) ![]const u8 {
+    const declaration = try std.fmt.allocPrint(w.arena.allocator(), "const Main${s} = ", .{name});
+    const start = std.mem.indexOf(u8, code, declaration) orelse return error.MissingWorkerDescriptor;
+    const id_start = start + (std.mem.indexOf(u8, code[start..], "id: \"") orelse return error.MissingWorkerId) + "id: \"".len;
+    const end = id_start + (std.mem.indexOfScalar(u8, code[id_start..], '"') orelse return error.MissingWorkerId);
+    return w.arena.allocator().dupe(u8, code[id_start..end]);
+}
+
+fn checkWorkerMetadata(w: *World, code: []const u8, id: []const u8, needs: bool) !usize {
+    var count: usize = 0;
+    inline for ([_][]const u8{ "id: \"{s}\"", "id:\"{s}\"" }) |format| {
+        const needle = try std.fmt.allocPrint(w.arena.allocator(), format, .{id});
+        var at: usize = 0;
+        while (std.mem.indexOfPos(u8, code, at, needle)) |position| {
+            const start = std.mem.lastIndexOfScalar(u8, code[0..position], '{') orelse return error.MissingWorkerDescriptor;
+            const end = position + (std.mem.indexOfScalar(u8, code[position..], '}') orelse return error.MissingWorkerDescriptor);
+            try testing.expectEqual(needs, std.mem.indexOf(u8, code[start..end], "$wire:") != null);
+            count += 1;
+            at = position + needle.len;
+        }
+    }
+    return count;
+}
+
+test "mixed worker entries keep normalization only in the page and List worker" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/browser/managed/MixedWire", "_expected.");
+    var stable_id: []const u8 = undefined;
+    var list_id: []const u8 = undefined;
+    for ([_]bool{ false, true }) |release| {
+        const built = try w.run(if (release)
+            &.{ "build", "--platform=browser", "--allow-unchecked-workers", "--release", "--source-maps", "--out=out", "Main.beni" }
+        else
+            &.{ "build", "--platform=browser", "--allow-unchecked-workers", "--source-maps", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+        if (!release) {
+            const main = try w.read("out/Main.mjs");
+            stable_id = try emittedWorkerId(&w, main, "stable");
+            list_id = try emittedWorkerId(&w, main, "lists");
+        }
+        const stable_prefix = try std.fmt.allocPrint(w.arena.allocator(), "_workers/{s}/", .{stable_id});
+        const list_prefix = try std.fmt.allocPrint(w.arena.allocator(), "_workers/{s}/", .{list_id});
+        var page_interpreter = false;
+        var stable_interpreter = false;
+        var list_interpreter = false;
+        var stable_descriptors: usize = 0;
+        var list_descriptors: usize = 0;
+        for (try w.listFiles("out")) |path| {
+            const bytes = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{path}));
+            if (std.mem.endsWith(u8, path, ".map") and std.mem.indexOf(u8, bytes, "WorkerWire.beni") != null) {
+                if (std.mem.startsWith(u8, path, stable_prefix)) {
+                    stable_interpreter = true;
+                } else if (std.mem.startsWith(u8, path, list_prefix)) {
+                    list_interpreter = true;
+                } else if (!std.mem.startsWith(u8, path, "_workers/")) {
+                    page_interpreter = true;
+                }
+            }
+            if (std.mem.endsWith(u8, path, ".mjs") and !std.mem.startsWith(u8, path, "_workers/")) {
+                stable_descriptors += try checkWorkerMetadata(&w, bytes, stable_id, false);
+                list_descriptors += try checkWorkerMetadata(&w, bytes, list_id, true);
+            }
+        }
+        try testing.expect(page_interpreter);
+        try testing.expect(!stable_interpreter);
+        try testing.expect(list_interpreter);
+        try testing.expect(stable_descriptors != 0);
+        try testing.expect(list_descriptors != 0);
+        try w.tmp.dir.deleteTree(w.io, "out");
+    }
+}
