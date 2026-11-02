@@ -5932,6 +5932,23 @@ Reusing the alphabet per declaration is worth **4 878 brotli bytes** over a sing
 across the corpus. *Alternative rejected: one namespace for the whole program, which is simpler and
 measurably worse, because it pushes locals into two-character names for no reason.*
 
+*Amended 2026-11-02: copies in branches and loops, and equal arms.* The own-expression
+restriction above no longer applies to immutable name copies. Both names must be bound exactly
+once in the whole top-level declaration, including parameters and loop variables, and neither
+may be rebound or be a mutable top-level ref. Every use must follow the copy in its statement
+list, or occur in a branch, block, switch or loop inside those later statements. Functions and
+catches remain excluded. Rename visits the printer's resolved expressions, including its veto
+of eta reduction for hand-written functions, so a replacement moved into a loop is recorded as
+a capture there and its spelling cannot be reused by a loop local. Dropped bindings continue
+to reserve their names; frequency assignment and dead-name compaction did not pay after brotli
+on the measured page pairs and library corpus.
+
+A conditional expression whose arms resolve to the same name or primitive literal is that atom
+when its test does nothing and cannot throw (Opt.pureValue). Nested conditionals can fold by
+the same rule. Calls, host property reads and conversions keep their tests, even when both
+arms have the same value. Evaluation order, effects and exceptions stay observable.
+
+
 **Assignment is in emission order, not frequency order, and that is a departure from the list
 above.** Â§9 item 2 says "frequency-ranked", after report 12 Â§5.2, where Closure, dart2js, Scala.js
 and Elm all sort by frequency. Measured on our own output, frequency ranking **loses**: 409 338
