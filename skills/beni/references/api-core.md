@@ -228,6 +228,17 @@ module Browser.Host.Response
   value statusText : Response → String  -- impure
   value text : Response → Promise String  -- impure
   value url : Response → String  -- impure
+module Browser.Host.Storage
+  type SetError
+    QuotaExceeded
+  type Storage
+  value get : Storage, String → Maybe String  -- impure
+  value key : Storage, Int → Maybe String  -- impure
+  value length : Storage → Int  -- impure
+  value local : ⊤ → Maybe Storage  -- impure
+  value remove : Storage, String → ⊤  -- impure
+  value session : ⊤ → Maybe Storage  -- impure
+  value set : Storage, String, String → Result SetError ⊤  -- impure
 module Browser.Host.TextDecoder
   type TextDecoder
   value create : ⊤ → TextDecoder  -- impure

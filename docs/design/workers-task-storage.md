@@ -220,3 +220,8 @@ actual response, text or byte-read type. Native rejection handles remain
 opaque through classification and are raised unchanged for unknown failures.
 Generated bindings supply URL/Headers/FormData/fetch/response/stream/decoder
 operations; the request, cancellation, timeout and progress logic stays beni.
+
+**As built, 2026-11-02:** browser Storage keeps its native area in the generated
+`Browser.Host.Storage.Storage` type. Its key accumulator is `List String`.
+The generated adapters catch only the documented DOMException classes;
+unknown thrown values retain their identity and remain defects.

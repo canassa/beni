@@ -3557,7 +3557,13 @@ no longer coalesced.)*
   the host leaves `null` is unavailable too. Any other exception is not caught: it is a defect
   (c). The catches are a sibling's (`Storage.js`), because `Js` writes no `catch` (§4.2).
   *(Amended 2026-10-01: they are `Js.catchIf`'s, each naming its `DOMException` by `name`, and
-  `Storage.js` is gone.)* `onChange` (another tab wrote) is still owed.
+  `Storage.js` is gone.)*
+  *As built, 2026-11-02:* the generated `Browser.Host.Storage` operations keep
+  the native area typed. Only a `DOMException` with the documented name is
+  mapped to an unavailable area or quota error; every other thrown value is
+  rethrown unchanged. Keys use a typed string list and skip an entry that
+  disappears during enumeration. `run/StorageAdapters` checks both exception
+  boundaries in development and release. `onChange` (another tab wrote) is still owed.
 
 **(c) A defect stops the program** (the owner's W2, *as recommended*; A1). A throw that escapes a
 program's own code — `init`, `update`, `view`, `subscriptions`, a markup handler, a render's patch
