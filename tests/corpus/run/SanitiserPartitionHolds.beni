@@ -1,0 +1,42 @@
+-- A runtime catch for a fold's open answer read back below its top
+-- (`ownership-v2.md` §2.10 *Read-off*): `Dict.partition` folds over the tree
+-- and answers two dictionaries built by `Dict.insert`, so its result holds
+-- the values of the dictionary it is handed. Its contract must say so. When
+-- the read-off said only the top slot of such an answer, the result's
+-- values were `shared` and nothing else, so an edit in place of a list the
+-- argument holds was accepted while a half of the partition still held it.
+-- Each line shows the list a half holds, then the pushed copy.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+-- The value lands in the half the predicate keeps.
+kept : ⊤ → String
+kept ⊤ =
+    d = Dict.singleton 1 [ 0 ]
+    ( a, b ) = Dict.partition d λk _ → k == 1
+    xs = Maybe.withDefault (Dict.get d 1) []
+    ys = List.push xs 9
+    "${ints (Maybe.withDefault (Dict.get a 1) [])} ${ints ys} ${String.fromInt (Dict.size b)}"
+
+
+-- And in the half it drops.
+dropped : ⊤ → String
+dropped ⊤ =
+    d = Dict.singleton 1 [ 0 ]
+    ( a, b ) = Dict.partition d λk _ → k == 2
+    xs = Maybe.withDefault (Dict.get d 1) []
+    ys = List.push xs 9
+    "${ints (Maybe.withDefault (Dict.get b 1) [])} ${ints ys} ${String.fromInt (Dict.size a)}"
+
+
+main : Program
+main = Node.printLines [ "kept ${kept ⊤}", "dropped ${dropped ⊤}" ]
