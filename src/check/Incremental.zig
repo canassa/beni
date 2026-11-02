@@ -298,6 +298,9 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     loaded.record = .empty;
 
     if (d.options.ownership) |ctx| ctx.ins.blocks[m.int()] = d.interfaces[m.int()].ownership;
+    // The interface keeps v1's block, so its hash and every key stay v1's;
+    // a v2 importer reads the pack's own v2 block (ownership-v2.md §3.6).
+    if (d.options.ownership2) |ctx| ctx.ins.from_pack[m.int()] = @import("../own2/Enforce.zig").packedBlock(ctx.session, m);
 
     // 2. The dispatch table, once its two reference tables are this
     //    session's ids, and the schema plan.

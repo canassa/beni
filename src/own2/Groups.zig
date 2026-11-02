@@ -680,6 +680,8 @@ pub const Module = struct {
     worded: Worded.Worded = .{},
     /// The imports' blocks read and those that did not round-trip.
     imports_read: u32 = 0,
+    /// The imported modules whose block was missing or unreadable (§3.6).
+    imports_unknown: std.ArrayList(u32) = .empty,
 
     pub fn deinit(mod: *Module) void {
         const gpa = mod.gpa;
@@ -709,6 +711,7 @@ pub const Module = struct {
         mod.reads.deinit(gpa);
         mod.pessimistic_of.deinit(gpa);
         mod.worded.deinit(gpa);
+        mod.imports_unknown.deinit(gpa);
     }
 
     pub fn rowsEnv(mod: *Module, arena: Allocator) Rows.Env {
@@ -733,6 +736,7 @@ pub const Module = struct {
             };
             try mod.imported.put(mod.gpa, m, cs);
             mod.imports_read += 1;
+            if (cs == null) try mod.imports_unknown.append(mod.gpa, m);
         }
         try mod.account.readEntry(mod.gpa, .import, m, mod.import_cost.get(m));
         const cs = mod.imported.get(m).? orelse return null;
