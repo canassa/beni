@@ -1,0 +1,5 @@
+import Browser.Worker as Worker
+
+
+-- An ErrorEvent without an error object remains fatal after Ready.
+pub foreign impure defect : Worker.Handle protocol → ⊤

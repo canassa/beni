@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- throws click-wait button output "unreachable"
+(threw: Error: Uncaught Error: worker handler defect)
+(threw: Error: Uncaught Error: worker handler defect)
+(threw: a thrown string: Uncaught Error: worker handler defect)
+(the DOM did not change)
+-- advance 1000
+console.error: abandonedWorkers [{"diagnosticName":"","entryId":"9c6efa08cb686088","instanceId":1,"kind":"Dedicated","termination":"NativeTerminated"}]
+(the DOM did not change)
+-- click button
+(the DOM did not change)
