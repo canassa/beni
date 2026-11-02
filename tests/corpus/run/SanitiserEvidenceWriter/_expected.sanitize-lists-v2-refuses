@@ -1,0 +1,3 @@
+# v2 refuses a writing method passed as evidence: its calls through the type variable are unknown (§2.11.4).
+55:9 list_may_be_shared Main.one
+62:16 list_may_be_shared Main.both

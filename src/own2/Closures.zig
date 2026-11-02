@@ -77,12 +77,14 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
                 for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
                 if (ps.items.len == 0) continue;
             }
+            // Evidence escapes at its site, a call named by its callee.
+            const callee = if (at.call != none) f.calls.items[at.call].head else if (e.w.bir.instTag(@fromBackingInt(cl.inst)) == .call) e.w.bir.instData(@fromBackingInt(cl.inst)).lhs else none;
             try e.demands.append(gpa, .{
                 .point = at.point,
-                .kind = if (at.call == none) .once else .callsite,
+                .kind = if (callee == none) .once else .callsite,
                 .token = Eval.tokenOf(e, if (at.call != none) f.calls.items[at.call].inst else cl.inst),
                 .base_inst = cl.inst,
-                .callee_inst = if (at.call != none) f.calls.items[at.call].head else none,
+                .callee_inst = callee,
                 .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
                 .deep = wr.deep,
                 .callback = true,

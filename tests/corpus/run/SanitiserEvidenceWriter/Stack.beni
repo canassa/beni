@@ -1,0 +1,24 @@
+-- The other module's half of `Main`: a type whose method writes its list.
+import List
+
+
+pub type Stack
+    = Stack (List Int)
+
+
+pub make : List Int → Stack
+make xs = Stack xs
+
+
+pub bump : Stack, Int → Stack
+bump s k =
+    case s of
+        Stack xs →
+            Stack (List.push xs k)
+
+
+pub items : Stack → List Int
+items s =
+    case s of
+        Stack xs →
+            xs
