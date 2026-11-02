@@ -3782,6 +3782,16 @@ may wait costs what it did (368 → 383 ns, within noise), and a message with no
 
 #### 9.8.12 HTTP, version 2
 
+*As built, 2026-11-02:* the request pipeline is beni over generated typed
+native bindings. URL, Headers, FormData, request initialization, response,
+byte reader, decoder, abort controller/signal, timer and rejection handles
+never become Js.Value. Promise observers resume typed Step values. Only the
+URL constructor's TypeError fallback is translated; a rejection outside the
+request's own abort is a network failure only when it is a TypeError, and
+other rejections are raised unchanged. Validation patterns use typed native
+RegExp operations with exactly the same patterns. Tracker listeners retain
+their real Progress callbacks in typed groups, including during live changes.
+
 *Added 2026-10-01* (`plans/status-2026-10.md` §4 Tier 1 item 2, §6 Milestone 2 item 2). This
 section is normative for `browser`'s `Http` and **replaces §9.8.8's `Http` row**: `get`, `post`,
 `getJson`, `postJson` and the four-constructor `Error` are withdrawn, and the fixtures that use
@@ -3908,8 +3918,8 @@ subscription and no tracker string to match.
 and each failure is decided by a test of the value, not by catching what the host throws, so every
 one is named precisely and nothing is caught to find it (rule 9):
 
-1. **The URL** is parsed by `new URL(url, document.baseURI)` inside `Js.catchIf` that takes only a
-   `TypeError` (the URL standard's one failure): `Err (BadUrl url)`. A parsed URL with a username or
+1. **The URL** is parsed through the generated typed URL binding, using `URL.parse` when present or
+   `new URL(url, document.baseURI)` with only its `TypeError` translated (the URL standard's one failure): `Err (BadUrl url)`. A parsed URL with a username or
    password is also `BadUrl url` — `fetch` rejects it with a `TypeError` that is otherwise the
    network's, so it must be found first. Every scheme `fetch` takes is allowed (`data:` and `blob:`
    included); one it does not (`file:`, `ftp:`) is the network error `fetch` gives.

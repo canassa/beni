@@ -71,11 +71,16 @@ module Basics
 module Browser.Host.AbortController
   type AbortController
   value abort : AbortController → ⊤  -- impure
+  value abortWith : AbortController, DOMException → ⊤  -- impure
   value create : ⊤ → AbortController  -- impure
   value signal : AbortController → AbortSignal  -- impure
 module Browser.Host.AbortSignal
   type AbortSignal
   value aborted : AbortSignal → Bool  -- impure
+  value reasonIs : AbortSignal, DOMException → Bool  -- impure
+module Browser.Host.DOMException
+  type DOMException
+  value create : String, String → DOMException  -- impure
 module Browser.Host.DOMRect
   type DOMRect
   value left : DOMRect → Float  -- impure
@@ -94,6 +99,7 @@ module Browser.Host.Document
   type Document
   type QueryError
     SyntaxError
+  value baseURI : ⊤ → String  -- impure
   value listen : String, (Event → ⊤) → (⊤ → ⊤)  -- impure
   value querySelector : Document, String → Result QueryError (Maybe Element)  -- impure
   value setTitle : String → ⊤  -- impure
@@ -127,6 +133,17 @@ module Browser.Host.EventTarget
   value asAnchor : EventTarget → Maybe HTMLAnchorElement  -- impure
 module Browser.Host.Events
   value listen : EventTarget, String, (Event → ⊤) → (⊤ → ⊤)  -- impure
+module Browser.Host.Fetch
+  type Body
+  type Init
+  value fetch : String, Init → Promise Response  -- impure
+  value formBody : FormData → Body
+  value init : String, Headers, Maybe Body, AbortSignal, String → Init  -- impure
+  value textBody : String → Body
+module Browser.Host.FormData
+  type FormData
+  value append : FormData, String, String → ⊤  -- impure
+  value create : ⊤ → FormData  -- impure
 module Browser.Host.HTMLAnchorElement
   type HTMLAnchorElement
   value hasAttribute : HTMLAnchorElement, String → Bool  -- impure
@@ -134,6 +151,14 @@ module Browser.Host.HTMLAnchorElement
   value href : HTMLAnchorElement → String  -- impure
   value protocol : HTMLAnchorElement → String  -- impure
   value target : HTMLAnchorElement → String  -- impure
+module Browser.Host.Headers
+  type Headers
+  value append : Headers, String, String → ⊤  -- impure
+  value create : ⊤ → Headers  -- impure
+  value entries : Headers → List (String × String)  -- impure
+  value get : Headers, String → Maybe String  -- impure
+  value has : Headers, String → Bool  -- impure
+  value set : Headers, String, String → ⊤  -- impure
 module Browser.Host.Immediate
   value trySchedule : (⊤ → ⊤) → Bool  -- impure
 module Browser.Host.Json
@@ -173,12 +198,41 @@ module Browser.Host.NodeProcess
 module Browser.Host.Promise
   type Promise a
   value observe : Promise a, (a → ⊤), (Rejection → ⊤) → ⊤  -- impure
+module Browser.Host.ReadResult
+  type ReadResult
+  value done : ReadResult → Bool  -- impure
+  value value : ReadResult → Maybe Uint8Array  -- impure
+module Browser.Host.ReadableStreamDefaultReader
+  type ReadableStreamDefaultReader
+  value read : ReadableStreamDefaultReader → Promise ReadResult  -- impure
+module Browser.Host.RegExp
+  type CreateError
+    SyntaxError
+  type RegExp
+  value create : String, String → Result CreateError RegExp  -- impure
+  value replace : RegExp, String, String → String  -- impure
+  value test : RegExp, String → Bool  -- impure
 module Browser.Host.Rejection
   type Rejection
   value code : Rejection → Maybe String  -- impure
   value isError : Rejection → Bool  -- impure
+  value isTypeError : Rejection → Bool  -- impure
   value name : Rejection → String  -- impure
   value raise : Rejection → a  -- impure
+module Browser.Host.Response
+  type Response
+  value headers : Response → Headers  -- impure
+  value ok : Response → Bool  -- impure
+  value reader : Response → Maybe ReadableStreamDefaultReader  -- impure
+  value status : Response → Int  -- impure
+  value statusText : Response → String  -- impure
+  value text : Response → Promise String  -- impure
+  value url : Response → String  -- impure
+module Browser.Host.TextDecoder
+  type TextDecoder
+  value create : ⊤ → TextDecoder  -- impure
+  value decodeMore : TextDecoder, Uint8Array → String  -- impure
+  value finish : TextDecoder → String  -- impure
 module Browser.Host.TextEncoder
   type TextEncoder
   value create : ⊤ → TextEncoder  -- impure
@@ -189,6 +243,12 @@ module Browser.Host.Timers
   value queueMicrotask : (⊤ → ⊤) → ⊤  -- impure
   value setTimeout : (⊤ → ⊤), Int → Int  -- impure
   value start : (⊤ → ⊤), Int → Timer  -- impure
+module Browser.Host.URL
+  type URL
+  value href : URL → String  -- impure
+  value password : URL → String  -- impure
+  value tryCreate : String, String → Maybe URL  -- impure
+  value username : URL → String  -- impure
 module Browser.Host.Uint8Array
   type Uint8Array
   value byteLength : Uint8Array → Int

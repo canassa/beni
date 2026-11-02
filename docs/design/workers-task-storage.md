@@ -211,3 +211,12 @@ updates. File promises, rejection reasons, directory entries and abort resources
 keep their native types. `Io` owns cancellation, directory ordering and the
 specific documented error mapping in beni. Unknown rejections are rethrown
 unchanged by the generated native operation.
+
+**As built, 2026-11-02:** browser render queues, after-render jobs, waiting
+resume capabilities and reentrant update jobs use typed Chain storage.
+HTTP progress listeners also keep typed callbacks. HTTP's flight owns typed
+native abort, timer and timeout-reason handles; promise results retain the
+actual response, text or byte-read type. Native rejection handles remain
+opaque through classification and are raised unchanged for unknown failures.
+Generated bindings supply URL/Headers/FormData/fetch/response/stream/decoder
+operations; the request, cancellation, timeout and progress logic stays beni.
