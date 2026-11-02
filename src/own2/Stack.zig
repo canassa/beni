@@ -293,7 +293,7 @@ pub const Index = struct {
     /// accepted demand it was pending at, compatible with, not judged one
     /// by one for (no key at a position related to the target's), and
     /// answers `under` for.
-    pub fn finish(x: *Index, ev: *Relation.Eval, w: *const Walk.Walk, regions: *const Regions.Tree, req: anytype) Error!void {
+    pub fn finish(x: *Index, ev: *Relation.Eval, w: *const Walk.Walk, regions: *const Regions.Tree, req: anytype, arena: Allocator) Error!void {
         if (x.writes.items.len == 0) return;
         const f = ev.f;
         try f.charge(.inspection, @intCast(1 + 2 * x.writes.items.len));
@@ -343,7 +343,7 @@ pub const Index = struct {
                 if (near) continue;
                 const o = try Distinct.overlap(ev, it.leaf, wr[2], true);
                 if (o.kind != .under) continue;
-                try req.add(g, ev.account(), o.cond);
+                try req.add(arena, ev.account(), o.cond);
                 break;
             }
         }
