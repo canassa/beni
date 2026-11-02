@@ -112,6 +112,8 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             defer scratch.deinit(gpa);
             t.no_memo = true;
             defer t.no_memo = false;
+            t.s6d_off = true;
+            defer t.s6d_off = false;
             var caches = t.checkBegin(false);
             defer t.checkEnd(gpa, &caches);
             for ([_]bool{ false, true }) |rev| {
@@ -181,10 +183,26 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
 
         const Edge = struct { to: u32, step: u32 };
 
+        pub var ph_rec: [8]u64 = @splat(0);
+        pub var local_rec: [Ids.Category.count]u64 = @splat(0);
+        fn lres(charge: Charge, gpa: Allocator, cat: Ids.Category, n: u32) Error!void {
+            local_rec[@backingInt(cat)] +%= n;
+            return charge.reserve(gpa, cat, n);
+        }
+        var ph_cur: u8 = 7;
+        var ph_last: u64 = 0;
+        fn ph(s: *const Sigma, n: u8) void {
+            if (!s.t.propagate_dump) return;
+            const tot = s.charge.account.total();
+            ph_rec[ph_cur] +%= tot -% ph_last;
+            ph_last = tot;
+            ph_cur = n;
+        }
+
         /// What a state reads of its run alone, once per run (#1273): its
         /// one member (the link test's), κ from the members, the cursors'
         /// steps, and the frontier of the first node read against them.
-        const Slice = struct { m0: NodeId, c0: Kappas, one: bool, k: [4]u32, words: u32, words_len: u32, fold: bool, front: [3]u32 = .{ none, 0, 0 } };
+        const Slice = struct { m0: NodeId, c0: Kappas, one: bool, k: [4]u32, words: u32, words_len: u32, fold: bool, front: [3]u32 = .{ none, 0, 0 }, cs: u32 = none };
 
         const Below = struct { first: u32, len: u32, run: u32 };
 
@@ -226,9 +244,28 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             comps: std.ArrayList(Comp) = .empty,
             bitwords: std.ArrayList(u64) = .empty,
             resumed: u32 = 0,
+            // S6d (experiment): exact caches keyed by what each read depends on.
+            on: bool = false,
+            cs_at: std.StringHashMapUnmanaged(u32) = .empty,
+            cs_keys: std.ArrayList([]u8) = .empty,
+            cs_words: std.ArrayList([2]u32) = .empty,
+            cs_fold: std.ArrayList(bool) = .empty,
+            ctxs_at: std.StringHashMapUnmanaged(u32) = .empty,
+            front2_at: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
+            kap_at: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
+            mem_at: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
 
             fn deinit(s: *Sigma) void {
                 const gpa = s.gpa;
+                for (s.cs_keys.items) |k| gpa.free(k);
+                s.cs_keys.deinit(gpa);
+                s.cs_words.deinit(gpa);
+                s.cs_fold.deinit(gpa);
+                s.cs_at.deinit(gpa);
+                s.ctxs_at.deinit(gpa);
+                s.front2_at.deinit(gpa);
+                s.kap_at.deinit(gpa);
+                s.mem_at.deinit(gpa);
                 inline for (.{ "states", "edges", "runs", "run_ctxs", "slices", "words", "belows", "fronts", "items", "next", "stack", "batch", "nodes", "node_edges", "comps", "bitwords" }) |f| @field(s, f).deinit(gpa);
                 inline for (.{ "index", "slice_at", "below_at", "front_at", "node_at", "node_edge_at" }) |f| @field(s, f).deinit(gpa);
             }
@@ -240,7 +277,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 var r = len;
                 while (r > 0) {
                     r -= 1;
-                    try s.charge.reserve(s.gpa, .memo, 1);
+                    try lres(s.charge, s.gpa, .memo, 1);
                     const got = try s.t.prop_runs.getOrPut(s.gpa, .{ s.runs.items[first + r].int(), s.run_ctxs.items[first + r].int(), run });
                     if (!got.found_existing) got.value_ptr.* = got.index;
                     run = got.value_ptr.*;
@@ -251,7 +288,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             /// The state `(node, class bits, run)`, made and queued to be read
             /// when new.
             fn stateOf(s: *Sigma, node: NodeId, summary: bool, msummary: bool, b: Below) Error!u32 {
-                try s.charge.reserve(s.gpa, .memo, 1);
+                try lres(s.charge, s.gpa, .memo, 1);
                 const got = try s.index.getOrPut(s.gpa, .{ node.int(), @as(u32, @intFromBool(summary)) | @as(u32, @intFromBool(msummary)) << 1, b.run });
                 if (got.found_existing) return got.value_ptr.*;
                 const id: u32 = @intCast(s.states.items.len);
@@ -296,9 +333,10 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 const charge = s.charge;
                 const in = s.in;
                 const v = in.v;
-                try charge.reserve(gpa, .memo, 1);
+                try lres(charge, gpa, .memo, 1);
                 const st = s.states.items[id];
                 const si = try s.sliceOf(st);
+                ph(s, 0);
                 try t.traced(gpa, st.node, st.summary);
                 // One alternative, or alternatives all one member at its own
                 // node: the position IS that member's, a link (§2.9, #1112) —
@@ -314,7 +352,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     const c0 = s.slices.items[si].c0;
                     const one = s.slices.items[si].one and m0 != .none and !v.shapes.isAtom(st.node) and (st.node == m0 or try joinOfOne(gpa, charge, v, st.node, m0, if (in.mode == .alternatives) .@"union" else .positions));
                     if (one) {
-                        try charge.reserve(gpa, .inspection, 1);
+                        try lres(charge, gpa, .inspection, 1);
                         var out: u32 = none;
                         // A literal's one element at its `[*]` itself: the objects it
                         // holds at any path below are compared there (§2.9), over
@@ -329,12 +367,12 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                                 s.items.clearRetainingCapacity();
                                 var it = v.cells.sets.iterate(try v.shapes.arrivals(gpa, charge.account, v.cells, &v.cells.sets, m0));
                                 while (it.next()) |e| {
-                                    try charge.reserve(gpa, .inspection, 1);
+                                    try lres(charge, gpa, .inspection, 1);
                                     try s.items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
                                 }
                                 k1 = try t.@"and"(gpa, charge, k1, try t.apart(gpa, charge, v.cells, v.places, s.items.items, in.traversal));
                             }
-                            try charge.reserve(gpa, .inspection, 1);
+                            try lres(charge, gpa, .inspection, 1);
                             out = k1.int();
                         }
                         const p = &s.states.items[id];
@@ -345,7 +383,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     }
                 }
                 if (in.mode == .alternatives and st.len == 1 and s.kept_call) {
-                    try charge.reserve(gpa, .inspection, 1);
+                    try lres(charge, gpa, .inspection, 1);
                     s.states.items[id].has_kept = true;
                     s.states.items[id].kept = s.run_ctxs.items[st.first];
                 }
@@ -356,7 +394,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 if (in.traversal == null and try memoRank(gpa, charge, v, st.node)) {
                     s.states.items[id].clean = true;
                     if (s.memo) {
-                        try charge.reserve(gpa, .memo, 1);
+                        try lres(charge, gpa, .memo, 1);
                         if (!mutated("propagate-full-read")) {
                             if (t.memo_prop.get(s.memoKey(st))) |hit| {
                                 s.states.items[id].hit = true;
@@ -386,6 +424,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 const v = in.v;
                 const st = s.states.items[id];
                 const si = try s.sliceOf(st);
+                ph(s, 1);
                 const k_slot = @as(usize, @intFromBool(st.node == in.joined)) * 2 + @intFromBool(st.msummary);
                 var k: CondId = yes;
                 if (s.slices.items[si].k[k_slot] != none) k = .from(s.slices.items[si].k[k_slot]) else {
@@ -397,7 +436,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     for (0..st.len) |i| {
                         const m = s.runs.items[st.first + i];
                         const c = s.run_ctxs.items[st.first + i];
-                        const km = try t.kappaOf(gpa, charge, v, c, m, st.msummary);
+                        const km = try s.memberKappa(c, m, st.msummary);
                         k = if (in.mode == .alternatives) try t.join(gpa, charge, k, km) else try t.@"and"(gpa, charge, k, km);
                         if (in.mode == .together) {
                             k = try t.@"and"(gpa, charge, k, try t.summaryExcl(gpa, charge, v.cells, v.places, (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m))));
@@ -412,7 +451,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                             const set = if (st.node == in.joined) try v.shapes.reach(gpa, charge.account, &v.cells.sets, m) else (try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, m));
                             var it = v.cells.sets.iterate(set);
                             while (it.next()) |e| {
-                                try charge.reserve(gpa, .inspection, 1);
+                                try lres(charge, gpa, .inspection, 1);
                                 try s.items.append(gpa, .{ .cell = .from(e.key), .approx = e.value == 1 });
                             }
                         }
@@ -423,6 +462,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     if (in.mode == .alternatives and st.len == 0) k = lost;
                     s.slices.items[si].k[k_slot] = k.int();
                 }
+                ph(s, 2);
                 // A folded class's obligation, stored so the block carries it: the
                 // class image's own, or its sides' where it rides in a union
                 // (§2.3, #1120).
@@ -431,32 +471,54 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 // stronger than the derivation stores nothing (against the read
                 // without its fold obligation, so the snapshot stores the
                 // obligation itself, #1128).
+                ph(s, 3);
                 const plain = try v.shapes.force(gpa, charge.account, st.node);
                 const redundant = v.shapes.kind(plain) == .leaf and try t.leq(gpa, charge, k, try t.kappaRead(gpa, charge, v, .none, plain, st.summary, null));
                 if (!redundant) {
-                    try charge.reserve(gpa, .inspection, 1);
+                    try lres(charge, gpa, .inspection, 1);
                     s.states.items[id].out = k.int();
                 }
+                ph(s, 4);
                 // Children: the joined node's frontier, the members projected
                 // along each step of it, each the state one step below.
                 if (s.slices.items[si].words_len == none) {
-                    const at: u32 = @intCast(s.words.items.len);
-                    const fold = try t.cursorSteps(gpa, charge, s.run_ctxs.items[st.first..][0..st.len], &s.words);
-                    s.slices.items[si].words = at;
-                    s.slices.items[si].words_len = @intCast(s.words.items.len - at);
-                    s.slices.items[si].fold = fold;
+                    if (s.on) {
+                        const cs = try s.cursorsOf(s.run_ctxs.items[st.first..][0..st.len]);
+                        s.slices.items[si].words = s.cs_words.items[cs][0];
+                        s.slices.items[si].words_len = s.cs_words.items[cs][1];
+                        s.slices.items[si].fold = s.cs_fold.items[cs];
+                        s.slices.items[si].cs = cs;
+                    } else {
+                        const at: u32 = @intCast(s.words.items.len);
+                        const fold = try t.cursorSteps(gpa, charge, s.run_ctxs.items[st.first..][0..st.len], &s.words);
+                        s.slices.items[si].words = at;
+                        s.slices.items[si].words_len = @intCast(s.words.items.len - at);
+                        s.slices.items[si].fold = fold;
+                    }
                 }
                 const sl = s.slices.items[si];
                 // The slice's first frontier is kept on it; another of its
                 // frontiers is in `front_at`.
                 const fkey: [2]u32 = .{ st.node.int(), @intFromBool(st.summary) };
-                var at: ?u32 = if (sl.front[0] == fkey[0] and sl.front[1] == fkey[1]) sl.front[2] else null;
-                if (at == null and sl.front[0] != none) {
-                    try charge.reserve(gpa, .memo, 1);
+                var at: ?u32 = null;
+                if (s.on) {
+                    try lres(charge, gpa, .memo, 1);
+                    const fg = try s.front2_at.getOrPut(gpa, .{ fkey[0], fkey[1], sl.cs });
+                    if (fg.found_existing) at = fg.value_ptr.* else {
+                        s.next.clearRetainingCapacity();
+                        try t.frontierWith(gpa, charge, v, st.node, st.summary, .{ .words = s.words.items[sl.words..][0..sl.words_len], .fold = sl.fold }, &s.next);
+                        at = @intCast(s.fronts.items.len);
+                        fg.value_ptr.* = at.?;
+                        try s.fronts.appendSlice(gpa, s.next.items);
+                        try s.fronts.append(gpa, .{ .node = .none, .summary = false, .step = none });
+                    }
+                } else at = if (sl.front[0] == fkey[0] and sl.front[1] == fkey[1]) sl.front[2] else null;
+                if (!s.on and at == null and sl.front[0] != none) {
+                    try lres(charge, gpa, .memo, 1);
                     const fg = try s.front_at.getOrPut(gpa, .{ fkey[0], fkey[1], si });
                     if (fg.found_existing) at = fg.value_ptr.* else fg.value_ptr.* = @intCast(s.fronts.items.len);
                 }
-                if (at == null) {
+                if (!s.on and at == null) {
                     s.next.clearRetainingCapacity();
                     try t.frontierWith(gpa, charge, v, st.node, st.summary, .{ .words = s.words.items[sl.words..][0..sl.words_len], .fold = sl.fold }, &s.next);
                     at = @intCast(s.fronts.items.len);
@@ -464,6 +526,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     try s.fronts.appendSlice(gpa, s.next.items);
                     try s.fronts.append(gpa, .{ .node = .none, .summary = false, .step = none });
                 }
+                ph(s, 5);
                 var end = at.?;
                 while (s.fronts.items[end].node != .none) end += 1;
                 const n_front = end - at.?;
@@ -474,18 +537,17 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     // The run one step below, made once per (run, step, inner
                     // place, class). A member's `side` for a transition out of a
                     // recast's inner reads the inner's place, never the inner.
-                    try charge.reserve(gpa, .memo, 1);
+                    try lres(charge, gpa, .memo, 1);
                     const place: u32 = if (e.via == .none) none else v.shapes.place(e.via).int();
                     const bg = try s.below_at.getOrPut(gpa, .{ st.run, e.step, place, @intFromBool(e.summary) });
                     if (!bg.found_existing) {
                         bg.value_ptr.* = @intCast(s.belows.items.len);
                         const first: u32 = @intCast(s.runs.items.len);
                         for (0..st.len) |i| {
-                            try charge.reserve(gpa, .inspection, 1);
+                            try lres(charge, gpa, .inspection, 1);
                             const m = s.runs.items[st.first + i];
                             const c = s.run_ctxs.items[st.first + i];
-                            const sm = (try Table.side(gpa, charge, v, m, e.via)) orelse continue;
-                            const pm = (try v.shapes.proj(gpa, charge.account, v.places, v.cells, sm, step)) orelse continue;
+                            const pm = (try s.memberBelow(m, e.via, place, step)) orelse continue;
                             try s.runs.append(gpa, pm);
                             try s.run_ctxs.append(gpa, t.kappaChild(c, step));
                         }
@@ -494,11 +556,73 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     }
                     const b = s.belows.items[bg.value_ptr.*];
                     const child = try s.stateOf(e.node, e.summary, s.states.items[id].msummary or Table.below(step), b);
-                    try charge.reserve(gpa, .inspection, 1);
+                    try lres(charge, gpa, .inspection, 1);
                     try s.edges.append(gpa, .{ .to = child, .step = e.step });
                 }
+                ph(s, 7);
                 s.states.items[id].edge_first = edge_first;
                 s.states.items[id].edge_len = @intCast(s.edges.items.len - edge_first);
+            }
+
+            /// S6d: κ of one member at its own position, read once per
+            /// `(position, member, class)` in the call, not once per run.
+            fn memberKappa(s: *Sigma, c: Kappas, m: NodeId, msummary: bool) Error!CondId {
+                if (!s.on) return s.t.kappaOf(s.gpa, s.charge, s.in.v, c, m, msummary);
+                try lres(s.charge, s.gpa, .memo, 1);
+                const g = try s.kap_at.getOrPut(s.gpa, .{ c.int(), m.int(), @intFromBool(msummary) });
+                if (g.found_existing) return .from(g.value_ptr.*);
+                const k = try s.t.kappaOf(s.gpa, s.charge, s.in.v, c, m, msummary);
+                (try s.kap_at.getOrPut(s.gpa, .{ c.int(), m.int(), @intFromBool(msummary) })).value_ptr.* = k.int();
+                return k;
+            }
+
+            /// S6d: a member one step below, `proj(side(m, via), step)`, made
+            /// once per `(member, step, inner place)`: `side` reads only the
+            /// inner's place.
+            fn memberBelow(s: *Sigma, m: NodeId, via: NodeId, place: u32, step: Step) Error!?NodeId {
+                const v = s.in.v;
+                if (!s.on) {
+                    const sm = (try Table.side(s.gpa, s.charge, v, m, via)) orelse return null;
+                    return v.shapes.proj(s.gpa, s.charge.account, v.places, v.cells, sm, step);
+                }
+                try lres(s.charge, s.gpa, .memo, 1);
+                const key: [3]u32 = .{ m.int(), step.word(), place };
+                if (s.mem_at.get(key)) |x| return if (x == none) null else NodeId.from(x);
+                const sm = try Table.side(s.gpa, s.charge, v, m, via);
+                const pm: ?NodeId = if (sm) |x| try v.shapes.proj(s.gpa, s.charge.account, v.places, v.cells, x, step) else null;
+                try s.mem_at.put(s.gpa, key, if (pm) |x| x.int() else none);
+                return pm;
+            }
+
+            /// S6d: the cursors' steps of a list of positions, read once per
+            /// distinct list in the call; its id keys the frontier.
+            fn cursorsOf(s: *Sigma, ctxs: []const Kappas) Error!u32 {
+                const bytes = std.mem.sliceAsBytes(ctxs);
+                try lres(s.charge, s.gpa, .memo, 1);
+                if (s.ctxs_at.get(bytes)) |x| return x;
+                const at: u32 = @intCast(s.words.items.len);
+                const fold = try s.t.cursorSteps(s.gpa, s.charge, ctxs, &s.words);
+                const len: u32 = @intCast(s.words.items.len - at);
+                // One id per distinct step set: two lists that read the same
+                // steps share their frontiers.
+                var wkey = try s.gpa.alloc(u8, len * 8 + 1);
+                @memcpy(wkey[0 .. len * 8], std.mem.sliceAsBytes(s.words.items[at..][0..len]));
+                wkey[len * 8] = @intFromBool(fold);
+                const id: u32 = if (s.cs_at.get(wkey)) |x| blk: {
+                    s.gpa.free(wkey);
+                    break :blk x;
+                } else blk: {
+                    const x: u32 = @intCast(s.cs_words.items.len);
+                    try s.cs_words.append(s.gpa, .{ at, len });
+                    try s.cs_fold.append(s.gpa, fold);
+                    try s.cs_keys.append(s.gpa, wkey);
+                    try s.cs_at.put(s.gpa, wkey, x);
+                    break :blk x;
+                };
+                const kcopy = try s.gpa.dupe(u8, bytes);
+                try s.cs_keys.append(s.gpa, kcopy);
+                try s.ctxs_at.put(s.gpa, kcopy, id);
+                return id;
             }
 
             fn edgesOf(s: *const Sigma, id: u32) []const Edge {
@@ -556,7 +680,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                         s.nodes.items[a].head = id;
                     }
                     for (s.edgesOf(id)) |e| {
-                        try charge.reserve(gpa, .memo, 1);
+                        try lres(charge, gpa, .memo, 1);
                         const b = try s.nodeIndex(s.states.items[e.to].node);
                         const got = try s.node_edge_at.getOrPut(gpa, .{ a, b });
                         if (!got.found_existing) try s.node_edges.append(gpa, .{ a, b });
@@ -564,7 +688,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 }
                 // Its components, taken once on the final graph of this pass.
                 const n = s.nodes.items.len;
-                try charge.reserve(gpa, .inspection, @intCast(n + s.node_edges.items.len));
+                try lres(charge, gpa, .inspection, @intCast(n + s.node_edges.items.len));
                 const head = try gpa.alloc(u32, n + 1);
                 defer gpa.free(head);
                 @memset(head, 0);
@@ -677,7 +801,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                         if (top.edge < es.len) {
                             const to = es[top.edge].to;
                             top.edge += 1;
-                            try charge.reserve(gpa, .inspection, 1);
+                            try lres(charge, gpa, .inspection, 1);
                             const m = s.states.items[to].tj;
                             if (m == 1) {
                                 s.states.items[to].tj_index = counter;
@@ -728,13 +852,13 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 const words: u32 = if (k.nontrivial) (k.size + 63) / 64 else 0;
                 const off: u32 = @intCast(s.bitwords.items.len);
                 if (words > 0) {
-                    try charge.reserve(gpa, .inspection, words);
+                    try lres(charge, gpa, .inspection, words);
                     try s.bitwords.appendNTimes(gpa, 0, words);
                     for (scc) |x| for (s.edgesOf(x)) |e| {
                         const to = s.states.items[e.to];
                         const tn = s.node_at.get(.{to.node.int()}).?;
                         if (s.nodes.items[tn].comp != kid) continue;
-                        try charge.reserve(gpa, .inspection, words);
+                        try lres(charge, gpa, .inspection, words);
                         const kidx = s.nodes.items[tn].kidx;
                         s.bitwords.items[off + kidx / 64] |= @as(u64, 1) << @intCast(kidx % 64);
                         // A state of this component carries the set being made.
@@ -848,7 +972,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 var r = ids.len;
                 while (r > 0) {
                     r -= 1;
-                    try charge.reserve(gpa, .memo, 1);
+                    try lres(charge, gpa, .memo, 1);
                     const got = try x.cons.getOrPut(gpa, .{ ids[r], id });
                     if (!got.found_existing) {
                         got.value_ptr.* = got.index;
@@ -870,6 +994,132 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             }
         };
 
+        fn sigmaStats(s: *Sigma) void {
+            const sh = s.in.v.shapes;
+            var nodes = std.AutoHashMap(u32, u32).init(s.gpa);
+            defer nodes.deinit();
+            var runs = std.AutoHashMap(u32, u32).init(s.gpa);
+            defer runs.deinit();
+            var by_kind: [8]u32 = @splat(0);
+            var linked: u32 = 0;
+            var runlen: u64 = 0;
+            var mkinds: [8]u32 = @splat(0);
+            var places = std.AutoHashMap(u32, u32).init(s.gpa);
+            defer places.deinit();
+            for (s.states.items) |st| {
+                const g = nodes.getOrPut(st.node.int()) catch return;
+                if (!g.found_existing) g.value_ptr.* = 0;
+                g.value_ptr.* += 1;
+                const r = runs.getOrPut(st.run) catch return;
+                if (!r.found_existing) r.value_ptr.* = 0;
+                r.value_ptr.* += 1;
+                by_kind[@backingInt(sh.kind(st.node))] += 1;
+                if (st.linked) linked += 1;
+                runlen += st.len;
+                for (0..st.len) |i| mkinds[@backingInt(sh.kind(s.runs.items[st.first + i]))] += 1;
+            }
+            var nk = std.AutoHashMap([2]u32, void).init(s.gpa);
+            defer nk.deinit();
+            var outs: u32 = 0;
+            for (s.states.items) |st| {
+                if (st.out == none) continue;
+                outs += 1;
+                nk.put(.{ st.node.int(), st.out }, {}) catch return;
+            }
+            var kdist = std.AutoHashMap(u32, void).init(s.gpa);
+            defer kdist.deinit();
+            for (s.states.items) |st| if (st.out != none) kdist.put(st.out, {}) catch return;
+            // Members as their union DAG's atoms (non-union nodes), sorted: the
+            // states a normalised member representation would leave.
+            var norm = std.StringHashMap(void).init(s.gpa);
+            defer {
+                var kit = norm.keyIterator();
+                while (kit.next()) |kk| s.gpa.free(kk.*);
+                norm.deinit();
+            }
+            var atoms_all = std.AutoHashMap(u32, void).init(s.gpa);
+            defer atoms_all.deinit();
+            var triples = std.AutoHashMap([3]u32, void).init(s.gpa);
+            defer triples.deinit();
+            for (s.states.items) |st| {
+                var buf: std.ArrayList(u32) = .empty;
+                defer buf.deinit(s.gpa);
+                buf.append(s.gpa, st.node.int()) catch return;
+                for (0..st.len) |i| {
+                    var stack: std.ArrayList(u32) = .empty;
+                    defer stack.deinit(s.gpa);
+                    var seen = std.AutoHashMap(u32, void).init(s.gpa);
+                    defer seen.deinit();
+                    var atoms: std.ArrayList(u32) = .empty;
+                    defer atoms.deinit(s.gpa);
+                    stack.append(s.gpa, s.runs.items[st.first + i].int()) catch return;
+                    while (stack.pop()) |x| {
+                        if ((seen.getOrPut(x) catch return).found_existing) continue;
+                        const nd = sh.get(.from(x));
+                        if (nd.kind == .@"union") {
+                            stack.append(s.gpa, nd.a) catch return;
+                            stack.append(s.gpa, nd.b) catch return;
+                        } else atoms.append(s.gpa, x) catch return;
+                    }
+                    std.mem.sort(u32, atoms.items, {}, std.sort.asc(u32));
+                    for (atoms.items) |a| atoms_all.put(a, {}) catch return;
+                    for (atoms.items) |a| triples.put(.{ st.node.int(), a, s.run_ctxs.items[st.first + i].int() }, {}) catch return;
+                    buf.append(s.gpa, 0xffffffff) catch return;
+                    buf.appendSlice(s.gpa, atoms.items) catch return;
+                    buf.append(s.gpa, s.run_ctxs.items[st.first + i].int()) catch return;
+                }
+                const key = s.gpa.dupe(u8, std.mem.sliceAsBytes(buf.items)) catch return;
+                if ((norm.getOrPut(key) catch return).found_existing) s.gpa.free(key);
+            }
+            std.debug.print("  sigma normalised: distinct (node, member atom sets) {d}, distinct atoms {d}, distinct (node, atom, ctx) {d}\n", .{ norm.count(), atoms_all.count(), triples.count() });
+            std.debug.print("  sigma entries: states with an entry {d}, distinct (node, k) {d}, distinct k {d}\n", .{ outs, nk.count(), kdist.count() });
+            var maxn: u32 = 0;
+            var it = nodes.valueIterator();
+            while (it.next()) |x| maxn = @max(maxn, x.*);
+            std.debug.print("  sigma: states {d}, distinct nodes {d} (max states per node {d}), distinct runs {d}, linked {d}, run members {d}, nodes by kind leaf {d} node {d} delta {d} recast {d} union {d} positions {d} choice {d} view {d}; members by kind leaf {d} node {d} delta {d} recast {d} union {d} positions {d} choice {d} view {d}; node-graph nodes {d}\n", .{ s.states.items.len, nodes.count(), maxn, runs.count(), linked, runlen, by_kind[0], by_kind[1], by_kind[2], by_kind[3], by_kind[4], by_kind[5], by_kind[6], by_kind[7], mkinds[0], mkinds[1], mkinds[2], mkinds[3], mkinds[4], mkinds[5], mkinds[6], mkinds[7], s.nodes.items.len });
+        }
+
+        fn tree(sh: anytype, n: NodeId, d: u32) void {
+            const x = sh.get(n);
+            std.debug.print("{s}{d}@p{d}", .{ @tagName(x.kind), n.int(), x.place.int() });
+            if (d == 0) return;
+            switch (x.kind) {
+                .@"union", .choice, .positions, .recast, .view => {
+                    std.debug.print("(", .{});
+                    tree(sh, .from(x.a), d - 1);
+                    if (x.kind != .recast and x.kind != .view) {
+                        std.debug.print(",", .{});
+                        tree(sh, .from(x.b), d - 1);
+                    } else if (x.kind == .view) std.debug.print(",env{d}", .{x.b});
+                    std.debug.print(")", .{});
+                },
+                else => {},
+            }
+        }
+
+        fn dumpSigma(s: *Sigma) void {
+            const sh = s.in.v.shapes;
+            for (s.states.items, 0..) |st, id| {
+                std.debug.print("  s{d} n{d} {s} p{d} sum{d}{d} run{d}[", .{ id, st.node.int(), @tagName(sh.kind(st.node)), sh.place(st.node).int(), @intFromBool(st.summary), @intFromBool(st.msummary), st.run });
+                for (0..st.len) |i| {
+                    const m = s.runs.items[st.first + i];
+                    std.debug.print(" n{d}:{s}:k{d}", .{ m.int(), @tagName(sh.kind(m)), s.run_ctxs.items[st.first + i].int() });
+                }
+                if (st.len > 0 and s.states.items.len == 1194) {
+                    std.debug.print(" T=", .{});
+                    tree(sh, s.runs.items[st.first + st.len - 1], 4);
+                    std.debug.print(" J=", .{});
+                    tree(sh, st.node, 2);
+                }
+                std.debug.print(" ] cyc{d} link{d} hit{d} ->", .{ @intFromBool(st.cyclic), @intFromBool(st.linked), @intFromBool(st.hit) });
+                for (s.edgesOf(@intCast(id))) |e| {
+                    const stp = Step.fromWord(e.step);
+                    std.debug.print(" {s}{d}:s{d}", .{ @tagName(stp.kind), stp.payload, e.to });
+                }
+                std.debug.print("\n", .{});
+            }
+        }
+
         /// One call by the rule (§2.9 *Fold first*, *The rule*).
         fn rule(t: *Table, gpa: Allocator, charge: Charge, in: *const Input, memo: bool, reverse: bool, dump: bool) Error!Kappas {
             if (mutated("propagate-no-fold-first")) {
@@ -877,15 +1127,27 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             }
             const call = t.prop_calls;
             t.prop_calls += 1;
-            var s: Sigma = .{ .t = t, .gpa = gpa, .charge = charge, .in = in, .memo = memo, .reverse = reverse, .kept_call = in.mode == .alternatives and in.members.len == 1 };
+            var s: Sigma = .{ .t = t, .gpa = gpa, .charge = charge, .in = in, .memo = memo, .reverse = reverse, .kept_call = in.mode == .alternatives and in.members.len == 1, .on = t.s6d & 0x0f != 0 and !t.s6d_off };
             defer s.deinit();
             // Pass 1, and pass 2 over it.
             try s.runs.appendSlice(gpa, in.members);
             try s.run_ctxs.appendSlice(gpa, in.ctxs);
             const root_run = try s.intern(0, @intCast(in.members.len));
+            const pr0 = charge.account.total();
+            var cat0: [Ids.Category.count]u64 = undefined;
+            for (&cat0, 0..) |*x, ci| x.* = charge.account.growth_by[ci] + charge.account.baseline_by[ci];
+            ph_rec = @splat(0);
+            local_rec = @splat(0);
+            ph_cur = 7;
+            ph_last = pr0;
             const root = try s.stateOf(in.joined, in.at_summary, in.member_summary, .{ .first = 0, .len = @intCast(in.members.len), .run = root_run });
             try s.drain();
+            const pr1 = charge.account.total();
+            ph(&s, 7);
             try s.classify();
+            const pr2 = charge.account.total();
+            if (dump and ((s.states.items.len >= 100 and s.states.items.len < 140) or s.states.items.len == 1194)) dumpSigma(&s);
+            if (dump and s.states.items.len >= 60) sigmaStats(&s);
             // Pass 3, post-order on an explicit stack.
             var sets: Sets = .{};
             defer sets.deinit(gpa);
@@ -934,7 +1196,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     // The sets one step down, one per step.
                     pairs.clearRetainingCapacity();
                     for (sets.of(w.set)) |x| for (s.edgesOf(x)) |e| try pairs.append(gpa, .{ e.step, e.to });
-                    try charge.reserve(gpa, .inspection, Table.sortCost(pairs.items.len));
+                    try lres(charge, gpa, .inspection, Table.sortCost(pairs.items.len));
                     std.mem.sort([2]u32, pairs.items, {}, lessPair);
                     const kids_first: u32 = @intCast(sets.kids.items.len);
                     var i: usize = 0;
@@ -944,7 +1206,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                         while (i < pairs.items.len and pairs.items[i][0] == step) : (i += 1) {
                             if (ids.items.len == 0 or ids.items[ids.items.len - 1] != pairs.items[i][1]) try ids.append(gpa, pairs.items[i][1]);
                         }
-                        try charge.reserve(gpa, .inspection, 1);
+                        try lres(charge, gpa, .inspection, 1);
                         try sets.kids.append(gpa, .{ .step = step, .set = try sets.intern(gpa, charge, ids.items) });
                     }
                     sets.info.items[w.set].kids_first = kids_first;
@@ -973,11 +1235,20 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             // The call has finished: each clean state built alone at an open
             // position is that position's snapshot wherever it is met again.
             for (candidates.items) |c| {
-                try charge.reserve(gpa, .memo, 1);
+                try lres(charge, gpa, .memo, 1);
                 (try t.memo_prop.getOrPut(gpa, c.key)).value_ptr.* = sets.info.items[c.set].pos.int();
             }
             if (memo) t.prop_stats = .{ .states = @intCast(s.states.items.len), .edges = @intCast(s.edges.items.len), .open = sets.open, .folds = sets.folds, .resumed = s.resumed };
-            if (dump) std.debug.print("propagate {d}: {d} states, {d} edges, {d} open sets, {d} fold sets, {d} resumed\n", .{ call, s.states.items.len, s.edges.items.len, sets.open, sets.folds, s.resumed });
+            if (dump and s.states.items.len >= 60) {
+                std.debug.print("  local: memo {d} inspection {d}\n", .{ local_rec[@backingInt(Ids.Category.memo)], local_rec[@backingInt(Ids.Category.inspection)] });
+                std.debug.print("  categories:", .{});
+                inline for (@typeInfo(Ids.Category).@"enum".field_names, 0..) |nm, ci| {
+                    const d = charge.account.growth_by[ci] + charge.account.baseline_by[ci] - cat0[ci];
+                    if (d != 0) std.debug.print(" {s} {d}", .{ nm, d });
+                }
+                std.debug.print("\n", .{});
+            }
+            if (dump) std.debug.print("propagate {d} [joined n{d} run{d} out k{d} ties {d}]: {d} states, {d} edges, {d} open sets, {d} fold sets, {d} resumed, members {d}, mode {s}, records pass1 {d} pass2 {d} pass3 {d} [head {d} kappa {d} foldcond {d} redundant {d} frontier {d} below {d}]\n", .{ call, in.joined.int(), root_run, in.out.int(), in.v.shapes.ties, s.states.items.len, s.edges.items.len, sets.open, sets.folds, s.resumed, in.members.len, @tagName(in.mode), pr1 - pr0, pr2 - pr1, charge.account.total() - pr2, ph_rec[0], ph_rec[1], ph_rec[2], ph_rec[3], ph_rec[4], ph_rec[5] });
             return t.kappaMerge(gpa, charge, in.out, sets.info.items[root_set].pos);
         }
 
@@ -996,13 +1267,13 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             for (ms) |x| {
                 const st = s.states.items[x];
                 if (!st.has_kept or st.kept == .none) continue;
-                try charge.reserve(gpa, .inspection, 1);
+                try lres(charge, gpa, .inspection, 1);
                 here = try t.mapUnion(gpa, charge, .cond, here, t.position(st.kept).here);
             }
             for (ms) |x| {
                 const st = s.states.items[x];
                 if (st.out == none) continue;
-                try charge.reserve(gpa, .inspection, 1);
+                try lres(charge, gpa, .inspection, 1);
                 const old = t.mapGet(here, st.node.int());
                 const val = if (old) |o| try t.join(gpa, charge, .from(o), .from(st.out)) else CondId.from(st.out);
                 try t.keyed(gpa, charge, st.node);
@@ -1053,7 +1324,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     try s.drain();
                     resumed = true;
                 }
-                try charge.reserve(gpa, .inspection, 1);
+                try lres(charge, gpa, .inspection, 1);
                 const st = s.states.items[x];
                 if (st.linked) try merged.append(gpa, st.link);
                 if (st.out != none) {
@@ -1063,7 +1334,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     here = try t.mapPut(gpa, charge, here, st.node.int(), val.int());
                 }
                 for (s.edgesOf(x)) |e| {
-                    try charge.reserve(gpa, .inspection, 1);
+                    try lres(charge, gpa, .inspection, 1);
                     links = try t.mapPut(gpa, charge, links, e.step, 0);
                     if (s.states.items[e.to].mark == gen) continue;
                     s.states.items[e.to].mark = gen;
@@ -1107,7 +1378,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 if (st.out != none) _ = try written.getOrPut(gpa, .{st.node.int()});
             }
             for (sides.items) |w| {
-                try charge.reserve(gpa, .inspection, 1);
+                try lres(charge, gpa, .inspection, 1);
                 if (written.get(.{w.node.int()}) != null) continue;
                 const old = t.mapGet(here, w.node.int());
                 const val = if (old) |o| try t.join(gpa, charge, .from(o), w.k) else w.k;
@@ -1159,7 +1430,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             try stack.append(gpa, .{ .state = root, .path = 0, .folded = false, .route = try t.mapPut(gpa, charge, none, in.joined.int(), 0) });
             var frames: u32 = 0;
             while (stack.pop()) |f| {
-                try charge.reserve(gpa, .memo, 1);
+                try lres(charge, gpa, .memo, 1);
                 const got = try visited.getOrPut(gpa, .{ f.state, f.path, @intFromBool(f.folded), f.route });
                 if (got.found_existing) continue;
                 got.value_ptr.* = 1;
@@ -1186,7 +1457,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                             next.path = q;
                             fold_at.items[q] = true;
                         } else {
-                            try charge.reserve(gpa, .memo, 1);
+                            try lres(charge, gpa, .memo, 1);
                             const pg = try path_index.getOrPut(gpa, .{ f.path, e.step });
                             if (!pg.found_existing) {
                                 pg.value_ptr.* = @intCast(paths.items.len);
@@ -1208,7 +1479,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                         }
                     }
                     if (next.folded) {
-                        try charge.reserve(gpa, .inspection, 1);
+                        try lres(charge, gpa, .inspection, 1);
                         try fold_steps.append(gpa, .{ next.path, e.step });
                     }
                     try stack.append(gpa, next);
@@ -1256,7 +1527,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 defer written.deinit(gpa);
                 for (outs.items) |w| _ = try written.getOrPut(gpa, .{ owner[w.path], w.node.int() });
                 for (side_outs.items) |w| {
-                    try charge.reserve(gpa, .inspection, 1);
+                    try lres(charge, gpa, .inspection, 1);
                     const at = owner[w.path];
                     if (!fold_at.items[at] or written.get(.{ at, w.node.int() }) != null) continue;
                     const old = t.mapGet(here[at], w.node.int());
@@ -1303,7 +1574,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             defer stack.deinit(gpa);
             try stack.append(gpa, u);
             while (stack.pop()) |x| {
-                try charge.reserve(gpa, .inspection, 1);
+                try lres(charge, gpa, .inspection, 1);
                 const d = shapes.get(x);
                 switch (d.kind) {
                     .@"union", .choice => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
@@ -1330,7 +1601,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             try stack.append(gpa, joined);
             var found: u32 = 0;
             while (stack.pop()) |x| {
-                try charge.reserve(gpa, .inspection, 1);
+                try lres(charge, gpa, .inspection, 1);
                 if (x == m) {
                     found += 1;
                     continue;

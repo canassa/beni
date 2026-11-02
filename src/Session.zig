@@ -408,6 +408,7 @@ pub const Options = struct {
     /// compares. Hidden and test-only.
     ownership_rewalk_check: bool = false,
     ownership_contracts: u8 = 0,
+    ownership_s6d: u8 = 0,
     /// `--ownership-propagate` (`Cli.Common`, `ownership-v2.md` §2.9 *Fold
     /// first*): v2's `propagate` prints a line per call. Hidden and test-only.
     ownership_propagate: bool = false,

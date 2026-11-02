@@ -528,7 +528,10 @@ pub const Frame = struct {
             },
             .call => {
                 if (f.ctx.isListAppend(f.ctx.ctx, i) and f.args(i).len == 2) return .{ .value = try f.appendChain(i) };
-                return .{ .value = try f.call(i, d.lhs, f.args(i)) };
+                const xc0 = f.account().total();
+                const cv = try f.call(i, d.lhs, f.args(i));
+                if (f.env.conds.propagate_dump) std.debug.print("call %{d}: records {d}\n", .{ i, f.account().total() - xc0 });
+                return .{ .value = cv };
             },
             .method_call => {
                 const m = f.bir.extraData(@fromBackingInt(d.rhs), Bir.MethodCall);
@@ -575,10 +578,14 @@ pub const Frame = struct {
                 const copy = try f.gpa.dupe(NodeId, members.items);
                 defer f.gpa.free(copy);
                 // One arm runs: its arms are exclusive alternatives (§2.3).
+                const xr0 = f.account().total();
                 const joined = try f.env.shapes.joinAlternatives(f.gpa, f.account(), f.env.places, f.env.cells, copy);
+                const xr1 = f.account().total();
                 var kappa: Cond.Kappas = .none;
                 for (ctxs.items) |k| kappa = try f.env.conds.kappaMerge(f.gpa, f.env.charge, kappa, k);
+                const xr2 = f.account().total();
                 kappa = try f.env.conds.propagate(f.gpa, f.env.charge, f.env.view(), kappa, joined, members.items, ctxs.items, .alternatives, false, null);
+                if (f.env.conds.propagate_dump) std.debug.print("case join %{d}: arms {d}, records shape-join {d}, kappa-merge {d}, propagate {d}\n", .{ i, members.items.len, xr1 - xr0, xr2 - xr1, f.account().total() - xr2 });
                 return .{ .value = .{ .node = joined, .kappa = kappa } };
             },
             else => {

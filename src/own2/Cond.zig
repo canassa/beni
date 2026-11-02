@@ -234,6 +234,10 @@ pub const Table = struct {
     /// `--ownership-propagate`: a line per `propagate` call with its states,
     /// edges, open sets and fold sets (§2.9 *Fold first*, *Cost*).
     propagate_dump: bool = false,
+    /// `--ownership-s6d` (experiment): which exact caches `propagate` uses.
+    s6d: u8 = 0,
+    /// Set while a check walks a call again without the S6d caches.
+    s6d_off: bool = false,
     /// The last memoised call's counts, for tests.
     prop_stats: Propagate.Stats = .{},
     /// Off while a construction tests whether a dropped node's entry needs

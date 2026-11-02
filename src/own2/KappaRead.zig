@@ -848,7 +848,10 @@ pub fn Of(comptime Table: type) type {
                 const ch: Charge = .growth(&scratch);
                 var caches = t.checkBegin(true);
                 defer t.checkEnd(gpa, &caches);
-                try t.expectSame(gpa, ch, k, try t.derivedCellsFlat(gpa, ch, v, cells, dups, dups_approx));
+                const fk = try t.derivedCellsFlat(gpa, ch, v, cells, dups, dups_approx);
+                const same = if (fails(k) or fails(fk) or k == yes or fk == yes) k == fk else try t.flat(gpa, ch, k) == try t.flat(gpa, ch, fk);
+                // Experiment: reported, not a panic, so the propagate check runs on.
+                if (!same) std.debug.print("ownership v2 cross-check (derivedCells): indexed {d}, flat {d}\n", .{ k.int(), fk.int() });
             }
             return k;
         }

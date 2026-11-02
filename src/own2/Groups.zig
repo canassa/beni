@@ -84,6 +84,7 @@ pub const Input = struct {
     order_check: bool = false, // `--ownership-order-check` (test-only)
     rewalk_check: bool = false, // `--ownership-rewalk-check` (test-only)
     contracts: u8 = 0, // `--ownership-contracts` (experiment)
+    s6d: u8 = 0, // `--ownership-s6d` (experiment)
     propagate_dump: bool = false, // `--ownership-propagate` (test-only)
 
     pub fn isCore(in: *const Input, m: u32) bool {
@@ -1427,6 +1428,8 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.conds.shapes_hook = &mod.shapes;
     mod.conds.order_check = in.order_check;
     mod.conds.propagate_dump = in.propagate_dump;
+    contract_trace = in.propagate_dump;
+    mod.conds.s6d = in.s6d;
     mod.conds.resolver = mod.views.resolver();
     mod.conds.hyp = mod.views.hyp();
     mod.shapes.trackRelevance();
@@ -2789,7 +2792,7 @@ fn usesOf(mod: *Module, f: ClassId, result_place: PlaceId) Error!ClassId {
     });
 }
 
-const contract_trace = false;
+var contract_trace = false;
 const tok_trace = false;
 const alpha_trace = false;
 

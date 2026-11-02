@@ -204,6 +204,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .ownership_order_check = common.ownership_order_check,
         .ownership_rewalk_check = common.ownership_rewalk_check,
         .ownership_contracts = common.ownership_contracts,
+        .ownership_s6d = common.ownership_s6d,
         .ownership_propagate = common.ownership_propagate,
         .ownership_v2 = common.ownership == .v2,
     };
