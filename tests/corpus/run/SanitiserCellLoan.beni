@@ -1,0 +1,96 @@
+-- A runtime catch for the loan rule at a cell callback (`ownership-v2.md`
+-- §2.13.7): a `Ref.update` or `Ref.modify` callback that edits the contents
+-- in place while a loan of them is live. The loan is a `Ref.get` result read
+-- after the update, a `Ref.modify` result, a loan kept in a record or in a
+-- closure, a field read out of a record the cell holds, and a loan live
+-- across a call of a function that makes the edit. Each prints the loan
+-- after the edit: the old contents. A callback that stores a list that
+-- something else holds (a capture, a loan of another cell) shares the
+-- contents with it, and a later edit in place is refused too.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    v = Ref.get r
+    Ref.update r λxs → List.push xs 1
+    "${ints v} ${ints (Ref.get r)}"
+
+
+modified : ⊤ → String
+modified ⊤ =
+    r = Ref.make [ 0 ]
+    old = Ref.modify r λxs → ( xs, xs )
+    Ref.update r λxs → List.push xs 1
+    "${ints old} ${ints (Ref.get r)}"
+
+
+kept : ⊤ → String
+kept ⊤ =
+    r = Ref.make [ 0 ]
+    m = { v = Ref.get r, n = 1 }
+    Ref.update r λxs → List.push xs 1
+    "${ints m.v} ${ints (Ref.get r)}"
+
+
+captured : ⊤ → String
+captured ⊤ =
+    r = Ref.make [ 0 ]
+    v = Ref.get r
+    g = λ⊤ → ints v
+    _ = Ref.modify r λxs → ( List.length xs, List.push xs 1 )
+    "${g ⊤} ${ints (Ref.get r)}"
+
+
+field : ⊤ → String
+field ⊤ =
+    r = Ref.make { items = [ 0 ], n = 0 }
+    v = (Ref.get r).items
+    Ref.update r λs → { s | items = List.push s.items 1 }
+    "${ints v} ${ints (Ref.get r).items}"
+
+
+bump : Ref (List Int) → ⊤
+bump r = Ref.update r λxs → List.push xs 1
+
+
+called : ⊤ → String
+called ⊤ =
+    r = Ref.make [ 0 ]
+    v = Ref.get r
+    bump r
+    "${ints v} ${ints (Ref.get r)}"
+
+
+stored : ⊤ → String
+stored ⊤ =
+    ys = [ 4 ]
+    r = Ref.make [ 0 ]
+    Ref.update r λ_ → ys
+    Ref.update r λxs → List.push xs 1
+    "${ints ys} ${ints (Ref.get r)}"
+
+
+shared : ⊤ → String
+shared ⊤ =
+    a = Ref.make [ 0 ]
+    b = Ref.make [ 7 ]
+    Ref.update b λ_ → Ref.get a
+    Ref.update b λys → List.push ys 1
+    "${ints (Ref.get a)} ${ints (Ref.get b)}"
+
+
+main : Program
+main =
+    Node.print
+        "${direct ⊤}; ${modified ⊤}; ${kept ⊤}; ${captured ⊤}; ${field ⊤}; ${called ⊤}; ${stored ⊤}; ${shared ⊤}"

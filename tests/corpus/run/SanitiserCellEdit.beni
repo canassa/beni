@@ -1,0 +1,73 @@
+-- The controls of `SanitiserCellLoan` (`ownership-v2.md` §2.13.7): a
+-- `Ref.update` or `Ref.modify` callback that edits the contents in place
+-- with no loan of them live is accepted, and so is a call of a function that
+-- makes the edit. A loan read before the edit is dead by then. A closure that
+-- `List.map` calls does a cell operation on a captured counter: no list write
+-- of `List.map`'s own.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    Ref.update r λxs → List.push xs 1
+    Ref.update r λxs → List.push xs 2
+    ints (Ref.get r)
+
+
+before : ⊤ → String
+before ⊤ =
+    r = Ref.make [ 0 ]
+    n = List.length (Ref.get r)
+    Ref.update r λxs → List.push xs 1
+    "${String.fromInt n} ${ints (Ref.get r)}"
+
+
+modified : ⊤ → String
+modified ⊤ =
+    r = Ref.make [ 0 ]
+    n = Ref.modify r λxs → ( List.length xs, List.push xs 1 )
+    "${String.fromInt n} ${ints (Ref.get r)}"
+
+
+field : ⊤ → String
+field ⊤ =
+    r = Ref.make { items = [ 0 ], n = 0 }
+    Ref.update r λs → { s | items = List.push s.items 1 }
+    Ref.update r λs → { s | items = List.push s.items 2, n = 1 }
+    ints (Ref.get r).items
+
+
+bump : Ref (List Int) → ⊤
+bump r = Ref.update r λxs → List.push xs 1
+
+
+called : ⊤ → String
+called ⊤ =
+    r = Ref.make [ 0 ]
+    bump r
+    bump r
+    ints (Ref.get r)
+
+
+counted : ⊤ → String
+counted ⊤ =
+    count = Ref.make 0
+    xs = List.map [ 1, 2, 3 ] λk →
+        Ref.update count λn → n + k
+        k * 2
+    ys = List.push xs 7
+    "${ints ys} ${String.fromInt (Ref.get count)}"
+
+
+main : Program
+main = Node.print "${direct ⊤}; ${before ⊤}; ${modified ⊤}; ${field ⊤}; ${called ⊤}; ${counted ⊤}"
