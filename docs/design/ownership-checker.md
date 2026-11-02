@@ -4271,6 +4271,11 @@ names the fixture that pins each (§24.6).
 | `Node.printLines` | `borrowed List String → fresh Program` | `Node.beni`: `Js.get` of the list's `length`, then `String.join` on it, which keeps nothing |
 | `Ssr.render` | `borrowed Html msg → String` | `Ssr.beni`: `Js.get (Js.from html) "t"`, the markup's text |
 
+*Amended 2026-11-03 (#1736):* `Task.spawn`, `spawnIn`, `spawnDetached` (`escaped` work and scope, `cellempty Fiber
+a`) and `Task.join` (`cellread Fiber a → lent a`) have v2 words. `ownership-v2.md` §2.13.7, *the fiber rows*, has their
+reading: `fork` makes a new record with an empty `outcome` and only queues it, and `complete` alone writes the
+`outcome`, with the work's answer or `Cancelled`. Their bodies and the 103 helpers of `Task` they run are pinned.
+
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
 
