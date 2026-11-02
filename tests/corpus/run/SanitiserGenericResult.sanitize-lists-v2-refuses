@@ -1,1 +1,3 @@
-v2 refuses the push of a generic call's result that is read again (#1516).
+# v2 refuses the push of a generic call's result that is read again (#1516).
+20:10 list_still_used List.push
+27:10 list_still_used List.push
