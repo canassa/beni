@@ -53,7 +53,6 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Regions = @import("Regions.zig");
-const Shape = @import("Shape.zig");
 const stamped = @import("../stamped.zig");
 
 pub const Use = Facts.Use;
