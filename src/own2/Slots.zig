@@ -102,6 +102,11 @@ pub const Table = struct {
     below_of: ByPath = .{},
     canon_of: ByPath = .{},
     rel_of: ByPath = .{},
+    /// Per path: its index in `walks`, a run of `steps` (`relBelow`'s
+    /// walk from it).
+    steps_of: ByPath = .{},
+    walks: std.ArrayList([2]u32) = .empty,
+    steps: std.ArrayList([2]u32) = .empty,
     /// Per relative run: its canonical key, three words a step (the kind,
     /// a constructor step's `(ordinal, argument)` and not its pair index,
     /// which is module-local), so the order of §2.10 is the same in every
@@ -118,6 +123,9 @@ pub const Table = struct {
         t.below_of.deinit(gpa);
         t.canon_of.deinit(gpa);
         t.rel_of.deinit(gpa);
+        t.steps_of.deinit(gpa);
+        t.steps.deinit(gpa);
+        t.walks.deinit(gpa);
         t.keys.deinit(gpa);
         t.key_of.deinit(gpa);
         t.scratch.deinit(gpa);
@@ -326,13 +334,56 @@ pub const Table = struct {
 
     /// The relative steps of `p` below `from`, a prefix of it (or `root`
     /// when it is not one).
-    pub fn relBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *const Place.Table, from: PathId, p: PathId) Error!?Rel {
+    /// A path below `from` whose canonical name folds at a level (§2.3.1:
+    /// `#Rose.1[*]⟲#Rose.0` below `#Rose.1[*]#Rose.1`) is no textual
+    /// extension of it: its steps are then the shortest ones the place graph
+    /// takes from `from` to it, found by one walk per `from`, a module
+    /// table like `below`'s.
+    pub fn relBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId, p: PathId) Error!?Rel {
         const a = t.relWords(try t.relOf(gpa, account, places, from));
         const b = t.relWords(try t.relOf(gpa, account, places, p));
-        if (b.len < a.len or !std.mem.eql(u32, a, b[0..a.len])) return null;
-        const rest = try gpa.dupe(u32, b[a.len..]);
-        defer gpa.free(rest);
-        return try t.relOfWords(gpa, account, places, rest);
+        if (b.len >= a.len and std.mem.eql(u32, a, b[0..a.len])) {
+            const rest = try gpa.dupe(u32, b[a.len..]);
+            defer gpa.free(rest);
+            return try t.relOfWords(gpa, account, places, rest);
+        }
+        try account.reserve(.memo, 1);
+        const wi = t.steps_of.get(from) orelse try t.walkFrom(gpa, account, places, from);
+        const run = t.walks.items[wi];
+        for (t.steps.items[run[0]..][0..run[1]]) |x| if (x[0] == p.int()) return x[1];
+        return null;
+    }
+
+    /// Every path the place graph reaches from `from`, each with the
+    /// shortest steps to it: the index of its run in `walks`.
+    fn walkFrom(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId) Error!u32 {
+        const start: u32 = @intCast(t.steps.items.len);
+        var queue: std.ArrayList(struct { PathId, Rel }) = .empty;
+        defer queue.deinit(gpa);
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(gpa);
+        try queue.append(gpa, .{ from, root });
+        _ = try seen.getOrPut(gpa, .{from.int()});
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(gpa);
+        var qi: usize = 0;
+        while (qi < queue.items.len) : (qi += 1) {
+            const at, const rel = queue.items[qi];
+            try account.reserve(.path, 1);
+            try t.steps.append(gpa, .{ at.int(), rel });
+            for (places.steps(places.pathPlace(at)).steps) |st| {
+                const nx = (try places.extend(gpa, .growth(account), at, st)) orelse continue;
+                if ((try seen.getOrPut(gpa, .{nx.int()})).found_existing) continue;
+                words.clearRetainingCapacity();
+                try words.appendSlice(gpa, t.relWords(rel));
+                try words.append(gpa, st.word());
+                try queue.append(gpa, .{ nx, try t.relOfWords(gpa, account, places, words.items) });
+            }
+        }
+        const wi: u32 = @intCast(t.walks.items.len);
+        try t.walks.append(gpa, .{ start, @intCast(t.steps.items.len - start) });
+        try t.steps_of.put(gpa, from, wi);
+        return wi;
     }
 };
 
