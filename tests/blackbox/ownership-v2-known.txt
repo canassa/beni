@@ -2615,7 +2615,6 @@ platforms/browser-tea Tea 280:26 #0 :: Tea.put state.jobs#Table.0 :: accepted ::
 platforms/browser-tea Tea 286:13 #0 :: Tea.put state.jobs#Table.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 platforms/browser-tea Tea 289:13 #0 :: Tea.put state.jobs#Table.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 platforms/browser-tea Tea 289:30 #0 :: construction old :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/browser/inline/FunctionElements.beni FunctionElements 17:27 #0 :: ++ left :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/browser/tea/BikeWars Bike 56:62 #0 :: ++ <construction> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/browser/tea/BikeWars Game 109:72 #0 :: ++ <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/browser/tea/BikeWars Game 232:9 #0 :: ++ <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
