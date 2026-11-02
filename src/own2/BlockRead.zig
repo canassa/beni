@@ -82,6 +82,9 @@ pub fn read(env: Env, sums: *Summary.Table, words: []const u32, remap: Remap, ou
                 owner.failed = t.account.failed;
                 return error.OwnershipLimit;
             }
+            // A trial dictionary past `probe_length`: the caller's limit
+            // too, loud, never no block.
+            if (e == error.ProbeLength) return owner.probeFailed().?.err();
             return null;
         }
     }
@@ -248,6 +251,7 @@ const Reader = struct {
             .field => Step.field(r.env.account(), r.remap.place.field(r.remap.place.ctx, a)) catch error.Malformed,
             .ctor_arg => r.env.places.ctorStep(r.env.gpa, r.env.account(), a, b) catch |e| switch (e) {
                 error.OutOfMemory => error.OutOfMemory,
+                error.ProbeLength => error.ProbeLength,
                 else => error.Malformed,
             },
             else => if (a > std.math.maxInt(@FieldType(Step, "payload"))) error.Malformed else .{ .kind = kind, .payload = @intCast(a) },
@@ -2300,6 +2304,28 @@ test "a read is the codec's baseline, never growth, and a read past the place ro
     try testing.expectError(error.OwnershipLimit, read(t.env(), &t.sums, words.items, .identity, &back));
     try testing.expectEqualSlices(u32, &counts, &tableCounts(&t));
     try testing.expectEqual(@as(usize, 0), back.items.len);
+}
+
+test "a block's constructor step past probe_length is that limit, never a malformed block" {
+    var t: Tables = .{};
+    try t.init();
+    defer t.deinit();
+    const gpa = testing.allocator;
+    // `(constructor, argument)` steps whose hashes agree in their low 12
+    // bits: one home in every index up to 4 096 slots.
+    const home = Ids.hashKey(2, .{ 0, 0 }) & 0xFFF;
+    var c: u32 = 0;
+    var placed: u32 = 0;
+    while (placed <= Ids.probe_length) : (c += 1) {
+        if (Ids.hashKey(2, .{ c, 0 }) & 0xFFF != home) continue;
+        _ = try t.places.ctorStep(gpa, &t.account, c, 0);
+        placed += 1;
+    }
+    while (Ids.hashKey(2, .{ c, 0 }) & 0xFFF != home) c += 1;
+    var r: Reader = .{ .env = t.env(), .sums = &t.sums, .words = &.{}, .remap = .identity };
+    defer r.deinit();
+    try testing.expectError(error.ProbeLength, r.stepFrom(.ctor_arg, c, 0));
+    try testing.expectEqual(Ids.Failure{ .limit = .probe_length }, t.account.probeFailed().?);
 }
 
 /// κ at the position `steps` reach from `n` in `t`, read by `proj` as a
