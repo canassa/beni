@@ -9,7 +9,7 @@ module HolderIndex
   71:10 List.push x2: rejected alias: a2.item holds it and is read at 75:11
   93:10 List.push xs: accepted param
   94:10 List.push ys: accepted param
-  112:10 List.push xs: rejected alias: t8.1.1.1.1.1.1.1.1.0 holds it and is read at 113:37
+  112:10 List.push xs: rejected alias: t8.0.0.0.0.0.0.0.0.0 holds it and is read at 113:37
   119:14 List.push base: rejected held-operand: the value at 119:7, evaluated before it, holds it until its consumer runs
   demands 12: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
 total 12: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
