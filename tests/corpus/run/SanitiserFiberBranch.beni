@@ -1,0 +1,64 @@
+-- A runtime catch for a loan across a suspension (`ownership-v2.md` §2.11.4,
+-- §2.13.7): the two branches of `Task.par` run in two fibers. One holds a
+-- loan of a cell's contents across a sleep, the other edits the contents in
+-- place, in its own body or through a callee. Each branch is checked on its
+-- own, so neither sees the other. What makes the edit refused is `once`: a
+-- closure that edits a captured cell's contents in place may run only where
+-- the checker sees every call, and `par` hands it to another fiber. Were the
+-- edit exempt from `once`, as a cell operation is, the first branch would
+-- read the edited list. Each line shows the loan as it was before the edit.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+look : Ref (List Int), ⊤ → String
+look r _ =
+    v = Ref.get r
+    Io.sleep 10
+    ints v
+
+
+bump : Ref (List Int), ⊤ → ⊤
+bump r _ =
+    Io.sleep 1
+    Ref.update r λxs → List.push xs 1
+
+
+inline : ⊤ → String
+inline ⊤ =
+    r = Ref.make [ 0 ]
+    ( a, _ ) =
+        Task.par
+            (λ⊤ →
+                v = Ref.get r
+                Io.sleep 10
+                ints v
+            )
+            λ⊤ →
+                Io.sleep 1
+                Ref.update r λxs → List.push xs 1
+    "inline ${a}"
+
+
+callees : ⊤ → String
+callees ⊤ =
+    r = Ref.make [ 0 ]
+    ( a, _ ) = Task.par (look r _) (bump r _)
+    "callees ${a}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    a = inline ⊤
+    b = callees ⊤
+    Node.printLines [ a, b ]
