@@ -289,6 +289,7 @@ async function diff(sides) {
   const accepts = [];
   const refuses = [];
   const notBuilt = [];
+  const updates = [];
   const oneSided = [];
   const explained = [];
   for (const [i, root] of roots.entries()) {
@@ -318,6 +319,13 @@ async function diff(sides) {
           notBuilt.push({ ...row, why: `${sides[missing]} did not check ${span.name}` });
           continue;
         }
+      }
+      // v1's record-update demands (`update …`): v2 makes none, since an
+      // in-place record update is a later slice and the emitter copies
+      // (`ownership-v2.md` §2.11.5). Counted apart, by demand kind only.
+      if (missing >= 0 && sides[missing] === "v2" && sides[1 - missing] === "v1" && (x ?? y).demand.startsWith("update ")) {
+        updates.push(row);
+        continue;
       }
       const differs = missing >= 0 || x.refused !== y.refused;
       // A known difference names the demand and both verdicts, so it
@@ -353,6 +361,7 @@ async function diff(sides) {
   show(oneSided, "Demands only one side reports, in a declaration both checked", true);
   show(explained, "Known differences (tests/blackbox/ownership-v2-known.txt)", true);
   show(notBuilt, "Demands in a declaration one side did not check", !!args.unchecked);
+  show(updates, "v1's record-update demands, which v2 does not make (ownership-v2.md §2.11.5)", false);
   const stale = [...allowed.keys()].filter((k) => !used.has(k));
   if (stale.length) {
     console.log(`\n## Known differences that no longer occur: ${stale.length}\n`);
