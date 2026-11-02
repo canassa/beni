@@ -662,11 +662,12 @@ pub const Eval = struct {
         return 0;
     }
 
-    /// What arrives at slot `words` of tree `root` (`Contract.Table.atSlot`),
-    /// one inspection a node visited.
+    /// What arrives at slot `words` of tree `root` (`Trees.Table.atSlot`):
+    /// a walk of the slot's steps, the instantiation's own lookup, which
+    /// the key it fills pays for (§4.1); a test that reads a contract
+    /// pays an inspection a node visited (`uniformAtoms`).
     pub fn hitsAt(e: *Eval, root: Contract.Node, words: []const u32, out: *std.ArrayList(Contract.Hit)) Error!void {
-        const n = try e.contracts.trees.atSlot(e.gpa(), root, words, out);
-        try e.charge(.inspection, n);
+        _ = try e.contracts.trees.atSlot(e.gpa(), root, words, out);
     }
 
     pub fn contractOf(e: *Eval, call: u32) ?Contract.Id {
@@ -974,7 +975,7 @@ pub const Eval = struct {
         if (e.contracts.trees.at(root, xw)) |n| if (e.contracts.trees.kids(n).len != 0 or e.contracts.trees.here(n).len != 0) return false;
         var hits: std.ArrayList(Contract.Hit) = .empty;
         defer hits.deinit(e.gpa());
-        try e.hitsAt(root, xw, &hits);
+        try e.charge(.inspection, try e.contracts.trees.atSlot(e.gpa(), root, xw, &hits));
         var any = false;
         for (hits.items) |hit| {
             if (!hit.open) continue;
