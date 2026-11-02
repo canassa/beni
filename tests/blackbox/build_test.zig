@@ -9753,14 +9753,15 @@ test "the checker v2's cold run applies no class the warm run stopped at a limit
     try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "main", "growth"));
 }
 
-test "the checker v2 leaves unchecked a caller of an imported eq whose walk a limit stopped" {
+test "the checker v2 reads an imported eq whose walk a limit stopped as the pessimistic contract" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §2.13.13: `Lib.eq` is written in beni, so `==` on
     // `Key` is not a derived, read-only comparison. `eq` calls `w12`, whose
-    // walk the allowance stops, so the block says an importer may not apply
-    // it: `bad` is unchecked, never accepted with `xs` kept beside `==`.
+    // walk the allowance stops, so `eq` publishes no contract and an
+    // importer reads the pessimistic one (§2.10, §3.6): `bad`'s `xs`
+    // escapes at `==`, never kept as only read beside it.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
@@ -9782,8 +9783,8 @@ test "the checker v2 leaves unchecked a caller of an imported eq whose walk a li
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w12: ownership_summary_size") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  unchecked bad: lines 4-5 (not built: method_call)\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary bad: π1 RA") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit eq: ownership_summary_size") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary bad: res .1 π1ε; nondup yes; reads π1ε*; escapes π1ε*\n") != null);
 }
 
 /// The continuation `owner`'s walk spent, from `dump`, for a source of `n`
@@ -11187,10 +11188,9 @@ fn expectWideRunPerItem(shape: WideRun, per_item: u64) !void {
 }
 
 test "the checker v2 checks 600 spreads of one list in no growth and work bounded per item" {
-    // Measured: 22 / 20 records per item at 100 / 600 (18 at 600 before
-    // positions saturate at two: the 600 copies of `xs`'s element rebuild
-    // to one `positions(x, x)`, each rebuild a task of its own, §2.3).
-    try expectWideRunPerItem(.spreads, 32);
+    // Measured on the slot domain: 41 / 40 continuation records per item
+    // at 100 / 600 (each spread one arrival of `xs`'s slots, §2.3).
+    try expectWideRunPerItem(.spreads, 60);
 }
 
 test "the checker v2 checks 600 items before a spread in no growth and work bounded per item" {
@@ -11356,7 +11356,7 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // └─────────────────────────────────────────┘
     // §4.1: work that is not the declaration's source is past K·I_f, which
     // is growth, and past the allowance the loud `ownership_summary_size`.
-    // `nearLimitModule`'s `h` costs about 78 000 records from a few atoms.
+    // `nearLimitModule`'s `h` costs about 75 000 growth records from a few atoms.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni", try nearLimitModule(w.arena.allocator(), true, 65_536));
@@ -11915,10 +11915,11 @@ test "the checker v2 keeps a dropped positions node's shared entry (positions sa
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // §2.3 *The entries of a dropped node*: `[ l4, l4, …m7 ]` holds `l4`
-    // three times, so the rebuild drops `m7`'s `[*]` node, which `m7`'s
-    // snapshot stores `shared`. Read at the summary position, the rebuilt
-    // node derives `lost` alone; the carried entry keeps it `shared`, as
-    // the tree the constructors would have made reads.
+    // three times. Before the slot domain the rebuild dropped `m7`'s `[*]`
+    // node, which `m7`'s snapshot stores `shared`, and had to carry the
+    // entry. On the slot domain (#1685) every arrival at `[*]` is kept:
+    // `m`'s elements and `a`'s, and the result's elements may repeat
+    // (`nondup no`), as the tree the constructors would have made reads.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -11941,7 +11942,7 @@ test "the checker v2 keeps a dropped positions node's shared entry (positions sa
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "res [*] fresh2 ~π2 π2 π3[*]{shared},") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary sharedLost: res ε π3ε fresh, [*] π2ε π3[*] fresh, [*][*] π1ε π2[*] π3[*][*]; nondup no;") != null);
 }
 
 test "the checker v2 counts a tower of joins of a level and the level below in n log n (K)" {
@@ -12109,7 +12110,8 @@ test "the checker v2 counts a branch's arms once at a fold, and coexisting occur
     // node's sides coexist and add. JoinFoldChoice reads `x` once; before
     // `choice`, its opened union counted `x` in both arms and read `lost`.
     // `Rose [ r, r ]` and an element beside a choice holding it repeat; K's
-    // tower keeps every kids read `yes` at every height.
+    // tower keeps every kids read `yes` at every height. On the slot domain
+    // (#1685) a repeat is the summary's `nondup no`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
@@ -12168,12 +12170,12 @@ test "the checker v2 counts a branch's arms once at a fold, and coexisting occur
     }.of;
     const fails = struct {
         fn in(l: []const u8) bool {
-            return std.mem.indexOf(u8, l, "{lost}") != null or std.mem.indexOf(u8, l, "{shared}") != null;
+            return std.mem.indexOf(u8, l, "; nondup no") != null;
         }
     }.in;
     try testing.expect(!fails(try line(dump.stdout, "joinFold")));
     try testing.expect(fails(try line(dump.stdout, "twice")));
-    try testing.expect(std.mem.indexOf(u8, try line(dump.stdout, "besides"), "{shared}") != null);
+    try testing.expect(fails(try line(dump.stdout, "besides")));
     try testing.expect(!fails(try line(dump.stdout, "kTower")));
 }
 
@@ -12264,14 +12266,14 @@ test "a kids list at two depths of a widened tree reads as a repeat; distinct ki
     // and every fold reads its repeats (#1125's verification).
     for ([_][]const u8{ "minimal", "kidsPush", "kidsSpread", "onePush", "plainPush", "mTree", "mPlain" }) |name| {
         var buf: [64]u8 = undefined;
-        const field = if (name[0] == 'm' and name[1] != 'i') "#M.0" else "#Rose.0";
-        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res {s} ", .{ name, field });
+        const head = try std.fmt.bufPrint(&buf, "  summary {s}: res ", .{name});
         const at = std.mem.indexOf(u8, dump.stdout, head) orelse return error.TestUnexpectedResult;
         const line = dump.stdout[at..std.mem.indexOfScalarPos(u8, dump.stdout, at, '\n').?];
         // Since #1253 a Maybe tree's depth-1 child is a first return, a
         // plain path, so `mTree` holds `k` at depths 1 and 2, where the
-        // levels below the first return fold into its class.
-        const repeat = std.mem.indexOf(u8, line, "{lost}") != null or std.mem.indexOf(u8, line, "{shared}") != null;
+        // levels below the first return fold into its class. On the slot
+        // domain (#1685) a repeat is the summary's `nondup no`.
+        const repeat = std.mem.indexOf(u8, line, "; nondup no") != null;
         try testing.expectEqual(!std.mem.eql(u8, name, "plainPush") and !std.mem.eql(u8, name, "mPlain"), repeat);
     }
 }
@@ -12283,7 +12285,9 @@ test "a one-element literal's [*] compares the objects its element holds at ever
     // #1115's review: the link of a one-element literal keeps the entry at
     // its `[*]` that compares everything the element holds below (`apart`
     // over its arrivals): `( a, b )`'s two parameters, and `( xs, x )` with
-    // `x` one of `xs`'s elements, one object at two paths.
+    // `x` one of `xs`'s elements, one object at two paths. On the slot
+    // domain (#1685) the comparison is the result's `nondup` condition: the
+    // two parameters apart, and `no` for `xs` beside its own element.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -12312,8 +12316,8 @@ test "a one-element literal's [*] compares the objects its element holds at ever
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p10: π1 RA, π2 RA; res [*] {apart [π1] [π2]}, [*].0 π1, [*].1 π2, fresh1\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p11: π1 RA, π1[*] RA; res [*] {lost}, [*].0 π1, [*].1 π1[*]{excl π1[*]}, fresh1 fresh2\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p10: res ε fresh, [*].0 π1ε, [*].1 π2ε; nondup ⇐ sel π1{ε} π2{ε}; reads π1ε* π2ε*\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary p11: res ε fresh, [*].0 π1ε, [*].0[*] π1[*], [*].1 π1[*]; nondup no; reads π1ε*\n") != null);
 }
 
 test "the checker v2's summary prints a cell at every path it is reached at, a shared value by reference" {
@@ -12375,7 +12379,9 @@ test "the checker v2 gives each demand of one call its own query lane" {
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §4.1, *direct demand query*: ≤ 512 records per
     // written demand. `Ref.set` writes its cell and stores its value: two
-    // demands at one call, two lanes, never one shared by the call point.
+    // demands at one call, each judged on its own. The slot domain (#1685)
+    // charges demands to their own category, not a lane per demand: the
+    // two cost at most 512 records each.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -12398,7 +12404,9 @@ test "the checker v2 gives each demand of one call its own query lane" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, dump.stdout, ": accepted param\n"));
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "direct_demand_query lanes 2,") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  6:5 Ref.set r◆: accepted param\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  6:5 Ref.set xs: accepted param\n") != null);
+    try testing.expect(try accountField(dump.stdout, "put", "demands") <= 2 * 512);
 }
 
 test "the checker v2's dump does not depend on where a declaration sits in its module" {
@@ -12528,7 +12536,8 @@ test "the checker v2 prints a summary of shared positions once per node, not onc
     // 2ⁱ routes. The summary print expanded each route and gathered each
     // route's cells: 2¹⁰ copies of `π1[*]` at ten bindings, and 101.8 s and
     // 6.8 GB at 25. It expands a shared node once per prefix now, and a
-    // position's cells are a set.
+    // position's cells are a set: on the slot domain (#1685), each slot's
+    // arrivals are a sorted run, `π1[*]` once.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
@@ -12548,7 +12557,7 @@ test "the checker v2 prints a summary of shared positions once per node, not onc
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary g: π1 RAW, π1[*] A; res [*] fresh1 π1[*]{shared}, π1\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary g: res ε π1ε, [*] π1[*] fresh; nondup no; reads π1ε*; writes π1ε; req yes\n") != null);
 }
 
 test "the checker v2's branch join reads a repeated run once per call, whatever parent it is met through" {
@@ -12755,7 +12764,8 @@ test "the checker v2 keeps no round of a group's port that its last round covers
     // new round covered it, so the port held the history of its rounds. It
     // took 4 walks and passed the default allowance (168 829 records with
     // the allowance raised). The join keeps only the round that covers the
-    // other: 3 walks, about 37 000 records, no growth.
+    // other: 3 walks, about 37 000 records, no growth. On the slot domain
+    // (#1685) the group settles in one walk of three rounds, 998 records.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -12814,7 +12824,8 @@ test "the checker v2 keeps no round of a group's port that its last round covers
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit mergeSort") == null);
-    try testing.expectEqual(@as(u64, 3), try accountField(dump.stdout, "mergeSort", "walks"));
+    try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "mergeSort", "walks"));
+    try testing.expectEqual(@as(u64, 3), try accountField(dump.stdout, "mergeSort", "rounds"));
     // #1459's read-off filter reads each joined entry it may drop: growth, as
     // the limit must see it (4 045 records).
     try testing.expect(try accountField(dump.stdout, "mergeSort", "growth") <= 5_000);
@@ -12884,19 +12895,21 @@ fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const 
     try src.appendSlice(a, " }\n    [ t, t ]\n");
 }
 
-/// `h`, ten calls `( w9 x, …, w9 x )` over `w_k x = w_{k-1} (w_{k-1} x)` to 9,
-/// from `w1 x = ( x, x )`: each call applies a callee whose result doubles,
-/// so its work, about 78 000 records, is a genuine product of a few source
-/// atoms (§4.1, #1188; it took `doublingProduct`'s place when §2.9 *Fold
-/// first*, #1543, made that one linear). With it
+/// `h`, seven calls `( w4 x, …, w4 x )` over `w_k x = w_{k-1} (w_{k-1} x)`
+/// to 4, from `w1 x = ( x, x )`: each call applies a callee whose result
+/// doubles, so its work, about 75 000 growth records on the slot domain, is
+/// a genuine product of a few source atoms (§4.1, #1188; it took
+/// `doublingProduct`'s place when §2.9 *Fold first*, #1543, made that one
+/// linear). It was ten calls of `w9` before the slot domain (#1685), whose
+/// `w5` alone now passes the allowance. With it
 /// another declaration `g`, `h` first or not, under a module allowance of
 /// `size` (#1104): one module's text.
 fn nearLimitModule(a: std.mem.Allocator, h_first: bool, size: u64) ![]const u8 {
     var h: std.ArrayList(u8) = .empty;
     try h.appendSlice(a, "w1 x = ( x, x )\n");
-    for (2..10) |k| try h.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try h.appendSlice(a, "\n\nh x =\n    ( w9 x");
-    for (1..10) |_| try h.appendSlice(a, ", w9 x");
+    for (2..5) |k| try h.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
+    try h.appendSlice(a, "\n\nh x =\n    ( w4 x");
+    for (1..7) |_| try h.appendSlice(a, ", w4 x");
     try h.appendSlice(a, " )\n");
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const head = try std.fmt.allocPrint(a, "@ownership_summary_size(module, {d})\n\n\n", .{size});
@@ -12920,12 +12933,12 @@ test "the checker v2 charges a declaration near its limit the same in either ord
     // #1104: a table both declarations share once charged its first miss to
     // whichever declaration met it first, so a declaration near its limit
     // passed after another and failed before it. Three modules in one run:
-    // `h` first and `g` first under one allowance above `h`'s growth (77 716
-    // when this was written), and `g` first under one below it. The run
+    // `h` first and `g` first under one allowance above `h`'s growth (75 358
+    // on the slot domain, #1685), and `g` first under one below it. The run
     // checks that both lie within 5 % of the growth it reports, so a change
     // of cost that moves them out fails here and names the growth.
-    const above: u64 = 81_000;
-    const below: u64 = 75_000;
+    const above: u64 = 78_000;
+    const below: u64 = 73_000;
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
@@ -13665,8 +13678,8 @@ test "the checker v2 publishes nothing of a recursive group a limit stops, and s
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 24 fields exhausts past
-    // the lanes (16 settled once 4b delivered the facts along the edges). The
+    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 112 fields exhausts past
+    // the lanes (at 24 before the slot domain, #1685, which checks 96). The
     // group is built whole or not at all: one member has the limit, the
     // other is unbuilt at its group call, and neither publishes a class or a
     // line. `before`, an earlier group, still serves `after`, whose call is
@@ -13677,7 +13690,7 @@ test "the checker v2 publishes nothing of a recursive group a limit stops, and s
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try groupFieldShift(&w, 24, true);
+    const dump = try groupFieldShift(&w, 112, true);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
