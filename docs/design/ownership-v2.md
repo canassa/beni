@@ -921,7 +921,9 @@ closure with no capture; a constructor used as a value is the constructor's code
 is a read at creation (R-5.4.6), a whole capture is used wherever the closure is consumed (R-5.4.1). A body
 that writes a capture makes its code `once` (R-2.8): its creation is a `once` demand on each written capture,
 and a second call of the closure, a call by a label whose `calls` is many, or an escape of the closure
-refuses it.
+refuses it. A code that writes one of its own **parameters** relies on its callers' supplies; where the closure
+escapes (to a callee with the pessimistic contract, to JavaScript, into a cell), its callers are unknown, so each
+such write is a `callsite` demand on `⊤` at the first escape, refused `unknown` (O1; `Closures.zig`).
 
 A function value returned by a callee is unknown code at the caller (§2.11.3): its answer is `⊤`.
 
@@ -2973,7 +2975,7 @@ L13 Enforce
 L12 Ownership
 L11 Block  Message  Report  Hoists
 L10 Groups
-L9  Resolve  Deliver
+L9  Resolve  Deliver  Closures
 L8  Eval
 L7  Walk  Distinct
 L6  Relation
@@ -3008,7 +3010,8 @@ L0  Ids  Counters  Scratch
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Contract, Value, Relation, Distinct, Walk |
 | `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Value, Relation, Distinct, Walk, Eval, Liveness, Regions |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
-| `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver |
+| `Closures.zig` | 9 | a closure that writes its own parameters and escapes: its unknown callers' supplies are `⊤` (§2.11.4) | Ids, Eval |
+| `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups |
 | `Report.zig` | 11 | dump lines and totals | Facts |

@@ -147,6 +147,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
         .local => localName(f, d.lhs),
         .field_access, .tuple_index => unreachable,
         .list => "<literal>",
+        .lambda => "<lambda>",
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
         // A spread literal's outermost call is the literal, as v1 names it.
