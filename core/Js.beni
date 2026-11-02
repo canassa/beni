@@ -162,7 +162,12 @@ pub foreign impure apply : Value, args → Value
 --| driver to consume. Its real type and callback summary are retained.
 --| Core's fiber driver only; this does not turn suspension into a value
 --| an application can hold. Unlike a host callback, `work` is not `sync`.
-pub foreign impure invoke : once (a → b), aliased a → unknown b
+pub foreign impure invoke : once (a → b), aliased a, sync (b → ⊤) → unknown b
+
+
+--| The current typed result destination. Only Task.callback's compiler
+--| protocol reads it; it is supplied by the caller, never application data.
+pub foreign impure completion : ⊤ → (a → ⊤)
 
 
 --| `new C(a, b)`: an object made by a constructor, the arguments written

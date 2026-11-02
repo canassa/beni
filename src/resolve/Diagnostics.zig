@@ -151,12 +151,16 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             \\
             \\Check the spelling, or check that the declaration in `{s}` is marked `pub`.
         , .{ cx.module, cx.name, cx.module }),
-        .private_name => try w.print(
-            \\`{s}` is not public in `{s}`.
-            \\
-            \\It is declared there, but without `pub`, so only that module can use it. Add
-            \\`pub` to its declaration if it is meant to be part of the interface.
-        , .{ cx.name, cx.module }),
+        .private_name => if (std.mem.eql(u8, cx.module, "Js") and
+            (std.mem.eql(u8, cx.name, "invoke") or std.mem.eql(u8, cx.name, "completion")))
+            try w.writeAll("This primitive is private to core's typed fiber protocol. Platforms use `Task.callback` and `Task.resume`.")
+        else
+            try w.print(
+                \\`{s}` is not public in `{s}`.
+                \\
+                \\It is declared there, but without `pub`, so only that module can use it. Add
+                \\`pub` to its declaration if it is meant to be part of the interface.
+            , .{ cx.name, cx.module }),
         .opaque_constructor => try w.print(
             \\`{s}` is a constructor of `{s}.{s}`, which is opaque.
             \\

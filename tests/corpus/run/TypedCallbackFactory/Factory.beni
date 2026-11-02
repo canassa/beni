@@ -1,0 +1,12 @@
+pub opaque type Callback
+    = Callback (⊤ → Int)
+
+
+pub make : (⊤ → Int) → Callback
+make work = Callback work
+
+
+pub run : Callback → Int
+run (Callback work) =
+    value = work ⊤
+    value + 1

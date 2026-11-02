@@ -1,0 +1,12 @@
+import Factory
+import Io
+import Node
+import String
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    callback = Factory.make λ⊤ →
+        Io.sleep 1
+        41
+    Node.print (String.fromInt (Factory.run callback))

@@ -16,8 +16,8 @@ types. Keep the sentinel fast path, iterative resume, child-first cancellation
 and LIFO finalizer boundaries. No universal `Value → Value` callback replaces
 those types.
 
-Migrate scheduler jobs → continuations → finalizers/observers → context slots
-→ renderer queues → native shims. Task families include pending/stack and
+Migrate Task scheduler jobs → continuations → finalizers/observers → context
+slots and native shims. Renderer queues follow in their own slice. Task families include pending/stack and
 fork/begin work; program/custom/macro queues; wait/Resume/Fiber result storage;
 cancellers and deferred releases; scheduler run/more/drain/idle/count hooks;
 clock sleepers, log sinks and inherited/restored contexts. Their control
@@ -33,8 +33,9 @@ coordination and matching fetch/socket/timer shims are also worker paths.
 The first implementation uses a typed linked FIFO over existing `Js.Ref` for
 the program queue, shutdown work and MessageChannel jobs, and a typed optional
 scheduler-turn hook. Dequeue happens before invocation; reentrant enqueue
-preserves FIFO order. Custom schedulers, native shims and continuation/value
-storage remain to migrate. This is not yet a HostFree-complete Task.
+preserves FIFO order. The compiler now passes typed hidden completions and
+imports private continuation adapters; its temporary driver still uses the old
+control records until the typed fiber/result-slot kernel replaces them. This is not yet a HostFree-complete Task.
 
 **Owner decision, 2026-11-01:** the core-private typed protocol invocation
 intrinsic is approved as a rule-6 extension. It invokes a typed possibly
