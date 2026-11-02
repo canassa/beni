@@ -1,6 +1,9 @@
-# Proposed browser worker API
+# Browser worker API
 
-**Normative proposed signatures, 2026-10-30; not implemented or compiled.**
+**Dedicated module workers are built:** scoped calls, events, cancellation, cleanup
+and defect routing. This document retains the full normative API contract, including
+additional specified capabilities. Generated platform references list the available
+public signatures.
 The [callback protocol](workers-callback-contracts.md) is selected by entryKinds
 metadata and checked by ownership checker v2 against inferred user summaries.
 The language has no new field annotations. [workers.md](workers.md) owns semantics.
@@ -127,6 +130,12 @@ pub type alias Protocol call reply streamRequest error event chunk =
     event : event
     chunk : chunk
 
+-- Owner decision, 2026-11-02: type-only aliases; no streams.
+pub type alias Calls request reply error =
+    Protocol request reply ⊥ error ⊥ ⊥
+pub type alias CallsWithEvents request reply error event =
+    Protocol request reply ⊥ error event ⊥
+
 pub type alias Definition config state call reply streamRequest error event chunk =
     init : Context event, config → Result error state
     start : Context event, state → ⊤
@@ -139,6 +148,32 @@ pub program : Definition config state call reply streamRequest error event chunk
 pub concurrent : Concurrency, Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
 
+
+-- pure
+pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
+```
+
+**Owner decision, 2026-11-02.** `Calls request reply error` is call-only.
+`CallsWithEvents request reply error event` adds pushed events. Both are plain
+aliases over `Protocol`, with absent roles set to `⊥`; they add no runtime code.
+A type alias cannot supply a record field value. `Definition` still requires
+`stream`, so pass `Worker.noStream` without writing a stream callback:
+
+```beni platform=browser
+import Browser.Worker as Worker
+
+
+pub worker : Worker.Program ⊤ ⊤ (Worker.Calls String String String)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok message
+        , stream = Worker.noStream
+        }
+```
+
+```text
 -- pure
 pub concurrency : Int → Result ConfigError Concurrency
 pub options : Options
@@ -155,8 +190,33 @@ pub events : Handle (Protocol call reply streamRequest error event chunk) → St
 -- impure, synchronous codec/commit path; prepared inputs are consumed.
 pub send : Handle (Protocol call reply streamRequest error event chunk), Prepared call
     → Result SendError (Ticket error reply)
--- suspends
+-- suspends; an interrupted ticket cancels the awaiting fiber.
 pub await : Ticket error reply → Result (CallError error) reply
+```
+
+Awaiting an interrupted ticket does not return a `Result`: it ends the awaiting
+fiber as `Cancelled`. A statement after that await does not run. To keep the
+parent running, await in a child and inspect `Task.wait`:
+
+```beni platform=browser
+import Browser.Worker as Worker
+import Task
+
+
+pub cancelAndObserve : Worker.Ticket error reply → Worker.Cleanup × Bool
+cancelAndObserve ticket =
+    cleanup = Worker.cancel ticket
+    awaiting = Task.spawn λ⊤ → Worker.await ticket
+    interrupted =
+        case Task.wait awaiting of
+            Task.Cancelled →
+                True
+            Task.Done _ →
+                False
+    ( cleanup, interrupted )
+```
+
+```text
 -- suspends, cancel-and-wait; idempotent terminal outcome.
 pub cancel : Ticket error reply → Cleanup
 -- suspends
@@ -232,8 +292,9 @@ one type-only protocol record. For example `type alias Jobs = Worker.Protocol
 Call Int StreamRequest Error Event Int` is shared by both sides. Ordinary alias
 expansion/unification selects its fields; there are no new associated-type
 projections or runtime protocol records. The eight parameters of Definition
-are spelled out only at generic constructor signatures. A call-only protocol
-uses `⊥` for streamRequest and chunk. The library value Worker.noStream
+are spelled out only at generic constructor signatures. Use `Worker.Calls`
+for calls without events, or `Worker.CallsWithEvents` for calls with events.
+Both use `⊥` for streamRequest and chunk. The library value Worker.noStream
 supplies that field without a user callback. No value can be supplied
 to Worker.stream, and no runtime WrongRequest branch exists. ExternalProtocol
 is a different, value-level pair of schemas for untyped native peers.
@@ -348,7 +409,6 @@ pub type alias Machine config model msg call reply streamRequest error event chu
 pub machine : Machine config model msg call reply streamRequest error event chunk
     → Program config model (Protocol call reply streamRequest error event chunk)
 -- pure
-pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
 pub noStreamRequest : ⊥, Sink error ⊥ → msg
 pub none : Command msg
 pub batch : List (Command msg) → Command msg

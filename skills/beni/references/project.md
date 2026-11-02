@@ -19,6 +19,17 @@ The project file, in the directory `beni` runs from (or `--root`):
 }
 ```
 
+A custom `index.html` must contain `{{entry}}`. The build replaces it with the
+entry module URL:
+
+```html
+<!doctype html>
+<html>
+  <head><script type="module" src="{{entry}}"></script></head>
+  <body></body>
+</html>
+```
+
 | Key | Is | Default |
 |---|---|---|
 | `"build"."platform"` | the platform, what `--platform` says | none: `build` refuses |

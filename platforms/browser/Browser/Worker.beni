@@ -1,4 +1,4 @@
--- Dedicated workers. Launches remain behind --allow-unchecked-workers.
+-- Dedicated module workers with typed calls and pushed events.
 import Browser.WorkerStream exposing (Sink, Stream)
 import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
@@ -149,6 +149,16 @@ pub type alias Protocol call reply streamRequest error event chunk =
     error : error
     event : event
     chunk : chunk
+
+
+--| Calls without events or streams.
+pub type alias Calls request reply error =
+    Protocol request reply ⊥ error ⊥ ⊥
+
+
+--| Calls with pushed events, without streams.
+pub type alias CallsWithEvents request reply error event =
+    Protocol request reply ⊥ error event ⊥
 
 
 pub type alias Definition config state call reply streamRequest error event chunk =

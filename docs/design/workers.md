@@ -1,6 +1,7 @@
 # Web Workers in the browser platform
 
-**Normative design, specified 2026-10-30; not implemented.** Tracking:
+**Normative design, specified 2026-10-30. Dedicated module workers are built:**
+scoped calls, events, cancellation, cleanup and defect routing. Tracking:
 [#1290](https://github.com/canassa/beni/issues/1290). The owner decisions of 2026-10-30 below are the implementation contract.
 The [research and inventory](research/workers-api-research.md) establish the
 baseline. This document owns the compiler/runtime contract, not a claim that
@@ -67,7 +68,7 @@ for each entry (§4).
 
 The current target is `browser-inline`, the replacement selected in #966;
 capabilities move into its browser base, rather than the old dom/TEA renderer.
-The proposed modules and every public signature are in
+The API contract is in
 [workers-api.md](workers-api.md). The existing-module audit remains in
 [research §8](research/workers-api-research.md#8-existing-browser-modules-by-realm-source-audit-2026-10-30).
 That audit distinguishes today's code from needed migration: for example,
@@ -198,6 +199,9 @@ The graph worklist discovers nested launches until no new entry declaration
 appears. Runtime paths come from canonical package/module/declaration identity,
 not discovery order. A cycle of entries does not recurse the build forever.
 No launch means no emitted worker: unused program declarations are eliminated.
+Dedicated launches need no opt-in compiler flag. Both `check` and `build`
+validate finite entry selection, each discovered worker’s realm and all Wire
+roles before accepting a launch. There is no unchecked launch bypass.
 External code can be served by compiling the worker declaration as a generic
 explicit root with `beni build Module.beni --entry=value`; the selected type
 must match one entryKind. This handles standalone deployments without a

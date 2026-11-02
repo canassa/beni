@@ -1496,7 +1496,7 @@ test "generic aliased runtime may store a suspending callback without calling it
     }
 }
 
-// Dedicated workers stay on this test platform until realm and Wire checks ship.
+// This test platform isolates the generic entry contract from the browser runtime.
 fn writeWorkerPlatform(w: *World) !void {
     for ([_][]const u8{ "beni.json", "Page.beni", "Page.js", "Worker.beni", "Worker.js", "WorkerRuntime.beni", "runtime.js" }) |name| {
         const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(w.arena.allocator(), "tests/platforms/worker/{s}", .{name}), w.arena.allocator(), .limited(world.max_stream_bytes));
@@ -1540,10 +1540,10 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
     for ([_]bool{ false, true }) |release| {
         // EXECUTE
         const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
-        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
+        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
         try testing.expectEqual(@as(u8, 0), one.exit_code);
         try testing.expectEqual(@as(usize, 0), one.diagnostics.len);
-        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
+        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
         try testing.expectEqual(@as(u8, 0), eight.exit_code);
         try testing.expectEqual(@as(usize, 0), eight.diagnostics.len);
         // VERIFY OUTPUT AND SIDE EFFECTS
@@ -1601,7 +1601,7 @@ test "worker runtime factories are diagnosed before writing any output" {
         \\
     );
     // EXECUTE
-    const result = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" });
+    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
     // VERIFY OUTPUT AND SIDE EFFECTS
     try testing.expectEqual(@as(u8, 1), result.exit_code);
     try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
@@ -1661,7 +1661,7 @@ test "worker launch URLs stay relative to their module under release specializat
     for ([_]bool{ false, true }) |release| {
         // EXECUTE
         const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
-            &.{ "build", "--allow-unchecked-workers", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
+            &.{ "build", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
             if (release) &.{"--release"} else &.{},
         });
         const result = try w.run(args);
@@ -1741,7 +1741,7 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
         // EXECUTE: the second check reads the helper's cached interface.
         for (0..2) |_| {
-            const good = try w.run(&.{ "check", "--allow-unchecked-workers", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
             // Checking discharges generic Wire obligations without launching a worker.
             try testing.expectEqual(@as(u8, 0), good.exit_code);
             try testing.expectEqual(@as(usize, 0), good.diagnostics.len);
@@ -1813,7 +1813,7 @@ test "worker Wire follows opaque payload layouts across warm caches" {
         try w.write("platform/Box.beni", try std.fmt.allocPrint(w.arena.allocator(), "import List\npub opaque type Box = Box {{ {s} : List Int }}\npub make : List Int → Box\nmake values = Box {{ {s} = values }}\npub sum : Box → Int\nsum (Box record) = List.sum record.{s}\n", .{ field, field, field }));
         // EXECUTE: the second build changes a private representation while
         // retaining every public value signature and structural marker.
-        const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
+        const built = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
         try testing.expectEqual(@as(u8, 0), built.exit_code);
         try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
         // VERIFY OUTPUT: the compiled plan must normalize the new payload
@@ -1878,7 +1878,7 @@ test "worker realm obligations survive generic imported writers and warm interfa
     // EXECUTE AND VERIFY: warm compilation must read the published generic
     // obligation while keeping the page's DOM instantiation independent.
     for (0..2) |_| {
-        const good = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "--self-profile=warm.json", "Main.beni", "Storage.beni" });
+        const good = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "--self-profile=warm.json", "Main.beni", "Storage.beni" });
         try testing.expectEqual(@as(u8, 0), good.exit_code);
         try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), good.diagnostics);
     }
@@ -1897,7 +1897,7 @@ test "worker realm obligations survive generic imported writers and warm interfa
     const expected_bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/build/bad/dedicated/RealmGenericImported/_expected.diag", w.arena.allocator(), .limited(world.max_stream_bytes));
     const expected = try std.json.parseFromSlice([]const diagnostic.Diagnostic, w.arena.allocator(), expected_bytes, .{});
     for (0..2) |_| {
-        const bad = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni", "Storage.beni" });
+        const bad = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni", "Storage.beni" });
         try testing.expectEqual(@as(u8, 1), bad.exit_code);
         try testing.expectEqualDeep(expected.value, bad.diagnostics);
         try testing.expect(!w.exists("refused"));
@@ -1936,30 +1936,21 @@ test "worker entry machinery is fenced from applications and spoofed module name
     }}), spoof.diagnostics);
 }
 
-test "check and build agree on the unchecked worker gate through a suspendable twin" {
+test "check and build allow a worker launch through a suspendable twin without a bypass" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.copyTree("tests/corpus/browser/managed/TwinLaunch", "_expected.");
     for (0..2) |_| {
         const checked = try w.run(&.{ "check", "--platform=browser", "--cache-dir=cache", "Main.beni" });
-        const built = try w.run(&.{ "build", "--platform=browser", "--cache-dir=cache", "--out=out", "Main.beni" });
-        try testing.expectEqual(@as(u8, 1), checked.exit_code);
-        try testing.expectEqual(@as(u8, 1), built.exit_code);
-        try testing.expectEqualDeep(built.diagnostics, checked.diagnostics);
-        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
-            .code = .invalid_entry_kind,
-            .severity = .@"error",
-            .span = .{ .file = "Main.beni", .start = .{ .line = 19, .col = 10 }, .end = .{ .line = 19, .col = 21 } },
-            .title = "INVALID ENTRY KIND",
-            .message = "Worker launches are unavailable until realm and Wire checks are implemented.",
-        }}), checked.diagnostics);
-        try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
-        try testing.expectEqual(diagnostic.Code.invalid_entry_kind, checked.diagnostics[0].code);
+        try testing.expectEqual(@as(u8, 0), checked.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), checked.diagnostics);
         try testing.expect(!w.exists("out"));
+        const built = try w.run(&.{ "build", "--platform=browser", "--cache-dir=cache", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+        try testing.expect(w.exists("out/_workers"));
+        try w.tmp.dir.deleteTree(w.io, "out");
     }
-    const allowed = try w.run(&.{ "check", "--allow-unchecked-workers", "--platform=browser", "--cache-dir=cache", "Main.beni" });
-    try testing.expectEqual(@as(u8, 0), allowed.exit_code);
-    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), allowed.diagnostics);
     const original = try w.read("Main.beni");
     const before_messages = std.mem.indexOf(u8, original, "\ntype Msg") orelse unreachable;
     try w.write("Main.beni", try std.mem.concat(w.arena.allocator(), u8, &.{
@@ -1987,4 +1978,22 @@ test "worker runtime entry cannot be called through static dispatch" {
         .title = "PRIVATE METHOD",
         .message = "This name is private to the platform’s worker entry machinery.",
     }}), result.diagnostics);
+}
+
+test "check and build retain worker realm and static-entry diagnostics without a bypass" {
+    for ([_][]const u8{ "RealmDirect", "IndirectLaunch" }) |name| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        const fixture = try std.fmt.allocPrint(w.arena.allocator(), "tests/corpus/build/bad/dedicated/{s}", .{name});
+        try w.copyTree(fixture, "_expected.");
+        const golden = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(w.arena.allocator(), "{s}/_expected.diag", .{fixture}), w.arena.allocator(), .limited(world.max_stream_bytes));
+        const expected = try std.json.parseFromSlice([]const diagnostic.Diagnostic, w.arena.allocator(), golden, .{});
+        for ([_][]const u8{ "check", "build" }) |command| {
+            const result = try w.run(&.{ command, "--platform=platform", "--no-cache", "Main.beni" });
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqualDeep(expected.value, result.diagnostics);
+            try testing.expect(!w.exists("out"));
+        }
+    }
 }

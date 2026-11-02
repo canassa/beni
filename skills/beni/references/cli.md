@@ -41,6 +41,8 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 | `--no-cache` | read and write no cache |
 | `--platform=<name>` | `check`: also load the platform, as `build` does; optional. `build`, `serve`: required unless `beni.json` names it |
 
+Worker launches run realm, Wire, and finite-entry checks without an opt-in flag.
+
 ## `build` and `serve`
 
 | Flag | Meaning |

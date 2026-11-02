@@ -479,7 +479,6 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
-    allow_unchecked_workers: bool = false,
     /// `--test-hooks`, the hidden test-only flag (`src/Cli.zig`): what
     /// `Js.testHooks ()` is (`backend.md` §4, *`Js.testHooks` is the
     /// build's test hooks*); a platform's test hooks are in the build only
@@ -759,7 +758,7 @@ pub fn run(
         try e.cutPrerender();
     };
     try e.workerDiscoveryReach(entry);
-    try e.planWorkers(entry);
+    try e.planWorkers(entry, true);
     if (e.workerHostModule() != null) {
         e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
         try e.walk();
@@ -836,12 +835,11 @@ pub fn run(
 /// `beni check --platform=<name>` runs after the check phases
 /// (`frontend.md` §1).
 ///
-/// It is the front half of `run` and nothing else — no entry-point search,
-/// no elimination, no lowering, no output directory. The entry point is half
-/// of a BUILD pair (§5.3) and `check` is handed paths; the four checks are
-/// not, because a `foreign_arity_mismatch` is a defect of the module and its
-/// sibling wherever it is found, and it is exactly what a pre-commit check
-/// exists to catch. `options.out_dir` is unused here and nothing is written.
+/// Ordinary checks inspect declarations without an entry-point search or
+/// elimination. A platform with worker launches also validates the reachable
+/// entry graph, including each worker’s realm and finite nested launches.
+/// There is no lowering or output directory: `options.out_dir` is unused here
+/// and nothing is written.
 ///
 /// Diagnostics are owned by the caller, messages included, like `run`'s.
 pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
@@ -867,7 +865,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     try e.checkEntryKinds();
     // Entry reachability is needed only when this check can reach a worker
     // launch. Ordinary checks keep their existing declaration-only path.
-    if (!e.hasErrors() and !options.allow_unchecked_workers and session.entry_plan.launches.len != 0) {
+    if (!e.hasErrors() and session.entry_plan.launches.len != 0) {
         var entry: ?Emitter.Entry = null;
         var multiple = false;
         for (0..e.graph().count()) |mi| {
@@ -886,8 +884,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
         e.pool = &pool;
         e.extra_roots = try e.coarseRuntimeRoots();
         try e.workerDiscoveryReach(entry);
-        var found: std.ArrayList(u32) = .empty;
-        try e.discoverWorkers(entry, &found);
+        try e.planWorkers(entry, false);
     }
     return e.diagnostics.toOwnedSlice(gpa);
 }
@@ -1722,7 +1719,7 @@ const Emitter = struct {
         return false;
     }
 
-    fn discoverWorkers(e: *Emitter, selected: ?Entry, found: *std.ArrayList(u32)) !void {
+    fn discoverWorkers(e: *Emitter, selected: ?Entry, found: *std.ArrayList(u32), comptime emitting: bool) !void {
         if (e.session.entry_plan.launches.len == 0) return;
         const plan = &e.session.entry_plan;
         const allowed = try e.scratch.alloc([]bool, e.graph().count());
@@ -1747,11 +1744,7 @@ const Emitter = struct {
                             const launch = plan.launches.get(li);
                             if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
                             allowed[mi][data.lhs] = true;
-                            if (!e.options.allow_unchecked_workers) {
-                                try e.report(.invalid_entry_kind, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches are unavailable until realm and Wire checks are implemented.", .{});
-                                continue;
-                            }
-                            if (e.options.library) {
+                            if (emitting and e.options.library) {
                                 try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
                                 continue;
                             }
@@ -1875,6 +1868,7 @@ const Emitter = struct {
     }
     fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
         var options = e.options;
+        options.library = false;
         options.platform.entry_host = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).realm;
         options.platform.page = false;
         options.platform.lowering = null;
@@ -1909,11 +1903,11 @@ const Emitter = struct {
         };
     }
 
-    fn planWorkers(e: *Emitter, entry: ?Entry) !void {
+    fn planWorkers(e: *Emitter, entry: ?Entry, comptime emitting: bool) !void {
         if (e.worker_candidates.len == 0 and !e.hasWorkerLaunch()) return;
         var found: std.ArrayList(u32) = .empty;
-        try e.discoverWorkers(entry, &found);
-        if (e.options.library) {
+        try e.discoverWorkers(entry, &found, emitting);
+        if (emitting and e.options.library) {
             for (e.worker_candidates) |d| if (e.live.decl(d.module, d.decl) or e.live.twin(d.module, d.decl)) {
                 try e.report(.not_implemented, e.graph().moduleFile(d.module), e.bir(d.module).decls[d.decl].name_token, "Worker Program exports in `--library` builds are not implemented yet.", .{});
             };
@@ -1927,10 +1921,11 @@ const Emitter = struct {
             const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
             try projection.eliminate(root);
             try projection.checkEntryRealm(root);
-            try projection.discoverWorkers(root, &found);
+            try projection.discoverWorkers(root, &found, emitting);
             try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
             projection.diagnostics.deinit(e.gpa);
         }
+        if (!emitting) return;
         const selected = try e.scratch.alloc(bool, e.worker_candidates.len);
         @memset(selected, false);
         for (found.items) |i| selected[i] = true;

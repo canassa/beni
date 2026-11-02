@@ -80,9 +80,9 @@ protocol tags and parameter roles must be well formed; contradictory or duplicat
 rows are refused. Pending structural field obligations belong to the generic
 scheme and are discharged on instantiation, not treated as satisfied by a parser.
 
-This foundation does not emit source-discovered worker entries or add a public
-worker launch API. #1294 owns the finite descriptor worklist, concrete type-role
-instantiation, independent entry graphs, paths, bootstrap and output proofs.
+The initial foundation did not emit source-discovered worker entries. The
+current dedicated runtime and worker projections are described below. #1294 owns
+the finite descriptor worklist, concrete type-role instantiation, independent entry graphs, paths, bootstrap and output proofs.
 #1295 and #1296 must provide realm and wire proofs before public worker launches
 ship. #1297 supplies the callback protocol's ownership v2 obligations. Parsed
 metadata alone is never advertised as worker safety or implementation of those
@@ -136,13 +136,14 @@ private type dependencies. A private payload field rename therefore invalidates
 cached Wire plans. Value-body edits with the same type layout keep the firewall;
 builds with no Wire roles retain the ordinary digest path.
 
-## Dedicated browser runtime (gated)
+## Dedicated browser runtime
 
 The browser platform declares the dedicated handlers kind through entryKinds.
 Its runtime is beni over Js and Task's public scope/fiber APIs. It supports the
 Ready handshake, typed calls and pushed events, interrupt-and-wait, cooperative
-close, explicit abort, and fatal worker defects. Builds still require the hidden
-unchecked-worker flag at reachable launches; ordinary browser builds need none.
+close, explicit abort, and fatal worker defects. Both `check` and `build`
+validate the discovered entry graph, realm availability and Wire obligations
+without a bypass flag. Ordinary builds keep worker runtimes lazy.
 The test platform remains for generic entry diagnostics and emission fixtures.
 
 The emitted Wire plan keeps the encoded role path and a fourth, semantic path.
@@ -159,11 +160,10 @@ Review fixes keep worker runtimes lazy until their Program module is reached.
 Discovery includes every emitted direct/suspendable body. Worker-bearing browser
 entries wire the page's existing private stop/stopped functions into a private
 runtime bridge; Rt itself is unchanged, including its source-map contents.
-The remaining public-entry-hook and check-gate fence work is #1678.
 
 Worker entry helpers are fenced at import resolution and static dispatch by
 CorePrivate's worker-machinery access rule. `check` shares launch reachability
-with `build`, including suspendable twins, and accepts the same hidden bypass.
+with `build`, including nested workers and suspendable twins.
 Task.chainDefect composes the worker stop with the platform’s current hook.
 The native error listener only records metadata after a beni stop has begun,
 in both window and worker realms; unrelated host errors do not stop the page.

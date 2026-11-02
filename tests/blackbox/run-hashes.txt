@@ -163,9 +163,9 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 1093639f584107e0b9df9fcf2df078a3f53381f293073dd3e4c53e245b0c9192
-platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 d7cbf2b2e0fdfa5061eb94915334ae2fb7ce0329f7afafbb8d03dfad8cdceff3
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 83f4e32899685b548eee52e3d2e60c48bd9d042095009db6b2b5fd2df73b5f0d
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 6c8b707c8fb6a45ba7da53a40dc5fa64cbeef470ce29ce6fb3b656a493d741bd
-platform_test.test.worker launch URLs stay relative to their module under release specialization #0 69c72e8a089bed0a043e075c434cf0c139b8288a593323025b20da3b4c1f5778
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 03dda1bd648507d1cfec516200944e0d10fe06220e43ac3a7feab81d097cfc6a
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 a02b9c86b0e8a1d74a05490fb4d2fa785b199db46d51affaeee5fdda5cb4453b
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 e39bcf89961e2801fbc709878d8ff174ba23313e432f008650fcc1e3d38d4dc7
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 4c397ee578795c2d3b205a1cb81fdd9824f192b0472d3a0e2209dd45ce2c3f4f
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 afdf987b295ed5ba3f063ea81410122aa413d59b5038d35d0c076d82381e8592
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 7bd1518e314f9a0f5ebb23dcaa9c85b3e25bad0693a04e3b4d91f4da750da01a
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 0a1aa6db2427c776511648fddc183d5f4a53acb825d2b008a2938cdea25dd57b

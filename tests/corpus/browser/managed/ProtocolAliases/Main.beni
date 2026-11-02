@@ -1,0 +1,86 @@
+-- Both short protocol aliases retain typed call/reply/error and event roles.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Hosted
+import Html exposing (Html)
+import Task
+
+
+calls : Worker.Program String String (Worker.Calls String String String)
+calls =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state message → Ok (state ++ message)
+        , stream = Worker.noStream
+        }
+
+
+pushed : Worker.Program String String (Worker.CallsWithEvents String String String String)
+pushed =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start =
+            λcontext _ →
+                _ = Worker.emit context "ready"
+                ⊤
+        , handle = λ_ state message → Ok (state ++ message)
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    first =
+        case Worker.open owner calls "call:" Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle "one"
+                closed = Worker.close handle
+                case reply of
+                    Ok text →
+                        text == "call:one" && closed == Worker.Confirmed
+                    Err _ →
+                        False
+    second =
+        case Worker.open owner pushed "event:" Worker.options of
+            Err _ →
+                False
+            Ok handle →
+                reply = Worker.call handle "two"
+                event = Events.next (Worker.events handle)
+                closed = Worker.close handle
+                case ( reply, event ) of
+                    ( Ok text, Ok (Events.Item chunk) ) →
+                        text == "event:two"
+                            && Events.take chunk == "ready"
+                            && closed == Worker.Confirmed
+                    _ →
+                        False
+    if first && second then "protocol aliases passed" else "protocol aliases failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

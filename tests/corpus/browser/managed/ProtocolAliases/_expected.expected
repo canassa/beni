@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "protocol aliases passed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"protocol aliases passed"</output>
+  </main>
+</body>

@@ -1,1 +1,0 @@
-[{"code":"invalid_entry_kind","severity":"error","span":{"file":"Main.beni","start":{"line":18,"col":9},"end":{"line":18,"col":20}},"title":"INVALID ENTRY KIND","message":"Worker launches are unavailable until realm and Wire checks are implemented."}]

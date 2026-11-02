@@ -107,6 +107,9 @@ Open the file that your task needs. Each is short.
   lists, `Html.map`, what is refused.
 - `references/platforms.md` — `node`, `browser`, `browser-tea`, `browser-inline`, `html` and `cloudflare`: what `main` is on
   each, commands, subscriptions and the modules each adds.
+- `references/dedicated-workers.md` — worker Programs, scoped calls, events, cleanup, Wire values,
+  and worker diagnostics. `references/worker-pages.md` has the persistent hosted recipe
+  and progress loop; `references/worker-tea.md` has the scoped TEA command recipe.
 - `references/entry-runtimes.md` — custom platform runtime selection and its checked contract.
 - `references/prerender.md` — `Browser.prerender`: a page per route on `browser-inline`, routes and files,
   `"build"."origin"`, `{{view}}` and `{{title}}`, what must be pure.

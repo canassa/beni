@@ -70,6 +70,140 @@ module Browser.Navigation
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
+module Browser.Worker
+  type CallError a
+    Application
+    PreparationFailed
+    Transport
+  alias Calls a b c
+  alias CallsWithEvents a b c d
+  type Cleanup
+    Confirmed
+    Unconfirmed
+    Abandoned
+  type CloneFailure
+    DetachedBuffer
+    ViewOutOfBounds
+    ClosedResource
+    StreamLocked
+    CanvasHasContext
+    TargetRealmUnavailable
+    SameAgentClusterRequired
+    SendingPortTransferred
+    PortBusy
+    DataChannelNotTransferable
+    MediaSourceAlreadyAttached
+    TrackDetached
+    TrackHandleNotTransferable
+    NativeCloneRejected
+  type ConfigError
+    NonPositiveLimit
+    InvalidDuration
+    InvalidPoolBounds
+    InvalidUtilization
+  type ConnectionId
+  type Context a
+  type Credentials
+    Omit
+    SameOrigin
+    Include
+  alias Definition a b c d e f g h
+    Definition
+  type EmitError
+    EventQueueFull
+    EventChannelClosed
+    EventTargetRequired
+    EventCloneRejected
+    EventCanvasTransferInvalidState
+  type Handle a
+  type Loss
+    ReadyExpired
+    LeaseExpired
+    ConnectionLost
+  alias OpenError a
+    OpenError
+  type OpenReason a
+    UnsupportedWorkerKind
+    InvalidScriptUrl
+    WorkerSecurityDenied
+    ScriptPolicy
+    TrustedScriptUrlRejected
+    WorkerLoadFailed
+    ReadyDeadlineExceeded
+    ClosedBeforeReady
+    InvalidOptions
+    InitializationFailed
+    HandshakeFailed
+  alias Options
+    Options
+  type Policy
+  type PolicyError
+    TrustedTypesUnavailable
+    TrustedPolicyDenied
+    NotTrustedScriptUrl
+    PolicyRefused
+    InvalidPolicyName
+  type PrepareError
+    InvalidMessage
+    InvalidResource
+    PreparationClosed
+  type Prepared a
+  type Program a b c
+  alias Protocol a b c d e f
+    Protocol
+  type SendError
+    WorkerCloneRejected
+    CanvasTransferInvalidState
+    ChannelClosed
+    QueueFull
+    PreparedForAnotherEndpoint
+  type Ticket a b
+  type TransportError
+    SendFailed
+    MessageDeserializationFailed
+    ProtocolVersionMismatch
+    ProtocolRejected
+    PeerUnresponsive
+    PeerClosed
+    CleanupAbandoned
+  value abort : Handle protocol → Cleanup  -- impure
+  value await : Ticket error reply → Result (CallError error) reply  -- suspends
+  value call : Handle (Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply  -- suspends
+  value cancel : Ticket error reply → Cleanup  -- suspends
+  value close : Handle protocol → Cleanup  -- suspends
+  value connection : Context event → Maybe ConnectionId  -- impure
+  value discard : Prepared a → ⊤  -- impure
+  value emit : Context event, event → Result EmitError ⊤  -- impure
+  value events : Handle (Protocol call reply streamRequest error event chunk) → Stream TransportError event  -- impure
+  value noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
+  value open : (Scope), Program config state (Protocol call reply streamRequest error event chunk), config, Options → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))  -- suspends
+  value options : Options
+  value prepare : a → Result PrepareError (Prepared a)
+  value program : Definition config state call reply streamRequest error event chunk → Program config state (Protocol call reply streamRequest error event chunk)
+  value scope : Context event → Scope  -- impure
+  value send : Handle (Protocol call reply streamRequest error event chunk), Prepared call → Result SendError (Ticket error reply)  -- impure
+module Browser.WorkerRuntime
+module Browser.WorkerStream
+  type Chunk a
+  type ReadError a
+    Failed
+    StreamClosed
+    StreamUnresponsive
+  type Sink a b
+  type Step a
+    Item
+    End
+  type Stream a b
+  value end : Stream error a → ⊤  -- impure
+  value fail : Stream error a, error → ⊤  -- impure
+  value make : Int → Stream error a  -- impure
+  value next : Stream error a → Result (ReadError error) (Step a)  -- suspends
+  value offer : Stream error a, a → Bool  -- impure
+  value release : Chunk a → ⊤
+  value take : Chunk a → a
+  value value : Chunk a → a
+module Browser.WorkerWire
+  value normalize : V, Int, String, V → V  -- impure
 module Cmd
   type Cmd a
     Cmd

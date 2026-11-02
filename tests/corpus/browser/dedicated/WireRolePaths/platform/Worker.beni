@@ -1,4 +1,4 @@
--- Test-only transport until realm and Wire checks enable the public API.
+-- Test-only transport for generic entry checks and emission fixtures.
 import Js
 import Task
 

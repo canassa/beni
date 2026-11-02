@@ -2,8 +2,8 @@
 
 Specified 2026-10-30. This implements the decided contract in workers.md §2–§5.
 The restructuring below is required by that contract. It does not introduce a
-new language feature or change a guarantee. Implementation is incremental;
-this document does not claim multiple entries already emit.
+new language feature or change a guarantee. The implementation emits independent
+page and dedicated-worker entries after validating the discovered worker graph.
 
 ## Build-wide state and entry-local state
 
@@ -50,7 +50,7 @@ factories that could synthesize executable code remain worker_entry_not_static.
 
 Value-cycle analysis treats references to direct Program definitions as
 descriptor edges. During module checking, constructor selectors provisionally
-identify these definitions; the complete entryKinds validation still gates
+identify these definitions; complete entryKinds validation still checks
 every accepted build. The selectors participate in checker cache keys, so a
 manifest edit cannot reuse a different cycle-analysis result.
 
@@ -71,8 +71,9 @@ initializer effects and their ordinary realm summaries.
 
 Infer C's native realm obligations through ordinary types and callable summaries.
 Discharge HostFree, Wire, callback protocol and backing-ownership obligations
-before accepting a launch path. The presence of an entry runtime table by itself
-is not permission to expose workers before these checks are implemented.
+before accepting a launch path. Every dedicated launch runs the realm and Wire
+checks, without an opt-in flag or bypass. An entry runtime table is not a
+substitute for these proofs.
 
 Collect the field and constructor interference constraints from all wire-visible
 representation plans. Union them once in deterministic order and assign one

@@ -178,20 +178,21 @@ test "every beni code block of the skill checks and is formatted, or is refused 
         try blocksOf(arena, path, try readRepoFile(arena, w.io, path), &blocks, &problems);
     }
     // A group is one info string: one `check` per group, not per block.
-    const Group = struct { platform: ?[]const u8, refused: bool, dir: []const u8, members: std.ArrayList(usize) = .empty };
+    const Group = struct { platform: ?[]const u8, refused: ?[]const u8, dir: []const u8, members: std.ArrayList(usize) = .empty };
     var groups: std.ArrayList(Group) = .empty;
     for (blocks.items, 0..) |*block, i| {
-        const is_refused = block.refused != null;
         var found: ?*Group = null;
         for (groups.items) |*g| {
             const same_platform = (g.platform == null and block.platform == null) or
                 (g.platform != null and block.platform != null and std.mem.eql(u8, g.platform.?, block.platform.?));
-            if (same_platform and g.refused == is_refused) found = g;
+            const same_refusal = (g.refused == null and block.refused == null) or
+                (g.refused != null and block.refused != null and std.mem.eql(u8, g.refused.?, block.refused.?));
+            if (same_platform and same_refusal) found = g;
         }
         if (found == null) {
             try groups.append(arena, .{
                 .platform = block.platform,
-                .refused = is_refused,
+                .refused = block.refused,
                 .dir = try std.fmt.allocPrint(arena, "g{d}", .{groups.items.len}),
             });
             found = &groups.items[groups.items.len - 1];
@@ -236,7 +237,7 @@ test "every beni code block of the skill checks and is formatted, or is refused 
                 }
             }
         }
-        if (g.refused) {
+        if (g.refused != null) {
             if (r.exit_code != 1) try problems.append(arena, try std.fmt.allocPrint(arena, "group {s}: a refused group must exit 1, not {d}", .{ g.dir, r.exit_code }));
             continue;
         }
