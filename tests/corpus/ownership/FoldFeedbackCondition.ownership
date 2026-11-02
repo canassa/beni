@@ -1,0 +1,10 @@
+module FoldFeedbackCondition
+  47:5 List.push rows: accepted param
+  52:12 call FoldFeedbackCondition.fold <literal>: accepted fresh (<lambda> writes what FoldFeedbackCondition.fold supplies it)
+  52:40 call FoldFeedbackCondition.put acc: accepted callback-param (FoldFeedbackCondition.fold supplies it owned)
+  summary fold: π1 R, π1[*] R, π2 RA, π3 R; res ~cb3{excl cb3}r{excl cb3} π2; π3 calls many, supply 1 π1[*] owned taken{excl π1}r{excl π1}, supply 2 cb3 owned{excl cb3}r{excl cb3}, supply 2 π2 owned{excl π2}r{excl π2}
+  summary first: π1 R, π1[*] RA; res #Just.0 π1[*]{excl π1}r{excl π1}
+  summary orElse: π1 R, π1#Just.0 RA, π2 RA; res π1#Just.0 π2
+  summary put: π1 RAW[storage], π1[*] RAE; res [*] ~fresh1 ~π1[*]{excl π1}, π1
+  demands 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 1, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
