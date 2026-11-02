@@ -276,18 +276,17 @@ fn merge(gpa: Allocator, out: *std.ArrayList(Arrival), xs: []const Arrival, ys: 
 /// A tree's text (§2.10 *Text*): `entry` for each entry in the canonical
 /// order, a kid equal to an earlier sibling as `.1 = .0`, each
 /// with its slot's words.
-pub fn text(t: *const Trees.Table, places: *const Place.Table, root: Node, ctx: *anyopaque, entry: EntryText) std.Io.Writer.Error!void {
+pub fn text(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, root: Node, ctx: *anyopaque, entry: EntryText) std.Io.Writer.Error!void {
     var path: std.ArrayList(u32) = .empty;
-    defer path.deinit(std.heap.smp_allocator);
-    textAt(t, places, root, ctx, entry, &path) catch return error.WriteFailed;
+    defer path.deinit(gpa);
+    textAt(t, gpa, places, root, ctx, entry, &path) catch return error.WriteFailed;
 }
 
 /// An entry's text: its slot's words, open or not, and its arrivals; or
 /// the words of the earlier sibling it equals (`as`).
 pub const EntryText = *const fn (ctx: *anyopaque, path: []const u32, open: bool, run: []const Arrival, as: ?[]const u32) std.Io.Writer.Error!void;
 
-fn textAt(t: *const Trees.Table, places: *const Place.Table, n: Node, ctx: *anyopaque, entry: EntryText, path: *std.ArrayList(u32)) (std.Io.Writer.Error || Allocator.Error)!void {
-    const gpa = std.heap.smp_allocator;
+fn textAt(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, n: Node, ctx: *anyopaque, entry: EntryText, path: *std.ArrayList(u32)) (std.Io.Writer.Error || Allocator.Error)!void {
     if (t.here(n).len != 0) try entry(ctx, path.items, false, t.here(n), null);
     if (t.open(n).len != 0) try entry(ctx, path.items, true, t.open(n), null);
     var ks: std.ArrayList([2]u32) = .empty;
@@ -308,7 +307,7 @@ fn textAt(t: *const Trees.Table, places: *const Place.Table, n: Node, ctx: *anyo
             try entry(ctx, path.items[top + 1 ..], false, &.{}, path.items[0 .. top + 1]);
         } else {
             try path.append(gpa, k[0]);
-            try textAt(t, places, k[1], ctx, entry, path);
+            try textAt(t, gpa, places, k[1], ctx, entry, path);
         }
     }
 }
