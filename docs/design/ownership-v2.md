@@ -1013,6 +1013,52 @@ argument (a constructor duplicates nothing), no write. **A code with no contract
 words, an imported declaration whose module published none, a declaration past its limit) has the
 pessimistic contract: every argument read and escaped deep, the result `⊤`, `res_cond no`.
 
+*Specified 2026-11-02 (#1714), not built: a contract is a tree of shared subtrees.* A contract names one entry
+per result slot and one effect per parameter slot, and a reader walks every entry. So a type whose two parts
+are one type doubles its slots at each level: `w₁ x = ( x, x )`, `wₖ x = wₖ₋₁ (wₖ₋₁ x)` has 2^(2^(k-1))
+result slots (`w₅`: 6.1 million records, master's v2: 968), a write below a doubling record reads 2ᵏ slots,
+and `wrap r = [ r ]` names every slot of `r`'s type at `[*]`, so a call costs its argument's width (#1714's
+report, F4). Master's v2 printed a shared subtree as `.1 = .0`. The contract becomes:
+
+- **Result trees.** `res` and a supply's `res` are one node of a tree over the result's relative steps: a node
+  is its `open` bit, its arrivals (a sorted run) and its kids, `(step, node)` pairs sorted by the step's
+  words. Nodes are hash-consed in the module's contract table by that content, so equal subtrees are one node
+  and `wₖ`'s result is k nodes. An arrival names a parameter's slot from the parameter's root, which does not
+  depend on where the node sits, so sharing is exact. The flat entries of §3.5 are the tree's paths. A reader
+  that asks one slot walks its steps from the root; a reader that needs every slot walks each node once.
+- **Effects as trees.** `reads`, `writes`, `escapes` and a supply's `kept` are, per parameter, a tree of the
+  same kind: a node is what it says at its own slot (nothing, shallow, deep; for a write also `fields`) and its
+  kids. **Covering effects fold:** a node whose own slot and every object slot below it are read, or escape,
+  is that one deep effect, and its kids are dropped. A shallow write of every slot below is not folded: a deep
+  write is `consumed` (§2.8), which says more. Nothing else changes: a fold names the same slots.
+- **Arrivals by structure.** An `open` node with an arrival `π_j·s` reads, at its slot `q·r`, the objects at
+  `π_j·(s·r)` for every `r` its place takes (the `q… π_j·s*` entry of a type variable's slot today). The
+  read-off writes a parameter's subtree read by structure as that one node, never one entry per slot below
+  (§2.3.1's *written out* rule is withdrawn for it). A caller reads such a node **lazily**: an asked slot `q·r`
+  is the argument projected at `s·r`, made when it is asked and kept in the call's instantiation (below).
+  **Owner's decision when it is measured:** #1706 measured an eager by-structure form at `Schema.shapeOf`
+  540 000 records against the 215 000 of slots written out. The lazy reader must keep a call's cost flat in
+  its argument's width (tests 151, 155, 171) without moving `Schema.shapeOf`'s row past today's. If it
+  cannot do both, the choice is the owner's.
+- **The read-off describes a value once per place.** `describe` (§2.10 *Read-off*) gives a node per
+  `(value, result place)`, not per result path: a value read at a place is described by the place's steps,
+  so a value of a doubling type is k descriptions. A call's leaf is described by the callee's result tree
+  instantiated (below); a join of arms is the union of their nodes.
+- **A call's instantiation is a tree** (§2.11.2): per callee node, once per call site, the caller's node for
+  it. An arrival `π_j·s` becomes the description of argument `j` projected at `s`; `fresh`, `shared`, `cb`
+  and `⊤` are what they are today. It is the call's representation, built with the call in the frame's call
+  columns and read by every reader of the call, never a table of earlier answers.
+- **Join and `within`** (§2.10 *Lattice*) are pointwise over two trees: a union of nodes is a node of the
+  arrivals' union and the kids' unions, hash-consed. A join still never drops a result slot.
+- **Text.** A kid equal to an earlier sibling prints as `.1 = .0`; a folded effect prints as today's deep
+  effect (`π1ε*`).
+- **Determinism** is unchanged: kids sort by their steps' canonical words, arrivals as today, so a tree does
+  not depend on intern order.
+- **Done means:** `w₃ / w₄ / w₅` within master's v2 (287 / 514 / 968) and linear in k; the doubling family
+  (149, 231, 257, 154, 157, 168, 169, 147, check_test's tuple DAG, `EvidenceDagBuildDepth32` without its
+  limit line) and the width family (151, 155, 171) pass; the ledger moves no verdict from accepted to
+  refused, and no summary says less.
+
 ### 2.11 Calls
 
 *Replaced 2026-11-02 (#1685). Until then a call grafted its callee's class onto the arguments lazily, as a
@@ -2448,6 +2494,12 @@ Contract.Table (per module)
   supplies  : Columns { k: u32, res: Range, kept: Range, cond: Range }
 ```
 
+*Specified 2026-11-02 (#1714), not built (§2.10, contracts as trees):* `res` and a supply's `res` become one
+node id of `nodes : Columns { open: u8, arrivals: Range, kids: Range }` with `kids : Columns { step: [3]u32,
+node: u32 }`, hash-consed by content; `reads`, `writes`, `escapes` and `kept` one node id per parameter of
+`effect_nodes : Columns { here: u8 (none | shallow | deep | fields), kids: Range }`. A call's instantiation
+(§2.11.2) is a column per call of the caller's node per callee node.
+
 A contract is immutable once read off; a join makes a new one. Its text (the dump's `summary` line) is
 `ContractText.zig`'s. The group solver keeps one candidate per member
 and the delivery queue of §2.12.
@@ -2469,6 +2521,12 @@ It is a serialization of each contract's words, with every module-local id made 
   terms; the words must equal the block's (the experiment: 61 contracts, 0 mismatches). A mismatch, a magic or
   version that is not this one, or a short block makes the block unknown: its module's codes have the
   pessimistic contract at every importer, and the importer's report says so.
+
+*Specified 2026-11-02 (#1714), not built: version 17.* A contract's result trees and effect trees are written
+as a node table in post-order, each node once (its `open` bit, its arrivals, its kids as `(step, node index)`
+pairs; an effect node's flag and kids), and each field as its root's index. The reader re-interns each node in
+its own table, so equal subtrees are one node there too, and the re-encoding check is unchanged: the words it
+writes again must equal the block's.
 
 The block stays in the interface (`Interface.ownership`, inside the interface hash); v2 writes no cache entry
 (`Session` turns the cache off under `--ownership=v2`), so no cache entry can hold an old block. The version
