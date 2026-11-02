@@ -1,0 +1,12 @@
+module CallReadsNothingAfter
+  16:19 List.push kids: accepted param
+  37:7 call CallReadsNothingAfter.incAll v#Rose.0: accepted fresh (CallReadsNothingAfter.incAll writes π1#Rose.0)
+  47:7 call CallReadsNothingAfter.incAll v#Rose.0: rejected later-use: v#Rose.0 is read again at 47:17 (CallReadsNothingAfter.incAll writes π1#Rose.0)
+  summary incAll: π1 R, π1#Rose.0 RAW[storage], π1#Rose.0[*] A; res #Rose.0 π1#Rose.0, #Rose.0[*] ~π1#Rose.0[*], ⟨Rose⟩⁺#Rose.0 ~fresh1
+  summary ignore: unused
+  summary count: π1 R, π1#Rose.0 R
+  summary ignored: res .0#Rose.0 fresh2, .0⟨Rose⟩⁺#Rose.0 fresh1 ~fresh3
+  summary counted: res .0#Rose.0 fresh2, .0⟨Rose⟩⁺#Rose.0 fresh1 ~fresh3
+  demands 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1
