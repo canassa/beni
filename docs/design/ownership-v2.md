@@ -1331,7 +1331,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    R-5.8.6, `p/RecordForItem`); a handler capturing a scalar key holds nothing. The construction's result is
    `fresh` (`assumed`, R-6.3).
 9. *On slots* [#1685]: a `returned` word whose parameter slot is opaque or a type variable's arrives deep at
-   the result slot it lands on and, below it, each result slot's steps taken inside the parameter. A
+   the result slot it lands on, which is open: a caller's slot below it takes its own steps on inside the
+   parameter. A
    projection that an opaque or a type variable's place cannot follow, of a call's result, is read through
    the call's arrivals there: the rest taken from each argument both inside the arrival's slot and from the
    argument's root (a whole value cast is read back by its own structure), and, when neither names

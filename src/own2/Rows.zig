@@ -106,19 +106,10 @@ pub const Env = struct {
                 if (env.isVar(.from(q))) try Draft.markOpen(&d.res, env.arena, qr);
                 _ = try Draft.addArrival(&d.res, env.arena, qr, arrival);
                 // Below where it lands, each result slot is that slot's
-                // steps taken inside the parameter's: a cast read back is
-                // the part it was built from (§2.13.9).
-                if (wild) for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, .from(q)))) |b| {
-                    if (b == q) continue;
-                    const w = (try env.slots.relBelow(env.gpa, env.account, env.places, .from(q), .from(b))) orelse continue;
-                    var words: std.ArrayList(u32) = .empty;
-                    defer words.deinit(env.gpa);
-                    try words.appendSlice(env.gpa, env.slots.relWords(arrival.slot));
-                    try words.appendSlice(env.gpa, env.slots.relWords(w));
-                    const br = try env.rel(.from(b));
-                    if (env.isVar(.from(b))) try Draft.markOpen(&d.res, env.arena, br);
-                    _ = try Draft.addArrival(&d.res, env.arena, br, .{ .kind = .param, .j = j, .slot = try env.slots.relOfWords(env.gpa, env.account, env.places, words.items), .deep = true });
-                };
+                // steps taken inside the parameter (a cast read back is the
+                // part it was built from, §2.13.9): the slot is open, so a
+                // caller's slot below it takes its own steps on from `s`.
+                if (wild) try Draft.markOpen(&d.res, env.arena, qr);
             }
         }
     }
