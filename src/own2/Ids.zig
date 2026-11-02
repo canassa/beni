@@ -515,6 +515,40 @@ pub const Failure = union(enum) {
     }
 };
 
+/// The module tables whose entries an account pays on its own first read
+/// (§4.1, *A module table's entries*).
+pub const ModuleTable = enum(u8) {
+    extend,
+    levels,
+    folds_up,
+    hits,
+    canon,
+    rel_of,
+    rel_walk,
+    below,
+    anchors,
+    below_all,
+    import,
+    pub const count = @typeInfo(ModuleTable).@"enum".field_names.len;
+};
+
+/// A module table's fill costs by its entries' dense ids (§4.1, *A module
+/// table's entries*), beside the table's own column.
+pub const Costs = struct {
+    items: std.ArrayList(u64) = .empty,
+
+    pub fn deinit(c: *Costs, gpa: Allocator) void {
+        c.items.deinit(gpa);
+    }
+    pub fn get(c: *const Costs, id: u32) u64 {
+        return if (id < c.items.items.len) c.items.items[id] else 0;
+    }
+    pub fn put(c: *Costs, gpa: Allocator, id: u32, cost: u64) Allocator.Error!void {
+        if (id >= c.items.items.len) try c.items.appendNTimes(gpa, 0, id + 1 - c.items.items.len);
+        c.items.items[id] = cost;
+    }
+};
+
 /// `ProbeLength` is a dictionary's `probe_length`, raised where no account is
 /// at hand; the walk that catches it names it (`Account.probeFailed`).
 pub const AccountError = error{ OwnershipLimit, AccountingInvariant, ProbeLength };
@@ -562,6 +596,16 @@ pub const Account = struct {
     /// group member's second walk the validation one, any later walk none,
     /// its lanes growth (§8 S3b slice 4, *Charging*).
     walk: enum(u8) { inference, validation, growth } = .inference,
+    /// §4.1, *A module table's entries*: per table, the entries this
+    /// account has read outside a fill, one bit per dense id. Each such
+    /// first read paid the entry's fill cost.
+    firsts: [ModuleTable.count]std.DynamicBitSetUnmanaged = @splat(.{}),
+    /// The fills open (nested), the records the innermost one has counted,
+    /// and what every open one has counted: a fill counts its records
+    /// instead of reserving them, and the reader of the entry pays them.
+    fill_depth: u32 = 0,
+    fill_count: u64 = 0,
+    fill_sum: u64 = 0,
 
     pub const default_allowance: u32 = 65_536;
     /// K (§4.1, *The source continuation*): the records each source atom
@@ -577,6 +621,72 @@ pub const Account = struct {
 
     pub fn deinit(a: *Account, gpa: Allocator) void {
         a.lanes.deinit(gpa);
+        a.dropFirsts(gpa);
+    }
+
+    /// Forget the first reads (`firsts`): once the declaration is checked,
+    /// nothing of it reads a module table again.
+    pub fn dropFirsts(a: *Account, gpa: Allocator) void {
+        for (&a.firsts) |*b| b.deinit(gpa);
+    }
+
+    /// An open fill of a module table's entry (§4.1, *A module table's
+    /// entries*): the count of the fill around it.
+    pub const Fill = struct { saved: u64 };
+
+    /// Open a fill: until `endFill`, every reservation is counted, not made.
+    pub fn beginFill(a: *Account) Fill {
+        a.fill_depth += 1;
+        const f: Fill = .{ .saved = a.fill_count };
+        a.fill_count = 0;
+        return f;
+    }
+
+    /// Close a fill: its cost, the records it counted. The caller stores
+    /// it with the entry and then reads the entry (`readEntry`).
+    pub fn endFill(a: *Account, f: Fill) u64 {
+        const c = a.fill_count;
+        a.fill_count = f.saved;
+        a.fill_depth -= 1;
+        a.fill_sum -= c;
+        return c;
+    }
+
+    /// Whether a fill is open: a read now is the fill's.
+    pub fn filling(a: *const Account) bool {
+        return a.fill_depth != 0;
+    }
+
+    /// Count `n` records in the open fill, against what the account has
+    /// left: the reader pays them whole, from the continuation or growth,
+    /// so a count that fits in neither stops the fill now (§4.4).
+    fn countFill(a: *Account, category: Category, n: u64) AccountError!void {
+        if (a.failed) |f| return f.err();
+        a.fill_count += n;
+        a.fill_sum += n;
+        const room = @max(a.continuationCap() -| a.continuation, @as(u64, a.allowance) -| a.growth);
+        if (a.fill_sum > room) {
+            a.failed = .{ .exhausted = category };
+            return error.OwnershipLimit;
+        }
+    }
+
+    /// Read entry `id` of module table `table`, whose fill cost is
+    /// `cost`: inside a fill, the fill counts the cost; else the account
+    /// pays it on its own first read of the entry and never again.
+    pub fn readEntry(a: *Account, gpa: Allocator, table: ModuleTable, id: u32, cost: u64) ChargeError!void {
+        if (a.failed) |f| return f.err();
+        if (a.fill_depth != 0) return a.countFill(.memo, cost);
+        const bits = &a.firsts[@backingInt(table)];
+        if (id >= bits.bit_length) try bits.resize(gpa, @max(id + 1, 2 * bits.bit_length), false);
+        if (bits.isSet(id)) return;
+        bits.set(id);
+        if (cost == 0) return;
+        if (cost > std.math.maxInt(u32)) {
+            a.failed = .{ .exhausted = .memo };
+            return error.OwnershipLimit;
+        }
+        return a.reserve(.memo, @intCast(cost));
     }
 
     /// N_f.
@@ -620,6 +730,7 @@ pub const Account = struct {
 
     /// Reserve `n` records in the kernel `enter` named, or growth.
     pub fn reserve(a: *Account, category: Category, n: u32) AccountError!void {
+        if (a.fill_depth != 0) return a.countFill(category, n);
         if (a.in_demands) a.demands += n;
         if (a.lane_slot == none_int) return a.reserveGrowth(category, n);
         if (a.failed) |f| return f.err();
@@ -636,6 +747,7 @@ pub const Account = struct {
 
     /// Reserve `n` growth records first: a product, a general task.
     pub fn reserveGrowth(a: *Account, category: Category, n: u32) AccountError!void {
+        if (a.fill_depth != 0) return a.countFill(category, n);
         if (a.failed) |f| return f.err();
         // The source continuation first, whole or not at all, decided at
         // this reservation before its work: only what passes K·I_f is growth.
@@ -658,6 +770,7 @@ pub const Account = struct {
     /// the 513th (or 33rd) record is the implementation defect
     /// `ownership_accounting_invariant`, never growth (§4.1).
     pub fn reserveLane(a: *Account, gpa: Allocator, lane_: Lane, category: Category, n: u32) ChargeError!void {
+        if (a.fill_depth != 0) return a.countFill(category, n);
         if (a.in_demands) a.demands += n;
         if (a.walk == .growth) return a.reserveGrowth(category, n);
         var lane = lane_;
@@ -963,6 +1076,11 @@ pub fn FixedDict(comptime k: usize) type {
             var steps: Counters.Steps = .{};
             defer Counters.dictDescended(&d.stats, steps, d.index.reach);
             return d.index.find(k, key, d, &steps);
+        }
+
+        /// The entry number of `key`, or null.
+        pub fn indexOf(d: *const Self, key: Key) ?u32 {
+            return d.lookup(key);
         }
 
         pub fn get(d: *const Self, key: Key) ?u32 {

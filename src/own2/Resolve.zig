@@ -30,6 +30,7 @@ const Eval = @import("Eval.zig");
 const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
+const Holders = @import("Holders.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -79,6 +80,9 @@ const Resolver = struct {
     /// Locals whose values reach an unknown object: candidates of every demand.
     anywhere: std.ArrayList(u32) = .empty,
     ancestry: Liveness.Ancestry = .{},
+    /// Each leaf's base keys and the escape index (§2.8).
+    keys: Holders.Keys = .{},
+    escapes: Holders.Escapes = .{},
 
     fn f(r: *Resolver) *Value.Frame {
         return &r.e.w.f;
@@ -99,6 +103,8 @@ const Resolver = struct {
         r.cands.deinit(r.gpa());
         r.anywhere.deinit(r.gpa());
         r.ancestry.deinit(r.gpa());
+        r.keys.deinit(r.gpa());
+        r.escapes.deinit(r.gpa());
     }
 
     /// A leaf's base keys: the parameters, atoms and labels it comes from,
@@ -389,21 +395,10 @@ const Resolver = struct {
     }
 
     /// Whether an escape before `point` reaches a target.
+    /// Whether an escape before `point` reaches a target (§2.8, *The
+    /// escape index*).
     fn escaped(r: *Resolver, t: u32, point: u32, call: u32, relied: *Cond) Error!bool {
-        for (r.e.escapes.items) |x| {
-            if (x.point > point) continue;
-            // What a callee keeps of the value its own write takes (`Ref.set`
-            // storing what it consumes) is that write's own business.
-            if (call != none and x.call == call) continue;
-            if (x.point != point and !r.regions.compatible(x.point, point)) continue;
-            const o = try Distinct.overlap(r.ev(), x.leaf, t, false);
-            switch (o.kind) {
-                .no => {},
-                .under => relied.* = try Cond.conj(r.ev().arena, r.account(), relied.*, o.cond),
-                .may => return true,
-            }
-        }
-        return false;
+        return r.escapes.escaped(r.ev(), &r.keys, r.regions, r.e.escapes.items, t, point, call, relied);
     }
 
     fn refuse(o: *Outcome, cause: Facts.Cause) void {
@@ -603,6 +598,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     var r: Resolver = .{ .e = e, .arena = arena, .regions = regions };
     defer r.deinit();
     try r.index();
+    try r.escapes.build(r.ev(), &r.keys, regions, e.escapes.items);
     const lines = try arena.alloc(Line, e.demands.items.len);
     var req: Cond = .{};
     for (e.demands.items, lines) |d, *l| {

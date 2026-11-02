@@ -12470,8 +12470,8 @@ test "the checker v2 charges a declaration near its limit the same in either ord
     // one below it. The run
     // checks that both lie within 5 % of the growth it reports, so a change
     // of cost that moves them out fails here and names the growth.
-    const above: u64 = 80_000;
-    const below: u64 = 75_000;
+    const above: u64 = 82_000;
+    const below: u64 = 77_000;
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
