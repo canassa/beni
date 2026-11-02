@@ -10221,8 +10221,10 @@ test "the checker v2's demands over a chain still read after the call cost recor
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §2.8 *As built*, *The join index* (#1510): the chain
-    // of D arms (`chosen`'s) handed to `incAll`, then `ignore v`, so `v` is
-    // read after the call and each arm's target pairs with it. Each pair's
+    // of D arms (`chosen`'s) handed to `incAll`, then `count v`, so `v` is
+    // read after the call and each arm's target pairs with it. (It was
+    // `ignore v`, which reads nothing of `v` and is accepted since a call's
+    // uses are its callee's footprint: `ownership/CallReadsNothingAfter`.) Each pair's
     // cover walked the chain down to its arm: 1 146 / 2 610 / 7 028 demand
     // records at D = 8 / 16 / 32 on master (×2.3, ×2.7 a doubling). Read
     // from the root's join index, 1 214 / 2 265 / 4 544. With the issue's
@@ -10234,13 +10236,13 @@ test "the checker v2's demands over a chain still read after the call cost recor
     const a = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n\n\nignore : Rose → Int\nignore _ =\n    0\n");
+    try src.appendSlice(a, "type Rose\n    = Rose (List Rose)\n\n\nincAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n\n\ncount : Rose → Int\ncount r =\n    case r of\n        Rose kids →\n            List.length kids\n");
     const depths = [_]u32{ 8, 16, 32 };
     const arms = [_][]const u8{ "Rose [ Rose k ]", "Rose [ Rose [ Rose k ] ]" };
     for (depths) |n| {
         try src.print(a, "\n\npub read{d} : Bool → Rose × Int\nread{d} c =\n    k = [ Rose [] ]\n    v =\n", .{ n, n });
         for (1..n + 1) |i| try src.print(a, "        {s} c then\n            {s}\n", .{ if (i == 1) "if" else "else if", arms[i % 2] });
-        try src.appendSlice(a, "        else\n            Rose []\n    ( incAll v, ignore v )\n");
+        try src.appendSlice(a, "        else\n            Rose []\n    ( incAll v, count v )\n");
     }
 
     // ┌─────────────────────────────────────────┐
@@ -10252,7 +10254,7 @@ test "the checker v2's demands over a chain still read after the call cost recor
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // `v` is read after the call: each depth's call is refused.
-    if (std.mem.count(u8, dump, "Main.incAll v#Rose.0: rejected element: v#Rose.0 holds it") != depths.len) {
+    if (std.mem.count(u8, dump, "Main.incAll v#Rose.0: rejected later-use: v is read again") != depths.len) {
         std.debug.print("a call over the chain is not refused\n{s}\n", .{dump});
         return error.TestUnexpectedResult;
     }
