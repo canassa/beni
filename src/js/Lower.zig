@@ -10741,6 +10741,17 @@ pub const Lowerer = struct {
             if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorCall(out, which, arg_insts, p);
         }
 
+        return l.generalCallExpr(out, inst);
+    }
+
+    // Keep general-call temporaries off the recursive arithmetic path.
+    noinline fn generalCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        const roots = l.rootsOf(inst);
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        const callee_inst: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+
         // A constructor is an object literal and never a call (§4); the
         // checker has already refused any application of one that is not
         // saturated, so `args` is exactly its field list.

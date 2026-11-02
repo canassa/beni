@@ -1,5 +1,5 @@
-//! Effect classes retained by module-level mutable cells. This is part of
-//! Effects.run's existing class construction, before solving the graph.
+//! Effect classes retained by stored values and declaration schemes.
+//! Traversals used while constructing the effect graph and its summaries.
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Effects = @import("Effects.zig");
@@ -49,4 +49,33 @@ pub fn run(e: *Effects, schemes: []const Var.Optional, scratch: Allocator) Error
         }
     }
     return shared;
+}
+
+/// The distinct nodes of `scheme`'s function types and function-holding
+/// applications and realm variables, including `where` types.
+pub fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32), holders: *std.ArrayList(u32), scratch: Allocator) Error!void {
+    const store = e.store;
+    const stack = &e.solved.walk;
+    stack.clearRetainingCapacity();
+    const mark = store.nextMark();
+    try stack.append(e.gpa, scheme);
+    while (stack.pop()) |next| {
+        const r = store.find(next);
+        if (store.mark(r) == mark) continue;
+        store.setMark(r, mark);
+        switch (store.content(r)) {
+            .flex, .rigid => |flags| {
+                const set = Walk.constraints(flags);
+                for (0..set.count(store)) |i| try stack.append(e.gpa, set.at(store, @intCast(i)).fn_var);
+            },
+            else => {},
+        }
+        if (e.realmCarrier(r)) {
+            const nd = try e.nodeFor(r);
+            if (std.mem.indexOfScalar(u32, out.items, nd) == null) try out.append(e.gpa, nd);
+            if (e.isHolder(r)) try holders.append(scratch, nd);
+        }
+        var k: u32 = 0;
+        while (Walk.stepped(store, r, k)) |c| : (k += 1) try stack.append(e.gpa, c.v);
+    }
 }
