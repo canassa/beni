@@ -78,4 +78,17 @@ browser-inline Tea.application    ownership/EntryUrlTaggers.beni   1:entry>-
 # document delegates to element with the same protocol; no further ownership promise.
 browser-inline Tea.document       browser/inline/DocumentTitle.beni     -
 page       Page.sandbox           browser/Counter.beni             1:entry>-
-core       Js.invoke             ownership/core/JsWords.beni     2:aliased>borrowed+res:unknown>fresh
+core       Js.invoke             ownership/core/JsWords.beni     2:aliased>borrowed+1:returned>-+res:->fresh
+# Retained callbacks must not permit mutation of their captured lists later.
+core       Js.Runtime.microtask  ownership/core/RuntimeWords.beni 1:escaped>borrowed
+core       Js.Runtime.macrotask  ownership/core/RuntimeWords.beni 1:escaped>borrowed
+core       Js.Runtime.timer      ownership/core/RuntimeWords.beni 2:escaped>borrowed
+# Scalar results and unit inputs carry no mutable payload; there is no observable unsafe neighbour.
+core       Js.Runtime.now        ownership/core/RuntimeWords.beni -
+core       Js.Runtime.random     ownership/core/RuntimeWords.beni -
+# defect never returns; its message is immutable text.
+core       Js.Runtime.defect     ownership/core/RuntimeWords.beni -
+# Only Task reads parked as the identity of its plain sentinel, never as mutable program data.
+core       Js.Runtime.parked     ownership/TaskWords.beni - Task.timeout
+# This private queue boundary retains runtime handles and closed drains; public Task storage already escapes their captures.
+core       Task.requeue          ownership/TaskWords.beni - Task.timeout

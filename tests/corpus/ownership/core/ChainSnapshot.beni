@@ -1,0 +1,24 @@
+-- A fresh snapshot accumulator cannot alias a Ref payload read before it
+-- was allocated. V2 currently reports a disjointness false positive.
+import Js
+
+
+type Link a
+    = Link { value : Js.Ref (Maybe a), after : Js.Ref (Maybe (Link a)) }
+
+
+pub snapshot : Js.Ref (Maybe (Link a)) → List a
+snapshot first = collect (Js.read first) []
+
+
+collect : Maybe (Link a), List a → List a
+collect next values =
+    case next of
+        Nothing →
+            values
+        Just (Link link) →
+            case Js.read link.value of
+                Nothing →
+                    values
+                Just value →
+                    collect (Js.read link.after) [ …values, value ]

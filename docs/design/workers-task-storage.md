@@ -62,3 +62,15 @@ changing an inherited snapshot. The returned wait canceller is explicitly
 `sync`, enforcing the existing contract (#1649). Continue correctness checks;
 correctness is the Task/effects and browser/tea corpus, then unfiltered gates.
 Performance belongs to a later slice.
+
+The typed control graph currently retains its general cleanup paths where the
+old raw-record implementation pruned individual capabilities. Optimizing that
+graph follows the owner's build-first directive. Tests use the typed host
+adapter to identify retained fiber machinery; raw `finalizers`/`children` key
+counts no longer describe the representation. Cancellation and cleanup order
+remain behavior contracts, including cancellation before a queued child's first line.
+
+V2's ownership parity currently falsely aliases the fresh chain snapshot with
+an earlier Ref read (#1664). The reduced fixture and six precise differences
+use §7.2's existing known-difference mechanism; default-checker verdicts and
+all other parity checks stay enforced. This is follow-up ownership work.

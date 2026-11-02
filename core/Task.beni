@@ -384,7 +384,7 @@ callbackWith register done later =
 --|         Nothing → ⊤
 pub resume : Resume a, a → ⊤
 resume (Resume wake) value =
-    _ = Js.invoke wake value λ_ → ⊤
+    Js.invoke wake value λ_ → ⊤
     ⊤
 
 
@@ -433,7 +433,7 @@ runLoop ((Control c) as fiber) =
                 leaveCleanup fiber
                 runLoop fiber
             Just (Execute work) →
-                _ = Js.invoke work ⊤ λ_ → ⊤
+                Js.invoke work ⊤ λ_ → ⊤
                 if Js.read c.ended then
                     ⊤
                 else
@@ -473,7 +473,7 @@ unwind ((Control c) as fiber) =
 driverJob : (⊤ → ⊤) → (⊤ → ⊤)
 driverJob work =
     λ⊤ →
-        _ = Js.invoke work ⊤ λ⊤ → ⊤
+        Js.invoke work ⊤ λ⊤ → ⊤
         ⊤
 
 
@@ -579,7 +579,7 @@ runJobs jobs =
         Nothing →
             ⊤
         Just job →
-            _ = Js.invoke job ⊤ λ_ → ⊤
+            Js.invoke job ⊤ λ_ → ⊤
             runJobs jobs
 
 
@@ -865,8 +865,8 @@ scheduleOn ((Scheduler s) as sched) task =
 
 
 -- The host scheduler retains this closed drain. Its captures escape; the
--- scheduler handle itself is read, and its mutable state is behind Js.Ref.
-requeue : borrowed Scheduler, escaped sync (⊤ → ⊤) → ⊤
+-- scheduler handle can be retained with it; mutable state is behind Js.Ref.
+requeue : escaped Scheduler, escaped sync (⊤ → ⊤) → ⊤
 requeue (Scheduler s) task =
     Js.write s.queuing True
     s.runner task
@@ -1225,9 +1225,8 @@ cleansUp ⊤ = Js.read fibered
 --| `work` must not suspend, and it runs outside any fiber, as `main` does.
 --| What a page program runs a command with when its body cannot suspend
 --| (`boundary.md` §9.8.11). What `work` starts with `spawn` belongs to it,
---| as a fiber's children do, and is cancelled when it returns. Nothing stops it: a fiber that has not started
---| runs until it first suspends before anything can cancel it, and work
---| that never suspends runs to its end.
+--| as a fiber's children do, and is cancelled when it returns. Once this synchronous job starts, it runs to its end. Its children
+--| that have not started are cancelled before their first line when it ends.
 pub soon : sync (⊤ → ⊤) → Soon
 soon work =
     sched = schedulerHere ⊤
@@ -2099,7 +2098,7 @@ startIn group work =
         (λ⊤ →
             case popChain c.stack of
                 Just (Execute job) →
-                    _ = Js.invoke job ⊤ λ_ → ⊤
+                    Js.invoke job ⊤ λ_ → ⊤
                     ⊤
                 _ →
                     ⊤

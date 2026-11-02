@@ -4256,7 +4256,7 @@ names the fixture that pins each (§24.6).
 | `Js.each` | `escaped Value, many (Value → ⊤) → ⊤` | `for (const x of xs) f(x)`: the iteration protocol is the host's, so the iterable is taken to escape; `f` is called during the call, any number of times, and not kept |
 | `Js.throw` | `escaped Value → fresh a` | `throw v`: JavaScript keeps what is thrown; the call never returns, so what it returns is the call's own |
 | `Js.ref`, `Js.read`, `Js.write` | `escaped a → fresh Ref a`; `borrowed Ref a → unknown a`; `borrowed Ref a, escaped a → ⊤` | `{ v }`, `r.v`, `r.v = v`: what a cell holds can be read by anyone holding it, at any time later, so what goes in escapes and what comes out is unknown |
-| `Js.invoke` (owner, 2026-11-01) | `once` callback, `aliased` argument, `unknown` result | `work(value, done)`: one typed protocol step; the synchronous completion may be retained for a parked callback; the callback may retain the argument or return an alias, and its result is never assumed fresh |
+| `Js.invoke` (owner, 2026-11-01) | `once returned` callback, `aliased` argument, escaping completion | `work(value, done)`: one typed protocol step; the synchronous completion may be retained for a parked callback; the callback may retain the argument or return an alias, and its result is the callback's result, including the plain parked sentinel, and is not assumed fresh |
 | `Js.pure`, `Js.suspending` | `once returned sync (⊤ → a) → a` | `body()`, compiled to the lambda's body |
 | `Js.finally` | `once returned sync (⊤ → a), once sync (⊤ → ⊤) → a` | `try { return body() } finally { cleanup() }` |
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
@@ -6480,12 +6480,25 @@ function's words, which describe each element: the summary's function slot at th
 
 | Declaration | Words | Why |
 |---|---|---|
-| `Task.timeout` | `borrowed Duration, once aliased (⊤ → a) → fresh Maybe a` | `startIn` runs the work once as a child of the call's own scope, and `within` closes that scope before the call returns; `valueOf` reads the child's outcome, which is what the work returned, and the `Just` around it is new. Nothing keeps the work or its value after the call (re-read 2026-10-26: only `firstOf`'s cancelling of the other child changed) |
+| `Task.timeout` | `borrowed Duration, once aliased (⊤ → a) → fresh Maybe a` | `startIn` runs the work once as a child of the call's own scope, and `scope` closes that scope before the call returns; `wait` reads the child's typed `Exit a` slot, which is what the work returned, and the `Just` around it is new. Nothing keeps the work or its value after the call (re-read 2026-10-26: only `firstOf`'s cancelling of the other child changed) |
 | `Task.raceOk` | `many aliased List (⊤ → Result e a) → fresh Result (List e) a` | each thunk runs at most once as a child of the call's scope, closed before it returns (none after one that answered `Ok` at once; `startRacers` walks the list in order and keeps no part of it, re-read 2026-10-26); the answer is the winner's `Ok` payload or a new list of every `Err` |
 | `Int32` | `crossing` | an `Int32` is a JavaScript number, `Math.imul`'s and the bit operations': it holds no list and no function |
 
 They are pinned in `trusted-surface.txt` (`ownership/TaskWords`, `ownership/RandomGenerate`) and their bodies,
-with `within`, `startIn` and `valueOf`, in `word-bodies.txt`.
+with `scope`, `startIn`, `makeFiber`, `wait`, `join` and `entry`, in `word-bodies.txt`.
+
+*Re-read 2026-11-02 (typed Task storage):* results move through the same typed
+slot and closed completion jobs without copying or manufacturing payload lists.
+The timeout wrapper is new; a race returns a winner's payload or builds the
+error list after closing its scope. The private `requeue` boundary marks both
+the scheduler handle and the closed drain `escaped`: the host may retain them,
+while all mutable runtime state lives behind `Js.Ref`. Its body is pinned.
+`Js.Runtime`'s timer, microtask and macrotask adapters likewise escape typed
+callbacks, tested by `ownership/core/RuntimeWords` and unsafe-word flips. The
+timer returns a fresh canceller closure over its native handle; the handle
+stays in the sibling. `now` and `random` return scalars, `defect` only throws,
+and Task alone reads `parked` as a plain sentinel identity. Their sibling
+bodies are pinned in the same guard, with no new ownership exemption.
 
 **What O1 does not clear** (`bench/ownership-everywhere.mjs`, 2026-10-16: 3 of 835 programs; core and every
 platform hold no rejected or pending line):
