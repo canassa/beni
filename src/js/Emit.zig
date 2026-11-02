@@ -712,6 +712,11 @@ pub fn run(
     // list has the entry declaration in it and §9 roots a library at its
     // export list — `Reach.collectRoots` says why at length.
     const entry = if (options.library) null else try e.findEntry();
+    if (entry) |main| if (e.selectedRuntime()) |runner| {
+        e.entry_runtime_twin = e.dispatchOf(main.module).effectDecl(main.decl.int()).own == .yes and
+            e.dispatchOf(runner.module).effectDecl(runner.decl).twin;
+    };
+
     if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
 
     // §9's reachability walk, between `findEntry` and `emitModules` and
@@ -1350,6 +1355,7 @@ const Emitter = struct {
     /// every name, and the names its kept part mentions. Found by
     /// `checkMarkupRuntime` and `preciseRuntimeRoots`; scratch-owned.
     runtime_module: ?Graph.Index = null,
+    entry_runtime_twin: bool = false,
     /// The write-set pass, between `runWrites` and `buildDirect`.
     writes: ?*Writes = null,
     writes_calls: []const Writes.Call = &.{},
@@ -1695,7 +1701,7 @@ const Emitter = struct {
         const runner = e.worker_runtime.?;
         const runtime_path = try e.outputPath(runner.module);
         const main_path = try e.outputPath(entry.module);
-        const run_name = try e.moduleSpelling(runner.module, "run");
+        const run_name = try e.moduleSpelling(runner.module, e.runtimeRunName());
         const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
         var text: std.ArrayList(u8) = .empty;
         // These listeners must run before either imported module's initializers.
@@ -1743,6 +1749,8 @@ const Emitter = struct {
             .deferred = e.deferred,
             .worker_entries = e.worker_entries,
             .worker_runtime = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime,
+            .entry_runtime_twin = e.dispatchOf(descriptor.module).effectDecl(descriptor.decl).own == .yes and
+                e.dispatchOf(e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime.module).effectDecl(e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime.decl).twin,
             .output_prefix = try std.fmt.allocPrint(e.scratch, "_workers/{s}/", .{descriptor.id}),
         };
     }
@@ -3168,7 +3176,7 @@ const Emitter = struct {
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
-        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
         for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
         for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
@@ -3182,7 +3190,7 @@ const Emitter = struct {
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
-        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
         try names.appendSlice(e.scratch, e.module_uses.items);
@@ -7125,7 +7133,7 @@ const Emitter = struct {
             }
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
-        if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
+        if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, e.runtimeRunName())));
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
             const b = e.bir(entry.module);
@@ -8371,7 +8379,7 @@ const Emitter = struct {
         }
         if (e.options.prerender != .tree) {
             const run_name = if (e.entryRun()) |runner|
-                try e.moduleSpelling(runner.module, "run")
+                try e.moduleSpelling(runner.module, e.runtimeRunName())
             else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
             if (e.exportsProgram()) {
                 // `boundary.md` §9.12 (c): the hoisted file exports what `run`
@@ -8566,7 +8574,7 @@ const Emitter = struct {
             }
         }
         if (entry != null) if (e.selectedRuntime()) |runner| {
-            if (e.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.imported.set(ordinal);
+            if (e.globals.lookup(try e.moduleName(runner.module, e.runtimeRunName()))) |ordinal| e.imported.set(ordinal);
         };
         // What the markup runtime and the entry file import from the
         // runtime module (`backend.md` §15.1, *The runtime module*).
@@ -9131,6 +9139,10 @@ const Emitter = struct {
     /// `emitEntry` for a build with a runtime module (`backend.md` §15.1):
     /// `run` and `start` are imported from the module when it supplies
     /// them, one statement per file, `run`'s first.
+    fn runtimeRunName(e: *const Emitter) []const u8 {
+        return if (e.entry_runtime_twin) "run$s" else "run";
+    }
+
     fn emitEntryWithModule(e: *Emitter, entry: Entry, module: Graph.Index, imported: []const u8, start: ?StartData) !void {
         const release = e.options.release;
         const module_path = try e.outputPath(module);
@@ -9151,7 +9163,7 @@ const Emitter = struct {
         };
         const as = " as ";
         if (e.entryRun() != null) {
-            try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}run", .{ try e.moduleSpelling(module, "run"), as }));
+            try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}run", .{ try e.moduleSpelling(module, e.runtimeRunName()), as }));
         } else try Add.one(e, &imports, runtime_path, "run");
         if (start) |s| {
             if (e.suppliedAs("start") != null) {

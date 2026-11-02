@@ -352,7 +352,7 @@ pub const Tag = enum(u32) {
     lst_lit,
     /// `[tag, deps]`.
     fresh,
-    /// `[tag, kind, module, x, inst, env*]` (`FunKind`).
+    /// `[tag, kind, module, x, inst, body_mode, env*]` (`FunKind`).
     fun,
     /// `[tag, scrutinee, keyed, reads, (gamma, term)*]`: `reads` is what
     /// deciding the choice read (a deps id: a `case`'s pattern reads), or
@@ -365,6 +365,11 @@ pub const Tag = enum(u32) {
 };
 
 const FunKind = enum(u32) { top, ctor, lambda, letdef };
+const fun_prefix = 6;
+
+fn selectedMode(mode: Dispatch.Suspend, enclosing: Dispatch.Suspend) Dispatch.Suspend {
+    return if (mode == .poly) enclosing else mode;
+}
 
 pub const Edit = enum(u32) {
     none,
@@ -1675,7 +1680,7 @@ fn closedIdentity(a: *Writes, term_: u32) u32 {
 fn closedArgument(a: *Writes, term_: u32) bool {
     const constant = a.closedIdentity(term_);
     if (a.termTag(constant) != .fun) return a.isLiteral(constant);
-    var i: u32 = 5;
+    var i: u32 = fun_prefix;
     while (i < a.termLen(constant)) : (i += 1) {
         const captured = a.termWord(constant, i);
         if (captured != none and !a.closedArgument(captured)) return false;
@@ -1854,9 +1859,9 @@ fn mkLstLit(a: *Writes, elems: []const u32) Error!u32 {
     return a.finish(mark, depth + 1);
 }
 
-fn mkFun(a: *Writes, kind: FunKind, m: u32, x: u32, inst: u32, env: []const u32) Error!u32 {
+fn mkFun(a: *Writes, kind: FunKind, m: u32, x: u32, inst: u32, env: []const u32, body_mode: Dispatch.Suspend) Error!u32 {
     const mark = a.scratch.items.len;
-    try a.scratch.appendSlice(a.gpa, &.{ @backingInt(Tag.fun), @backingInt(kind), m, x, inst });
+    try a.scratch.appendSlice(a.gpa, &.{ @backingInt(Tag.fun), @backingInt(kind), m, x, inst, @backingInt(body_mode) });
     try a.scratch.appendSlice(a.gpa, env);
     return a.finish(mark, 0);
 }
@@ -1994,7 +1999,7 @@ fn deps(a: *Writes, t: u32) Allocator.Error!u32 {
             for (0..a.lstElems(t)) |i| d = try a.depsUnion(d, try a.deps(a.lstElem(t, @intCast(i)).term));
         },
         .fun => {
-            var i: u32 = 5;
+            var i: u32 = fun_prefix;
             while (i < a.termLen(t)) : (i += 1) {
                 const e = a.termWord(t, i);
                 if (e != none) d = try a.depsUnion(d, try a.deps(e));
@@ -2041,7 +2046,7 @@ fn termSize(a: *Writes, t: u32, limit: u32) Allocator.Error!u32 {
             },
             .lst => for (0..a.lstElems(x)) |i| try stack.append(a.gpa, a.lstElem(x, @intCast(i)).term),
             .fun => {
-                var i: u32 = 5;
+                var i: u32 = fun_prefix;
                 while (i < a.termLen(x)) : (i += 1) if (a.termWord(x, i) != none) try stack.append(a.gpa, a.termWord(x, i));
             },
             .alt => {
@@ -2183,6 +2188,7 @@ fn projField(a: *Writes, t: u32, field: Symbol) Error!u32 {
 // ---------------------------------------------------------------------------
 
 const Frame = struct {
+    body_mode: Dispatch.Suspend = .no,
     m: u32,
     decl: u32,
     env: []u32,
@@ -2442,12 +2448,12 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
         },
         .top, .ext_value => {
             const t = a.valueTarget(f.m, inst) orelse return a.freshEmpty();
-            return a.topRef(t.m, t.d, g);
+            return a.topRef(t.m, t.d, g, a.referenceMode(f, inst));
         },
         .ctor, .ext_ctor => {
             const c = a.ctorTarget(f.m, inst) orelse return a.freshEmpty();
             if (a.ctorArity(c) == 0) return a.mkCon(c, &.{});
-            return a.mkFun(.ctor, a.ctor_module[c], c, none, &.{});
+            return a.mkFun(.ctor, a.ctor_module[c], c, none, &.{}, .no);
         },
         .int => {
             const n = parseInt(b.bytes(inst)) orelse return a.mkLit(lit_float, try a.internBytes(b.bytes(inst)), 0);
@@ -2509,7 +2515,7 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
             for (args) |arg| d = try a.depsUnion(d, try a.deps(try a.eval(f, arg, g)));
             return a.mkFresh(d);
         },
-        .lambda => return a.mkFun(.lambda, f.m, f.decl, inst.int(), f.env),
+        .lambda => return a.mkFun(.lambda, f.m, f.decl, inst.int(), f.env, f.body_mode),
         .let => {
             const items = b.extraSlice(b.subRange(@fromBackingInt(data.lhs)), Inst.Index);
             for (items) |item| {
@@ -2521,7 +2527,7 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
                             f.env[ld.local] = try a.eval(f, @fromBackingInt(idata.rhs), g);
                             try a.recordLet(f, @fromBackingInt(idata.rhs), f.env[ld.local]);
                         } else {
-                            f.env[ld.local] = try a.mkFun(.letdef, f.m, f.decl, item.int(), f.env);
+                            f.env[ld.local] = try a.mkFun(.letdef, f.m, f.decl, item.int(), f.env, f.body_mode);
                         }
                     },
                     .let_pattern => {
@@ -2682,14 +2688,19 @@ fn noteSplit(a: *Writes, facts: []const Fact, g: u32) Allocator.Error!void {
 
 // ---- references and calls ---------------------------------------------------
 
-fn topRef(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
+fn referenceMode(a: *const Writes, f: *const Frame, inst: Inst.Index) Dispatch.Suspend {
+    const dt = a.dispatchOf(f.m) orelse return .poly;
+    return selectedMode(dt.effectAt(inst).body, f.body_mode);
+}
+
+fn topRef(a: *Writes, m: u32, d: u32, g: u32, body_mode: Dispatch.Suspend) Error!u32 {
     const decl = a.bir(m).decls[d];
     if (decl.kind == .foreign_value) {
         if (decl.params == 0) return a.freshEmpty();
-        return a.mkFun(.top, m, d, none, &.{});
+        return a.mkFun(.top, m, d, none, &.{}, body_mode);
     }
     if (!decl.kind.isValue()) return a.freshEmpty();
-    if (decl.params > 0) return a.mkFun(.top, m, d, none, &.{});
+    if (decl.params > 0) return a.mkFun(.top, m, d, none, &.{}, body_mode);
     return a.topValue(m, d, g);
 }
 
@@ -2763,7 +2774,7 @@ fn evalCall(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
                 return a.mkLit(lit_int, @truncate(neg), @truncate(neg >> 32));
             }
         }
-        return a.callTop(t.m, t.d, args, f.m, inst, g);
+        return a.callTop(t.m, t.d, args, f.m, inst, g, a.referenceMode(f, callee));
     }
     if (a.ctorTarget(f.m, callee)) |c| return a.mkCon(c, args);
     const fun = try a.eval(f, callee, g);
@@ -2789,12 +2800,12 @@ fn evalMethod(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     const site = dt.siteOf(inst) orelse return a.freshCall(all);
     const ci = site.callee.unwrap() orelse return a.freshCall(all);
     switch (dt.term(ci)) {
-        .top => |t| return a.callTop(f.m, t.decl.int(), all, f.m, inst, g),
+        .top => |t| return a.callTop(f.m, t.decl.int(), all, f.m, inst, g, a.referenceMode(f, inst)),
         .ext => |t| {
             const m2 = t.module.int();
             if (m2 >= a.in.provenance.len) return a.freshCall(all);
             const d = a.in.provenance[m2].valueDecl(@backingInt(t.value)) orelse return a.freshCall(all);
-            return a.callTop(m2, d.int(), all, f.m, inst, g);
+            return a.callTop(m2, d.int(), all, f.m, inst, g, a.referenceMode(f, inst));
         },
         .field => {
             const fun = try a.projField(recv, b.symbol(mc.name));
@@ -2986,16 +2997,18 @@ fn funSite(a: *const Writes, t: u32) struct { m: u32, inst: u32 } {
 }
 
 /// Whether calling the function term may suspend, by the checker's answer
-/// (`checker-v2.md` §26): `yes`, or `poly` — yes in the body that suspends.
+/// (`checker-v2.md` §26), resolved in the body selected at this reference.
+/// An unresolved polymorphic choice remains conservative.
 fn funSuspends(a: *const Writes, t: u32) bool {
     const kind: FunKind = @fromBackingInt(a.termWord(t, 1));
     const m = a.termWord(t, 2);
     const dt = a.dispatchOf(m) orelse return true;
-    return switch (kind) {
-        .top => dt.effectDecl(a.termWord(t, 3)).own != .no,
-        .ctor => false,
-        .lambda, .letdef => dt.effectAt(@fromBackingInt(a.termWord(t, 4))).own != .no,
+    const own = switch (kind) {
+        .top => dt.effectDecl(a.termWord(t, 3)).own,
+        .ctor => Dispatch.Suspend.no,
+        .lambda, .letdef => dt.effectAt(@fromBackingInt(a.termWord(t, 4))).own,
     };
+    return selectedMode(own, @fromBackingInt(@intCast(a.termWord(t, 5)))) != .no;
 }
 
 /// Whether a term is made of literals and constructors alone.
@@ -3034,7 +3047,7 @@ pub fn funInfo(a: *Writes, t: u32) Allocator.Error!FunInfo {
         .top => return .{ .kind = .top, .m = m, .d = x, .inst = none, .bound = &.{} },
         .lambda => {
             var bound: std.ArrayList(u32) = .empty;
-            for (5..a.termLen(t)) |k| if (a.termWord(t, k) != none) try bound.append(a.arena(), @intCast(k - 5));
+            for (fun_prefix..a.termLen(t)) |k| if (a.termWord(t, k) != none) try bound.append(a.arena(), @intCast(k - fun_prefix));
             return .{ .kind = .lambda, .m = m, .d = x, .inst = a.termWord(t, 4), .bound = bound.items };
         },
         else => return .{ .kind = .other, .m = m, .d = x, .inst = none, .bound = &.{} },
@@ -3146,7 +3159,7 @@ fn applicationSubscriptions(a: *Writes, frame: *Frame, fs: Fields, sub: u32) Err
             if (decl.kind == .value and std.mem.eql(u8, a.declName(nav, @intCast(di)), field.name)) break @as(u32, @intCast(di));
         } else return none;
         const tag = try a.eval(frame, inst, 0);
-        const declared = try a.callTop(nav, d, &.{tag}, fs.m, inst, 0);
+        const declared = try a.callTop(nav, d, &.{tag}, fs.m, inst, 0, .no);
         // Copied at once: the term table grows, and moves, as it interns.
         try parts.appendSlice(a.arena(), a.effectParts(declared, .sub) orelse return none);
     }
@@ -3156,7 +3169,7 @@ fn applicationSubscriptions(a: *Writes, frame: *Frame, fs: Fields, sub: u32) Err
 /// A call of the top-level `(m, d)`: a core row, `Fresh` for a `foreign` or
 /// a platform function without one, the body inlined in `view` for the
 /// program's own functions, and otherwise its summary instantiated.
-fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32) Error!u32 {
+fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32, body_mode: Dispatch.Suspend) Error!u32 {
     const decl = a.bir(m).decls[d];
     if (a.in.effects) |fx| if (try a.effectCall(fx, m, d, args)) |t| return t;
     if (!a.isOwn(m)) {
@@ -3195,9 +3208,9 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
     if (decl.params == 0) return a.apply(try a.topValue(m, d, g), args, g);
     if (args.len != decl.params) return a.opaqueCall(args, m, site_m, site);
-    if (a.ctx.mode == .view and a.isOwn(m)) return a.direct(m, d, args, g);
+    if (a.ctx.mode == .view and a.isOwn(m)) return a.direct(m, d, args, g, body_mode);
     const s = try a.summary(m, d);
-    return a.instantiate(s, a.fnId(m, d), args, g);
+    return a.instantiate(s, a.fnId(m, d), args, g, body_mode);
 }
 
 /// Opaque impure host results vary independently of model writes.
@@ -3225,7 +3238,7 @@ fn apply(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
             const m = a.termWord(fun, 2);
             const x = a.termWord(fun, 3);
             switch (kind) {
-                .top => return a.callTop(m, x, args, m, @fromBackingInt(0), g),
+                .top => return a.callTop(m, x, args, m, @fromBackingInt(0), g, @fromBackingInt(@intCast(a.termWord(fun, 5)))),
                 .ctor => {
                     if (args.len != a.ctorArity(x)) return a.freshCall(args);
                     return a.mkCon(x, args);
@@ -3273,8 +3286,9 @@ fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     a.inst_depth += 1;
     defer a.inst_depth -= 1;
     var f = try a.newFrame(m, d, 0);
-    const n_env = a.termLen(fun) - 5;
-    for (0..@min(n_env, f.env.len)) |i| f.env[i] = a.termWord(fun, 5 + i);
+    f.body_mode = @fromBackingInt(@intCast(a.termWord(fun, 5)));
+    const n_env = a.termLen(fun) - fun_prefix;
+    for (0..@min(n_env, f.env.len)) |i| f.env[i] = a.termWord(fun, fun_prefix + i);
     f.unknown = try a.deps(fun);
     const data = b.instData(inst);
     var params: []const Inst.Index = undefined;
@@ -3318,7 +3332,7 @@ fn noteRecursive(a: *Writes, key: u64) Allocator.Error!void {
 
 /// Walk `(m, d)`'s body with `args` bound: the key's walk of `update`, the
 /// view's inlining, `init`.
-fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
+fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32, body_mode: Dispatch.Suspend) Error!u32 {
     const key = directKey(m, d);
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null or a.inst_depth >= cap_inst_depth) {
         if (a.inst_depth >= cap_inst_depth) a.ctx.caps.d = true else try a.noteRecursive(key);
@@ -3333,6 +3347,7 @@ fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
     const b = a.bir(m);
     const decl = b.decls[d];
     var f = try a.newFrame(m, d, if (a.ctx.mode == .summary) 0 else try a.depsOfPath(rho_path));
+    f.body_mode = body_mode;
     const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
     if (params.len != args.len) return a.freshCall(args);
     for (params, args) |p, v| {
@@ -3448,6 +3463,7 @@ fn summaryBody(a: *Writes, m: u32, d: u32) Error!u32 {
     const decl = b.decls[d];
     const id = a.fnId(m, d);
     var f = try a.newFrame(m, d, try a.paramDeps(m, d));
+    f.body_mode = .poly;
     const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
     for (params, 0..) |p, i| try a.bind(&f, p, try a.mkSame(try a.mkPath(none, .pi, id, @intCast(i))));
     const body = decl.body.unwrap() orelse return a.mkFresh(try a.paramDeps(m, d));
@@ -3460,20 +3476,21 @@ fn summaryBody(a: *Writes, m: u32, d: u32) Error!u32 {
 // ---------------------------------------------------------------------------
 
 const Subst = struct {
+    body_mode: Dispatch.Suspend = .poly,
     id: u32,
     fn_id: u32,
     args: []const u32,
     g: u32,
 };
 
-fn instantiate(a: *Writes, s: u32, fn_id: u32, args: []const u32, g: u32) Error!u32 {
+fn instantiate(a: *Writes, s: u32, fn_id: u32, args: []const u32, g: u32, body_mode: Dispatch.Suspend) Error!u32 {
     if (a.inst_depth >= cap_inst_depth) {
         a.ctx.caps.d = true;
         return a.freshCall(args);
     }
     a.inst_depth += 1;
     defer a.inst_depth -= 1;
-    const sub: Subst = .{ .id = a.next_inst_id, .fn_id = fn_id, .args = args, .g = g };
+    const sub: Subst = .{ .id = a.next_inst_id, .fn_id = fn_id, .args = args, .g = g, .body_mode = body_mode };
     a.next_inst_id += 1;
     return a.capSize(try a.subst(&sub, s));
 }
@@ -3615,13 +3632,13 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
             return a.apply(fun, args, sub.g);
         },
         .fun => {
-            const n = a.termLen(t) - 5;
+            const n = a.termLen(t) - fun_prefix;
             const env = try a.arena().alloc(u32, n);
             for (env, 0..) |*e, i| {
-                const x = a.termWord(t, 5 + i);
+                const x = a.termWord(t, fun_prefix + i);
                 e.* = if (x == none) none else try a.subst(sub, x);
             }
-            return a.mkFun(@fromBackingInt(a.termWord(t, 1)), a.termWord(t, 2), a.termWord(t, 3), a.termWord(t, 4), env);
+            return a.mkFun(@fromBackingInt(a.termWord(t, 1)), a.termWord(t, 2), a.termWord(t, 3), a.termWord(t, 4), env, selectedMode(@fromBackingInt(@intCast(a.termWord(t, 5))), sub.body_mode));
         },
         .ixeq => {
             const s = try a.substSym(sub, a.termWord(t, 2));
@@ -3905,8 +3922,8 @@ fn alphaTerm(a: *Writes, al: *Alpha, t1: u32, t2: u32) Allocator.Error!bool {
         },
         .fresh => return a.alphaDeps(al, w(a, t1, 1), w(a, t2, 1)),
         .fun => {
-            for (1..5) |k| if (w(a, t1, k) != w(a, t2, k)) return false;
-            for (5..n) |k| if (!try a.alphaTerm(al, w(a, t1, k), w(a, t2, k))) return false;
+            for (1..fun_prefix) |k| if (w(a, t1, k) != w(a, t2, k)) return false;
+            for (fun_prefix..n) |k| if (!try a.alphaTerm(al, w(a, t1, k), w(a, t2, k))) return false;
             return true;
         },
         .alt => {
@@ -6686,7 +6703,7 @@ fn copyTerm(a: *Writes, old: u32, plan: []const PlanItem, d: u32) Error!u32 {
 /// view's holes are seen.
 fn applyDirect(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     if (a.termTag(fun) == .fun and @as(FunKind, @fromBackingInt(a.termWord(fun, 1))) == .top) {
-        return a.direct(a.termWord(fun, 2), a.termWord(fun, 3), args, g);
+        return a.direct(a.termWord(fun, 2), a.termWord(fun, 3), args, g, @fromBackingInt(@intCast(a.termWord(fun, 5))));
     }
     return a.apply(fun, args, g);
 }
@@ -7570,7 +7587,7 @@ pub fn literalSpelling(a: *Writes, t: u32, out: *std.ArrayList(u8)) Allocator.Er
 /// declaration, or `none`.
 pub fn closureLocal(a: *const Writes, t: u32, local: u32) u32 {
     if (a.termTag(t) != .fun) return none;
-    const k = 5 + @as(usize, local);
+    const k = fun_prefix + @as(usize, local);
     if (k >= a.termLen(t)) return none;
     return a.termWord(t, k);
 }

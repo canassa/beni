@@ -81,7 +81,8 @@ pub foreign type Scope
 
 --| How a platform's primitive resumes the fiber that waits on it, once: a
 --| JavaScript function the platform calls with the value.
-pub foreign type Resume a
+pub opaque type Resume a
+    = Resume (a → ⊤)
 
 
 --| Work queued to run once, in no fiber, where a fiber started now would
@@ -125,6 +126,40 @@ andThen value next =
         Js.to sentinel
     else
         next value
+
+
+-- The compiler-only typed completion protocol. The closures capture their
+-- actual input and result types; each continuation is run by the loop.
+chain : ((a → ⊤) → a), (a → b), sync (b → ⊤) → b
+chain work next done =
+    value = Js.invoke work (λincoming → continueWith next incoming done) λ_ → ⊤
+    if isWaiting value then Js.to sentinel else Js.invoke next value done
+
+
+continueWith : (a → b), a, sync (b → ⊤) → ⊤
+continueWith next value done =
+    _ =
+        Js.call (Js.get (Js.read current) "stack") "push"
+            [ Js.from λ_ →
+                result = Js.invoke next value done
+                if isWaiting result then
+                    sentinel
+                else
+                    done result
+                    Js.null
+            ]
+    ⊤
+
+
+-- A temporary adapter while control records migrate: the old trampoline
+-- consumes a result from a closed job, never from a recursively called sink.
+legacyResult : V → ⊤
+legacyResult value =
+    fiber = Js.read current
+    if not (Js.isNull (Js.get fiber "outcome")) then
+        ⊤
+    else
+        Js.to (Js.call (Js.get fiber "stack") "push" [ Js.from λ_ → value ])
 
 
 --| Used by the code the compiler emits, and by nothing else: always `False`
@@ -311,7 +346,7 @@ runPortTask ⊤ =
 
         JobNext task next →
             Js.write portTasks.first next
-            _ = Js.invoke task ⊤
+            _ = Js.invoke task ⊤ λ_ → ⊤
             ⊤
 
 
@@ -503,7 +538,7 @@ releaseAll ⊤ =
 
         JobNext cleanup next →
             Js.write releases.first next
-            _ = Js.invoke cleanup ⊤
+            _ = Js.invoke cleanup ⊤ λ_ → ⊤
             releaseAll ⊤
 
 
@@ -659,7 +694,7 @@ loop fiber first =
         else
             first
     next = Js.call (Js.get fiber "stack") "pop" []
-    result = Js.apply next [ value ]
+    result = Js.apply next [ value, Js.from legacyResult ]
     if not (Js.isNull (Js.get fiber "outcome")) then
         ⊤
     else if Js.same result sentinel then
@@ -697,31 +732,9 @@ pushBack stack ks i =
 -- once when it is called before `register` returns: `done` then. `register` returns a
 -- canceller, or null.
 suspend : sync (V → V) → a
-suspend register =
-    fiber = Js.read current
-    if deliverable fiber then
-        park Js.null True
-    else
-        w = Js.from { cancel = Js.null, done = False, ready = False, sync = True, value = Js.null }
-
-        wake =
-            λvalue →
-                if Js.to (Js.get w "done") then
-                    ⊤
-                else
-                    Js.set w "done" (Js.from True)
-                    if Js.to (Js.get w "sync") then
-                        Js.set w "ready" (Js.from True)
-                        Js.set w "value" value
-                    else
-                        enqueue fiber value w
-        canceller = register (Js.from wake)
-        Js.set w "sync" (Js.from False)
-        if Js.to (Js.get w "ready") then
-            Js.to (Js.get w "value")
-        else
-            Js.set w "cancel" canceller
-            park w False
+suspend register = callback λr →
+    cancelWait = register (Js.from λvalue → resume r (Js.to value))
+    λ⊤ → if Js.isNull cancelWait then ⊤ else Js.to (Js.apply cancelWait [ Js.null ])
 
 
 -- The current fiber cancels itself: there is no value to return.
@@ -878,7 +891,7 @@ cleanups fiber =
                     [ Js.from boundary
                     , Js.from λ_ →
                         _ = Js.call (cleaningSet ⊤) "add" [ Js.read current ]
-                        Js.apply fin [ Js.null ]
+                        Js.suspending λ⊤ → Js.to (Js.apply fin [ Js.null ])
                     ]
                 )
 
@@ -1014,9 +1027,47 @@ fork parent work sc from =
 --|     sleep ms =
 --|         Task.callback λresume → startTimer ms resume
 pub callback : sync (Resume a → (⊤ → ⊤)) → a
-callback register = suspend λwake →
-    canceller = Js.from (register (Js.to wake))
-    if Js.typeIs canceller "function" then canceller else Js.null
+callback register = Js.suspending λ⊤ → callbackWith register (Js.completion ⊤) False
+
+
+callbackWith : sync (Resume a → (⊤ → ⊤)), sync (a → ⊤), Bool → a
+callbackWith register done later =
+    fiber = Js.read current
+    if deliverable fiber then
+        Js.write pending (Js.from { interrupt = True, ks = Js.array [], wait = Js.null })
+        Js.to sentinel
+    else
+        w =
+            Js.from
+                { cancel = Js.null, done = False, ready = False, sync = not later, value = Js.null }
+        ready = Js.ref Nothing
+
+        wake =
+            λvalue →
+                if Js.to (Js.get w "done") then
+                    ⊤
+                else
+                    Js.set w "done" (Js.from True)
+                    if Js.to (Js.get w "sync") then
+                        Js.write ready (Just value)
+                    else
+                        _ =
+                            Js.call (Js.get fiber "stack") "push"
+                                [ Js.from λ_ →
+                                    done value
+                                    Js.null
+                                ]
+                        enqueue fiber Js.null w
+        cancelWait = register (Resume wake)
+        Js.set w "sync" (Js.from False)
+        case Js.read ready of
+            Just value →
+                value
+
+            Nothing →
+                Js.set w "cancel" (Js.from cancelWait)
+                Js.write pending (Js.from { interrupt = False, ks = Js.array [], wait = w })
+                Js.to sentinel
 
 
 -- Work outside any fiber, `{ end, kids, w }`, while it runs.
@@ -1107,23 +1158,7 @@ outcomeOf fiber = suspend λwake →
 --| Wait for a fiber's value. If it was cancelled, the fiber that joins it is
 --| cancelled too.
 pub join : Fiber a → a
-join fiber =
-    f = Js.from fiber
-    if Js.isNull (Js.get f "outcome") then
-        -- The protocol by hand, as `Task.js` wrote it: the wait is called
-        -- as data, and when it parks `joined` itself goes on the stack, so
-        -- a join that waits makes no continuation of its own — the
-        -- lowering's would be a closure per join (`joined` may suspend, so
-        -- it cannot go to `andThen`, whose argument is `sync`).
-        r = Js.apply (Js.from outcomeOf) [ f ]
-        Js.suspending λ⊤ →
-            if Js.same r sentinel then
-                _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from joined ]
-                Js.to sentinel
-            else
-                Js.to (Js.apply (Js.from joined) [ r ])
-    else
-        joined (guest (Js.get f "outcome"))
+join fiber = joined (wait fiber)
 
 
 --| Wait for a fiber to end, and say how.
@@ -1152,14 +1187,14 @@ cancel fiber =
 
 --| Let every other fiber that is ready run first.
 pub yieldNow : ⊤ → ⊤
-yieldNow ⊤ =
-    fiber = Js.read current
-    if deliverable fiber then
-        selfCancel ⊤
-    else
-        w = Js.from { cancel = Js.null, done = False, ready = False, sync = False, value = Js.null }
-        enqueue fiber Js.null w
-        park w False
+yieldNow ⊤ = Js.suspending λ⊤ →
+    callbackWith
+        (λr →
+            resume r ⊤
+            λ⊤ → ⊤
+        )
+        (Js.completion ⊤)
+        True
 
 
 --| Answer the wait `resume` belongs to with `value`: the fiber that waits
@@ -1181,7 +1216,7 @@ yieldNow ⊤ =
 --|         Just r → Task.resume r "open"
 --|         Nothing → ⊤
 pub resume : Resume a, a → ⊤
-resume r value = Js.to (Js.apply (Js.from r) [ Js.from value ])
+resume (Resume wake) value = Js.invoke wake value λ_ → ⊤
 
 
 --| Wait forever. Only cancelling the fiber ends the wait. Effect's `never`.
@@ -1372,14 +1407,8 @@ deferral = Js.ref Js.null
 -- `deferral`'s `run`, with the protocol by hand, as `join` writes it.
 afterDeferred : V, V, a → a
 afterDeferred s exit value =
-    r = Js.apply (Js.get (Js.read deferral) "run") [ s, exit ]
-
-    Js.suspending λ⊤ →
-        if Js.same r sentinel then
-            _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from λ_ → Js.from value ]
-            Js.to sentinel
-        else
-            value
+    runDeferred s exit
+    value
 
 
 -- A scope's finaliser on its fiber's list: run when that fiber is cancelled
@@ -1414,20 +1443,18 @@ runDeferred s exit =
 -- before the next starts. The protocol by hand, as `join` writes it: a
 -- function that parks has the rest of the list pushed after it.
 runEach : V, V → ⊤
-runEach fins exit =
+runEach fins exit = Js.suspending λ⊤ → runEachWith fins exit (Js.completion ⊤)
+
+
+runEachWith : V, V, sync (⊤ → ⊤) → ⊤
+runEachWith fins exit done =
     if Js.to (Js.get fins "length") == 0 then
         ⊤
     else
-        r = Js.apply (Js.call fins "pop" []) [ exit ]
-
-        Js.suspending λ⊤ →
-            if Js.same r sentinel then
-                _ =
-                    Js.call (Js.get (Js.read pending) "ks") "push"
-                        [ Js.from λ_ → Js.apply (Js.from runEach) [ fins, exit ] ]
-                Js.to sentinel
-            else
-                Js.to (Js.apply (Js.from runEach) [ fins, exit ])
+        fin : V → ⊤
+        fin = Js.to (Js.call fins "pop" [])
+        result = Js.invoke fin exit λ⊤ → continueWith (λ⊤ → runEach fins exit) ⊤ done
+        if isWaiting result then Js.to sentinel else runEachWith fins exit done
 
 
 -- A fiber of its own for finalisers that belong to no running fiber: it
@@ -1753,7 +1780,7 @@ withSlotsOf holder fiber =
                         Js.call (Js.global "Object") "assign" [ Js.from {}, Js.get holder "slots" ]
                     Js.set next "scheduler" Js.undefined
                     Js.set fiber "slots" next
-                    Js.apply fin [ x ]
+                    Js.suspending λ⊤ → Js.to (Js.apply fin [ x ])
             ]
         )
 
@@ -3459,7 +3486,7 @@ begin h work arg =
         Js.set h "probe" Js.null
         _ =
             Js.call (Js.get fiber "stack") "push"
-                [ Js.from finish, Js.from λ_ → Js.apply work [ arg ] ]
+                [ Js.from finish, Js.from λ_ → Js.suspending λ⊤ → Js.to (Js.apply work [ arg ]) ]
         enlist h fiber
         Js.set fiber "interrupted" (Js.from True)
         enqueue fiber Js.null Js.null
@@ -3475,7 +3502,7 @@ begin h work arg =
             p = Js.read pending
             Js.write pending Js.null
             stack = Js.get fiber "stack"
-            _ = Js.call stack "push" [ Js.from finish ]
+            _ = Js.call stack "unshift" [ Js.from finish ]
             ks = Js.get p "ks"
             takeOn stack ks (Js.to (Js.get ks "length") - 1)
 
@@ -3569,7 +3596,7 @@ callAs fiber h work arg =
     r =
         Js.finally
             (λ⊤ →
-                v = Js.apply work [ arg ]
+                v = Js.apply work [ arg, Js.from legacyResult ]
                 Js.write ok True
                 v
             )
