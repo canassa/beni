@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const PlaceBelow = @import("PlaceBelow.zig");
 
 const Table = Slots.Table;
 const SetId = Slots.SetId;
@@ -91,7 +92,7 @@ fn belowFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Ta
     // are counted over the place graph, never walked path by path.
     var counts: Ids.FixedDict(1) = .{};
     defer counts.deinit(gpa);
-    if (!whole) whole = try manyBelow(gpa, account, places, places.pathPlace(p), &counts) == Slots.below_min + 1;
+    if (!whole) whole = try PlaceBelow.slotsBelow(gpa, account, places, places.pathPlace(p), Slots.below_min + 1, &counts) == Slots.below_min + 1;
     try queue.append(gpa, p);
     _ = try seen.getOrPut(gpa, .{p.int()});
     var qi: usize = 0;
@@ -110,24 +111,6 @@ fn belowFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Ta
         }
     }
     return if (whole) try t.internSorted(gpa, account, &.{p.int() | Slots.sub_bit}) else try t.sorted(gpa, account, acc.items);
-}
-
-/// The object slots at and below place `p`, at most `Slots.below_min + 1`;
-/// `maxInt` when a place below it is on a cycle (its paths fold: not counted).
-fn manyBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.Table, p: PlaceId, memo: *Ids.FixedDict(1)) Error!u32 {
-    if (memo.get(.{p.int()})) |n| return n;
-    try account.reserve(.path, 1);
-    var n: u32 = @intFromBool(!Place.Kind.own(places.kind(p)).isEmpty());
-    if (places.cyclic(p)) n = std.math.maxInt(u32) else for (places.steps(p).children) |c| {
-        const m = try manyBelow(gpa, account, places, c, memo);
-        if (m == std.math.maxInt(u32)) {
-            n = m;
-            break;
-        }
-        n = @min(n + m, Slots.below_min + 1);
-    }
-    try memo.put(gpa, .{p.int()}, n);
-    return n;
 }
 
 /// Add path `at`'s object slots to `acc` (each once); whether there
@@ -331,30 +314,4 @@ fn belowAllFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place
         }
     }
     return t.sorted(gpa, account, acc.items);
-}
-
-/// Whether `below(p)` holds a slot below a `[*]` or a `⟲` (a family,
-/// §2.3.1), read off the place graph, never off the paths: `p` is one, or a
-/// place reachable from `p`'s is a list or a dictionary whose elements hold
-/// an object, or lies on a cycle and holds one (every second return there
-/// is a `⟲`, and `Up(p)`'s paths are `⟲`s).
-pub fn familyBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.Table, p: PathId) Error!bool {
-    if (places.isSummary(p)) return true;
-    var seen: Ids.FixedDict(1) = .{};
-    defer seen.deinit(gpa);
-    var stack: std.ArrayList(PlaceId) = .empty;
-    defer stack.deinit(gpa);
-    try stack.append(gpa, places.pathPlace(p));
-    while (stack.pop()) |at| {
-        if ((try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
-        try account.reserve(.inspection, 1);
-        const held = !places.holds(at).isEmpty() or !Place.Kind.own(places.kind(at)).isEmpty();
-        if (held and places.cyclic(at)) return true;
-        const st = places.steps(at);
-        for (st.steps, st.children) |s, c| {
-            if (s.kind == .elem and (!places.holds(c).isEmpty() or !Place.Kind.own(places.kind(c)).isEmpty())) return true;
-            try stack.append(gpa, c);
-        }
-    }
-    return false;
 }
