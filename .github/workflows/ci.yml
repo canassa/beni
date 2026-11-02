@@ -417,6 +417,11 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/b"
           echo "TMPDIR=$RUNNER_TEMP/b" >> "$GITHUB_ENV"
+      # Ubuntu restricts user namespaces to AppArmor-listed binaries. The
+      # Nix store Chromium is not on that list; allow its user-namespace
+      # sandbox on this disposable runner, rather than disabling sandboxing.
+      - name: allow the Chromium user-namespace sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: nix-installer v3.23.2
         run: |
           curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
