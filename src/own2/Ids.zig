@@ -66,9 +66,11 @@ pub fn assertRecord(comptime T: type) void {
 ///
 /// `list` is never changed but through this type: the one method that moves
 /// the storage (`ensureTotalCapacity`) re-reads `col`, and every one that
-/// changes its length cuts or extends `col` to match, so a stale
-/// column cannot be observed. `rules_test` keeps every other `own2/` file
-/// off `MultiArrayList` and `items`.
+/// changes its length cuts or extends `col` to match, so `col` itself is
+/// never stale. A slice copied out of it is: a local `const xs = t.col.f`
+/// held across a call that may append to the same table can point at freed
+/// storage, so read `t.col.f` again after any such call. `rules_test`
+/// keeps every other `own2/` file off `MultiArrayList`, `items` and `list`.
 pub fn Columns(comptime T: type) type {
     assertRecord(T);
     const names = @typeInfo(T).@"struct".field_names;
@@ -175,6 +177,93 @@ pub fn Columns(comptime T: type) type {
                 const got = @field(s.col, n);
                 std.debug.assert(got.len == want.len and (want.len == 0 or got.ptr == want.ptr));
             }
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// IdColumn: a memo or attribute keyed by one dense id (§4.1)
+// ---------------------------------------------------------------------------
+
+/// A map from one dense id `K` (an id newtype or a `u32` index) to a `u32`,
+/// as a column indexed by the id: one load and a compare per lookup, where a
+/// `FixedDict(1)` descends a crit-bit tree. It holds memory in proportion to
+/// the highest id it has stored, never iterates, and is never cleared: a
+/// slot is absent until written.
+///
+/// A column is used one of two ways, never both:
+/// - plain (`get`, `getOrPut`, `put`): a slot, once written, stays;
+/// - by epoch (`getAt`, `getOrPutAt`): a slot holds the epoch it was written
+///   at, and reads as absent at any other — a memo valid while a counter
+///   (`Shape.Table.ties`, `base_epoch`) stands still, emptied by moving it.
+pub fn IdColumn(comptime K: type) type {
+    return struct {
+        slots: std.ArrayList(Slot) = .empty,
+        stats: Counters.Col = Counters.zero(Counters.Col),
+
+        const Self = @This();
+        pub const Key = K;
+        pub const counter_kind = Counters.Kind.column;
+        /// `tag`: `absent`, `present` for a plain column, or the epoch the
+        /// value was written at.
+        const Slot = struct { tag: u32, value: u32 };
+        const absent: u32 = none_int;
+        const present: u32 = 0;
+
+        comptime {
+            assertRecord(Slot);
+        }
+
+        pub const GetOrPut = struct { found_existing: bool, value_ptr: *u32 };
+
+        pub fn deinit(c: *Self, gpa: Allocator) void {
+            c.slots.deinit(gpa);
+        }
+
+        inline fn index(k: K) usize {
+            return switch (@typeInfo(K)) {
+                .@"enum" => @backingInt(k),
+                else => k,
+            };
+        }
+
+        pub inline fn get(c: *const Self, k: K) ?u32 {
+            return c.getAt(k, present);
+        }
+
+        pub inline fn contains(c: *const Self, k: K) bool {
+            return c.get(k) != null;
+        }
+
+        /// The value written at `epoch`, or null.
+        pub inline fn getAt(c: *const Self, k: K, epoch: u32) ?u32 {
+            const i = index(k);
+            const hit = i < c.slots.items.len and c.slots.items[i].tag == epoch;
+            Counters.colRead(&c.stats, hit);
+            return if (hit) c.slots.items[i].value else null;
+        }
+
+        pub fn getOrPut(c: *Self, gpa: Allocator, k: K) Allocator.Error!GetOrPut {
+            return c.getOrPutAt(gpa, k, present);
+        }
+
+        pub fn put(c: *Self, gpa: Allocator, k: K, value: u32) Allocator.Error!void {
+            (try c.getOrPut(gpa, k)).value_ptr.* = value;
+        }
+
+        /// The slot of `k` at `epoch`: found when it was written at `epoch`,
+        /// otherwise now taken for it, its value the caller's to write.
+        pub fn getOrPutAt(c: *Self, gpa: Allocator, k: K, epoch: u32) Allocator.Error!GetOrPut {
+            std.debug.assert(epoch != absent);
+            const i = index(k);
+            // An id, never `none`: a column grows to the id it is given.
+            std.debug.assert(i != none_int);
+            if (i >= c.slots.items.len) try c.slots.appendNTimes(gpa, .{ .tag = absent, .value = 0 }, i + 1 - c.slots.items.len);
+            const s = &c.slots.items[i];
+            const found = s.tag == epoch;
+            Counters.colWrite(&c.stats, s.tag == absent);
+            s.tag = epoch;
+            return .{ .found_existing = found, .value_ptr = &s.value };
         }
     };
 }
@@ -937,6 +1026,35 @@ test "a table's hoisted columns follow its storage across every reallocation" {
     t.clearRetainingCapacity();
     t.assertSynced();
     try testing.expectEqual(@as(usize, 0), t.col.a.len);
+}
+
+test "an id column reads absent until written, and by epoch only at the epoch written" {
+    const gpa = testing.allocator;
+    var c: IdColumn(NodeId) = .{};
+    defer c.deinit(gpa);
+    try testing.expectEqual(@as(?u32, null), c.get(.from(5)));
+    try testing.expectEqual(@as(?u32, null), c.get(.none));
+    const got = try c.getOrPut(gpa, .from(5));
+    try testing.expect(!got.found_existing);
+    got.value_ptr.* = none_int;
+    // Any value is stored, `none` included; ids below and above stay absent.
+    try testing.expectEqual(@as(?u32, none_int), c.get(.from(5)));
+    try testing.expectEqual(@as(?u32, null), c.get(.from(4)));
+    try testing.expectEqual(@as(?u32, null), c.get(.from(6)));
+    try testing.expect((try c.getOrPut(gpa, .from(5))).found_existing);
+    try c.put(gpa, .from(0), 7);
+    try testing.expectEqual(@as(?u32, 7), c.get(.from(0)));
+    var e: IdColumn(u32) = .{};
+    defer e.deinit(gpa);
+    (try e.getOrPutAt(gpa, 3, 0)).value_ptr.* = 11;
+    try testing.expectEqual(@as(?u32, 11), e.getAt(3, 0));
+    try testing.expectEqual(@as(?u32, null), e.getAt(3, 1));
+    // Written again at a later epoch, it is that epoch's alone.
+    const later = try e.getOrPutAt(gpa, 3, 1);
+    try testing.expect(!later.found_existing);
+    later.value_ptr.* = 12;
+    try testing.expectEqual(@as(?u32, 12), e.getAt(3, 1));
+    try testing.expectEqual(@as(?u32, null), e.getAt(3, 0));
 }
 
 test "growth is reserved before work and the allowance is terminal" {

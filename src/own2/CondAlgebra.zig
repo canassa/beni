@@ -202,20 +202,20 @@ pub fn Of(comptime Table: type) type {
         /// new spine (§2.9, #1121): O(log |S|), never a chain of all its atoms.
         pub fn ofSet(t: *Table, gpa: Allocator, charge: Charge, s: SetId) Error!CondId {
             if (s == .none) return yes;
-            if (t.of_set.get(.{s.int()})) |hit| return .from(hit);
+            if (t.of_set.get(s)) |hit| return .from(hit);
             var stack: std.ArrayList(SetId) = .empty;
             defer stack.deinit(gpa);
             try stack.append(gpa, s);
             while (stack.items.len > 0) {
                 const x = stack.items[stack.items.len - 1];
-                if (t.of_set.get(.{x.int()}) != null) {
+                if (t.of_set.get(x) != null) {
                     _ = stack.pop();
                     continue;
                 }
                 try charge.reserve(gpa, .inspection, 1);
                 const acc: CondId = if (t.atoms.branches(x)) |kids| blk: {
-                    const l = t.of_set.get(.{kids[0].int()});
-                    const r = t.of_set.get(.{kids[1].int()});
+                    const l = t.of_set.get(kids[0]);
+                    const r = t.of_set.get(kids[1]);
                     if (l == null or r == null) {
                         if (l == null) try stack.append(gpa, kids[0]);
                         if (r == null) try stack.append(gpa, kids[1]);
@@ -226,11 +226,11 @@ pub fn Of(comptime Table: type) type {
                     var it = t.atoms.iterate(x);
                     break :blk .from(it.next().?.key);
                 };
-                (try t.of_set.getOrPut(gpa, .{x.int()})).value_ptr.* = acc.int();
+                (try t.of_set.getOrPut(gpa, x)).value_ptr.* = acc.int();
                 if (!t.flat_memo.contains(acc)) try t.flat_memo.put(gpa, acc, x);
                 _ = stack.pop();
             }
-            return .from(t.of_set.get(.{s.int()}).?);
+            return .from(t.of_set.get(s).?);
         }
 
         /// The lattice join (§2.10): `shared` wins, then `lost`, else the
@@ -336,10 +336,10 @@ pub fn Of(comptime Table: type) type {
             const g: Charge = .growth(charge.account);
             const latest = try t.instLatest(gpa, g, k) orelse return k;
             try g.reserve(gpa, .memo, 1);
-            if (t.memo_resolved_root.get(.{k.int()})) |hit| return .from(hit);
+            if (t.memo_resolved_root.get(k)) |hit| return .from(hit);
             try t.drainTo(gpa, g, latest);
             const out = try t.canonical(gpa, g, try t.resolveTree(gpa, g, k));
-            (try t.memo_resolved_root.getOrPut(gpa, .{k.int()})).value_ptr.* = out.int();
+            (try t.memo_resolved_root.getOrPut(gpa, k)).value_ptr.* = out.int();
             return out;
         }
 
@@ -362,7 +362,7 @@ pub fn Of(comptime Table: type) type {
             try stack.append(gpa, k);
             while (stack.items.len > 0) {
                 const x = stack.items[stack.items.len - 1];
-                if (t.memo_inst_latest.get(.{x.int()}) != null) {
+                if (t.memo_inst_latest.get(x) != null) {
                     _ = stack.pop();
                     continue;
                 }
@@ -373,7 +373,7 @@ pub fn Of(comptime Table: type) type {
                 for ([_]CondId{ .from(c.a), .from(c.b) }, 0..) |sd, i| {
                     if (of.leaf(t, sd)) |v| {
                         vals[i] = v;
-                    } else if (t.memo_inst_latest.get(.{sd.int()})) |v| {
+                    } else if (t.memo_inst_latest.get(sd)) |v| {
                         vals[i] = v;
                     } else {
                         missing = true;
@@ -381,10 +381,10 @@ pub fn Of(comptime Table: type) type {
                     }
                 }
                 if (missing) continue;
-                (try t.memo_inst_latest.getOrPut(gpa, .{x.int()})).value_ptr.* = @max(vals[0], vals[1]);
+                (try t.memo_inst_latest.getOrPut(gpa, x)).value_ptr.* = @max(vals[0], vals[1]);
                 _ = stack.pop();
             }
-            const v = t.memo_inst_latest.get(.{k.int()}).?;
+            const v = t.memo_inst_latest.get(k).?;
             return if (v == none) null else v - 1;
         }
 
@@ -406,7 +406,7 @@ pub fn Of(comptime Table: type) type {
             try stack.append(gpa, k);
             while (stack.items.len > 0) {
                 const x = stack.items[stack.items.len - 1];
-                if (t.memo_resolved.get(.{x.int()}) != null) {
+                if (t.memo_resolved.get(x) != null) {
                     _ = stack.pop();
                     continue;
                 }
@@ -417,7 +417,7 @@ pub fn Of(comptime Table: type) type {
                 for ([_]CondId{ .from(c.a), .from(c.b) }, 0..) |sd, i| {
                     if (try leafOf(t, gpa, charge, sd)) |r| {
                         sides[i] = r;
-                    } else if (t.memo_resolved.get(.{sd.int()})) |r| {
+                    } else if (t.memo_resolved.get(sd)) |r| {
                         sides[i] = .from(r);
                     } else {
                         missing = true;
@@ -426,10 +426,10 @@ pub fn Of(comptime Table: type) type {
                 }
                 if (missing) continue;
                 const got = try t.@"and"(gpa, charge, sides[0], sides[1]);
-                (try t.memo_resolved.getOrPut(gpa, .{x.int()})).value_ptr.* = got.int();
+                (try t.memo_resolved.getOrPut(gpa, x)).value_ptr.* = got.int();
                 _ = stack.pop();
             }
-            return .from(t.memo_resolved.get(.{k.int()}).?);
+            return .from(t.memo_resolved.get(k).?);
         }
 
         /// The queued atoms up to environment `env`, resolved in creation order.
@@ -447,7 +447,7 @@ pub fn Of(comptime Table: type) type {
         /// `inst` atom.
         pub fn resolveAtom(t: *Table, gpa: Allocator, charge: Charge, a: CondId) Error!CondId {
             try charge.reserve(gpa, .memo, 1);
-            if (t.memo_resolved.get(.{a.int()})) |hit| return .from(hit);
+            if (t.memo_resolved.get(a)) |hit| return .from(hit);
             const d = t.get(a);
             const rs = t.resolver orelse unreachable; // an `inst` atom is made only under one
             const r = try t.canonical(gpa, charge, try rs.resolve(rs.ctx, t, gpa, charge, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0));
@@ -468,7 +468,7 @@ pub fn Of(comptime Table: type) type {
                 }
                 try t.expectSame(gpa, ch, r, try t.canonical(gpa, ch, try rs.resolve(rs.ctx, t, gpa, ch, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0)));
             }
-            (try t.memo_resolved.getOrPut(gpa, .{a.int()})).value_ptr.* = r.int();
+            (try t.memo_resolved.getOrPut(gpa, a)).value_ptr.* = r.int();
             return r;
         }
 

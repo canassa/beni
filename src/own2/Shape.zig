@@ -90,14 +90,15 @@ pub const OverNode = struct {
 pub const Table = struct {
     nodes: Ids.Columns(Node) = .empty,
     intern: Ids.FixedDict(5) = .{},
-    overs: Ids.Columns(OverNode) = .empty,
+    /// Whole nodes, not columns: a descent reads every word of each node.
+    overs: std.ArrayList(OverNode) = .empty,
     over_intern: Ids.FixedDict(4) = .{},
     memo_proj: Ids.FixedDict(2) = .{},
     /// The projection correspondence (§2.9 *Keyed where a reader looks*): a
     /// union, choice or positions node that `proj` made as the projection of
     /// a DAG node → the head of its origins in `proj_origins`, each `(that
     /// node, the step's word, the next origin)` (`projectedImage`).
-    proj_origin: Ids.FixedDict(1) = .{},
+    proj_origin: Ids.IdColumn(NodeId) = .{},
     proj_origins: std.ArrayList([3]u32) = .empty,
     memo_join: Ids.FixedDict(3) = .{},
     memo_leq: Ids.FixedDict(2) = .{},
@@ -163,9 +164,8 @@ pub const Table = struct {
     memo_force: stamped.Column(NodeId, NodeId) = .{},
     /// A view's one step, when it is a view again: the chain `force` followed.
     memo_step: stamped.Column(NodeId, NodeId) = .{},
-    /// Nodes `holdsView` found view-free, valid while `ties` is `view_free_epoch`.
-    view_free: Ids.FixedDict(1) = .{},
-    view_free_epoch: u32 = 0,
+    /// Nodes `holdsView` found view-free, each at the `ties` it was found at.
+    view_free: Ids.IdColumn(NodeId) = .{},
     memo_view_reach: Ids.FixedDict(2) = .{},
     /// The crossing's node sets (§2.11 *κ across a call*): `region` and `bases`
     /// live in `node_sets`, unions memoised per pair; `base_epoch` moves when
@@ -175,19 +175,19 @@ pub const Table = struct {
     /// `intersectsMemo`'s pairs over `node_sets`; `approxAll`'s images of cell
     /// sets (`recastWhole`).
     memo_node_meet: Ids.FixedDict(2) = .{},
-    memo_approx_all: Ids.FixedDict(1) = .{},
-    bases: Ids.FixedDict(1) = .{},
+    memo_approx_all: Ids.IdColumn(SetId) = .{},
+    bases: Ids.IdColumn(NodeId) = .{},
     base_epoch: u32 = 0,
-    memo_region: Ids.FixedDict(1) = .{},
-    region_ties: Ids.FixedDict(1) = .{},
-    memo_bstar: Ids.FixedDict(1) = .{},
-    bstar_epoch: Ids.FixedDict(1) = .{},
+    /// `closure`'s sets: `region` at the `ties` it was made at, `bases*`
+    /// at the `base_epoch`.
+    memo_region: Ids.IdColumn(NodeId) = .{},
+    memo_bstar: Ids.IdColumn(NodeId) = .{},
     memo_tested: Ids.FixedDict(3) = .{},
     memo_wholly: Ids.FixedDict(3) = .{},
     /// Each node's constructions, a list through `cons` (`next`), their members
     /// in `cons_pool`; a projection's once per (node, base). The relevant
     /// nodes: κ keys and their `bases*`, once the κ table reports its keys.
-    cons_head: Ids.FixedDict(1) = .{},
+    cons_head: Ids.IdColumn(NodeId) = .{},
     cons: std.ArrayList(struct { next: u32, start: u32, len: u32 }) = .empty,
     cons_pool: std.ArrayList(NodeId) = .empty,
     cons_single: Ids.FixedDict(2) = .{},
@@ -214,13 +214,13 @@ pub const Table = struct {
     /// Per node, for `reach` (0) and `arrivals` (1): whether its settled set
     /// may not hold the node's `cellsOf` (`Reach.short`, #1467).
     reach_short: [2]std.DynamicBitSetUnmanaged = .{ .{}, .{} },
-    member_counts: Ids.FixedDict(1) = .{},
+    member_counts: Ids.IdColumn(NodeId) = .{},
     member_maps: std.ArrayList([2]SetId) = .empty,
     member_sets: Cell.Radix = .{ .category = .memo },
     /// The counted nodes each rebuild dropped, by the node it returned, a list
     /// through `drop_links` (`node`, `next`): what a construction carries
     /// entries from and the read machine checks (§2.3 *Saturation at two*).
-    drop_head: Ids.FixedDict(1) = .{},
+    drop_head: Ids.IdColumn(NodeId) = .{},
     drop_links: std.ArrayList([2]u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
@@ -260,9 +260,7 @@ pub const Table = struct {
         t.memo_approx_all.deinit(gpa);
         t.bases.deinit(gpa);
         t.memo_region.deinit(gpa);
-        t.region_ties.deinit(gpa);
         t.memo_bstar.deinit(gpa);
-        t.bstar_epoch.deinit(gpa);
         t.memo_tested.deinit(gpa);
         t.memo_wholly.deinit(gpa);
         t.cons_head.deinit(gpa);
@@ -465,14 +463,14 @@ pub const Table = struct {
     const over_none: u32 = Ids.none_int;
 
     fn overNode(t: *const Table, id: u32) OverNode {
-        return t.overs.get(id);
+        return t.overs.items[id];
     }
 
     fn makeOver(t: *Table, gpa: Allocator, account: *Account, n: OverNode) Error!u32 {
         try account.reserve(.shape, 1);
         const got = try t.over_intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
         if (got.found_existing) return got.value_ptr.*;
-        got.value_ptr.* = @intCast(t.overs.len());
+        got.value_ptr.* = @intCast(t.overs.items.len);
         try t.overs.append(gpa, n);
         return got.value_ptr.*;
     }
@@ -779,7 +777,7 @@ pub const Table = struct {
     /// The persistent set of `m`'s bases (*Bases*): what a `proj` or a join
     /// made it from. `.none` for none.
     pub fn basesOf(t: *const Table, m: NodeId) SetId {
-        return if (t.bases.get(.{m.int()})) |s| .from(s) else .none;
+        return if (t.bases.get(m)) |s| .from(s) else .none;
     }
 
     /// `m` made by one construction from `members` (a `proj`'s node, a join's
@@ -804,10 +802,10 @@ pub const Table = struct {
             const got = try t.cons_single.getOrPut(gpa, .{ m.int(), members[0].int() });
             if (got.found_existing) return;
         }
-        const head = t.cons_head.get(.{m.int()}) orelse Ids.none_int;
+        const head = t.cons_head.get(m) orelse Ids.none_int;
         try t.cons.append(gpa, .{ .next = head, .start = @intCast(t.cons_pool.items.len), .len = @intCast(members.len) });
         try t.cons_pool.appendSlice(gpa, members);
-        (try t.cons_head.getOrPut(gpa, .{m.int()})).value_ptr.* = @intCast(t.cons.items.len - 1);
+        (try t.cons_head.getOrPut(gpa, m)).value_ptr.* = @intCast(t.cons.items.len - 1);
         var old = t.basesOf(m);
         var gained = false;
         for (members) |b| {
@@ -816,7 +814,7 @@ pub const Table = struct {
             gained = true;
         }
         if (!gained) return;
-        (try t.bases.getOrPut(gpa, .{m.int()})).value_ptr.* = old.int();
+        (try t.bases.getOrPut(gpa, m)).value_ptr.* = old.int();
         if (!t.isRelevant(m)) return;
         if (!fresh) t.base_epoch += 1;
         for (members) |b| try t.markRelevant(gpa, account, b);
@@ -899,14 +897,14 @@ pub const Table = struct {
     pub fn wholly(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
         try account.reserve(.inspection, 1);
         if (t.node_sets.member(reg, m.int())) return true;
-        if (t.cons_head.get(.{m.int()}) == null) return false;
+        if (t.cons_head.get(m) == null) return false;
         const Frame = struct { node: NodeId, c: u32, i: u32 };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         var done: stamped.Column(NodeId, bool) = .{};
         defer done.deinit(gpa);
         var cyclic = false;
-        try stack.append(gpa, .{ .node = m, .c = t.cons_head.get(.{m.int()}).?, .i = 0 });
+        try stack.append(gpa, .{ .node = m, .c = t.cons_head.get(m).?, .i = 0 });
         while (stack.items.len > 0) {
             const f = &stack.items[stack.items.len - 1];
             const answer: ?bool = blk: {
@@ -923,7 +921,7 @@ pub const Table = struct {
                     true
                 else if (t.memo_wholly.get(.{ x.int(), reg.int(), t.base_epoch + 1 }) != null)
                     false
-                else if (t.cons_head.get(.{x.int()}) == null)
+                else if (t.cons_head.get(x) == null)
                     false
                 else
                     null;
@@ -941,7 +939,7 @@ pub const Table = struct {
                     f.i = 0;
                     break :blk null;
                 };
-                try stack.append(gpa, .{ .node = x, .c = t.cons_head.get(.{x.int()}).?, .i = 0 });
+                try stack.append(gpa, .{ .node = x, .c = t.cons_head.get(x).?, .i = 0 });
                 break :blk null;
             };
             const a = answer orelse continue;
@@ -1073,10 +1071,9 @@ pub const Table = struct {
     }
 
     fn closureMemo(t: *const Table, which: Closure, n: NodeId) ?SetId {
-        const key: [1]u32 = .{n.int()};
         return switch (which) {
-            .region => if (t.region_ties.get(key) == t.ties) (if (t.memo_region.get(key)) |s| SetId.from(s) else null) else null,
-            .bases => if (t.bstar_epoch.get(key) == t.base_epoch) (if (t.memo_bstar.get(key)) |s| SetId.from(s) else null) else null,
+            .region => if (t.memo_region.getAt(n, t.ties)) |s| SetId.from(s) else null,
+            .bases => if (t.memo_bstar.getAt(n, t.base_epoch)) |s| SetId.from(s) else null,
             .union_dag, .choice_dag => blk: {
                 const k2: [2]u32 = .{ @backingInt(which), n.int() };
                 break :blk if (t.dag_members_ties.get(k2) == t.ties) (if (t.memo_dag_members.get(k2)) |s| SetId.from(s) else null) else null;
@@ -1085,16 +1082,9 @@ pub const Table = struct {
     }
 
     fn closureKeep(t: *Table, gpa: Allocator, which: Closure, n: NodeId, s: SetId) Error!void {
-        const key: [1]u32 = .{n.int()};
         switch (which) {
-            .region => {
-                (try t.memo_region.getOrPut(gpa, key)).value_ptr.* = s.int();
-                (try t.region_ties.getOrPut(gpa, key)).value_ptr.* = t.ties;
-            },
-            .bases => {
-                (try t.memo_bstar.getOrPut(gpa, key)).value_ptr.* = s.int();
-                (try t.bstar_epoch.getOrPut(gpa, key)).value_ptr.* = t.base_epoch;
-            },
+            .region => (try t.memo_region.getOrPutAt(gpa, n, t.ties)).value_ptr.* = s.int(),
+            .bases => (try t.memo_bstar.getOrPutAt(gpa, n, t.base_epoch)).value_ptr.* = s.int(),
             .union_dag, .choice_dag => {
                 const k2: [2]u32 = .{ @backingInt(which), n.int() };
                 (try t.memo_dag_members.getOrPut(gpa, k2)).value_ptr.* = s.int();
@@ -1191,11 +1181,6 @@ pub const Table = struct {
     /// deep snapshots' codec tests quadratic.
     pub fn holdsView(t: *Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
         if (n == .none) return false;
-        if (t.view_free_epoch != t.ties) {
-            t.view_free.deinit(gpa);
-            t.view_free = .{};
-            t.view_free_epoch = t.ties;
-        }
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
         var visited: std.ArrayList(NodeId) = .empty;
@@ -1204,7 +1189,7 @@ pub const Table = struct {
         defer stack.deinit(gpa);
         try stack.append(gpa, n);
         while (stack.pop()) |x| {
-            if (t.view_free.get(.{x.int()}) != null) continue;
+            if (t.view_free.getAt(x, t.ties) != null) continue;
             const got = try seen.getOrPut(gpa, .{x.int()});
             if (got.found_existing) continue;
             try visited.append(gpa, x);
@@ -1222,7 +1207,7 @@ pub const Table = struct {
             }
         }
         // No view below any node the walk met: each is view-free.
-        for (visited.items) |x| (try t.view_free.getOrPut(gpa, .{x.int()})).value_ptr.* = 1;
+        for (visited.items) |x| (try t.view_free.getOrPutAt(gpa, x, t.ties)).value_ptr.* = 1;
         return false;
     }
 
@@ -1639,25 +1624,25 @@ pub const Table = struct {
     /// identical subtrees are skipped by identity, so a merge pays for its
     /// changed spine. A record per map made.
     fn countMap(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![2]SetId {
-        if (t.member_counts.get(.{n.int()})) |i| return t.member_maps.items[i];
+        if (t.member_counts.get(n)) |i| return t.member_maps.items[i];
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
         try stack.append(gpa, .{ .node = n, .expanded = false });
         while (stack.pop()) |f| {
-            if (t.member_counts.get(.{f.node.int()}) != null) continue;
+            if (t.member_counts.get(f.node) != null) continue;
             const d = t.get(f.node);
             if (!f.expanded) {
                 try stack.append(gpa, .{ .node = f.node, .expanded = true });
-                for ([_]u32{ d.a, d.b }) |s| if (t.isCounted(.from(s)) and t.member_counts.get(.{s}) == null) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
+                for ([_]u32{ d.a, d.b }) |s| if (t.isCounted(.from(s)) and t.member_counts.get(.from(s)) == null) try stack.append(gpa, .{ .node = .from(s), .expanded = false });
                 continue;
             }
             const m = try t.mergeCounts(gpa, account, .from(d.a), .from(d.b));
             try account.reserve(.memo, 1);
-            (try t.member_counts.getOrPut(gpa, .{f.node.int()})).value_ptr.* = @intCast(t.member_maps.items.len);
+            (try t.member_counts.getOrPut(gpa, f.node)).value_ptr.* = @intCast(t.member_maps.items.len);
             try t.member_maps.append(gpa, m);
         }
-        return t.member_maps.items[t.member_counts.get(.{n.int()}).?];
+        return t.member_maps.items[t.member_counts.get(n).?];
     }
 
     /// The count map of `positions(l, r)`: the keys' union, and twice what
@@ -1739,7 +1724,7 @@ pub const Table = struct {
         }
         for (read) |n| if (!kept.contains(n)) {
             try account.reserve(.memo, 1);
-            const head = try t.drop_head.getOrPut(gpa, .{out.int()});
+            const head = try t.drop_head.getOrPut(gpa, out);
             if (!head.found_existing) head.value_ptr.* = Ids.none_int;
             try t.drop_links.append(gpa, .{ n.int(), head.value_ptr.* });
             head.value_ptr.* = @intCast(t.drop_links.items.len - 1);
@@ -1760,7 +1745,7 @@ pub const Table = struct {
     };
 
     pub fn dropsOf(t: *const Table, n: NodeId) Drops {
-        return .{ .t = t, .at = t.drop_head.get(.{n.int()}) orelse Ids.none_int };
+        return .{ .t = t, .at = t.drop_head.get(n) orelse Ids.none_int };
     }
 
     /// Every node a rebuild of `n` dropped, and what a dropped node that a
@@ -1768,7 +1753,7 @@ pub const Table = struct {
     /// counted nodes of the tree the constructors would have made that `n`
     /// does not hold. A record per node.
     pub fn dropsClosure(t: *Table, gpa: Allocator, account: *Account, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
-        if (t.drop_head.get(.{n.int()}) == null) return;
+        if (t.drop_head.get(n) == null) return;
         const seen = try t.marks.take(gpa);
         defer t.marks.give(seen);
         for (out.items) |x| try seen.put(gpa, x, {});
@@ -2070,7 +2055,7 @@ pub const Table = struct {
     fn addOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
         if (!t.isJoinNode(n) or !t.isJoinNode(m)) return;
         try account.reserve(.memo, 1);
-        const got = try t.proj_origin.getOrPut(gpa, .{m.int()});
+        const got = try t.proj_origin.getOrPut(gpa, m);
         const next: u32 = if (got.found_existing) got.value_ptr.* else Ids.none_int;
         var i = next;
         while (i != Ids.none_int) : (i = t.proj_origins.items[i][2]) {
@@ -2083,7 +2068,7 @@ pub const Table = struct {
     /// Whether DAG node `n` is the projection of a DAG node (§2.9 *Keyed
     /// where a reader looks*).
     pub fn hasOrigin(t: *const Table, n: NodeId) bool {
-        return t.proj_origin.get(.{n.int()}) != null;
+        return t.proj_origin.get(n) != null;
     }
 
     /// Where `n`'s origins start: its own, or, for a call's view of a node
@@ -2093,9 +2078,9 @@ pub const Table = struct {
     /// reader looks*). `templates` false: own origins only (a recursive group's
     /// read-off, whose rounds the port join carries, #1466).
     pub fn originHead(t: *const Table, n: NodeId, templates: bool) ?struct { head: u32, env: u32 } {
-        if (t.proj_origin.get(.{n.int()})) |h| return .{ .head = h, .env = Ids.none_int };
+        if (t.proj_origin.get(n)) |h| return .{ .head = h, .env = Ids.none_int };
         if (!templates or t.kind(n) != .view) return null;
-        const h = t.proj_origin.get(.{t.nodes.col.a[n.int()]}) orelse return null;
+        const h = t.proj_origin.get(.from(t.nodes.col.a[n.int()])) orelse return null;
         return .{ .head = h, .env = t.nodes.col.b[n.int()] };
     }
 
@@ -4902,7 +4887,7 @@ test "a refused reservation leaves the shape tables whole" {
     try testing.expectEqual(before + 1, f.account.growth);
     // The same for the step maps.
     try testing.expectError(error.OwnershipLimit, f.shapes.overPut(gpa, &broke, Table.over_none, Place.Step.elem, l));
-    try testing.expectEqual(@as(usize, 0), f.shapes.overs.len());
+    try testing.expectEqual(@as(usize, 0), f.shapes.overs.items.len);
     const m = try f.shapes.overPut(gpa, &f.account, Table.over_none, Place.Step.elem, l);
     try testing.expectEqual(l, f.shapes.overGet(m, Place.Step.elem).?);
 }

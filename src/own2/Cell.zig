@@ -203,7 +203,7 @@ pub const Table = struct {
     mark_a: CellId = .none,
     /// `keysOverlap` by key set: the steps the test takes, shifted left
     /// once, and whether the keys overlap in the low bit.
-    overlap_memo: Ids.FixedDict(1) = .{},
+    overlap_memo: Ids.IdColumn(SetId) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.overlap_memo.deinit(gpa);
@@ -611,11 +611,11 @@ pub const Table = struct {
     /// the entry (§4.1). Under `runtime_safety` the verdict is checked against
     /// `alias` on every pair, which shares nothing with the trie (C6).
     pub fn keysOverlap(t: *Table, gpa: Allocator, charge: Charge, places: *const Places, keys: SetId) Error!bool {
-        const v = t.overlap_memo.get(.{keys.int()}) orelse v: {
+        const v = t.overlap_memo.get(keys) orelse v: {
             // Computed before the entry is made, so a failure leaves none.
             const r = try t.keysOverlapTrie(gpa, places, keys);
             const w = r.cost << 1 | @intFromBool(r.overlap);
-            (try t.overlap_memo.getOrPut(gpa, .{keys.int()})).value_ptr.* = w;
+            (try t.overlap_memo.getOrPut(gpa, keys)).value_ptr.* = w;
             break :v w;
         };
         try charge.reserve(gpa, .inspection, v >> 1);
@@ -869,7 +869,9 @@ pub const RadixNode = struct {
 };
 
 pub const Radix = struct {
-    nodes: Ids.Columns(RadixNode) = .empty,
+    /// Whole nodes, not columns: a descent reads all four words of each
+    /// node it visits.
+    nodes: std.ArrayList(RadixNode) = .empty,
     /// What a node is reserved as: a cell set's `set`, a node set's (the
     /// crossing's `region` and `bases`) `memo`. Instrumentation only.
     category: Ids.Category = .set,
@@ -886,7 +888,7 @@ pub const Radix = struct {
     }
 
     inline fn node(r: *const Radix, id: SetId) RadixNode {
-        return r.nodes.get(id.int());
+        return r.nodes.items[id.int()];
     }
 
     /// One node, interned. The record is reserved BEFORE the dictionary is
@@ -901,7 +903,7 @@ pub const Radix = struct {
             Counters.setMakeRequest(&r.stats, got.value_ptr.*);
             return .from(got.value_ptr.*);
         }
-        const id: SetId = .from(@intCast(r.nodes.len()));
+        const id: SetId = .from(@intCast(r.nodes.items.len));
         got.value_ptr.* = id.int();
         try r.nodes.append(gpa, n);
         try Counters.setMade(&r.stats, gpa, n.mask == 0, n.left.int(), n.right.int());
@@ -960,7 +962,7 @@ pub const Radix = struct {
     }
 
     pub fn nodeCount(r: *const Radix) u32 {
-        return @intCast(r.nodes.len);
+        return @intCast(r.nodes.items.len);
     }
 
     /// The two children of a branch, or null for a leaf.
@@ -1176,16 +1178,16 @@ pub const Radix = struct {
 
     /// `s` with every bit approximate: memoised per set node in `memo`, a
     /// branch rebuilt over its halves' images. The recursion is the key width.
-    pub fn approxAll(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(1), s: SetId) Error!SetId {
+    pub fn approxAll(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.IdColumn(SetId), s: SetId) Error!SetId {
         if (s == .none) return .none;
         const n = r.node(s);
         if (n.mask == 0) return if (n.left.int() == 1) s else r.make(gpa, charge, .{ .prefix = n.prefix, .mask = 0, .left = .from(1), .right = .none });
         try charge.reserve(gpa, .memo, 1);
-        if (memo.get(.{s.int()})) |hit| return .from(hit);
+        if (memo.get(s)) |hit| return .from(hit);
         const l = try r.approxAll(gpa, charge, memo, n.left);
         const rt = try r.approxAll(gpa, charge, memo, n.right);
         const out = if (l == n.left and rt == n.right) s else try r.make(gpa, charge, .{ .prefix = n.prefix, .mask = n.mask, .left = l, .right = rt });
-        (try memo.getOrPut(gpa, .{s.int()})).value_ptr.* = out.int();
+        (try memo.getOrPut(gpa, s)).value_ptr.* = out.int();
         return out;
     }
 
@@ -1434,16 +1436,16 @@ test "a union adding nothing returns the destination root, and shares the larger
     small = try r.insert(gpa, g, small, 30, 0);
     try testing.expectEqual(big, try r.unionWith(gpa, g, big, small));
     try testing.expectEqual(big, try r.unionWith(gpa, g, small, big));
-    const before = r.nodes.len();
+    const before = r.nodes.items.len;
     var other: SetId = .none;
     other = try r.insert(gpa, g, other, 1, 0);
     const joined = try r.unionWith(gpa, g, big, other);
     try testing.expectEqual(@as(u32, 65), r.count(joined));
     // One path copied: at most 33 new nodes, plus the leaf.
-    try testing.expect(r.nodes.len() - before <= 34);
+    try testing.expect(r.nodes.items.len - before <= 34);
     // Every node was reserved (a hit as well, so at least one record per
     // node), and so was every inspection.
-    try testing.expect(a.growth_by[@backingInt(Ids.Category.set)] >= @as(u32, @intCast(r.nodes.len())));
+    try testing.expect(a.growth_by[@backingInt(Ids.Category.set)] >= @as(u32, @intCast(r.nodes.items.len)));
     try testing.expect(a.growth_by[@backingInt(Ids.Category.inspection)] > 0);
 }
 
@@ -1466,11 +1468,11 @@ test "a union that adds nothing still pays its inspections, before it reads" {
     // Exhaustion stops before any node is allocated or read.
     var tight: Account = .{ .allowance = 0 };
     defer tight.deinit(testing.allocator);
-    const nodes = r.nodes.len();
+    const nodes = r.nodes.items.len;
     try testing.expectError(error.OwnershipLimit, r.unionWith(gpa, .growth(&tight), x, y));
     try testing.expectError(error.OwnershipLimit, r.insert(gpa, .growth(&tight), x, 100, 0));
     try testing.expectError(error.OwnershipLimit, r.subset(gpa, .growth(&tight), y, x));
-    try testing.expectEqual(nodes, r.nodes.len());
+    try testing.expectEqual(nodes, r.nodes.items.len);
     // In a lane, the inspections are baseline, not growth.
     var lane_account: Account = .{ .allowance = 0 };
     defer lane_account.deinit(testing.allocator);
@@ -1487,13 +1489,13 @@ test "a refused reservation leaves the set table whole, and a hit is charged lik
     var broke: Account = .{ .allowance = 0 };
     defer broke.deinit(gpa);
     try testing.expectError(error.OwnershipLimit, r.insert(gpa, .growth(&broke), .none, 42, 0));
-    try testing.expectEqual(@as(usize, 0), r.nodes.len());
+    try testing.expectEqual(@as(usize, 0), r.nodes.items.len);
     // Another owner making the same node gets a real one, not the refused
     // owner's half-written entry.
     var a: Account = .{};
     defer a.deinit(gpa);
     const s = try r.insert(gpa, .growth(&a), .none, 42, 0);
-    try testing.expectEqual(@as(usize, 1), r.nodes.len());
+    try testing.expectEqual(@as(usize, 1), r.nodes.items.len);
     try testing.expectEqual(@as(u32, 0), s.int());
     try testing.expect(r.member(s, 42));
     // The same node again is a hit, and the request is charged all the same
