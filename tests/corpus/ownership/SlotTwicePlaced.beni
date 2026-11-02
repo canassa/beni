@@ -1,0 +1,46 @@
+-- ownership: each part of a value has its own route, so one value placed
+-- twice is two entries (#1685's requirement 5; the experiment's
+-- `moveRedLeftDup`). `twin` puts a node's left subtree on both sides;
+-- `incAll` writes every payload, so over `twin`'s answer it is refused
+-- (`twinned`). `swap` moves each subtree once: accepted (`swapped`).
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l v r →
+            Node (incAll l) (List.push v 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+twin : Tree → Tree
+twin t =
+    case t of
+        Node l v _ →
+            Node l v l
+
+        Leaf →
+            Leaf
+
+
+swap : Tree → Tree
+swap t =
+    case t of
+        Node l v r →
+            Node r v l
+
+        Leaf →
+            Leaf
+
+
+pub twinned : Tree → Tree
+twinned t = incAll (twin t)
+
+
+pub swapped : Tree → Tree
+swapped t = incAll (swap t)

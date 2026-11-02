@@ -1,0 +1,14 @@
+module SlotJoinKeepsSlots
+  12:13 call SlotJoinKeepsSlots.appendAll <call List.push>: accepted param (SlotJoinKeepsSlots.appendAll writes π2)
+  12:29 List.push acc: accepted param
+  19:17 List.push <call SlotJoinKeepsSlots.appendAll>: rejected alias: acc holds it and is read at 19:15
+  19:28 call SlotJoinKeepsSlots.appendAll acc: rejected later-use: acc is read again at 19:15 (SlotJoinKeepsSlots.appendAll writes π2)
+  23:15 List.push <call SlotJoinKeepsSlots.appendAll>: accepted fresh
+  23:26 call SlotJoinKeepsSlots.appendAll <literal>: accepted fresh (SlotJoinKeepsSlots.appendAll writes π2)
+  summary appendAll: π1 R, π2 RAW[storage], π2[*] A; res [*] ~fresh1 ~π2[*], π2
+  summary keptAcc: π1 RAW[storage], π1[*] RA; res .0 condition(fresh3) π1, .0[*] ~condition(fresh1) ~fresh1 ~π1[*], .1 ~condition(fresh4) π1, condition(fresh2){shared}
+  summary freshAcc: π1 R; res [*] fresh1 ~condition(fresh3) ~fresh3, fresh2
+  demands 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 2, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause later-use 1
+cause alias 1

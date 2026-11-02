@@ -1,0 +1,11 @@
+module SlotRepeatedAnswer
+  15:13 List.push a: accepted param
+  24:23 call SlotRepeatedAnswer.writeFirst inner.0: accepted param (SlotRepeatedAnswer.writeFirst writes π1.0)
+  31:15 call SlotRepeatedAnswer.writeFirst inner.0: rejected alias: first holds it and is read at 31:13 (SlotRepeatedAnswer.writeFirst writes π1.0)
+  summary pair: π1 RA, π2 RA; res .0 condition(fresh5) π1, .1 condition(fresh1){sep π1 π2}, .1.0 condition(fresh2) π1, .1.1 condition(fresh3) π2, condition(fresh4){shared}
+  summary writeFirst: π1 R, π1.0 RAW[storage], π1.0[*] A; res [*] ~π1.0[*], π1.0
+  summary otherRead: π1 RAW[storage], π1[*] RA, π2 RA; res .0 condition(fresh1) π1, .0[*] ~condition(fresh2) ~π1[*], .1 condition(fresh3) ~condition(fresh5) π2, condition(fresh4){sep π1 π2, sep π1[*] π2}
+  summary sameRead: π1 RAW[storage], π1[*] RA, π2 R; res .0 condition(fresh1) π1, .0[*] ~condition(fresh2) ~π1[*], .1 condition(fresh3) ~condition(fresh5) π1, condition(fresh4){shared}
+  demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

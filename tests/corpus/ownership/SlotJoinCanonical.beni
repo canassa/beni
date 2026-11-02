@@ -1,0 +1,42 @@
+-- ownership: a join compares slots by their canonical names (#1685's
+-- requirement 6; the experiment's `FoldedBCall`). `chosen` puts `k` under
+-- the first or the second list of a `B` in two arms; the two arms name
+-- the place by different steps through the recursive type, and the
+-- prototype compared them before canonicalising. Once per arm is accepted
+-- (`chosen`); both places in one arm is refused (`both`).
+type B
+    = B (List Int) (List B) (List B)
+
+
+incAll : B → B
+incAll b =
+    case b of
+        B ns xs ys →
+            B (List.push ns 1) (incList xs) (incList ys)
+
+
+incList : List B → List B
+incList bs =
+    case bs of
+        [ b, …rest ] →
+            [ incAll b, …incList rest ]
+
+        [] →
+            []
+
+
+pub chosen : Bool → B
+chosen c =
+    k = [ B [ 5 ] [] [] ]
+    v =
+        if c then
+            B [] [ B [] k [] ] []
+        else
+            B [] [] [ B [] k [] ]
+    incAll v
+
+
+pub both : ⊤ → B
+both ⊤ =
+    k = [ B [ 5 ] [] [] ]
+    incAll (B [] [ B [] k [] ] [ B [] k [] ])

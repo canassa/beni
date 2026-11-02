@@ -1,0 +1,27 @@
+-- ownership: two parameters a recursive function answers stay two
+-- families (#1685's requirement 2). `swapN` answers its two lists in
+-- either order; the prototype folded both callee families into one caller
+-- family, and lost which separation the answer keeps. Writing both parts
+-- of the answer is accepted over two lists (`apart`) and refused over one
+-- list given twice (`same`).
+swapN : Int, List Int, List Int → List Int × List Int
+swapN n a b =
+    if n == 0 then
+        ( a, b )
+    else
+        swapN (n - 1) b a
+
+
+pushBoth : List Int × List Int → List Int × List Int
+pushBoth p =
+    case p of
+        ( a, b ) →
+            ( List.push a 1, List.push b 2 )
+
+
+pub apart : List Int, List Int → List Int × List Int
+apart xs ys = pushBoth (swapN 3 xs ys)
+
+
+pub same : List Int → List Int × List Int
+same xs = pushBoth (swapN 3 xs xs)
