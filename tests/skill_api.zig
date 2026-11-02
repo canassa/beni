@@ -104,7 +104,7 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
         if (gated_worker) continue;
         if (line.len == 0 and lines.peek() == null) break;
         if (std.mem.startsWith(u8, line, "module ")) module = line[7..];
-        if (is_core and coreOnly(module, line)) continue;
+        if (runtimePrivate(module, line, is_core)) continue;
         // `type Never` in Basics and its constructor line: one comment (§12.1).
         if (std.mem.eql(u8, line, "  type Never")) {
             in_never = true;
@@ -120,14 +120,15 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
     return text.items;
 }
 
-// Core's fiber protocol is not an application or platform API.
-fn coreOnly(module: []const u8, line: []const u8) bool {
-    if (@import("core_private").access(module, "", true) != null) return true;
+// Runtime-only names are not part of the application API.
+fn runtimePrivate(module: []const u8, line: []const u8, is_core: bool) bool {
+    if (@import("core_private").access(module, "", true)) |access| if ((access == .worker) != is_core) return true;
     for ([_][]const u8{ "  value ", "  foreign value ", "  type ", "  opaque type " }) |prefix| {
         if (!std.mem.startsWith(u8, line, prefix)) continue;
         const rest = line[prefix.len..];
         const end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
-        return @import("core_private").access(module, rest[0..end], std.mem.indexOf(u8, prefix, "value") != null) != null;
+        const access = @import("core_private").access(module, rest[0..end], std.mem.indexOf(u8, prefix, "value") != null) orelse return false;
+        return (access == .worker) != is_core;
     }
     return false;
 }

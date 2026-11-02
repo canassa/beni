@@ -7,5 +7,5 @@
   </main>
 </body>
 -- throws click-wait button output "unreachable"
-(threw: Error: Worker startup message queue is full)
+(threw: RangeError: Worker startup message queue is full)
 (the DOM did not change)

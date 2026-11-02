@@ -48,7 +48,7 @@ exercise outlet = Task.scope λowned →
                             event = Events.next pushed
                             _ = Worker.abort handle
                             case ( cleanup, result, event ) of
-                                ( Worker.Unconfirmed Worker.LeaseExpired, Err (Worker.Transport Worker.PeerUnresponsive), Err (Events.Failed Worker.PeerUnresponsive) ) →
+                                ( Worker.Unconfirmed Worker.ConnectionLost, Err (Worker.Transport Worker.PeerUnresponsive), Err (Events.Failed Worker.PeerUnresponsive) ) →
                                     "unresponsive"
                                 _ →
                                     "wrong loss"

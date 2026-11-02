@@ -1735,7 +1735,7 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
         // EXECUTE: the second check reads the helper's cached interface.
         for (0..2) |_| {
-            const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            const good = try w.run(&.{ "check", "--allow-unchecked-workers", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
             // Checking discharges generic Wire obligations without launching a worker.
             try testing.expectEqual(@as(u8, 0), good.exit_code);
             try testing.expectEqual(@as(usize, 0), good.diagnostics.len);
@@ -1896,4 +1896,91 @@ test "worker realm obligations survive generic imported writers and warm interfa
         try testing.expectEqualDeep(expected.value, bad.diagnostics);
         try testing.expect(!w.exists("refused"));
     }
+}
+
+test "worker entry machinery is fenced from applications and spoofed module names" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_]struct { module: []const u8, name: []const u8 }{
+        .{ .module = "Browser.Worker", .name = "run" },
+        .{ .module = "Browser.WorkerRuntime", .name = "run" },
+        .{ .module = "Browser.Worker", .name = "installHostStop" },
+        .{ .module = "Rt", .name = "workerStop" },
+        .{ .module = "Rt", .name = "workerDefect" },
+    }) |hidden| {
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import {s} as Hidden\n\nvalue = Hidden.{s}\n", .{ hidden.module, hidden.name }));
+        const result = try w.run(&.{ "check", "--platform=browser", "--no-cache", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+            .code = .private_name,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 9 }, .end = .{ .line = 3, .col = @intCast(16 + hidden.name.len) } },
+            .title = "PRIVATE NAME",
+            .message = "This name is private to the platform’s worker entry machinery.",
+        }}), result.diagnostics);
+        try testing.expect(!w.exists("out"));
+    }
+    try w.write("Browser/WorkerRuntime.beni", "import Browser.Worker as Worker\npub leak = Worker.run\n");
+    const spoof = try w.run(&.{ "check", "--platform=browser", "--no-cache", "--root=.", "Browser/WorkerRuntime.beni" });
+    try testing.expectEqual(@as(u8, 1), spoof.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .private_name,
+        .severity = .@"error",
+        .span = .{ .file = "Browser/WorkerRuntime.beni", .start = .{ .line = 2, .col = 12 }, .end = .{ .line = 2, .col = 22 } },
+        .title = "PRIVATE NAME",
+        .message = "This name is private to the platform’s worker entry machinery.",
+    }}), spoof.diagnostics);
+}
+
+test "check and build agree on the unchecked worker gate through a suspendable twin" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/browser/managed/TwinLaunch", "_expected.");
+    for (0..2) |_| {
+        const checked = try w.run(&.{ "check", "--platform=browser", "--cache-dir=cache", "Main.beni" });
+        const built = try w.run(&.{ "build", "--platform=browser", "--cache-dir=cache", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), checked.exit_code);
+        try testing.expectEqual(@as(u8, 1), built.exit_code);
+        try testing.expectEqualDeep(built.diagnostics, checked.diagnostics);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+            .code = .invalid_entry_kind,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 19, .col = 10 }, .end = .{ .line = 19, .col = 21 } },
+            .title = "INVALID ENTRY KIND",
+            .message = "Worker launches are unavailable until realm and Wire checks are implemented.",
+        }}), checked.diagnostics);
+        try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.invalid_entry_kind, checked.diagnostics[0].code);
+        try testing.expect(!w.exists("out"));
+    }
+    const allowed = try w.run(&.{ "check", "--allow-unchecked-workers", "--platform=browser", "--cache-dir=cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), allowed.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), allowed.diagnostics);
+    const original = try w.read("Main.beni");
+    const before_messages = std.mem.indexOf(u8, original, "\ntype Msg") orelse unreachable;
+    try w.write("Main.beni", try std.mem.concat(w.arena.allocator(), u8, &.{
+        original[0..before_messages],
+        "\nmain : Browser.Program\nmain = Browser.program {init = λ_ → ⊤, update = λ_ _ → ⊤, view = λ_ → <main>idle</main>}\n",
+    }));
+    for ([_][]const u8{ "check", "build" }) |command| {
+        const dead = try w.run(&.{ command, "--platform=browser", "--no-cache", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dead.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), dead.diagnostics);
+    }
+    try testing.expect(!w.exists("out/_workers"));
+}
+
+test "worker runtime entry cannot be called through static dispatch" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Browser.Worker as Worker\npub leak : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥) → ⊤\nleak worker = worker.run\n");
+    const result = try w.run(&.{ "check", "--platform=browser", "--no-cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .private_method,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 3, .col = 21 }, .end = .{ .line = 3, .col = 25 } },
+        .title = "PRIVATE METHOD",
+        .message = "This name is private to the platform’s worker entry machinery.",
+    }}), result.diagnostics);
 }

@@ -313,6 +313,7 @@ pub const Cache = struct {
 };
 
 pub const Check = struct {
+    allow_unchecked_workers: bool = false,
     common: Common = .{},
     cache: Cache = .{},
     /// `--platform`: the same value `build` takes, resolved the same way
@@ -871,11 +872,18 @@ fn applyCache(cache: *Cache, consumed: *bool, name: []const u8, value: ?[]const 
 }
 
 const CheckSpecific = struct {
+    allow_unchecked_workers: bool = false,
     consumed: bool = false,
     platform: ?[]const u8 = null,
     cache: Cache = .{},
 
     fn apply(self: *CheckSpecific, name: []const u8, value: ?[]const u8) Allocator.Error!?Usage {
+        if (std.mem.eql(u8, name, "--allow-unchecked-workers")) {
+            if (value != null) return noValue(name);
+            self.allow_unchecked_workers = true;
+            self.consumed = true;
+            return null;
+        }
         if (std.mem.eql(u8, name, "--platform")) {
             if (applyPlatform(&self.platform, &self.consumed, value)) |u| return u;
             return null;
@@ -934,6 +942,7 @@ fn parseCheck(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result
     // §1). The cost of leaving it off is an `unknown_module` that names the
     // flag.
     return .{ .command = .{ .check = .{
+        .allow_unchecked_workers = s.specific.allow_unchecked_workers,
         .common = s.common,
         .cache = s.specific.cache,
         .platform = s.specific.platform,
@@ -1810,7 +1819,11 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
         &.{ "build", "--platform=node", "--allow-unchecked-workers", "src" },
     );
     try expectUsage("beni: option '--allow-unchecked-workers' does not take a value", &.{ "build", "--platform=node", "--allow-unchecked-workers=1", "src" });
-    try expectUsage("beni: unknown option '--allow-unchecked-workers'; run 'beni help' for usage", &.{ "check", "--allow-unchecked-workers", "src" });
+    try expectCommand(
+        .{ .check = .{ .allow_unchecked_workers = true, .paths = &.{"src"} } },
+        &.{ "check", "--allow-unchecked-workers", "src" },
+    );
+    try expectUsage("beni: option '--allow-unchecked-workers' does not take a value", &.{ "check", "--allow-unchecked-workers=1", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "allow-unchecked-workers") == null);
 
     // `--roundtrip-dispatch` is a fourth, and on `Common` for its twin's
