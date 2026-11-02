@@ -956,7 +956,9 @@ pub const Module = struct {
         // Every argument and the result cross: nothing to track.
         var harmless = !Slots.holdsAny(&mod.places, try mod.places.rootPath(mod.gpa, try placeOfInst(ctx, inst)));
         for (args) |x| harmless = harmless and !Slots.holdsAny(&mod.places, try mod.places.rootPath(mod.gpa, try placeOfInst(ctx, x)));
-        if (harmless) return .harmless;
+        // A function value is never harmless: its code may write what its
+        // closure holds, a label of the frame (§2.11.3).
+        if (harmless and (target != null or composed)) return .harmless;
         var ps: std.ArrayList(PlaceId) = .empty;
         defer ps.deinit(mod.gpa);
         for (args) |x| try ps.append(mod.gpa, try placeOfInst(ctx, x));

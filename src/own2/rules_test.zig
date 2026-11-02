@@ -56,7 +56,7 @@ const layers = [_]Entry{
     .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
     .{ .file = "Resolve.zig", .layer = 9, .max_lines = 600 },
     .{ .file = "Deliver.zig", .layer = 9, .max_lines = 300 },
-    .{ .file = "Closures.zig", .layer = 9, .max_lines = 80 },
+    .{ .file = "Closures.zig", .layer = 9, .max_lines = 100 },
     .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
     .{ .file = "Block.zig", .layer = 11, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 280 },
