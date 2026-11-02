@@ -5774,7 +5774,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    holders of the contents are loans. `Ref.make v`: fresh `site` with `◆ ↦ v`, `consumed` on `v`. `Ref.get`
    (`lent`): `loan(c·ι)` per `c ∈ cellsAt(r, ◆)`, a holder that may be read, passed to readers and used to build
    values. Implement `lent` as a lazy overlay tagging every reachable mutable storage path in the cell's
-   contents, stopping at nested ◆ barriers; scalars/crossing descendants carry no tag. A projection retains
+   contents, stopping at nested ◆ barriers; scalars/crossing descendants carry no tag. A backing handle cell (§2.13.18)
+   is not crossing and **is tagged** (2026-11-02): before §2.13.18 a native handle crossed and carried no tag, but
+   §2.13.18's loan rule for `backingof` and its Known condition both rely on the tag. A projection retains
    the overlay at the selected descendant. Loan origins carry the introducing region id (u32) and stable
    slot identity; summary substitution maps incoming region variables to the caller's original ids, never
    fresh regions. Thus a shallow copied outer list still has loan-tagged inner lists; a loan reaching Esc, a send, a model or a closure/return outliving its loan region is refused
@@ -6147,7 +6149,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
 
     **Places and cells.** A type with `backing` metadata gets a place of a new kind, `backing`, with one barrier
     step `⬡`. The metadata is a contextual type word, as `cell` is (§2.13.6), validated on a `pub foreign type` of
-    a core or platform package. Its values are handle cells, as a `ref`'s are, but `⬡` is not a container: reach
+    a core or platform package. Its values are handle cells, as a `ref`'s are, and they no longer cross: §2.13.7's `lent` overlay tags them, which
+    the `backingof` loan rule and Known rely on. `⬡` is not a container: reach
     and Esc stop at it, and it has no contents cells. Each handle cell has a **slot** in a frame relation
     `backs(handle) → slot`. A slot is a stable identity like §2.13.7's `(handle origin, ◆)`: may-alias, a strong
     update only for a slot that is definitely identified, a weak union otherwise, top for unknown. **Backing slots
@@ -6256,7 +6259,15 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
       which contradicts `workers.md` §2 (*clone-only values can be sent separately*). At a call, `T` at q becomes a
       `transfer` demand at the call point over the actual's backings at q.
     - **Blocks.** Blocks publish `T`, the `backing` place kind and the slot column, and a cross-module call reads
-      them like any other use mark or provenance.
+      them like any other use mark or provenance. The effect encoding also carries two records (fifth review of
+      #1672):
+      - per stored payload, its **outside-alias record**: the slot annotations of its outside aliases, each with
+        its kind (escaped, live across a suspension, or live at return);
+      - per spawn-like effect, its **pending movers**: the `◆` slot and the `T` path below it.
+
+      Both are part of the block's semantic hash and of a reverse user's cache key. A block that cannot carry them
+      does not decode (`Malformed`). An importer that dropped them would accept `TransferPageFibersShareRef` when
+      the fiber body lives in another module.
 
     **Stores, spawns and outside aliases** (third review of #1672; made general after the fourth review). A slot
     contents relation sees the handles stored in slots. It does not see an alias that a fiber, a suspended
@@ -6268,8 +6279,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
 
     **This item takes (b), as one general rule for every frame:**
     1. **Stores.** At a store into a `◆` slot (any store: `cellnew`, `cellstored`, a `cellupdate` or `cellmodify`
-       write-back), the frame collects every other handle in the stored handle's class that is live after the store
-       or escaped. They come from the same holder and slot indexes that the `transfer` demand queries. They are
+       write-back), the frame collects every other handle in the stored handle's class that is escaped, live across
+       a may-suspend point after the store (`Dispatch.effectAt`, as for loans in §2.13.7), or live at the frame's
+       return. An alias that dies before the frame can next suspend or return is not collected. Under P-sync no
+       other beni code runs before that point, so no mover can run while that alias is live (fifth review of
+       #1672: `refill r b = let v = view b in Ref.set r (Just b); get v 0` records nothing). They come from the same holder and slot indexes that the `transfer` demand queries. They are
        published on the stored-payload effect as its **outside aliases**. A call instantiates them and adds the
        caller's own live or escaped aliases at the call point, because the callee cannot see the caller's holders.
     2. **The `contents` relation keeps them.** An outside alias that reaches a frame through an effect, from a
@@ -6279,7 +6293,21 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     3. **Spawns.** A spawn-like row (`Task.spawn`, `spawnIn`, `perform`, `performFor`, `performStream`,
        `subscription`) applies its callback's slot effects at the spawn point, `many` times, together with their
        outside aliases. They are applied as **weak** joins that hold for the rest of the frame, because the fiber
-       may run at any later point. A spawned closure never makes a strong update in its spawner's relation.
+       may run at any later point. A spawned closure never makes a strong update in its spawner's relation. The
+       callback's `T` on a capture below `◆` (a take out of a captured `Ref` followed by a move) is applied the same
+       way. It becomes a **pending mover** on that slot, weak and kept for the rest of the frame, and published with
+       the frame's effects so that callers keep it.
+    3a. **Stores under a pending mover** (fifth review of #1672). The spawn point checked the mover's demand against
+       the slot's contents at that moment, so it never saw a backing stored later. At every later store into a slot
+       with a pending mover, including a store a callee makes (instantiated from its effects), the mover's
+       `transfer` demand is run again over the stored payload's backings. The holders it checks are the ones rule 1
+       collects: escaped, live across a may-suspend point after the store, or live at return. A holder found there
+       refuses **the store**, with `worker_transfer_alias_live` naming the pending mover's spawn and its take. That
+       store is the one point where the frame can see both the alias and the backing entering the mover's reach.
+       Recording the alias as an outside alias instead would protect nothing: the mover's own demand is already
+       resolved, and nothing later in the spawner's frame checks the move again. So that equivalent formulation is
+       taken as "refuse the store". The rule is sound because a spawned fiber runs only when its spawner suspends or
+       returns (P-sync), and rule 1's holder set contains every alias that can still be read at such a point.
     4. **The demand.** The `transfer` demand's *not stored in a slot* condition also refuses a move of β when β has
        an outside alias.
     5. **Protocols.** Ŝ and the model's slot fixpoint (§2.13.17) are this rule applied at the constructor, where the
@@ -6295,7 +6323,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     - in a slot, so in `contents` (or in Ŝ);
     - reachable from state, so in Ŝ through `S₀` or an effect;
     - a loan, which cannot outlive its synchronous region (§2.13.7, and the `backingof` row);
-    - live or escaped at the store, so an outside alias.
+    - escaped, live across a suspension or live at return at the store, so an outside alias; or, when the slot has
+      a pending mover, refused at the store (rule 3a).
+
+    An alias that is live only until the next synchronous point is the first case at every point where another fiber
+    can run.
 
     Spawned effects are weak and persist, so no interleaving at a suspension can hide a member. The move check
     refuses whenever the class has another member. That covers the suspension case: a fiber that keeps `v` across
@@ -6435,6 +6467,10 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `TransferHelperReturnsReader` *(second review)* | `mkReader b = let v = view b in λ⊤ → length v`; `rd = mkReader buf; send h (Worker.prepare buf); rd ⊤` | refuse `worker_transfer_alias_live` (captured) |
     | `TransferHelperSuppliesView` *(second review)* | `withView b f = f (view b)`; `withView buf (λv → Ref.set r (Just v)); send h (Worker.prepare buf); Ref.get r` | refuse `worker_transfer_alias_live` (stored in a slot) |
     | `TransferUnknownSlotDead` *(second review)* | a handle of slot `⊤` (returned by an unknown function value) is read and then dead; a fresh buffer is sent | accept; its twin that reads the `⊤` handle after the send refuses, approximately |
+    | `TransferPendingMoverPage` *(fifth review)* | `r = Ref.make Nothing`; spawn a fiber that sleeps, takes `b` from `r` and moves it; then `buf = alloc; v = view buf; Ref.set r (Just buf)`; sleep; `length v` | refuse `worker_transfer_alias_live` at the store (pending mover) |
+    | `TransferPendingMoverInit` *(fifth review)* | `init` starts a root fiber that later takes from the state `Ref` `slot` and moves; then stores `buf` into `slot` and returns state with a view of `buf` in a field | refuse `worker_transfer_alias_live` at the store (the view is live at return, through `R`) |
+    | `TransferRefillSync` *(fifth review)* | `refill r b = let v = view b in Ref.set r (Just b); get v 0`; later a take of `b` from `r` and a move | accept (`v` dies before any suspension) |
+    | `TransferPageFibersShareRef.cached`, `TransferPageFibersShareRefImported` *(fifth review)* | the fiber bodies of `TransferPageFibersShareRef` in another module, cold and from the cache | refuse `worker_transfer_alias_live` (outside aliases cross the block) |
     | `TransferPageFibersShareRef` *(fourth review)* | in `main`, `r = Ref.make (Just buf)`; fiber A takes `b`, makes `v`, puts `b` back, sleeps and reads `v`; fiber B takes `b` and moves it | refuse `worker_transfer_alias_live` (outside alias from a spawned effect) |
     | `TransferReservedHelper` *(third review)* | `takeIt c = Chunk.take c`; `v = takeIt c; Worker.prepare v`, no other alias | accept (`slot reserved π₁`) |
     | `TransferRefTakeHelper` *(second review)* | `take slot = Ref.modify slot λold → ( old, Nothing )` as a helper, `Worker.prepare (take slot)`, no other alias | accept |
