@@ -13,10 +13,11 @@
 //! every module of that platform's chain exactly as `beni check
 //! --platform=<name>` would. It writes each core and platform file's
 //! front-end artifact, each core and platform module's cache entry, each
-//! such module's reachability edge lists (`js/EdgePack.zig`) and each
+//! such module's reachability edge lists (`js/EdgePack.zig`), each
 //! module's emitted text, split in the units a join splices
-//! (`js/EmitPack.zig`), into one blob (`cache/Pack.zig`), which that
-//! compiler embeds as `core_pack`.
+//! (`js/EmitPack.zig`), and each module's ownership v2 block
+//! (`ownership-v2.md` §3.6, *The checked core*) into one blob
+//! (`cache/Pack.zig`), which that compiler embeds as `core_pack`.
 //!
 //! **The platforms are the target compiler's, not this program's.** Each
 //! `<name> <root> <dir>` triple is one row of the table that compiler embeds
@@ -158,6 +159,8 @@ fn check(
         .pack_build_id = build_id,
         // Every build installs these records: they carry the crossing bits.
         .crossing_always = true,
+        // The ownership checker v2 reads the solved types after the run.
+        .keep_type_stores = true,
     });
     defer session.deinit();
 
@@ -178,6 +181,7 @@ fn check(
         return error.Reported;
     }
     try addEdges(gpa, &session, writer, made);
+    try addOwn2(gpa, stderr, &session, writer, made, what);
     try addEmit(gpa, stderr, &session, writer, made, chain, what);
 
     // Every core and platform file and module of the run, or no pack.
@@ -256,6 +260,45 @@ fn addEdges(
             defer gpa.free(bytes);
             try writer.add(gpa, .edges, key, bytes);
         }
+    }
+}
+
+/// Every core and platform module's ownership v2 block, beside the entry
+/// that carries v1's (`ownership-v2.md` §3.6, *The checked core*): under
+/// the entry's key, so a run under `--ownership=v2` that installs the entry
+/// finds it, while the interface, its hash and every key stay v1's. A
+/// module v2 publishes no block for (a limit) has no row, and its importers
+/// read it as unknown and say so; the pack is not refused for it, because
+/// v2 is not yet the checker a build runs. A row an earlier run made holds
+/// the same bytes, or the pack is refused: a key names its content.
+fn addOwn2(
+    gpa: Allocator,
+    stderr: *Io.Writer,
+    session: *Session,
+    writer: *Pack.Writer,
+    made: []const u8,
+    what: []const u8,
+) error{ OutOfMemory, Reported }!void {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const blocks = try gpa.alloc(?[]const u8, session.graph.count());
+    defer gpa.free(blocks);
+    beni.own2.Enforce.packBlocks(gpa, arena_state.allocator(), session, blocks) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.WriteFailed => unreachable,
+    };
+    const earlier = Pack.Pack.init(made);
+    for (blocks, 0..) |block, i| {
+        const m: Graph.Index = @fromBackingInt(@intCast(i));
+        const bytes = block orelse continue;
+        if (session.graph.modulePackage(m) == .app or !session.keys.isCacheable(m)) continue;
+        const key = session.keys.of(m);
+        if (earlier.find(.own2, key)) |had| {
+            if (std.mem.eql(u8, had, bytes)) continue;
+            _ = fail(stderr, "checking {s}, the module '{s}' has two ownership v2 blocks under one key", .{ what, session.store.path(session.graph.moduleFile(m)) });
+            return error.Reported;
+        }
+        try writer.add(gpa, .own2, key, bytes);
     }
 }
 

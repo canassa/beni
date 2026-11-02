@@ -27,7 +27,8 @@
 //! rows[count], sorted by (kind, key):
 //!   kind: u8, 3 zero bytes      0 an entry, 1 a front-end artifact (`Dir.Kind`'s
 //!                               numbers), 2 a module's edge lists, 3 a
-//!                               module's emitted text, in units
+//!                               module's emitted text, in units, 4 a
+//!                               module's ownership v2 block
 //!   key: [16]u8
 //!   offset: u32, len: u32       into the blob, from its first byte
 //! the payloads, in row order; two `edges` or `emit` rows with the same
@@ -43,8 +44,8 @@ const Allocator = std.mem.Allocator;
 const Key = @import("Key.zig");
 
 pub const magic = "BENIPACK";
-/// 2: the `edges` kind; 3: the `emit` rows.
-pub const version: u32 = 3;
+/// 2: the `edges` kind; 3: the `emit` rows; 4: the `own2` rows.
+pub const version: u32 = 4;
 
 const header_len = magic.len + 4 + 4;
 const row_len = 4 + 16 + 4 + 4;
@@ -53,11 +54,15 @@ const row_len = 4 + 16 + 4 + 4;
 /// is a module's reachability edge lists (`js/EdgePack.zig`) and `emit` the
 /// development text of the binary's own modules, split in the units a join
 /// splices (`js/EmitPack.zig`), neither of which a cache directory holds.
+/// `own2` is a module's ownership checker v2 block (`ownership-v2.md` §3.6,
+/// *The checked core*), under its entry's key: the entry's interface
+/// carries v1's block, and only a run under `--ownership=v2` reads this one.
 pub const Kind = enum(u8) {
     entry = 0,
     frontend = 1,
     edges = 2,
     emit = 3,
+    own2 = 4,
 };
 
 /// A pack, validated. `empty` holds no row and finds nothing.
@@ -82,7 +87,7 @@ pub const Pack = struct {
         var previous: ?Row = null;
         for (0..count) |i| {
             const row = pack.rowAt(@intCast(i));
-            if (row.kind > @backingInt(Kind.emit)) return empty;
+            if (row.kind > @backingInt(Kind.own2)) return empty;
             if (@as(u64, row.offset) + row.len > bytes.len or row.offset < table_end) return empty;
             if (previous) |p| if (!p.lessThan(row)) return empty;
             previous = row;
