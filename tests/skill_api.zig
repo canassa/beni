@@ -95,8 +95,11 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
     try text.appendSlice(arena, "```text\n");
     var lines = std.mem.splitScalar(u8, r.stdout, '\n');
     var in_never = false;
+    var module: []const u8 = "";
     while (lines.next()) |line| {
         if (line.len == 0 and lines.peek() == null) break;
+        if (std.mem.startsWith(u8, line, "module ")) module = line[7..];
+        if (is_core and coreOnly(module, line)) continue;
         // `type Never` in Basics and its constructor line: one comment (§12.1).
         if (std.mem.eql(u8, line, "  type Never")) {
             in_never = true;
@@ -110,6 +113,26 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
     }
     try text.appendSlice(arena, "```\n");
     return text.items;
+}
+
+// Core's fiber protocol is not an application or platform API.
+fn coreOnly(module: []const u8, line: []const u8) bool {
+    if (std.mem.eql(u8, module, "Js.Runtime")) return true;
+    const names: []const []const u8 = if (std.mem.eql(u8, module, "Js"))
+        &.{ "invoke", "completion" }
+    else if (std.mem.eql(u8, module, "Task"))
+        &.{ "VirtualClock", "currentClock", "withClock", "virtualClock", "adjustClock", "currentLogContext", "withLogContext" }
+    else
+        return false;
+    for (names) |name| {
+        for ([_][]const u8{ "  value ", "  type " }) |prefix| {
+            if (!std.mem.startsWith(u8, line, prefix)) continue;
+            const rest = line[prefix.len..];
+            if (std.mem.startsWith(u8, rest, name) and
+                (rest.len == name.len or rest[name.len] == ' ')) return true;
+        }
+    }
+    return false;
 }
 
 /// One dump line in beni's notation (§12.1).

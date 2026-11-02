@@ -1,0 +1,5 @@
+import Task
+
+
+pub bad : ⊤ → Int
+bad ⊤ = Task.callback λ_ → λ⊤ → Task.yieldNow ⊤

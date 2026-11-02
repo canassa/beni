@@ -5645,6 +5645,9 @@ section says only where it sits in this checker.
   refusal never sets the failure bits P7 and P8 read. It builds the reverse graph, the copies'
   classes and the chain's ends only when a demand failed. What the dumps print moved to
   `check/EffectsView.zig`, to keep `Effects.zig` under §19.1's 1 500 lines.
+  *Amended 2026-11-02:* module-level mutable-cell class retention is in
+  `check/EffectCells.zig`, called during the existing class construction,
+  preserving the same file-size bound.
 - **Versions** (§15.5): `iface_bytes.format_version` 9 → 10, `entry_bytes.format_version` 7 → 8,
   the frontend artifact 9 → 10.
 - *Amended 2026-09-30 (§15.2 item 7):* the generator demands every top-level value's evaluation

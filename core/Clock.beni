@@ -24,13 +24,13 @@
 --! Nothing here is `foreign`.
 
 import Duration exposing (Duration)
-import Js
+import Js.Runtime as Runtime
 import Task
 
 
 --| A clock that moves only when `adjust` moves it.
 pub opaque type Virtual
-    = Virtual Js.Value
+    = Virtual Task.VirtualClock
 
 
 --| The milliseconds since the Unix epoch, on the calling fiber's clock: the
@@ -38,18 +38,17 @@ pub opaque type Virtual
 --| inside `run`.
 pub now : ⊤ → Int
 now ⊤ =
-    clock = Task.currentClock ⊤
-
-    if Js.isUndefined clock then
-        Js.to (Js.call (Js.global "Date") "now" [])
-    else
-        Js.to (Js.get clock "now")
+    case Task.currentClock ⊤ of
+        Nothing →
+            Runtime.now ⊤
+        Just reading →
+            reading
 
 
 --| A new virtual clock reading `epoch` milliseconds, with nothing waiting
 --| on it. Two clocks are independent.
 pub virtual : Int → Virtual
-virtual epoch = Virtual (Task.virtualClock (Js.from epoch))
+virtual epoch = Virtual (Task.virtualClock epoch)
 
 
 --| Run `work` on the virtual clock: `work`, and every fiber it starts —
@@ -69,4 +68,4 @@ run (Virtual clock) work = Task.withClock clock work
 --| Called from the fiber that drives the test, outside `run`: it waits for
 --| the others.
 pub adjust : Virtual, Duration → ⊤
-adjust (Virtual clock) duration = Task.adjustClock clock (Js.from (Duration.toMillis duration))
+adjust (Virtual clock) duration = Task.adjustClock clock (Duration.toMillis duration)
