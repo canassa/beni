@@ -14,6 +14,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
+const Leaves = @import("Leaves.zig");
 
 pub const PathId = Ids.PathId;
 pub const PlaceId = Ids.PlaceId;
@@ -164,6 +165,8 @@ pub const LeafKind = enum(u8) {
     /// `cbs` index, `extra` the answer's slot (a `Slots.Rel`).
     answer,
     top,
+    /// A prepend's deferred storage, `atom` its value (§2.3.4; a leaf set's).
+    recons,
 };
 
 pub const Leaf = struct {
@@ -195,11 +198,10 @@ pub const Frame = struct {
     vals: std.ArrayList(Val) = .empty,
     leaves: std.ArrayList(Leaf) = .empty,
     leaf_index: Ids.FixedDict(7) = .{},
-    /// Tag sets: runs of `(choice, arm)` pairs; set 0 is empty.
-    tag_runs: std.ArrayList([2]u32) = .empty,
-    tag_words: std.ArrayList([2]u32) = .empty,
-    tag_index: Ids.FixedDict(2) = .{},
-    tag_next: std.ArrayList(u32) = .empty,
+    /// Leaf and tag sets; per value, its leaf set and its storage's (§2.3.4).
+    sets: Leaves.Table = .{},
+    deep: std.ArrayList(u32) = .empty,
+    shallow: std.ArrayList(u32) = .empty,
     calls: std.ArrayList(Call) = .empty,
     cbs: std.ArrayList(Cb) = .empty,
     supplies: std.ArrayList(Supply) = .empty,
@@ -212,10 +214,9 @@ pub const Frame = struct {
         f.vals.deinit(gpa);
         f.leaves.deinit(gpa);
         f.leaf_index.deinit(gpa);
-        f.tag_runs.deinit(gpa);
-        f.tag_words.deinit(gpa);
-        f.tag_index.deinit(gpa);
-        f.tag_next.deinit(gpa);
+        f.sets.deinit(gpa);
+        f.deep.deinit(gpa);
+        f.shallow.deinit(gpa);
         f.calls.deinit(gpa);
         f.cbs.deinit(gpa);
         f.supplies.deinit(gpa);
@@ -233,8 +234,65 @@ pub const Frame = struct {
 
     pub fn mk(f: *Frame, v: Val) Error!u32 {
         try f.charge(.shape, 1);
+        const id: u32 = @intCast(f.vals.items.len);
+        const sets = try f.setsOf(v, id);
         try f.vals.append(f.gpa, v);
-        return @intCast(f.vals.items.len - 1);
+        try f.deep.append(f.gpa, sets[0]);
+        try f.shallow.append(f.gpa, sets[1]);
+        return id;
+    }
+
+    /// A leaf set's `ref` element, its slots named when read: the family's
+    /// or the position's `below` (deep), or their own storage. `resolveRef`
+    /// gives the leaf, or null when it names no object slot.
+    pub const deferred_deep: u32 = 1;
+    pub const deferred_own: u32 = 2;
+    pub fn resolveRef(f: *Frame, l0: Leaf) Error!?Leaf {
+        var l = l0;
+        const g = f.gpa;
+        const slot = f.pos.items[l.pos].slot;
+        l.slots = switch (l0.extra) {
+            deferred_deep => if (l0.slots != Slots.empty) try Subtree.belowSet(f.slots, g, f.account, f.places, l0.slots) else try Subtree.below(f.slots, g, f.account, f.places, slot),
+            else => if (l0.slots != Slots.empty) try f.slots.setOf(g, f.account, f.places, f.slots.items(l0.slots)) else try f.slots.canon(g, f.account, f.places, slot),
+        };
+        l.extra = 0;
+        return if (l.slots == Slots.empty) null else l;
+    }
+
+    fn oneOf(f: *Frame, l: Leaf) Error!u32 {
+        return f.sets.one(f.gpa, f.account, try f.leaf(l), 0, l.kind == .ref or l.kind == .recons);
+    }
+
+    /// Value `v`'s leaf sets, deep and its storage's, from its kids' (§2.3.4).
+    fn setsOf(f: *Frame, v: Val, id: u32) Error![2]u32 {
+        const s = &f.sets;
+        const g = f.gpa;
+        const a = f.account;
+        switch (v.kind) {
+            .scalar, .bot => return .{ Leaves.empty, Leaves.empty },
+            .top, .shared => {
+                const x = try f.oneOf(if (v.kind == .top) .{ .kind = .top } else .{ .kind = .shared, .atom = v.head, .extra = v.site });
+                return .{ x, x };
+            },
+            .ref => {
+                // Its slots are named when it is read (`resolveRef`); a place
+                // that holds no object has none (a crossing tuple of 2¹⁶ paths).
+                const crossing = v.family == Slots.empty and !Slots.holdsAny(f.places, f.pos.items[v.pos].slot);
+                const deep = if (crossing) Leaves.empty else try f.oneOf(.{ .kind = .ref, .root = v.root, .pos = v.pos, .slots = v.family, .extra = deferred_deep });
+                const shallow = try f.oneOf(.{ .kind = .ref, .root = v.root, .pos = v.pos, .slots = v.family, .at_pos = v.family == Slots.empty, .extra = deferred_own });
+                return .{ deep, shallow };
+            },
+            .built => {
+                // Built over a base: its storage, read deep; a prepend's own
+                // storage is the base's only on a re-cons (deferred).
+                const own = if (v.site != none) try f.oneOf(.{ .kind = .site, .atom = v.site }) else Leaves.empty;
+                const over = v.form == .list and v.head != 0;
+                const base = if (over) f.shallow.items[v.head - 1] else Leaves.empty;
+                const recons = if (over and v.site != none) try f.oneOf(.{ .kind = .recons, .atom = id }) else Leaves.empty;
+                return s.built(g, a, own, base, recons, f.deep.items, v.kids);
+            },
+            .alt => return s.alt(g, a, f.deep.items, f.shallow.items, v.head, v.kids),
+        }
     }
 
     pub fn val(f: *const Frame, id: u32) Val {
@@ -394,63 +452,19 @@ pub const Frame = struct {
         return f.leaves.items[id];
     }
 
-    fn tagRun(f: *const Frame, id: u32) []const [2]u32 {
-        if (id == 0) return &.{};
-        const r = f.tag_runs.items[id];
-        return f.tag_words.items[r[0]..][0..r[1]];
+    /// The arm set of one arm (a tag's second word, §2.3.5).
+    pub fn armOf(f: *Frame, arm: u32) Error!u32 {
+        return f.sets.armOf(f.gpa, f.account, arm);
     }
 
-    pub fn tagsOf(f: *const Frame, id: u32) []const [2]u32 {
-        return f.tagRun(id);
-    }
-
-    pub fn internTags(f: *Frame, words0: []const [2]u32) Error!u32 {
-        if (words0.len == 0) return 0;
-        if (f.tag_runs.items.len == 0) {
-            try f.tag_runs.append(f.gpa, .{ 0, 0 });
-            try f.tag_next.append(f.gpa, none);
-        }
-        const words = try f.arena.dupe([2]u32, words0);
-        std.mem.sort([2]u32, words, {}, struct {
-            fn lt(_: void, x: [2]u32, y: [2]u32) bool {
-                return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
-            }
-        }.lt);
-        try f.charge(.set, @intCast(words.len));
-        const h = std.hash.Wyhash.hash(7, std.mem.sliceAsBytes(words));
-        const got = try f.tag_index.getOrPut(f.gpa, .{ @truncate(h), @truncate(h >> 32) });
-        if (got.found_existing) {
-            var at = got.value_ptr.*;
-            while (at != none) : (at = f.tag_next.items[at]) if (std.mem.eql(u8, std.mem.sliceAsBytes(f.tagRun(at)), std.mem.sliceAsBytes(words))) return at;
-        }
-        const id: u32 = @intCast(f.tag_runs.items.len);
-        const start: u32 = @intCast(f.tag_words.items.len);
-        try f.tag_words.appendSlice(f.gpa, words);
-        try f.tag_runs.append(f.gpa, .{ start, @intCast(words.len) });
-        try f.tag_next.append(f.gpa, if (got.found_existing) got.value_ptr.* else none);
-        got.value_ptr.* = id;
-        return id;
+    pub fn internTags(f: *Frame, words: []const [2]u32) Error!u32 {
+        return f.sets.internTags(f.gpa, f.account, words);
     }
 
     /// The union of two tag sets, or null when they give one choice two
     /// arms (never together, §2.3.5).
     pub fn mergeTags(f: *Frame, x: u32, y: u32) Error!?u32 {
-        if (x == 0) return y;
-        if (y == 0 or x == y) return x;
-        const xs = f.tagRun(x);
-        const ys = f.tagRun(y);
-        try f.charge(.inspection, @intCast(xs.len + ys.len));
-        for (xs) |p| for (ys) |q| if (p[0] == q[0] and p[1] != q[1]) return null;
-        var all: std.ArrayList([2]u32) = .empty;
-        defer all.deinit(f.gpa);
-        try all.appendSlice(f.gpa, xs);
-        for (ys) |q| {
-            const found = for (xs) |p| {
-                if (p[0] == q[0]) break true;
-            } else false;
-            if (!found) try all.append(f.gpa, q);
-        }
-        return try f.internTags(all.items);
+        return f.sets.merge(f.gpa, f.account, x, y);
     }
 
     /// Leaf `l` with tags `t` added, or null when they conflict.
@@ -459,13 +473,6 @@ pub const Frame = struct {
         var x = f.leaves.items[l];
         x.tags = (try f.mergeTags(x.tags, t)) orelse return null;
         return try f.leaf(x);
-    }
-
-    /// The root position's slot set of a `ref` value: its family, or
-    /// `below` of its position's slot.
-    pub fn refSlots(f: *Frame, v: Val) Error!SetId {
-        if (v.family != Slots.empty) return Subtree.belowSet(f.slots, f.gpa, f.account, f.places, v.family);
-        return Subtree.below(f.slots, f.gpa, f.account, f.places, f.pos.items[v.pos].slot);
     }
 };
 
