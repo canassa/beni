@@ -9750,20 +9750,25 @@ test "the checker v2's cold run applies no class the warm run stopped at a limit
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // #1261's review: `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )`.
-    // The warm run stops `w12` at its limit, so `w13` and `main` are not
-    // built at their calls. The dump's cold run walked the callees again
-    // with no limit and applied `w12`'s class: `w13`'s and `main`'s cold
-    // accounts spent the whole allowance. They are walked as the warm run
-    // walks them.
+    // #1261's review: the warm run stops `w12` at its limit, so `w13` and
+    // `main` are not built at their calls. The dump's cold run walked the
+    // callees again with no limit and applied `w12`'s class: `w13`'s and
+    // `main`'s cold accounts spent the whole allowance. They are walked as
+    // the warm run walks them. `w12` is a record product, 128 copies of a
+    // 128-field record that differ in one field each, so no sharing makes
+    // its walk cheap (as `recordProduct`). It was the doubling chain
+    // `w_k x = w_{k-1} (w_{k-1} x)` over `w1 x = ( x, x )` until result
+    // trees made that cheap: `w12`'s growth 18 536, past no limit (#1714).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try src.appendSlice(a, "w1 x = ( x, x )\n");
-    for (2..14) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try src.appendSlice(a, "\n\npub main : List Int → Int\nmain xs =\n    t = w13 xs\n    List.length xs\n");
+    const m = 128;
+    try recordType(a, &src, m);
+    try src.appendSlice(a, "\n\nw12 : R → List R\nw12 r =\n    [ { r | f0 = [] }");
+    for (1..m) |i| try src.print(a, "\n    , {{ r | f{d} = [] }}", .{i});
+    try src.appendSlice(a, "\n    ]\n\n\nw13 : R → List R\nw13 r = w12 r\n\n\npub main : R → Int\nmain r =\n    t = w13 r\n    List.length r.f0\n");
     try w.write("Main.beni", src.items);
 
     // ┌─────────────────────────────────────────┐
