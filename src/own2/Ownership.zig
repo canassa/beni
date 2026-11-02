@@ -137,6 +137,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 try others.append(arena, buf.written());
             }
         }
+        // An import read as unknown is said, never silent (§3.6): its codes
+        // had the pessimistic contract here.
+        std.mem.sort(u32, mod.imports_unknown.items, {}, std.sort.asc(u32));
+        for (mod.imports_unknown.items) |m| try others.append(arena, try std.fmt.allocPrint(arena, "unknown block {s}: its declarations read the pessimistic contract", .{in.names.module_names[m]}));
         var unpublished: ?[]const u8 = null;
         const block: ?[]const u8 = if ((in.publish or in.format_summaries) and limits == 0) try publish(gpa, arena, in.names, mod, &unpublished) else null;
         // A block not written for a limit is that limit, said (never a silent

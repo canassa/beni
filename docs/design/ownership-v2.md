@@ -2829,6 +2829,20 @@ The block stays in the interface (`Interface.ownership`, inside the interface ha
 (`Session` turns the cache off under `--ownership=v2`), so no cache entry can hold an old block. The version
 moves with every change of these words.
 
+*The checked core* (amended 2026-11-02, #1704). Core's and the platforms' modules are installed from the pack
+the binary embeds (`cache/Pack.zig`, `fast-compiler.md` §8), so no check of a session runs v2 over them and their
+entries' interfaces carry v1's block. The pack therefore carries each such module's v2 block as a row of its own
+kind, `own2`, under the module's entry key: a different section, never inside the entry, so a v1 run reads
+nothing new and a mixed read is impossible. The pack's maker (`core_pack_main.zig`) computes the blocks after
+each chain's run, in dependency order, as `dump` does (`Enforce.packBlocks`); a module an earlier chain's run
+made reads that row, and two runs that give one key two blocks fail the pack. Under `--ownership=v2` a module
+installed from the pack keeps v1's block in its interface, so its interface hash and every key are v1's and
+the platforms' rows still hit; an importer reads the `own2` row in its place (`Inputs.from_pack`). A module
+v2 publishes no block for (a limit) has no row and is not a reason to refuse the pack, since v2 is not yet the
+checker a build runs; a v2 word error in core or a platform is not carried either. An importer that reads an
+import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
+declarations read the pessimistic contract`.
+
 ### 3.7 Inputs, outputs, and where the pass runs
 
 Inputs (R-1.6): the module's `Bir` with the new spread table (§2.13.2), `Check.Module` (`inst_type`, `local_type`,

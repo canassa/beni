@@ -37,6 +37,10 @@ pub const Inputs = struct {
     /// Per global symbol its rank in text order, and per rank its symbol.
     ranks: []u32,
     rank_names: []InternPool.Symbol,
+    /// Per module installed from the checked core, its pack's v2 block
+    /// (§3.6 *The checked core*), read in place of the interface's v1 block;
+    /// written by the worker that installs it, before its importers run.
+    from_pack: []?[]const u8 = &.{},
 
     pub fn deinit(i: *Inputs, gpa: Allocator) void {
         gpa.free(i.birs);
@@ -44,6 +48,7 @@ pub const Inputs = struct {
         gpa.free(i.core);
         gpa.free(i.ranks);
         gpa.free(i.rank_names);
+        gpa.free(i.from_pack);
     }
 };
 
@@ -53,9 +58,11 @@ pub fn inputs(gpa: Allocator, session: *const Session) Allocator.Error!Inputs {
         .birs = try gpa.alloc(*const Bir, n),
         .names = try gpa.alloc([]const u8, n),
         .core = try gpa.alloc(bool, n),
+        .from_pack = try gpa.alloc(?[]const u8, n),
         .ranks = &.{},
         .rank_names = &.{},
     };
+    @memset(out.from_pack, null);
     for (0..n) |i| {
         const f = session.graph.moduleFile(@fromBackingInt(@intCast(i)));
         out.birs[i] = session.artifacts.bir(f);
@@ -194,7 +201,8 @@ const ImportReader = struct {
     fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]u32 {
         const r: *ImportReader = @ptrCast(@alignCast(ctx));
         if (m >= r.interfaces.len) return null;
-        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else r.interfaces[m].ownership;
+        const from_pack = if (m < r.ins.from_pack.len) r.ins.from_pack[m] else null;
+        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else from_pack orelse r.interfaces[m].ownership;
         if (bytes.len == 0 or bytes.len % 4 != 0) return null;
         const gpa = mod.gpa;
         const words = try gpa.alloc(u32, bytes.len / 4);
@@ -347,6 +355,34 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
     try Report.write(w, reports.items, ins.names, .{ .totals_only = options.totals_only });
 }
 
+/// The checked core's v2 blocks (§3.6 *The checked core*;
+/// `core_pack_main.zig`): every module of `session` outside the application,
+/// in dependency order, as `dump` runs them; one installed from the session's
+/// pack reads the pack's block. `out[m]` is null where v2 published none (a
+/// limit). Blocks live in `arena` or the pack.
+pub fn packBlocks(gpa: Allocator, arena: Allocator, session: *Session, out: []?[]const u8) (Allocator.Error || std.Io.Writer.Error)!void {
+    var ins = try inputs(gpa, session);
+    defer ins.deinit(gpa);
+    var mods: std.ArrayList(Groups.Input) = .empty;
+    defer mods.deinit(gpa);
+    var nc: NameCtx = .{ .session = session, .ins = &ins, .types = &session.checked.types, .arena = arena };
+    @memset(out, null);
+    const done = try gpa.alloc(Done, session.graph.count());
+    defer gpa.free(done);
+    @memset(done, .{});
+    var reader: ImportReader = .{ .session = session, .ins = &ins, .types = &session.checked.types, .interfaces = session.resolution.interfaces, .blocks = out };
+    var run: DumpRun = .{ .gpa = gpa, .arena = arena, .session = session, .ins = &ins, .nc = &nc, .reader = &reader, .mods = &mods, .blocks = out, .done = done, .totals_only = true };
+    for (0..session.graph.count()) |m| {
+        if (session.graph.modulePackage(@fromBackingInt(@intCast(m))) != .app) _ = try run.module(@intCast(m));
+    }
+}
+
+/// Module `m`'s block in the session's checked core, under its entry's key.
+pub fn packedBlock(session: *const Session, m: Graph.Index) ?[]const u8 {
+    if (!session.keys.isCacheable(m)) return null;
+    return session.pack.find(.own2, session.keys.of(m));
+}
+
 const Done = struct { started: bool = false, reports: ?[]const Report.Module = null };
 
 /// The dump's own run of v2 over a module and, first, the modules it imports.
@@ -367,7 +403,11 @@ const DumpRun = struct {
         if (r.done[m].started) return r.done[m].reports;
         r.done[m].started = true;
         for (r.session.graph.dependencies(@fromBackingInt(m))) |dep| _ = try r.module(dep.int());
-        var mi = moduleInput(r.gpa, r.session, r.ins, .{ .modules = r.session.checked.modules, .types = &r.session.checked.types, .dispatch = r.session.checked.dispatch }, m) orelse return null;
+        var mi = moduleInput(r.gpa, r.session, r.ins, .{ .modules = r.session.checked.modules, .types = &r.session.checked.types, .dispatch = r.session.checked.dispatch }, m) orelse {
+            // Installed from the checked core: its pack's block (§3.6).
+            r.blocks[m] = packedBlock(r.session, @fromBackingInt(m));
+            return null;
+        };
         mi.imports = r.reader.imports();
         try r.mods.append(r.gpa, mi);
         const token = r.session.profile.begin();
