@@ -1,0 +1,76 @@
+-- A runtime catch for a callback that writes its own parameter and that a
+-- callee hands back to its caller (`ownership-v2.md` §2.11.3, §2.11.4): as
+-- itself (`same`), captured by a closure the callee returns (`later`,
+-- `defer`), or in a record (`mkOps`). The caller calls a function value a
+-- callee returns as unknown code, so the callback's callers are unknown
+-- there. v2 accepted each `List.push l` as `param`, relying on callers it
+-- could not see, and the sanitised run trapped on the read of the list the
+-- later call had pushed onto in place. Each write is refused at the call
+-- that hands the callback back.
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l =
+    case l of
+        [] →
+            "."
+
+        [ x, …rest ] →
+            String.fromInt x ++ "," ++ show rest
+
+
+type alias Ops =
+    run : List Int → List Int
+
+
+same : (a → b) → (a → b)
+same f = f
+
+
+later : (a → b) → (a → b)
+later f = λx → f x
+
+
+mkOps : (List Int → List Int) → Ops
+mkOps f = { run = f }
+
+
+defer : a, (a → b) → (⊤ → b) × a
+defer x f = ( λ⊤ → f x, x )
+
+
+viaSame : Int → String
+viaSame n =
+    xs = [ n ]
+    h = same λl → List.push l 1
+    a = h xs
+    "${show a} ${show xs}"
+
+
+viaLater : Int → String
+viaLater n =
+    xs = [ n ]
+    h = later λl → List.push l 2
+    a = h xs
+    "${show a} ${show xs}"
+
+
+viaRecord : Int → String
+viaRecord n =
+    xs = [ n ]
+    ops = mkOps λl → List.push l 3
+    a = ops.run xs
+    "${show a} ${show xs}"
+
+
+viaThunk : Int → String
+viaThunk n =
+    ( th, b ) = defer [ n ] λl → List.push l 4
+    a = th ⊤
+    "${show a} ${show b}"
+
+
+main : Program
+main = Node.print "${viaSame 5} ${viaLater 6} ${viaRecord 7} ${viaThunk 8}"

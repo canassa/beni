@@ -5,7 +5,8 @@
 //! callers to hand it a list nothing else holds. A known caller says what
 //! it hands (§2.11.3: a label's supplies, the `callsite` demands). Where the
 //! closure escapes instead — to a callee with the pessimistic contract, to
-//! JavaScript, into a cell — its caller is unknown and so are its supplies
+//! JavaScript, into a cell, back to its caller in a callee's answer — its
+//! caller is unknown and so are its supplies
 //! (O1): each such write is a demand on `⊤`, refused `unknown`.
 //!
 //! A closure whose code writes a capture is `once` (R-2.8): an escape of it,
@@ -30,18 +31,31 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
     var out: std.ArrayList(u32) = .empty;
     defer out.deinit(gpa);
     if (e.w.result != none) try e.ev.leavesOf(e.w.result, 0, &out);
+    // What a callee hands back: a closure among a call's result arrivals is
+    // a function value that callee returns, which the caller calls as
+    // unknown code (§2.11.3), so its callers are unknown from there on.
+    var back: std.ArrayList(Eval.Escape) = .empty;
+    defer back.deinit(gpa);
+    var back_done = false;
     for (e.w.closures.items) |cl| {
         const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
         const h = e.contracts.head(c);
         const sig = try e.ctx.codeSig(e.ctx.ctx, cl.code);
         const writes = e.contracts.effectsOf(h.writes);
         if (writes.len == 0) continue;
+        if (!back_done) {
+            back_done = true;
+            try handedBack(e, &back);
+        }
         // Its first escape, else (for a capture write) another closure that
         // captures it, which may call it any number of times (as v1 has it).
         const by: ?Eval.Escape = for (e.w.closures.items) |c2| {
             if (std.mem.indexOfScalar(u32, f.kidsOf(f.val(c2.value)), cl.value) != null) break .{ .leaf = none, .point = c2.point };
         } else null;
         const at = for (e.escapes.items) |es| {
+            const l = f.leafAt(es.leaf);
+            if (l.kind == .site and l.atom == cl.inst) break es;
+        } else for (back.items) |es| {
             const l = f.leafAt(es.leaf);
             if (l.kind == .site and l.atom == cl.inst) break es;
         } else for (out.items) |l| {
@@ -91,5 +105,24 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
             if (l.j == lab.j and l.slot == lab.slot) same += 1;
         }
         if (lab.calls == .many or same > 1) d.many = true;
+    }
+}
+
+/// The objects each call of the walk hands back to the frame through its
+/// callee's result: its `res` arrivals of the arguments, projected, as
+/// escapes at the call.
+fn handedBack(e: *Eval.Evaluation, out: *std.ArrayList(Eval.Escape)) Eval.Error!void {
+    const f = e.fr();
+    const gpa = e.gpa();
+    for (f.calls.items, 0..) |call, q| {
+        if (call.contract == none) continue;
+        const h = e.contracts.head(call.contract);
+        for (e.contracts.resOf(h.res)) |rs| for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+            if (a.kind != .param) continue;
+            var ls: std.ArrayList(u32) = .empty;
+            defer ls.deinit(gpa);
+            try e.ev.arrivalLeaves(@intCast(q), call.contract, a, &.{}, &ls);
+            for (ls.items) |l| if (f.leafAt(l).kind == .site) try out.append(gpa, .{ .leaf = l, .point = call.point, .call = @intCast(q) });
+        };
     }
 }
