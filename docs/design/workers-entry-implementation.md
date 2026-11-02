@@ -164,7 +164,9 @@ The remaining public-entry-hook and check-gate fence work is #1678.
 Worker entry helpers are fenced at import resolution and static dispatch by
 CorePrivate's worker-machinery access rule. `check` shares launch reachability
 with `build`, including suspendable twins, and accepts the same hidden bypass.
-The native error listener preserves the platform's Task.onDefect hook; an
-optional page-stop bridge is called only when installed. Defect frames retain
+Task.chainDefect composes the worker stop with the platform’s current hook.
+The native error listener only records metadata after a beni stop has begun,
+in both window and worker realms; unrelated host errors do not stop the page.
+An optional page-stop bridge is called only when installed. Defect frames retain
 a bounded error name, and cleanup deadlines report ConnectionLost rather than
 claiming that a heartbeat lease expired.
