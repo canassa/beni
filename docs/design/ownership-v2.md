@@ -893,6 +893,13 @@ A label of a callee whose function slot is projected from one of the caller's pa
 the caller, its supplies projected onto the caller's arguments, its origin kept: so a callback handed through
 `List.map` to `mapHelp` and back to itself is one label, and a recursive group's labels are finite (one per
 callback call instruction reachable, per function slot).
+Projected by structure: each part of the caller's argument arrives at its own slot below the supply slot, at
+the call's function type, as a direct label's argument does. A callee supply slot of a type variable's place
+(`apply : (a → b), a → b`) takes the whole argument, so one arrival there for `{ f0 = a, f1 = b }` would leave
+a write of `.f0` with nothing to read. Each part is also judged at the call as a direct label's argument is: a
+part held after the call or reached by another part or operand is kept, at its own slot, and the distinct check
+over the parts joins the supply's condition (`wrap f a b = ( apply f { f0 = a, f1 = b }, b )` refuses
+`wrap g xs xs`).
 
 At a caller where the label's function value is **known** — a lambda, a local function, a declaration, a
 constructor, or an `alt` of them — the label is applied: for each possible code `K`, `K`'s contract is

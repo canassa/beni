@@ -54,7 +54,8 @@ const layers = [_]Entry{
     .{ .file = "Walk.zig", .layer = 7, .max_lines = 1230 },
     .{ .file = "Distinct.zig", .layer = 7, .max_lines = 640 },
     .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
-    .{ .file = "Resolve.zig", .layer = 9, .max_lines = 600 },
+    // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
+    .{ .file = "Resolve.zig", .layer = 9, .max_lines = 640 },
     .{ .file = "Deliver.zig", .layer = 9, .max_lines = 300 },
     .{ .file = "Closures.zig", .layer = 9, .max_lines = 100 },
     .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
