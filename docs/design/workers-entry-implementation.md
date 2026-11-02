@@ -160,3 +160,11 @@ Discovery includes every emitted direct/suspendable body. Worker-bearing browser
 entries wire the page's existing private stop/stopped functions into a private
 runtime bridge; Rt itself is unchanged, including its source-map contents.
 The remaining public-entry-hook and check-gate fence work is #1678.
+
+Worker entry helpers are fenced at import resolution and static dispatch by
+CorePrivate's worker-machinery access rule. `check` shares launch reachability
+with `build`, including suspendable twins, and accepts the same hidden bypass.
+The native error listener preserves the platform's Task.onDefect hook; an
+optional page-stop bridge is called only when installed. Defect frames retain
+a bounded error name, and cleanup deadlines report ConnectionLost rather than
+claiming that a heartbeat lease expired.
