@@ -150,7 +150,7 @@ pub const Demand = struct {
 pub const Binding = struct { value: u32 = none, point: u32 = none, token: u32 = none };
 
 /// An escape (§2.4): a leaf at a point.
-pub const Escape = struct { leaf: u32, point: u32 };
+pub const Escape = struct { leaf: u32, point: u32, call: u32 = none };
 
 /// A pending operand: its value, its instruction.
 pub const Pending = struct { value: u32, inst: u32 };
@@ -1376,7 +1376,7 @@ pub fn callEscape(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     var ps: std.ArrayList(Relation.Proj) = .empty;
     defer ps.deinit(gpa);
     try e.ev.project(call.args[x.j], f.slots.relWords(x.slot), true, 0, 0, &ps);
-    for (ps.items) |p| try addEscape(e, p.leaf, call.point);
+    for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, q);
 }
 
 /// A write of call `q`'s callee: a demand at the call. What it relies on
@@ -1395,6 +1395,21 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
         defer ps.deinit(gpa);
         try e.ev.project(arg, words, true, 0, 0, &ps);
         for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
+    } else if (words.len != 0 and Step.fromWord(words[words.len - 1]).kind == .contents) {
+        // A cell's `◆` (§2.13.7): the contents position of each cell the
+        // argument names, whatever its contents' type.
+        var ps: std.ArrayList(Relation.Proj) = .empty;
+        defer ps.deinit(gpa);
+        try e.ev.project(arg, words[0 .. words.len - 1], false, 0, 0, &ps);
+        for (ps.items) |p| {
+            const l = f.leafAt(p.leaf);
+            if (l.kind == .ref) if (try f.child(l.pos, .plain, Step.contents.word(), 0)) |cp| {
+                const set = try f.slots.internSorted(gpa, f.account, &.{f.pos.items[cp].slot.int()});
+                try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .ref, .root = l.root, .pos = cp, .slots = set, .tags = l.tags, .at_pos = true }));
+                continue;
+            };
+            try e.w.leaf_runs.append(gpa, p.leaf);
+        }
     } else if (words.len == 0) {
         var ls: std.ArrayList(u32) = .empty;
         defer ls.deinit(gpa);
@@ -1481,7 +1496,11 @@ fn addDemand(e: *Evaluation, d: Demand) Error!void {
 }
 
 fn addEscape(e: *Evaluation, leaf: u32, point: u32) Error!void {
-    try e.escapes.append(e.gpa(), .{ .leaf = leaf, .point = point });
+    return addEscapeAt(e, leaf, point, none);
+}
+
+fn addEscapeAt(e: *Evaluation, leaf: u32, point: u32, call: u32) Error!void {
+    try e.escapes.append(e.gpa(), .{ .leaf = leaf, .point = point, .call = call });
     if (e.facts_on) try paramEffects(&e.sink, leaf, true, .escapes);
 }
 
@@ -1797,6 +1816,27 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         defer ps.deinit(gpa);
         const lroot = try f.places.rootPath(gpa, try e.ctx.placeOfLocal(e.ctx.ctx, u.local));
         const rel = (try f.slots.relBelow(gpa, f.account, f.places, lroot, u.path)) orelse Slots.root;
+        // A call use reads what its callee's footprint reads of the
+        // argument (§2.10 *Read-off*, §2.11.2 item 1), not all of it.
+        if (u.kind == .call and u.use_node != .none) foot: {
+            const ft = w.foots.items[u.use_node.int()];
+            const call = f.calls.items[ft[0]];
+            if (call.contract == none) break :foot;
+            const h = e.contracts.head(call.contract);
+            if (h.flags.pessimistic) break :foot;
+            for (e.contracts.effectsOf(h.reads)) |x| {
+                if (x.j != ft[1]) continue;
+                var words: std.ArrayList(u32) = .empty;
+                defer words.deinit(gpa);
+                try words.appendSlice(gpa, f.slots.relWords(rel));
+                try words.appendSlice(gpa, f.slots.relWords(x.slot));
+                var qs: std.ArrayList(Relation.Proj) = .empty;
+                defer qs.deinit(gpa);
+                try e.ev.project(b.value, words.items, x.deep, 0, 0, &qs);
+                for (qs.items) |p| try paramEffects(s, p.leaf, x.deep, .reads);
+            }
+            continue;
+        }
         try e.ev.project(b.value, f.slots.relWords(rel), true, 0, 0, &ps);
         for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
     }
@@ -1871,6 +1911,10 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     const d = s.d;
     const code = w.code;
     if (d.flags.returns and !d.flags.cross) d.res_cond = try e.ev.sepOf(w.result);
+    // An arrival is read where the result is consumed.
+    for (d.res.items) |rs| for (rs.arrivals.items) |a| if (a.kind == .param) {
+        _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = true });
+    };
     d.req = v.req;
     for (f.cbs.items, 0..) |cb, ci| {
         if (cb.inst == none) continue;
