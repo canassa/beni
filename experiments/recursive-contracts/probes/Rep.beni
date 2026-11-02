@@ -1,0 +1,13 @@
+import List
+
+
+repeatHelp : a, Int, Int, List a → List a
+repeatHelp value i n b =
+    if i < n then
+        repeatHelp value (i + 1) n (List.push b value)
+    else
+        b
+
+
+pub rep : List Int → List (List Int)
+rep x = repeatHelp x 0 3 []
