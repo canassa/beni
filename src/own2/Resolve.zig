@@ -20,6 +20,7 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
@@ -254,8 +255,11 @@ const Resolver = struct {
                         if (lf.kind == .ref and tls.items.len != 0 and x.family == Slots.empty) {
                             const pslot = fr.pos.items[lf.pos].slot;
                             var any = false;
-                            for (tls.items) |tli| for (fr.slots.items(fr.leafAt(tli).slots)) |ts| {
-                                if (!fr.slots.has(lf.slots, ts)) continue;
+                            for (tls.items) |tli| for (fr.slots.elems(fr.leafAt(tli).slots)) |el| {
+                                if (Slots.isNot(el)) continue;
+                                const ts = Slots.pathOf(el).int();
+                                // A slot, or a whole subtree (`↓ts`, §2.3.1), the holder meets.
+                                if (!try Subtree.meetIn(fr.slots, g, fr.account, fr.places, lf.slots, try fr.slots.internSorted(g, fr.account, &.{el}))) continue;
                                 const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
                                 var ps: std.ArrayList(u32) = .empty;
                                 defer ps.deinit(g);
@@ -269,18 +273,12 @@ const Resolver = struct {
                                 // The holder's other objects are the target
                                 // only where its root is not separated: held
                                 // at the holder's path, under that condition.
-                                var rest: std.ArrayList(u32) = .empty;
-                                defer rest.deinit(g);
-                                for (fr.slots.items(lf.slots)) |sl| {
-                                    var hit = false;
-                                    for (tls.items) |tli| if (fr.slots.has(fr.leafAt(tli).slots, sl)) {
-                                        hit = true;
-                                    };
-                                    if (!hit) try rest.append(g, sl);
-                                }
-                                if (rest.items.len != 0) {
+                                var minus: std.ArrayList(u32) = .empty;
+                                defer minus.deinit(g);
+                                for (tls.items) |tli| try minus.append(g, fr.leafAt(tli).slots);
+                                if (try Subtree.without(fr.slots, g, fr.account, fr.places, lf.slots, minus.items)) |rest| {
                                     var rl = lf;
-                                    rl.slots = try fr.slots.internSorted(g, fr.account, rest.items);
+                                    rl.slots = rest;
                                     const o2 = try Distinct.overlap(r.ev(), try fr.leaf(rl), target, true);
                                     if (o2.kind != .no) try out.append(g, .{ it.q, o2 });
                                 }

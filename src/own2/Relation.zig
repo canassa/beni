@@ -23,6 +23,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 
@@ -103,7 +104,7 @@ pub const open_bit: u32 = 1 << 31;
 /// A subtree of more slots than this is read through one key below its
 /// top; a smaller one through a key per slot, which costs less there.
 /// Both read the same leaves.
-pub const below_min: usize = 16;
+pub const below_min = Slots.below_min;
 
 /// One projected object: its leaf and the literal route that reached it.
 pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
@@ -378,8 +379,8 @@ pub const Eval = struct {
                         }
                     }
                     var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);
-                    if (deep) set = try e.f.slots.belowSet(e.gpa(), e.account(), e.places(), try e.f.slots.sorted(e.gpa(), e.account(), all.items));
-                    for (inside.items) |t| set = try e.f.slots.unionOf(e.gpa(), e.account(), set, try e.f.slots.below(e.gpa(), e.account(), e.places(), .from(t)));
+                    if (deep) set = try Subtree.belowSet(e.f.slots, e.gpa(), e.account(), e.places(), try e.f.slots.sorted(e.gpa(), e.account(), all.items));
+                    for (inside.items) |t| set = try e.f.slots.unionOf(e.gpa(), e.account(), set, try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(t)));
                     if (set == Slots.empty) continue;
                     try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it.tags }), .route = it.route });
                 },
@@ -770,18 +771,8 @@ pub const Eval = struct {
         if (at & open_bit == 0) return x;
         const l = e.f.leafAt(x);
         if (l.kind != .ref) return x;
-        var all: std.ArrayList(u32) = .empty;
-        defer all.deinit(e.gpa());
-        for (e.f.slots.items(l.slots)) |sl| try all.appendSlice(e.gpa(), e.f.slots.items(try e.f.slots.below(e.gpa(), e.account(), e.places(), .from(sl))));
-        std.mem.sort(u32, all.items, {}, std.sort.asc(u32));
-        var n: usize = 0;
-        for (all.items) |v| {
-            if (n != 0 and all.items[n - 1] == v) continue;
-            all.items[n] = v;
-            n += 1;
-        }
         var w = l;
-        w.slots = try e.f.slots.internSorted(e.gpa(), e.account(), all.items[0..n]);
+        w.slots = try Subtree.belowSet(e.f.slots, e.gpa(), e.account(), e.places(), l.slots);
         w.at_pos = false;
         return e.f.leaf(w);
     }
@@ -857,7 +848,9 @@ pub const Eval = struct {
                 for (acc.items) |x| try e.addBelow(ki, x, at_base);
                 return;
             }
-            for (e.f.slots.items(try e.f.slots.below(e.gpa(), e.account(), e.places(), base))) |sl| {
+            // Each slot below through its own key: a whole subtree's slots
+            // written out (`belowAll`, §2.3.1, charged).
+            for (e.f.slots.items(try Subtree.belowAll(e.f.slots, e.gpa(), e.account(), e.places(), base))) |sl| {
                 if (sl != base.int()) try e.slotItems(ki, .from(sl));
             }
             // At `base` itself, what the arrival gives there: read once.
@@ -890,6 +883,7 @@ pub const Eval = struct {
         }
         const r = e.f.roots.items[l.root];
         if (r.kind != .call) return false;
+        if (Subtree.symbolic(e.f.slots, l.slots)) return false;
         const sls = e.f.slots.items(l.slots);
         if (sls.len != 1) return false;
         const cl = e.f.calls.items[r.a];
@@ -1122,6 +1116,18 @@ pub const Eval = struct {
         };
     }
 
+    /// Every arrival of call `call`'s callee at and below caller slot
+    /// `prefix`, through one key below it, widened, with `tags`.
+    fn wholeItems(e: *Eval, call: u32, which: u32, prefix: PathId, tags: u32, out: *std.ArrayList(u32)) Error!void {
+        const ki = try e.instBelow(call, prefix, which);
+        var i: usize = 0;
+        while (i < e.keys.items[ki].leaves.items.len) : (i += 1) {
+            const k = e.keys.items[ki];
+            const x = try e.widen(k.leaves.items[i], k.at.items[i]);
+            if (try e.f.withTags(x, tags)) |y| try out.append(e.gpa(), y);
+        }
+    }
+
     /// A call, supply or known label's leaf as the leaves it comes from,
     /// with its tags; a leaf met again while it is expanded adds nothing.
     pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
@@ -1129,22 +1135,15 @@ pub const Eval = struct {
         const r = e.f.roots.items[l.root];
         // A whole subtree is read through one key below its position, never
         // one per slot (§2.10 *Read-off*).
+        // A symbol `↓p` (§2.3.1) is read the same way at `p`, whatever
+        // else the set holds.
         if (r.kind == .call or r.kind == .supply) {
-            const pslot = e.f.pos.items[l.pos].slot;
-            if (e.f.slots.items(l.slots).len > below_min and l.slots == try e.f.slots.below(e.gpa(), e.account(), e.places(), pslot)) {
-                const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else blk: {
-                    const su = e.f.supplies.items[r.a];
-                    break :blk .{ su.call, (su.label << 16) | su.k };
-                };
-                const ki = try e.instBelow(call, pslot, which);
-                var i: usize = 0;
-                while (i < e.keys.items[ki].leaves.items.len) : (i += 1) {
-                    const k = e.keys.items[ki];
-                    const x = try e.widen(k.leaves.items[i], k.at.items[i]);
-                    if (try e.f.withTags(x, l.tags)) |y| try out.append(e.gpa(), y);
-                }
-                return;
-            }
+            const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else blk: {
+                const su = e.f.supplies.items[r.a];
+                break :blk .{ su.call, (su.label << 16) | su.k };
+            };
+            for (Subtree.subs(e.f.slots, l.slots)) |sb| try e.wholeItems(call, which, Slots.pathOf(sb), l.tags, out);
+            if (Subtree.explicit(e.f.slots, l.slots).len == 0) return;
         }
         if (e.live != null) {
             // Keys meet cycles themselves: a key read again while it is
@@ -1157,7 +1156,7 @@ pub const Eval = struct {
                 },
                 .cb, .param => unreachable,
             };
-            for (e.f.slots.items(l.slots)) |s| {
+            for (Subtree.explicit(e.f.slots, l.slots)) |s| {
                 // A copy: a consumer's work may grow the key under it.
                 const run = try e.gpa().dupe(u32, try e.instAt(call, .from(s), which));
                 defer e.gpa().free(run);
@@ -1179,7 +1178,7 @@ pub const Eval = struct {
             },
             .cb, .param => unreachable,
         };
-        for (e.f.slots.items(l.slots)) |s| {
+        for (Subtree.explicit(e.f.slots, l.slots)) |s| {
             for (try e.instAt(call, .from(s), which)) |x| if (try e.f.withTags(x, l.tags)) |y| try out.append(e.gpa(), y);
         }
     }

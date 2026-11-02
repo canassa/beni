@@ -56,6 +56,26 @@ pub const Cond = struct {
         return true;
     }
 
+    /// `weaker`, where a deep occurrence also asks every occurrence of its
+    /// parameter at a slot whose steps continue its own (§2.9.1, *A subtree
+    /// held whole*).
+    pub fn weakerIn(a: Cond, slots: *const Slots.Table, b: Cond) bool {
+        if (b.no) return true;
+        if (a.no) return false;
+        outer: for (a.sel) |x| {
+            if (std.sort.binarySearch(u64, b.sel, x, order) != null) continue;
+            if (isApart(x) and std.sort.binarySearch(u64, b.sel, x & ~apart_bit, order) != null) continue;
+            const xw = slots.relWords(occRel(x));
+            for (b.sel) |y| {
+                if (!isDeep(y) or occParam(y) != occParam(x) or (isApart(y) and !isApart(x))) continue;
+                const yw = slots.relWords(occRel(y));
+                if (xw.len >= yw.len and std.mem.eql(u32, yw, xw[0..yw.len])) continue :outer;
+            }
+            return false;
+        }
+        return true;
+    }
+
     fn order(x: u64, y: u64) std.math.Order {
         return std.math.order(x, y);
     }
@@ -127,8 +147,18 @@ pub fn occApart(j: u32, r: Rel) u64 {
 pub fn isApart(o: u64) bool {
     return o & apart_bit != 0;
 }
+/// A deep occurrence (§2.9.1, *A subtree held whole*): every object at the
+/// slot and at every slot below it, the selection of a symbol `↓s` of
+/// §2.3.1, never written out slot by slot.
+pub const deep_bit: u64 = 1 << 62;
+pub fn occDeep(j: u32, r: Rel) u64 {
+    return occ(j, r) | deep_bit;
+}
+pub fn isDeep(o: u64) bool {
+    return o & deep_bit != 0;
+}
 pub fn occParam(o: u64) u32 {
-    return @intCast((o >> 32) & 0x7fff_ffff);
+    return @intCast((o >> 32) & 0x3fff_ffff);
 }
 pub fn occRel(o: u64) Rel {
     return @truncate(o);
@@ -370,7 +400,20 @@ pub const Table = struct {
     fn putCond(t: *Table, gpa: Allocator, slots: *const Slots.Table, c: Cond) Allocator.Error!StoredCond {
         if (c.no) return .{ .no = true };
         const start: u32 = @intCast(t.occs.items.len);
-        try t.occs.appendSlice(gpa, c.sel);
+        // An occurrence a deep one of its parameter asks already, at a slot
+        // whose steps continue the deep one's, says nothing more (§2.9.1):
+        // left out, so a join that adds it changes nothing.
+        outer: for (c.sel) |x| {
+            const xw = slots.relWords(occRel(x));
+            for (c.sel) |y| {
+                if (y == x or !isDeep(y) or occParam(y) != occParam(x) or (isApart(y) and !isApart(x))) continue;
+                const yw = slots.relWords(occRel(y));
+                if (xw.len < yw.len or !std.mem.eql(u32, yw, xw[0..yw.len])) continue;
+                if (xw.len == yw.len and isDeep(x) and (isApart(x) == isApart(y))) continue;
+                continue :outer;
+            }
+            try t.occs.append(gpa, x);
+        }
         const run = t.occs.items[start..];
         sortOccs(slots, run);
         return .{ .run = .{ .start = start, .len = @intCast(run.len) } };
@@ -598,9 +641,9 @@ pub const Table = struct {
         if (g.flags.returns and !c.flags.returns) return false;
         if (g.flags.once and !c.flags.once) return false;
         if (g.flags.returns and !c.res_cond.no) {
-            if (!(try t.cond(arena, g.res_cond)).weaker(try t.cond(arena, c.res_cond))) return false;
+            if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
         }
-        if (!(try t.cond(arena, g.req)).weaker(try t.cond(arena, c.req))) return false;
+        if (!(try t.cond(arena, g.req)).weakerIn(slots, try t.cond(arena, c.req))) return false;
         if (!t.effectsWithin(slots, g.reads, c.reads) or !t.effectsWithin(slots, g.writes, c.writes) or !t.effectsWithin(slots, g.escapes, c.escapes)) return false;
         // Labels by identity; `cb` arrivals compared through them.
         for (t.labelsOf(g.labels)) |l| {
@@ -612,7 +655,7 @@ pub const Table = struct {
                 } else return false;
                 if (!t.slotsWithin(slots, got, claim, s.res, u.res)) return false;
                 if (!t.effectsWithin(slots, s.kept, u.kept)) return false;
-                if (!u.cond.no and !(try t.cond(arena, s.cond)).weaker(try t.cond(arena, u.cond))) return false;
+                if (!u.cond.no and !(try t.cond(arena, s.cond)).weakerIn(slots, try t.cond(arena, u.cond))) return false;
             }
         }
         return t.slotsWithin(slots, got, claim, g.res, c.res);
@@ -716,6 +759,7 @@ pub fn sortOccs(slots: *const Slots.Table, run: []u64) void {
         fn lt(s: *const Slots.Table, x: u64, y: u64) bool {
             if (occParam(x) != occParam(y)) return occParam(x) < occParam(y);
             if (occRel(x) != occRel(y)) return s.relLess(occRel(x), occRel(y));
+            if (isDeep(x) != isDeep(y)) return !isDeep(x);
             return !isApart(x) and isApart(y);
         }
     }.lt);

@@ -42,6 +42,8 @@ const layers = [_]Entry{
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 400 },
     .{ .file = "Contract.zig", .layer = 3, .max_lines = 800 },
+    // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
+    .{ .file = "Subtree.zig", .layer = 3, .max_lines = 320 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 4, .max_lines = 320 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 530 },
@@ -350,7 +352,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 26), layers.len);
+    try testing.expectEqual(@as(usize, 27), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

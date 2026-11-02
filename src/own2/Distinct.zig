@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
@@ -34,21 +35,33 @@ pub fn sel(e: *Eval, j: u32, set: Slots.SetId) Error!Cond {
 /// The selection of parameter `j` at `set`, its occurrences apart
 /// only (§2.9.1) when `apart`.
 pub fn selOf(e: *Eval, j: u32, set: Slots.SetId, only_apart: bool) Error!Cond {
-    const items = e.f.slots.items(set);
+    const items = e.f.slots.elems(set);
     try e.charge(.cond, @intCast(1 + items.len));
-    const out = try e.arena.alloc(u64, items.len);
-    for (items, out) |s, *o| {
-        const r = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(s));
-        o.* = if (only_apart) Contract.occApart(j, r) else Contract.occ(j, r);
-    }
-    return Cond.of(e.account(), out);
+    var out: std.ArrayList(u64) = .empty;
+    for (items) |s| if (try occOf(e, j, s, only_apart)) |o| try out.append(e.arena, o);
+    return Cond.of(e.account(), out.items);
+}
+
+/// The occurrence of parameter `j` at set element `s`: a symbol `↓p`
+/// (§2.3.1) is the deep occurrence at `p`; an exclusion asks nothing
+/// less (null: the symbol's occurrence asks it).
+fn occOf(e: *Eval, j: u32, s: u32, only_apart: bool) Error!?u64 {
+    if (Slots.isNot(s)) return null;
+    const r = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), Slots.pathOf(s));
+    const o = if (Slots.isSub(s)) Contract.occDeep(j, r) else Contract.occ(j, r);
+    return if (only_apart) o | Contract.apart_bit else o;
 }
 
 /// Whether a leaf names a family: one of its slots is below a `[*]` or a
 /// `⟲`, where many objects sit (§2.3.1); elsewhere a position's slot
 /// holds one object.
-fn isFamily(e: *Eval, l: Leaf) bool {
-    for (e.f.slots.items(l.slots)) |s| if (e.f.places.isSummary(.from(s))) return true;
+fn isFamily(e: *Eval, l: Leaf) Error!bool {
+    for (e.f.slots.elems(l.slots)) |s| {
+        if (Slots.isNot(s)) continue;
+        if (Slots.isSub(s)) {
+            if (try Subtree.familyBelow(e.gpa(), e.account(), e.places(), Slots.pathOf(s))) return true;
+        } else if (e.f.places.isSummary(.from(s))) return true;
+    }
     return false;
 }
 
@@ -114,6 +127,9 @@ fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error
     defer plain.deinit(g);
     for (idx) |i| {
         if (Contract.isApart(ents[i].occ)) continue;
+        // A whole subtree is plain at every slot below its top: every
+        // occurrence may arrive there.
+        if (Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) return instSel(e, full, call);
         for (e.f.slots.items(e.f.leafAt(ents[i].leaf).slots)) |x| {
             try plain.append(g, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
         }
@@ -131,6 +147,8 @@ fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error
 /// slots `plain` (words from the result's root) by `res`. A slot `res`
 /// does not name may hold anything.
 fn arrivesAtPlain(e: *Eval, res: Ids.Range, o: u64, plain: []const []const u32) Error!bool {
+    // A deep occurrence reaches every slot below its own.
+    if (Contract.isDeep(o)) return true;
     const ow = e.f.slots.relWords(Contract.occRel(o));
     for (plain) |words| {
         var named = false;
@@ -176,7 +194,7 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
         defer got.deinit(e.gpa());
         // Routes are per parameter: two parameters handed one value are
         // that value twice (the experiment's third requirement).
-        try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), false, 0, try e.routeStep(0, 0x8000_0000 | j), &got);
+        try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), Contract.isDeep(o), 0, try e.routeStep(0, 0x8000_0000 | j), &got);
         for (got.items) |p| try ps.append(e.gpa(), .{ .leaf = p.leaf, .route = p.route, .occ = o });
     }
     return distinct(e, ps.items, true);
@@ -214,7 +232,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     for (ents.items) |en| {
         const l = e.f.leafAt(en.leaf);
         switch (l.kind) {
-            .ref => if (!l.at_pos and isFamily(e, l) and !Contract.isApart(en.occ)) {
+            .ref => if (!l.at_pos and try isFamily(e, l) and !Contract.isApart(en.occ)) {
                 if (e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
                 if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             },
@@ -292,12 +310,9 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                     // asks to be apart only.
                     for (idx.items) |i| {
                         const ap = Contract.isApart(ents.items[i].occ);
-                        const lslots = e.f.slots.items(e.f.leafAt(ents.items[i].leaf).slots);
+                        const lslots = e.f.slots.elems(e.f.leafAt(ents.items[i].leaf).slots);
                         try e.charge(.cond, @intCast(1 + lslots.len));
-                        for (lslots) |x| {
-                            const rl = try e.f.slots.relOf(g, e.account(), e.places(), .from(x));
-                            try occs.add(g, if (ap) Contract.occApart(r.a, rl) else Contract.occ(r.a, rl));
-                        }
+                        for (lslots) |x| if (try occOf(e, r.a, x, ap)) |o| try occs.add(g, o);
                     }
                 },
                 .call => if (idx.items.len >= 2 and !allApart(ents.items, idx.items)) {
@@ -354,7 +369,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         for (ents.items) |en| {
             if (en.block == none) continue;
             const l = e.f.leafAt(en.leaf);
-            if (l.kind == .ref and !l.at_pos and isFamily(e, l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
+            if (l.kind == .ref and !l.at_pos and try isFamily(e, l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
                 if (e.f.roots.items[l.root].kind == .cb) return Cond.unprovable;
                 if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             }
@@ -427,9 +442,18 @@ fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!
         for (lists.items) |*l| l.deinit(g);
         lists.deinit(g);
     }
+    // A whole subtree (`↓p`, §2.3.1) meets slots by prefix, not by name:
+    // an entry that holds one is compared with every other entry.
+    for (idx, 0..) |i, k| {
+        if (!Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) continue;
+        for (idx, 0..) |j, m| {
+            if (j == i or (m < k and Subtree.symbolic(e.f.slots, e.f.leafAt(ents[j].leaf).slots))) continue;
+            if (try pairMay(e, ents[i], ents[j], routed)) return true;
+        }
+    }
     for (idx) |i| {
         const l = e.f.leafAt(ents[i].leaf);
-        for (e.f.slots.items(l.slots)) |s| {
+        for (Subtree.explicit(e.f.slots, l.slots)) |s| {
             try e.charge(.inspection, 1);
             const got = try at.getOrPut(g, .{ l.pos, s });
             if (!got.found_existing) {
@@ -443,7 +467,7 @@ fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!
         const l = e.f.leafAt(ents[i].leaf);
         var p = l.pos;
         while (p != none) : (p = e.f.pos.items[p].parent) {
-            for (e.f.slots.items(l.slots)) |s| {
+            for (Subtree.explicit(e.f.slots, l.slots)) |s| {
                 try e.charge(.inspection, 1);
                 const here = at.get(.{ p, s }) orelse continue;
                 for (lists.items[here].items) |j| {
@@ -471,7 +495,7 @@ fn pairMay(e: *Eval, a: Ent, b: Ent, routed: bool) Error!bool {
     if (routed and a.route == b.route and a.occ != b.occ and la.pos == lb.pos) return false;
     if (la.at_pos and lb.at_pos and la.pos != lb.pos) return false;
     const r = try e.f.related(la.pos, lb.pos);
-    return r.rel == .related and try e.f.slots.meet(e.account(), la.slots, lb.slots);
+    return r.rel == .related and try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), la.slots, lb.slots);
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------
@@ -549,11 +573,11 @@ fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         // A write of a position's own storage never meets what lies
         // inside it: no value holds itself.
         if (target and t.at_pos and r.second_prefix and x.pos != t.pos) {
-            if (!(try e.f.slots.meet(e.account(), x.slots, t.slots))) return apart(e, xi, ti, target);
+            if (!(try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots))) return apart(e, xi, ti, target);
             // The holder below the written position holds the slot only
             // where a level folds back onto it.
         }
-        if (try e.f.slots.meet(e.account(), x.slots, t.slots)) return .may;
+        if (try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots)) return .may;
     }
     return apart(e, xi, ti, target);
 }

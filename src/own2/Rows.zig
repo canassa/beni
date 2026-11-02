@@ -34,6 +34,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Ast = @import("../parse/Ast.zig");
 
@@ -73,7 +74,15 @@ pub const Env = struct {
     /// Every object slot at and below the result root, each with `a`.
     fn everySlot(env: Env, d: *Draft, result: PlaceId, a: Contract.Arrival) Error!void {
         const r = try env.root(result);
-        for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, r))) |s| {
+        // A whole subtree (`↓r`, §2.3.1): an atom is the same at every slot,
+        // one wide entry at the root; anything else is named at each slot
+        // (`belowAll`, charged).
+        const set = try Subtree.below(env.slots, env.gpa, env.account, env.places, r);
+        if (Subtree.symbolic(env.slots, set) and (a.kind == .fresh or a.kind == .top or a.kind == .shared)) {
+            _ = try Draft.addWide(&d.res, env.arena, Slots.root, a);
+            return;
+        }
+        for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, r))) |s| {
             const sr = try env.rel(.from(s));
             if (env.isVar(.from(s))) try Draft.markOpen(&d.res, env.arena, sr);
             _ = try Draft.addArrival(&d.res, env.arena, sr, a);
@@ -84,7 +93,9 @@ pub const Env = struct {
     /// The result's slots below `prefix` (a result path) are parameter `j`'s
     /// below `from` (a parameter path), slot for slot.
     fn identity(env: Env, d: *Draft, prefix: PathId, j: u32, from: PathId) Error!void {
-        for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, from))) |s| {
+        // A contract names each result slot (§2.10): a whole subtree is
+        // written out (`belowAll`, §2.3.1, charged).
+        for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, from))) |s| {
             const below = (try env.slots.relBelow(env.gpa, env.account, env.places, from, .from(s))) orelse continue;
             var at: std.ArrayList(u32) = .empty;
             defer at.deinit(env.gpa);
@@ -167,7 +178,7 @@ pub fn ctor(env: Env, sig: Signature, ordinal: u32) Error!Contract.Id {
         } else try env.places.ctorStep(env.gpa, env.account, ordinal, @intCast(k));
         const at = (try env.places.extend(env.gpa, .growth(env.account), r, st)) orelse continue;
         try env.identity(&d, at, @intCast(k), from);
-        for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, from))) |s| try occs.append(env.arena, Contract.occ(@intCast(k), try env.rel(.from(s))));
+        for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, from))) |s| try occs.append(env.arena, Contract.occ(@intCast(k), try env.rel(.from(s))));
     }
     if (env.places.kind(sig.result) == .record and !d.flags.cross) _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .fresh });
     d.res_cond = try Contract.Cond.of(env.account, occs.items);

@@ -1,12 +1,14 @@
 //! L2: slots (`docs/design/ownership-v2.md` §2.3.1, §3.2): the module's
-//! slot sets, the object slots at and below a path (`below`), a slot's
-//! canonical name (`canon`, its expansion through `Place.expandLevels`),
-//! and relative steps (`Rel`, a contract's slots, by their step words).
+//! slot sets and their tables (`below`'s is filled by `Subtree`), a
+//! slot's canonical name (`canon`, its expansion through
+//! `Place.expandLevels`), and relative steps (`Rel`, a contract's slots,
+//! by their step words).
 //!
 //! A slot is a canonical path of `Place.Table`; an object slot is one whose
 //! place holds an object. A slot set is a sorted, deduplicated run of
-//! expanded object slots, interned by content, so two sets meet exactly
-//! when their runs share an element (one merge). Every fill is reserved on
+//! expanded object slots, then exclusions and symbols `↓p` (§2.3.1), interned
+//! by content; two runs of explicit slots meet by one merge, a symbol by
+//! `Subtree.meetIn`. Every fill is reserved on
 //! the asking account before its work (§4.1); a hit is one record.
 //!
 //! Obligations kept here: none of §2.14's directly (tables only).
@@ -27,6 +29,31 @@ const none: u32 = Ids.none_int;
 /// A slot set: an index of `Table.sets`; `empty` is the empty set.
 pub const SetId = u32;
 pub const empty: SetId = 0;
+
+/// A set's element `sub_bit | p` is the symbol `↓p`, every object slot of
+/// `below(p)` (§2.3.1, *A subtree held whole*; `Subtree` reads it);
+/// `not_bit | q` excludes the explicit slot `q` from the set's symbols.
+/// Explicit slots sort first, then exclusions, then symbols.
+pub const sub_bit: u32 = 1 << 31;
+pub const not_bit: u32 = 1 << 30;
+/// A subtree of more object slots than this is held whole, as `↓p`; a
+/// smaller one is written out, which costs less to read slot by slot. A
+/// reader that reads a whole subtree through one key or one effect at its
+/// top does so exactly when the set is `↓p` (§2.10 *Read-off*).
+pub const below_min: usize = 16;
+
+pub fn isSub(x: u32) bool {
+    return x & sub_bit != 0;
+}
+
+pub fn isNot(x: u32) bool {
+    return x & (sub_bit | not_bit) == not_bit;
+}
+
+/// The path of an element, whatever its kind.
+pub fn pathOf(x: u32) PathId {
+    return .from(x & ~(sub_bit | not_bit));
+}
 
 /// Relative steps: an index of `Table.rels`; `root` is no step.
 pub const Rel = u32;
@@ -52,8 +79,14 @@ pub const Table = struct {
     /// Per relative run, a root-relative path at each root place it was
     /// replayed from is not kept: replay walks `extend`, which Place memoises.
     scratch: std.ArrayList(u32) = .empty,
+    /// Per path: its anchors (`anchors`), a run of `sets`.
+    anchor_of: ByPath = .{},
+    /// Per path whose `below` is a symbol: `belowAll`, written out.
+    all_of: ByPath = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.anchor_of.deinit(gpa);
+        t.all_of.deinit(gpa);
         t.sets.deinit(gpa);
         t.rels.deinit(gpa);
         t.below_of.deinit(gpa);
@@ -67,7 +100,17 @@ pub const Table = struct {
         t.scratch.deinit(gpa);
     }
 
+    /// The slots of a set that holds no symbol. A reader that may meet a
+    /// symbol reads `elems` and handles `↓p` itself.
     pub fn items(t: *const Table, s: SetId) []const u32 {
+        if (s == empty) return &.{};
+        const xs = t.sets.get(s);
+        if (std.debug.runtime_safety) std.debug.assert(xs.len == 0 or xs[xs.len - 1] < not_bit);
+        return xs;
+    }
+
+    /// Every element of a set: explicit slots, then exclusions, then symbols.
+    pub fn elems(t: *const Table, s: SetId) []const u32 {
         if (s == empty) return &.{};
         return t.sets.get(s);
     }
@@ -143,11 +186,19 @@ pub const Table = struct {
         return t.internSorted(gpa, account, run[0..n]);
     }
 
+    /// The union of two sets. An exclusion of either is dropped: a slot one
+    /// side excludes, the other may hold (a superset, never a subset).
     pub fn unionOf(t: *Table, gpa: Allocator, account: *Ids.Account, a: SetId, b: SetId) Error!SetId {
         if (a == b or b == empty) return a;
         if (a == empty) return b;
-        const xs = t.items(a);
-        const ys = t.items(b);
+        if (t.hasNot(a) or t.hasNot(b)) {
+            var acc: std.ArrayList(u32) = .empty;
+            defer acc.deinit(gpa);
+            for ([_]SetId{ a, b }) |x| for (t.elems(x)) |y| if (!isNot(y)) try acc.append(gpa, y);
+            return t.sorted(gpa, account, acc.items);
+        }
+        const xs = t.elems(a);
+        const ys = t.elems(b);
         try account.reserve(.set, @intCast(xs.len + ys.len));
         var out = try std.ArrayList(u32).initCapacity(gpa, xs.len + ys.len);
         defer out.deinit(gpa);
@@ -169,7 +220,12 @@ pub const Table = struct {
         return t.sets.intern(gpa, out.items);
     }
 
-    /// Whether two sets share a slot: one merge, charged.
+    fn hasNot(t: *const Table, s: SetId) bool {
+        for (t.elems(s)) |x| if (isNot(x)) return true;
+        return false;
+    }
+
+    /// Whether two sets of explicit slots share a slot: one merge, charged.
     pub fn meet(t: *const Table, account: *Ids.Account, a: SetId, b: SetId) Ids.AccountError!bool {
         if (a == empty or b == empty) return false;
         if (a == b) return true;
@@ -185,12 +241,12 @@ pub const Table = struct {
         return false;
     }
 
+    pub fn order(k: u32, x: u32) std.math.Order {
+        return std.math.order(k, x);
+    }
+
     pub fn has(t: *const Table, s: SetId, p: u32) bool {
-        return std.sort.binarySearch(u32, t.items(s), p, struct {
-            fn f(k: u32, x: u32) std.math.Order {
-                return std.math.order(k, x);
-            }
-        }.f) != null;
+        return std.sort.binarySearch(u32, t.items(s), p, order) != null;
     }
 
     /// `p`'s canonical names, as a set of the object slots among them; a
@@ -207,48 +263,6 @@ pub const Table = struct {
         const s = try t.sorted(gpa, account, run.items);
         try t.canon_of.put(gpa, p, s);
         return s;
-    }
-
-    /// `below(p)`: the object slots at and below `p`, by their canonical
-    /// names (§2.3.1): a walk of `extend` over each place's steps, each path
-    /// once, filled once per path.
-    pub fn below(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
-        try account.reserve(.memo, 1);
-        if (t.below_of.get(p)) |hit| return hit;
-        var queue: std.ArrayList(PathId) = .empty;
-        defer queue.deinit(gpa);
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(gpa);
-        var acc: std.ArrayList(u32) = .empty;
-        defer acc.deinit(gpa);
-        try queue.append(gpa, p);
-        _ = try seen.getOrPut(gpa, .{p.int()});
-        var qi: usize = 0;
-        while (qi < queue.items.len) : (qi += 1) {
-            const at = queue.items[qi];
-            try account.reserve(.path, 1);
-            if (isObject(places, at)) for (t.items(try t.canon(gpa, account, places, at))) |c| try acc.append(gpa, c);
-            const steps = places.steps(places.pathPlace(at)).steps;
-            for (steps) |st| {
-                const nx = (try places.extend(gpa, .growth(account), at, st)) orelse continue;
-                if ((try seen.getOrPut(gpa, .{nx.int()})).found_existing) continue;
-                try queue.append(gpa, nx);
-            }
-        }
-        const s = try t.sorted(gpa, account, acc.items);
-        try t.below_of.put(gpa, p, s);
-        return s;
-    }
-
-    /// `below` of every slot of `s`, joined.
-    pub fn belowSet(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, s: SetId) Error!SetId {
-        // One sort of every member's run, never a union per member: the
-        // cost is linear in the parts, not in their product.
-        if (t.items(s).len == 1) return t.below(gpa, account, places, .from(t.items(s)[0]));
-        var acc: std.ArrayList(u32) = .empty;
-        defer acc.deinit(gpa);
-        for (t.items(s)) |x| try acc.appendSlice(gpa, t.items(try t.below(gpa, account, places, .from(x))));
-        return t.sorted(gpa, account, acc.items);
     }
 
     /// The relative steps of path `p` from its root.

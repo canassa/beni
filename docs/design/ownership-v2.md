@@ -315,6 +315,47 @@ place holds none; its object slots are below it.
 A recursive slot (`⟲`) names a **family** of occurrences: every object one or more levels below. It never
 names one object, and two values of one type never become one identity because their slots are equal.
 
+*Amended 2026-11-02 (#1706, the manager's decision): a subtree held whole.* §2.1's paths fold only where a step
+returns to a place already on the path, so a strongly connected group of types has a path for every order of
+visiting it: `below(π1)` of a group of five types that each name every other one is a run of over 10⁸ slots
+(`MutualCycles`; three types: 535 paths, four: 22 224). Written out, it passed the summary limit, while
+master's v2 read the same deep read by prefix (`Place.hits`, §2.7's `Up(p)`). The naming of §2.1 is
+unchanged; a slot set may now hold `below(p)` **symbolically**:
+
+- **The symbol `↓p`.** A slot set is a sorted run of explicit object slots, then **exclusions** `¬q`, then
+  **symbols** `↓p`. `↓p` is every object slot of `below(p)`. `¬q` takes the explicit slot `q` out of the
+  set's symbols; it is kept only beside a symbol. `below(p)` is written out while it has at most
+  `below_min` (16) object slots, and is `{↓p}` past that: the walk that fills it counts a path's slots when
+  it finds the path and stops at the seventeenth, so its cost is `below_min` slots' discovery, never the size
+  of the closure. It is filled once per path. A reader that reads a whole subtree through one key or one
+  effect at its top (`below_min`, §2.10 *Read-off*) does so exactly when the set is `{↓p}`.
+- **Anchors.** The anchors of `p` are `p` and `Up(p)` (§2.7: the `⟲` paths above `p` that its levels fold
+  into, closed over theirs), each with its canonical names (`Place.expandLevels`). Every slot of `below(p)`
+  lies at or under an anchor. Memoised per path.
+- **Meet by prefix.** An explicit slot `q` is in `↓p` when an anchor of `p` is a prefix of `q`, and in a set
+  when the set names it, does not exclude it, or one of its symbols holds it. Two symbols meet when an anchor
+  of one is a prefix of an anchor of the other at or below which something holds an object. Two sets meet by
+  one merge of their explicit runs and these tests for the rest; a symbol is never written out to meet. An
+  exclusion is read against explicit slots only (a symbol meets a symbol whatever either excludes), and a
+  union drops exclusions: both answer *may* where they cannot tell, never *apart*.
+- **The other operations** read the symbol without writing it out. `below` of `↓p` is `↓p`. A family
+  (§2.9.3) is a set holding a slot below a `[*]` or a `⟲`: for `↓p`, read off the place graph (a list's
+  or dictionary's elements, or a place on a cycle, reachable from `p`'s place that hold an object). An effect
+  on `↓p` is one deep effect at `p` (§2.10); a selection's occurrence at `↓p` is the **deep occurrence**
+  `(j, p)*` (§2.9.1); a call's leaf at `↓p` is read through one key below `p` (§2.11.2); a holder's leaf
+  without the target's slots keeps `↓p` with the target's explicit slots excluded (§2.8).
+- **Written out where a contract names each slot.** A contract's result names its slots one by one (§2.10,
+  §3.5): an arrival the same at every slot below a cast, a parameter's or a label's subtree read by
+  structure, a constructor's or a worded declaration's identity and its occurrences, a call's arrival read
+  slot by slot below an open entry. There `↓p` is written out (`belowAll`): the full walk of `below`,
+  filled once per path and charged on the asker's account like it. An atom (`fresh`, `⊤`, a shared value)
+  is the same at every slot and stays one wide entry. A wide entry for any other arrival is not used: read
+  back over a call's result, it needs the call's whole subtree described by structure at each slot, which
+  cost `Schema.shapeOf` 540 000 records where the slots written out cost 215 000 (measured 2026-11-02).
+  Nothing on a deep read's path writes a symbol out: `MutualCycles` `f` and `g` check in 1 898 and
+  1 805 records, and a group of n such types costs 359, 841, 914, 781, 918, 1 062, 1 215 records for
+  n = 2…8 (1 906 at 12, 2 726 at 16).
+
 #### 2.3.2 Roots and positions
 
 A **root** is a source of a value in a frame:
@@ -377,7 +418,8 @@ The **leaves** of a value are its objects, each said once:
 | `shared d` | the top-level value's objects |
 | `⊤` | unknown objects |
 
-A deep read of a value reaches every leaf of it: for a `ref`, `below` of its slot. **Shallow storage and
+A deep read of a value reaches every leaf of it: for a `ref`, `below` of its slot, a symbol `↓p` past
+`below_min` slots (§2.3.1). **Shallow storage and
 payloads are different slots**: a list's own storage is the list's slot, its elements are its `[*]` slot, so a
 write of a list's storage meets an element only where the element is a list of that slot. Leaves are interned
 per walk; `tags` is a tag set (§2.3.5).
@@ -680,7 +722,10 @@ apart.*
 #### 2.9.1 The selection
 
 A **selection** is a set of **occurrences** `(j, s)`, a parameter of the frame and one of its object slots
-(relative steps, §2.3.1). `Sep(sel)` says: every object at a selected occurrence occurs at most once among all
+(relative steps, §2.3.1). A **deep occurrence** `(j, s)*` [#1706] is every object slot at and below `s`: the
+selection of a symbol `↓s` (§2.3.1), instantiated at a call by a deep projection (§2.11.2). It asks every
+occurrence of `j` at a slot whose steps continue `s`'s; a stored selection leaves those out, and `within`
+reads them as asked, so a join that adds one changes nothing (§2.12). `Sep(sel)` says: every object at a selected occurrence occurs at most once among all
 the selected occurrences. It is the inductive predicate of a region (Astra's second review, §2): a family
 slot's objects are pairwise distinct, and distinct from every other selected occurrence's.
 
@@ -2170,13 +2215,17 @@ the tables below lay out the slot domain.*
 Slots.Table (per module, beside Place.Table; outlives a walk)
   sets      : []u32 runs of expanded object slots (PathId), sorted, deduplicated; interned by content
   set_runs  : Columns { start: u32, len: u32 }
-  below     : IdColumn PathId → set   the object slots at and below a path, filled once per path (§2.3.1)
+  below     : IdColumn PathId → set   the object slots at and below a path, or {↓p} past below_min (§2.3.1)
+  all       : IdColumn PathId → set   below written out, for a path whose below is {↓p} (belowAll)
+  anchors   : IdColumn PathId → run   p, Up(p) and their canonical names: what a symbol is met by
   canon     : IdColumn PathId → set   a slot's expansion through expandLevels
   rel       : []u32 runs of relative step words; interned (`Rel` ids): a contract's slots
 ```
 
 Every fill is reserved on the asking account before work (§4.1); a hit is one record. The interned runs and the
-columns by path id are `Runs.zig`'s.
+columns by path id are `Runs.zig`'s. A set element's two top bits mark a symbol `↓p` and an exclusion `¬q`
+(§2.3.1), so a path id is below 2³⁰; the readers of symbols (`below`, `belowAll`, the anchors, meet by
+prefix) are `Subtree.zig`'s, the tables `Slots.zig`'s.
 
 ### 3.3 The walk (`Walk.zig`, `Eval.zig`)
 
@@ -2979,7 +3028,7 @@ L7  Walk  Distinct
 L6  Relation
 L5  Value  Liveness
 L4  Rows  Regions  ContractText
-L3  Contract  Prepass
+L3  Contract  Subtree  Prepass
 L2  Slots  Facts
 L1  Place  Runs
 L0  Ids  Counters  Scratch
@@ -2996,17 +3045,18 @@ L0  Ids  Counters  Scratch
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
+| `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |
-| `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Contract |
+| `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
-| `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags (§2.3, §3.3) | Ids, Place, Slots, Contract |
+| `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
-| `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Contract, Value |
+| `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
-| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Contract, Value, Relation |
-| `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Contract, Value, Relation, Distinct, Walk |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Value, Relation, Distinct, Walk, Eval, Liveness, Regions |
+| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
+| `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
