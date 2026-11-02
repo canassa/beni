@@ -12,6 +12,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
@@ -48,12 +49,13 @@ pub const Solver = struct {
     group: Eval.Group = undefined,
 
     const Item = struct {
-        kind: enum(u8) { key, res, write, escape },
+        kind: enum(u8) { key, res, node, write, escape },
         x: u32,
         a: u32 = 0,
         open: bool = false,
         arrival: Contract.Arrival = .{ .kind = .top },
         effect: Contract.Effect = .{ .j = 0, .slot = 0 },
+        node: Contract.Node = 0,
     };
 
     pub fn init(s: *Solver, gpa: Allocator, codes: []const u32, evals: []Evaluation, drafts: []Contract.Draft) Error!void {
@@ -154,8 +156,8 @@ pub const Solver = struct {
         try self(ctx).watchEffects(x, y, call);
     }
 
-    fn resFactFn(ctx: *anyopaque, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void {
-        try self(ctx).resFact(x, rel, open, a);
+    fn resFactFn(ctx: *anyopaque, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival, n: Contract.Node) Error!void {
+        try self(ctx).queue.append(self(ctx).gpa, .{ .kind = if (n != 0) .node else .res, .x = x, .a = rel, .open = open, .arrival = a, .node = n });
     }
 
     fn effFactFn(ctx: *anyopaque, x: u32, write: bool, eff: Contract.Effect) Error!void {
@@ -164,10 +166,6 @@ pub const Solver = struct {
 
     fn pumpFn(ctx: *anyopaque) Error!void {
         try self(ctx).pump();
-    }
-
-    pub fn resFact(s: *Solver, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void {
-        try s.queue.append(s.gpa, .{ .kind = .res, .x = x, .a = rel, .open = open, .arrival = a });
     }
 
     pub fn effFact(s: *Solver, x: u32, write: bool, eff: Contract.Effect) Error!void {
@@ -189,36 +187,8 @@ pub const Solver = struct {
             const it = s.queue.items[at];
             switch (it.kind) {
                 .key => try s.evals[it.x].ev.drainKey(it.a),
-                .res => {
-                    const e0 = &s.evals[it.x];
-                    const rw = e0.ev.f.slots.relWords(it.a);
-                    // The keys below a prefix: each reads the fact itself.
-                    var bi: usize = 0;
-                    while (bi < s.below_watch.items[it.x].items.len) : (bi += 1) {
-                        const kw = s.below_watch.items[it.x].items[bi];
-                        const e = &s.evals[kw[0]];
-                        try e.ev.f.charge(.edge, 1);
-                        try e.ev.feedBelowDraft(kw[1], it.a, it.open, it.arrival);
-                    }
-                    if (it.open) {
-                        // Every key at or below an open slot.
-                        var i: usize = 0;
-                        while (i < s.all_watch.items[it.x].items.len) : (i += 1) {
-                            const kw = s.all_watch.items[it.x].items[i];
-                            const e = &s.evals[kw[0]];
-                            try e.ev.f.charge(.edge, 1);
-                            const words = e.ev.f.slots.relWords(kw[2]);
-                            if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
-                            try e.ev.feedDraft(kw[1], it.arrival, @intCast(rw.len));
-                        }
-                    } else if (s.res_watch.get(.{ it.x, it.a })) |li| {
-                        var i: usize = 0;
-                        while (i < s.res_lists.items[li].items.len) : (i += 1) {
-                            const kw = s.res_lists.items[li].items[i];
-                            try s.evals[kw[0]].ev.feedDraft(kw[1], it.arrival, @intCast(rw.len));
-                        }
-                    }
-                },
+                .node => try s.nodeItem(it.x, it.a, it.node),
+                .res => try s.resItem(it.x, it.a, it.open, it.arrival),
                 .write, .escape => {
                     var i: usize = 0;
                     while (i < s.eff_watch.items[it.x].items.len) : (i += 1) {
@@ -231,5 +201,93 @@ pub const Solver = struct {
             }
         }
         s.queue.clearRetainingCapacity();
+    }
+
+    /// Member `x`'s subtree `n` below result slot `rel`, delivered to the
+    /// keys that read it: a key at a slot reads what the subtree says
+    /// there (its open nodes above it too), a key below a prefix every
+    /// entry at and below the prefix and each open one above it.
+    fn nodeItem(s: *Solver, x: u32, rel: Slots.Rel, n: Contract.Node) Error!void {
+        const e0 = &s.evals[x];
+        const t = &e0.contracts.trees;
+        const sl = e0.ev.f.slots;
+        const rw = sl.relWords(rel);
+        var bi: usize = 0;
+        while (bi < s.below_watch.items[x].items.len) : (bi += 1) {
+            const kw = s.below_watch.items[x].items[bi];
+            const e = &s.evals[kw[0]];
+            try e.ev.f.charge(.edge, 1);
+            const pw = sl.relWords(kw[2]);
+            var sub = n;
+            var d: usize = rw.len;
+            if (pw.len > rw.len) {
+                if (!std.mem.eql(u32, rw, pw[0..rw.len])) continue;
+                // Down to the prefix: an open node on the way holds below it.
+                while (d < pw.len and sub != 0) : (d += 1) {
+                    if (t.open(sub).len != 0) {
+                        const at = sl.rels.find(pw[0..d]) orelse try sl.relOfWords(s.gpa, e0.ev.f.account, e0.ev.f.places, pw[0..d]);
+                        const opens = try s.gpa.dupe(Contract.Arrival, t.open(sub));
+                        defer s.gpa.free(opens);
+                        for (opens) |a| try e.ev.feedBelowDraft(kw[1], at, true, a);
+                    }
+                    sub = t.kidAt(sub, pw[d]) orelse 0;
+                }
+            } else if (!std.mem.eql(u32, pw, rw[0..pw.len])) continue;
+            var es: Forest.Entries = .{};
+            defer es.deinit(s.gpa);
+            try es.of(t, s.gpa, e0.ev.f.places, sub, if (pw.len > rw.len) pw else rw);
+            for (es.items.items) |y| {
+                const at = sl.rels.find(es.wordsOf(y)) orelse try sl.relOfWords(s.gpa, e0.ev.f.account, e0.ev.f.places, es.wordsOf(y));
+                for (y.arrivals) |a| try e.ev.feedBelowDraft(kw[1], at, y.open, a);
+            }
+        }
+        var hits: std.ArrayList(Contract.Hit) = .empty;
+        defer hits.deinit(s.gpa);
+        var i: usize = 0;
+        while (i < s.all_watch.items[x].items.len) : (i += 1) {
+            const kw = s.all_watch.items[x].items[i];
+            const e = &s.evals[kw[0]];
+            try e.ev.f.charge(.edge, 1);
+            const words = sl.relWords(kw[2]);
+            if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
+            hits.clearRetainingCapacity();
+            _ = try Forest.atSlot(t, s.gpa, n, words[rw.len..], &hits);
+            var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32 }) = .empty;
+            defer arrs.deinit(s.gpa);
+            for (hits.items) |h| for (h.arrivals) |a| try arrs.append(s.gpa, .{ .a = a, .n = @intCast(rw.len + h.depth) });
+            for (arrs.items) |y| try e.ev.feedDraft(kw[1], y.a, y.n);
+        }
+    }
+
+    /// Member `x`.s arrival `a` at result slot `rel`, delivered to the keys
+    /// that read it.
+    fn resItem(s: *Solver, x: u32, rel: Slots.Rel, open: bool, arrival: Contract.Arrival) Error!void {
+        const rw = s.evals[x].ev.f.slots.relWords(rel);
+        // The keys below a prefix: each reads the fact itself.
+        var bi: usize = 0;
+        while (bi < s.below_watch.items[x].items.len) : (bi += 1) {
+            const kw = s.below_watch.items[x].items[bi];
+            const e = &s.evals[kw[0]];
+            try e.ev.f.charge(.edge, 1);
+            try e.ev.feedBelowDraft(kw[1], rel, open, arrival);
+        }
+        if (open) {
+            // Every key at or below an open slot.
+            var i: usize = 0;
+            while (i < s.all_watch.items[x].items.len) : (i += 1) {
+                const kw = s.all_watch.items[x].items[i];
+                const e = &s.evals[kw[0]];
+                try e.ev.f.charge(.edge, 1);
+                const words = e.ev.f.slots.relWords(kw[2]);
+                if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
+                try e.ev.feedDraft(kw[1], arrival, @intCast(rw.len));
+            }
+        } else if (s.res_watch.get(.{ x, rel })) |li| {
+            var i: usize = 0;
+            while (i < s.res_lists.items[li].items.len) : (i += 1) {
+                const kw = s.res_lists.items[li].items[i];
+                try s.evals[kw[0]].ev.feedDraft(kw[1], arrival, @intCast(rw.len));
+            }
+        }
     }
 };

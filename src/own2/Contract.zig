@@ -420,7 +420,7 @@ pub const Table = struct {
     /// `rank`: its arrivals as entries (sorted by their slots' canonical
     /// keys, a plain run before an open one), its subtrees and its base
     /// joined in.
-    fn putRes(t: *Table, gpa: Allocator, slots: *const Slots.Table, r: *const Draft.Res, rank: []const u32) Ids.IndexError!Node {
+    pub fn putRes(t: *Table, gpa: Allocator, slots: *const Slots.Table, r: *const Draft.Res, rank: []const u32) Ids.IndexError!Node {
         var flat: std.ArrayList(Flat) = .empty;
         defer flat.deinit(gpa);
         for (r.items.items) |e| if (e.node == 0) {
@@ -510,12 +510,8 @@ pub const Table = struct {
         const rank = try gpa.alloc(u32, d.labels.items.len);
         defer gpa.free(rank);
         for (order, 0..) |o, r| rank[o] = @intCast(r);
-        // The result is put with the draft's label numbers, as it always
-        // was; the supplies with the sorted ones.
-        const same = try gpa.alloc(u32, d.labels.items.len);
-        defer gpa.free(same);
-        for (same, 0..) |*x, i| x.* = @intCast(i);
-        h.res_root = try t.putRes(gpa, slots, &d.res, same);
+        // The result and the supplies name the labels by their sorted order.
+        h.res_root = try t.putRes(gpa, slots, &d.res, rank);
         h.res_cond = try t.putCond(gpa, slots, d.res_cond);
         h.reads = try t.putEffects(gpa, slots, d.reads.items);
         h.writes = try t.putEffects(gpa, slots, d.writes.items);

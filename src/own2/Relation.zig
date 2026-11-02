@@ -966,7 +966,7 @@ pub const Eval = struct {
     /// atoms at each (`⊤`, a shared value, a call's fresh objects): a call's
     /// leaf whose callee says only that, open, above it and nothing below it
     /// (a pessimistic contract's `⊤`, a cast of one). Null otherwise.
-    fn uniformAtoms(e: *Eval, x: u32, out: *std.ArrayList(u32)) Error!bool {
+    pub fn uniformAtoms(e: *Eval, x: u32, out: *std.ArrayList(u32)) Error!bool {
         const l = e.f.leafAt(x);
         switch (l.kind) {
             .top, .shared => {
