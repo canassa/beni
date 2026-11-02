@@ -12611,9 +12611,14 @@ test "the checker v2 reads an imported doubling function's block as growth, at t
     // 3%; +66 000 at k = 9 with the square), and its total over the twin's,
     // the block's read, the same factor at both k to a tenth (×1.43 at 7, 8
     // and 9).
+    // The importer reads the same contract: `h`'s summary is its twin's,
+    // and it reads all of its parameter.
+    var keep: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer keep.deinit();
     var ratio: [2]u64 = undefined;
     for ([_]u32{ 7, 9 }, 0..) |k, run| {
         var cost: [2]struct { growth: u64, total: u64 } = undefined;
+        var summary: [2][]const u8 = undefined;
         for ([_]bool{ false, true }, 0..) |imported, side| {
             var w = try World.init(testing.allocator, testing.io);
             defer w.deinit();
@@ -12640,9 +12645,11 @@ test "the checker v2 reads an imported doubling function's block as growth, at t
             try testing.expectEqual(@as(u8, 0), dump.exit_code);
             try testing.expect(std.mem.indexOf(u8, dump.stdout, "ownership_accounting_invariant") == null);
             try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit h") == null);
-            try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary h: π1 RA;") != null);
+            summary[side] = try keep.allocator().dupe(u8, try summaryLine(dump.stdout, "h"));
+            try testing.expect(std.mem.endsWith(u8, summary[side], "; reads π1ε*"));
             cost[side] = .{ .growth = try accountField(dump.stdout, "h", "growth"), .total = try accountField(dump.stdout, "h", "total") };
         }
+        try testing.expectEqualStrings(summary[0], summary[1]);
         try testing.expect(cost[1].growth <= cost[0].growth + cost[0].total / 10);
         ratio[run] = 1000 * cost[1].total / cost[0].total;
     }

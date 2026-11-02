@@ -234,6 +234,41 @@ pub const Table = struct {
         return t.supplies.items[r.start..][0..r.len];
     }
 
+    /// Every nonempty node the trees `roots` reach, once, in post-order
+    /// (a node after its kids, each node's kids in the canonical order):
+    /// how a block writes them (§3.6). An explicit stack, a frame's kids the
+    /// top run of `ks` from its start: a tree is as deep as its type.
+    pub fn postOrder(t: *const Table, gpa: Allocator, places: *const Place.Table, roots: []const Node, out: *std.ArrayList(Node)) Allocator.Error!void {
+        var done: std.AutoHashMapUnmanaged(Node, void) = .empty;
+        defer done.deinit(gpa);
+        var stack: std.ArrayList([3]u32) = .empty;
+        defer stack.deinit(gpa);
+        var ks: std.ArrayList([2]u32) = .empty;
+        defer ks.deinit(gpa);
+        var sorted: std.ArrayList([2]u32) = .empty;
+        defer sorted.deinit(gpa);
+        for (roots) |root| {
+            var push = root;
+            while (true) {
+                if (push != 0 and !(try done.getOrPut(gpa, push)).found_existing) {
+                    try Forest.sortedKids(&t.trees, gpa, places, push, &sorted);
+                    try stack.append(gpa, .{ push, @intCast(ks.items.len), 0 });
+                    try ks.appendSlice(gpa, sorted.items);
+                }
+                const f = if (stack.items.len == 0) break else &stack.items[stack.items.len - 1];
+                push = 0;
+                if (f[2] < ks.items.len - f[1]) {
+                    push = ks.items[f[1] + f[2]][1];
+                    f[2] += 1;
+                    continue;
+                }
+                try out.append(gpa, f[0]);
+                ks.shrinkRetainingCapacity(f[1]);
+                _ = stack.pop();
+            }
+        }
+    }
+
     /// A stored condition as a walk-time one, its words in walk order
     /// (sorted by the raw occurrence word) in `arena`.
     pub fn cond(t: *const Table, arena: Allocator, c: StoredCond) Allocator.Error!Cond {
