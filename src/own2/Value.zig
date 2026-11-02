@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 
 pub const PathId = Ids.PathId;
 pub const PlaceId = Ids.PlaceId;
@@ -463,8 +464,8 @@ pub const Frame = struct {
     /// The root position's slot set of a `ref` value: its family, or
     /// `below` of its position's slot.
     pub fn refSlots(f: *Frame, v: Val) Error!SetId {
-        if (v.family != Slots.empty) return f.slots.belowSet(f.gpa, f.account, f.places, v.family);
-        return f.slots.below(f.gpa, f.account, f.places, f.pos.items[v.pos].slot);
+        if (v.family != Slots.empty) return Subtree.belowSet(f.slots, f.gpa, f.account, f.places, v.family);
+        return Subtree.below(f.slots, f.gpa, f.account, f.places, f.pos.items[v.pos].slot);
     }
 };
 

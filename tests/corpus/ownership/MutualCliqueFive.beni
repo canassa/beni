@@ -1,0 +1,64 @@
+-- ownership: a group of types that each name every other one is read
+-- whole by prefix, never path by path (#1706). Five types, each holding a
+-- list and a `Maybe` of each other one: the subtree below `t` has a path
+-- for every order of visiting the group, so a deep read of it written out
+-- slot by slot passed the summary limit. `f` pushes onto the list of its
+-- parameter: accepted, `param`, with the read of `t` one deep effect.
+type K0
+    = K0
+        (List Int)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+    | KEnd0
+
+
+type K1
+    = K1
+        (List Int)
+        (Maybe K0)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+    | KEnd1
+
+
+type K2
+    = K2
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K3)
+        (Maybe K4)
+    | KEnd2
+
+
+type K3
+    = K3
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K4)
+    | KEnd3
+
+
+type K4
+    = K4
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+    | KEnd4
+
+
+pub f : K0 → List Int
+f t =
+    case t of
+        K0 xs _ _ _ _ →
+            List.push xs 1
+
+        KEnd0 →
+            []
