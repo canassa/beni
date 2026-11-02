@@ -1,0 +1,34 @@
+-- Core-private scheduler callbacks retain their captures after the call.
+-- Changing escaped to borrowed must not make a later write safe.
+import Js.Runtime
+import List
+
+
+micro xs =
+    Js.Runtime.microtask λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+macro xs =
+    Js.Runtime.macrotask λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+timer xs =
+    _ = Js.Runtime.timer 1 λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+-- Scalar-only adapters and the Task-only sentinel have no mutable payload
+-- whose ownership can be improved. Task.timeout reaches Task.requeue and
+-- Js.Runtime.parked through the runtime, rather than exposing them here.
+scalar ⊤ =
+    _ = Js.Runtime.now ⊤
+    _ = Js.Runtime.random ⊤
+    Js.Runtime.defect "done"

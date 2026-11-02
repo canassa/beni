@@ -183,21 +183,23 @@ const detach = (port, step) => {
   req.end(step.body ?? "");
 };
 
-// A request the client gives up on as soon as it is sent: the connection is
-// destroyed once the request has left, so the server sees a client that is
-// gone before it answers.
+// Abort only after Node acknowledges the request headers. A local flush
+// callback does not establish server receipt: destroying there can discard
+// the request before its handler starts. The HTTP 100-continue handshake
+// establishes receipt without a scheduling delay or waiting for the answer.
 const abortStep = (port, step) =>
   new Promise((resolve) => {
     printRequest(step, " (aborted)");
     const req = http.request(
-      { host: "127.0.0.1", port, method: step.method ?? "GET", path: step.path, headers: step.headers ?? {}, agent: new http.Agent({ keepAlive: false }) },
+      { host: "127.0.0.1", port, method: step.method ?? "GET", path: step.path, headers: { ...step.headers, Expect: "100-continue" }, agent: new http.Agent({ keepAlive: false }) },
       () => {},
     );
     req.on("error", () => {});
     req.on("socket", (socket) => {
       socket.on("close", () => resolve());
     });
-    req.end(step.body ?? "", () => req.destroy());
+    req.on("continue", () => req.destroy());
+    req.end(step.body ?? "");
   });
 
 // A request whose client leaves after the first chunk of the answer, while

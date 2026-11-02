@@ -1,0 +1,15 @@
+module RuntimeWords
+  9:13 List.push xs: rejected later-use: xs is read again at 11:5
+  11:5 List.push xs: rejected escaped: a function value that Js.Runtime.microtask hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  16:13 List.push xs: rejected later-use: xs is read again at 18:5
+  18:5 List.push xs: rejected escaped: a function value that Js.Runtime.macrotask hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  23:13 List.push xs: rejected later-use: xs is read again at 25:5
+  25:5 List.push xs: rejected escaped: a function value that Js.Runtime.timer hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  summary micro: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary macro: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary timer: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary scalar: res ⊤{lost}r{lost}
+  demands 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 6: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause escaped 3
+cause later-use 3

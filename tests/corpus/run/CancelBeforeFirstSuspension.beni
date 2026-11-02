@@ -1,0 +1,14 @@
+import Io
+import Node
+import Task
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    fiber = Task.spawn λ⊤ →
+        Debug.log "started" ⊤
+        Task.yieldNow ⊤
+        Debug.log "past cancellation" ⊤
+        ⊤
+    Task.cancel fiber
+    Node.print (Debug.toString (Task.poll fiber))

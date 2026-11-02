@@ -178,7 +178,6 @@ module Js
   value bitXor : int, int → int
   value call : Value, name, args → Value  -- impure
   value catchIf : (⊤ → a), (Value → bool), (Value → a) → a  -- impure
-  value completion : ⊤ → (a → ⊤)  -- impure
   value construct : Value, args → Value  -- impure
   value development : ⊤ → bool
   value each : Value, (Value → ⊤) → ⊤  -- impure
@@ -190,7 +189,6 @@ module Js
   value global : name → Value  -- impure
   value gt : a, a → bool
   value instanceOf : Value, Value → bool  -- impure
-  value invoke : (a → b), a, (b → ⊤) → b  -- impure
   value isNull : Value → bool
   value isNullish : Value → bool
   value isUndefined : Value → bool
@@ -620,7 +618,6 @@ module Task
   opaque type Scheduler
   opaque type Scope
   opaque type Soon
-  opaque type VirtualClock
   value andThen : a, (a → b) → b
   value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure
   value callback : ((Resume a) → (⊤ → ⊤)) → a  -- suspends
@@ -659,18 +656,18 @@ module Task
   value resume : Resume a, a → ⊤  -- impure
   value retry : (Schedule e), (⊤ → Result e a) → Result e a  -- suspends
   value running : Fiber a → Bool  -- impure
-  value scheduler : (⊤ → ⊤) → Scheduler  -- impure
+  value scheduler : (⊤ → ⊤) → (Scheduler)  -- impure
   value schedulerBusy : Scheduler → Bool  -- impure
   value schedulerFibers : Scheduler → Int  -- impure
-  value schedulerWith : ((⊤ → ⊤) → ⊤), ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
+  value schedulerWith : ((⊤ → ⊤) → ⊤), ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → (Scheduler)  -- impure
   value schedulersListed : ⊤ → Int  -- impure
   value scope : ((Scope) → a) → a  -- suspends
   value shutdown : Int, (Int → ⊤) → ⊤  -- impure
   value sleep : Duration → ⊤  -- suspends
-  value soon : (⊤ → ⊤) → Soon  -- impure
-  value spawn : (⊤ → a) → Fiber a  -- impure
-  value spawnDetached : (⊤ → a) → Fiber a  -- impure
-  value spawnIn : (Scope), (⊤ → a) → Fiber a  -- impure
+  value soon : (⊤ → ⊤) → (Soon)  -- impure
+  value spawn : (⊤ → a) → (Fiber a)  -- impure
+  value spawnDetached : (⊤ → a) → (Fiber a)  -- impure
+  value spawnIn : (Scope), (⊤ → a) → (Fiber a)  -- impure
   value start : (⊤ → a), (Exit a → ⊤) → ⊤  -- impure
   value stopScheduler : (Scheduler), Int, (Int → ⊤) → ⊤  -- impure
   value timeout : Duration, (⊤ → a) → Maybe a  -- suspends

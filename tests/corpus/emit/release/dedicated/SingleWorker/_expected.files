@@ -8,6 +8,11 @@ _platform/Worker.mjs
 _platform/runtime.foreign.mjs
 _workers/1c1928caf485efcb/SingleWorker.mjs
 _workers/1c1928caf485efcb/_core/Basics.mjs
+_workers/1c1928caf485efcb/_core/Js/Runtime.foreign.mjs
+_workers/1c1928caf485efcb/_core/Js/Runtime.mjs
+_workers/1c1928caf485efcb/_core/List.mjs
+_workers/1c1928caf485efcb/_core/Record.foreign.mjs
+_workers/1c1928caf485efcb/_core/Record.mjs
 _workers/1c1928caf485efcb/_core/Task.mjs
 _workers/1c1928caf485efcb/_main.mjs
 _workers/1c1928caf485efcb/_platform/Worker.foreign.mjs

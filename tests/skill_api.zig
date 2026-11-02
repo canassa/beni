@@ -125,7 +125,7 @@ fn coreOnly(module: []const u8, line: []const u8) bool {
     else
         return false;
     for (names) |name| {
-        for ([_][]const u8{ "  value ", "  type " }) |prefix| {
+        for ([_][]const u8{ "  value ", "  foreign value ", "  type ", "  opaque type " }) |prefix| {
             if (!std.mem.startsWith(u8, line, prefix)) continue;
             const rest = line[prefix.len..];
             if (std.mem.startsWith(u8, rest, name) and

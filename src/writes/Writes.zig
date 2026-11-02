@@ -3234,7 +3234,7 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
                 }
             } else if (decl.kind == .foreign_value) {
                 probe.suspends = true;
-            } else if (decl.params > 0) return a.direct(m, d, args, g);
+            } else if (decl.params > 0) return a.direct(m, d, args, g, body_mode);
         }
     }
     if (a.in.effects) |fx| if (try a.effectCall(fx, m, d, args)) |t| return t;

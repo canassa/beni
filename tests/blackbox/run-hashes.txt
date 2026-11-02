@@ -39,8 +39,8 @@ build_test.test.--release refuses a build that reaches Debug; the same program b
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 dd0bea7b0b9fffe8a8f90c0aef6b2e1035ecc7600e7ee74583af413e1956ce54
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 9e5d5b94ebf8911ff07562860928ff86f5323deaffa33f61c65d044fde06c5d0
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 ebbdd61691f82e43d7d11ea8296ddb4e617bf55023a2355bc5b8f7022aac0bd6
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 5b30ab7edbefcf149e08ce2ecf02ba1d1454e92c2fa768754aa1507bea8c7f9d
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 9db2665deea8f4dad621feb3c151a804ae3ededde97a387ca8aab29ef71d3f11
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 77e4e0ea3d2b1e59d2b5eda872310df65b3f56ac855c90d14fa9ca62e84a3797
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 dbb8471a7115504450b6c8a339cb1bd40119caab93e29fc17252ea8eabcca8d7
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 0fd8e45ccfd565d1f2ac7d89726e73550bd70ccd06fc54968e043298de7bf764
 build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 44ecc7a339cbef9425b78b03aed04d6203b6ea2021a3b2fe69739a212938d496
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 3a684eb60c6507bc2b67c62bb4fb634cb9822a0238a847593a6a5b971afefc94
@@ -54,8 +54,8 @@ build_test.test.a development build copies hand-written JavaScript byte for byte
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 da4f95bb5fbddf9783fac2d8b054be1b9c3e4defe1abf0b63251c18e9360ba6c
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 585ac960a23b92bdb637da0b69b4cf404adb14a189fe4e88a8d985afebb18594
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 9f4abf3e47f5f2593e5857b78320e126dfea8c8ed00f8c9baf97b2e66ee48155
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 a1789223490c001286ea4afc6d935697347f0996b88f685929067e6ec7b8a2ed
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 e8a93fbdde9ed9627dff14b5398aae9e20af0f81457d7c3bade46e94a97924a8
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 e4bbb9d2a5573ab0e779fe469b53d88d5a0394831622c12c32fa5de614d5aa2b
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 79bb4236562938f1d99f631eba96766d57f9ca6cae4199347f1bc90e09b5b520
 build_test.test.a non-zero exit code from the platform reaches the process #0 79dc1058f7ce57adae9e9ff9fdc290ff29f9c9bb2546fa8f10fbbddada2f1b0b
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
@@ -64,7 +64,7 @@ build_test.test.a platform that declares exports gets an entry file that exports
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #1 3ba1fe19ce10eb75bf1245700c570da39147951bfcd5dc77667060fd8a65262c
 build_test.test.a platform that declares exports gets an entry file that exports what run returns, in both builds #2 c0a4c377b0770e255b520ef57b83968cbc7866c69e7b781adbfcd89b968cefe1
 build_test.test.a program computes something and prints the right answer #0 f3e0231f20bfd7aeec04a3abc4adbeae7db7a1d20270c6dcbd9102be4e2d3686
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 634946bbe4ba220353da0d4343fc437d165545075d8772889ca06e1eed34ead8
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 2fa01f11e7ba669a8c82a0c662689a9a4d8a4819b4969d687f317c5406fe9235
 build_test.test.a project that lists exports for a platform without the key gets a warning and a build #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 265af6e8ab60960da933835356ac1f9958054dd56a15e3ba6d1d6644ac5288bd
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 b3d11a735033774d93cd1586051419fb5bbc4fd647cd18a54053da5bc90639e5
@@ -145,25 +145,25 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 14b30c7ff7ee51f14951aed9a5adc7b2c4a876d7c4d4a4624a09e1d509f542ba
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 b46ddba369fbfdec5cbe9b0901ccd3dbbb6793d6b1ab4fd91f359d9fa6f46fed
 ordering_test.test.nullary methods and record defaults print the same reversed #0 4b82a541713d2a1be9f08f673e10fddf5148f81cdff5a101513a016cb029fa79
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 69a44580ac025f3a49fa5c4b488acf633f03f0d51eae19483d7466aef09eef0b
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 2c662446b453f07205846a92ca4a2f796763b2b9c9b9a00d0101a18c1d5ebf5a
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 2b2e7f5ba1be83822f35e32ecce93e432e36a759435ff5125691f0f91d6d9ecb
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 a9e3bdfb4730cf733ce9fd29884045fb3a195244540f8d1909ae52de7f976f40
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 9f3ae5a0c08f50414a483875cdf8b9ee7066ad766809556f41cfb4b0657b6ff2
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 6fe0515971745e5e0d4d6c1a12dd1aa78ce47965a0e80169d6074e8e30f33a11
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 971f9cc77820dea89f4654ac49b0551de3815c8c251b90e1f1b7e4c3b2715adc
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 894ffb135ded5bc905e1941bc1df845d03446348bb42f18802c6fbfb74c6a671
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 2b499712aa522edf5f44fd36943b8a980c8b9bb65d863b8a2036616456b780d0
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 f0ccf482e058f2952b35ec7d4043dc75a1c5448515c0483778945323c9a7e4e1
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 197249dec2e07e74ff7487a5508238c2b8e8f4cbd6a99d7da48ef2912a5c5e17
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 ea4003f6c9f7c83fed4a3cdc248c3f31b9e02894d09e95fd251bcde98c91f680
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 8ef8b2c6cd3aa2b5242ae89dd214e9810d523db1dc692f6441354683f313743f
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 b1a7e0caf06da65a651f8ec6d1f6d48fa794b6c0a917b8765edc2630cc922b96
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 ab8db8189edf868a5d3da0870d0425c569069b715798313b63c90b67e9e83bb9
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 8b6ddf6cef074f217f203c55187220866cdcab641fc6efea33e6b1f4df7d508c
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
-platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 cc12fb90b64981940baf6d3aa327c34acd759b278b3b41b1f8f99bec983d2401
-platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 7ebd8a471118cd3046dcafef4011c35aa9efdf09013ae4154f51051c6df2b217
-platform_test.test.generic aliased runtime may store a suspending callback without calling it #2 ba3c84c27fdeb5944a3beb60d45b7e69a3475601d75c23244b92549636ea3593
-platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 36f148b2ee6e64c043bb46fba68e44f01bc8c136757ff0a76bc4da7af14e92ca
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 1958744680188134deaa86c628c33a1fd3ba78efccf1e61b6c215d611d6b9d61
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 fc7c4a517a548826700ac73ce3b2d9ebfca0786a727a103cb4f9b78c77b7e28d
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #2 1265ec7550a76605e8fde2c37dbeb9e4011326e0c275291670e28f7018e3da73
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 ed21178ce09338d3d09e37e73176fba5a26429ee80f36f740ff84677051bd338
 platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #0 552778c27edf20abfb9ab735e12b97f7a6bf4ddff165405bd01ebccb27a8fae7
 platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #1 3ae44a88e14cb4d6e1698816bdba76e183aa4689f03b6d2ebf33ac249eb8a2dd
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 60aa1d99413c576ea8f3b8e2a258b3a5fe605661e38af5031b19467e9868a69c
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 a9b6864aef6eb56e2b9b84e680e99eecc976d7143720bbd351827c52dba8e174
-platform_test.test.worker launch URLs stay relative to their module under release specialization #0 1976f41a0154f7fdfac467ea9bfff0f527b6d6aed8ed3d9bfdc33751fc0911fd
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 d7fbf657ee9786e1485b6654818cc7fc90630fea2525bf95e4e636c82b1f2ebc
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 e08abd43bfa98aa9190a89319df48505c0e381389c1a9b1210cf632a54ce2f0e
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 20bf50d439b28645582b726ee2a4ce6c7fb7506ad0a42524fb291cc6ce194e9d
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 5dc91957f2b1e638b07d6c964856359bb351702c772d2c7a3619ad071fda15d3
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 9d9b9fa2810d8161aa31e7edbc06bdff2a9717f5317f3859310c1b8397485dff

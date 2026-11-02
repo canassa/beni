@@ -2886,3 +2886,10 @@ tests/corpus/ownership/FoldCertificateImportedPair [node] Main 27:14 #0 :: Main.
 tests/corpus/ownership/FoldCertificateImportedPair [node] Main 27:14 #0 :: Main.incAll <call>#Node.1 :: absent :: rejected  #1570 each imported certificate on its own class: v1 names the cycle (`⟨Tree⟩`), v2 the folded paths; each row's verdict is pinned by FoldCertificateImportedPair/_expected.v2.ownership
 tests/corpus/ownership/FoldCertificateImportedPair [node] Main 27:14 #0 :: Main.incAll <call>#Node.0⟨Tree⟩#Node.1 :: absent :: rejected  #1570 each imported certificate on its own class: v1 names the cycle (`⟨Tree⟩`), v2 the folded paths; each row's verdict is pinned by FoldCertificateImportedPair/_expected.v2.ownership
 tests/corpus/ownership/FoldCertificateImportedPair [node] Main 27:14 #0 :: Main.incAll <call>#Node.0#Node.1 :: absent :: rejected  #1570 each imported certificate on its own class: v1 names the cycle (`⟨Tree⟩`), v2 the folded paths; each row's verdict is pinned by FoldCertificateImportedPair/_expected.v2.ownership
+# #1664: typed Ref chain snapshots; the fresh accumulator never enters the input chain.
+core Task 2840:23 #0 :: Task.linksList <literal> :: accepted :: rejected  #1664: v2 aliases the earlier Ref payload with a fresh snapshot accumulator
+core Task 2853:21 #0 :: Task.linksList <construction> :: accepted :: rejected  #1664: v2 aliases the input Ref chain with its separate accumulator
+core Task 2853:54 #0 :: construction values :: accepted :: rejected  #1664: the accumulator is never stored into the input chain
+tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 11:18 #0 :: ChainSnapshot.collect <literal> :: accepted :: rejected  #1664: a fresh accumulator cannot alias the earlier Ref payload
+tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 24:21 #0 :: ChainSnapshot.collect <construction> :: accepted :: rejected  #1664: the snapshot accumulator is separate from the input chain
+tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 24:52 #0 :: construction values :: accepted :: rejected  #1664: the accumulator is never stored into the input chain

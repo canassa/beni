@@ -5,6 +5,6 @@ const hold = event => { event.stopImmediatePropagation(); pending.push(event.dat
 globalThis.addEventListener("message", hold);
 const runtime = await import("./_platform/WorkerRuntime.mjs");
 const program = await import("./SingleWorker.mjs");
-runtime.nb(program.e);
+runtime.Rb(program.e);
 globalThis.removeEventListener("message", hold);
 for (const data of pending) globalThis.dispatchEvent(new MessageEvent("message", { data }));
