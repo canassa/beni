@@ -19,7 +19,7 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 16;
+pub const version: u32 = 17;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -40,6 +40,9 @@ pub const Remap = struct {
     decl: *const fn (ctx: *anyopaque, string: u32) ?[2]u32,
 };
 
+/// A writer's node to its index in the node table (from 1).
+const Index = std.AutoHashMapUnmanaged(Contract.Node, u32);
+
 const Writer = struct {
     t: *const Contract.Table,
     slots: *const Slots.Table,
@@ -53,21 +56,20 @@ const Writer = struct {
     }
 
     fn rel(w: *Writer, r: Slots.Rel) Allocator.Error!void {
-        return w.steps(w.slots.relWords(r));
+        try w.word(@intCast(w.slots.relWords(r).len));
+        for (w.slots.relWords(r)) |wd| try w.step(wd);
     }
 
-    fn steps(w: *Writer, words: []const u32) Allocator.Error!void {
-        try w.word(@intCast(words.len));
-        for (words) |wd| {
-            const s = Step.fromWord(wd);
-            switch (s.kind) {
-                .field => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), w.names.field(w.names.ctx, s.payload), 0 }),
-                .ctor_arg => {
-                    const ca = w.places.ctorArgOf(s);
-                    try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), ca[0], ca[1] });
-                },
-                else => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), s.payload, 0 }),
-            }
+    /// One step as `(kind, a, b)`.
+    fn step(w: *Writer, wd: u32) Allocator.Error!void {
+        const s = Step.fromWord(wd);
+        switch (s.kind) {
+            .field => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), w.names.field(w.names.ctx, s.payload), 0 }),
+            .ctor_arg => {
+                const ca = w.places.ctorArgOf(s);
+                try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), ca[0], ca[1] });
+            },
+            else => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), s.payload, 0 }),
         }
     }
 
@@ -90,57 +92,68 @@ const Writer = struct {
         }
     }
 
-    /// The reads, a tree a parameter, written as its effects in order.
-    fn reads(w: *Writer, r: Ids.Range) Allocator.Error!void {
-        var es: Forest.Entries = .{};
-        defer es.deinit(w.gpa);
-        const at = w.out.items.len;
-        try w.word(0);
-        for (w.t.readsOf(r)) |x| {
-            try es.of(&w.t.trees, w.gpa, w.places, x[1], &.{});
-            for (es.items.items) |e| {
-                try w.word(x[0]);
-                try w.steps(es.wordsOf(e));
-                try w.word(@intFromBool(e.open));
+    /// The node table of a contract's trees (§3.6, version 17): every node
+    /// its result, its reads and its supplies' results reach, once, in
+    /// post-order with each node's kids in the canonical order; `index`
+    /// maps a node to its place in the table (from 1; 0 is the empty node).
+    fn table(w: *Writer, roots: []const Contract.Node, index: *Index) Allocator.Error!void {
+        var order: std.ArrayList(Contract.Node) = .empty;
+        defer order.deinit(w.gpa);
+        try w.t.postOrder(w.gpa, w.places, roots, &order);
+        var ks: std.ArrayList([2]u32) = .empty;
+        defer ks.deinit(w.gpa);
+        try w.word(@intCast(order.items.len));
+        for (order.items, 1..) |n, at| {
+            try w.arrivals(w.t.trees.here(n));
+            try w.arrivals(w.t.trees.open(n));
+            try Forest.sortedKids(&w.t.trees, w.gpa, w.places, n, &ks);
+            try w.word(@intCast(ks.items.len));
+            for (ks.items) |k| {
+                try w.step(k[0]);
+                try w.word(nodeIndex(index, k[1]));
             }
-            w.out.items[at] += @intCast(es.items.items.len);
+            try index.put(w.gpa, n, @intCast(at));
         }
     }
 
-    fn res(w: *Writer, root: Contract.Node) Allocator.Error!void {
-        var es: Forest.Entries = .{};
-        defer es.deinit(w.gpa);
-        try es.of(&w.t.trees, w.gpa, w.places, root, &.{});
-        try w.word(@intCast(es.items.items.len));
-        for (es.items.items) |s| {
-            try w.steps(es.wordsOf(s));
-            try w.word(@intFromBool(s.open));
-            try w.word(@intCast(s.arrivals.len));
-            for (s.arrivals) |a| {
-                try w.word(@backingInt(a.kind) | (@as(u32, @intFromBool(a.deep)) << 8));
-                switch (a.kind) {
-                    .param => {
-                        try w.word(a.j);
-                        try w.rel(a.slot);
-                    },
-                    .shared => try w.word(w.names.decl(w.names.ctx, .{ a.j, a.slot })),
-                    .cb => {
-                        try w.word(a.j);
-                        try w.rel(a.slot);
-                    },
-                    .fresh, .top => {},
-                }
+    fn arrivals(w: *Writer, run: []const Contract.Arrival) Allocator.Error!void {
+        try w.word(@intCast(run.len));
+        for (run) |a| {
+            try w.word(@backingInt(a.kind) | (@as(u32, @intFromBool(a.deep)) << 8));
+            switch (a.kind) {
+                .param, .cb => {
+                    try w.word(a.j);
+                    try w.rel(a.slot);
+                },
+                .shared => try w.word(w.names.decl(w.names.ctx, .{ a.j, a.slot })),
+                .fresh, .top => {},
             }
         }
+    }
+
+    fn nodeIndex(index: *const Index, n: Contract.Node) u32 {
+        return if (n == 0) 0 else index.get(n).?;
     }
 
     fn contract(w: *Writer, c: Contract.Id) Allocator.Error!void {
         const h = w.t.head(c);
         try w.word(h.arity);
         try w.word(@as(u8, @bitCast(h.flags)));
-        try w.res(h.res_root);
+        var roots: std.ArrayList(Contract.Node) = .empty;
+        defer roots.deinit(w.gpa);
+        try roots.append(w.gpa, h.res_root);
+        for (w.t.readsOf(h.reads)) |x| try roots.append(w.gpa, x[1]);
+        for (w.t.labelsOf(h.labels)) |l| for (w.t.suppliesOf(l.supplies)) |s| try roots.append(w.gpa, s.res_root);
+        var index: Index = .empty;
+        defer index.deinit(w.gpa);
+        try w.table(roots.items, &index);
+        try w.word(nodeIndex(&index, h.res_root));
         try w.cond(h.res_cond);
-        try w.reads(h.reads);
+        try w.word(h.reads.len);
+        for (w.t.readsOf(h.reads)) |x| {
+            try w.word(x[0]);
+            try w.word(nodeIndex(&index, x[1]));
+        }
         try w.effects(h.writes);
         try w.cond(h.req);
         try w.effects(h.escapes);
@@ -154,7 +167,7 @@ const Writer = struct {
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
                 try w.word(s.k);
-                try w.res(s.res_root);
+                try w.word(nodeIndex(&index, s.res_root));
                 try w.effects(s.kept);
                 try w.cond(s.cond);
             }
@@ -196,27 +209,28 @@ const Reader = struct {
     }
 
     fn rel(r: *Reader) Error!Slots.Rel {
-        const n = try r.next();
-        if (n > r.words.len) return error.BadBlock;
-        const out = try r.arena.alloc(u32, n);
-        for (out) |*o| {
-            const kind = try r.next();
-            const a = try r.next();
-            const b = try r.next();
-            if (kind > @backingInt(Place.StepKind.level)) return error.BadBlock;
-            const k: Place.StepKind = @fromBackingInt(@intCast(kind));
-            const s: Step = switch (k) {
-                .field => blk: {
-                    const rank = r.remap.field(r.remap.ctx, a) orelse return error.BadBlock;
-                    (try r.field_string.getOrPut(r.gpa, .{rank})).value_ptr.* = a;
-                    break :blk try Step.field(r.account, rank);
-                },
-                .ctor_arg => try r.places.ctorStep(r.gpa, r.account, a, b),
-                else => .{ .kind = k, .payload = @intCast(a & 0x0fff_ffff) },
-            };
-            o.* = s.word();
-        }
+        const out = try r.arena.alloc(u32, try r.count());
+        for (out) |*o| o.* = try r.step();
         return r.slots.relOfWords(r.gpa, r.account, r.places, out);
+    }
+
+    /// One step `(kind, a, b)` as this module's step word.
+    fn step(r: *Reader) Error!u32 {
+        const kind = try r.next();
+        const a = try r.next();
+        const b = try r.next();
+        if (kind > @backingInt(Place.StepKind.level)) return error.BadBlock;
+        const k: Place.StepKind = @fromBackingInt(@intCast(kind));
+        const s: Step = switch (k) {
+            .field => blk: {
+                const rank = r.remap.field(r.remap.ctx, a) orelse return error.BadBlock;
+                (try r.field_string.getOrPut(r.gpa, .{rank})).value_ptr.* = a;
+                break :blk try Step.field(r.account, rank);
+            },
+            .ctor_arg => try r.places.ctorStep(r.gpa, r.account, a, b),
+            else => .{ .kind = k, .payload = @intCast(a & 0x0fff_ffff) },
+        };
+        return s.word();
     }
 
     fn decl(r: *Reader) Error![2]u32 {
@@ -228,9 +242,7 @@ const Reader = struct {
 
     fn cond(r: *Reader) Error!Contract.Cond {
         const no = try r.next() != 0;
-        const n = try r.next();
-        if (n > r.words.len) return error.BadBlock;
-        const run = try r.arena.alloc(u64, n);
+        const run = try r.arena.alloc(u64, try r.count());
         for (run) |*o| {
             const j = try r.next();
             o.* = Contract.occ(j & 0x3fff_ffff, try r.rel()) | (if (j >> 31 != 0) Contract.apart_bit else 0) | (if ((j >> 30) & 1 != 0) Contract.deep_bit else 0);
@@ -240,9 +252,7 @@ const Reader = struct {
     }
 
     fn effects(r: *Reader, out: *std.ArrayList(Contract.Effect)) Error!void {
-        const n = try r.next();
-        if (n > r.words.len) return error.BadBlock;
-        for (0..n) |_| {
+        for (0..try r.count()) |_| {
             const j = try r.next();
             const s = try r.rel();
             const deep = try r.next() != 0;
@@ -250,48 +260,67 @@ const Reader = struct {
         }
     }
 
-    fn res(r: *Reader, out: *Contract.Draft.Res) Error!void {
+    /// A contract's node table (§3.6, version 17), each node re-interned in
+    /// `t`'s trees (equal subtrees are one node here too): `out[i]` is the
+    /// block's node `i` (0 the empty node). A kid names an earlier node.
+    fn table(r: *Reader, t: *Contract.Table, out: *std.ArrayList(Contract.Node)) Error!void {
+        try out.append(r.arena, 0);
+        for (0..try r.count()) |_| {
+            const plain = try r.arrivals();
+            const open = try r.arrivals();
+            const kids = try r.arena.alloc([2]u32, try r.count());
+            for (kids) |*k| k.* = .{ try r.step(), try node(out.items, try r.next()) };
+            try out.append(r.arena, try t.trees.node(r.gpa, plain, open, kids));
+        }
+    }
+
+    /// A count, no more than the block's words.
+    fn count(r: *Reader) Error!u32 {
         const n = try r.next();
-        if (n > r.words.len) return error.BadBlock;
-        for (0..n) |_| {
-            const slot = try r.rel();
-            const open = try r.next() != 0;
-            const na = try r.next();
-            if (na > r.words.len) return error.BadBlock;
-            for (0..na) |_| {
-                const kw = try r.next();
-                if ((kw & 0xff) > @backingInt(Contract.ArrivalKind.top)) return error.BadBlock;
-                var a: Contract.Arrival = .{ .kind = @fromBackingInt(@intCast(kw & 0xff)), .deep = kw >> 8 != 0 };
-                switch (a.kind) {
-                    .param, .cb => {
-                        a.j = try r.next();
-                        a.slot = try r.rel();
-                    },
-                    .shared => {
-                        const md = try r.decl();
-                        a.j = md[0];
-                        a.slot = md[1];
-                    },
-                    .fresh, .top => {},
-                }
-                if (open) try Contract.Draft.markOpen(out, r.arena, slot);
-                _ = try Contract.Draft.addArrival(out, r.arena, slot, a);
+        return if (n > r.words.len) error.BadBlock else n;
+    }
+
+    fn arrivals(r: *Reader) Error![]Contract.Arrival {
+        const out = try r.arena.alloc(Contract.Arrival, try r.count());
+        for (out) |*a| {
+            const kw = try r.next();
+            if ((kw & 0xff) > @backingInt(Contract.ArrivalKind.top) or kw >> 9 != 0) return error.BadBlock;
+            a.* = .{ .kind = @fromBackingInt(@intCast(kw & 0xff)), .deep = kw >> 8 != 0 };
+            switch (a.kind) {
+                .param, .cb => {
+                    a.j = try r.next();
+                    a.slot = try r.rel();
+                },
+                .shared => {
+                    const md = try r.decl();
+                    a.j = md[0];
+                    a.slot = md[1];
+                },
+                .fresh, .top => {},
             }
         }
+        return out;
+    }
+
+    fn node(nodes: []const Contract.Node, i: u32) Error!Contract.Node {
+        return if (i < nodes.len) nodes[i] else error.BadBlock;
     }
 
     fn contract(r: *Reader, t: *Contract.Table) Error!Contract.Id {
         var d: Contract.Draft = .{ .arity = try r.next() };
         d.flags = @bitCast(@as(u8, @truncate(try r.next())));
-        try r.res(&d.res);
+        var nodes: std.ArrayList(Contract.Node) = .empty;
+        try r.table(t, &nodes);
+        d.res.base = try node(nodes.items, try r.next());
         d.res_cond = try r.cond();
-        try r.effects(&d.reads);
+        for (0..try r.count()) |_| {
+            const j = try r.next();
+            try d.reads.append(r.arena, .{ .j = j, .slot = Slots.root, .node = try node(nodes.items, try r.next()) });
+        }
         try r.effects(&d.writes);
         d.req = try r.cond();
         try r.effects(&d.escapes);
-        const nl = try r.next();
-        if (nl > r.words.len) return error.BadBlock;
-        for (0..nl) |_| {
+        for (0..try r.count()) |_| {
             const j = try r.next();
             const slot = try r.rel();
             const md = try r.decl();
@@ -300,12 +329,10 @@ const Reader = struct {
             if (calls > 2) return error.BadBlock;
             const li = try d.labelOf(r.arena, j, slot, .{ md[0], md[1], off });
             d.labels.items[li].calls = @fromBackingInt(@intCast(calls));
-            const ns = try r.next();
-            if (ns > r.words.len) return error.BadBlock;
-            for (0..ns) |_| {
+            for (0..try r.count()) |_| {
                 const k = try r.next();
                 const s = try d.labels.items[li].supplyOf(r.arena, k);
-                try r.res(&s.res);
+                s.res.base = try node(nodes.items, try r.next());
                 try r.effects(&s.kept);
                 s.cond = try r.cond();
             }
