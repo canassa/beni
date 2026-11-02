@@ -21,7 +21,10 @@
 --! release build writes where the call is (`backend.md` §9, *A function
 --! called once is written where it is called*).
 
+import Browser.Host.Timers as Timers
 import Js
+import Js.Chain as Chain
+import Js.Protocol as Protocol
 import Task
 
 
@@ -363,16 +366,16 @@ childHtml s b =
 
 -- The module's `let`s: the programs with a render queued, whether a flush
 -- is, and the after-render phase a hosted program sets.
-queued : Js.Ref V
-queued = Js.ref (Js.array [])
+queued : Js.Ref (Chain.Chain (⊤ → ⊤))
+queued = Js.ref (Chain.make ⊤)
 
 
 scheduled : Js.Ref Bool
 scheduled = Js.ref False
 
 
-phase : Js.Ref V
-phase = Js.ref Js.null
+phase : Js.Ref (Maybe (⊤ → ⊤))
+phase = Js.ref Nothing
 
 
 -- A turn runs (`backend.md` §15.11, *A render at the end of a turn*): an
@@ -449,7 +452,11 @@ stop ⊤ =
     -- Only a hosted mount runs fibers, and one sets the after-render
     -- `phase` when it mounts: a page of `Browser.program`s never calls
     -- `shutdown`, and its release build knows it.
-    if Js.isNull (Js.read phase) then ⊤ else Task.shutdown deadline stopped
+    case Js.read phase of
+        Nothing →
+            ⊤
+        Just _ →
+            Task.shutdown deadline stopped
     Js.write dead True
 
 
@@ -574,13 +581,14 @@ flush ⊤ =
                 Js.write scheduled False
                 Js.write flushing True
                 renders = Js.read queued
-                Js.write queued (Js.array [])
-                Js.each renders λrender → Js.to (Js.apply render [])
+                Js.write queued (Chain.make ⊤)
+                renderJobs renders
 
-                if Js.isNullish (Js.read phase) then
-                    ⊤
-                else
-                    Js.to (Js.apply (Js.read phase) [])
+                case Js.read phase of
+                    Nothing →
+                        ⊤
+                    Just after →
+                        Protocol.call after ⊤
                 Js.write ok True
             )
             λ⊤ →
@@ -645,10 +653,10 @@ startOne m =
             root
 
 
-setPhase : V → V
+setPhase : (⊤ → ⊤) → Bool
 setPhase f =
-    Js.write phase f
-    Js.from (Js.read scheduled)
+    Js.write phase (Just f)
+    Js.read scheduled
 
 
 -- Render `view (init ⊤)` after the children of `root`, and mark `root` with
@@ -679,7 +687,7 @@ mount program root =
                     ⊤
                 else
                     Js.write waiting True
-                    _ = Js.call (Js.read queued) "push" [ Js.from render ]
+                    _ = Chain.append (Js.read queued) render
                     if Js.read scheduled then
                         ⊤
                     else
@@ -688,10 +696,7 @@ mount program root =
                         if Js.read turning then
                             ⊤
                         else
-                            Js.to
-                                (Js.apply (Js.global "queueMicrotask")
-                                    [ Js.from λ⊤ → microtask ⊤ ]
-                                )
+                            Timers.queueMicrotask microtask
                 -- `update` has the program's log context, whoever sends
                 -- the message (`boundary.md` §9.8.16 (b), amended
                 -- 2026-10-23). The call is written twice, so that a build
@@ -2355,3 +2360,15 @@ fuzzSend node msg = turn False λ⊤ →
                 Js.write ok True
             )
             λ⊤ → if Js.read ok then ⊤ else stop ⊤
+
+
+-- A flush drains the snapshot it took; renders queued while it runs belong
+-- to the next flush. Invocation retains the actual callback summary.
+renderJobs : Chain.Chain (⊤ → ⊤) → ⊤
+renderJobs jobs =
+    case Chain.shift jobs of
+        Nothing →
+            ⊤
+        Just render →
+            Protocol.call render ⊤
+            renderJobs jobs

@@ -18,7 +18,7 @@ module Browser
     External
   value flush : ⊤ → ⊤  -- impure
   value hosted : { init : Host msg → model, settle : Host msg, model → model, update : Host msg, msg, model → model, view : model → Html msg } → Program  -- impure
-  value installRendered : Value → ⊤  -- impure
+  value installRendered : (Resume ⊤ → (⊤ → ⊤)) → ⊤  -- impure
   value mountAt : Program, String → Program  -- impure
   value onRendered : Resume ⊤ → (⊤ → ⊤)  -- impure
   value prerender : Program, List String → Program

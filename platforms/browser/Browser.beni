@@ -11,7 +11,9 @@
 
 import Html exposing (Html)
 import Js
+import Js.Chain as Chain
 import Js.Host as TypedHost
+import Js.Protocol as Protocol
 import Task
 import Url exposing (Url)
 
@@ -150,40 +152,49 @@ hosted p =
 --| message.
 pub flush : ⊤ → ⊤
 flush ⊤ =
-    if Js.isNull (Js.read loop) || Js.read busy || Js.read dispatching then
-        ⊤
-    else
-        Js.to (Js.apply (Js.read loop) [])
+    if not (Js.read busy || Js.read dispatching) then
+        case Js.read loop of
+            Nothing →
+                ⊤
+            Just flushing →
+                Protocol.call flushing ⊤
 
 
---| How `Dom.rendered` waits: `resume` is called at the start of the
---| after-render phase of the flush the page has queued, or at once when
---| none is queued. Returns what stops the wait.
+--| Resume at the start of the next after-render phase, or immediately when
+--| no work is queued. The returned job cancels only this wait.
 pub onRendered : Task.Resume ⊤ → (⊤ → ⊤)
 onRendered resume =
-    if Js.isNull (Js.read directRendered) then
-        loopRendered resume
-    else
-        Js.to (Js.apply (Js.read directRendered) [ Js.from resume ])
+    case Js.read directRendered of
+        Nothing →
+            loopRendered resume
+        Just installed →
+            Protocol.call installed resume
 
 
 loopRendered : Task.Resume ⊤ → (⊤ → ⊤)
 loopRendered resume =
-    if
-        Js.isNull (Js.read loop)
-            || not (Js.to (Js.apply (Js.read setPhase) [ Js.from afterRender ]))
-                && Js.to (Js.get (Js.read later) "length") == 0
-    then
-        _ = Js.apply (Js.from resume) [ Js.null ]
-        Js.to Js.null
-    else
-        _ = Js.call (Js.read waiters) "push" [ Js.from resume ]
-        _ = Js.apply (Js.read nudge) []
+    active =
+        case Js.read loop of
+            Nothing →
+                False
+            Just _ →
+                queued =
+                    case Js.read setPhase of
+                        Nothing →
+                            False
+                        Just install →
+                            Protocol.call install afterRender
+                queued || Chain.size (Js.read later) > 0
+    if active then
+        pending = Js.read waiters
+        link = Chain.append pending resume
+        Protocol.call (Js.read nudge) ⊤
         λ⊤ →
-            i : Int
-            i = Js.to (Js.call (Js.read waiters) "indexOf" [ Js.from resume ])
-            if i ≥ 0 then
-                Js.to (Js.call (Js.read waiters) "splice" [ Js.from i, Js.from 1 ])
+            _ = Chain.remove pending link
+            ⊤
+    else
+        Task.resume resume ⊤
+        λ⊤ → ⊤
 
 
 -- ---- The hosted loop (`boundary.md` §9.8; `backend.md` §15.11) -----------
@@ -200,37 +211,31 @@ loopRendered resume =
 -- The runtime's loop, once a hosted program has mounted (null before),
 -- what sets its after-render phase, and what queues a flush: the last
 -- hosted mount node's `send`, with `skip`.
-loop : Js.Ref Js.Value
-loop = Js.ref Js.null
+loop : Js.Ref (Maybe (⊤ → ⊤))
+loop = Js.ref Nothing
 
 
-setPhase : Js.Ref Js.Value
-setPhase = Js.ref Js.null
+setPhase : Js.Ref (Maybe ((⊤ → ⊤) → Bool))
+setPhase = Js.ref Nothing
 
 
-nudge : Js.Ref Js.Value
-nudge = Js.ref Js.null
+nudge : Js.Ref (⊤ → ⊤)
+nudge = Js.ref λ⊤ → ⊤
 
 
--- A message no `update` sees: sent to queue a flush, and the render it
--- queues shows what the program showed.
+-- A renderer-private message queues a flush without applying update.
 skip : Js.Value
 skip = Js.array []
 
 
--- After-render work queued since the last flush, and the resumes of the
--- fibers waiting for its phase (`onRendered`), first queued first.
-later : Js.Ref Js.Value
-later = Js.ref (Js.array [])
+later : Js.Ref (Chain.Chain (⊤ → ⊤))
+later = Js.ref (Chain.make ⊤)
 
 
-waiters : Js.Ref Js.Value
-waiters = Js.ref (Js.array [])
+waiters : Js.Ref (Chain.Chain (Task.Resume ⊤))
+waiters = Js.ref (Chain.make ⊤)
 
 
--- A hosted program renders in a flush, or the after-render phase runs; and
--- a message is being dispatched. `flush` does nothing during either: the
--- flush already queued renders what the dispatch did.
 busy : Js.Ref Bool
 busy = Js.ref False
 
@@ -239,38 +244,48 @@ dispatching : Js.Ref Bool
 dispatching = Js.ref False
 
 
--- Messages sent while one was being dispatched, as apply, message pairs.
-inbox : Js.Ref Js.Value
-inbox = Js.ref (Js.array [])
+-- A nested update retains one closed job with the real message type.
+inbox : Chain.Chain (⊤ → ⊤)
+inbox = Chain.make ⊤
 
 
--- The after-render phase, which ends every flush once a hosted program has
--- mounted: the fibers waiting in `Dom.rendered` resume, in the order they
--- waited, then the work queued before this flush began runs, first queued
--- first, each at once. Work queued, or a message sent, while it runs is the
--- next flush's.
 afterRender : ⊤ → ⊤
 afterRender ⊤ =
     resumes = Js.read waiters
     work = Js.read later
-    Js.write waiters (Js.array [])
-    Js.write later (Js.array [])
+    Js.write waiters (Chain.make ⊤)
+    Js.write later (Chain.make ⊤)
     Js.write busy True
     Js.finally
         (λ⊤ →
-            Js.each resumes λresume → Js.to (Js.apply resume [ Js.null ])
-            Js.each work λf → Js.to (Js.apply f [])
+            resumeAll resumes
+            runJobs work
         )
         λ⊤ → Js.write busy False
 
 
--- Apply every message the inbox holds from `i` on, in the order they were
--- sent; one applied may send more, which land after them.
-drain : Int → ⊤
-drain i =
-    if i < Js.to (Js.get (Js.read inbox) "length") then
-        _ = Js.apply (Js.at (Js.read inbox) i) [ Js.at (Js.read inbox) (i + 1) ]
-        drain (i + 2)
+resumeAll : Chain.Chain (Task.Resume ⊤) → ⊤
+resumeAll resumes =
+    case Chain.shift resumes of
+        Nothing →
+            ⊤
+        Just resume →
+            Task.resume resume ⊤
+            resumeAll resumes
+
+
+runJobs : Chain.Chain (⊤ → ⊤) → ⊤
+runJobs jobs =
+    case Chain.shift jobs of
+        Nothing →
+            ⊤
+        Just work →
+            Protocol.call work ⊤
+            runJobs jobs
+
+
+drain : ⊤ → ⊤
+drain ⊤ = runJobs inbox
 
 
 -- A hosted mount, as the runtime reads one: `{ init, update, view }` whose
@@ -287,40 +302,40 @@ host :
       , view : sync (model → Html msg)
       }
     , Js.Value
-    , Js.Value
-    , Js.Value
-    , Js.Value
+    , sync (⊤ → ⊤)
+    , sync ((⊤ → ⊤) → Bool)
+    , sync (⊤ → ⊤)
     → Js.Value
 host p root flushing phase stop =
-    Js.write loop flushing
+    Js.write loop (Just flushing)
 
     -- A fiber that throws stops the page, as a handler that throws does.
     -- Once the page has stopped, `stop` cancels every fiber of every
     -- program (`boundary.md` §9.8.14). The after-render work not yet run is
     -- dropped with no help: only a flush runs it, and none runs once the
     -- page has stopped.
-    Task.onDefect λ⊤ → Js.to (Js.apply stop [])
-    Js.write setPhase phase
-    _ = Js.apply phase [ Js.from afterRender ]
+    Task.onDefect stop
+    Js.write setPhase (Just phase)
+    _ = phase afterRender
 
     send =
         λmsg →
             _ = Js.call root "$$root" [ msg ]
             ⊤
 
-    Js.write nudge (Js.from λ⊤ → send skip)
-    model = Js.ref (Js.to Js.null)
+    Js.write nudge λ⊤ → send skip
+    model = Js.ref Nothing
     started = Js.ref False
     dirty = Js.ref False
-    shown = Js.ref (Js.to Js.null)
+    shown = Js.ref Nothing
     self = TypedHost.make (λmessage → Js.to (Js.call root "$$root" [ message ])) λwork →
-        _ = Js.call (Js.read later) "push" [ Js.from work ]
+        _ = Chain.append (Js.read later) work
         send skip
 
     apply =
         λmsg →
             Js.write dirty True
-            Js.write model (p.update self (Js.to msg) (Js.read model))
+            Js.write model (Just (p.update self (Js.to msg) (stored model)))
     Js.from
         { init = λ⊤ → Js.null
         , update =
@@ -328,45 +343,54 @@ host p root flushing phase stop =
                 if Js.same msg skip then
                     ⊤
                 else if Js.read dispatching then
-                    _ = Js.call (Js.read inbox) "push" [ Js.from apply, msg ]
+                    _ = Chain.append inbox λ⊤ → apply msg
                     ⊤
                 else
                     Js.write dispatching True
                     Js.finally
                         (λ⊤ →
                             apply msg
-                            drain 0
+                            drain ⊤
                             ⊤
                         )
                         λ⊤ →
-                            Js.write inbox (Js.array [])
+                            Chain.clear inbox
                             Js.write dispatching False
         , view =
             λ⊤ →
                 if not (Js.read started) then
                     Js.write started True
-                    Js.write model (p.settle self (p.init self))
-                    Js.write shown (p.view (Js.read model))
-                    Js.read shown
+                    Js.write model (Just (p.settle self (p.init self)))
+                    Js.write shown (Just (p.view (stored model)))
+                    stored shown
                 else if not (Js.read dirty) then
-                    Js.read shown
+                    stored shown
                 else
                     Js.write dirty False
                     Js.write busy True
                     Js.finally
                         (λ⊤ →
-                            Js.write model (p.settle self (Js.read model))
-                            Js.write shown (p.view (Js.read model))
-                            Js.read shown
+                            Js.write model (Just (p.settle self (stored model)))
+                            Js.write shown (Just (p.view (stored model)))
+                            stored shown
                         )
                         λ⊤ → Js.write busy False
         }
 
 
 -- The compiled platform supplies its synchronous after-render point.
-directRendered : Js.Ref Js.Value
-directRendered = Js.ref Js.null
+directRendered : Js.Ref (Maybe (Task.Resume ⊤ → (⊤ → ⊤)))
+directRendered = Js.ref Nothing
 
 
-pub installRendered : Js.Value → ⊤
-installRendered callback = Js.write directRendered callback
+pub installRendered : sync (Task.Resume ⊤ → (⊤ → ⊤)) → ⊤
+installRendered callback = Js.write directRendered (Just callback)
+
+
+stored : Js.Ref (Maybe a) → a
+stored cell =
+    case Js.read cell of
+        Just value →
+            value
+        Nothing →
+            Protocol.defect "a browser model was read before initialization"
