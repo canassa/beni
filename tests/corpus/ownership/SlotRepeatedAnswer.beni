@@ -1,0 +1,31 @@
+-- ownership: where a call's answer may repeat, the check compares where
+-- its two parts come from instead of refusing (#1685's requirement 7; the
+-- experiment's `RepeatedPathCall.otherRead`). `pair a b` answers
+-- `( a, ( a, b ) )`: `a` twice. Writing `.1.0` while `.1.1`, which is `b`,
+-- is read after is accepted (`otherRead`); while `.0`, which is `a`, is
+-- read after, refused (`sameRead`).
+pair : List Int, List Int → List Int × (List Int × List Int)
+pair a b = ( a, ( a, b ) )
+
+
+writeFirst : List Int × List Int → List Int
+writeFirst p =
+    case p of
+        ( a, _ ) →
+            List.push a 1
+
+
+pub otherRead : List Int, List Int → List Int × List Int
+otherRead x y =
+    case pair x y of
+        ( _, inner ) →
+            case inner of
+                ( _, b ) →
+                    ( writeFirst inner, b )
+
+
+pub sameRead : List Int, List Int → List Int × List Int
+sameRead x y =
+    case pair x y of
+        ( first, inner ) →
+            ( writeFirst inner, first )
