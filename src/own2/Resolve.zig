@@ -558,8 +558,6 @@ const Resolver = struct {
 pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocator) Error!Result {
     var r: Resolver = .{ .e = e, .arena = arena, .regions = regions };
     defer r.deinit();
-    try r.index();
-    try r.escapes.build(r.ev(), &r.keys, regions, e.escapes.items);
     const f = &e.w.f;
     // Every judgement, in the walk's order: the demands, the direct labels'
     // supplied parts, the passed-on labels' parts (§2.11.3).
@@ -596,6 +594,12 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 for (ls.items) |part| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending });
             };
         }
+    }
+    // The indices are built only when something is judged (§2.8): a
+    // declaration with no demand and no label pays for neither.
+    if (jobs.items.len != 0) {
+        try r.index();
+        try r.escapes.build(r.ev(), &r.keys, regions, e.escapes.items);
     }
     // Judged in point order (the sweep, §2.8), kept in the walk's order.
     const order = try arena.alloc(u32, jobs.items.len);
