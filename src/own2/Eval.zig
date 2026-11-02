@@ -1723,6 +1723,17 @@ fn describe(s: *Sink, v: u32, q: PathId, out: ResList) Error!void {
     }
 }
 
+/// An arrival at `q` and, by structure, at every slot below it.
+fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
+    const f = s.e.fr();
+    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const list = try resList(s, out);
+    try f.charge(.edge, 1);
+    if (try Contract.Draft.addWide(list, s.arena, r, a)) {
+        if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, true, a);
+    }
+}
+
 fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
     const f = s.e.fr();
     const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
@@ -1756,6 +1767,10 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
             // to its inner's restores the inner exactly (§2.13.9), so the
             // result's storage is the position's, not every object below it.
             const by_structure = !whole or f.places.pathPlace(pslot) == f.places.pathPlace(q);
+            // A call's or a supply's whole subtree read by structure is read
+            // through one key below its position, never one per slot below it
+            // (§2.10 *Read-off*).
+            if (by_structure and (r.kind == .call or r.kind == .supply) and l.slots == try f.slots.below(gpa, f.account, f.places, pslot)) return describeCallWide(s, l, pslot, q, out);
             for (f.slots.items(l.slots)) |sl| {
                 // The result slot of this object: q, below by the steps from
                 // the position to the slot.
@@ -1773,6 +1788,227 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
                     }
                 }
                 try describeOne(s, l, r, sl, at, out);
+            }
+        },
+    }
+}
+
+/// The subtree at `prefix` of a call's or a supply's root `root`, described
+/// at result slot `q` through one key below the prefix (§2.10 *Read-off*).
+fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out: ResList) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const r = f.roots.items[root];
+    const call: u32, const which: u32 = switch (r.kind) {
+        .call => .{ r.a, none },
+        .supply => blk: {
+            const su = f.supplies.items[r.a];
+            break :blk .{ su.call, (su.label << 16) | su.k };
+        },
+        .param, .cb => unreachable,
+    };
+    const saved = e.ev.cur_sub;
+    e.ev.cur_sub = if (e.solver != null) .{ .kind = .describe_below, .a = out.label, .b = q.int(), .c = out.k, .d = prefix.int(), .tags = tags } else null;
+    const ki = e.ev.instBelow(call, prefix, which) catch |err| {
+        e.ev.cur_sub = saved;
+        return err;
+    };
+    e.ev.cur_sub = saved;
+    if ((try s.described.getOrPut(e.gpa(), .{ ki | Relation.open_bit, q.int(), out.label, out.k })).found_existing) return;
+    var i: usize = 0;
+    while (i < e.ev.keyItems(ki)[0].len) : (i += 1) {
+        const items = e.ev.keyItems(ki);
+        const y = (try f.withTags(items[0][i], tags)) orelse continue;
+        try describeItem(s, y, items[1][i], prefix, q, out);
+    }
+}
+
+/// An item of a key below `prefix` (leaf `li` at slot `at`), described at
+/// the result slot the steps from the prefix take `q` to.
+fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, out: ResList) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    const slot: PathId = .from(at & ~Relation.open_bit);
+    const open = at & Relation.open_bit != 0;
+    var ps: std.ArrayList(u32) = .empty;
+    defer ps.deinit(gpa);
+    if (slot == prefix) try ps.append(gpa, q.int()) else {
+        const rel = (try f.slots.relBelow(gpa, f.account, f.places, prefix, slot)) orelse Slots.root;
+        try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), &ps);
+        if (ps.items.len == 0) try ps.append(gpa, q.int());
+    }
+    for (ps.items) |dest| {
+        // A type variable's slot has no structure below it: what is open
+        // there is all of it at the slot, which `arrive` keeps open.
+        const wide = open and f.places.kind(f.places.pathPlace(.from(dest))) != .@"var";
+        if (wide) try describeWide(s, li, .from(dest), out) else try describeLeaf(s, li, .from(dest), true, out);
+    }
+}
+
+/// The subtree of a call or a supply at its slot `sl`, at result slot
+/// `dest` and below by structure. A slot that an opaque or a type
+/// variable's place holds is read on through the call's arrivals (§2.13.9,
+/// *On slots*), one result slot at a time, where the result's place is not
+/// its own.
+fn describeCallWide(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: ResList) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    try describeBelow(s, l.root, sl, l.tags, dest, out);
+    const k = f.places.kind(f.places.pathPlace(sl));
+    if ((k != .@"opaque" and k != .@"var") or f.places.pathPlace(sl) == f.places.pathPlace(dest)) return;
+    for (f.slots.items(try f.slots.below(gpa, f.account, f.places, dest))) |qs| {
+        const rel = (try f.slots.relBelow(gpa, f.account, f.places, dest, .from(qs))) orelse continue;
+        const words = f.slots.relWords(rel);
+        if (words.len == 0) continue;
+        var ps: std.ArrayList(Relation.Proj) = .empty;
+        defer ps.deinit(gpa);
+        if (!try e.ev.throughCall(l.root, sl, words, false, l.tags, 0, &ps)) {
+            const all = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.below(gpa, f.account, f.places, sl), .tags = l.tags });
+            try describeLeaf(s, all, .from(qs), true, out);
+            continue;
+        }
+        for (ps.items) |p| try describeLeaf(s, p.leaf, .from(qs), true, out);
+    }
+}
+
+/// Leaf `li` at result slot `q` and, by structure, at every slot below it.
+fn describeWide(s: *Sink, li: u32, q: PathId, out: ResList) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    const l = f.leafAt(li);
+    switch (l.kind) {
+        .site, .fresh => try arriveWide(s, q, .{ .kind = .fresh }, out),
+        .shared => try arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
+        .top => try arriveWide(s, q, .{ .kind = .top }, out),
+        .answer => try arriveWide(s, q, .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra }, out),
+        .ref => {
+            const r = f.roots.items[l.root];
+            // The leaf is a subtree of its root read at `q` by structure: its
+            // base is the longest common prefix of its slots whose place is
+            // `q`'s (a family's element, a position's own slot), and each
+            // slot is at the result slot its steps from the base reach. A
+            // leaf that is its base's whole subtree says each top slot once,
+            // open; any other says each slot. Without such a base it is all
+            // at `q` (a cast, §2.13.9).
+            const items = f.slots.items(l.slots);
+            var rels = try gpa.alloc(Slots.Rel, items.len);
+            defer gpa.free(rels);
+            var cp: usize = std.math.maxInt(usize);
+            var first: []const u32 = &.{};
+            for (items, 0..) |sl, i| {
+                rels[i] = try f.slots.relOf(gpa, f.account, f.places, .from(sl));
+                const w = f.slots.relWords(rels[i]);
+                if (i == 0) {
+                    first = w;
+                    cp = w.len;
+                } else {
+                    var n: usize = 0;
+                    while (n < cp and n < w.len and w[n] == first[n]) n += 1;
+                    cp = n;
+                }
+            }
+            if (items.len == 0) return;
+            var base: ?usize = null;
+            var base_path: PathId = .none;
+            // Never above the leaf's own position: what is above it is not this leaf.
+            const floor = f.slots.relWords(try f.slots.relOf(gpa, f.account, f.places, f.pos.items[l.pos].slot)).len;
+            var k: usize = cp + 1;
+            while (k > floor) {
+                k -= 1;
+                var ps: std.ArrayList(u32) = .empty;
+                defer ps.deinit(gpa);
+                try Slots.replay(gpa, f.account, f.places, r.path, first[0..k], &ps);
+                if (ps.items.len == 0) continue;
+                if (f.places.pathPlace(.from(ps.items[0])) == f.places.pathPlace(q)) {
+                    base = k;
+                    base_path = .from(ps.items[0]);
+                    break;
+                }
+            }
+            const b = base orelse {
+                // Read across a cast: a call's part through its arrivals,
+                // anything else all of it at every result slot below `q`.
+                const qs_all = f.slots.items(try f.slots.below(gpa, f.account, f.places, q));
+                for (items, 0..) |sl, i| switch (r.kind) {
+                    .call, .supply => {
+                        const k2 = f.places.kind(f.places.pathPlace(.from(sl)));
+                        if (k2 == .@"opaque" or k2 == .@"var") {
+                            try describeCallWide(s, l, .from(sl), q, out);
+                            continue;
+                        }
+                        const sub = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.below(gpa, f.account, f.places, .from(sl)), .tags = l.tags });
+                        var xs: std.ArrayList(u32) = .empty;
+                        defer xs.deinit(gpa);
+                        try e.ev.expand(sub, &xs);
+                        for (xs.items) |x| {
+                            try describeLeaf(s, x, q, true, out);
+                            for (qs_all) |qs| try describeLeaf(s, x, .from(qs), true, out);
+                        }
+                    },
+                    .param => {
+                        const pk = f.places.kind(f.places.pathPlace(.from(sl)));
+                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = pk == .@"var" or pk == .@"opaque" };
+                        try arrive(s, q, a, out);
+                        for (qs_all) |qs| try arrive(s, .from(qs), a, out);
+                    },
+                    .cb => {
+                        const crel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
+                        const a: Contract.Arrival = .{ .kind = .cb, .j = try labelIndex(s, r.a), .slot = crel };
+                        try arrive(s, q, a, out);
+                        for (qs_all) |qs| try arrive(s, .from(qs), a, out);
+                    },
+                };
+                return;
+            };
+            const whole = l.slots == try f.slots.below(gpa, f.account, f.places, base_path);
+            var have: Ids.FixedDict(1) = .{};
+            defer have.deinit(gpa);
+            if (whole) for (rels) |rl| try have.put(gpa, .{rl}, 0);
+            for (items, 0..) |sl, i| {
+                const w = f.slots.relWords(rels[i]);
+                // A slot below another of a whole subtree is said by it.
+                if (whole) {
+                    var below_other = false;
+                    var m = w.len;
+                    while (m > b) {
+                        m -= 1;
+                        if (have.get(.{try f.slots.relOfWords(gpa, f.account, f.places, w[0..m])}) != null) {
+                            below_other = true;
+                            break;
+                        }
+                    }
+                    if (below_other) continue;
+                }
+                var ps: std.ArrayList(u32) = .empty;
+                defer ps.deinit(gpa);
+                try Slots.replay(gpa, f.account, f.places, q, w[b..], &ps);
+                if (ps.items.len == 0) try ps.append(gpa, q.int());
+                for (ps.items) |dest| switch (r.kind) {
+                    .param => {
+                        // An opaque or a type variable's slot holds anything
+                        // below it: where the result's place is not its own,
+                        // all of it arrives at each result slot (§2.13.9),
+                        // never by steps the slot cannot take.
+                        const pk = f.places.kind(f.places.pathPlace(.from(sl)));
+                        const wild = pk == .@"var" or pk == .@"opaque";
+                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = wild };
+                        if (wild and f.places.pathPlace(.from(sl)) != f.places.pathPlace(.from(dest))) {
+                            for (f.slots.items(try f.slots.below(gpa, f.account, f.places, .from(dest)))) |qs| try arrive(s, .from(qs), a, out);
+                        } else if (whole) try arriveWide(s, .from(dest), a, out) else try arrive(s, .from(dest), a, out);
+                    },
+                    .cb => {
+                        const crel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
+                        const a: Contract.Arrival = .{ .kind = .cb, .j = try labelIndex(s, r.a), .slot = crel };
+                        if (whole) try arriveWide(s, .from(dest), a, out) else try arrive(s, .from(dest), a, out);
+                    },
+                    .call, .supply => if (whole) try describeCallWide(s, l, .from(sl), .from(dest), out) else {
+                        const one = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{sl}), .tags = l.tags });
+                        try describeLeaf(s, one, .from(dest), true, out);
+                    },
+                };
             }
         },
     }
@@ -1819,10 +2055,16 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
         if (l.kind != .ref) continue;
         const r = f.roots.items[l.root];
         switch (r.kind) {
-            .param => for (f.slots.items(l.slots)) |sl| {
-                const eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep };
-                if (try Contract.Draft.addEffect(effList(s, out), s.arena, eff)) {
-                    if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
+            .param => {
+                // A deep effect on a whole subtree is one effect at its top.
+                const pslot = f.pos.items[l.pos].slot;
+                const whole = deep and l.slots == try f.slots.below(gpa, f.account, f.places, pslot);
+                const one = [1]u32{pslot.int()};
+                for (if (whole) &one else f.slots.items(l.slots)) |sl| {
+                    const eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep };
+                    if (try Contract.Draft.addEffect(effList(s, out), s.arena, eff)) {
+                        if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
+                    }
                 }
             },
             .call, .supply => {
@@ -1951,11 +2193,13 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
 }
 
 /// A leaf delivered to a consumer of the read-off (§2.12 *Deliveries*).
-pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32) Error!void {
+pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
     const f = e.fr();
     const y = (try f.withTags(x, sub.tags)) orelse return;
     switch (sub.kind) {
         .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c }),
+        .describe_below => try describeItem(&e.sink, y, at, .from(sub.d), .from(sub.b), .{ .label = sub.a, .k = sub.c }),
+        .forward_below => unreachable,
         .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
         .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b }),
         .escape => try addEscape(e, y, sub.a),
