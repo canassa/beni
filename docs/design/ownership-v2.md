@@ -636,6 +636,11 @@ entry reaches is not read: `rkids r = r.kids` reads `π1.kids` and leaves `π1.v
 fields). The exits on a cycle (*A read that leaves its path on a cycle*) are the footprint entries' `Up`
 closures, as before.
 
+*Amended 2026-11-02 (#1714):* whether a footprint reaches a path is two binary searches over the callee's
+effects, which a contract stores sorted by parameter and canonical key (§2.10): one for an entry at or below the
+path, one per proper prefix for a deep entry above it. Each costs ⌈log₂(E + 1)⌉ + 1 records, reserved before
+its work. Before this, every use group scanned the whole effect list, uncharged.
+
 A **use** is `(atom, local, PathId, point, kind, callee-use-node?)`, where `atom` is the use occurrence: unique in
 its declaration and deterministic, not the operand instruction, so one instruction reading a local twice has two
 uses and the transfer rules of §2.6 need no change. Kinds: `field` (this frame's own field chain,
