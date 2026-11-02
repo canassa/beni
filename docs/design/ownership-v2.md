@@ -500,10 +500,33 @@ leaves by four a level (n = 8: 744 671 records; master's v2 5 431 at n = 5 and 1
 - **What it costs.** A leaf has as many routes as distinct ways its arms reach it; the arms-alike rule and
   the route join keep that at one for K and for wide updates. Tagging a set is one **wrap** node,
   `wrap(tags, set)`, opened one level only where a join looks inside it, and a join of routes compares a new
-  route only with the ones it meets. A leaf that every `then` arm of an `else if` chain of D arms reaches
-  has D routes of up to D tags, which is what the chain then costs: D = 8 / 16 / 32 / 64: 3 468 / 14 998 /
-  87 023 / 598 764 records (the branch head: 2 547 / 9 116 / 46 909 / 306 878, which read the same leaves
-  as a tree). K is linear: n = 8 / 16: 1 097 / 2 486 (master's v2: 10 152 / 23 197).
+  route only with the ones it meets. K is linear: n = 8 / 16: 1 097 / 2 486 (master's v2: 10 152 / 23 197).
+- *Amended 2026-11-02 (#1714, the manager's decision: exact routes, shared, never merged):* **routes share
+  their tails.** A leaf that every `then` arm of an `else if` chain of D arms reaches has D routes of up to
+  D tags; written out one by one they cost the chain D² to D³ records (D = 8 / 16 / 32 / 64: 3 468 /
+  14 998 / 87 023 / 598 764). Every route is still kept; what changed is how routes are stored:
+  - *A tag set is a list* of `(choice, arms)` pairs sorted by choice, earliest first, one node per
+    `(pair, tail)` by dense id, hash-consed (`Routes.zig`). An enclosing `case` is made after its arms,
+    so its choice comes later: a reader going down a set meets the outer wraps first and puts each inner
+    tag in front of the list it has, and the leaves below one wrap share its tags as their tail. A merge,
+    a conflict test or an implication walks two lists only to where they meet.
+  - *A wrap inside a wrap* is kept as two wraps when every choice of the inner one comes before the outer
+    one's, so tagging a tagged set is one node; opening a set pushes its wraps down one level, innermost
+    first.
+  - *An element's routes are a route set* by dense id: `flat`, a normalised run of lists; `wrap(tags,
+    set)`, every route of a set with an enclosing choice's tags after it (one node, where every choice of
+    the tags comes after the set's); `join`, the routes of an `alt`'s arms. An arm's routes join
+    another's only where they are one node under both (`wrap`s of one set, whose tags `combine` or one
+    implies the other), and a set that holds the unconditional route is that route. A reader walks a set
+    from its top, outer tags first, so the routes it lists share their tails too. Coexisting joins write
+    both sides out and normalise them, as before.
+  - *The distinct check reads the lists' shape* (§2.9.3): two entries of one atom whose lists part at two
+    pairs of one choice with no arm in common never coexist, and are not merged.
+
+  The chain is then linear: D = 8 / 16 / 32 / 64 / 128 / 256: 2 204 / 4 524 / 9 339 / 19 208 / 39 431 /
+  80 720 records (×2.05 a doubling), and a call over it (`chainCallCold`) 1 967 / 3 711 / 7 159 / 13 975
+  (before: 2 617 / 8 445 / 42 717 / 287 821). K costs 1 149 / 6 727 at n = 8 / 32 (before: 1 097 / 6 135).
+  No verdict and no summary moved over the 2 177 roots.
 - **Walks over a value's structure.** The read-off's `describe` (§2.10) visits each `(value, result slot)`
   once: it reads no tags and its arrivals are a set. A projection of a whole `alt` read deep is the alt's
   leaf set. A holder's paths (§2.8, `Resolve.holds`) still walk the structure: that is the holder lane's.
@@ -890,7 +913,9 @@ reached it, so one value placed twice is two entries):
   claimed `nondup yes`, and `callTwice λ⊤ → xs` answered `xs` twice. A caller with the code to hand still reads
   both answers precisely, through the call's expansion (the call vouches for nothing).
 - Two entries of one atom that coexist make the check `no`; an atom's single entry is distinct from every
-  other root's.
+  other root's. *Amended 2026-11-02 (#1714):* the entries of one atom are read as a tree of their tag lists
+  by shared tail (§2.3.5); two entries whose lists part at two pairs of one choice with no arm in common
+  conflict and are not merged, so an atom an `else if` chain reaches through D arms costs D, never D².
 - When a call's group meets another root's, the latest call is expanded into its arguments' entries (one
   level), which form one **block** the call has vouched for, and the check runs again.
 - A call's group of two entries or more whose instantiated `res_cond` is `no` is expanded the same way, but
@@ -2372,9 +2397,10 @@ pos       : Columns { parent: u32, step: u8, a: u32, b: u32, root: u32, slot: Pa
 leaves    : Columns { kind: u8, root: u32, pos: u32, slots: SetId, tags: u32, flags: u8 }   interned
 deep      : per value, its leaf set (§2.3.4): a node of `sets`, made with the value
 sets      : Leaves.Table { prefix: u32, mask: u32, left: u32, right: u32 }: hash-consed Patricia nodes;
-            a leaf node's `left` is its routes, `right` its `many` bit; a column of `refs` bits and pass stamps;
-            interned runs of tags `(choice, arm set)`, of arm sets and of routes
-tags      : runs of (choice, arm) pairs, interned; 0 is the empty set
+            a leaf node's `left` is its route set, `right` its `many` bit; a column of `refs` bits and pass stamps
+tags      : Routes.Table: tag lists { choice, arms, tail, len, last } by dense id, hash-consed by
+            (choice, arms, tail), 0 the empty list; route sets { kind: flat|wrap|join, a, b, last }, 0 the
+            unconditional route; interned runs of arm sets, of flat routes and of a join's sets (§2.3.5)
 calls     : Columns { inst: u32, contract: u32, args: Range, cond: u32, inst_map: Range }   one per call site
 inst_map  : runs of (result slot, leaf run): a call's instantiation, built once (§2.11.2)
 locals    : per BIR local: its value, binding point, binding token
@@ -3167,7 +3193,7 @@ L5  Value  Liveness
 L4  Rows  Regions  ContractText  Leaves
 L3  Contract  Subtree  Prepass
 L2  Slots  Facts
-L1  Place  Runs
+L1  Place  Runs  Routes
 L0  Ids  Counters  Scratch
      bir/Bir, check/{TypeStore,Types,Walk,Dispatch,Edges,SchemaPlan,EffectPlan,Scc}, resolve/{Interface,Graph}, parse/Ast, InternPool, stamped
 ```
@@ -3179,6 +3205,7 @@ L0  Ids  Counters  Scratch
 | `Scratch.zig` | 0 | a walk's sparse sets and maps | Counters |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, levels and their expansion | Ids |
 | `Runs.zig` | 1 | runs of words interned by content, a column by path id (§3.2) | Ids |
+| `Routes.zig` | 1 | tag lists with shared tails, route sets, the atom pairs a parting rules out (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
@@ -3187,7 +3214,7 @@ L0  Ids  Counters  Scratch
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
-| `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, its pass reader (§2.3.4, §2.3.5, #1714) | Ids |
+| `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, its pass reader (§2.3.4, §2.3.5, #1714) | Ids, Routes |
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |

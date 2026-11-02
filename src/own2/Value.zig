@@ -454,17 +454,17 @@ pub const Frame = struct {
 
     /// The arm set of one arm (a tag's second word, §2.3.5).
     pub fn armOf(f: *Frame, arm: u32) Error!u32 {
-        return f.sets.armOf(f.gpa, f.account, arm);
+        return f.sets.tags.armOf(f.gpa, f.account, arm);
     }
 
     pub fn internTags(f: *Frame, words: []const [2]u32) Error!u32 {
-        return f.sets.internTags(f.gpa, f.account, words);
+        return f.sets.tags.internTags(f.gpa, f.account, words);
     }
 
     /// The union of two tag sets, or null when they give one choice two
     /// arms (never together, §2.3.5).
     pub fn mergeTags(f: *Frame, x: u32, y: u32) Error!?u32 {
-        return f.sets.merge(f.gpa, f.account, x, y);
+        return f.sets.tags.merge(f.gpa, f.account, x, y);
     }
 
     /// Leaf `l` with tags `t` added, or null when they conflict.
