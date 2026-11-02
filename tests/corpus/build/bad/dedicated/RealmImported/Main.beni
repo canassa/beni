@@ -1,0 +1,23 @@
+-- A native page operation must remain visible in the worker's inferred summary.
+import Library
+import Page
+import Worker
+
+
+worker : Worker.Program
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → Library.dom ⊤
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

@@ -116,6 +116,8 @@ cycle_members: []const Index,
 sees: []const u64 = &.{},
 /// The markup vocabulary the chain names (`boundary.md` §9.2), resolved.
 markup: Markup = .{},
+/// Set during the existing name-index build; no native pass on ordinary builds.
+has_native_bindings: bool = false,
 
 /// The vocabulary module and the markup type of the build, or why there are
 /// none (`frontend.md` §9.8, `checker-v2.md` §25.1).
@@ -425,6 +427,7 @@ pub fn build(
         const name = try interner.getOrPut(gpa, store.moduleName(file));
         name_limit = @max(name_limit, @backingInt(name) + 1);
         const package = store.package(file);
+        if (package == .core and std.mem.startsWith(u8, store.moduleName(file), "Browser.Host.")) g.has_native_bindings = true;
         const layer: u8 = if (package == .platform and file.int() < platforms.file_layers.len) platforms.file_layers[file.int()] else 0;
         try modules.append(gpa, .{
             .file = file,

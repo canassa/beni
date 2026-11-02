@@ -18,6 +18,7 @@ pub fn main(init: std.process.Init) !u8 {
             return 1;
         },
     };
+    if (!Native.Callable.validate(c)) return error.InvalidCallableCatalogue;
     // Generation and validation finish before any output directory is created.
     const bytes = try std.json.Stringify.valueAlloc(arena, c, .{ .whitespace = .indent_2 });
     try std.Io.Dir.cwd().createDirPath(init.io, args[2]);
@@ -27,7 +28,16 @@ pub fn main(init: std.process.Init) !u8 {
     try out.createDirPath(init.io, "Browser/Host");
     for (c.native_types) |native| {
         const path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{native.name});
-        try out.writeFile(init.io, .{ .sub_path = path, .data = try Native.moduleSource(arena, native) });
+        const callable = @import("native_bindings").Callable;
+        const text = try callable.source(arena, native.module, native.name);
+        try out.writeFile(init.io, .{ .sub_path = path, .data = text });
+        const js = try callable.sibling(arena, native.module);
+        if (js.len != 0) try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{native.name}), .data = js });
+    }
+    for ([_][]const u8{ "Timers", "Uint8Array" }) |name| {
+        const module = try std.fmt.allocPrint(arena, "Browser.Host.{s}", .{name});
+        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{name}), .data = try Native.Callable.source(arena, module, if (std.mem.eql(u8, name, "Uint8Array")) name else null) });
+        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{name}), .data = try Native.Callable.sibling(arena, module) });
     }
     return 0;
 }
@@ -84,4 +94,26 @@ test "generator source identity agrees with the shared research receipt" {
     try std.testing.expectEqualStrings(Native.source.version, receipt.value.idl.version);
     try std.testing.expectEqualStrings(Native.source.url, receipt.value.idl.url);
     try std.testing.expectEqualStrings(Native.source.sha256, receipt.value.idl.sha256);
+}
+
+test "reviewed callable subset resolves against the pinned catalogue" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const result = try Native.generate(arena.allocator(), @embedFile("webref_idl"));
+    try std.testing.expect(Native.Callable.validate(result.success));
+}
+
+test "shipped native modules are exactly the pinned generator output" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope" }) |name| {
+        const module = try std.fmt.allocPrint(a, "Browser.Host.{s}", .{name});
+        const path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.beni", .{name});
+        const actual = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024));
+        try std.testing.expectEqualStrings(try Native.Callable.source(a, module, if (std.mem.eql(u8, name, "Timers")) null else name), actual);
+        const js_path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.js", .{name});
+        const js = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, js_path, a, .limited(64 * 1024));
+        try std.testing.expectEqualStrings(try Native.Callable.sibling(a, module), js);
+    }
 }

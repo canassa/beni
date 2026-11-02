@@ -139,3 +139,42 @@ Future operation tests pin wrong native receivers, realm misuse through callback
 and container paths, exact error predicates and unchanged emit/release/ bytes for
 identity upcasts and direct operations. Generation time and catalogue bytes are
 reported separately from ordinary checker throughput and package-index loading.
+
+## Callable subset in the compiler
+
+The first callable rows are `Window.document`, `Document.querySelector`
+(from ParentNode), `Node.textContent` get/set, `Element.toNode`,
+`TextEncoder.create`/`encode`, `Timers.setTimeout`, and
+`WorkerGlobalScope.self`. `Uint8Array.byteLength` is an ECMAScript intrinsic
+under intrinsic revision 1. The pinned catalogue resolves the reviewed rows
+in `src/native/Operations.zig` to native declarations and member spans;
+unreviewed members still require adapters. Generation emits source-linked
+callable rows, ordinary typed modules and precise-error siblings. The first
+modules ship in core, so loading uses core provenance, never an app's module
+spelling. The checker validates callable signatures and effects against the
+trusted table before it seeds a summary or the backend uses a direct recipe.
+
+Native objects remain host objects. Identity upcasts, construction, encoding
+and simple property operations lower directly. Result/Maybe adapters retain
+their normal beni representation. The query-selector adapter catches only a
+DOMException named SyntaxError, and rethrows everything else.
+
+Realm bits travel on the existing typed effect classes, copies and dependency
+edges. Shared pure classes must be published when distinct scheme sites refer
+to them; otherwise an imported opaque holder loses its stored callback's
+summary. Interfaces carry availability and deferred generic dependencies.
+Interface format 19 adds realm class words, initializer availability and the
+dormant HostFree quantifier bit; dispatch format 16 carries entry/initializer
+availability. EntryHost checks each emitted projection before output.
+
+HostFree is implemented behind an internal Session option, off by default
+until typed Task storage and the dependent callback queues are ready. It walks
+representations, including opaque constructors, and retains generic requirements
+in interfaces and through the quantified-use/copy worklist. No CLI flag exposes
+this rollout option. Browser Http/WebSocket UTF-8 length helpers use the new
+native operations; remaining native migration is tracked in
+[#1636](https://github.com/canassa/beni/issues/1636).
+The HostFree representation facts are immutable before the checker DAG runs;
+held parameters and native/callable flags reach a fixed point without expanding
+recursive type applications. Dependency digest version 6 includes those facts
+when the internal option is enabled, including private representation changes.

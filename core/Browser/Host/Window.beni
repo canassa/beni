@@ -1,0 +1,8 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Document as Document
+
+
+pub foreign type Window
+
+
+pub foreign impure document : ⊤ → Document.Document

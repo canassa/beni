@@ -169,6 +169,8 @@ pub const EntryKind = struct {
 
 pub const Platform = struct {
     entry_kinds: []const EntryKind = &.{},
+    entry_host: EntryPlan.Realm = .node,
+    obsolete_host_root: ?[]const u8 = null,
     /// Module-qualified name of the opaque `Program` type `main` must have.
     /// Null for a chain that declares none, which only a library builds for.
     program: ?[]const u8 = null,
@@ -699,6 +701,7 @@ pub fn run(
     // platform whose manifest names an impossible entry file is broken
     // whatever the program does, and `--library` — which writes no entry
     // file at all — must not be the way to find out it is fine.
+    if (options.platform.obsolete_host_root) |root| try e.reportInFile(.obsolete_host_promise, .{ .path = try std.fmt.allocPrint(scratch, "{s}/beni.json", .{root}) }, "The platform-wide `host: page` promise is obsolete. Declare `entryHost: window` for the page entry; entryKinds supply each worker realm. EntryHost checks every entry separately.", .{});
     try e.checkEntryFileName();
     try e.checkEntryExports();
     try e.checkLowering();
@@ -714,6 +717,10 @@ pub fn run(
     // export list — `Reach.collectRoots` says why at length.
     const entry = if (options.library) null else try e.findEntry();
     if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
+    if (session.entry_plan.selected != .none) {
+        e.options.platform.entry_host = session.entry_plan.kinds.get(@backingInt(session.entry_plan.selected)).realm;
+        e.options.platform.page = false;
+    }
 
     // §9's reachability walk, between `findEntry` and `emitModules` and
     // BEFORE lowering: an unreachable declaration is then never lowered at
@@ -749,6 +756,7 @@ pub fn run(
     try e.workerCandidates();
     try e.eliminate(entry);
     try e.planWorkers(entry);
+    if (entry) |root| try e.checkEntryRealm(root);
     if (e.hasErrors()) return e.nothingWritten(gpa);
     try e.shareValidators();
 
@@ -841,6 +849,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
+    if (options.platform.obsolete_host_root) |root| try e.reportInFile(.obsolete_host_promise, .{ .path = try std.fmt.allocPrint(scratch, "{s}/beni.json", .{root}) }, "The platform-wide `host: page` promise is obsolete. Declare `entryHost: window` for the page entry; entryKinds supply each worker realm. EntryHost checks every entry separately.", .{});
     try e.checkEntryFileName();
     try e.checkEntryExports();
     try e.checkLowering();
@@ -1721,6 +1730,8 @@ const Emitter = struct {
     }
     fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
         var options = e.options;
+        options.platform.entry_host = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).realm;
+        options.platform.page = false;
         options.platform.lowering = null;
         options.platform.markup_runtime = null;
         options.platform.markup_module = null;
@@ -1767,6 +1778,7 @@ const Emitter = struct {
             projection.extra_roots = try projection.coarseRuntimeRoots();
             const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
             try projection.eliminate(root);
+            try projection.checkEntryRealm(root);
             try projection.discoverWorkers(root, &found);
             try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
             projection.diagnostics.deinit(e.gpa);
@@ -1827,11 +1839,15 @@ const Emitter = struct {
         }
     }
 
-    fn graph(e: *Emitter) *const Graph {
+    fn checkEntryRealm(e: *Emitter, entry: Entry) !void {
+        try @import("RealmCheck.zig").check(e, entry.module, entry.decl.int());
+    }
+
+    pub fn graph(e: *Emitter) *const Graph {
         return &e.session.graph;
     }
 
-    fn bir(e: *Emitter, m: Graph.Index) *const Bir {
+    pub fn bir(e: *Emitter, m: Graph.Index) *const Bir {
         return e.session.artifacts.bir(e.graph().moduleFile(m));
     }
 
@@ -1948,7 +1964,7 @@ const Emitter = struct {
         return diagnostic.position(line_starts, e.session.store.bytes(file), tokens.starts[token]);
     }
 
-    fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
+    pub fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{ .code = code, .file = file, .token = token, .message = message });

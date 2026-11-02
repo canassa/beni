@@ -890,7 +890,7 @@ pub const ModuleEdges = struct {
     chains: []const Chain = &.{},
     chain_ctors: []const Node = &.{},
 
-    fn targets(e: ModuleEdges, node: Node) []const Target {
+    pub fn targets(e: ModuleEdges, node: Node) []const Target {
         const at, const list = switch (node.kind) {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },

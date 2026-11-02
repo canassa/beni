@@ -209,6 +209,9 @@ pub const Input = struct {
     /// Whether to make the keys: an app module (§36). The crossing bits are
     /// made for every module.
     keyed: bool,
+    host_free: bool = false,
+    report: ?*@import("Report.zig") = null,
+    host_free_uses: []const Instantiate.CrossingUse = &.{},
 };
 
 pub const Output = struct {
@@ -217,6 +220,7 @@ pub const Output = struct {
     /// Per store variable: whether it is a scheme quantifier that crosses,
     /// which P8 publishes as its `crosses` bit; owned by `scratch`.
     crossing: []const bool,
+    host_free: []const bool = &.{},
 };
 
 /// Record facts have no store-variable identity. Sort and deduplicate by
@@ -455,7 +459,17 @@ pub fn build(in: Input) Error!Output {
         artifact.args = try in.gpa.dupe(TypeKey, b.args.items);
         artifact.labels = try in.gpa.dupe(InternPool.Symbol, b.labels.items);
     }
-    return .{ .artifact = artifact, .crossing = c.crossing };
+    var host_free: []const bool = &.{};
+    if (in.host_free) {
+        var host_input = in;
+        host_input.keyed = false;
+        host_input.uses = in.host_free_uses;
+        var host: Crossing = .{ .in = host_input, .b = &b, .checking_host_free = true };
+        defer host.deinit();
+        try host.run();
+        host_free = host.crossing;
+    }
+    return .{ .artifact = artifact, .crossing = c.crossing, .host_free = host_free };
 }
 
 /// The instructions that make a value with an identity of its own, by tag;
@@ -907,6 +921,9 @@ const Builder = struct {
 /// of it, so the fixpoint is a worklist over those records and never a second
 /// walk of the module.
 const Crossing = struct {
+    checking_host_free: bool = false,
+    host_free_state: ?@import("HostFree.zig").State = null,
+    source_inst: ?Bir.Inst.Index = null,
     in: Input,
     b: *Builder,
     wild: std.ArrayList(TypeKey) = .empty,
@@ -941,16 +958,20 @@ const Crossing = struct {
         @memset(c.crossing, false);
         // The seeds: every `Js.from`, every imported crossing quantifier.
         for (in.casts) |cast| {
+            c.source_inst = cast.inst;
             const func = Walk.function(in.store, cast.copy) orelse continue;
             switch (cast.which) {
                 .from => if (func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
                 // A `Js.to` adds its closed types to the wild set and crosses
                 // no quantifier (`backend.md` §9's table).
-                .to => if (in.keyed) try c.cross(func.result, cast.decl, false),
+                .to => if (in.keyed or c.checking_host_free) try c.cross(func.result, cast.decl, c.checking_host_free),
             }
         }
-        for (in.uses) |u| try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
-
+        for (in.uses) |u| {
+            c.source_inst = u.inst;
+            try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
+        }
+        c.source_inst = null;
         if (c.queue.items.len == 0) return;
         // Passes over the copies until none wakes: a copy is read once its
         // quantifier crosses, and a pass is a test per copy.
@@ -1010,7 +1031,18 @@ const Crossing = struct {
     fn cross(c: *Crossing, v: Var, decl: u32, quantifiers: bool) Error!void {
         const store = c.in.store;
         const s = c.in.scratch;
+        if (c.checking_host_free and c.host_free_state == null) c.host_free_state = @import("HostFree.zig").State.forContext(c.in.cx);
+        if (c.checking_host_free) if (try c.host_free_state.?.inspect(v)) |offense| {
+            if (c.in.report) |report| {
+                report.at(decl);
+                const inst = c.source_inst orelse c.in.bir.decls[decl].inst_start;
+                const message = try std.fmt.allocPrint(s, "This Js.Value conversion erases a {s} at `{s}`. Js.Value requires HostFree data. Keep the value in a typed container so its native identity and callback summary remain visible.", .{ @tagName(offense.kind), offense.path });
+                try report.emitText(.host_value_erasure, inst, null, message);
+                report.at(null);
+            }
+        };
         const seen = store.nextMark();
+
         // `quantifier` walks a scheme with a list of its own, so `todo` is
         // this walk'"'"'s.
         const todo = &c.todo;
@@ -1046,6 +1078,14 @@ const Crossing = struct {
                         // Only the arguments its representation holds: a
                         // phantom parameter puts no value in JavaScript's hands
                         // (`backend.md` §9, amended 2026-10-20).
+                        if (c.checking_host_free and a.type != .none) {
+                            const state = &c.host_free_state.?;
+                            const info = state.info[a.type.int()];
+                            for (store.vars(a.args), 0..) |arg, i| {
+                                if (i < info.parameters.len and state.held[info.parameters.start + i]) try todo.append(s, arg);
+                            }
+                            continue;
+                        }
                         const args_held = try c.held(a.type);
                         for (store.vars(a.args), 0..) |x, i| {
                             if (has(args_held, i)) try todo.append(s, x);
@@ -1136,6 +1176,7 @@ const Crossing = struct {
         const store = c.in.store;
         const s = c.in.scratch;
         const seen = store.nextMark();
+
         var todo: std.ArrayList(Var) = .empty;
         defer todo.deinit(s);
         try todo.append(s, v);

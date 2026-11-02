@@ -97,7 +97,9 @@ pub const magic = "BENIIFC\x00";
 /// ownership-checker.md §16.7 (c)).
 /// 18: a type row's byte 30 and a hidden row's byte 22 carry the type word,
 /// a constructor row's byte 25 its `failure` mark (ownership-v2.md §2.13.6).
-pub const format_version: u32 = 19;
+/// 19: Wire obligations and projected paths.
+/// 20: native realm classes, evaluated realm masks and HostFree quantifiers.
+pub const format_version: u32 = 20;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -416,8 +418,8 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             std.mem.writeInt(u32, row[4..8], s.quantified_count, .little);
             std.mem.writeInt(u32, row[8..12], @backingInt(s.body), .little);
             std.mem.writeInt(u32, row[12..16], s.effects, .little);
-            std.mem.writeInt(u32, row[16..20], @intFromBool(s.total), .little);
             std.mem.writeInt(u32, row[20..24], s.wire_paths, .little);
+            std.mem.writeInt(u32, row[16..20], @intFromBool(s.total) | (@as(u32, s.eval_realms) << 8), .little);
         }
     }
     if (iface.terms.len != 0) {
@@ -742,14 +744,15 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         iface.schemes = schemes;
         for (schemes, 0..) |*s, i| {
             const row = in[i * 24 ..][0..24];
-            if (std.mem.readInt(u32, row[16..20], .little) > 1) return error.BadRecord;
+            if (std.mem.readInt(u32, row[16..20], .little) & ~@as(u32, 0x1f01) != 0) return error.BadRecord;
             s.* = .{
                 .quantified_start = std.mem.readInt(u32, row[0..4], .little),
                 .quantified_count = std.mem.readInt(u32, row[4..8], .little),
                 .body = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .effects = std.mem.readInt(u32, row[12..16], .little),
-                .total = std.mem.readInt(u32, row[16..20], .little) == 1,
                 .wire_paths = std.mem.readInt(u32, row[20..24], .little),
+                .total = row[16] == 1,
+                .eval_realms = row[17],
             };
         }
     }

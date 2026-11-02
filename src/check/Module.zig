@@ -110,6 +110,8 @@ pub const Input = struct {
     roundtrip_dispatch: bool = false,
     /// Compute the crossing bits (checker-v2.md §36).
     crossing: bool = true,
+    /// Internal rollout option; enable after typed Task storage lands.
+    host_free: bool = false,
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
     /// `unit_discarded` is emitted (checker-v2.md §34).
@@ -283,7 +285,7 @@ pub fn check(in: Input) Error!Check.Counters {
     var solver: Solve = undefined;
     solver.init(&cx, &report, retained);
     // The crossing bits' records (checker-v2.md §36), when the run computes them.
-    solver.instantiate.track_crossing = in.crossing;
+    solver.instantiate.track_crossing = in.crossing or in.host_free;
     defer solver.deinit();
     solver.decl_scheme = decl_scheme;
     solver.own_values = own_values;
@@ -352,6 +354,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try @import("Nullary.zig").checked(gpa, bir, &solver.evidence);
     // Every group, nested check and derived context has recorded its
     // edges: the summaries now (§14.4), before P6 and P8 read them.
+    try @import("Realms.zig").seed(&effects, &cx, decl_scheme, &report);
     const effects_token = if (in.profile) |p| p.begin() else null;
     const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
     // What the lowering reads of the bits (transparent-effects-proposal.md
@@ -437,7 +440,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // The type-key artifact (checker-v2.md §36), while the store is alive,
     // and before P8, which publishes each declaration's crossing
     // quantifiers.
-    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0 and (keyed or in.crossing)) try TypeKeys.build(.{
+    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0 and (keyed or in.crossing or in.host_free)) try TypeKeys.build(.{
         .cx = &cx,
         .gpa = gpa,
         .scratch = scratch,
@@ -455,6 +458,9 @@ pub fn check(in: Input) Error!Check.Counters {
         .schemas = &schemas,
         .dispatch = in.dispatch,
         .keyed = keyed,
+        .host_free = in.host_free,
+        .host_free_uses = solver.instantiate.host_free.items,
+        .report = &report,
     }) else null;
     if (type_keys) |t| {
         in.type_keys.deinit(gpa);
@@ -521,6 +527,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .crossing = if (type_keys) |t| t.crossing else &.{},
         .wire = wire_quantifiers,
         .wire_paths = wire_paths,
+        .host_free = if (type_keys) |t| t.host_free else &.{},
     });
     try reportKeyErrors(&report, key_errors.items, &reported_keys);
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);

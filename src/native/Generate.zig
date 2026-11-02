@@ -1,7 +1,8 @@
-//! Native type catalogue generation. This stage deliberately exposes no host
-//! operation until its exact error adapter and lowering recipe are checked.
+//! Pinned native catalogue and callable subset generation. Only reviewed,
+//! source-linked error adapters and lowering recipes expose an operation.
 const std = @import("std");
 const Idl = @import("Idl.zig");
+pub const Callable = @import("Callable.zig");
 const Allocator = std.mem.Allocator;
 pub const source = .{
     .package = "@webref/idl",
@@ -25,7 +26,7 @@ pub const Declaration = struct {
     members_start: u32,
     members_end: u32,
 };
-pub const Member = struct { file: u32, owner: u32, source_span: Idl.Span, status: enum { adapter_required } = .adapter_required };
+pub const Member = struct { file: u32, owner: u32, source_span: Idl.Span, status: enum { adapter_required, callable } = .adapter_required };
 pub const NativeType = struct {
     idl_name: []const u8,
     name: []const u8,
@@ -42,7 +43,9 @@ pub const NameMap = struct { idl: []const u8, beni: []const u8 };
 pub const name_map = [_]NameMap{.{ .idl = "console", .beni = "Console" }};
 pub const Catalogue = struct {
     name_map: []const NameMap = &name_map,
-    format_version: u32 = 1,
+    callable_bindings: []const Callable.Binding = &.{},
+    intrinsic_revision: u32 = 1,
+    format_version: u32 = 2,
     source: @TypeOf(source) = source,
     files: []const File,
     declarations: []const Declaration,
@@ -67,7 +70,15 @@ pub fn generate(arena: Allocator, archive: []const u8) Allocator.Error!Result {
         error.OutOfMemory => return error.OutOfMemory,
         error.InvalidInput => return .{ .failure = .{ .code = .invalid_archive } },
     };
-    return index(arena, files);
+    var result = try index(arena, files);
+    if (result == .success) {
+        if (!Callable.validate(result.success)) return .{ .failure = .{ .code = .invalid_idl, .detail = "reviewed native callable does not match the pinned catalogue" } };
+        result.success.callable_bindings = try Callable.bindings(arena, result.success);
+        for (result.success.callable_bindings) |binding| if (binding.member) |m| {
+            @constCast(result.success.members)[m].status = .callable;
+        };
+    }
+    return result;
 }
 
 fn readArchive(arena: Allocator, archive: []const u8) Error![]const File {
@@ -237,10 +248,6 @@ fn beniName(name: []const u8) ?[]const u8 {
     return name;
 }
 
-pub fn moduleSource(arena: Allocator, native: NativeType) Allocator.Error![]const u8 {
-    return std.fmt.allocPrint(arena, "-- Generated from @webref/idl 3.86.0. Native identity; no public acquisition yet.\npub foreign type {s}\n", .{native.name});
-}
-
 test "native index joins includes and generates explicit inheritance upcasts" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
@@ -251,7 +258,6 @@ test "native index joins includes and generates explicit inheritance upcasts" {
     try std.testing.expectEqualDeep(&[_]Upcast{.{ .from = 0, .to = 1 }}, c.upcasts);
     try std.testing.expectEqualDeep(&[_]Include{.{ .target = 0, .mixin_declaration = 2 }}, c.includes);
     try std.testing.expectEqualStrings("Window", c.native_types[0].exposed[0]);
-    try std.testing.expectEqualStrings("-- Generated from @webref/idl 3.86.0. Native identity; no public acquisition yet.\npub foreign type Element\n", try moduleSource(arena.allocator(), c.native_types[0]));
 }
 
 test "native index refuses unresolved inheritance and cycles" {

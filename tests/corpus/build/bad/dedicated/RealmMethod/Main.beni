@@ -1,0 +1,44 @@
+-- A native page operation must remain visible in the worker's inferred summary.
+import Browser.Host.Document as Document
+import Browser.Host.Window as Window
+import Page
+import Worker
+
+
+dom : ⊤ → String
+dom _ =
+    case Document.querySelector (Window.document ⊤) "body" of
+        Ok _ →
+            "found"
+        Err _ →
+            "bad selector"
+
+
+type Box
+    = Box
+
+
+pub read : Box → String
+read _ = dom ⊤
+
+
+box = Box
+
+
+worker : Worker.Program
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → box.read
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

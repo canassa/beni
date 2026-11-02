@@ -30,6 +30,8 @@
 --! null), whether a subscription opened it, whether it has opened, and the
 --! URL as the program wrote it, for the console's line.
 
+import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.Uint8Array as Uint8Array
 import Cmd exposing (Cmd)
 import Js
 import Sub exposing (Sub)
@@ -551,9 +553,4 @@ stop s =
 
 -- The length of `text` in UTF-8, after the host's `USVString` conversion.
 utf8Length : String → Int
-utf8Length text =
-    Js.to
-        (Js.get
-            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
-            "length"
-        )
+utf8Length text = Uint8Array.byteLength (TextEncoder.encode (TextEncoder.create ⊤) text)

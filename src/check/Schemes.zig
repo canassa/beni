@@ -149,6 +149,7 @@ pub const Writer = struct {
     crossing: []const bool = &.{},
     wire: []const bool = &.{},
     wire_paths: []const @import("Wire.zig").Requirement = &.{},
+    host_free: []const bool = &.{},
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -252,6 +253,7 @@ pub const Writer = struct {
             .body = body,
             .effects = effects,
             .wire_paths = wire_paths,
+            .eval_realms = if (w.effects) |p| p.effects.evalRealms(p.decl) else 0,
             .total = if (w.effects) |p| p.decl < p.effects.total.len and p.effects.total[p.decl] else false,
         });
         try w.finish(mark);
@@ -763,6 +765,7 @@ pub const Writer = struct {
             .equatable = flags.equatable,
             .crosses = root.int() < w.crossing.len and w.crossing[root.int()],
             .wire = root.int() < w.wire.len and w.wire[root.int()],
+            .host_free = root.int() < w.host_free.len and w.host_free[root.int()],
             // Into the interface's own column, never the interner's — see
             // `Interface.Quantified.name`.
             // A name that disagrees with the kind is not published: it was

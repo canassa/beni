@@ -1,15 +1,14 @@
-export const text = (value) => {
-  let output = globalThis.document.querySelector("output");
-  if (output === null) {
-    output = globalThis.document.createElement("output");
-    globalThis.document.body.appendChild(output);
-  }
+export const createOutput = (document, value) => {
+  const output = document.createElement("output");
   output.textContent = value;
+  document.body.appendChild(output);
+  return null;
 };
-export const initializer = (value) => { globalThis.document.body.dataset.page = value; return value; };
-export const button = (callback) => {
-  const button = globalThis.document.createElement("button");
+export const setPage = (element, value) => { element.dataset.page = value; return value; };
+export const addButton = (document, callback) => {
+  const button = document.createElement("button");
   button.textContent = "launch";
   button.addEventListener("click", () => callback(null));
-  globalThis.document.body.appendChild(button);
+  document.body.appendChild(button);
+  return null;
 };

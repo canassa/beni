@@ -10737,7 +10737,7 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    no longer. Fixture: `emit/release/core/StatementShapes`.
 
    *Amended 2026-10-24 (the owner, #936).* `window` is bare only in a build for a chain that
-   says it always runs in a page (`"host": "page"`, `boundary.md` §5.2): it is
+   has a proven Window EntryHost (`"entryHost": "window"`, `boundary.md` §5.2): it is
    `Rename.page_globals`, apart from the list above. Where there is no window, a bare `window`
    throws `ReferenceError` and `globalThis.window` reads `undefined`, so a build for any other
    chain keeps `globalThis.window`; the rule writes a bare name only where both read the same

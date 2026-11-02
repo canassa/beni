@@ -86,7 +86,7 @@ pub const Chain = struct {
     /// 2026-10-24): its first `"host"`, down the chain.
     pub fn inPage(chain: *const Chain) bool {
         for (chain.layers) |layer| {
-            if (layer.manifest.host) |h| return h == .page;
+            if (layer.manifest.entryHost) |h| return h == .window;
         }
         return false;
     }
@@ -510,6 +510,12 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .exports = if (exports) |x| x.decl else .none,
             .exports_root = if (exports) |x| chain.layers[x.layer].root else chain.top().root,
             .page = chain.inPage(),
+            .entry_host = for (chain.layers) |layer| {
+                if (layer.manifest.entryHost) |host| break @as(@import("entry/Plan.zig").Realm, @fromBackingInt(@intCast(@backingInt(host))));
+            } else .node,
+            .obsolete_host_root = for (chain.layers) |layer| {
+                if (layer.manifest.host != null) break layer.root;
+            } else null,
         },
         .embedded = try collectEmbedded(arena, session, chain),
     };

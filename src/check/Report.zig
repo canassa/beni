@@ -231,8 +231,11 @@ pub fn calleeOf(r: *const Report, region: Bir.Inst.Index) Callee {
 }
 
 pub fn mismatch(r: *Report, region: Bir.Inst.Index, category: Category, expected: Var, actual: Var, rigid: ?Rigid) Error!void {
+    const hint = nativeUpcast(r, expected, actual);
+    const first = r.items.items.len;
     try r.texts.mismatch(region, category, expected, actual, rigid);
     try r.flush();
+    if (hint) for (first..r.items.items.len) |i| try r.appendToItem(@intCast(i), "\n\nHint: Convert Element to Node explicitly with `Element.toNode element`.");
 }
 
 pub fn invalidDictKey(r: *Report, region: Bir.Inst.Index, actual: Var) Error!void {
@@ -449,4 +452,26 @@ pub fn constrainedConstant(r: *Report, region: Bir.Inst.Index, token: u32, decl:
 /// use is not refused twice for one receiver (`Instances.noMethodsAs`).
 pub fn hasErrorAt(r: *const Report, region: Bir.Inst.Index) bool {
     return r.error_regions.contains(@backingInt(region));
+}
+
+fn nativeUpcast(r: *Report, expected: Var, actual: Var) bool {
+    const store = r.env.store;
+    const expected_content = store.resolvedContent(expected);
+    const actual_content = store.resolvedContent(actual);
+    const types = r.env.types;
+    const Wanted = struct {
+        fn named(content: @import("TypeStore.zig").Content, table: *const @import("Types.zig")) ?@import("Types.zig").Named {
+            return switch (content) {
+                .structure => |s| switch (s) {
+                    .app => |a| table.named(a.type),
+                    else => null,
+                },
+                else => null,
+            };
+        }
+    };
+    const e = Wanted.named(expected_content, types) orelse return false;
+    const a = Wanted.named(actual_content, types) orelse return false;
+    if (e.package != .core or a.package != .core) return false;
+    return std.mem.eql(u8, r.env.interner.slice(e.module), "Browser.Host.Node") and std.mem.eql(u8, r.env.interner.slice(a.module), "Browser.Host.Element");
 }

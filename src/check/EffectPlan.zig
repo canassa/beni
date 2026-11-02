@@ -425,8 +425,10 @@ fn answers(p: *Plan) Error!Result {
         }
         var own: Suspend = .no;
         if (rootOf(p, d)) |r| own = answer(p, r, tag);
-        decls[d] = .{ .own = own, .twin = p.twin[d] };
-        if (own != .no or p.twin[d]) any_decl = true;
+        const realms = if (rootOf(p, d)) |r| p.e.realmOf(r) else 0;
+        const eval_realms = if (p.e.eval[d].unwrap()) |v| if (p.e.nodeOf(v)) |r| p.e.realmOf(r) else 0 else 0;
+        decls[d] = .{ .own = own, .twin = p.twin[d], .realms = realms, .eval_realms = eval_realms };
+        if (own != .no or p.twin[d] or realms != 0 or eval_realms != 0) any_decl = true;
     }
     // One row per instruction: a call's own answer and a method call's
     // choice of body land on the same instruction.
