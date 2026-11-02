@@ -141,6 +141,11 @@ pub const Table = struct {
         return t.rels.get(r);
     }
 
+    /// `r`'s canonical key: a prefix of steps has a prefix of keys.
+    pub fn relKey(t: *const Table, r: Rel) []const u32 {
+        return t.keyOf(r);
+    }
+
     fn keyOf(t: *const Table, r: Rel) []const u32 {
         if (r == root or r >= t.key_of.items.len) return &.{};
         return t.keys.get(t.key_of.items[r]);

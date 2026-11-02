@@ -56,8 +56,9 @@ pub const Ov = struct {
 /// leaves reach it once each, the ones it saw when it subscribed and every
 /// one added after. `forward` adds them to another key (`a`); the other
 /// kinds are the read-off's (`Eval.zig` delivers them).
-pub const SubKind = enum(u8) { forward, describe, effect, supply, escape };
-pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, tags: u32 = 0 };
+pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, effect, supply, escape };
+/// `d`: a `describe_below` consumer's prefix slot (its key's).
+pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0 };
 
 /// The group being solved (§2.12): its members' drafts, read while they
 /// grow, and the queue of what is still to be delivered.
@@ -70,8 +71,11 @@ pub const Live = struct {
     watch: *const fn (ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Eval, key: u32) Error!void,
     /// Key `key` of `ev` has leaves a subscriber has not seen.
     dirty: *const fn (ctx: *anyopaque, ev: *Eval, key: u32) Error!void,
-    /// A subscriber of the read-off consumes a leaf.
-    deliver: *const fn (ctx: *anyopaque, ev: *Eval, sub: Sub, leaf: u32) Error!void,
+    /// A subscriber of the read-off consumes a leaf; `at`, for a key below a
+    /// prefix, the leaf's slot (`Key.at`).
+    deliver: *const fn (ctx: *anyopaque, ev: *Eval, sub: Sub, leaf: u32, at: u32) Error!void,
+    /// Key `key` of `ev` reads member `code`'s result at and below `rel`.
+    watchBelow: *const fn (ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Eval, key: u32) Error!void,
     /// Deliver everything queued, unless a delivery is under way.
     pump: *const fn (ctx: *anyopaque) Error!void,
     /// Member `code`'s draft label `i` as the label of the same identity
@@ -80,15 +84,22 @@ pub const Live = struct {
 };
 
 /// A live instantiation: one call's leaves at one caller slot, growing.
+/// A key `below` a prefix (`instBelow`) holds every arrival at the slots at
+/// and below `slot`, each leaf with its caller slot in `at` (the path's
+/// index, `open_bit` set for an arrival that holds by structure at every
+/// slot below its own, §2.10 *Read-off*).
 const Key = struct {
     call: u32,
     slot: PathId,
     which: u32,
+    below: bool = false,
     leaves: std.ArrayList(u32) = .empty,
+    at: std.ArrayList(u32) = .empty,
     subs: std.ArrayList(SubAt) = .empty,
     dirty: bool = false,
 };
 const SubAt = struct { sub: Sub, cursor: u32 };
+pub const open_bit: u32 = 1 << 31;
 
 /// One projected object: its leaf and the literal route that reached it.
 pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
@@ -132,7 +143,12 @@ pub const Eval = struct {
     keys: std.ArrayList(Key) = .empty,
     /// `(key, leaf)`: the key has the leaf; `(key, sub…)`: subscribed.
     key_has: Ids.FixedDict(2) = .{},
-    key_subs: Ids.FixedDict(6) = .{},
+    key_subs: Ids.FixedDict(7) = .{},
+    /// `(call, prefix, which)` → a key below the prefix; `(key, leaf, at)`.
+    below_memo: Ids.FixedDict(3) = .{},
+    below_has: Ids.FixedDict(3) = .{},
+    /// `(root path, rel)` → the one caller slot a callee's entry is at.
+    slot_memo: Ids.FixedDict(2) = .{},
     inst_depth: u32 = 0,
 
     pub fn deinit(e: *Eval) void {
@@ -153,10 +169,14 @@ pub const Eval = struct {
         for (e.keys.items) |*k| {
             k.leaves.deinit(g);
             k.subs.deinit(g);
+            k.at.deinit(g);
         }
         e.keys.deinit(g);
         e.key_has.deinit(g);
         e.key_subs.deinit(g);
+        e.below_memo.deinit(g);
+        e.below_has.deinit(g);
+        e.slot_memo.deinit(g);
     }
 
     fn charge(e: *Eval, cat: Ids.Category, n: u32) Error!void {
@@ -412,7 +432,7 @@ pub const Eval = struct {
     /// cannot follow (an opaque value read back): through each arrival at
     /// `t`, the rest taken from the argument it names. Whether it could
     /// (a fixed contract with no arrival but parameters').
-    fn throughCall(e: *Eval, root: u32, t: PathId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!bool {
+    pub fn throughCall(e: *Eval, root: u32, t: PathId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!bool {
         const r = e.f.roots.items[root];
         if (r.kind != .call) return false;
         const call = e.f.calls.items[r.a];
@@ -669,6 +689,265 @@ pub const Eval = struct {
         return e.keys.items[ki].leaves.items;
     }
 
+    /// Every arrival of call `call`'s callee at the caller slots at and below
+    /// `prefix` (a path under the call's result root), each with its slot:
+    /// one key per prefix, never one per slot below it. A callee's entry at a
+    /// slot below the prefix is read there; an open entry above it is read at
+    /// the prefix, open (§2.10 *Read-off*). Items are `(leaf, at)` pairs of
+    /// the key's `leaves` and `at`.
+    pub fn instBelow(e: *Eval, call: u32, prefix: PathId, which: u32) Error!u32 {
+        try e.charge(.memo, 1);
+        const sub = e.cur_sub;
+        const keyv: [3]u32 = .{ call, prefix.int(), which };
+        if (e.below_memo.get(keyv)) |ki| {
+            if (sub) |s| if (e.live != null) {
+                _ = try e.subscribe(ki, s);
+            };
+            return ki;
+        }
+        const ki: u32 = @intCast(e.keys.items.len);
+        try e.keys.append(e.gpa(), .{ .call = call, .slot = prefix, .which = which, .below = true });
+        try e.below_memo.put(e.gpa(), keyv, ki);
+        e.inst_depth += 1;
+        const code = e.f.calls.items[call].code;
+        const draft: ?*std.ArrayList(Contract.Draft.DraftSlot) = if (e.live) |lv| (if (which == none and code != none) lv.draftRes(lv.ctx, code) else null) else null;
+        const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), prefix));
+        if (draft) |list| {
+            const lv = e.live.?;
+            try lv.watchBelow(lv.ctx, code, try e.f.slots.relOf(e.gpa(), e.account(), e.places(), prefix), e, ki);
+            var si: usize = 0;
+            while (si < list.items.len) : (si += 1) {
+                var ai: usize = 0;
+                while (ai < list.items[si].arrivals.items.len) : (ai += 1) {
+                    const rs = list.items[si];
+                    try e.feedBelowDraft(ki, rs.slot, rs.open, rs.arrivals.items[ai]);
+                }
+            }
+        } else if (e.contractOf(call)) |c| {
+            const h = e.contracts.head(c);
+            const res: Ids.Range = if (which == none) h.res else blk: {
+                const l = e.contracts.labelsOf(h.labels)[which >> 16];
+                for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) break :blk s.res;
+                break :blk .{};
+            };
+            // The entries at and below the prefix are one run of the sorted
+            // entries; an open one above it is one of its prefixes.
+            const run = e.contracts.resOf(res);
+            const pk = e.f.slots.relKey(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), prefix));
+            var lo: usize = 0;
+            var hi: usize = run.len;
+            while (lo < hi) {
+                const mid = (lo + hi) / 2;
+                if (std.mem.order(u32, e.f.slots.relKey(run[mid].slot), pk) == .lt) lo = mid + 1 else hi = mid;
+            }
+            try e.charge(.inspection, @intCast(1 + std.math.log2_int_ceil(usize, run.len + 1)));
+            var i = lo;
+            while (i < run.len and std.mem.startsWith(u32, e.f.slots.relKey(run[i].slot), pk)) : (i += 1) {
+                for (e.contracts.arrivalsOf(run[i].arrivals)) |a| try e.feedBelow(ki, run[i].slot, run[i].open, a);
+            }
+            for (run[0..lo]) |rs| {
+                if (!rs.open) continue;
+                if (!std.mem.startsWith(u32, pk, e.f.slots.relKey(rs.slot))) continue;
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.feedBelow(ki, rs.slot, rs.open, a);
+            }
+        } else try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
+        _ = pw;
+        e.inst_depth -= 1;
+        if (e.inst_depth == 0) if (e.live) |lv| try lv.pump(lv.ctx);
+        if (sub) |s| if (e.live != null) {
+            _ = try e.subscribe(ki, s);
+        };
+        return ki;
+    }
+
+    /// An item of a key below a prefix as a plain leaf: an open one stands
+    /// for its subtree, every slot below its own.
+    pub fn widen(e: *Eval, x: u32, at: u32) Error!u32 {
+        if (at & open_bit == 0) return x;
+        const l = e.f.leafAt(x);
+        if (l.kind != .ref) return x;
+        var all: std.ArrayList(u32) = .empty;
+        defer all.deinit(e.gpa());
+        for (e.f.slots.items(l.slots)) |sl| try all.appendSlice(e.gpa(), e.f.slots.items(try e.f.slots.below(e.gpa(), e.account(), e.places(), .from(sl))));
+        std.mem.sort(u32, all.items, {}, std.sort.asc(u32));
+        var n: usize = 0;
+        for (all.items) |v| {
+            if (n != 0 and all.items[n - 1] == v) continue;
+            all.items[n] = v;
+            n += 1;
+        }
+        var w = l;
+        w.slots = try e.f.slots.internSorted(e.gpa(), e.account(), all.items[0..n]);
+        w.at_pos = false;
+        return e.f.leaf(w);
+    }
+
+    /// A key's items: its leaves and their slots.
+    pub fn keyItems(e: *const Eval, ki: u32) struct { []const u32, []const u32 } {
+        const k = e.keys.items[ki];
+        return .{ k.leaves.items, k.at.items };
+    }
+
+    /// The callee's arrival `a` at its result slot `rel` (`open`: and below)
+    /// for below-key `ki`: read at that slot when it is at or below the
+    /// key's prefix, at the prefix, open, when the slot is open above it.
+    pub fn feedBelow(e: *Eval, ki: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void {
+        const k = e.keys.items[ki];
+        const r = e.f.roots.items[e.rootOfKey(ki)];
+        const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));
+        const rw = e.f.slots.relWords(rel);
+        if (rw.len >= pw.len and std.mem.eql(u32, pw, rw[0..pw.len])) {
+            // The caller slot of the entry, once per (root, entry).
+            if (e.slot_memo.get(.{ r.path.int(), rel })) |one| return e.feedAt(ki, .from(one), @intCast(rw.len), open, a);
+            var paths: std.ArrayList(u32) = .empty;
+            defer paths.deinit(e.gpa());
+            try Slots.replay(e.gpa(), e.account(), e.places(), r.path, rw, &paths);
+            if (paths.items.len == 1) try e.slot_memo.put(e.gpa(), .{ r.path.int(), rel }, paths.items[0]);
+            if (paths.items.len == 0) try paths.append(e.gpa(), k.slot.int());
+            for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(rw.len), open, a);
+        } else if (open and rw.len < pw.len and std.mem.eql(u32, rw, pw[0..rw.len])) {
+            try e.feedAt(ki, k.slot, @intCast(rw.len), true, a);
+        }
+    }
+
+    /// Arrival `a` of an entry `n` steps from the call's root, read at the
+    /// caller slot `base` at or below it; `open`: and at every caller slot
+    /// below `base`. An atom is the same at every slot (one open item); a
+    /// projection that gives only `⊤` or shared objects at `base` gives them
+    /// below it too. Anything else is read at each slot through that slot's
+    /// own key (`instAt`), which every reader of the slot shares.
+    fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a: Contract.Arrival) Error!void {
+        const k = e.keys.items[ki];
+        const saved = e.cur_sub;
+        defer e.cur_sub = saved;
+        if (open) {
+            var acc: std.ArrayList(u32) = .empty;
+            defer acc.deinit(e.gpa());
+            const bw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), base));
+            const suffix0 = try e.gpa().dupe(u32, bw[@min(n, bw.len)..]);
+            defer e.gpa().free(suffix0);
+            const at_base = base.int() | open_bit;
+            e.cur_sub = .{ .kind = .forward_below, .a = ki, .b = at_base };
+            try e.arrivalLeaves(k.call, none, a, suffix0, &acc);
+            var atoms: std.ArrayList(u32) = .empty;
+            defer atoms.deinit(e.gpa());
+            var uniform = true;
+            for (acc.items) |x| if (!try e.uniformAtoms(x, &atoms)) {
+                uniform = false;
+                break;
+            };
+            if (uniform or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+                for (if (uniform) atoms.items else acc.items) |x| try e.addBelow(ki, x, at_base);
+                return;
+            }
+            // A call's or a supply's result at `base` is open there: its
+            // subtree is read through that call's own key below it.
+            var calls = true;
+            for (acc.items) |x| {
+                const xl = e.f.leafAt(x);
+                if (xl.kind != .ref or !e.expandable(xl)) calls = false;
+            }
+            if (calls) {
+                for (acc.items) |x| try e.addBelow(ki, x, at_base);
+                return;
+            }
+            for (e.f.slots.items(try e.f.slots.below(e.gpa(), e.account(), e.places(), base))) |sl| {
+                if (sl != base.int()) try e.slotItems(ki, .from(sl));
+            }
+        }
+        try e.slotItems(ki, base);
+    }
+
+    /// The objects at every slot of leaf `x`'s subtree when they are the same
+    /// atoms at each (`⊤`, a shared value, a call's fresh objects): a call's
+    /// leaf whose callee says only that, open, above it and nothing below it
+    /// (a pessimistic contract's `⊤`, a cast of one). Null otherwise.
+    fn uniformAtoms(e: *Eval, x: u32, out: *std.ArrayList(u32)) Error!bool {
+        const l = e.f.leafAt(x);
+        switch (l.kind) {
+            .top, .shared => {
+                try out.append(e.gpa(), x);
+                return true;
+            },
+            .ref => {},
+            else => return false,
+        }
+        const r = e.f.roots.items[l.root];
+        if (r.kind != .call) return false;
+        const sls = e.f.slots.items(l.slots);
+        if (sls.len != 1) return false;
+        const cl = e.f.calls.items[r.a];
+        if (cl.contract == none) return false;
+        if (e.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
+        const xw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sls[0])));
+        const h = e.contracts.head(cl.contract);
+        var any = false;
+        for (e.contracts.resOf(h.res)) |rs| {
+            try e.charge(.inspection, 1);
+            const rw = e.f.slots.relWords(rs.slot);
+            if (rw.len > xw.len) {
+                if (std.mem.eql(u32, xw, rw[0..xw.len])) return false;
+                continue;
+            }
+            if (!std.mem.eql(u32, rw, xw[0..rw.len])) continue;
+            if (!rs.open) {
+                if (rw.len == xw.len) return false;
+                continue;
+            }
+            for (e.contracts.arrivalsOf(rs.arrivals)) |a| switch (a.kind) {
+                .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = l.tags })),
+                .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot, .tags = l.tags })),
+                .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = r.a, .tags = l.tags })),
+                .param, .cb => return false,
+            };
+            any = true;
+        }
+        return any;
+    }
+
+    /// The leaves at caller slot `sl` of key `ki`'s call, through the slot's
+    /// own key, as items of `ki` at `sl`.
+    fn slotItems(e: *Eval, ki: u32, sl: PathId) Error!void {
+        const k = e.keys.items[ki];
+        const saved = e.cur_sub;
+        defer e.cur_sub = saved;
+        e.cur_sub = .{ .kind = .forward_below, .a = ki, .b = sl.int() };
+        const run = try e.gpa().dupe(u32, try e.instAt(k.call, sl, k.which));
+        defer e.gpa().free(run);
+        for (run) |x| try e.addBelow(ki, x, sl.int());
+    }
+
+    /// `feedBelow` of a member's draft arrival (its label renamed, as `feedDraft`).
+    pub fn feedBelowDraft(e: *Eval, ki: u32, rel: Slots.Rel, open: bool, a0: Contract.Arrival) Error!void {
+        var a = a0;
+        if (a.kind == .cb) {
+            const call = e.f.calls.items[e.keys.items[ki].call];
+            if (call.contract == none) return;
+            a.j = e.live.?.labelIn(e.live.?.ctx, call.code, a.j, call.contract) orelse return;
+        }
+        try e.feedBelow(ki, rel, open, a);
+    }
+
+    /// The root a key's call or supply results in.
+    fn rootOfKey(e: *Eval, ki: u32) u32 {
+        const k = e.keys.items[ki];
+        if (k.which == none) return e.f.calls.items[k.call].root;
+        for (e.f.supplies.items) |s| if (s.call == k.call and (s.label << 16 | s.k) == k.which) return s.root;
+        unreachable;
+    }
+
+    fn addBelow(e: *Eval, ki: u32, x: u32, at: u32) Error!void {
+        if ((try e.below_has.getOrPut(e.gpa(), .{ ki, x, at })).found_existing) return;
+        try e.charge(.edge, 1);
+        const k = &e.keys.items[ki];
+        try k.leaves.append(e.gpa(), x);
+        try k.at.append(e.gpa(), at);
+        if (k.subs.items.len != 0 and !k.dirty) {
+            k.dirty = true;
+            if (e.live) |lv| try lv.dirty(lv.ctx, e, ki);
+        }
+    }
+
     /// Arrival `a` of key `ki`'s callee, at a slot whose steps are the
     /// first `at` of the key's: its leaves added to the key.
     pub fn feed(e: *Eval, ki: u32, a: Contract.Arrival, at: u32) Error!void {
@@ -717,7 +996,7 @@ pub const Eval = struct {
     /// Whether `s` is new to key `ki`.
     fn subscribe(e: *Eval, ki: u32, s: Sub) Error!bool {
         if (s.kind == .forward and s.a == ki) return false;
-        const got = try e.key_subs.getOrPut(e.gpa(), .{ ki, @backingInt(s.kind), s.a, s.b, s.c, s.tags });
+        const got = try e.key_subs.getOrPut(e.gpa(), .{ ki, @backingInt(s.kind), s.a, s.b, s.c, s.d, s.tags });
         if (got.found_existing) return false;
         try e.charge(.edge, 1);
         const k = &e.keys.items[ki];
@@ -733,17 +1012,23 @@ pub const Eval = struct {
             while (true) {
                 const at = e.keys.items[ki].subs.items[si];
                 if (at.cursor >= e.keys.items[ki].leaves.items.len) break;
-                const x = e.keys.items[ki].leaves.items[at.cursor];
+                const x0 = e.keys.items[ki].leaves.items[at.cursor];
                 e.keys.items[ki].subs.items[si].cursor += 1;
                 const saved = e.cur_sub;
                 e.cur_sub = null;
                 defer e.cur_sub = saved;
+                const xat: u32 = if (e.keys.items[ki].below) e.keys.items[ki].at.items[at.cursor] else 0;
+                const x = if (at.sub.kind == .describe_below) x0 else try e.widen(x0, xat);
                 switch (at.sub.kind) {
                     .forward => {
                         const y = (try e.f.withTags(x, at.sub.tags)) orelse continue;
                         try e.addLeaf(at.sub.a, y);
                     },
-                    else => try e.live.?.deliver(e.live.?.ctx, e, at.sub, x),
+                    .forward_below => {
+                        const y = (try e.f.withTags(x, at.sub.tags)) orelse continue;
+                        try e.addBelow(at.sub.a, y, at.sub.b);
+                    },
+                    else => try e.live.?.deliver(e.live.?.ctx, e, at.sub, x, xat),
                 }
             }
         }
@@ -789,7 +1074,8 @@ pub const Eval = struct {
                         try out.appendSlice(e.gpa(), ls.items);
                         return;
                     }
-                    for (all.items) |s| try out.appendSlice(e.gpa(), try e.instAt(vc, .from(s), none));
+                    // The known code's call, read where its leaves are wanted.
+                    for (all.items) |s| try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = try e.f.slots.internSorted(e.gpa(), e.account(), &.{s}) }));
                     return;
                 }
                 const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -814,6 +1100,25 @@ pub const Eval = struct {
     pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
         const l = e.f.leafAt(li);
         const r = e.f.roots.items[l.root];
+        // A whole subtree is read through one key below its position, never
+        // one per slot (§2.10 *Read-off*).
+        if (r.kind == .call or r.kind == .supply) {
+            const pslot = e.f.pos.items[l.pos].slot;
+            if (e.f.slots.items(l.slots).len > 1 and l.slots == try e.f.slots.below(e.gpa(), e.account(), e.places(), pslot)) {
+                const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else blk: {
+                    const su = e.f.supplies.items[r.a];
+                    break :blk .{ su.call, (su.label << 16) | su.k };
+                };
+                const ki = try e.instBelow(call, pslot, which);
+                var i: usize = 0;
+                while (i < e.keys.items[ki].leaves.items.len) : (i += 1) {
+                    const k = e.keys.items[ki];
+                    const x = try e.widen(k.leaves.items[i], k.at.items[i]);
+                    if (try e.f.withTags(x, l.tags)) |y| try out.append(e.gpa(), y);
+                }
+                return;
+            }
+        }
         if (e.live != null) {
             // Keys meet cycles themselves: a key read again while it is
             // made gives what it has, and its consumer gets the rest.

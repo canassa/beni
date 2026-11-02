@@ -35,6 +35,9 @@ pub const Solver = struct {
     res_watch: Ids.FixedDict(2) = .{},
     res_lists: std.ArrayList(std.ArrayList([2]u32)) = .empty,
     all_watch: std.ArrayList(std.ArrayList([3]u32)) = .empty,
+    /// Per member: the keys `(eval, key, prefix rel)` reading its result at
+    /// and below a prefix (`Relation.Eval.instBelow`).
+    below_watch: std.ArrayList(std.ArrayList([3]u32)) = .empty,
     /// Per member: the calls `(eval, call)` of it whose effects it delivers.
     eff_watch: std.ArrayList(std.ArrayList([2]u32)) = .empty,
     queue: std.ArrayList(Item) = .empty,
@@ -55,11 +58,12 @@ pub const Solver = struct {
 
     pub fn init(s: *Solver, gpa: Allocator, codes: []const u32, evals: []Evaluation, drafts: []Contract.Draft) Error!void {
         s.* = .{ .gpa = gpa, .evals = evals, .drafts = drafts };
-        s.live = .{ .ctx = s, .draftRes = draftRes, .watch = watch, .dirty = dirty, .deliver = deliverFn, .pump = pumpFn, .labelIn = labelIn };
+        s.live = .{ .ctx = s, .draftRes = draftRes, .watch = watch, .watchBelow = watchBelow, .dirty = dirty, .deliver = deliverFn, .pump = pumpFn, .labelIn = labelIn };
         s.group = .{ .ctx = s, .live = &s.live, .member = memberFn, .watchEffects = watchEffectsFn, .resFact = resFactFn, .effFact = effFactFn };
         for (codes, 0..) |c, x| {
             try s.member.put(gpa, .{c}, @intCast(x));
             try s.all_watch.append(gpa, .empty);
+            try s.below_watch.append(gpa, .empty);
             try s.eff_watch.append(gpa, .empty);
         }
     }
@@ -71,6 +75,8 @@ pub const Solver = struct {
         s.res_lists.deinit(s.gpa);
         for (s.all_watch.items) |*l| l.deinit(s.gpa);
         s.all_watch.deinit(s.gpa);
+        for (s.below_watch.items) |*l| l.deinit(s.gpa);
+        s.below_watch.deinit(s.gpa);
         for (s.eff_watch.items) |*l| l.deinit(s.gpa);
         s.eff_watch.deinit(s.gpa);
         s.queue.deinit(s.gpa);
@@ -109,15 +115,22 @@ pub const Solver = struct {
         try s.all_watch.items[x].append(s.gpa, .{ y, key, rel });
     }
 
+    fn watchBelow(ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Relation.Eval, key: u32) Error!void {
+        const s = self(ctx);
+        const x = s.memberOf(code).?;
+        s.used = true;
+        try s.below_watch.items[x].append(s.gpa, .{ s.evalIndex(ev), key, rel });
+    }
+
     fn dirty(ctx: *anyopaque, ev: *Relation.Eval, key: u32) Error!void {
         const s = self(ctx);
         try s.queue.append(s.gpa, .{ .kind = .key, .x = s.evalIndex(ev), .a = key });
     }
 
-    fn deliverFn(ctx: *anyopaque, ev: *Relation.Eval, sub: Relation.Sub, leaf: u32) Error!void {
+    fn deliverFn(ctx: *anyopaque, ev: *Relation.Eval, sub: Relation.Sub, leaf: u32, at: u32) Error!void {
         _ = ctx;
         const e: *Evaluation = @fieldParentPtr("ev", ev);
-        try Eval.deliver(e, sub, leaf);
+        try Eval.deliver(e, sub, leaf, at);
     }
 
     fn labelIn(ctx: *anyopaque, code: u32, i: u32, c: Contract.Id) ?u32 {
@@ -179,6 +192,14 @@ pub const Solver = struct {
                 .res => {
                     const e0 = &s.evals[it.x];
                     const rw = e0.ev.f.slots.relWords(it.a);
+                    // The keys below a prefix: each reads the fact itself.
+                    var bi: usize = 0;
+                    while (bi < s.below_watch.items[it.x].items.len) : (bi += 1) {
+                        const kw = s.below_watch.items[it.x].items[bi];
+                        const e = &s.evals[kw[0]];
+                        try e.ev.f.charge(.edge, 1);
+                        try e.ev.feedBelowDraft(kw[1], it.a, it.open, it.arrival);
+                    }
                     if (it.open) {
                         // Every key at or below an open slot.
                         var i: usize = 0;
