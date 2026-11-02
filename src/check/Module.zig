@@ -684,22 +684,31 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
 /// (`boundary.md` §4.2): `invalid_js_object`, at the fault. The backend
 /// writes the fields as an object literal's syntax, so nothing else of the
 /// argument could be written.
+fn checkedJsIntrinsic(cx: *const Context, inst: Bir.Inst.Index) ?JsIntrinsic.Which {
+    if (JsIntrinsic.of(cx.graph, cx.interfaces, cx.bir, inst, cx.interner)) |which| return which;
+    if (cx.bir.instTag(inst) != .top or cx.graph.modulePackage(cx.module) != .core or
+        !std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js")) return null;
+    const decl = cx.bir.instData(inst).lhs;
+    if (decl >= cx.bir.decls.len or cx.bir.decls[decl].kind != .foreign_value) return null;
+    return std.meta.stringToEnum(JsIntrinsic.Which, cx.interner.slice(cx.bir.symbol(cx.bir.decls[decl].name)));
+}
+
 fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
     const bir = cx.bir;
     const tags = bir.insts.items(.tag);
     var field_refs: std.ArrayList(Bir.Inst.Index) = .empty;
     var field_calls: std.ArrayList(Bir.Inst.Index) = .empty;
     for (tags, 0..) |tag, i| {
-        if (tag == .ext_value) {
+        if (tag == .ext_value or tag == .top) {
             const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
-            const which = JsIntrinsic.of(cx.graph, cx.interfaces, bir, inst, cx.interner);
+            const which = checkedJsIntrinsic(cx, inst);
             if (which == .cellRead or which == .cellWrite) try field_refs.append(cx.scratch, inst);
         }
         if (tag != .call) continue;
         const d = bir.instData(@fromBackingInt(@intCast(i)));
         const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
-        if (callee.int() >= tags.len or tags[callee.int()] != .ext_value) continue;
-        const which = JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner);
+        if (callee.int() >= tags.len) continue;
+        const which = checkedJsIntrinsic(cx, callee);
         if (which == .cellRead or which == .cellWrite) {
             try field_calls.append(cx.scratch, callee);
             const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);

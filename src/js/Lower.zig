@@ -11538,7 +11538,11 @@ pub const Lowerer = struct {
         }
         if (which == .cellRead or which == .cellWrite) {
             const write = which == .cellWrite;
-            const field = l.bir.fieldSelector(args[if (write) @as(usize, 2) else 1]) orelse unreachable;
+            const selector = args[if (write) @as(usize, 2) else 1];
+            const field = l.bir.fieldSelector(selector) orelse {
+                try l.report(.invalid_cell_selector, selector, "A cell field needs a literal single-field accessor, such as .state.", .{});
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            };
             const values = try l.orderedExprs(out, args[0..if (write) @as(usize, 2) else 1], false);
             const target = try l.fieldMember(values[0], field, p);
             if (!write) return target;

@@ -8571,3 +8571,8 @@ the part of the section it settles keeps its text.
   failure class it admits is the one nothing can catch.
 - **A synchronous escape hatch "just for core".** Core is where the bugs in §4.1 were.
 - **Settling for opaque-JSON-only ports.** That is the status quo, and it is the *unchecked* path.
+
+*2026-11-03, #1738:* cell selector validation applies to local references
+inside core/Js.beni as well as imported calls. A non-literal selector is
+invalid_cell_selector in check and build; lowering reports that diagnostic
+instead of asserting if an invalid selector reaches it.
