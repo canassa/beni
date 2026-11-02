@@ -160,7 +160,7 @@ pub const Adapter = struct {
     }
 
     /// The cons list `(head, tail)`, interned.
-    fn cons(a: *Adapter, head: u32, tail: u32) Allocator.Error!u32 {
+    fn cons(a: *Adapter, head: u32, tail: u32) Ids.IndexError!u32 {
         const got = try a.lists.getOrPut(a.gpa, .{ head, tail });
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(a.list_cells.items.len);
@@ -169,7 +169,7 @@ pub const Adapter = struct {
         return got.value_ptr.*;
     }
 
-    fn listOf(a: *Adapter, ids: []const u32) Allocator.Error!u32 {
+    fn listOf(a: *Adapter, ids: []const u32) Ids.IndexError!u32 {
         var l: u32 = none;
         var i = ids.len;
         while (i > 0) {
@@ -190,7 +190,7 @@ pub const Adapter = struct {
     }
 
     /// A structural node by its kind and children, interned.
-    fn structural(a: *Adapter, k: Place.Kind, head: u32, kids: []const Kid) Allocator.Error!u32 {
+    fn structural(a: *Adapter, k: Place.Kind, head: u32, kids: []const Kid) Ids.IndexError!u32 {
         // The key: the children as a cons list of (step word, id) pairs.
         var l: u32 = none;
         var i = kids.len;
@@ -206,7 +206,7 @@ pub const Adapter = struct {
         return got.value_ptr.*;
     }
 
-    fn nominal(a: *Adapter, t: Types.TypeId, args: []const u32, origin: u32) Allocator.Error!u32 {
+    fn nominal(a: *Adapter, t: Types.TypeId, args: []const u32, origin: u32) Ids.IndexError!u32 {
         const list = try a.listOf(args);
         const got = try a.keys.getOrPut(a.gpa, .{ 0x100, t.int(), list });
         if (got.found_existing) return got.value_ptr.*;
@@ -455,7 +455,10 @@ pub const Adapter = struct {
             error.OutOfMemory => error.OutOfMemory,
             // A limit met while describing: the node is a leaf that may hold
             // anything; the account has the failure and stops the owner.
-            else => .{ .kind = .@"var" },
+            else => blk: {
+                if (err == error.ProbeLength) _ = a.account.probeFailed();
+                break :blk .{ .kind = .@"var" };
+            },
         };
     }
 
@@ -682,7 +685,7 @@ pub const Module = struct {
     }
 
     /// The `shared` index of declaration `md` (a block's shared cell).
-    pub fn sharedOf(mod: *Module, md: [2]u32) Allocator.Error!u32 {
+    pub fn sharedOf(mod: *Module, md: [2]u32) Ids.IndexError!u32 {
         const got = try mod.shared.getOrPut(mod.gpa, md);
         if (!got.found_existing) {
             got.value_ptr.* = @intCast(mod.shared_of.items.len);
@@ -897,7 +900,10 @@ pub const Module = struct {
         if (decl.kind != .value or decl.params != 0) return null;
         const at = placeOfInst(ctx, ref) catch return null;
         if (mod.places.kind(at) == .closure) return null;
-        return mod.sharedOf(md) catch null;
+        return mod.sharedOf(md) catch |err| {
+            if (err == error.ProbeLength) _ = mod.account.probeFailed();
+            return null;
+        };
     }
 
     pub fn isListAppend(ctx: *anyopaque, inst: u32) bool {
@@ -1437,6 +1443,7 @@ fn walkIn(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResu
     walkOne(mod, d, prepass, r) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.OwnershipLimit, error.AccountingInvariant => r.failure = r.account.failed,
+        error.ProbeLength => r.failure = r.account.probeFailed(),
     };
 }
 
@@ -1738,6 +1745,10 @@ fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass,
     const settled = runGroup(mod, &g, prepass, rs) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.OwnershipLimit, error.AccountingInvariant => false,
+        error.ProbeLength => blk: {
+            _ = mod.account.probeFailed();
+            break :blk false;
+        },
     };
     if (settled) return;
     // No member publishes a class it earned: an unbuilt one has the
@@ -1760,6 +1771,10 @@ fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass,
             error.OutOfMemory => return error.OutOfMemory,
             error.OwnershipLimit, error.AccountingInvariant => blk: {
                 r.failure = mod.base_account.failed;
+                break :blk .none;
+            },
+            error.ProbeLength => blk: {
+                r.failure = mod.base_account.probeFailed();
                 break :blk .none;
             },
         };

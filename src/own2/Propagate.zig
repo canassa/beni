@@ -60,12 +60,12 @@ pub const Stats = struct { states: u32 = 0, edges: u32 = 0, open: u32 = 0, folds
 /// (`Scratch.Depths`): a call neither allocates them nor clears them in
 /// proportion to the id space (#1646).
 pub const Working = struct {
-    index: Scratch.Hash(3) = .{},
+    index: Ids.FixedDict(3) = .{},
     slice_at: Scratch.Dict(1, 0) = .{},
-    below_at: Scratch.Hash(4) = .{},
-    front_at: Scratch.Hash(3) = .{},
+    below_at: Ids.FixedDict(4) = .{},
+    front_at: Ids.FixedDict(3) = .{},
     node_at: Scratch.Dict(1, 0) = .{},
-    node_edge_at: Scratch.Hash(2) = .{},
+    node_edge_at: Ids.FixedDict(2) = .{},
 
     const fields = .{ "index", "slice_at", "below_at", "front_at", "node_at", "node_edge_at" };
 
@@ -227,16 +227,16 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             kept_call: bool,
             states: std.ArrayList(State) = .empty,
             working: *Working = undefined,
-            index: *Scratch.Hash(3) = undefined,
+            index: *Ids.FixedDict(3) = undefined,
             edges: std.ArrayList(Edge) = .empty,
             runs: std.ArrayList(NodeId) = .empty,
             run_ctxs: std.ArrayList(Kappas) = .empty,
             slices: std.ArrayList(Slice) = .empty,
             slice_at: *Scratch.Dict(1, 0) = undefined,
             words: std.ArrayList(u64) = .empty,
-            below_at: *Scratch.Hash(4) = undefined,
+            below_at: *Ids.FixedDict(4) = undefined,
             belows: std.ArrayList(Below) = .empty,
-            front_at: *Scratch.Hash(3) = undefined,
+            front_at: *Ids.FixedDict(3) = undefined,
             fronts: std.ArrayList(Next) = .empty,
             items: std.ArrayList(Item) = .empty,
             next: std.ArrayList(Next) = .empty,
@@ -245,7 +245,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             batch: std.ArrayList(u32) = .empty,
             node_at: *Scratch.Dict(1, 0) = undefined,
             nodes: std.ArrayList(NodeInfo) = .empty,
-            node_edge_at: *Scratch.Hash(2) = undefined,
+            node_edge_at: *Ids.FixedDict(2) = undefined,
             node_edges: std.ArrayList([2]u32) = .empty,
             comps: std.ArrayList(Comp) = .empty,
             bitwords: std.ArrayList(u64) = .empty,

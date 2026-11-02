@@ -4,8 +4,9 @@ Micro-benchmarks for the data-oriented work on the ownership checker v2
 (`src/own2/`). Neither is a gate; nothing in `zig build` runs them.
 
 - `bench.zig` replays the **real dictionary operations** of the checker against
-  three layouts: the crit-bit `Ids.FixedDict` as it is, an open-addressing
-  index of entry indices over dense key arrays, and a chain per key 0 (a dense
+  three layouts: the crit-bit dictionary `Ids.FixedDict` was until #1646
+  (a copy), an open-addressing index of entry indices over dense key arrays
+  (what `Ids.Index` is now), and a chain per key 0 (a dense
   id). It prints nanoseconds per operation, best of five.
 - `soa.zig` times four ways to read a `MultiArrayList` column against a plain
   slice, for the node shape of `Shape.Table`.

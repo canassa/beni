@@ -107,11 +107,11 @@ pub const Table = struct {
     /// The κ maps' nodes, hash-consed.
     /// Whole nodes, not columns: a descent reads every word of each node.
     kmaps: std.ArrayList(MapNode) = .empty,
-    kmap_intern: Ids.FixedDict(4) = .{},
+    kmap_intern: Ids.Interned(4) = .{},
     kmap_stats: Counters.Sets = Counters.zero(Counters.Sets),
     /// The snapshots' positions, hash-consed (`Kappas` indexes them).
     kpos: Ids.Columns(Position) = .empty,
-    kpos_intern: Ids.FixedDict(3) = .{},
+    kpos_intern: Ids.Interned(3) = .{},
     /// `flat`'s memo: the atom set of a condition (`.none` for `yes`).
     flat_memo: stamped.Column(CondId, SetId) = .{},
     /// `ofSet`'s memo: the canonical condition of an atom set.
@@ -186,7 +186,7 @@ pub const Table = struct {
     /// `arrivalAggs`' multisets per node, likewise.
     class_marks: Scratch.Depths(Scratch.Map(NodeId, ClassAggs)) = .{},
     /// `cursorSteps`' steps met, and `assertResolved`'s conditions met.
-    step_marks: Scratch.Depths(Scratch.Hash(1)) = .{},
+    step_marks: Scratch.Depths(Ids.FixedDict(1)) = .{},
     cond_marks: Scratch.Depths(Scratch.Set(CondId)) = .{},
     /// `kappaMerge`'s memo: an unordered pair of positions → their merge.
     memo_merge: Ids.FixedDict(2) = .{},

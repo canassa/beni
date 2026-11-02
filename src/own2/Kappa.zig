@@ -47,19 +47,35 @@ pub fn Of(comptime Table: type) type {
             return t.kmaps.items[id];
         }
 
+        /// The interning keys, rebuilt from the map nodes and positions.
+        const MapKeys = struct {
+            t: *const Table,
+            pub fn keyAt(c: MapKeys, i: u32) [4]u32 {
+                const n = c.t.kmaps.items[i];
+                return .{ n.prefix, n.mask, n.left, n.right };
+            }
+        };
+        const PosKeys = struct {
+            t: *const Table,
+            pub fn keyAt(c: PosKeys, i: u32) [3]u32 {
+                const col = c.t.kpos.col;
+                return .{ col.here[i], col.links[i], col.fold[i] };
+            }
+        };
+
         /// One map node, interned; reserved before the dictionary is touched.
         pub fn makeMap(t: *Table, gpa: Allocator, charge: Charge, n: MapNode) Error!u32 {
             try charge.reserve(gpa, .cond, 1);
-            const got = try t.kmap_intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
-            if (got.found_existing) {
-                Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
-                return got.value_ptr.*;
+            try t.kmaps.ensureUnusedCapacity(gpa, 1);
+            if (try t.kmap_intern.getOrInsert(gpa, .{ n.prefix, n.mask, n.left, n.right }, MapKeys{ .t = t }, t.kmaps.items.len)) |hit| {
+                Counters.setMakeRequest(&t.kmap_stats, hit);
+                return hit;
             }
-            got.value_ptr.* = @intCast(t.kmaps.items.len);
-            try t.kmaps.append(gpa, n);
+            const id: u32 = @intCast(t.kmaps.items.len);
+            t.kmaps.appendAssumeCapacity(n);
             try Counters.setMade(&t.kmap_stats, gpa, n.mask == 0, n.left, n.right);
-            Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
-            return got.value_ptr.*;
+            Counters.setMakeRequest(&t.kmap_stats, id);
+            return id;
         }
 
         pub inline fn matches(key: u32, prefix: u32, mask: u32) bool {
@@ -228,11 +244,11 @@ pub fn Of(comptime Table: type) type {
         pub fn makePos(t: *Table, gpa: Allocator, charge: Charge, p: Position) Error!Kappas {
             if (p.here == Ids.none_int and p.links == Ids.none_int and p.fold == 0) return .none;
             try charge.reserve(gpa, .cond, 1);
-            const got = try t.kpos_intern.getOrPut(gpa, .{ p.here, p.links, p.fold });
-            if (got.found_existing) return .from(got.value_ptr.*);
-            got.value_ptr.* = @intCast(t.kpos.len());
+            try t.kpos.ensureUnusedCapacity(gpa, 1);
+            if (try t.kpos_intern.getOrInsert(gpa, .{ p.here, p.links, p.fold }, PosKeys{ .t = t }, t.kpos.len())) |hit| return .from(hit);
+            const id: u32 = @intCast(t.kpos.len());
             try t.kpos.append(gpa, p);
-            return .from(got.value_ptr.*);
+            return .from(id);
         }
 
         /// κ stored for `n` at the position `ctx`, or null.
@@ -519,7 +535,7 @@ pub fn Of(comptime Table: type) type {
         /// Whether a snapshot stores an unresolved condition (an `inst` atom in an
         /// entry): a check that a published κ is resolved (§2.11), uncharged, for
         /// `runtime_safety` builds.
-        pub fn kappaHoldsInst(t: *const Table, gpa: Allocator, ctx: Kappas) Allocator.Error!bool {
+        pub fn kappaHoldsInst(t: *const Table, gpa: Allocator, ctx: Kappas) Ids.IndexError!bool {
             if (ctx == .none) return false;
             var seen: Ids.FixedDict(1) = .{};
             defer seen.deinit(gpa);
@@ -552,7 +568,7 @@ pub fn Of(comptime Table: type) type {
         /// (§2.11), uncharged, for `runtime_safety` builds. A position found
         /// view-free is remembered while no knot is tied, as `holdsView`
         /// remembers nodes, so a class added checks only the positions it adds.
-        pub fn kappaHoldsView(t: *Table, gpa: Allocator, shapes: *Shape.Table, ctx: Kappas) Allocator.Error!bool {
+        pub fn kappaHoldsView(t: *Table, gpa: Allocator, shapes: *Shape.Table, ctx: Kappas) Ids.IndexError!bool {
             if (ctx == .none) return false;
             var seen: Ids.FixedDict(1) = .{};
             defer seen.deinit(gpa);

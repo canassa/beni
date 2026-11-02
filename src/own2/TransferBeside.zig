@@ -53,10 +53,10 @@ fn exactPath(steps: []const Step) bool {
 /// `otherPaths`' visited states and certified reads, kept by the frame by
 /// call depth (`Slots.Depths`, #1646).
 pub const Seen = struct {
-    seen: Slots.Hash(6) = .{},
-    seen_x: Slots.Hash(7) = .{},
-    seen_r: Slots.Hash(6) = .{},
-    read: Slots.Hash(5) = .{},
+    seen: Ids.FixedDict(6) = .{},
+    seen_x: Ids.FixedDict(7) = .{},
+    seen_r: Ids.FixedDict(6) = .{},
+    read: Ids.FixedDict(5) = .{},
 
     const sets = .{ "seen", "seen_x", "seen_r", "read" };
 
@@ -543,7 +543,7 @@ pub fn Of(comptime Frame: type) type {
                 c.node_tags.deinit(gpa);
                 c.read_tags.deinit(gpa);
             }
-            fn intern(c: *Cert, gpa: Allocator, occ: u32, cls: NodeId) Allocator.Error!u32 {
+            fn intern(c: *Cert, gpa: Allocator, occ: u32, cls: NodeId) Ids.IndexError!u32 {
                 const got = try c.ids.getOrPut(gpa, .{ occ, cls.int() });
                 if (!got.found_existing) {
                     got.value_ptr.* = @intCast(c.tags.items.len);
@@ -683,7 +683,7 @@ pub fn Of(comptime Frame: type) type {
         /// `Arms.read`, with C7's edge check on the read map (row 17 of
         /// *The two walls*): a read node an item of one certified view made is
         /// read again only by an item of the same view, `runtime_safety` only.
-        pub fn certReadNode(f: *Frame, arms: *Arms, read: *Slots.Hash(5), key: [5]u32, by: u32, tag: u32) Error!?u32 {
+        pub fn certReadNode(f: *Frame, arms: *Arms, read: *Ids.FixedDict(5), key: [5]u32, by: u32, tag: u32) Error!?u32 {
             const c = certOf(f).?;
             if (std.debug.runtime_safety) if (read.get(key)) |n| if ((c.read_tags.get(.{n}) orelse none) != tag)
                 std.debug.panic("ownership v2: a read node of one certified view is read by an item of another (C7, #1485)", .{});
@@ -1698,7 +1698,7 @@ pub fn Of(comptime Frame: type) type {
                 w.set.deinit(gpa);
                 w.params.deinit(gpa);
             }
-            fn add(w: *Want, gpa: Allocator, k: [4]u32) Allocator.Error!void {
+            fn add(w: *Want, gpa: Allocator, k: [4]u32) Ids.IndexError!void {
                 if ((try w.set.getOrPut(gpa, k)).found_existing) return;
                 try w.keys.append(gpa, k);
             }

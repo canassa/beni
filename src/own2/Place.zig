@@ -270,7 +270,7 @@ pub const Table = struct {
     block_var: stamped.Column(u32, PlaceId) = .{},
     paths: Ids.Columns(PathNode) = .empty,
     /// `(parent path, step)` → path; a root is `(none, place)`.
-    path_index: Ids.FixedDict(2) = .{},
+    path_index: Ids.Interned(2) = .{},
     /// `extend`'s memo: `(path, step)` → the canonical result, `none` for
     /// no such step.
     extend_memo: Ids.FixedDict(2) = .{},
@@ -647,14 +647,24 @@ pub const Table = struct {
 
     // ---- canonical paths ------------------------------------------------
 
-    /// The `ε` path of `place`.
-    pub fn rootPath(t: *Table, gpa: Allocator, place: PlaceId) Allocator.Error!PathId {
-        const got = try t.path_index.getOrPut(gpa, .{ Ids.none_int, place.int() });
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(t.paths.len());
-            try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .depth = 0, .summary = false });
+    /// `path_index`'s keys, rebuilt from the paths: `(parent, step)`, and
+    /// `(none, place)` for a root.
+    const PathKeys = struct {
+        t: *const Table,
+        pub fn keyAt(c: PathKeys, i: u32) [2]u32 {
+            const col = c.t.paths.col;
+            if (col.parent[i] == .none) return .{ Ids.none_int, col.place[i].int() };
+            return .{ col.parent[i].int(), col.step[i].word() };
         }
-        return .from(got.value_ptr.*);
+    };
+
+    /// The `ε` path of `place`.
+    pub fn rootPath(t: *Table, gpa: Allocator, place: PlaceId) Ids.IndexError!PathId {
+        try t.paths.ensureUnusedCapacity(gpa, 1);
+        if (try t.path_index.getOrInsert(gpa, .{ Ids.none_int, place.int() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
+        const id: PathId = .from(@intCast(t.paths.len()));
+        try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .depth = 0, .summary = false });
+        return id;
     }
 
     pub fn pathPlace(t: *const Table, p: PathId) PlaceId {
@@ -817,15 +827,14 @@ pub const Table = struct {
     fn node(t: *Table, gpa: Allocator, account: *Account, parent: PathId, step: Step, place: PlaceId) Error!PathId {
         const depth = t.pathDepth(parent) + 1;
         try account.limitOver(.path_steps, depth, t.limits.path_steps);
-        const got = try t.path_index.getOrPut(gpa, .{ parent.int(), step.word() });
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(t.paths.len());
-            const summary = t.paths.col.summary[parent.int()] or step.kind == .elem or step.kind == .level;
-            const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
-            const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
-            try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up, .ret = step.kind == .level });
-        }
-        return .from(got.value_ptr.*);
+        try t.paths.ensureUnusedCapacity(gpa, 1);
+        if (try t.path_index.getOrInsert(gpa, .{ parent.int(), step.word() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
+        const id: PathId = .from(@intCast(t.paths.len()));
+        const summary = t.paths.col.summary[parent.int()] or step.kind == .elem or step.kind == .level;
+        const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
+        const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
+        try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up, .ret = step.kind == .level });
+        return id;
     }
 
     /// Whether `p` is on a cycle of the place graph: a step back to itself,

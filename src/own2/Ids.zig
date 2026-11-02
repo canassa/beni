@@ -27,9 +27,12 @@
 //! **The persistent set** of §4.1 is `Cell.Radix` (L2), the one table that
 //! holds cells; it is built on the same account.
 //!
-//! **The fixed-key dictionary** (`FixedDict`) is a mutable patricia tree over
-//! `[k]u32` keys: deterministic, O(32·k) comparisons per lookup, no hashing,
-//! the "owner-local comparison tree" every intern table and memo of §3 is.
+//! **The fixed-key dictionary** is `Index`: open addressing over entry
+//! indices with a fixed hash and linear probing, never iterated, an expected
+//! O(1) probes per operation at a load factor of at most 1/2, and a probe
+//! past `probe_length` is the named `ownership_limit` (§4.1). `FixedDict`
+//! keeps its keys in its own dense columns; `Interned` reads them from the
+//! records of an intern table, which stores each key once.
 //!
 //! **The queue** (`Tasks`) is one-shot: a task is enqueued at most once and
 //! executes at most once (§4.1), its links in its own record.
@@ -187,7 +190,7 @@ pub fn Columns(comptime T: type) type {
 
 /// A map from one dense id `K` (an id newtype or a `u32` index) to a `u32`,
 /// as a column indexed by the id: one load and a compare per lookup, where a
-/// `FixedDict(1)` descends a crit-bit tree. It holds memory in proportion to
+/// `FixedDict(1)` hashes the id and probes. It holds memory in proportion to
 /// the highest id it has stored, never iterates, and is never cleared: a
 /// slot is absent until written.
 ///
@@ -477,6 +480,9 @@ pub const Limit = enum(u8) {
     block_bytes,
     step_payload,
     ctor_steps,
+    /// The longest displacement of a key in a dictionary's index (§4.1): what
+    /// an adversarial key set meets, loudly.
+    probe_length,
 
     pub fn value(l: Limit) u64 {
         return switch (l) {
@@ -484,6 +490,7 @@ pub const Limit = enum(u8) {
             .type_places => 1 << 24,
             .declaration_insts, .block_bytes => 1 << 31,
             .step_payload, .ctor_steps => 1 << 28,
+            .probe_length => 1024,
         };
     }
 };
@@ -508,7 +515,9 @@ pub const Failure = union(enum) {
     }
 };
 
-pub const AccountError = error{ OwnershipLimit, AccountingInvariant };
+/// `ProbeLength` is a dictionary's `probe_length`, raised where no account is
+/// at hand; the walk that catches it names it (`Account.probeFailed`).
+pub const AccountError = error{ OwnershipLimit, AccountingInvariant, ProbeLength };
 /// What every charged operation can fail with.
 pub const ChargeError = Allocator.Error || AccountError;
 
@@ -689,6 +698,13 @@ pub const Account = struct {
         }
     }
 
+    /// A dictionary refused a probe past `probe_length` (§4.4), which has no
+    /// account to mark: this owner's failure names it, unless it has one.
+    pub fn probeFailed(a: *Account) ?Failure {
+        if (a.failed == null) a.failed = .{ .limit = .probe_length };
+        return a.failed;
+    }
+
     /// How many records `lane` has used.
     pub fn laneUsed(a: *const Account, lane: Lane) u32 {
         return a.lanes.get(.{ lane.atom, @backingInt(lane.role), @backingInt(lane.phase), lane.step }) orelse 0;
@@ -786,38 +802,139 @@ pub const Chunks = struct {
 };
 
 // ---------------------------------------------------------------------------
-// The fixed-key dictionary: a mutable patricia tree over [k]u32 keys (§4.1)
+// The fixed-key dictionary: open addressing over entry indices (§4.1)
 // ---------------------------------------------------------------------------
 
-/// Deterministic, hash-free, O(32k) per lookup: a crit-bit tree whose
-/// inner node names the first bit two keys differ at. Keys are the words
-/// `keys[k·i ..]`; `values[i]` is leaf `i`'s value.
+/// What an insertion into an `Index` fails with besides memory: a probe
+/// longer than `probe_length` (§4.1, §4.4). The index has no account, so the
+/// walk that meets it names the limit (`Account.probeFailed`).
+pub const IndexError = Allocator.Error || error{ProbeLength};
+
+/// `probe_length` (§4.4): the longest displacement an `Index` takes.
+pub const probe_length: u32 = @intCast(Limit.probe_length.value());
+
+/// The fixed hash of a key (§4.1): each word folded in by xor, a multiply by
+/// ⌊2⁶⁴/φ⌋ and an xor-shift, from a fixed seed. It reads nothing but the key,
+/// so where a key lands never depends on the run (§3.8).
+pub inline fn hashKey(comptime k: usize, key: [k]u32) u64 {
+    var h: u64 = 0x243f6a8885a308d3;
+    inline for (0..k) |j| {
+        h = (h ^ key[j]) *% 0x9e3779b97f4a7c15;
+        h ^= h >> 29;
+    }
+    return h ^ (h >> 32);
+}
+
+/// An open-addressing index of entry indices, the shape of Zig's
+/// `InternPool` maps: a slot holds `(generation, entry)` and nothing else,
+/// and the keys stay in the caller's dense columns, read through `ctx`
+/// (`ctx.keyAt(entry)`). Its entries are `0 .. len`, numbered in the order
+/// they were inserted. Nothing iterates the slots but `grow`.
+///
+/// - Linear probing from the key's hash; the load factor stays at most 1/2
+///   (the slots double, at least 16, before an insertion would pass it).
+/// - `reach` is the longest displacement of an entry, so a lookup probes at
+///   most `reach + 1` slots. An insertion whose displacement would pass
+///   `probe_length` is refused with `error.ProbeLength` before it writes: an
+///   adversarial key set is loud, never slow (§4.1). A rehash that passes it
+///   completes, so the index stays correct, then refuses.
+/// - `clear` is one increment of the generation: a slot of another
+///   generation is empty.
+pub const Index = struct {
+    slots: std.ArrayList([2]u32) = .empty,
+    gen: u32 = 1,
+    len: u32 = 0,
+    reach: u32 = 0,
+
+    pub fn deinit(ix: *Index, gpa: Allocator) void {
+        ix.slots.deinit(gpa);
+    }
+
+    pub fn clear(ix: *Index) void {
+        ix.len = 0;
+        ix.reach = 0;
+        ix.gen +%= 1;
+        if (ix.gen != 0) return;
+        for (ix.slots.items) |*x| x[0] = 0;
+        ix.gen = 1;
+    }
+
+    inline fn home(ix: *const Index, comptime k: usize, key: [k]u32) u32 {
+        return @as(u32, @truncate(hashKey(k, key))) & @as(u32, @intCast(ix.slots.items.len - 1));
+    }
+
+    /// The entry holding `key`, or null; `steps` counts the slots read.
+    pub fn find(ix: *const Index, comptime k: usize, key: [k]u32, ctx: anytype, steps: *Counters.Steps) ?u32 {
+        if (ix.len == 0) return null;
+        const mask: u32 = @intCast(ix.slots.items.len - 1);
+        var at = ix.home(k, key);
+        var d: u32 = 0;
+        while (d <= ix.reach) : (d += 1) {
+            steps.inc();
+            const x = ix.slots.items[at];
+            if (x[0] != ix.gen) return null;
+            const other: [k]u32 = ctx.keyAt(x[1]);
+            var same = true;
+            inline for (0..k) |j| same = same and other[j] == key[j];
+            if (same) return x[1];
+            at = (at + 1) & mask;
+        }
+        return null;
+    }
+
+    /// Index entry `len` under `key`, which `find` has just missed. The
+    /// caller writes the entry's key into its columns after this succeeds,
+    /// so a refusal leaves nothing half-written.
+    pub fn insert(ix: *Index, gpa: Allocator, comptime k: usize, key: [k]u32, ctx: anytype) IndexError!void {
+        if (2 * (@as(usize, ix.len) + 1) > ix.slots.items.len) try ix.grow(gpa, k, ctx);
+        const mask: u32 = @intCast(ix.slots.items.len - 1);
+        var at = ix.home(k, key);
+        var d: u32 = 0;
+        while (ix.slots.items[at][0] == ix.gen) : (d += 1) {
+            if (d == probe_length) return error.ProbeLength;
+            at = (at + 1) & mask;
+        }
+        ix.slots.items[at] = .{ ix.gen, ix.len };
+        ix.reach = @max(ix.reach, d);
+        ix.len += 1;
+    }
+
+    /// Twice the slots, every entry placed again from its key.
+    fn grow(ix: *Index, gpa: Allocator, comptime k: usize, ctx: anytype) IndexError!void {
+        const n = @max(16, 2 * ix.slots.items.len);
+        try ix.slots.resize(gpa, n);
+        @memset(ix.slots.items, .{ 0, 0 });
+        ix.gen = 1;
+        ix.reach = 0;
+        const mask: u32 = @intCast(n - 1);
+        for (0..ix.len) |i| {
+            var at = ix.home(k, ctx.keyAt(@intCast(i)));
+            var d: u32 = 0;
+            while (ix.slots.items[at][0] == ix.gen) : (d += 1) at = (at + 1) & mask;
+            ix.slots.items[at] = .{ ix.gen, @intCast(i) };
+            ix.reach = @max(ix.reach, d);
+        }
+        if (ix.reach > probe_length) return error.ProbeLength;
+    }
+};
+
+/// A map from keys of `k` words to `u32`: an `Index` over its own dense key
+/// and value columns, entries numbered in insertion order (§4.1).
 pub fn FixedDict(comptime k: usize) type {
     return struct {
-        /// `crit`: the critical bit's position (0 is the most significant
-        /// bit of word 0), or `leaf_crit` for a leaf whose `left` is the
-        /// key/value index. Whole nodes, not columns: a descent reads all
-        /// three words of each node it visits (#1560).
-        nodes: std.ArrayList(Node) = .empty,
+        index: Index = .{},
         keys: std.ArrayList(u32) = .empty,
         values: std.ArrayList(u32) = .empty,
-        root: u32 = none_int,
         stats: Counters.Dict = Counters.zero(Counters.Dict),
 
         const Self = @This();
         pub const Key = [k]u32;
         pub const counter_kind = Counters.Kind.dict;
-        const Node = struct { crit: u32, left: u32, right: u32 };
-        const leaf_crit: u32 = none_int;
-
-        comptime {
-            assertRecord(Node);
-        }
 
         pub const GetOrPut = struct { found_existing: bool, value_ptr: *u32, index: u32 };
 
         pub fn deinit(d: *Self, gpa: Allocator) void {
-            d.nodes.deinit(gpa);
+            d.index.deinit(gpa);
             d.keys.deinit(gpa);
             d.values.deinit(gpa);
             if (Counters.enabled) d.stats.trace.deinit(std.heap.smp_allocator);
@@ -828,87 +945,97 @@ pub fn FixedDict(comptime k: usize) type {
         }
 
         pub fn clearRetainingCapacity(d: *Self) void {
-            d.nodes.clearRetainingCapacity();
+            d.index.clear();
             d.keys.clearRetainingCapacity();
             d.values.clearRetainingCapacity();
-            d.root = none_int;
         }
 
-        inline fn bitOf(key: Key, crit: u32) u1 {
-            return @intCast((key[crit / 32] >> @intCast(31 - crit % 32)) & 1);
+        /// What a walk's slot (`Scratch.Depths`) empties it with.
+        pub fn clear(d: *Self) void {
+            d.clearRetainingCapacity();
         }
 
-        fn keyAt(d: *const Self, leaf: u32) Key {
-            return d.keys.items[leaf * k ..][0..k].*;
+        pub fn keyAt(d: *const Self, i: u32) Key {
+            return d.keys.items[i * k ..][0..k].*;
         }
 
-        /// The leaf a lookup of `key` lands on, or none for an empty tree.
-        fn descend(d: *const Self, key: Key) u32 {
-            var at = d.root;
+        fn lookup(d: *const Self, key: Key) ?u32 {
             var steps: Counters.Steps = .{};
-            defer Counters.dictDescended(&d.stats, steps);
-            if (at == none_int) return none_int;
-            const ns = d.nodes.items;
-            while (ns[at].crit != leaf_crit) {
-                steps.inc();
-                at = if (bitOf(key, ns[at].crit) == 0) ns[at].left else ns[at].right;
-            }
-            return ns[at].left;
+            defer Counters.dictDescended(&d.stats, steps, d.index.reach);
+            return d.index.find(k, key, d, &steps);
         }
 
         pub fn get(d: *const Self, key: Key) ?u32 {
-            const leaf = d.descend(key);
-            const hit = leaf != none_int and std.mem.eql(u32, &d.keyAt(leaf), &key);
-            Counters.dictGet(k, &d.stats, &key, hit);
-            if (!hit) return null;
-            return d.values.items[leaf];
+            const at = d.lookup(key);
+            Counters.dictGet(k, &d.stats, &key, at != null);
+            return if (at) |i| d.values.items[i] else null;
         }
 
-        pub fn getOrPut(d: *Self, gpa: Allocator, key: Key) Allocator.Error!GetOrPut {
-            const leaf = d.descend(key);
-            const found = leaf != none_int and std.mem.eql(u32, &d.keyAt(leaf), &key);
-            Counters.dictPut(k, &d.stats, &key, found);
-            if (found) {
-                return .{ .found_existing = true, .value_ptr = &d.values.items[leaf], .index = leaf };
-            }
-            const new_leaf: u32 = @intCast(d.values.items.len);
-            try d.keys.appendSlice(gpa, &key);
-            try d.values.append(gpa, undefined);
-            try d.nodes.ensureUnusedCapacity(gpa, 2);
-            const leaf_node: u32 = @intCast(d.nodes.items.len);
-            d.nodes.appendAssumeCapacity(.{ .crit = leaf_crit, .left = new_leaf, .right = none_int });
-            if (leaf == none_int) {
-                d.root = leaf_node;
-                return .{ .found_existing = false, .value_ptr = &d.values.items[new_leaf], .index = new_leaf };
-            }
-            // The first differing bit against the leaf found decides where
-            // the new branch goes: above the first inner node whose
-            // critical bit is deeper than it.
-            const other = d.keyAt(leaf);
-            var crit: u32 = 0;
-            while (crit / 32 < k and bitOf(other, crit) == bitOf(key, crit)) crit += 1;
-            var parent: u32 = none_int;
-            var at = d.root;
-            while (d.nodes.items[at].crit != leaf_crit and d.nodes.items[at].crit < crit) {
-                parent = at;
-                const n = d.nodes.items[at];
-                at = if (bitOf(key, n.crit) == 0) n.left else n.right;
-            }
-            const branch: u32 = @intCast(d.nodes.items.len);
-            const new_bit = bitOf(key, crit);
-            d.nodes.appendAssumeCapacity(.{
-                .crit = crit,
-                .left = if (new_bit == 0) leaf_node else at,
-                .right = if (new_bit == 0) at else leaf_node,
-            });
-            if (parent == none_int) {
-                d.root = branch;
-            } else if (d.nodes.items[parent].left == at) {
-                d.nodes.items[parent].left = branch;
-            } else {
-                d.nodes.items[parent].right = branch;
-            }
-            return .{ .found_existing = false, .value_ptr = &d.values.items[new_leaf], .index = new_leaf };
+        pub fn getOrPut(d: *Self, gpa: Allocator, key: Key) IndexError!GetOrPut {
+            const at = d.lookup(key);
+            Counters.dictPut(k, &d.stats, &key, at != null);
+            if (at) |i| return .{ .found_existing = true, .value_ptr = &d.values.items[i], .index = i };
+            try d.keys.ensureUnusedCapacity(gpa, k);
+            try d.values.ensureUnusedCapacity(gpa, 1);
+            try d.index.insert(gpa, k, key, d);
+            Counters.dictReach(&d.stats, d.index.reach);
+            const i: u32 = @intCast(d.values.items.len);
+            d.keys.appendSliceAssumeCapacity(&key);
+            d.values.appendAssumeCapacity(undefined);
+            return .{ .found_existing = false, .value_ptr = &d.values.items[i], .index = i };
+        }
+
+        pub fn put(d: *Self, gpa: Allocator, key: Key, v: u32) IndexError!void {
+            (try d.getOrPut(gpa, key)).value_ptr.* = v;
+        }
+    };
+}
+
+/// An intern table's index (§4.1): an `Index` whose entry `i` is the
+/// table's record `i`, its key rebuilt from that record's columns by
+/// `ctx.keyAt(i)`, so the table stores each key once, in its records.
+pub fn Interned(comptime k: usize) type {
+    return struct {
+        index: Index = .{},
+        stats: Counters.Dict = Counters.zero(Counters.Dict),
+
+        const Self = @This();
+        pub const Key = [k]u32;
+        pub const counter_kind = Counters.Kind.dict;
+
+        pub fn deinit(t: *Self, gpa: Allocator) void {
+            t.index.deinit(gpa);
+            if (Counters.enabled) t.stats.trace.deinit(std.heap.smp_allocator);
+        }
+
+        pub fn count(t: *const Self) u32 {
+            return t.index.len;
+        }
+
+        fn lookup(t: *const Self, key: Key, ctx: anytype) ?u32 {
+            var steps: Counters.Steps = .{};
+            defer Counters.dictDescended(&t.stats, steps, t.index.reach);
+            return t.index.find(k, key, ctx, &steps);
+        }
+
+        /// The record holding `key`, or null.
+        pub fn get(t: *const Self, key: Key, ctx: anytype) ?u32 {
+            const at = t.lookup(key, ctx);
+            Counters.dictGet(k, &t.stats, &key, at != null);
+            return at;
+        }
+
+        /// The record holding `key`, or null once `key` is indexed as the
+        /// next record, `records`: the caller appends that record at once,
+        /// its capacity ensured before this call.
+        pub fn getOrInsert(t: *Self, gpa: Allocator, key: Key, ctx: anytype, records: usize) IndexError!?u32 {
+            const at = t.lookup(key, ctx);
+            Counters.dictPut(k, &t.stats, &key, at != null);
+            if (at != null) return at;
+            std.debug.assert(records == t.index.len);
+            try t.index.insert(gpa, k, key, ctx);
+            Counters.dictReach(&t.stats, t.index.reach);
+            return null;
         }
     };
 }
@@ -1086,7 +1213,7 @@ test "a baseline lane is per atom and role, and overflow is the invariant, never
     try testing.expectError(error.AccountingInvariant, a.reserveLane(testing.allocator, .{ .atom = 9, .role = .direct_data }, .cell, 1));
 }
 
-test "the fixed-key dictionary finds composite keys without hashing" {
+test "the fixed-key dictionary finds composite keys" {
     var d: FixedDict(3) = .{};
     defer d.deinit(testing.allocator);
     const gpa = testing.allocator;
@@ -1117,6 +1244,126 @@ test "the fixed-key dictionary finds composite keys without hashing" {
     }
     k = 0;
     while (k < 2000) : (k += 1) try testing.expectEqual(@as(?u32, k), d.get(.{ k *% 2654435761, k + 10, k >> 3 }));
+}
+
+test "a dictionary grows past many sizes and numbers its entries in insertion order" {
+    const gpa = testing.allocator;
+    var d: FixedDict(2) = .{};
+    defer d.deinit(gpa);
+    var k: u32 = 0;
+    while (k < 5000) : (k += 1) {
+        const got = try d.getOrPut(gpa, .{ k, k ^ 0x5555 });
+        try testing.expect(!got.found_existing);
+        try testing.expectEqual(k, got.index);
+        got.value_ptr.* = k + 1;
+    }
+    // Every doubling placed each entry again from its key.
+    try testing.expect(d.index.slots.items.len >= 2 * 5000);
+    k = 0;
+    while (k < 5000) : (k += 1) {
+        try testing.expectEqual(@as(?u32, k + 1), d.get(.{ k, k ^ 0x5555 }));
+        try testing.expectEqual([2]u32{ k, k ^ 0x5555 }, d.keyAt(k));
+    }
+    try testing.expectEqual(@as(?u32, null), d.get(.{ 5000, 5000 ^ 0x5555 }));
+}
+
+test "a cleared dictionary is empty, keeps its slots, and numbers from zero again" {
+    const gpa = testing.allocator;
+    var d: FixedDict(1) = .{};
+    defer d.deinit(gpa);
+    for (0..100) |i| try d.put(gpa, .{@intCast(i)}, @intCast(i));
+    const slots = d.index.slots.items.len;
+    d.clear();
+    try testing.expectEqual(@as(u32, 0), d.count());
+    for (0..100) |i| try testing.expectEqual(@as(?u32, null), d.get(.{@intCast(i)}));
+    const got = try d.getOrPut(gpa, .{7});
+    try testing.expect(!got.found_existing);
+    try testing.expectEqual(@as(u32, 0), got.index);
+    got.value_ptr.* = 70;
+    try testing.expectEqual(@as(?u32, 70), d.get(.{7}));
+    try testing.expectEqual(slots, d.index.slots.items.len);
+}
+
+test "a dictionary's generation wraps: every older slot reads as empty" {
+    const gpa = testing.allocator;
+    var d: FixedDict(1) = .{};
+    defer d.deinit(gpa);
+    for (0..10) |i| try d.put(gpa, .{@intCast(i)}, 1);
+    // The last generation before the counter wraps.
+    d.index.gen = std.math.maxInt(u32);
+    for (d.index.slots.items) |*x| {
+        if (x[0] != 0) x[0] = d.index.gen;
+    }
+    try testing.expectEqual(@as(?u32, 1), d.get(.{3}));
+    d.clear();
+    try testing.expectEqual(@as(u32, 1), d.index.gen);
+    for (d.index.slots.items) |x| try testing.expectEqual(@as(u32, 0), x[0]);
+    for (0..10) |i| try testing.expectEqual(@as(?u32, null), d.get(.{@intCast(i)}));
+    try d.put(gpa, .{3}, 9);
+    try testing.expectEqual(@as(?u32, 9), d.get(.{3}));
+    try testing.expectEqual(@as(?u32, null), d.get(.{4}));
+}
+
+test "an intern table keeps its keys in its records" {
+    const gpa = testing.allocator;
+    const Records = struct {
+        rows: std.ArrayList([3]u32) = .empty,
+        pub fn keyAt(r: *const @This(), i: u32) [3]u32 {
+            return r.rows.items[i];
+        }
+    };
+    var recs: Records = .{};
+    defer recs.rows.deinit(gpa);
+    var ix: Interned(3) = .{};
+    defer ix.deinit(gpa);
+    for (0..300) |i| {
+        const key = [3]u32{ @intCast(i % 7), @intCast(i), 1 };
+        try recs.rows.ensureUnusedCapacity(gpa, 1);
+        try testing.expectEqual(@as(?u32, null), try ix.getOrInsert(gpa, key, &recs, recs.rows.items.len));
+        recs.rows.appendAssumeCapacity(key);
+    }
+    for (0..300) |i| {
+        const key = [3]u32{ @intCast(i % 7), @intCast(i), 1 };
+        try testing.expectEqual(@as(?u32, @intCast(i)), try ix.getOrInsert(gpa, key, &recs, recs.rows.items.len));
+        try testing.expectEqual(@as(?u32, @intCast(i)), ix.get(key, &recs));
+    }
+    try testing.expectEqual(@as(?u32, null), ix.get(.{ 0, 1, 1 }, &recs));
+    try testing.expectEqual(@as(u32, 300), ix.count());
+}
+
+test "keys that collide past probe_length are the named ownership_limit, and the dictionary stays whole" {
+    const gpa = testing.allocator;
+    // Keys whose hashes agree in their low 12 bits share one home in every
+    // table up to 4 096 slots, which holds them all at a load of 1/2.
+    const want = probe_length + 2;
+    var keys: std.ArrayList(u32) = .empty;
+    defer keys.deinit(gpa);
+    const home = hashKey(1, .{0}) & 0xFFF;
+    var x: u32 = 0;
+    while (keys.items.len < want) : (x += 1) {
+        if (hashKey(1, .{x}) & 0xFFF == home) try keys.append(gpa, x);
+    }
+    var d: FixedDict(1) = .{};
+    defer d.deinit(gpa);
+    var a: Account = .{};
+    defer a.deinit(gpa);
+    const refused: usize = for (keys.items, 0..) |key, i| {
+        d.put(gpa, .{key}, @intCast(i)) catch |err| {
+            try testing.expectEqual(error.ProbeLength, err);
+            break i;
+        };
+    } else return error.TestExpectedProbeLength;
+    // The probe of displacement `probe_length` is the last one taken.
+    try testing.expectEqual(@as(usize, probe_length + 1), refused);
+    try testing.expectEqual(probe_length, d.index.reach);
+    for (keys.items[0..refused], 0..) |key, i| try testing.expectEqual(@as(?u32, @intCast(i)), d.get(.{key}));
+    try testing.expectEqual(@as(?u32, null), d.get(.{keys.items[refused]}));
+    try testing.expectEqual(@as(u32, @intCast(refused)), d.count());
+    // The walk that meets it names the limit, and the owner stops.
+    _ = a.probeFailed();
+    try testing.expectEqual(Failure{ .limit = .probe_length }, a.failed.?);
+    try testing.expectEqualStrings("probe_length", @tagName(a.failed.?.limit));
+    try testing.expectError(error.OwnershipLimit, a.reserve(.cell, 1));
 }
 
 test "chunks reserve each chunk before filling it and read back in order" {

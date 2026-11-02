@@ -13,7 +13,8 @@
 //!
 //! - per table-resident dictionary and column, found by reflection over the
 //!   module's tables (so the line names the field path): gets, hits, puts,
-//!   new entries, and for a crit-bit dictionary the mean and longest descent;
+//!   new entries, and for a dictionary the mean and longest probe and the
+//!   longest displacement in its index (what `probe_length` bounds);
 //! - per width of dictionary, and for columns, pools and a walk's sparse
 //!   sets (`Scratch.zig`), a total over every instance, local ones included:
 //!   the difference to the sum of the table lines is the walks' own working
@@ -102,10 +103,13 @@ pub const DictStats = struct {
     hits: u64 = 0,
     puts: u64 = 0,
     new: u64 = 0,
-    /// Nodes visited by the crit-bit descents of gets and puts.
+    /// Index slots read by the probes of gets and puts.
     probes: u64 = 0,
     max_probe: u32 = 0,
     last_probe: u32 = 0,
+    /// The longest displacement of a key in the index (`Ids.Index.reach`),
+    /// what `probe_length` is checked against.
+    max_reach: u32 = 0,
     /// `(tag, key words…)` per operation, when `-Downership-v2-trace` is set.
     trace: std.ArrayList(u32) = .empty,
 
@@ -176,9 +180,17 @@ inline fn mutable(p: anytype) @TypeOf(@constCast(p)) {
     return @constCast(p);
 }
 
-pub inline fn dictDescended(s: anytype, steps: Steps) void {
+pub inline fn dictDescended(s: anytype, steps: Steps, reach: u32) void {
     if (!enabled) return;
-    mutable(s).last_probe = steps.n;
+    const m = mutable(s);
+    m.last_probe = steps.n;
+    m.max_reach = @max(m.max_reach, reach);
+}
+
+/// An index's displacement after an insertion.
+pub inline fn dictReach(s: anytype, reach: u32) void {
+    if (!enabled) return;
+    mutable(s).max_reach = @max(mutable(s).max_reach, reach);
 }
 
 pub inline fn dictGet(comptime k: usize, s: anytype, key: *const [k]u32, hit: bool) void {
@@ -434,7 +446,7 @@ fn rowsOf(comptime K: type, mod: anytype) ?usize {
 fn writeDict(w: *std.Io.Writer, path: []const u8, comptime k: usize, d: anytype) Error!void {
     const s = d.stats;
     const mean = if (s.gets + s.puts == 0) 0.0 else @as(f64, @floatFromInt(s.probes)) / @as(f64, @floatFromInt(s.gets + s.puts));
-    try w.print("counters dict {s} k={d}: gets {d}, hits {d}, puts {d}, new {d}, entries {d}, descent mean {d:.1}, max {d}\n", .{ path, k, s.gets, s.hits, s.puts, s.new, d.count(), mean, s.max_probe });
+    try w.print("counters dict {s} k={d}: gets {d}, hits {d}, puts {d}, new {d}, entries {d}, probe mean {d:.2}, max {d}, displacement max {d}\n", .{ path, k, s.gets, s.hits, s.puts, s.new, d.count(), mean, s.max_probe, s.max_reach });
     if (trace_dir.len != 0 and s.trace.items.len != 0) {
         var name: [160]u8 = undefined;
         const file = std.fmt.bufPrint(&name, "{s}/{s}.k{d}", .{ trace_dir, path, k }) catch return;
@@ -496,7 +508,7 @@ pub fn write(w: *std.Io.Writer, mod: anytype) Error!void {
     try walk(w, "sums.", @TypeOf(mod.sums), &mod.sums, mod);
     for (dict_totals, 0..) |t, k| {
         if (t.gets + t.puts == 0) continue;
-        try w.print("counters total dict k={d}{s}: gets {d}, hits {d}, puts {d}, new {d}, descent mean {d:.1}\n", .{ k, if (k == 0) "+" else "", t.gets, t.hits, t.puts, t.new, @as(f64, @floatFromInt(t.probes)) / @as(f64, @floatFromInt(t.gets + t.puts)) });
+        try w.print("counters total dict k={d}{s}: gets {d}, hits {d}, puts {d}, new {d}, probe mean {d:.2}\n", .{ k, if (k == 0) "+" else "", t.gets, t.hits, t.puts, t.new, @as(f64, @floatFromInt(t.probes)) / @as(f64, @floatFromInt(t.gets + t.puts)) });
     }
     try w.print("counters total column: reads {d}, hits {d}, writes {d}, distinct {d}, clears {d}\n", .{ col_total.reads, col_total.hits, col_total.writes, col_total.fresh, col_total.clears });
     try w.print("counters total pool: takes {d}, created {d}\n", .{ pool_total.takes, pool_total.creates });

@@ -126,7 +126,7 @@ pub const Index = struct {
             masks: *std.ArrayList(u4),
             work: *std.ArrayList(struct { u32, u2 }),
 
-            fn add(f: @This(), g: Allocator, n: NodeId, k: u2) Allocator.Error!void {
+            fn add(f: @This(), g: Allocator, n: NodeId, k: u2) Ids.IndexError!void {
                 const got = try f.at.getOrPut(g, .{n.int()});
                 if (!got.found_existing) {
                     got.value_ptr.* = @intCast(f.order.items.len);
