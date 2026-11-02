@@ -949,8 +949,11 @@ records.
 `emit/dom/` and `emit/release/dom/` are `emit/`
 fixtures built the same way, the shapes of what the lowering emits, and
 `emit/release/tea/` holds release applications built for `browser-tea`,
-their golden `_main.mjs` whole. The
-steps, the transcript, the run hashes and `test-browser` are the kind's
+their golden `_main.mjs` whole. An emit fixture with a `.map` golden
+(`_expected.map` in a project) also builds with `--source-maps` and compares
+the emitted module’s source map byte for byte.
+
+The steps, the transcript, the run hashes and `test-browser` are the kind's
 own. The differential oracle against dom-expressions' fixtures is a
 separate, DOM-free comparison of template strings and walks:
 `tests/oracle/`, run by `tests/blackbox/oracle_test.zig`.
