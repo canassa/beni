@@ -2500,7 +2500,9 @@ fn checkOwnCompanions(l: *Lower, slots: anytype, arity: u32) Allocator.Error!voi
         const first = S.at(slots, 0);
         const needs = [_]struct { w: W, ok: bool }{
             .{ .w = .cellnew, .ok = first & W.consumed.bit() != 0 },
-            .{ .w = .cellempty, .ok = first & W.unused.bit() != 0 },
+            // `cellempty`: nothing of parameter 1 goes into the cell: it is unused,
+            // or escaped to code that fills the cell later (a fiber's work).
+            .{ .w = .cellempty, .ok = first & (W.unused.bit() | W.escaped.bit()) != 0 },
             .{ .w = .lent, .ok = first & W.cellread.bit() != 0 },
             .{ .w = .lentoptional, .ok = first & W.cellread.bit() != 0 },
             // `builderdone`: the builder and its length, read only.

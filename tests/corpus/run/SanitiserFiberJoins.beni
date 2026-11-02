@@ -1,0 +1,46 @@
+-- Two joins of one fiber answer the same object (`ownership-v2.md` §2.13.7,
+-- the fiber rows): `Task.join` reads the fiber's cell, which holds the
+-- work's answer itself, so each join is a loan of those contents and not an
+-- answer of its own. An in-place edit of one join is refused while the
+-- other is still read, directly and through a helper that joins. Were a
+-- join the work's answer as its own, the two would look apart, the edit
+-- would be accepted and the other join would read the edited list. Each
+-- line shows the edit beside the other join as it was before it.
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task exposing (Fiber)
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+get : Fiber (List Int) → List Int
+get fiber = Task.join fiber
+
+
+direct : ⊤ → String
+direct ⊤ =
+    f = Task.spawn λ⊤ → [ 1, 2, 3 ]
+    a = Task.join f
+    b = Task.join f
+    a2 = List.push a 4
+    "direct ${ints a2} ${ints b}"
+
+
+helper : ⊤ → String
+helper ⊤ =
+    f = Task.spawn λ⊤ → [ 1, 2, 3 ]
+    a = get f
+    b = get f
+    a2 = List.push a 4
+    "helper ${ints a2} ${ints b}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    x = direct ⊤
+    y = helper ⊤
+    Node.printLines [ x, y ]

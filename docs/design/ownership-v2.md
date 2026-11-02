@@ -1351,7 +1351,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    | result `prepended` | Exactly two parameters: `stored a, returned List a → prepended List a`. Result storage is π₂'s storage (re-cons: a view over, or a header sharing, π₂'s base) or fresh (copy), π₂ `RA`, π₁ `RA`; contents are the positional collection of π₁ and π₂[*], not a branch union. At each path κ is `excl π₁ ∧ excl π₂[*] ∧ sep(π₁,π₂[*])`, with the construction's cross-path comparisons. No existing storage write is demanded: prepend allocates or reconstructs a view. Surface prepend's fresh-front refinement is §2.13.2, never a name test for `cons`. |
    | callback parameter `stored` | Store its **result**, not the closure. Without a cell selector, the answer is put back at the element position `[*]` of the written container, whatever its kind: a `sequence`'s `[*]` or a `dict`'s value position `[*]` (keys cross). **Row:** the callback is invoked at most once with the taken element; its stored answer replaces that element at the destination's `[*]`, the result's `[*]` is the join of the stored answer and the remainder, and κ there is derived as §2.9's construction rule derives it with the remainder (the taken position removed first). The answer is either the element type `a`, and then the whole answer is stored, or a resolved Maybe-like two-constructor carrier (one nullary, one unary whose payload is `a`, validated by shape as for `lentoptional`, no name test). For the carrier, the unary payload path (`Just`'s payload) is the selected result path that is stored, and the nullary alternative (`Nothing`) is a removal: it stores nothing, the taken position is gone, and the result's `[*]` is the remainder only; the result row joins the two alternatives. **Placement:** on the callback parameter. **Companions:** the callback is `once taken`; parameter 1 is the sole `written returned` destination, a `sequence` or a `dict` whose element type is `a`; the callback's argument is `a` or the same carrier over `a` (the taken element at its payload path; the nullary argument alternative takes nothing); the answer type must match the argument form. `List.focus` carries `once taken stored` with `a → a`; `Dict.focus` carries it with `Maybe v → Maybe v` over a `dict` destination, worded in S8 (#1021, #1053). With `cellupdate`, store result ε at π₁◆; with `cellmodify`, store only result .1 at π₁◆ and return .0 under the loan/disjointness rule below. These selectors require `stored sync` and imply once/taken/owned; reject duplicate/conflicting invocation or destination words. |
    | result `cellnew` | Result is a fresh `cell` handle, ◆ initially parameter 1; require parameter 1 `consumed`. `Ref.make : consumed a → cellnew Ref a`. Inspect the payload for loans **before** installing the barrier. |
-   | result `cellempty` | Fresh `cell` handle with initially empty ◆, no payload; unit argument `unused`. `Deferred.make`. Empty is an initial state, not the result of later reads. |
+   | result `cellempty` | Fresh `cell` handle with initially empty ◆, no payload; unit argument `unused`. `Deferred.make`. Empty is an initial state, not the result of later reads. *Amended 2026-11-03 (#1736):* the first parameter may be `escaped` instead: code the callee keeps fills the cell later, and what it puts there is reached only through that escape. `Task.spawn` (§2.13.7, *the fiber rows*). |
    | parameter `cellread` + result `lent` | First parameter must be `cell`; record its stable slot in `refs`, no write, return a loan of the current ◆ at the resolved result payload path. `Ref.get`, `Deferred.wait`; the latter may suspend and the loan is born at return. |
    | parameter `cellread` + result `lentoptional` | Same, but result is a resolved Maybe-like two-constructor carrier (one nullary, one unary matching contents); empty alternative or loan at its unary payload path. `Deferred.poll`. No name test; validate the shape and publish the path. |
    | parameter `cellread` + crossing result | Read only, no loan in the result; `Deferred.isDone`. |
@@ -1497,6 +1497,28 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    edit in place what the spawned work reaches, joined or not. And because `Task.spawn`'s result is `⊤` in core's
    inferred contract, `Task.join` escapes `⊤`, so after a join the frame edits nothing in place at all, not even a
    list made after the join (#1734's probe `C13MakeAfterJoin`).
+   *Amended 2026-11-03 (#1736), the fiber rows:* `Fiber a` is a `cell foreign type`. Its `◆` is the fiber's
+   `outcome`. Only `Task.complete` writes it, once: with `Done` of the work's answer itself (`finished`, the bottom
+   of every fiber's stack), or with the shared `Cancelled` (`ended`), which `joined` never returns (it cancels the
+   joiner). So:
+   - `spawn` and `spawnDetached : escaped (⊤ → a) → cellempty Fiber a`, `spawnIn : escaped Scope, escaped (⊤ → a) →
+     cellempty Fiber a`. `fork` makes a new record whose `outcome` is null, and only queues it (`enqueue`; a
+     scheduler's `run` that calls the drain during the call is a defect, `drainS`), so the cell is empty at return.
+     The fiber's stack keeps the work, and a scope given one keeps the fiber, so both escape. The escape through
+     `◆` above still covers what the work's answer reaches.
+   - `join : cellread Fiber a → lent a`, the row of `Deferred.wait`. Every join of one fiber answers the same
+     object, so a join is a loan of the contents and not an answer of its own. With the work's answer as the
+     join's own (`fresh`), two joins would look apart, and an edit in place of one would change the other:
+     `run/SanitiserFiberJoins` is refused with `lent`, and its sanitised run traps with `fresh`.
+   - `wait`, `poll` and `joinAll` keep their inferred rows, whose answers are `⊤`.
+
+   With these rows, a frame that spawns and joins can edit in place what the work does not reach (#1734's
+   probes `C8SpawnOtherRef`, `C9SpawnNothing`, `C12JoinOnly`, `C13MakeAfterJoin`). It is still coarse in one place:
+   a loan of a list is `⊤` in v2, so while the answer of a `join` of a `Fiber (List a)` is live (as for
+   `Deferred.wait`), each in-place edit of a list is refused, even of a list made after the join. The four bodies
+   and every helper of `Task` they run are pinned in `word-bodies.txt`. `check_test`'s reach rule follows them
+   from these four v2 rows. `Task`'s v1 rows keep v1's rule (their own body), as they did before `Task` had a
+   v2 row.
    **Slot state and loans.** A versioned frame relation `contents(handle-origin, ◆)` supplies current stored
    origins/κ. `cellnew`/`cellempty` initialise it; set/update/modify write-back changes it after the callback,
    and complete joins the already-complete/no-op and empty/store alternatives. Strong update is allowed only
@@ -2005,6 +2027,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
        callback's `T` on a capture below `◆` (a take out of a captured `Ref` followed by a move) is applied the same
        way. It becomes a **pending mover** on that slot, weak and kept for the rest of the frame, and published with
        the frame's effects so that callers keep it.
+       *As built (2026-11-03, #1736):* the slot effects at a spawn point are not built. `Task.spawn`, `spawnIn` and
+       `spawnDetached` have words (§2.13.7, *the fiber rows*): an `escaped` work and a `cellempty` result. The escape
+       of the work, which reaches through `◆`, takes their place, more coarsely.
     3a. **Stores under a pending mover** (fifth review of #1672). The spawn point checked the mover's demand against
        the slot's contents at that moment, so it never saw a backing stored later. At every later store into a slot
        with a pending mover, including a store a callee makes (instantiated from its effects) and a store applied
