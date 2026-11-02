@@ -6285,7 +6285,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
        other beni code runs before that point, so no mover can run while that alias is live (fifth review of
        #1672: `refill r b = let v = view b in Ref.set r (Just b); get v 0` records nothing). They come from the same holder and slot indexes that the `transfer` demand queries. They are
        published on the stored-payload effect as its **outside aliases**. A call instantiates them and adds the
-       caller's own live or escaped aliases at the call point, because the callee cannot see the caller's holders.
+       caller's own aliases at the call point, because the callee cannot see the caller's holders. The caller's
+       aliases pass the same test (sixth review of #1672): escaped, live across a may-suspend point after the call,
+       or live at the caller's return. So `v = view buf; refill r buf; get v 0` records nothing.
     2. **The `contents` relation keeps them.** An outside alias that reaches a frame through an effect, from a
        callee or a spawned closure, is kept as a member of the stored backing's class, with no slot. It is never
        removed, not even by a later strong update of the slot. A local alias needs no record, because it is one of
@@ -6308,6 +6310,15 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
        resolved, and nothing later in the spawner's frame checks the move again. So that equivalent formulation is
        taken as "refuse the store". The rule is sound because a spawned fiber runs only when its spawner suspends or
        returns (P-sync), and rule 1's holder set contains every alias that can still be read at such a point.
+       **Movers below a nested `◆`** (sixth review of #1672). A pending mover's `T` path can cross more `◆` steps
+       below its slot. For example, `outer, ◆·◆·#Just.0` is a fiber that takes the inner `Ref` out of `outer` and then
+       takes and moves the buffer from it. The walk then cannot stop at the stored payload's first `◆`. At the
+       store, rule 3a follows the mover's path through the payload, and at each `◆` step through the settled
+       `contents` of the `Ref` or `Deferred` it reaches, outside aliases included, as a weak union. It runs the
+       mover's demand over the backings at the end of the path. The same applies to every element when the path
+       crosses a list's `[*]`. Contents that are unknown at a step refuse, approximately. The mover is also
+       registered as pending on each inner slot it passed through, with the rest of its path, so a later store into
+       an inner slot (`Ref.set inner (Just buf)`) is checked by rule 3a too.
     4. **The demand.** The `transfer` demand's *not stored in a slot* condition also refuses a move of β when β has
        an outside alias.
     5. **Protocols.** Ŝ and the model's slot fixpoint (§2.13.17) are this rule applied at the constructor, where the
@@ -6469,6 +6480,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `TransferUnknownSlotDead` *(second review)* | a handle of slot `⊤` (returned by an unknown function value) is read and then dead; a fresh buffer is sent | accept; its twin that reads the `⊤` handle after the send refuses, approximately |
     | `TransferPendingMoverPage` *(fifth review)* | `r = Ref.make Nothing`; spawn a fiber that sleeps, takes `b` from `r` and moves it; then `buf = alloc; v = view buf; Ref.set r (Just buf)`; sleep; `length v` | refuse `worker_transfer_alias_live` at the store (pending mover) |
     | `TransferPendingMoverInit` *(fifth review)* | `init` starts a root fiber that later takes from the state `Ref` `slot` and moves; then stores `buf` into `slot` and returns state with a view of `buf` in a field | refuse `worker_transfer_alias_live` at the store (the view is live at return, through `R`) |
+    | `TransferPendingMoverNested` *(sixth review)* | `outer = Ref.make (Ref.make Nothing)`; a fiber sleeps, extracts the inner `Ref` from `outer`, then takes and moves its buffer; the frame makes `inner = Ref.make (Just buf)`, keeps `v = view buf`, does `Ref.set outer inner`, sleeps, reads `length v` | refuse `worker_transfer_alias_live` at the store |
+    | `TransferPendingMoverDeferredOfRef` *(sixth review)* | the same, with `outer` a `Deferred (Ref (Maybe Buffer))` completed with `inner` | refuse `worker_transfer_alias_live` at the store |
+    | `TransferPendingMoverListOfRefs` *(sixth review)* | the same, with `outer` a `Ref (List (Ref (Maybe Buffer)))` set to `[ inner ]` and a mover through `[*]` | refuse `worker_transfer_alias_live` at the store |
+    | `TransferPendingMoverInnerLater` *(sixth review)* | `Ref.set outer inner` while `inner` is empty, then `Ref.set inner (Just buf)` with `v` live across a sleep | refuse `worker_transfer_alias_live` at the inner store |
+    | `TransferRefillCallerSync` *(sixth review)* | `v = view buf; refill r buf; get v 0`; later a take of `buf` from `r` and a move | accept |
     | `TransferRefillSync` *(fifth review)* | `refill r b = let v = view b in Ref.set r (Just b); get v 0`; later a take of `b` from `r` and a move | accept (`v` dies before any suspension) |
     | `TransferPageFibersShareRef.cached`, `TransferPageFibersShareRefImported` *(fifth review)* | the fiber bodies of `TransferPageFibersShareRef` in another module, cold and from the cache | refuse `worker_transfer_alias_live` (outside aliases cross the block) |
     | `TransferPageFibersShareRef` *(fourth review)* | in `main`, `r = Ref.make (Just buf)`; fiber A takes `b`, makes `v`, puts `b` back, sleeps and reads `v`; fiber B takes `b` and moves it | refuse `worker_transfer_alias_live` (outside alias from a spawned effect) |
