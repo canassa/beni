@@ -9,6 +9,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Counters = @import("Counters.zig");
 const Summary = @import("Summary.zig");
 const Groups = @import("Groups.zig");
 const Walk = @import("Walk.zig");
@@ -61,6 +62,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
     for (in.modules, out, 0..) |*mi, *r, at| {
         const mod = try gpa.create(Groups.Module);
         defer gpa.destroy(mod);
+        Counters.reset();
         try Groups.checkModule(mi, mod, in.format_summaries);
         defer mod.deinit();
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;
@@ -195,6 +197,12 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         };
         const word_errors = try arena.alloc([3]u32, errs.items.len);
         for (errs.items, word_errors) |e, *w| w.* = .{ e.decl, e.slot, @backingInt(e.word) };
+        // `-Downership-v2-counters`: the module's container counts and census.
+        if (Counters.enabled and in.format_summaries) {
+            var text: std.Io.Writer.Allocating = .init(arena);
+            Counters.write(&text.writer, mod) catch return error.OutOfMemory;
+            try others.append(arena, std.mem.trimEnd(u8, text.written(), "\n"));
+        }
         if (in.channels) |c| c[at] = try channel.finish(arena, gpa, limits != 0);
         r.* = .{ .module = mi.module, .lines = lines.items, .others = others.items, .limits = limits, .block = block, .word_errors = word_errors };
     }

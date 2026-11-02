@@ -38,6 +38,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Counters = @import("Counters.zig");
 
 pub const none_int: u32 = std.math.maxInt(u32);
 
@@ -584,9 +585,11 @@ pub fn FixedDict(comptime k: usize) type {
         keys: std.ArrayList(u32) = .empty,
         values: std.ArrayList(u32) = .empty,
         root: u32 = none_int,
+        stats: Counters.Dict = Counters.zero(Counters.Dict),
 
         const Self = @This();
         pub const Key = [k]u32;
+        pub const counter_kind = Counters.Kind.dict;
         const Node = struct { crit: u32, left: u32, right: u32 };
         const leaf_crit: u32 = none_int;
 
@@ -600,6 +603,7 @@ pub fn FixedDict(comptime k: usize) type {
             d.nodes.deinit(gpa);
             d.keys.deinit(gpa);
             d.values.deinit(gpa);
+            if (Counters.enabled) d.stats.trace.deinit(std.heap.smp_allocator);
         }
 
         pub fn count(d: *const Self) u32 {
@@ -624,21 +628,30 @@ pub fn FixedDict(comptime k: usize) type {
         /// The leaf a lookup of `key` lands on, or none for an empty tree.
         fn descend(d: *const Self, key: Key) u32 {
             var at = d.root;
+            var steps: Counters.Steps = .{};
+            defer Counters.dictDescended(&d.stats, steps);
             if (at == none_int) return none_int;
             const ns = d.nodes.items;
-            while (ns[at].crit != leaf_crit) at = if (bitOf(key, ns[at].crit) == 0) ns[at].left else ns[at].right;
+            while (ns[at].crit != leaf_crit) {
+                steps.inc();
+                at = if (bitOf(key, ns[at].crit) == 0) ns[at].left else ns[at].right;
+            }
             return ns[at].left;
         }
 
         pub fn get(d: *const Self, key: Key) ?u32 {
             const leaf = d.descend(key);
-            if (leaf == none_int or !std.mem.eql(u32, &d.keyAt(leaf), &key)) return null;
+            const hit = leaf != none_int and std.mem.eql(u32, &d.keyAt(leaf), &key);
+            Counters.dictGet(k, &d.stats, &key, hit);
+            if (!hit) return null;
             return d.values.items[leaf];
         }
 
         pub fn getOrPut(d: *Self, gpa: Allocator, key: Key) Allocator.Error!GetOrPut {
             const leaf = d.descend(key);
-            if (leaf != none_int and std.mem.eql(u32, &d.keyAt(leaf), &key)) {
+            const found = leaf != none_int and std.mem.eql(u32, &d.keyAt(leaf), &key);
+            Counters.dictPut(k, &d.stats, &key, found);
+            if (found) {
                 return .{ .found_existing = true, .value_ptr = &d.values.items[leaf], .index = leaf };
             }
             const new_leaf: u32 = @intCast(d.values.items.len);

@@ -35,7 +35,10 @@ const layers = [_]Entry{
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
     // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 760 },
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 770 },
+    // The data-oriented measurement (S0): imported by any file, whatever its
+    // layer, and imports nothing of own2/.
+    .{ .file = "Counters.zig", .layer = 0, .max_lines = 520 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
@@ -63,14 +66,16 @@ const layers = [_]Entry{
     // 4 025 since #1483: the atom rule, `isAtom` and `settle` (§2.3).
     // 4 075 since #1485 part 2: C1, the saturation check.
     // 4 100 since #1570: `interned` and `rawCopy`, a block's class kept raw.
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4100 },
+    // 4 110 since the counters (`Counters.zig`): the placeholders census.
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4110 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
     // 700 since #1308: κ storage, the radix maps and the trie of positions,
     // split out of Cond (§5).
-    .{ .file = "Kappa.zig", .layer = 4, .max_lines = 700 },
+    // 710 since the counters (`Counters.zig`): the κ map requests.
+    .{ .file = "Kappa.zig", .layer = 4, .max_lines = 710 },
     // 2 560 since #1308: κ reads (the machine, views, the crossing, the
     // aggregates, `deep`, `sep`, `apart`, `lower`, the frontier), split out of
     // Cond (§5).
@@ -241,7 +246,8 @@ const layers = [_]Entry{
     .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1320 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
     // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
-    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },
+    // 350 since the counters (`Counters.zig`): their lines in the dump.
+    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 350 },
     // 500 since #1398: the dump checks a module after its imports and reads
     // the blocks it published itself.
     // 510 since #1566: the block read's `own_memo`, kept across one read.
@@ -360,6 +366,7 @@ fn importVerdict(file: []const u8, target: []const u8, in_tests: bool) ?[]const 
     const me = layerOf(file) orelse return "not in §5's table";
     if (std.mem.indexOf(u8, target, "own/") != null) return "v1 (src/own/) is frozen and no v2 file reads it";
     if (std.mem.indexOfScalar(u8, target, '/') == null and std.mem.endsWith(u8, target, ".zig")) {
+        if (std.mem.eql(u8, target, "Counters.zig")) return null;
         const other = layerOf(target) orelse return "not in §5's table";
         if (other.layer >= me.layer) return "imports go to strictly lower layers (§5)";
         return null;
@@ -518,7 +525,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 41), layers.len);
+    try testing.expectEqual(@as(usize, 42), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

@@ -246,6 +246,14 @@ pub fn build(b: *std.Build) void {
     // Hidden; never given to the gates.
     const own2_switch = b.option([]const u8, "ownership-v2-switch", "Test-only: reverse an order of the v2 checker (otherPaths-spine-first, cert-params-reversed; comma-separated); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "v2_switch", own2_switch);
+    // The v2 checker's data-oriented measurement (`src/own2/Counters.zig`): what its
+    // dictionaries, columns and pools are asked, and a census of its sets, maps and
+    // nodes, appended to a module's dump. Off, it is compiled away. Hidden; never given
+    // to the gates.
+    const own2_counters = b.option(bool, "ownership-v2-counters", "Count the v2 checker's container operations and census its data, in its dump (off: compiled away); `gates` refuses it") orelse false;
+    own_opts.addOption(bool, "counters", own2_counters);
+    const own2_trace = b.option([]const u8, "ownership-v2-trace", "With -Downership-v2-counters: a directory the dump writes every table dictionary's operation trace to, for bench/own2-dict") orelse "";
+    own_opts.addOption([]const u8, "trace_dir", own2_trace);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the
     // narrower runtime roots leaves every answer its lowering read as it
@@ -1295,6 +1303,8 @@ fn gatesRefusal(b: *std.Build, filtered: bool) ?[]const u8 {
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` requires the intended checker: drop -Downership-record-mutation, which breaks it on purpose; use test-record-mutations";
     if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose";
     if (b.user_input_options.contains("ownership-v2-switch")) return "`gates` requires the intended checker: drop -Downership-v2-switch, which reverses one of its orders on purpose";
+    if (b.user_input_options.contains("ownership-v2-counters")) return "`gates` requires the intended checker: drop -Downership-v2-counters, which adds counters to its dump";
+    if (b.user_input_options.contains("ownership-v2-trace")) return "`gates` requires the intended checker: drop -Downership-v2-trace";
     return null;
 }
 

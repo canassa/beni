@@ -37,6 +37,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Counters = @import("Counters.zig");
 const Place = @import("Place.zig");
 
 pub const CellId = Ids.CellId;
@@ -878,10 +879,12 @@ pub const Radix = struct {
     /// every node interned by `(prefix, mask, left, right)` they have one
     /// id too.
     intern: Ids.FixedDict(4) = .{},
+    stats: Counters.Sets = Counters.zero(Counters.Sets),
 
     pub fn deinit(r: *Radix, gpa: Allocator) void {
         r.nodes.deinit(gpa);
         r.intern.deinit(gpa);
+        Counters.setDeinit(&r.stats, gpa);
     }
 
     inline fn node(r: *const Radix, id: SetId) RadixNode {
@@ -896,10 +899,15 @@ pub const Radix = struct {
     fn make(r: *Radix, gpa: Allocator, charge: Charge, n: RadixNode) Error!SetId {
         try charge.reserve(gpa, r.category, 1);
         const got = try r.intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left.int(), n.right.int() });
-        if (got.found_existing) return .from(got.value_ptr.*);
+        if (got.found_existing) {
+            Counters.setMakeRequest(&r.stats, got.value_ptr.*);
+            return .from(got.value_ptr.*);
+        }
         const id: SetId = .from(@intCast(r.nodes.len));
         got.value_ptr.* = id.int();
         try r.nodes.append(gpa, n);
+        try Counters.setMade(&r.stats, gpa, n.mask == 0, n.left.int(), n.right.int());
+        Counters.setMakeRequest(&r.stats, id.int());
         return id;
     }
 
@@ -931,6 +939,7 @@ pub const Radix = struct {
     /// depth)) reads: a lookup is a fixed-key dictionary navigation, which
     /// §4.1 lets a task do without a record per comparison.
     pub fn get(r: *const Radix, root: SetId, key: u32) ?u1 {
+        Counters.setRequest(&r.stats, .get, root.int());
         var at = root;
         while (at != .none) {
             const n = r.node(at);
@@ -967,6 +976,7 @@ pub const Radix = struct {
     /// Every node on the descent is one inspection; every node copied one
     /// record, ≤ 33 of each.
     pub fn insert(r: *Radix, gpa: Allocator, charge: Charge, root: SetId, key: u32, value: u1) Error!SetId {
+        Counters.setRequest(&r.stats, .insert_in, root.int());
         if (root == .none) return r.make(gpa, charge, .{ .prefix = key, .mask = 0, .left = .from(value), .right = .none });
         // Descend, remembering the path, then copy it back up.
         var path: [33]SetId = undefined;
@@ -1014,6 +1024,8 @@ pub const Radix = struct {
     /// is one record reserved before it is read, whether or not anything is
     /// added (§4.1's zero-growth unions).
     pub fn unionWith(r: *Radix, gpa: Allocator, charge: Charge, a: SetId, b: SetId) Error!SetId {
+        Counters.setRequest(&r.stats, .union_a, a.int());
+        Counters.setRequest(&r.stats, .union_b, b.int());
         if (a == .none) return b;
         if (b == .none) return a;
         if (a == b) return a;
@@ -1068,6 +1080,8 @@ pub const Radix = struct {
     /// from `memo`. A memo record per pair met; the recursion is the key
     /// width, 33 frames.
     pub fn unionMemo(r: *Radix, gpa: Allocator, charge: Charge, memo: *Ids.FixedDict(2), a: SetId, b: SetId) Error!SetId {
+        Counters.setRequest(&r.stats, .union_a, a.int());
+        Counters.setRequest(&r.stats, .union_b, b.int());
         if (a == .none) return b;
         if (b == .none) return a;
         if (a == b) return a;
