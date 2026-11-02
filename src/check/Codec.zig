@@ -76,7 +76,10 @@ pub const State = struct {
 
     pub fn deinit(c: *State, gpa: Allocator) void {
         c.pending.deinit(gpa);
-        for (c.defs.items) |d| gpa.free(d.key);
+        for (c.defs.items) |d| {
+            gpa.free(d.key);
+            gpa.free(d.parameters);
+        }
         c.defs.deinit(gpa);
         c.nodes.deinit(gpa);
         c.words.deinit(gpa);
@@ -94,6 +97,7 @@ pub const Def = struct {
     root: u32 = none,
     /// How many slots, which are its parameters.
     slots: u32,
+    parameters: []const Var = &.{},
     /// The source token of the first use, where the code it compiles to is.
     token: u32,
     /// Its shape could not be derived; the first use said why.
@@ -103,6 +107,7 @@ pub const Def = struct {
 /// One node of a definition's shape.
 pub const Node = struct {
     tag: Tag,
+    source_type: Var.Optional = .none,
     a: u32 = 0,
     b: u32 = 0,
 
@@ -426,6 +431,7 @@ const Key = struct {
 };
 
 const Derivation = struct {
+    source_type: Var.Optional = .none,
     s: *Solve,
     origin: Bir.Inst.Index,
     /// The use's receiver, which a message names.
@@ -552,9 +558,13 @@ const Derivation = struct {
         if (d.made > max_definitions) return d.fail(t, "is used at ever larger types inside itself, so no finite schema reads it");
         const owned = try gpa.dupe(u8, key.text);
         const index: u32 = @intCast(c.defs.items.len);
-        try c.defs.append(gpa, .{ .key = owned, .slots = @intCast(key.slots.len), .token = d.s.cx.bir.insts.items(.main_token)[d.origin.int()] });
+        const parameters = try gpa.dupe(Var, key.slots);
+        try c.defs.append(gpa, .{ .key = owned, .slots = @intCast(key.slots.len), .parameters = parameters, .token = d.s.cx.bir.insts.items(.main_token)[d.origin.int()] });
         try c.by_key.put(gpa, owned, index);
         const slots = try d.s.cx.scratch.dupe(Var, key.slots);
+        const saved_type = d.source_type;
+        d.source_type = t.toOptional();
+        defer d.source_type = saved_type;
         const root, const content = d.st().resolved(t);
         const node = switch (content) {
             .structure => |flat| switch (flat) {
@@ -603,7 +613,9 @@ const Derivation = struct {
 
     fn add(d: *Derivation, n: Node) Error!u32 {
         const c = &d.s.codecs;
-        try c.nodes.append(d.s.cx.gpa, n);
+        var typed = n;
+        typed.source_type = d.source_type;
+        try c.nodes.append(d.s.cx.gpa, typed);
         return @intCast(c.nodes.items.len - 1);
     }
 
@@ -615,6 +627,9 @@ const Derivation = struct {
 
     /// The node of `t` inside a definition whose slots are `slots`.
     fn nodeFor(d: *Derivation, t: Var, slots: []const Var, in_field: bool) Error!?u32 {
+        const saved_type = d.source_type;
+        d.source_type = t.toOptional();
+        defer d.source_type = saved_type;
         _ = in_field;
         d.depth += 1;
         defer d.depth -= 1;

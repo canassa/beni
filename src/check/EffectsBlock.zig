@@ -33,9 +33,22 @@ pub fn write(
     context: anytype,
     comptime symbol_index: fn (@TypeOf(context), Symbol) Error!u32,
 ) Error!u32 {
-    const s = &e.solved;
-    const classes = s.classesOf(decl);
+    if (decl == Effects.no_owner) return writeRoot(e, v, where_types, extra_gpa, extra, context, symbol_index);
     if (!e.publishes(decl)) return Interface.no_terms;
+    return writeClasses(e, e.solved.classesOf(decl), e.solved.deps.items, v, where_types, extra_gpa, extra, context, symbol_index);
+}
+
+fn writeClasses(
+    e: *Effects,
+    classes: []const Effects.Class,
+    dependencies: []const u32,
+    v: Var,
+    where_types: []const Var,
+    extra_gpa: Allocator,
+    extra: *std.ArrayList(u32),
+    context: anytype,
+    comptime symbol_index: fn (@TypeOf(context), Symbol) Error!u32,
+) Error!u32 {
     const gpa = e.gpa;
     // Which classes are worth a site: a rung, a dependency, or a dependant.
     const worth = try gpa.alloc(bool, classes.len);
@@ -43,7 +56,7 @@ pub fn write(
     @memset(worth, false);
     for (classes, 0..) |c, i| {
         if (c.rung != .pure or c.realms != 0 or c.deps_len != 0 or c.sync or c.sensitive or c.holder) worth[i] = true;
-        for (s.depsOf(c)) |d| worth[d & ~Interface.EffectBlock.realm_only] = true;
+        for (classDeps(dependencies, c)) |d| worth[d & ~Interface.EffectBlock.realm_only] = true;
     }
 
     var sites: std.ArrayList(BlockSite) = .empty;
@@ -62,7 +75,7 @@ pub fn write(
     defer gpa.free(seen);
     @memset(seen, false);
     for (sites.items) |site| {
-        const c = s.classIndex(decl, site.node) orelse continue;
+        const c = classIndex(classes, site.node) orelse continue;
         if (seen[c]) worth[c] = true;
         seen[c] = true;
     }
@@ -77,7 +90,7 @@ pub fn write(
     var kept: std.ArrayList(BlockSite) = .empty;
     defer kept.deinit(gpa);
     for (sites.items) |site| {
-        const c = s.classIndex(decl, site.node) orelse continue;
+        const c = classIndex(classes, site.node) orelse continue;
         if (!worth[c]) continue;
         if (number[c] == none) {
             number[c] = @intCast(order.items.len);
@@ -93,7 +106,7 @@ pub fn write(
     for (order.items) |c| {
         const class = classes[c];
         deps.clearRetainingCapacity();
-        for (s.depsOf(class)) |d| {
+        for (classDeps(dependencies, class)) |d| {
             const index = d & ~Interface.EffectBlock.realm_only;
             if (number[index] != none) try deps.append(gpa, number[index] | (d & Interface.EffectBlock.realm_only));
         }
@@ -104,13 +117,82 @@ pub fn write(
     }
     try extra.append(extra_gpa, @intCast(kept.items.len));
     for (kept.items) |site| {
-        const c = s.classIndex(decl, site.node).?;
+        const c = classIndex(classes, site.node).?;
         try extra.append(extra_gpa, number[c]);
         try extra.append(extra_gpa, site.root);
         try extra.append(extra_gpa, site.steps_len);
         try extra.appendSlice(extra_gpa, steps.items[site.steps_start..][0..site.steps_len]);
     }
     return at;
+}
+
+/// A virtual schema member has no ordinary declaration summary. Read the
+/// same solved classes and dependencies from its exact checked member type.
+fn writeRoot(
+    e: *Effects,
+    v: Var,
+    where_types: []const Var,
+    extra_gpa: Allocator,
+    extra: *std.ArrayList(u32),
+    context: anytype,
+    comptime symbol_index: fn (@TypeOf(context), Symbol) Error!u32,
+) Error!u32 {
+    const gpa = e.gpa;
+    var sites: std.ArrayList(BlockSite) = .empty;
+    defer sites.deinit(gpa);
+    var steps: std.ArrayList(u32) = .empty;
+    defer steps.deinit(gpa);
+    const roots = try gpa.alloc(Var, where_types.len + 1);
+    defer gpa.free(roots);
+    roots[0] = v;
+    @memcpy(roots[1..], where_types);
+    try walkSites(e, roots, &sites, &steps, context, symbol_index);
+    var nodes: std.ArrayList(u32) = .empty;
+    defer nodes.deinit(gpa);
+    for (sites.items) |site| if (std.mem.indexOfScalar(u32, nodes.items, site.node) == null) try nodes.append(gpa, site.node);
+    if (nodes.items.len == 0) return Interface.no_terms;
+    const reach = try gpa.alloc(bool, nodes.items.len);
+    defer gpa.free(reach);
+    @memset(reach, false);
+    const deps = try @import("Realms.zig").dependencies(e, nodes.items, gpa, reach);
+    defer {
+        for (deps) |list| gpa.free(list);
+        gpa.free(deps);
+    }
+    var classes: std.ArrayList(Effects.Class) = .empty;
+    defer classes.deinit(gpa);
+    var dependencies: std.ArrayList(u32) = .empty;
+    defer dependencies.deinit(gpa);
+    const own = e.nodeOf(v);
+    for (nodes.items, deps, reach) |node, list, demanded| {
+        const start: u32 = @intCast(dependencies.items.len);
+        try dependencies.appendSlice(gpa, list);
+        const rung = e.solved.level.items[node];
+        var holder = false;
+        for (sites.items) |site| if (site.node == node and e.isHolder(e.store.find(site.v))) {
+            holder = true;
+            break;
+        };
+        try classes.append(gpa, .{
+            .node = node,
+            .rung = rung,
+            .realms = e.realmOf(node),
+            .deps_start = start,
+            .deps_len = @intCast(list.len),
+            .holder = holder,
+            .sync = demanded and node != own and rung != .suspends,
+        });
+    }
+    return writeClasses(e, classes.items, dependencies.items, v, where_types, extra_gpa, extra, context, symbol_index);
+}
+
+fn classIndex(classes: []const Effects.Class, node: u32) ?u32 {
+    for (classes, 0..) |class, i| if (class.node == node) return @intCast(i);
+    return null;
+}
+
+fn classDeps(dependencies: []const u32, class: Effects.Class) []const u32 {
+    return dependencies[class.deps_start..][0..class.deps_len];
 }
 
 /// §14.6's walk: from each root in turn, depth first, parameters before

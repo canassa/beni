@@ -9876,6 +9876,11 @@ pub const Lowerer = struct {
     /// records disagree. The build stops rather than writing a call whose
     /// arguments are off by one — `backend.md` §1's rule that the half that
     /// is missing must say so, applied to a half that is WRONG.
+    pub fn reportSchemaIdentity(l: *Lowerer, p: u32) !void {
+        _ = p;
+        try l.report(.internal, l.region, "A generated schema adapter has no exact endpoint identity. This is a compiler bug; no output was written.", .{});
+    }
+
     fn reportEvidenceShape(l: *Lowerer, inst: Inst.Index) !void {
         try l.report(
             .internal,
@@ -10664,7 +10669,7 @@ pub const Lowerer = struct {
     noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
         if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
             switch (native.recipe) {
-                .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link => {}, // Precise generated adapters.
+                .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify => {}, // Precise generated adapters.
                 else => {
                     const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder;
                     const values = if (ignores_unit) blk: {
@@ -10754,6 +10759,14 @@ pub const Lowerer = struct {
             l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return SchemaLower.shapeName(l, ref, p);
         };
+        // A shape reader has no Any identity parameters. The original
+        // generic Schema runner does; its evidence belongs to that replaced
+        // callee and must not be forwarded to the data-only reader.
+        if (SchemaValid.has(l.valid_sites.shape_callees, callee_inst.int())) {
+            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            const runner = try l.coreSchemaValue(l.valid_sites.shapeRunner(callee_inst.int()), p);
+            return l.suspension(out, inst, try l.call(runner, written, p));
+        }
         // Version 1.14: a placement the program's mount already made.
         if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
         // Version 1.22: `Browser.prerender` (`prerender.md` §7.2).

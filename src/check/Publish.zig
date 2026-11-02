@@ -116,6 +116,8 @@ pub fn fill(in: Input) Error!u32 {
     for (members) |*member| {
         const decl = prov.schemaDecl(@backingInt(member.schema));
         const root = if (decl) |d| cx.schemas.member(d.int(), member.kind) else null;
+        writer.effects = if (cx.effects) |e| .{ .effects = e, .decl = @import("Effects.zig").no_owner } else null;
+        defer writer.effects = null;
         member.scheme = try p.scheme(root, decl);
     }
     gpa.free(@constCast(iface.schema_members));

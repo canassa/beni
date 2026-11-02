@@ -15,7 +15,8 @@ pub const magic = "BENISPL\x00";
 /// 3: a module's derived codecs (`schema.md` §12.10): four columns,
 /// `codecs` (a definition row each), `codec_ctors`, `type_targets` and
 /// `value_targets`, five node tags and three primitives.
-pub const format_version: u32 = 3;
+/// 4: resolved endpoint types for checked Any adapters at each node.
+pub const format_version: u32 = 4;
 
 pub const Column = enum(u32) {
     definitions,
@@ -23,6 +24,8 @@ pub const Column = enum(u32) {
     node_lhs,
     node_rhs,
     node_tokens,
+    node_encoded_types,
+    node_program_types,
     fields,
     variants,
     conversions,
@@ -51,7 +54,7 @@ pub const Column = enum(u32) {
         return switch (c) {
             .definitions, .codecs => 44,
             .node_tags, .term_tags, .literal_bytes, .strings => 1,
-            .node_lhs, .node_rhs, .node_tokens, .extra, .term_lhs, .term_rhs, .type_extra, .symbols => 4,
+            .node_lhs, .node_rhs, .node_tokens, .node_encoded_types, .node_program_types, .extra, .term_lhs, .term_rhs, .type_extra, .symbols => 4,
             .fields, .checks, .annotations => 20,
             .variants => 24,
             .conversions => 16,
@@ -98,6 +101,8 @@ pub fn write(gpa: Allocator, plan: *const SchemaPlan, interner: *const InternPoo
     lengths[@backingInt(Column.node_lhs)] = @intCast(plan.nodes.len);
     lengths[@backingInt(Column.node_rhs)] = @intCast(plan.nodes.len);
     lengths[@backingInt(Column.node_tokens)] = @intCast(plan.nodes.len);
+    lengths[@backingInt(Column.node_encoded_types)] = @intCast(plan.nodes.len);
+    lengths[@backingInt(Column.node_program_types)] = @intCast(plan.nodes.len);
     lengths[@backingInt(Column.fields)] = @intCast(plan.fields.len);
     lengths[@backingInt(Column.variants)] = @intCast(plan.variants.len);
     lengths[@backingInt(Column.conversions)] = @intCast(plan.conversions.len);
@@ -155,6 +160,8 @@ pub fn write(gpa: Allocator, plan: *const SchemaPlan, interner: *const InternPoo
         writeWords(col(out, offsets, .node_lhs), lhs);
         writeWords(col(out, offsets, .node_rhs), rhs);
         writeWords(col(out, offsets, .node_tokens), tokens);
+        for (plan.nodes.items(.encoded_term), 0..) |term, i| std.mem.writeInt(u32, col(out, offsets, .node_encoded_types)[i * 4 ..][0..4], @backingInt(term), .little);
+        for (plan.nodes.items(.program_term), 0..) |term, i| std.mem.writeInt(u32, col(out, offsets, .node_program_types)[i * 4 ..][0..4], @backingInt(term), .little);
     }
     for (plan.fields, 0..) |f, i| {
         const row = col(out, offsets, .fields)[i * 20 ..][0..20];
@@ -277,7 +284,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!Sc
         lengths[i] = len;
     }
     const nodes_len = lengths[@backingInt(Column.node_tags)];
-    if (lengths[@backingInt(Column.node_lhs)] != nodes_len or lengths[@backingInt(Column.node_rhs)] != nodes_len or lengths[@backingInt(Column.node_tokens)] != nodes_len) return error.BadPlan;
+    if (lengths[@backingInt(Column.node_lhs)] != nodes_len or lengths[@backingInt(Column.node_rhs)] != nodes_len or lengths[@backingInt(Column.node_tokens)] != nodes_len or lengths[@backingInt(Column.node_encoded_types)] != nodes_len or lengths[@backingInt(Column.node_program_types)] != nodes_len) return error.BadPlan;
     const terms_len = lengths[@backingInt(Column.term_tags)];
     if (lengths[@backingInt(Column.term_lhs)] != terms_len or lengths[@backingInt(Column.term_rhs)] != terms_len) return error.BadPlan;
 
@@ -328,7 +335,9 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!Sc
     const node_lhs = section(bytes, offsets, lengths, .node_lhs);
     const node_rhs = section(bytes, offsets, lengths, .node_rhs);
     const node_tokens = section(bytes, offsets, lengths, .node_tokens);
-    for (0..nodes_len) |i| nodes.set(i, .{ .tag = std.enums.fromInt(SchemaPlan.Node.Tag, node_tags[i]) orelse return error.BadPlan, .lhs = word(node_lhs, i), .rhs = word(node_rhs, i), .token = word(node_tokens, i) });
+    const node_encoded_types = section(bytes, offsets, lengths, .node_encoded_types);
+    const node_program_types = section(bytes, offsets, lengths, .node_program_types);
+    for (0..nodes_len) |i| nodes.set(i, .{ .tag = std.enums.fromInt(SchemaPlan.Node.Tag, node_tags[i]) orelse return error.BadPlan, .lhs = word(node_lhs, i), .rhs = word(node_rhs, i), .token = word(node_tokens, i), .encoded_term = @fromBackingInt(word(node_encoded_types, i)), .program_term = @fromBackingInt(word(node_program_types, i)) });
     plan.nodes = nodes.toOwnedSlice();
 
     plan.fields = try readFields(gpa, section(bytes, offsets, lengths, .fields));
@@ -416,6 +425,10 @@ pub fn verify(plan: *const SchemaPlan) bool {
             .codec_ref => if (l >= plan.codecs.len or !indicesInRange(plan.extra, r, node_i)) return false,
             .codec_value => if (l >= plan.value_targets.len or r != 0) return false,
         };
+    }
+    for (plan.nodes.items(.encoded_term), plan.nodes.items(.program_term)) |encoded, program| {
+        if (encoded != .none and encoded.int() >= plan.terms.len) return false;
+        if (program != .none and program.int() >= plan.terms.len) return false;
     }
     for (plan.fields) |f| if (@backingInt(f.name) >= symbol_len or @backingInt(f.external) >= plan.literals.len or @backingInt(f.child) >= node_len) return false;
     for (plan.variants) |v| {
@@ -710,7 +723,7 @@ fn samplePlan(gpa: Allocator, pool: *InternPool.Global) !SchemaPlan {
         .encoded_properties = 7,
     }});
     var nodes: std.MultiArrayList(SchemaPlan.Node) = .empty;
-    try nodes.append(gpa, .{ .tag = .primitive, .lhs = @backingInt(SchemaPlan.Primitive.string), .rhs = 0, .token = 2 });
+    try nodes.append(gpa, .{ .tag = .primitive, .lhs = @backingInt(SchemaPlan.Primitive.string), .rhs = 0, .token = 2, .encoded_term = @fromBackingInt(1), .program_term = @fromBackingInt(0) });
     var terms: std.MultiArrayList(Interface.Term) = .empty;
     try terms.append(gpa, .{ .tag = .app, .lhs = 0, .rhs = 0 });
     try terms.append(gpa, .{ .tag = .app, .lhs = 1, .rhs = 1 });
@@ -750,6 +763,8 @@ test "a resolved schema plan round-trips canonically" {
     defer gpa.free(encoded);
     var loaded = try read(gpa, encoded, &pool);
     defer loaded.deinit(gpa);
+    try testing.expectEqual(@as(u32, 1), @backingInt(loaded.nodes.get(0).encoded_term));
+    try testing.expectEqual(@as(u32, 0), @backingInt(loaded.nodes.get(0).program_term));
     const again = try write(gpa, &loaded, &pool);
     defer gpa.free(again);
     try testing.expectEqualSlices(u8, encoded, again);

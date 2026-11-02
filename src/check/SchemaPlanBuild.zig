@@ -59,6 +59,8 @@ pub fn build(
         const params_start: u32 = @intCast(b.extra.items.len);
         for (bir.declTypeParams(decl)) |param| try b.extra.append(gpa, @backingInt(try b.symbolIndex(param)));
         const params_end: u32 = @intCast(b.extra.items.len);
+        b.current_parameters = .{ .start = @intCast(b.identity_parameters.items.len), .len = 2 * schemas.params_len[decl_i] };
+        for (schemas.params[schemas.params_start[decl_i]..][0..schemas.params_len[decl_i]]) |parameter| try b.identity_parameters.appendSlice(gpa, &.{ parameter.encoded, parameter.program });
         const root = try b.node(@fromBackingInt(@intCast(decl_i)), root_inst);
         try b.definitions.append(gpa, .{
             .name = try b.symbolIndex(bir.symbol(decl.name)),
@@ -81,6 +83,9 @@ pub fn build(
                 b.poisoned = true;
                 continue;
             }
+            b.current_parameters = .{ .start = @intCast(b.identity_parameters.items.len), .len = 2 * d.slots };
+            const host_value = try schemas.applied(types.well_known.value, &.{});
+            for (d.parameters) |parameter| try b.identity_parameters.appendSlice(gpa, &.{ host_value, parameter });
             var t: CodecWriter = .{ .b = &b, .c = codecs, .types = types, .token = d.token };
             const root = try t.node(d.root);
             const codec_symbol = try b.symbolIndex(InternPool.WellKnown.codec.symbol());
@@ -133,6 +138,11 @@ pub fn build(
             .encoded_properties = properties[d.decl.int()][1],
         };
     }
+    for (b.node_types.items, 0..) |maybe, i| if (maybe) |typed| {
+        const parameters = b.identity_parameters.items[typed.parameters.start..][0..typed.parameters.len];
+        b.nodes.items(.encoded_term)[i] = try writer.addPlanIdentityRoot(typed.pair.encoded, parameters);
+        b.nodes.items(.program_term)[i] = try writer.addPlanIdentityRoot(typed.pair.program, parameters);
+    };
     const term_tables = try writer.takePlanTerms();
     plan.terms = term_tables.terms;
     plan.type_extra = term_tables.extra;
@@ -166,6 +176,12 @@ const CodecWriter = struct {
     token: u32,
 
     fn node(w: *CodecWriter, index: u32) Allocator.Error!SchemaPlan.NodeIndex {
+        const result = try w.nodeImpl(index);
+        if (w.c.nodes.items[index].source_type.unwrap()) |source| w.b.node_types.items[@backingInt(result)] = .{ .pair = .{ .encoded = source, .program = source }, .parameters = w.b.current_parameters };
+        return result;
+    }
+
+    fn nodeImpl(w: *CodecWriter, index: u32) Allocator.Error!SchemaPlan.NodeIndex {
         const b = w.b;
         const gpa = b.gpa;
         const n = w.c.nodes.items[index];
@@ -304,6 +320,9 @@ const PendingDefinition = struct {
     token: u32,
 };
 
+const ParameterRange = struct { start: u32 = 0, len: u32 = 0 };
+const NodeTypes = struct { pair: Schema.Pair, parameters: ParameterRange };
+
 const Builder = struct {
     gpa: Allocator,
     module: Graph.Index,
@@ -314,6 +333,9 @@ const Builder = struct {
     schemas: *const Schema.State,
     definitions: std.ArrayList(PendingDefinition) = .empty,
     nodes: std.MultiArrayList(SchemaPlan.Node) = .empty,
+    node_types: std.ArrayList(?NodeTypes) = .empty,
+    identity_parameters: std.ArrayList(Var) = .empty,
+    current_parameters: ParameterRange = .{},
     fields: std.ArrayList(SchemaPlan.Field) = .empty,
     variants: std.ArrayList(SchemaPlan.Variant) = .empty,
     conversions: std.ArrayList(SchemaPlan.Conversion) = .empty,
@@ -333,6 +355,8 @@ const Builder = struct {
     fn deinit(b: *Builder) void {
         b.definitions.deinit(b.gpa);
         b.nodes.deinit(b.gpa);
+        b.node_types.deinit(b.gpa);
+        b.identity_parameters.deinit(b.gpa);
         b.fields.deinit(b.gpa);
         b.variants.deinit(b.gpa);
         b.conversions.deinit(b.gpa);
@@ -367,6 +391,7 @@ const Builder = struct {
     fn appendNode(b: *Builder, entry: SchemaPlan.Node) Allocator.Error!SchemaPlan.NodeIndex {
         const index: SchemaPlan.NodeIndex = @fromBackingInt(@intCast(b.nodes.len));
         try b.nodes.append(b.gpa, entry);
+        try b.node_types.append(b.gpa, null);
         return index;
     }
 
@@ -378,6 +403,20 @@ const Builder = struct {
     }
 
     fn node(b: *Builder, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!SchemaPlan.NodeIndex {
+        const result = try b.nodeImpl(owner, inst);
+        if (b.node_types.items[@backingInt(result)] == null and inst.int() < b.schemas.node_pairs.len) {
+            if (b.schemas.node_pairs[inst.int()]) |pair| b.node_types.items[@backingInt(result)] = .{ .pair = pair, .parameters = b.current_parameters };
+        }
+        return result;
+    }
+
+    fn nullableNode(b: *Builder, child: SchemaPlan.NodeIndex, token_index: u32) Allocator.Error!SchemaPlan.NodeIndex {
+        const result = try b.appendNode(.{ .tag = .nullable, .lhs = @backingInt(child), .rhs = 0, .token = token_index });
+        if (b.node_types.items[@backingInt(child)]) |typed| b.node_types.items[@backingInt(result)] = .{ .pair = try b.schemas.wrap(b.schemas.types.well_known.nullable, typed.pair), .parameters = typed.parameters };
+        return result;
+    }
+
+    fn nodeImpl(b: *Builder, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!SchemaPlan.NodeIndex {
         const data = b.bir.instData(inst);
         const at = b.token(inst);
         return switch (b.bir.instTag(inst)) {
@@ -414,7 +453,7 @@ const Builder = struct {
     fn value(b: *Builder, owner: Bir.DeclIndex, operand: Bir.Inst.Index, modifiers: []const Bir.Inst.Index) Allocator.Error!SchemaPlan.NodeIndex {
         var child = try b.node(owner, operand);
         for (modifiers) |modifier| switch (b.bir.instTag(modifier)) {
-            .schema_nullable => child = try b.appendNode(.{ .tag = .nullable, .lhs = @backingInt(child), .rhs = 0, .token = b.token(modifier) }),
+            .schema_nullable => child = try b.nullableNode(child, b.token(modifier)),
             .schema_via => child = try b.conversion(owner, child, modifier),
             else => {},
         };
@@ -434,7 +473,7 @@ const Builder = struct {
             for (b.bir.extraSlice(.{ .start = field.modifiers_start, .end = field.modifiers_end }, Bir.Inst.Index)) |modifier| switch (b.bir.instTag(modifier)) {
                 .schema_as => external = try b.literal(b.bir.bytes(@fromBackingInt(@intCast(b.bir.instData(modifier).lhs)))),
                 .schema_optional => optional = true,
-                .schema_nullable => child = try b.appendNode(.{ .tag = .nullable, .lhs = @backingInt(child), .rhs = 0, .token = b.token(modifier) }),
+                .schema_nullable => child = try b.nullableNode(child, b.token(modifier)),
                 .schema_via => child = try b.conversion(owner, child, modifier),
                 else => {},
             };
@@ -468,7 +507,9 @@ const Builder = struct {
             .opaque_checks = true,
         });
         try b.conversion_vars.append(b.gpa, target);
-        return b.appendNode(.{ .tag = .conversion, .lhs = @backingInt(child), .rhs = conversion_index, .token = b.token(modifier) });
+        const result = try b.appendNode(.{ .tag = .conversion, .lhs = @backingInt(child), .rhs = conversion_index, .token = b.token(modifier) });
+        if (b.node_types.items[@backingInt(child)]) |typed| b.node_types.items[@backingInt(result)] = .{ .pair = .{ .encoded = typed.pair.encoded, .program = target }, .parameters = typed.parameters };
+        return result;
     }
 
     fn reference(b: *Builder, head: Bir.Inst.Index, args: []const u32) Allocator.Error!SchemaPlan.NodeIndex {

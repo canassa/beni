@@ -196,26 +196,20 @@ pub const Ref = struct { module: Graph.Index, decl: u32 };
 /// `core/Schema`'s core-private values the specialised path calls: in no
 /// interface, exported by `core/Schema` when they survive.
 pub const compiled_values = [_][]const u8{
-    "compiledParse",   "compiledPrint",       "compiledFail",    "compiledForward",   "compiledBackward",
-    "belowBackward",   "readSlot",            "writeSlot",       "pathAt",            "printableWithin",
-    "declared",        "decodeSlot",          "encodeSlot",      "readValueSlot",     "writeValueSlot",
-    "box",             "describedOf",         "describedList",   "describedNullable", "describedConverted",
-    "describedRecord", "describedField",      "describedTagged", "describedVariant",  "describedRecursive",
-    "compiledDeep",    "compiledMissing",     "badString",       "badInt",            "badBool",
-    "badFloat",        "badFinite",
+    "boxWithIds",          "encodedIdentity", "typedIdentity",   "packed",          "unpacked",         "at",            "listItems",         "listMade",           "argument",        "forwardOf",       "backwardOf",            "mappedConversion",
+    "compiledParse",       "compiledPrint",   "compiledFail",    "compiledForward", "compiledBackward", "belowBackward", "readSlot",          "writeSlot",          "pathAt",          "printableWithin", "declared",              "decodeSlot",
+    "encodeSlot",          "readValueSlot",   "writeValueSlot",  "box",             "describedOf",      "describedList", "describedNullable", "describedConverted", "describedRecord", "describedField",  "describedTagged",       "describedVariant",
+    "describedRecursive",  "compiledDeep",    "compiledMissing", "badString",       "badInt",           "badBool",       "badFloat",          "badFinite",
     // A derived codec's (schema.md §12.10).
-              "describedHost",   "describedTuple",    "describedConstructors",
-    "describedMaybe",  "describedMaybeField", "derivedChar",     "derivedInt32",      "derivedNever",
-    "hostWorker",
+             "describedHost",   "describedTuple",  "describedConstructors", "describedMaybe",
+    "describedMaybeField", "derivedChar",     "derivedInt32",    "derivedNever",    "hostWorker",
     // `read` as a validator (schema.md §6).
-         "readValid",           "readValidSlot",   "validContext",      "validJson",
+          "readValid",     "readValidSlot",     "validContext",       "validJson",
     // A shape run's validator and the readers a shape names (schema.md §6,
     // *A validator run is a shape that one shared validator reads*).
-    "validShape",      "shapeParse",          "shapeString",     "shapeBool",         "shapeInt",
-    "shapeFloat",      "shapeFinite",         "shapeNull",       "shapeValue",        "shapeChar",
-    "oneScalar",       "shapeInt32",          "shapeNever",      "shapeRecord",       "shapeList",
-    "shapeNullable",   "shapeMaybe",          "shapeJust",       "shapeLater",        "shapeTuple",
-    "shapeTagged",     "shapeCtors",          "shapeRecordOwn",  "shapeTaggedOwn",
+          "validShape",      "shapeParse",            "shapeString",
+    "shapeBool",           "shapeInt",        "shapeFloat",      "shapeFinite",     "shapeNull",        "shapeValue",    "shapeChar",         "oneScalar",          "shapeInt32",      "shapeNever",      "shapeRecord",           "shapeList",
+    "shapeNullable",       "shapeMaybe",      "shapeJust",       "shapeLater",      "shapeTuple",       "shapeTagged",   "shapeCtors",        "shapeRecordOwn",     "shapeTaggedOwn",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -235,8 +229,12 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
     const params = d.params_end - d.params_start;
     switch (member) {
         // Under `--schema-library` the root is its description, boxed.
-        .root => try out.append(scratch, if (library) "box" else "declared"),
+        .root => {
+            try out.append(scratch, if (library) "boxWithIds" else "declared");
+            if (params != 0) try out.appendSlice(scratch, &.{ "encodedIdentity", "typedIdentity", "argument" });
+        },
         .description => {
+            try out.appendSlice(scratch, &.{ "packed", "unpacked", "at", "listItems", "listMade", "encodedIdentity", "typedIdentity", "forwardOf", "backwardOf", "mappedConversion" });
             // `describedOf` makes a primitive's node, and a generic root's
             // description of each argument's node.
             try out.append(scratch, "describedOf");
@@ -264,6 +262,7 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
         // The readers the shape names, one per kind of node it holds.
         .shape => {
             if (library) return;
+            try out.append(scratch, "at");
             for (nodes.items) |n| if (shapeReader(plan, n)) |name| try out.append(scratch, name);
             var refs: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
             for (nodes.items) |n| switch (tag(plan, n)) {
@@ -283,6 +282,7 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
         },
         // The root wrappers: `S.parse`/`S.parseWith`, `S.print`/`S.printWith`.
         .parse, .print => {
+            try out.appendSlice(scratch, &.{ "encodedIdentity", "typedIdentity", "argument" });
             try out.append(scratch, "defaultOptions");
             if (library) {
                 try out.append(scratch, if (member == .parse) "parseWith" else "printWith");

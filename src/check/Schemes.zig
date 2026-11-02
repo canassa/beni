@@ -270,6 +270,27 @@ pub const Writer = struct {
         return root;
     }
 
+    /// Type identities in generated schema adapters use the declaration's
+    /// parameter seats, not each subtree's first-appearance order. Concrete
+    /// and aliased seats need no substitution; repeated variables reuse the
+    /// first seat. Ordinary interface and endpoint terms keep their format.
+    pub fn addPlanIdentityRoot(w: *Writer, v: Var, parameters: []const Var) Error!Interface.TermIndex {
+        const mark = try w.begin();
+        const previous_body = w.in_body;
+        w.in_body = true;
+        defer w.in_body = previous_body;
+        for (parameters, 0..) |parameter, i| {
+            const root = w.store.find(parameter);
+            if (w.live(root) and w.memo[root.int()] != .none) continue;
+            const parameter_term = try w.term(.@"var", @intCast(i), 0);
+            // writeVar's memo is local to this root (begin/finish).
+            _ = try w.memoise(root, parameter_term);
+        }
+        const root = try w.writeVar(v);
+        try w.finish(mark);
+        return root;
+    }
+
     pub const PlanTerms = struct {
         terms: std.MultiArrayList(Interface.Term).Slice,
         extra: []const u32,
@@ -491,7 +512,7 @@ pub const Writer = struct {
     /// them — quantifiers in discovery order, each one's constraints by name
     /// text, as `writeConstraints` did.
     fn writeEffects(w: *Writer, p: Effects.Publication, v: Var) Error!u32 {
-        if (!p.effects.publishes(p.decl)) return Interface.no_terms;
+        if (p.decl != Effects.no_owner and !p.effects.publishes(p.decl)) return Interface.no_terms;
         var where_types: std.ArrayList(Var) = .empty;
         defer where_types.deinit(w.gpa);
         for (w.pending_roots.items) |root| {

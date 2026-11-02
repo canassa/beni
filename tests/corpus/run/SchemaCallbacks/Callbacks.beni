@@ -1,0 +1,19 @@
+import Ref
+import Schema
+
+
+count : Ref.Ref Int
+count = Ref.make 0
+
+
+conversion : Schema.Conversion String (⊤ → ⊤)
+conversion = Schema.conversion (λtext → Ok λ⊤ → Ref.update count λn → n + String.length text) λ_ →
+    Ok "callback"
+
+
+pub schema Factory =
+    String via conversion
+
+
+pub total : ⊤ → Int
+total ⊤ = Ref.get count

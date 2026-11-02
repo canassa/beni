@@ -559,7 +559,7 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     try in.wantImported(mark, v);
     // A value's summary, read from its record (transparent-effects-proposal.md
     // §14.3 rule 3): the use's classes get its rungs and dependencies now.
-    if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@backingInt(scheme)], v, in.quantified.items, @backingInt(in.origin));
+    if (which == .value or which == .schema_member) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@backingInt(scheme)], v, in.quantified.items, @backingInt(in.origin));
     if (which == .value) {
         const identity_scheme = iface.schemes[@backingInt(scheme)];
         for (in.quantified.items, 0..) |q, i| {

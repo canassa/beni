@@ -1,0 +1,67 @@
+-- Callback summaries survive declared, generic, compiled-composed and
+-- interpreted schema storage, without calling a Token while storing it.
+import Callbacks
+import Node
+import Ref
+import Schema
+import Token exposing (Token)
+
+
+count : Ref.Ref Int
+count = Ref.make 0
+
+
+conversion : Schema.Conversion String Token
+conversion = Schema.conversion (λtext → Ok (Token.make count text)) λ_ → Ok "token"
+
+
+tokens : Schema.Schema String Token
+tokens = Schema.converted Schema.string conversion
+
+
+schema Declared =
+    String via conversion
+
+
+schema Box a =
+    item : a
+
+
+fire : Result (List Schema.Issue) Token → ⊤
+fire result =
+    case result of
+        Ok token →
+            Token.fire token
+        Err _ →
+            ⊤
+
+
+main : Node.Program
+main =
+    fire (Declared.parse "\"abc\"")
+    case Schema.parse (Schema.list (Declared.schema ⊤)) "[\"ab\",\"c\"]" of
+        Ok items →
+            List.foldl items ⊤ λtoken _ → Token.fire token
+        Err _ →
+            ⊤
+    case Box.parse tokens "{\"item\":\"four\"}" of
+        Ok item →
+            Token.fire item.item
+        Err _ →
+            ⊤
+    interpreted =
+        Schema.record
+            (Schema.field Schema.fields "item" tokens)
+            (Schema.mapping (λ( _, token ) → { item = token }) λitem → ( ⊤, item.item ))
+            (Schema.mapping (λ( _, token ) → { item = token }) λitem → ( ⊤, item.item ))
+    case Schema.decode interpreted { item = "four" } of
+        Ok item →
+            Token.fire item.item
+        Err _ →
+            ⊤
+    case Callbacks.Factory.parse "\"hello\"" of
+        Ok body →
+            body ⊤
+        Err _ →
+            ⊤
+    Node.printLines [ String.fromInt (Ref.get count), String.fromInt (Callbacks.total ⊤) ]

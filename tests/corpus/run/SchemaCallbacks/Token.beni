@@ -1,0 +1,13 @@
+import Ref
+
+
+pub opaque type Token
+    = Token (⊤ → ⊤)
+
+
+pub make : Ref.Ref Int, String → Token
+make count text = Token λ⊤ → Ref.update count λn → n + String.length text
+
+
+pub fire : Token → ⊤
+fire (Token body) = body ⊤

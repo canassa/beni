@@ -38,6 +38,7 @@ pub const State = struct {
     status: []Status,
     variant_payloads: []Pair,
     variant_built: []bool,
+    node_pairs: []?Pair = &.{},
     vias: std.ArrayList(Via) = .empty,
     recursive_aliases: std.ArrayList(Bir.Inst.Index) = .empty,
     errors: std.ArrayList(SchemaError) = .empty,
@@ -57,9 +58,13 @@ pub const State = struct {
         @memset(s.status, .absent);
         @memset(s.variant_built, false);
         var count: usize = 0;
+        var has_schema = false;
         for (bir.decls) |d| if (d.kind == .schema) {
+            has_schema = true;
             count += d.params;
         };
+        s.node_pairs = try a.alloc(?Pair, if (has_schema) bir.insts.len else 0);
+        @memset(s.node_pairs, null);
         s.params = try a.alloc(Pair, count);
         var cursor: u32 = 0;
         for (bir.decls, 0..) |d, i| {
@@ -87,6 +92,7 @@ pub const State = struct {
         s.allocator.free(s.status);
         s.allocator.free(s.variant_payloads);
         s.allocator.free(s.variant_built);
+        s.allocator.free(s.node_pairs);
         s.vias.deinit(s.allocator);
         s.recursive_aliases.deinit(s.allocator);
         s.errors.deinit(s.allocator);
@@ -260,6 +266,12 @@ pub const State = struct {
     }
 
     fn node(s: *State, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!Pair {
+        const pair = try s.nodeImpl(owner, inst);
+        if (inst.int() < s.node_pairs.len) s.node_pairs[inst.int()] = pair;
+        return pair;
+    }
+
+    fn nodeImpl(s: *State, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!Pair {
         const saved_key_region = s.key_region;
         s.key_region = inst;
         defer s.key_region = saved_key_region;
@@ -589,10 +601,10 @@ pub const State = struct {
         return s.bir.string_bytes[data.lhs..][0..data.rhs];
     }
 
-    fn wrap(s: *State, id: Types.TypeId, p: Pair) Allocator.Error!Pair {
+    pub fn wrap(s: *const State, id: Types.TypeId, p: Pair) Allocator.Error!Pair {
         return .{ .encoded = try s.applied(id, &.{p.encoded}), .program = try s.applied(id, &.{p.program}) };
     }
-    fn applied(s: *State, id: Types.TypeId, args: []const Var) Allocator.Error!Var {
+    pub fn applied(s: *const State, id: Types.TypeId, args: []const Var) Allocator.Error!Var {
         if (id == .none) return s.store.freshErr(TypeStore.generalized);
         var b: Types.Builder = .init(s.store, s.types, s.graph, s.artifacts, s.module, s.bir, .flex, TypeStore.generalized, s.allocator, s.interner);
         b.key_observer = s.key_observer;

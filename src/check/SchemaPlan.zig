@@ -139,6 +139,8 @@ pub const Definition = struct {
 
 pub const Node = struct {
     tag: Tag,
+    encoded_term: Interface.TermIndex = .none,
+    program_term: Interface.TermIndex = .none,
     lhs: u32,
     rhs: u32,
     token: u32,
