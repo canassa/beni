@@ -330,17 +330,17 @@ module WebSocket
     Received
     Closed
     Failed
-  type Socket
+  opaque type Socket
   type WriteError
     NotOpen
   value buffered : Socket → Int  -- impure
   value close : Socket, Close → Result CloseError ⊤  -- impure
-  value connect : String, List String, (Socket → a) → Result ConnectError a  -- suspends
+  value connect : String, List String, ((Socket) → a) → Result ConnectError a  -- suspends
   value disconnect : Socket, Close, (CloseError → msg) → Cmd msg  -- impure
   value eq : Socket, Socket → Bool
-  value listen : String, List String, (Event → msg) → Sub msg
+  value listen : String, List String, ((Event) → msg) → Sub msg
   value protocol : Socket → String  -- impure
-  value read : Socket → Result Close String  -- suspends
+  value read : (Socket) → Result Close String  -- suspends
   value send : Socket, String, (WriteError → msg) → Cmd msg  -- impure
   value write : Socket, String → Result WriteError ⊤  -- impure
 ```

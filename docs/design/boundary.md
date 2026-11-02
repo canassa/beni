@@ -3226,6 +3226,11 @@ to nothing moves.
 
 #### 9.8.6 After render, the DOM capabilities, `Browser.flush` (W49, W50)
 
+*As built, 2026-11-02:* Dom uses generated typed node, geometry, scroll and
+fullscreen operations. Fullscreen promises retain their native rejection
+handle until classification; only TypeError becomes a refusal, and every
+unknown rejection is raised unchanged in the waiting fiber.
+
 **`Cmd.afterRender body`** queues `body` into phase (2) of the next flush (`backend.md` §15.11):
 after every write of the render, synchronously, before the next message. The body is `sync` — the
 demand arrives from `Hosted.later`'s `sync` parameter through `Cmd.afterRender`'s summary — and it

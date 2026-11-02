@@ -230,3 +230,7 @@ unknown thrown values retain their identity and remain defects.
 `Task.Resume` opening/read capabilities and a typed subscription listener.
 Generated native event operations project text or binary presence and close
 code/reason directly into typed callbacks; no event or socket enters Js.Value.
+
+**As built, 2026-11-02:** Dom keeps node and geometry handles native. Its
+fullscreen wait uses `Promise ⊤` and a typed `Rejection` in the failure arm;
+no native handle or completion callback is stored as plain dynamic data.
