@@ -338,10 +338,9 @@ tests/pending/ownership/LocalEmptyInCtor.beni OwnershipV2Differs
 scenario/CK-314 grows
 
 # CK-316, #856 (issue #1509, #1640): v1 summarises the repeated tuple paths of
-# OwnershipAnnotationDag as 1,276,786 entries, over the limit of 262,144, on a
-# program with no list writes, so `check --ownership-everywhere` fails with
-# `ownership_limit`. Honouring an explicit flag without a platform chain (#1509)
-# exposed it. v2 checks the program in 0.03 s (check_test.zig, "ownership v2
-# everywhere: tuple DAG ..."), so this fixture goes with v1. Its golden is v2's
-# report.
-tests/pending/ownership/AnnotationDag.beni exit=0 node+everywhere.ownership-differs
+# tests/corpus/check/good/OwnershipAnnotationDag.beni as 1,276,786 entries, over
+# the limit of 262,144, on a program with no list writes, so `check
+# --ownership-everywhere` fails with `ownership_limit`. Honouring an explicit
+# flag without a platform chain (#1509) exposed it. v2 checks it in 0.03 s
+# (check_test.zig), so this goes with v1.
+scenario/CK-316 exit=1 codes=ownership_limit×1

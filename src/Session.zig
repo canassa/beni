@@ -194,7 +194,8 @@ pack: CorePack.Pack = .empty,
 /// that lowered the file, so the slots need no lock and their order is the
 /// file order whatever `--jobs` was.
 pack_frontend: []?[]u8 = &.{},
-/// `Options.ownership` on a chain that edits lists in place
+/// `Options.ownership` with `--ownership-everywhere`, records in place, or a chain
+/// that edits lists in place, the chain optional
 /// (`ownership-checker.md` §28.3): this run enforces.
 enforce_ownership: bool = false,
 /// Owned. Per module, the summary block its cache entry carries
