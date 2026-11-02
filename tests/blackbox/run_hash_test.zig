@@ -323,6 +323,40 @@ test "a lists pass that does not crash as its golden says writes no digest" {
     _ = try expectDigests(&w, 1);
 }
 
+test "a lists-v2 pass that does not crash as its golden says writes no digest" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The v2 twin of the lists pass (`out-lists-v2`, `.sanitize-lists-v2`
+    // and its `-crash`) records through `runOnceCrash` as the v1 pass does,
+    // so a change that records it early, or looks it up under the v1 pass's
+    // digest, must fail here as the v1 test above fails.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Hello.beni", hello);
+    try w.write("corpus/run/Hello.expected", "hello\n");
+    try w.write("corpus/run/Hello.sanitize-lists-v2", "a lists-v2 pass that must crash and does not\n");
+    try w.write("corpus/run/Hello.sanitize-lists-v2-crash", "the list sanitiser trapped\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try walker(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(1, r);
+    // The development pass and the lists-v2 pass ran; neither was verified before.
+    try expectCounts(&w, 0, 2);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One digest: the development pass's.
+    _ = try expectDigests(&w, 1);
+}
+
 fn expectReported(r: world.Result, text: []const u8) !void {
     if (std.mem.indexOf(u8, r.stderr, text) == null) {
         std.debug.print("the walker's report lacks:\n{s}\n--- stderr ---\n{s}\n", .{ text, r.stderr });

@@ -326,7 +326,7 @@ so a refusal of another write, or of one more write, fails the case even when
 the named write is accepted.
 
 Both files hold their reason, are written by hand and never blessed, and their
-passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build
+passes' digests go to the run-hash cache as every pass's do. `BENI_IN_PLACE=all` (`zig build
 test-records-in-place`) gives every `run/` fixture and every
 `browser/inline/` page the record passes, and `BENI_IN_PLACE=lists` (`zig
 build test-lists-in-place`) the list pass, `BENI_IN_PLACE=lists-v2` (`zig
