@@ -1016,6 +1016,19 @@ such write is a `callsite` demand on `⊤` at the first escape, refused `unknown
 code's capture write at its escape, at its capture by another closure (which may call it any number of times), or at a label of a callee that may call it again (`calls` many, or two labels
 of one function slot), is refused `once`.
 
+*Amended 2026-11-02 (#1727):* a **cell operation** on a captured `Ref` is not a write of a capture for `once`. A
+cell operation is a shallow write of a `◆` slot (`Ref.set`, `Ref.update`, `Ref.modify`: the `cellwrite` rows of
+§2.13.7, `Eval.cellWrite`). It rewrites the cell, which is the shared mutable place, so a second call stales no
+reader. A closure whose only capture writes are cell operations is therefore not `once`: a callee that calls it many
+times (`Task.retry`, `Task.forever`, `Browser.Events.eachAnimationFrameDelta`, a recursive walker), its escape and
+its capture by another closure refuse nothing. Its creation is a `writer` demand on each written cell's `◆`
+instead, `cell r◆` in the dump, so the enclosing code's contract still says `writes π◆`: a projection of a
+captured record (`m.world◆`) names the `◆` of each cell slot it reaches, never the handle. Before this, such a
+closure was `once`, and the callees above refused it. An **in-place write of a captured list** still makes the code
+`once`, under the rules above, also beside cell operations in the same body. A list taken out of the cell under
+`cellupdate`/`cellmodify` and edited in place is a write of that row's callback parameter, not of the capture: it
+is judged at that callback, by the row's own rules (§2.13.7), however often the closure runs.
+
 A function value returned by a callee is unknown code at the caller (§2.11.3): its answer is `⊤`. *Amended
 2026-11-02 (#1709):* so a closure that a callee **hands back** — an arrival of the callee's `res` (itself,
 `same f = f`; captured by a closure the callee returns, `later f = λx → f x`; in a record, `{ run = f }`) — has
@@ -1372,7 +1385,10 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    meets it (a write replaces what the cell holds and changes no object anyone holds), so `Ref.set` is
    accepted beside every holder of the handle (`RefSetThenWrite`). What a callee keeps of the value its own
    write consumes (`Ref.set` storing `v`) is that write's own business: an escape made by the call itself does
-   not refuse that call's demands.
+   not refuse that call's demands. *Amended 2026-11-02 (#1727):* a cell operation of a closure on a captured `Ref`
+   does not make the closure `once` (§2.11.4): rewriting the cell on each call stales no reader. Only an in-place
+   write of a list keeps a closure `once`. A list taken out of the cell under `cellupdate`/`cellmodify` and edited
+   in place is judged at that row's callback, by its own rules, and not by the closure's `once`.
    **`Ref` loans** (R-5.12.3, #981): `Ref a` is a `ref` place; **`◆` is a barrier**: a holder of a `Ref` is not a
    holder of its contents, `reach` and Esc stop at `◆` (a `Ref` captured by a handler, a spawned fiber or JavaScript
    does not escape its contents, since only the worded operations reach them: rule 6), and the only outside
