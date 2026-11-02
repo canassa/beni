@@ -120,7 +120,8 @@ pub const Eval = struct {
     inst_memo: Ids.FixedDict(3) = .{},
     inst_runs: std.ArrayList([2]u32) = .empty,
     inst_leaves: std.ArrayList(u32) = .empty,
-    /// Per call: 0 unset, 1 in progress, 2 done (`cond_of`).
+    /// Per call: 0 unset, 1 in progress, 2 done (`cond_of`); bit 4 while
+    /// `Distinct.instCondMixed` asks it.
     cond_state: std.ArrayList(u8) = .empty,
     cond_of: std.ArrayList(Cond) = .empty,
     /// `(leaf, leaf, target)` → `ovs` index; `none` while in progress.
