@@ -11,6 +11,7 @@ const Ids = @import("Ids.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Contract = @import("Contract.zig");
+const Slots = @import("Slots.zig");
 const Walk = @import("Walk.zig");
 const Regions = @import("Regions.zig");
 
@@ -628,3 +629,38 @@ pub const Live = struct {
         }
     }
 };
+
+/// Whether effect run `r` (sorted by parameter, then canonical key, §2.10)
+/// has an effect of parameter `j` that meets the slot of canonical key
+/// `key` (§2.7, a footprint entry read at a path): one at `key` or below
+/// it, or one at a proper prefix of it that is deep (any, when not
+/// `deep_only`). Binary searches by prefix, one a prefix of `key` and one
+/// below it, each charged before its work: never a scan of the run.
+pub fn effectMeets(ev: *Relation.Eval, contracts: *const Contract.Table, r: Ids.Range, j: u32, key: []const u32, deep_only: bool) Error!bool {
+    const slots = ev.f.slots;
+    const effs = contracts.effectsOf(r);
+    const n: u32 = @intCast(effs.len);
+    if (n == 0) return false;
+    const step = std.math.log2_int_ceil(u32, n + 1) + 1;
+    const Ctx = struct { slots: *const Slots.Table, j: u32, key: []const u32 };
+    const before = struct {
+        fn f(c: Ctx, x: Contract.Effect) bool {
+            if (x.j != c.j) return x.j < c.j;
+            return std.mem.order(u32, c.slots.relKey(x.slot), c.key) == .lt;
+        }
+    }.f;
+    // At or below `key`: the first effect not before it has `key` as prefix.
+    try ev.f.charge(.inspection, step);
+    const at = std.sort.partitionPoint(Contract.Effect, effs, Ctx{ .slots = slots, .j = j, .key = key }, before);
+    if (at < n and effs[at].j == j and std.mem.startsWith(u32, slots.relKey(effs[at].slot), key)) return true;
+    // At a proper prefix: three words a step (`Slots.relKey`).
+    var len: usize = 0;
+    while (len + 3 <= key.len) : (len += 3) {
+        if (len == key.len) break;
+        try ev.f.charge(.inspection, step);
+        const p = key[0..len];
+        const i = std.sort.partitionPoint(Contract.Effect, effs, Ctx{ .slots = slots, .j = j, .key = p }, before);
+        if (i < n and effs[i].j == j and std.mem.eql(u32, slots.relKey(effs[i].slot), p) and (effs[i].deep or !deep_only)) return true;
+    }
+    return false;
+}

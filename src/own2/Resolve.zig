@@ -347,14 +347,12 @@ const Resolver = struct {
         if (call.contract == none) return true;
         const h = r.e.contracts.head(call.contract);
         const rem = (try fr.slots.relBelow(g, fr.account, fr.places, u.path, q)) orelse return true;
+        // The reads by the callee's tree a parameter, the writes by binary
+        // search over its sorted effects (§2.7), each charged.
         const rw = fr.slots.relWords(rem);
+        try fr.charge(.inspection, @intCast(rw.len + 1));
         for (r.e.contracts.readsOf(h.reads)) |x| if (x[0] == foot[1] and Forest.effectReaches(&r.e.contracts.trees, x[1], rw)) return true;
-        for (r.e.contracts.effectsOf(h.writes)) |x| if (x.j == foot[1]) {
-            const sw = fr.slots.relWords(x.slot);
-            const n = @min(sw.len, rw.len);
-            if (std.mem.eql(u32, sw[0..n], rw[0..n])) return true;
-        };
-        return false;
+        return Holders.effectMeets(r.ev(), r.e.contracts, h.writes, foot[1], fr.slots.relKey(rem), false);
     }
 
     /// Whether an escape before `point` reaches a target.
