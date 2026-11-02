@@ -1,0 +1,7 @@
+-- load
+<body>
+  <output id="status">"after,command,fiber,listener,yield"</output>
+</body>
+-- flush #status
+(flushed)
+(the DOM did not change)

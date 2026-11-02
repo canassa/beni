@@ -129,11 +129,17 @@ close o = Js.setAt (host o) 1 (Js.from False)
 pub foreign type Job msg
 
 
+-- Keep the send typed until its impure host call: erasing the body alone
+-- loses the effect of its callback, so release could discard a send.
+withSend : ((a → ⊤) → b), V → b
+withSend body s = body λmsg → Js.to (Js.apply s [ host msg ])
+
+
 --| A body as a job: the body itself, a function of its `send`, which runs
 --| with the log context of the place where the job is made
 --| (`Task.keepLogContext`; `boundary.md` §9.8.16 (b), amended 2026-10-22).
 pub job : (Browser.Send msg → ⊤) → Job msg
-job body = guest (host (Task.keepLogContext body))
+job body = guest (host (Task.keepLogContext (withSend body _)))
 
 
 --| The same job, its messages passed through `tag`.
@@ -165,7 +171,7 @@ pub foreign type Later msg
 --| with the log context of the place where the work is made, as a job's.
 --| `[ f, t ]`: the body, and the tagger its messages go through or null.
 pub later : sync (Browser.Send msg → ⊤) → Later msg
-later body = guest (Js.array [ host (Task.keepLogContext body), Js.null ])
+later body = guest (Js.array [ host (Task.keepLogContext (withSend body _)), Js.null ])
 
 
 --| The same work, its messages passed through `tag`.
@@ -213,14 +219,14 @@ pub foreign type Tap msg
 --| borrowed. A runtime that handed each tagger a value of its own would
 --| change that row.
 pub tap : (Browser.Send a → ⊤), sync (a → msg) → Tap msg
-tap body tag = guest (Js.array [ host body, host tag ])
+tap body tag = guest (Js.array [ host (withSend body _), host tag ])
 
 
 --| A listener a subscription adds with no fiber, and its tagger
 --| (`boundary.md` §9.8.5): handed a function that sends values of type
 --| `a`, `start` adds the host's listener and returns what removes it.
 pub hook : sync ((a → ⊤) → (⊤ → ⊤)), sync (a → msg) → Tap msg
-hook start tag = guest (Js.array [ host start, host tag ])
+hook start tag = guest (Js.array [ host (withSend start _), host tag ])
 
 
 --| The same subscription, its messages passed through `tag`.

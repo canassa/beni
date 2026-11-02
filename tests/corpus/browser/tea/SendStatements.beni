@@ -1,0 +1,59 @@
+-- Every hosted callback gets an impure send, including a discarded send
+-- before unit, a suspension, or a listener's returned cleanup (#1694).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Task
+import Tea
+
+
+type Msg
+    = Got String
+
+
+init : ⊤ → List String × Cmd Msg
+init ⊤ =
+    ( []
+    , Cmd.batch
+        [ Cmd.perform λsend →
+            send (Got "command")
+            ⊤
+        , Cmd.perform λsend →
+            send (Got "yield")
+            Task.yieldNow ⊤
+        , Cmd.afterRender λsend →
+            send (Got "after")
+            ⊤
+        ]
+    )
+
+
+update : Msg, List String → List String × Cmd Msg
+update (Got label) model = ( [ …model, label ], Cmd.none )
+
+
+subscriptions : List String → Sub Msg
+subscriptions _ =
+    Sub.batch
+        [ Sub.listen "fiber"
+            (λsend →
+                Task.scope λ_ →
+                    send "fiber"
+                    Task.never ⊤
+            )
+            Got
+        , Sub.on "listener"
+            (λsend →
+                send "listener"
+                λ⊤ → ⊤
+            )
+            Got
+        ]
+
+
+view : List String → Html Msg
+view model = <output id="status">{String.join (List.sort model) ","}</output>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = subscriptions }
