@@ -61,6 +61,7 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
             last = occParam(o);
         } else try w.writeAll(",");
         try relText(slots, places, names, w, occRel(o));
+        if (Contract.isDeep(o)) try w.writeAll("*");
         if (isApart(o)) try w.writeAll("~");
     }
     try w.writeAll("}");

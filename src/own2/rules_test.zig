@@ -52,7 +52,8 @@ const layers = [_]Entry{
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     .{ .file = "Walk.zig", .layer = 7, .max_lines = 1230 },
-    .{ .file = "Distinct.zig", .layer = 7, .max_lines = 640 },
+    // One entry of many objects; an answer apart from nothing (#1710, #1711).
+    .{ .file = "Distinct.zig", .layer = 7, .max_lines = 680 },
     .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).

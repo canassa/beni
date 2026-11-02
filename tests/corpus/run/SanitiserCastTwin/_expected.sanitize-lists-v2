@@ -1,0 +1,3 @@
+A runtime catch for a cast that loses the sharing between two of its parts (ownership-v2.md §2.9.1, §2.9.3): built
+again under --ownership=v2 and the list stale-read sanitiser. v2 refuses the program; were it to accept it, the
+sanitised run would show the stale read of the second element.

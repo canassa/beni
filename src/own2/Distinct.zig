@@ -39,9 +39,18 @@ pub fn selOf(e: *Eval, j: u32, set: Slots.SetId, only_apart: bool) Error!Cond {
     const out = try e.arena.alloc(u64, items.len);
     for (items, out) |s, *o| {
         const r = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(s));
-        o.* = if (only_apart) Contract.occApart(j, r) else Contract.occ(j, r);
+        o.* = try deepAt(e, s, if (only_apart) Contract.occApart(j, r) else Contract.occ(j, r));
     }
     return Cond.of(e.account(), out);
+}
+
+/// Occurrence `o` at slot path `s`, deep where no step below `s` can be
+/// named (a type variable's or an opaque place, §2.9.1).
+fn deepAt(e: *Eval, s: u32, o: u64) Error!u64 {
+    return switch (e.places().kind(e.places().pathPlace(.from(s)))) {
+        .@"var", .@"opaque" => Contract.occDeep(o),
+        else => o,
+    };
 }
 
 /// Whether a leaf names a family: one of its slots is below a `[*]` or a
@@ -176,7 +185,7 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
         defer got.deinit(e.gpa());
         // Routes are per parameter: two parameters handed one value are
         // that value twice (the experiment's third requirement).
-        try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), false, 0, try e.routeStep(0, 0x8000_0000 | j), &got);
+        try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), Contract.isDeep(o), 0, try e.routeStep(0, 0x8000_0000 | j), &got);
         for (got.items) |p| try ps.append(e.gpa(), .{ .leaf = p.leaf, .route = p.route, .occ = o });
     }
     return distinct(e, ps.items, true);
@@ -238,6 +247,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     var rounds: u32 = 0;
     while (true) : (rounds += 1) {
         try e.charge(.cond, @intCast(1 + ents.items.len));
+        if (try answerMeets(e, ents.items)) return Cond.unprovable;
         // Group by root; atoms by identity.
         var groups: Ids.FixedDict(1) = .{};
         defer groups.deinit(g);
@@ -297,7 +307,9 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             if (try mayWithin(e, ents.items, idx.items, routed)) return Cond.unprovable;
             const r = e.f.roots.items[root];
             switch (r.kind) {
-                .param => if (idx.items.len >= 2 or params >= 2) {
+                // One entry that names several objects (a tuple a parameter
+                // or a call answers whole) asks as two entries do (#1711).
+                .param => if (idx.items.len >= 2 or params >= 2 or manyObjects(e, ents.items, idx.items)) {
                     // One sort of the group's slots, never a union per entry.
                     // Each entry's slots; an entry of an apart occurrence
                     // asks to be apart only.
@@ -307,23 +319,27 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                         try e.charge(.cond, @intCast(1 + lslots.len));
                         for (lslots) |x| {
                             const rl = try e.f.slots.relOf(g, e.account(), e.places(), .from(x));
-                            try occs.add(g, if (ap) Contract.occApart(r.a, rl) else Contract.occ(r.a, rl));
+                            try occs.add(g, try deepAt(e, x, if (ap) Contract.occApart(r.a, rl) else Contract.occ(r.a, rl)));
                         }
                     }
                 },
-                .call => if (idx.items.len >= 2 and !allApart(ents.items, idx.items)) {
+                .call => if ((idx.items.len >= 2 or manyObjects(e, ents.items, idx.items)) and !allApart(ents.items, idx.items)) {
                     // A call that does not vouch for its parts is read
                     // through what they come from (§2.9.2 step 3),
                     // each part on its own.
                     const c = if (anyApart(ents.items, idx.items)) try instCondMixed(e, r.a, ents.items, idx.items) else try instCond(e, r.a);
                     if (c.no) {
+                        // At a slot no step below can name, the arrivals
+                        // are one set: `xs` twice inside a cast is one leaf
+                        // there, so expansion cannot count it (#1710).
+                        if (idx.items.len == 1 and wildEntry(e, ents.items[idx.items[0]])) return Cond.unprovable;
                         if (must == none or root > must) {
                             must = root;
                             unvouched = true;
                         }
                     } else if (try gather(e, &occs, c)) return Cond.unprovable;
                 },
-                .supply, .cb => if (idx.items.len >= 2) {
+                .supply, .cb => if (idx.items.len >= 2 or manyObjects(e, ents.items, idx.items)) {
                     if (!e.expandable(e.f.leafAt(ents.items[idx.items[0]].leaf))) return Cond.unprovable;
                     if (must == none or root > must) {
                         must = root;
@@ -373,6 +389,39 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     }
     if (occs.run.items.len == 0) return acc;
     return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
+}
+
+/// A callback's answer is the unknown code's (§2.9.3, #1711): any object
+/// its caller reaches, what the label was supplied, the code's captures,
+/// the caller's other arguments, or another answer of the same code
+/// (`( f ⊤, f ⊤ )` with `f = λ⊤ → xs`). So it is apart from no other
+/// entry but an alternative to it or one its own block vouches for.
+fn answerMeets(e: *Eval, ents: []const Ent) Error!bool {
+    for (ents, 0..) |en, i| {
+        const l = e.f.leafAt(en.leaf);
+        if (!(l.kind == .answer or (l.kind == .ref and e.f.roots.items[l.root].kind == .cb))) continue;
+        for (ents, 0..) |o, k| {
+            if (k == i or (o.block != none and o.block == en.block)) continue;
+            if ((try e.f.mergeTags(l.tags, e.f.leafAt(o.leaf).tags)) != null) return true;
+        }
+    }
+    return false;
+}
+
+/// Whether a group's one entry names more than one object: two slots, or
+/// one that no step below can name.
+fn manyObjects(e: *Eval, ents: []const Ent, idx: []const u32) bool {
+    if (idx.len != 1) return false;
+    return e.f.slots.items(e.f.leafAt(ents[idx[0]].leaf).slots).len >= 2 or wildEntry(e, ents[idx[0]]);
+}
+
+/// Whether an entry has a slot of a type variable's or an opaque place.
+fn wildEntry(e: *Eval, en: Ent) bool {
+    for (e.f.slots.items(e.f.leafAt(en.leaf).slots)) |x| switch (e.places().kind(e.places().pathPlace(.from(x)))) {
+        .@"var", .@"opaque" => return true,
+        else => {},
+    };
+    return false;
 }
 
 fn anyApart(ents: []const Ent, idx: []const u32) bool {
