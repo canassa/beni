@@ -693,10 +693,11 @@ A frame's parameters are its **assumptions**: a selection on them is what the fr
 call's separation is the callee's `res_cond` instantiated on its arguments (§2.11.2).
 
 **Apart occurrences** [#1685, as built]. An occurrence may be marked *apart*, printed `s~`: its objects must
-be apart from the objects of every other occurrence of the selection, but may repeat among themselves. A
+be apart from the objects of every plain occurrence of the selection, but may repeat among themselves and
+meet another apart occurrence's. A
 holder beside a write needs no more: the written object is none of the holder's, whatever the holder repeats
 inside it. So the relation (§2.9.2 steps 3 and 5) asks the holder's slots apart and the target's plain. The
-distinct check never compares two entries of one apart occurrence, and a family entry of one does not ask its
+distinct check never compares two entries of apart occurrences, and a family entry of one does not ask its
 own root's separation. A plain occurrence asks more than the apart one of the same slot, so a selection that
 has both keeps the plain one only. Without the mark, a write beside a list of records asked every record's
 field to be distinct from every other's, and `List.unzipHelp`'s builder writes and `collect rest []` over a

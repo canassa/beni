@@ -938,6 +938,7 @@ pub const Eval = struct {
                         for (atom_members.items[got.value_ptr.*].items) |fi| {
                             const o = ents.items[fi];
                             if (o.block != none and o.block == en.block) continue;
+                            if (Contract.isApart(o.occ) and Contract.isApart(en.occ)) continue;
                             if ((try e.f.mergeTags(l.tags, e.f.leafAt(o.leaf).tags)) != null) return Cond.unprovable;
                         }
                         try atom_members.items[got.value_ptr.*].append(g, @intCast(i));
@@ -970,7 +971,7 @@ pub const Eval = struct {
                             }
                         }
                     },
-                    .call => if (idx.items.len >= 2) {
+                    .call => if (idx.items.len >= 2 and !allApart(ents.items, idx.items)) {
                         // A call that does not vouch for its parts is read
                         // through what they come from (§2.9.2 step 3),
                         // each part on its own.
@@ -1032,6 +1033,11 @@ pub const Eval = struct {
         }
         if (occs.run.items.len == 0) return acc;
         return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
+    }
+
+    fn allApart(ents: []const Ent, idx: []const u32) bool {
+        for (idx) |i| if (!Contract.isApart(ents[i].occ)) return false;
+        return true;
     }
 
     /// The occurrences a check gathers, each once.
@@ -1121,8 +1127,8 @@ pub const Eval = struct {
         try e.charge(.cond, 1);
         if (a.block != none and a.block == b.block) return false;
         if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ) return false;
-        // One apart occurrence's objects may repeat among themselves.
-        if (a.occ == b.occ and Contract.isApart(a.occ)) return false;
+        // Apart occurrences need only be apart from the plain ones.
+        if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
         const la = e.f.leafAt(a.leaf);
         const lb = e.f.leafAt(b.leaf);
         if ((try e.f.mergeTags(la.tags, lb.tags)) == null) return false;

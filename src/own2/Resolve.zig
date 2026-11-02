@@ -263,7 +263,27 @@ const Resolver = struct {
                                     any = true;
                                 }
                             };
-                            if (any) continue;
+                            if (any) {
+                                // The holder's other objects are the target
+                                // only where its root is not separated: held
+                                // at the holder's path, under that condition.
+                                var rest: std.ArrayList(u32) = .empty;
+                                defer rest.deinit(g);
+                                for (fr.slots.items(lf.slots)) |sl| {
+                                    var hit = false;
+                                    for (tls.items) |tli| if (fr.slots.has(fr.leafAt(tli).slots, sl)) {
+                                        hit = true;
+                                    };
+                                    if (!hit) try rest.append(g, sl);
+                                }
+                                if (rest.items.len != 0) {
+                                    var rl = lf;
+                                    rl.slots = try fr.slots.internSorted(g, fr.account, rest.items);
+                                    const o2 = try r.ev().overlap(try fr.leaf(rl), target, true);
+                                    if (o2.kind != .no) try out.append(g, .{ it.q, o2 });
+                                }
+                                continue;
+                            }
                         }
                         try out.append(g, .{ it.q, o });
                     }
