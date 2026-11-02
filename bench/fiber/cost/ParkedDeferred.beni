@@ -1,0 +1,25 @@
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Probe
+import Task
+
+
+spawnMany : Task.Scope, Deferred Int, Int → ⊤
+spawnMany scope deferred n =
+    if n > 0 then
+        _ = Task.spawnIn scope λ⊤ → Deferred.wait deferred
+        spawnMany scope deferred (n - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    deferred = Deferred.make ⊤
+    Task.scope λscope →
+        Probe.begin ⊤
+        spawnMany scope deferred Probe.count
+        Task.yieldNow ⊤
+        Probe.mark "parked-deferred"
+        _ = Deferred.complete deferred 1
+        ⊤
+    Node.print "done"

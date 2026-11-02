@@ -1,7 +1,7 @@
 -- The beni side of the fiber runtime benchmark
 -- (docs/design/research/44-effects-runtime-spike.md §7). Built with
 -- `--library`, so every `pub` value is a root and the harness imports it;
--- `node.mjs` and `chrome.mjs` start each workload in a fiber with `start`.
+-- `node.mjs` and `chrome.mjs` use the beni-side `run*` entries below.
 import Clock
 import Deferred
 import Duration
@@ -10,12 +10,6 @@ import Ref exposing (Ref)
 import Schedule
 import Semaphore exposing (Semaphore)
 import Task exposing (Exit)
-
-
---| The runtime's entry, for the harness: `work` in a root fiber, `done`
---| with how it ended.
-pub start : (⊤ → a), (Exit a → ⊤) → ⊤
-start work done = Task.start work done
 
 
 --| A plain function: the baseline a call is measured against.
@@ -324,3 +318,78 @@ cancelLoop s n =
 --| cancelled waits took none.
 pub availablePermits : Semaphore → Int
 availablePermits s = Semaphore.available s
+
+
+-- Start suspendable work from beni: a JavaScript thunk cannot forward its
+-- resumed result under the completion convention. The host supplies only done.
+
+pub runLoopYielding : Int, Int, (Exit Int → ⊤) → ⊤
+runLoopYielding n0 n1 done = Task.start (λ⊤ → loopYielding n0 n1) done
+
+
+pub runFanOut : Int, (Exit Int → ⊤) → ⊤
+runFanOut n0 done = Task.start (λ⊤ → fanOut n0) done
+
+
+pub runSleepZero : Int, Int, (Exit Int → ⊤) → ⊤
+runSleepZero n0 n1 done = Task.start (λ⊤ → sleepZero n0 n1) done
+
+
+pub runTenHours : (Exit Int → ⊤) → ⊤
+runTenHours done = Task.start (λ⊤ → tenHours ⊤) done
+
+
+pub runForEachSixteen : Int, (Exit Int → ⊤) → ⊤
+runForEachSixteen n0 done = Task.start (λ⊤ → forEachSixteen n0) done
+
+
+pub runParFast : Int, Int, (Exit Int → ⊤) → ⊤
+runParFast n0 n1 done = Task.start (λ⊤ → parFast n0 n1) done
+
+
+pub runRaceParked : Int, Int, (Exit Int → ⊤) → ⊤
+runRaceParked n0 n1 done = Task.start (λ⊤ → raceParked n0 n1) done
+
+
+pub runTimeoutFast : Int, Int, (Exit Int → ⊤) → ⊤
+runTimeoutFast n0 n1 done = Task.start (λ⊤ → timeoutFast n0 n1) done
+
+
+pub runDeferredHandoff : Int, Int, (Exit Int → ⊤) → ⊤
+runDeferredHandoff n0 n1 done = Task.start (λ⊤ → deferredHandoff n0 n1) done
+
+
+pub runDeferredReady : Int, Int, (Exit Int → ⊤) → ⊤
+runDeferredReady n0 n1 done = Task.start (λ⊤ → deferredReady n0 n1) done
+
+
+pub runRefUpdates : Int, (Exit Int → ⊤) → ⊤
+runRefUpdates n0 done = Task.start (λ⊤ → refUpdates n0) done
+
+
+pub runDetachJoin : Int, Int, (Exit Int → ⊤) → ⊤
+runDetachJoin n0 n1 done = Task.start (λ⊤ → detachJoin n0 n1) done
+
+
+pub runLogBelow : Int, Int, (Exit Int → ⊤) → ⊤
+runLogBelow n0 n1 done = Task.start (λ⊤ → logBelow n0 n1) done
+
+
+pub runLogWritten : Int, (Exit Int → ⊤) → ⊤
+runLogWritten n0 done = Task.start (λ⊤ → logWritten n0) done
+
+
+pub runLogInContext : Int, (Exit Int → ⊤) → ⊤
+runLogInContext n0 done = Task.start (λ⊤ → logInContext n0) done
+
+
+pub runPermitUncontended : Int, (Exit Int → ⊤) → ⊤
+runPermitUncontended n0 done = Task.start (λ⊤ → permitUncontended n0) done
+
+
+pub runPermitContended : Int, Int, (Exit Int → ⊤) → ⊤
+runPermitContended n0 n1 done = Task.start (λ⊤ → permitContended n0 n1) done
+
+
+pub runCancelledWaits : Int, (Exit Semaphore → ⊤) → ⊤
+runCancelledWaits n0 done = Task.start (λ⊤ → cancelledWaits n0) done

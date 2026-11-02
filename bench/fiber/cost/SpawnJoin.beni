@@ -1,0 +1,21 @@
+import Io
+import Node exposing (Program)
+import Probe
+import Task
+
+
+loop : Int, Int → Int
+loop n acc =
+    if n == 0 then
+        acc
+    else
+        child = Task.spawn λ⊤ → n
+        loop (n - 1) (acc + Task.join child)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Probe.begin ⊤
+    total = loop Probe.count 0
+    Probe.mark "spawn-join"
+    Node.print (String.fromInt total)

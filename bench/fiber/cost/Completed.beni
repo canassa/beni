@@ -1,0 +1,22 @@
+import Io
+import Node exposing (Program)
+import Probe
+import Task exposing (Fiber)
+
+
+spawnDone : Int, List (Fiber Int) → List (Fiber Int)
+spawnDone n acc =
+    if n == 0 then
+        acc
+    else
+        spawnDone (n - 1) [ …acc, Task.spawn λ⊤ → n ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    Probe.begin ⊤
+    fibers = spawnDone Probe.count []
+    Task.yieldNow ⊤
+    Probe.mark "completed"
+    total = List.sum (Task.joinAll fibers)
+    Node.print (String.fromInt total)

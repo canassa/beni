@@ -1,0 +1,27 @@
+-- Two fibers keep the run queue busy. Once both loops are warm, the host
+-- forces a GC and checks retained heap after another 200,000 resumptions.
+-- The 2 MiB ceiling allows GC/JIT noise but refuses the old 8+ MiB queue.
+import Heap
+import Io
+import Node exposing (Program)
+import Task
+
+
+yields : Int → ⊤
+yields n =
+    if n > 0 then
+        Task.yieldNow ⊤
+        yields (n - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    other = Task.spawn λ⊤ → yields 200000
+    yields 10000
+    Heap.begin ⊤
+    yields 100000
+    Heap.check ⊤
+    Task.join other
+    Io.sleep 5
+    Heap.check ⊤
+    Node.print "bounded while busy and after idle"

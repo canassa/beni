@@ -1,0 +1,13 @@
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    f = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Task.never ⊤
+    Task.yieldNow ⊤
+    Task.cancel f
+    Node.print (if Task.running f then "running" else "cancelled")
