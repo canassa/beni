@@ -9333,20 +9333,27 @@ test "the checker v2 reads an imported eq whose walk a limit stopped as the pess
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `ownership-v2.md` §2.13.13: `Lib.eq` is written in beni, so `==` on
-    // `Key` is not a derived, read-only comparison. `eq` calls `w12`, whose
-    // walk the allowance stops, so `eq` publishes no contract and an
-    // importer reads the pessimistic one (§2.10, §3.6): `bad`'s `xs`
-    // escapes at `==`, never kept as only read beside it.
+    // `Key` is not a derived, read-only comparison. `eq` makes a
+    // `recordProduct` of its key's 128-field record, whose walk the allowance
+    // stops, so `eq` publishes no contract and an importer reads the
+    // pessimistic one (§2.10, §3.6): `bad`'s `xs` escapes at `==`, never
+    // kept as only read beside it. (It called a doubling `w12` until result
+    // trees made that cheap, #1714.)
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;
     var src: std.ArrayList(u8) = .empty;
     defer src.deinit(a);
-    try src.appendSlice(a, "pub type Key =\n    Key (List Int)\n\n\nw1 x = ( x, x )\n");
-    for (2..13) |k| try src.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try src.appendSlice(a, "\n\npub eq : Key, Key → Bool\neq a b =\n    case a of\n        Key l →\n            t = w12 (w12 l)\n            List.length l > 0\n");
+    const m = 128;
+    try src.appendSlice(a, "pub type Key =\n    Key (List Int) R\n\n\npub ");
+    try recordType(a, &src, m);
+    try src.appendSlice(a, "\n\npub empty : R\nempty =\n    { f0 = []");
+    for (1..m) |i| try src.print(a, ", f{d} = []", .{i});
+    try src.appendSlice(a, " }\n\n\npub eq : Key, Key → Bool\neq a b =\n    case a of\n        Key l r →\n            t =\n                [ { r | f0 = [] }");
+    for (1..m) |i| try src.print(a, "\n                , {{ r | f{d} = [] }}", .{i});
+    try src.appendSlice(a, "\n                ]\n\n            List.length l > 0\n");
     try w.write("Lib.beni", src.items);
-    try w.write("Main.beni", "import Lib\n\n\npub bad : List Int → Bool × List Int\nbad xs = ( Lib.Key xs == Lib.Key [], xs )\n");
+    try w.write("Main.beni", "import Lib\n\n\npub bad : List Int → Bool × List Int\nbad xs = ( Lib.Key xs Lib.empty == Lib.Key [] Lib.empty, xs )\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -9357,7 +9364,6 @@ test "the checker v2 reads an imported eq whose walk a limit stopped as the pess
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit w12: ownership_summary_size") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit eq: ownership_summary_size") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary bad: res .1 π1ε; nondup yes; reads π1ε*; escapes π1ε*\n") != null);
 }
@@ -10577,8 +10583,10 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     // Since #1253 `l` is `π1#Node.0` and its own list `π1#Node.0#Node.1`,
     // exact; `a`, a level below `l`, is `π1#Node.0⟲`. In the slot domain
     // (#1685) the root's list `#1.1` and `#1.0#1.1` each read only their
-    // own arrivals; the levels below `#1.0` are `#1.0⟲`.
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1#1.0#1.1* π1#1.0⟲#1.1* π1#1.1* π1#1.2#1.1* π1#1.2⟲#1.1* π2#1.0#1.1* π2#1.0⟲#1.1* π2#1.1* π2#1.2#1.1* π2#1.2⟲#1.1*\n") != null);
+    // own arrivals; the levels below `#1.0` are `#1.0⟲`. With result trees
+    // (#1714) a read subtree equal to an earlier sibling's prints as
+    // `π1#1.2 = π1#1.0`: the reads below `#1.2` are `#1.0`'s, each exact.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1#1.0#1.1* π1#1.0⟲#1.1* π1#1.1* π1#1.2 = π1#1.0 π2#1.0#1.1* π2#1.0⟲#1.1* π2#1.1* π2#1.2 = π2#1.0\n") != null);
 }
 
 test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {
@@ -10920,7 +10928,8 @@ test "the checker v2 still refuses a genuine product past the source continuatio
     // └─────────────────────────────────────────┘
     // §4.1: work that is not the declaration's source is past K·I_f, which
     // is growth, and past the allowance the loud `ownership_summary_size`.
-    // `nearLimitModule`'s `h` costs about 75 000 growth records from a few atoms.
+    // `nearLimitModule`'s `h` (`recordProduct`) costs about 76 000 growth
+    // records from a few atoms.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni", try nearLimitModule(w.arena.allocator(), true, 65_536));
@@ -12412,13 +12421,28 @@ fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const 
 /// `w5` alone now passes the allowance. With it
 /// another declaration `g`, `h` first or not, under a module allowance of
 /// `size` (#1104): one module's text.
+/// A genuine product from a few atoms: `n` copies of a record of `m` list
+/// fields, each with one field fresh, joined at one list's elements. Each
+/// copy differs from the others, so the join is m·n work whatever shares,
+/// and nothing of it is source: at m = n = 88 `h` costs about 76 000
+/// growth records.
+fn recordProduct(a: std.mem.Allocator, h: *std.ArrayList(u8), m: u32, n: u32) !void {
+    try recordType(a, h, m);
+    try h.appendSlice(a, "\n\n");
+    try h.appendSlice(a, "h : R → List R\nh r =\n    [ { r | f0 = [] }");
+    for (1..n) |i| try h.print(a, "\n    , {{ r | f{d} = [] }}", .{i % m});
+    try h.appendSlice(a, "\n    ]\n");
+}
+
+/// `type alias R`, a record of `m` list fields `f0`…
+fn recordType(a: std.mem.Allocator, out: *std.ArrayList(u8), m: u32) !void {
+    try out.appendSlice(a, "type alias R =\n");
+    for (0..m) |i| try out.print(a, "    f{d} : List Int\n", .{i});
+}
+
 fn nearLimitModule(a: std.mem.Allocator, h_first: bool, size: u64) ![]const u8 {
     var h: std.ArrayList(u8) = .empty;
-    try h.appendSlice(a, "w1 x = ( x, x )\n");
-    for (2..5) |k| try h.print(a, "\n\nw{d} x = w{d} (w{d} x)\n", .{ k, k - 1, k - 1 });
-    try h.appendSlice(a, "\n\nh x =\n    ( w4 x");
-    for (1..7) |_| try h.appendSlice(a, ", w4 x");
-    try h.appendSlice(a, " )\n");
+    try recordProduct(a, &h, 88, 88);
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const head = try std.fmt.allocPrint(a, "@ownership_summary_size(module, {d})\n\n\n", .{size});
     return std.mem.concat(a, u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items });
@@ -12441,8 +12465,9 @@ test "the checker v2 charges a declaration near its limit the same in either ord
     // #1104: a table both declarations share once charged its first miss to
     // whichever declaration met it first, so a declaration near its limit
     // passed after another and failed before it. Three modules in one run:
-    // `h` first and `g` first under one allowance above `h`'s growth (77 031
-    // on the slot domain, #1685), and `g` first under one below it. The run
+    // `h` first and `g` first under one allowance above `h`'s growth (76 351
+    // with result trees, #1714, from `recordProduct`), and `g` first under
+    // one below it. The run
     // checks that both lie within 5 % of the growth it reports, so a change
     // of cost that moves them out fails here and names the growth.
     const above: u64 = 80_000;
