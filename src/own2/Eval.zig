@@ -137,6 +137,9 @@ pub const Demand = struct {
     /// and the argument written.
     call: u32 = none,
     arg: u32 = none,
+    /// A construction's base value: its storage, the targets, is read again
+    /// by each evaluation (a prepend's re-cons reads the calls' contracts).
+    base_value: u32 = none,
     /// The relied condition failed on the argument's own other paths.
     other_paths: bool = false,
     /// A callback's write (§2.11.3): accepted `callback-param`.
@@ -958,7 +961,8 @@ const Walker = struct {
         const flags = try k.f().arena.alloc(u32, ks.items.len);
         @memset(flags, 0);
         flags[flags.len - 1] = 1;
-        return k.built(i, .list, 0, i, ks.items, flags);
+        // Its storage is fresh, or `xs`'s base re-consed (§2.13.6, `prepended`).
+        return k.built(i, .list, xs + 1, i, ks.items, flags);
     }
 
     /// A construction over its base (R-2.3): the base's storage is written
@@ -997,6 +1001,7 @@ const Walker = struct {
             .targets = .{ .start = t_start, .len = @intCast(ls.items.len) },
             .operands = .{ .start = o_start, .len = @intCast(k.w.value_runs.items.len - o_start) },
             .pending = pend,
+            .base_value = bv,
         });
         // The result is the base's storage holding every item's elements.
         return fr.mk(.{ .kind = .built, .form = .list, .site = none, .head = bv + 1, .place = try k.placeOf(i), .kids = try fr.mkKids(ks.items), .extra = flags });
@@ -1245,6 +1250,15 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     for (f.calls.items[w.walk_calls..]) |*c| {
         if (c.code != none) c.contract = (ctx.contractOf(ctx.ctx, c.code)) orelse try ctx.pessimistic(ctx.ctx, @intCast(c.args.len));
     }
+    // A construction's targets under the contracts read now.
+    for (e.demands.items) |*d| if (d.base_value != none) {
+        const t_start: u32 = @intCast(w.leaf_runs.items.len);
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(gpa);
+        try e.ev.storageOf(d.base_value, 0, &ls);
+        try w.leaf_runs.appendSlice(gpa, ls.items);
+        d.targets = .{ .start = t_start, .len = @intCast(ls.items.len) };
+    };
     var q: u32 = 0;
     while (q < f.calls.items.len) : (q += 1) try labelsOf(e, q);
     q = 0;
