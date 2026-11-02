@@ -102,25 +102,27 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
 /// The callee's `res_cond` on call `call`'s arguments, once per call; a
 /// cycle through it reads `no`.
 pub fn instCond(e: *Eval, call: u32) Error!Cond {
-    while (e.cond_state.items.len < e.f.calls.items.len) {
-        try e.cond_state.append(e.gpa(), 0);
-        try e.cond_of.append(e.gpa(), .{});
-    }
-    switch (e.cond_state.items[call]) {
+    try condStates(e);
+    switch (e.cond_state.items[call] & 3) {
         2 => return e.cond_of.items[call],
         1 => return Cond.unprovable,
         else => {},
     }
-    e.cond_state.items[call] = 1;
-    const c = e.contractOf(call) orelse {
-        e.cond_state.items[call] = 2;
-        e.cond_of.items[call] = Cond.unprovable;
-        return Cond.unprovable;
-    };
-    const got = try instSel(e, try e.contracts.cond(e.arena, e.contracts.head(c).res_cond), call);
-    e.cond_state.items[call] = 2;
+    e.cond_state.items[call] |= 1;
+    const got = if (e.contractOf(call)) |c| try instSel(e, try e.contracts.cond(e.arena, e.contracts.head(c).res_cond), call) else Cond.unprovable;
+    e.cond_state.items[call] ^= 3; // in progress → done, `mixed_on` kept
     e.cond_of.items[call] = got;
     return got;
+}
+
+/// `cond_state`'s bit while `instCondMixed` asks the call.
+const mixed_on: u8 = 4;
+
+fn condStates(e: *Eval) Error!void {
+    while (e.cond_state.items.len < e.f.calls.items.len) {
+        try e.cond_state.append(e.gpa(), 0);
+        try e.cond_of.append(e.gpa(), .{});
+    }
 }
 
 /// The callee's `res_cond` on call `call`'s arguments, for a check that
@@ -129,7 +131,13 @@ pub fn instCond(e: *Eval, call: u32) Error!Cond {
 /// is asked apart, so that what an apart slot repeats inside it is not
 /// asked once (`List.unzipHelp`'s builders, whose elements come from one
 /// family of its parameter). `idx`: the call's entries of `ents`.
+/// A cycle through it reads `no`, as `instCond`'s does (a fold's step fed
+/// its own answer asks it inside its arguments; #1723).
 fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error!Cond {
+    try condStates(e);
+    if (e.cond_state.items[call] & mixed_on != 0) return Cond.unprovable;
+    e.cond_state.items[call] |= mixed_on;
+    defer e.cond_state.items[call] &= ~mixed_on;
     const g = e.gpa();
     const c = e.contractOf(call) orelse return Cond.unprovable;
     const h = e.contracts.head(c);
