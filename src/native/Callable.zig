@@ -76,6 +76,8 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("import Browser.Host.Rejection as Rejection\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.AbortController")) try w.writeAll("import Browser.Host.AbortSignal as AbortSignal\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.NodeFs")) try w.writeAll("import Browser.Host.AbortSignal as AbortSignal\nimport Browser.Host.Promise as Promise\nimport Browser.Host.NodeDirent as NodeDirent\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Data") or std.mem.eql(u8, module, "Browser.Host.Json")) try w.writeAll("import Js\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Json")) try w.writeAll("pub type ParseError\n    = SyntaxError\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -90,6 +92,15 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .data_is_array => "(value) => { return globalThis.Array.isArray(value); }",
+            .data_is_finite => "(value) => { return globalThis.Number.isFinite(value); }",
+            .data_is_integer => "(value) => { return globalThis.Number.isInteger(value); }",
+            .data_is_safe_integer => "(value) => { return globalThis.Number.isSafeInteger(value); }",
+            .data_keys => "(value) => { return globalThis.Object.keys(value); }",
+            .data_empty_object => "(_) => { return globalThis.Object.create(null); }",
+            .data_has_own => "(value, key) => { return globalThis.Object.hasOwn(value, key); }",
+            .json_parse => "(text) => { try { return { $: \"Ok\", a: globalThis.JSON.parse(text) }; } catch (error) { if (!(error instanceof globalThis.SyntaxError)) throw error; return { $: \"Err\", a: \"SyntaxError\" }; } }",
+            .json_stringify => "(value) => { return globalThis.JSON.stringify(value); }",
             .promise_observe => "(promise, done, failed) => { promise.then(done, failed); return null; }",
             .rejection_is_error => "(reason) => { return reason instanceof globalThis.Error; }",
             .rejection_name => "(reason) => { return reason instanceof globalThis.Error ? reason.name : \"\"; }",

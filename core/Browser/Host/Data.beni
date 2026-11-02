@@ -1,0 +1,18 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
+
+pub foreign impure isArray : Js.Value → Bool
+
+pub foreign impure isFinite : Js.Value → Bool
+
+pub foreign impure isInteger : Js.Value → Bool
+
+pub foreign impure isSafeInteger : Js.Value → Bool
+
+pub foreign impure keys : Js.Value → List String
+
+pub foreign impure emptyObject : ⊤ → Js.Value
+
+pub foreign impure hasOwn : Js.Value, String → Bool

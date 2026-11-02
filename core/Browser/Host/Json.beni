@@ -1,0 +1,12 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
+pub type ParseError
+    = SyntaxError
+
+
+
+pub foreign impure parse : String → Result ParseError Js.Value
+
+pub foreign impure stringify : Js.Value → Js.Value

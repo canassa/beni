@@ -39,6 +39,17 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer => a.len == 1 and named(cx, a[0], "Js", "Value") and named(cx, r, "Basics", "Bool"),
+        .data_keys => a.len == 1 and named(cx, a[0], "Js", "Value") and (if (argument(cx, r, "List", "List", 0)) |element| named(cx, element, "String", "String") else false),
+        .data_empty_object => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Js", "Value"),
+        .data_has_own => a.len == 2 and named(cx, a[0], "Js", "Value") and named(cx, a[1], "String", "String") and named(cx, r, "Basics", "Bool"),
+        .json_parse => blk: {
+            if (a.len != 1 or !named(cx, a[0], "String", "String")) break :blk false;
+            const failure = argument(cx, r, "Result", "Result", 0) orelse break :blk false;
+            const success = argument(cx, r, "Result", "Result", 1) orelse break :blk false;
+            break :blk named(cx, failure, "Browser.Host.Json", "ParseError") and named(cx, success, "Js", "Value");
+        },
+        .json_stringify => a.len == 1 and named(cx, a[0], "Js", "Value") and named(cx, r, "Js", "Value"),
         .promise_observe => blk: {
             if (a.len != 3 or !unit(cx, r)) break :blk false;
             const item = argument(cx, a[0], "Browser.Host.Promise", "Promise", 0) orelse break :blk false;
