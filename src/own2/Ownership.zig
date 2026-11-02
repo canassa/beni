@@ -110,6 +110,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 if (a.hold_listings != 0) line.writer.print(", hold listings {d}", .{a.hold_listings}) catch return error.OutOfMemory;
                 // Its codes' walks and its group's rounds (§2.12).
                 line.writer.print(", walks {d}, rounds {d}", .{ dr.walks, dr.rounds }) catch return error.OutOfMemory;
+                if (dr.defects != 0) line.writer.print(", inference defects {d}", .{dr.defects}) catch return error.OutOfMemory;
                 // §4.4's category counts: the growth records by what they
                 // were reserved for, the nonzero ones in category order.
                 for (a.growth_by, 0..) |n, c| if (n != 0) line.writer.print(", {t} {d}", .{ @as(Ids.Category, @fromBackingInt(@intCast(c))), n }) catch return error.OutOfMemory;
