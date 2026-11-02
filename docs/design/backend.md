@@ -9426,6 +9426,9 @@ After the solve, three read-offs, each a function of the final cells:
 - **Liveness of bindings**: a local binding is live when an executable read reads it or lowering
   keeps it for its initialiser's effect (`effect_keep`); only a live binding's initialiser
   references anything, and a write to a binding nothing live reads goes (master's `unreadName`).
+  A bound case subject receives `effect_keep` when evaluating its scrutinee may have effects,
+  even while its value is still read: rewriting can remove every read of its tag and fields,
+  and the following local optimiser must retain the original evaluation.
   This is what `Opt` will conclude, known before `Spec` decides (G8): `deadReads`, `releaseKeeps`
   and `unreadName` go.
 

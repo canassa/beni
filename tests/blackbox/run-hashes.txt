@@ -163,9 +163,11 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
+platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 1b9e06b6d8b4d8b32aebc0d282010b2fba3a2f5a53c352efb7e9171edb86c7fa
+platform_test.test.release worker init runs when specialisation removes its unused state #0 7b70a1c034c6fe7fad501b53f0e67cca74cd5b759896591d730a6fb7a0fe3201
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 1093639f584107e0b9df9fcf2df078a3f53381f293073dd3e4c53e245b0c9192
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 d7cbf2b2e0fdfa5061eb94915334ae2fb7ce0329f7afafbb8d03dfad8cdceff3
 platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 83f4e32899685b548eee52e3d2e60c48bd9d042095009db6b2b5fd2df73b5f0d
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 6c8b707c8fb6a45ba7da53a40dc5fa64cbeef470ce29ce6fb3b656a493d741bd
-platform_test.test.worker launch URLs stay relative to their module under release specialization #0 69c72e8a089bed0a043e075c434cf0c139b8288a593323025b20da3b4c1f5778
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 03dda1bd648507d1cfec516200944e0d10fe06220e43ac3a7feab81d097cfc6a
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 2047667a8f9645119a058f790cb343e4b428cd4e8c77ff3d49f98e2322cdf31e
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 80cee573752adbd9ce8f6bae43df2b61ef85e639487fcfdacd2a4e4f1a7b6d2b
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 1e24effb0f3975defaac5f458a5b75bc9fe0c713f1fb99b361c0336d24e058d5
