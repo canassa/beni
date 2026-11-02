@@ -1,0 +1,60 @@
+-- A worker launch in a suspendable twin must discover the child and check its realm.
+import Browser
+import Browser.Host.Document as Document
+import Browser.Host.Window as Window
+import Browser.Worker as Worker
+import Hosted
+import Task
+
+
+child : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ String ⊥ String ⊥ ⊥)
+child =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                case Document.querySelector (Window.document ⊤) "body" of
+                    Ok _ →
+                        Ok "found"
+                    Err _ →
+                        Ok "bad selector"
+        , stream = Worker.noStream
+        }
+
+
+launch : (⊤ → ⊤) → ⊤
+launch notify = Task.scope λowned →
+    _ = Worker.open owned child ⊤ Worker.options
+    notify ⊤
+
+
+outer : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ String ⊥ String ⊥ ⊥)
+outer =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                launch λ_ → Task.yieldNow ⊤
+                Ok "outer"
+        , stream = Worker.noStream
+        }
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ_ → ⊤
+        , update =
+            λ_ model →
+                Task.start
+                    (λ⊤ →
+                        Task.scope λowned →
+                            _ = Worker.open owned outer ⊤ Worker.options
+                            ⊤
+                    )
+                    λ_ → ⊤
+                model
+        , view = λ_ → <button onClick={⊤}>launch</button>
+        }

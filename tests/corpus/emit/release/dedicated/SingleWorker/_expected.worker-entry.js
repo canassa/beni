@@ -2,7 +2,7 @@ globalThis.__beniWorkerFingerprint = "2cbe728a2cf90080-1c1928caf485efcb";
 const report = event => {
   const cause = event.error ?? event.reason;
   globalThis.postMessage({worker: 1, kind: "Defect", payload: {
-    message: String(event.message ?? cause ?? "Worker defect").slice(0, 4096),
+    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").replace(/^Uncaught (?:Error: )?/, "").slice(0, 4096),
     stack: String(cause?.stack ?? "").slice(0, 16384)
   }});
 };

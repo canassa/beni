@@ -3,7 +3,6 @@ import Browser.WorkerStream exposing (Sink, Stream)
 import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
 import Js
-import Rt
 import Schema exposing (Issue)
 import Task exposing (Scope)
 
@@ -328,6 +327,8 @@ newPeer native descriptor opts =
         , alive = 0
         , owned = False
         , opening = True
+        , ready = False
+        , defected = False
         , queuedBytes = 0
         }
 
@@ -422,13 +423,22 @@ transportFailed peer failure =
         settle peer slot "Transport" (host failure)
     Browser.WorkerStream.fail (guest (Js.get peer "events")) failure
     Js.each (Js.get peer "closedWaiters") λwake →
-        Task.resume (guest wake) (Unconfirmed ConnectionLost)
+        Task.resume (guest wake)
+            (case failure of
+                CleanupAbandoned →
+                    Abandoned
+                PeerUnresponsive →
+                    Unconfirmed LeaseExpired
+                _ →
+                    Unconfirmed ConnectionLost
+            )
 
 
 fatal : String → a
 fatal message =
     cause = Js.construct (Js.global "Error") [ Js.from message ]
-    if Js.isUndefined (Js.global "window") then Js.throw cause else Rt.workerDefect cause
+    stopRealm ⊤
+    Js.throw cause
 
 
 received : V, V → ⊤
@@ -449,6 +459,7 @@ received peer event =
     else if Js.same kind (Js.from "Ready") then
         if Js.same (Js.get peer "phase") (Js.from "Starting") then
             Js.set peer "phase" (Js.from "Ready")
+            Js.set peer "ready" (host True)
             wakeStartup peer (Ok ⊤)
     else if Js.same kind (Js.from "InitializationFailed") then
         wakeStartup peer (Err (InitializationFailed (guest (Js.get incoming "payload"))))
@@ -643,13 +654,22 @@ open owner definition config opts =
                         listen peer "messageerror" λ_ →
                             transportFailed peer MessageDeserializationFailed
                         listen peer "error" λevent →
-                            if
-                                Js.instanceOf event (Js.global "ErrorEvent")
-                                    || not (Js.same (Js.get peer "phase") (Js.from "Starting"))
-                            then
-                                fatal (guest (Js.get event "message"))
+                            if Js.to (Js.get peer "defected") then
+                                Js.to (Js.call event "preventDefault" [])
+                            else if Js.instanceOf event (Js.global "ErrorEvent") then
+                                Js.to (Js.call event "preventDefault" [])
+                                workerDefect
+                                    peer
+                                    (Js.from { message = Js.get event "message", stack = Js.null })
+                            else if not (Js.to (Js.get peer "ready")) then
+                                if Js.same (Js.get peer "phase") (host "Starting") then
+                                    wakeStartup peer (Err WorkerLoadFailed)
                             else
-                                wakeStartup peer (Err WorkerLoadFailed)
+                                workerDefect
+                                    peer
+                                    (Js.from
+                                        { message = "Worker native error event", stack = Js.null }
+                                    )
                         Task.defer owner λ_ →
                             if Js.to (Js.get peer "owned") || Js.to (Js.get peer "opening") then
                                 status = close (guest peer)
@@ -792,8 +812,9 @@ await ticket =
             else if Js.same kind (host "Transport") then
                 Err (Transport (guest (Js.get outcome "payload")))
             else
-                _ = Task.cancel (Task.spawn λ⊤ → ⊤)
-                Task.never ⊤
+                cancelled = Task.spawn λ⊤ → Task.never ⊤
+                Task.cancel cancelled
+                Task.join cancelled
         )
         λexit →
             case exit of
@@ -885,8 +906,11 @@ close handle = Task.uninterruptible λ⊤ →
             Just cleanup →
                 cleanup
             Nothing →
-                Js.set peer "phase" (host "Lost")
-                Unconfirmed ConnectionLost
+                transportFailed peer PeerUnresponsive
+                if Js.to (Js.get peer "ready") then
+                    Unconfirmed LeaseExpired
+                else
+                    Unconfirmed ConnectionLost
 
 
 pub abort : Handle protocol → Cleanup
@@ -1146,12 +1170,28 @@ sizeLoop pending size limit =
             sizeLoop pending (size + 8) limit
 
 
+hostStop : Js.Ref V
+hostStop = Js.ref Js.null
+
+
+hostStopped : Js.Ref V
+hostStopped = Js.ref Js.null
+
+
+-- Installed by this entry, kept private to this module instance.
+installHostStop : V, V → ⊤
+installHostStop stop stopped =
+    Js.write hostStop stop
+    Js.write hostStopped stopped
+
+
 stopRealm : ⊤ → ⊤
 stopRealm ⊤ =
     if Js.isUndefined (Js.global "window") then
         Task.shutdown 1000 λ_ → abandonUnfinished ⊤
     else
-        Rt.workerStop ⊤
+        Js.to (Js.apply (Js.read hostStop) [ host ⊤ ])
+        Task.shutdown 1000 λcut → Js.to (Js.apply (Js.read hostStopped) [ host cut ])
 
 
 terminalReply : V, Int, String, V → ⊤
@@ -1194,15 +1234,23 @@ finiteNumber : Int → Bool
 finiteNumber value = Js.to (Js.call (Js.global "Number") "isFinite" [ host value ])
 
 
-workerDefect : V, V → a
+workerDefect : V, V → ⊤
 workerDefect peer report =
-    cause = Js.construct (Js.global "Error") [ Js.get report "message" ]
-    stack = Js.get report "stack"
-    if Js.typeIs stack "string" && not (Js.same stack (host "")) then Js.set cause "stack" stack
-    Js.set cause "entryId" (Js.get peer "entry")
-    Js.set cause "instanceId" (Js.get peer "generation")
-    Js.set cause "realm" (host "dedicatedWorker")
-    if Js.isUndefined (Js.global "window") then Js.throw cause else Rt.workerDefect cause
+    if Js.to (Js.get peer "defected") then
+        ⊤
+    else
+        Js.set peer "defected" (host True)
+        message =
+            Js.call (Js.get report "message") "replace"
+                [ Js.regExp "^Uncaught (?:Error: )?" "", host "" ]
+        cause = Js.construct (Js.global "Error") [ message ]
+        stack = Js.get report "stack"
+        if Js.typeIs stack "string" && not (Js.same stack (host "")) then Js.set cause "stack" stack
+        Js.set cause "entryId" (Js.get peer "entry")
+        Js.set cause "instanceId" (Js.get peer "generation")
+        Js.set cause "realm" (host "dedicatedWorker")
+        stopRealm ⊤
+        Js.throw cause
 
 
 requireCleanup : Cleanup → ⊤

@@ -154,3 +154,9 @@ those plans on config, requests, replies, typed failures and events.
 Borrowed callback state remains #1658. The delivery manager deferred request Log
 context transport to #1665; that work needs a core-private effective-minimum
 snapshot and adds no public Log surface without the owner's decision.
+
+Review fixes keep worker runtimes lazy until their Program module is reached.
+Discovery includes every emitted direct/suspendable body. Worker-bearing browser
+entries wire the page's existing private stop/stopped functions into a private
+runtime bridge; Rt itself is unchanged, including its source-map contents.
+The remaining public-entry-hook and check-gate fence work is #1678.

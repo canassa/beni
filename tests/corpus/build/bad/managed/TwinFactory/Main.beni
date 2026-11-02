@@ -1,0 +1,63 @@
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Task
+
+
+worker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state request → Ok (state ++ request)
+        , stream = Worker.noStream
+        }
+
+
+exercise :
+      (String → ⊤)
+    , Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+    → String
+exercise notify selected = Task.scope λowned →
+    case Worker.open owned selected "typed:" Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            result = Worker.call handle "twin"
+            _ = Worker.close handle
+            notify "notified"
+            case result of
+                Ok text →
+                    text
+                Err _ →
+                    "call failed"
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start
+                            (λ⊤ →
+                                Hosted.emit
+                                    outlet
+                                    (Finished (exercise (λ_ → Task.yieldNow ⊤) worker))
+                            )
+                            λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }
