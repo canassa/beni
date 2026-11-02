@@ -1,55 +1,48 @@
 //! L1: places, the type-shaped nodes abstract values live at
 //! (`docs/design/ownership-v2.md` §2.1, §3.1).
 //!
-//! A place is a node of the *place graph* of a type: one per store variable
-//! reachable from a root, children by step, built by one memoised walk with
-//! knot-tying — a variable reached again while on the walk's stack is the
-//! place being built, so a recursive type folds onto itself and a different
+//! A place is a node of the *place graph* of a type: one per store variable reachable from a root,
+//! children by step, built by one memoised walk with knot-tying — a variable reached again while on
+//! the walk's stack is the place being built, so a recursive type folds onto itself and a different
 //! instantiation is another place (R-4.7.3).
 //!
-//! **The one reader of type children.** This file is the only one in
-//! `own2/` that looks at a type's structure (§5's fence), and it does so
-//! through `Source`: an interface the caller passes down that describes one
-//! type node as `(kind, head, children)`. The adapter from the checker's
-//! `TypeStore`/`Types` is the caller's — note that `Walk.structural` yields
-//! an `app`'s type ARGUMENTS and not a constructor's payloads, so the
-//! adapter, not this file, instantiates `C#i`'s children — and a test
-//! builds a graph by hand. Nothing here names a type, a module or a field by
+//! **The one reader of type children.** This file is the only one in `own2/` that looks at a type's
+//! structure (§5's fence), and it does so through `Source`: an interface the caller passes down that
+//! describes one type node as `(kind, head, children)`. The adapter from the checker's
+//! `TypeStore`/`Types` is the caller's — note that `Walk.structural` yields an `app`'s type
+//! ARGUMENTS and not a constructor's payloads, so the adapter, not this file, instantiates `C#i`'s
+//! children — and a test builds a graph by hand. Nothing here names a type, a module or a field by
 //! spelling.
 //!
-//! **Steps are ordered by text, never by a session id** (§3.1, §3.8). A
-//! field step carries the field name's RANK in the adapter's table of the
-//! module's field names sorted by text, built once in input time; a
-//! constructor step carries `(constructor ordinal, argument)`; a tuple step
-//! its index. The canonical order of a place's children is the order of
-//! these words, and `encode`/`decode` map every name and head through the
-//! caller's `Names`/`Remap`, so a block holds no interned address.
+//! **Steps are ordered by text, never by a session id** (§3.1, §3.8). A field step carries the field
+//! name's RANK in the adapter's table of the module's field names sorted by text, built once in input
+//! time; a constructor step carries `(constructor ordinal, argument)`; a tuple step its index. The
+//! canonical order of a place's children is the order of these words, and `encode`/`decode` map every
+//! name and head through the caller's `Names`/`Remap`, so a block holds no interned address.
 //!
-//! **Canonical paths** (§2.1) are a trie (`paths`): a step that re-enters a
-//! place the path has returned to once pops back to that return and appends
-//! `⟲` (#1253: the first return stays a plain step), so a path
-//! names a place at most twice and is at most 3·|places| long. `extend` is
-//! memoised per `(path, step)`; a first extension reads the ancestors and
-//! charges one record per ancestor read (§3.1: "charged … per step").
+//! **Canonical paths** (§2.1) are a trie (`paths`): a step that re-enters a place the path has
+//! returned to once pops back to that return and appends `⟲` (#1253: the first return stays a plain
+//! step), so a path names a place at most twice and is at most 3·|places| long. `extend` is memoised
+//! per `(path, step)`; a first extension reads the ancestors and charges one record per ancestor
+//! read (§3.1: "charged … per step").
 //!
-//! **Holds** is the least fixpoint of "what kinds of cell may sit at or
-//! below this place", by a worklist over reverse edges, O(7·E); a `ctor`
-//! or `tuple` holding nothing is reclassified `cross` (§2.1's last row),
-//! which is what makes an `Int × Int` or a `type T = A T | B` a leaf.
+//! **Holds** is the least fixpoint of "what kinds of cell may sit at or below this place", by a
+//! worklist over reverse edges, O(7·E); a `ctor` or `tuple` holding nothing is reclassified `cross`
+//! (§2.1's last row), which is what makes an `Int × Int` or a `type T = A T | B` a leaf. **Cycles**
+//! are the strongly connected components, and with them each place's count of the object places at
+//! and below it, saturating past `below_min` and past it on a cycle that holds an object (§2.3.1).
 //!
-//! **Limits** (§4.4) are checked before the work they bound and named:
-//! `type_places`, `record_fields`, `tuple_arity`, `constructor_args`,
-//! `path_steps`, and the step payload's 28 bits. Each sets the account's
-//! failure.
+//! **Limits** (§4.4) are checked before the work they bound and named: `type_places`,
+//! `record_fields`, `tuple_arity`, `constructor_args`, `path_steps`, and the step payload's 28 bits.
+//! Each sets the account's failure.
 //!
-//! **Structural identity.** `encode` writes a sub-graph as
-//! `(kind, head, children)` records with ordinals for backreferences, so a
-//! cycle is one record; `decode` reads one back into a table of its own;
-//! `equals` is the graph-pair walk two tables are compared by (§2.1,
-//! *Identity*), one record reserved per pair before it is read.
+//! **Structural identity.** `encode` writes a sub-graph as `(kind, head, children)` records with
+//! ordinals for backreferences, so a cycle is one record; `decode` reads one back into a table of
+//! its own; `equals` is the graph-pair walk two tables are compared by (§2.1, *Identity*), one record
+//! reserved per pair before it is read.
 //!
-//! Obligations kept here: none of §2.14's rules is about a place; the
-//! canonical-path fold (`⟲`) is what O6's "`⟲` covers every level" rests on.
+//! Obligations kept here: none of §2.14's rules is about a place; the canonical-path fold (`⟲`) is
+//! what O6's "`⟲` covers every level" rests on.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -224,7 +217,12 @@ pub const Place = struct {
     /// The strongly connected component of the place graph this place is
     /// in (`settleCycles`): what `sameCycle` reads for §2.2's `⟲` matching.
     scc: u32,
+    /// `objectsBelow` (§2.3.1), set with `scc`.
+    below: u8 = 0,
 };
+
+/// A subtree of more object slots than this is held whole, `↓p` (§2.3.1).
+pub const below_min: u8 = 16;
 
 pub const StepEntry = struct { step: Step, child: PlaceId };
 
@@ -611,10 +609,16 @@ pub const Table = struct {
                     low[parent - first] = @min(low[parent - first], low[p - first]);
                 }
                 if (low[p - first] != index[p - first]) continue;
+                // Every component below pops first: a lone place sums its kids.
+                const kids = children[ranges[p].start..][0..ranges[p].len];
+                const lone = stack.items[stack.items.len - 1] == p and std.mem.indexOfScalar(PlaceId, kids, .from(p)) == null;
+                var below: u32 = if (lone) @intFromBool(!t.places.col.kind[p].own().isEmpty()) else if (t.places.col.holds[p].isEmpty()) 0 else below_min + 1;
+                for (if (lone) kids else kids[0..0]) |c| below = @min(below + t.objectsBelow(c), below_min + 1);
                 while (true) {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
                     sccs[m] = p + 1;
+                    t.places.col.below[m] = @intCast(below);
                     if (m == p) break;
                 }
             }
@@ -637,12 +641,13 @@ pub const Table = struct {
         return t.places.col.scc[p.int()];
     }
 
-    /// Whether `p` lies on a cycle of the place graph: one of its steps
-    /// reaches a place that can reach `p` again, so a value at `p` can
-    /// hold a re-entry back to its own path (§2.3's widen). O(steps).
-    pub fn onCycle(t: *const Table, p: PlaceId) bool {
-        for (t.steps(p).children) |c| if (t.sameCycle(p, c)) return true;
-        return false;
+    /// A value at a place on a cycle can re-enter its own path (§2.3's widen).
+    pub const onCycle = cyclic;
+
+    /// The object places at and below `p`, saturating at `below_min + 1`, as is
+    /// a cycle below `p` that holds an object (§2.3.1): `below` is then `↓p`.
+    pub fn objectsBelow(t: *const Table, p: PlaceId) u8 {
+        return t.places.col.below[p.int()];
     }
 
     // ---- canonical paths ------------------------------------------------
@@ -713,29 +718,26 @@ pub const Table = struct {
             (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = Ids.none_int;
             return null;
         };
-        // Re-entry: is `target` on the path? Only if it shares a cycle with
-        // `here` (a place above on the path that `here` steps back to closes
-        // one), and then among the path's last places on that cycle: they are
-        // a suffix of it, so the walk stops at the first one off the cycle.
-        // As long as the cycle, never the path (#1236). The first return to
-        // `target` stays a plain step, so each subtree is a path of its own
-        // (`#Node.0`, `#Node.2`, v1's `P s₀`); a return below it folds onto
-        // it as `⟲`, one or more levels below that subtree (#1253).
+        // Re-entry: is `target` on the path? Only if it shares a cycle with `here` (a place
+        // above on the path that `here` steps back to closes one), and then among the path's
+        // last places on that cycle: they are a suffix of it, so the walk stops at the first
+        // one off the cycle. As long as the cycle, never the path (#1236). The first return to
+        // `target` stays a plain step, so each subtree is a path of its own (`#Node.0`,
+        // `#Node.2`, v1's `P s₀`); a return below it folds onto it as `⟲`, one or more levels
+        // below that subtree (#1253).
         var out: ?PathId = null;
         var deepest: PathId = .none;
         if (step.kind == .level) {
             // A `⟲` given directly (a use's or a hold's route): inside a
             // level already it folds onto it, else it is the next step.
             if (t.pathParent(path) != .none and t.pathStep(path).kind == .level) out = path;
-            // At a first return that is not sealed, the levels below are not
-            // `path⟲`: a place of the cycle above has returned already, so a
-            // step-by-step walk folds them onto that return's `⟲` (in
-            // `T = T (List T)`, the lists below `#T.0[*]#T.0` are
-            // `#T.0[*]⟲#T.0`). One position has one name (#1253): a single
-            // level path is that path; several (`B (List B) (List B)`) are
-            // `levelPaths`', and `path⟲` stays only as the name of their join
-            // where one cell must stand for them (`Cell.alias` reads it on
-            // the cycle as overlapping every level path).
+            // At a first return that is not sealed, the levels below are not `path⟲`: a place
+            // of the cycle above has returned already, so a step-by-step walk folds them onto
+            // that return's `⟲` (in `T = T (List T)`, the lists below `#T.0[*]#T.0` are
+            // `#T.0[*]⟲#T.0`). One position has one name (#1253): a single level path is that
+            // path; several (`B (List B) (List B)`) are `levelPaths`', and `path⟲` stays only
+            // as the name of their join where one cell must stand for them (`Cell.alias` reads
+            // it on the cycle as overlapping every level path).
             if (out == null and t.pathParent(path) != .none and !(try t.sealed(charge, gpa, path))) {
                 const r = try t.levelsOf(gpa, charge, path);
                 if (r.len == 1) out = t.fold_paths.items[r.start];
@@ -943,12 +945,11 @@ pub const Table = struct {
         }
     }
 
-    /// `hits(x)`: the paths that a step of `x`'s plain subtree on its cycle
-    /// folds into, outside `x`'s subtree. A fold lands at the first return
-    /// it re-enters below (`extend`), so a target is `a⟲ₛ` for a prefix `a`
-    /// of the path, below `x` exactly when `x` is a prefix of it (#1253:
-    /// `a` may be below `x`). Made from the plain children's, so each canonical
-    /// path of a cycle is visited once, on an explicit stack (#1138).
+    /// `hits(x)`: the paths that a step of `x`'s plain subtree on its cycle folds into, outside
+    /// `x`'s subtree. A fold lands at the first return it re-enters below (`extend`), so a
+    /// target is `a⟲ₛ` for a prefix `a` of the path, below `x` exactly when `x` is a prefix of
+    /// it (#1253: `a` may be below `x`). Made from the plain children's, so each canonical path
+    /// of a cycle is visited once, on an explicit stack (#1138).
     fn hits(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error![2]u32 {
         try charge.reserve(gpa, .memo, 1);
         if (t.hit_memo.get(x0)) |i| return t.fold_runs.items[i];
