@@ -28,7 +28,8 @@
 //!
 //! **Nothing here mutates the IR.** The pass produces a `Plan`: a bitset of
 //! statement nodes the printer must not print, and one replacement node per
-//! `ident` NODE the printer substitutes. Two flat arrays, no allocation per
+//! expression NODE the printer substitutes (a name, forwarding arrow, or
+//! equal-arm conditional). Two flat arrays, no allocation per
 //! node, and dev output is the plan being empty rather than a second code
 //! path.
 //!
@@ -67,7 +68,7 @@ pub const Plan = struct {
     /// One slot per NODE index: for the `ident` that is a binding's single
     /// use, the node whose value takes its place; for the `arrow` item 6
     /// reduces (`eta`), the `ident` of its callee, which the printer writes
-    /// where the arrow stood.
+    /// where the arrow stood. For an equal-arm `cond`, its common atom.
     ///
     /// **Keyed by the use site and not by the name**, and that is not a
     /// detail. A local's `NameIndex` is shared across the whole module —
@@ -334,7 +335,7 @@ const Opt = struct {
     /// While `readsBefore` asks for a value that may have an effect: only
     /// names and literals may be evaluated before its read.
     names_only: bool = false,
-    /// `copy`'s use sites, found by `ownUsesInto`.
+    /// `copy`'s use sites, found by `copyUsesInto`.
     found_all: std.ArrayList(Index) = .empty,
 
     const Use = struct {
@@ -661,6 +662,10 @@ const Opt = struct {
         while (o.stack.items.len > base) {
             const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
+                .cond => {
+                    if (o.equalArm(node, 0)) |value| o.inlined[node.int()] = value.toOptional();
+                    try o.ir.pushOperands(o.arena, &o.stack, node);
+                },
                 .arrow => {
                     const record: JsIr.ExtraIndex = @fromBackingInt(@intCast(o.ir.data(node).lhs));
                     try o.planFunc(record);
@@ -668,6 +673,30 @@ const Opt = struct {
                 },
                 else => try o.ir.pushOperands(o.arena, &o.stack, node),
             }
+        }
+    }
+
+    /// Equal atom arms need no branch when evaluating every test is inert.
+    /// Keep calls, host reads and conversions: even equal arms do not license
+    /// dropping their effects or exceptions. The depth limit declines a fold.
+    fn equalArm(o: *Opt, node: Index, depth: u32) ?Index {
+        if (depth > 64) return null;
+        const value = o.compress(node);
+        const d = o.ir.data(value);
+        switch (o.ir.tag(value)) {
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return value,
+            .cond => {
+                _ = o.pureValue(@fromBackingInt(@intCast(d.lhs)), 0) orelse return null;
+                const c = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                const yes = o.equalArm(c.consequent, depth + 1) orelse return null;
+                const no = o.equalArm(c.alternate, depth + 1) orelse return null;
+                if (o.ir.tag(yes) != o.ir.tag(no)) return null;
+                if (o.ir.tag(yes) == .string or o.ir.tag(yes) == .number) {
+                    if (!std.mem.eql(u8, o.ir.bytes(yes), o.ir.bytes(no))) return null;
+                } else if (!std.meta.eql(o.ir.data(yes), o.ir.data(no))) return null;
+                return yes;
+            },
+            else => return null,
         }
     }
 
@@ -930,9 +959,10 @@ const Opt = struct {
     /// `const f = e` (or a `let` nothing assigns) read more than once,
     /// whose initialiser is — after `compress` — a local `e` bound once in
     /// the declaration and assigned nowhere, is `e` at every use, when every
-    /// use is in the own expressions of the statements after it in its list
-    /// (`ownUses`: none in a branch, a loop body or a function, where
-    /// another binding could come to be spelt as `e`). `e` holds one value
+    /// use is after it in its list or in a nested branch or loop, and none
+    /// is in a function or catch. Both names are bound exactly once in the
+    /// whole declaration, including loop variables and parameters, so no
+    /// nested binding can capture the replacement. `e` holds one value
     /// from its binding on and is in scope wherever `f` is, so each use
     /// reads what it read. True when the binding is planned away.
     fn copy(o: *Opt, rest: []const Index, stmt: Index, n: NameIndex, idx: u32) Allocator.Error!bool {
@@ -957,7 +987,7 @@ const Opt = struct {
         defer o.found_all.shrinkRetainingCapacity(base);
         for (rest) |later| {
             if (o.found_all.items.len - base >= uses) break;
-            try o.ownUsesInto(later, n);
+            try o.copyUsesInto(later, n);
         }
         if (o.found_all.items.len - base != uses) return false;
         o.drop(stmt);
@@ -965,8 +995,10 @@ const Opt = struct {
         return true;
     }
 
-    /// `ownUses`, every `ident` of `n` found appended to `found_all`.
-    fn ownUsesInto(o: *Opt, stmt: Index, n: NameIndex) Allocator.Error!void {
+    /// Every read of an immutable copy in nested statement lists. Neither
+    /// binding may repeat in this declaration: no branch or loop can shadow
+    /// the replacement. Functions and catches are deliberately not entered.
+    fn copyUsesInto(o: *Opt, stmt: Index, n: NameIndex) Allocator.Error!void {
         const d = o.ir.data(stmt);
         switch (o.ir.tag(stmt)) {
             .const_decl => try o.exprUsesInto(@fromBackingInt(@intCast(d.rhs)), n),
@@ -976,13 +1008,33 @@ const Opt = struct {
                 try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n);
                 try o.exprUsesInto(@fromBackingInt(@intCast(d.rhs)), n);
             },
-            .if_stmt, .switch_stmt => try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n),
-            // Never into a loop's head (`ownUses`): none is recorded, so a
-            // copy with a use there is declined.
-            .for_of => {},
+            .if_stmt => {
+                try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n);
+                const b = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                try o.listUsesInto(b.thenBody(), n);
+                try o.listUsesInto(b.elseBody(), n);
+            },
+            .while_true, .block_stmt => try o.listUsesInto(o.ir.subRange(@fromBackingInt(@intCast(d.rhs))), n),
+            .switch_stmt => {
+                try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n);
+                try o.listUsesInto(o.ir.subRange(@fromBackingInt(@intCast(d.rhs))), n);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try o.exprUsesInto(v, n);
+                try o.listUsesInto(o.ir.subRange(@fromBackingInt(@intCast(d.rhs))), n);
+            },
+            .for_of => {
+                const f = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                try o.exprUsesInto(f.iterable, n);
+                try o.listUsesInto(f.body(), n);
+            },
             .expr_stmt, .throw_stmt => try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n),
             else => {},
         }
+    }
+
+    fn listUsesInto(o: *Opt, range: JsIr.SubRange, n: NameIndex) Allocator.Error!void {
+        for (o.ir.extraSlice(range, Index)) |stmt| try o.copyUsesInto(stmt, n);
     }
 
     fn exprUsesInto(o: *Opt, root: Index, n: NameIndex) Allocator.Error!void {
@@ -1004,8 +1056,9 @@ const Opt = struct {
     /// THAT substitution records. **Path compression at creation**,
     /// and the reason `Plan.replacement` is one step with no budget.
     ///
-    /// The invariant is that no recorded target is itself a substituted
-    /// node, and it holds by induction over the order `list` visits
+    /// A recorded name target is never itself a substituted name; an
+    /// equal-arm conditional may be folded later by `planExpr`. The name
+    /// invariant holds by induction over the order `list` visits
     /// bindings. A target is the initialiser of a binding at or before the
     /// one being planned; a node is substituted only as the use site of a
     /// binding planned LATER, and `findUse` finds a use only AFTER its

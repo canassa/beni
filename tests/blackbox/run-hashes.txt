@@ -40,9 +40,9 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 9e5d5b94ebf8911ff07562860928ff86f5323deaffa33f61c65d044fde06c5d0
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 ebbdd61691f82e43d7d11ea8296ddb4e617bf55023a2355bc5b8f7022aac0bd6
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 8837d212c5869588907fb27ecd823402ffbc15da76e7ab0165b6204287cf6a14
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 4d4c0869512e10e175ed03ba94ba60653a47493235d841a44faf22ef5fcdb25b
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 ed4f510133db2740b310e9afb2c51f12b66e5f0f42e212b2e1e5936cf1764fb1
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 0fd8e45ccfd565d1f2ac7d89726e73550bd70ccd06fc54968e043298de7bf764
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 44ecc7a339cbef9425b78b03aed04d6203b6ea2021a3b2fe69739a212938d496
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 8802f2656841ecc4e296dbfaf75235d09a92514a4b14a28af5078c1aab0065d0
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 3a684eb60c6507bc2b67c62bb4fb634cb9822a0238a847593a6a5b971afefc94
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 d9bfc69170760b92d0a952ac5e66e873a4c76b699fe9c1d39234967dca06934b
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 6edb5a9d410c5494b87a8c293dcc238f06be50678f7d5d43eb08f40eda3fc27f
@@ -70,7 +70,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 b3d11a735033774d93cd1586051419fb5bbc4fd647cd18a54053da5bc90639e5
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 9e3fba43279096e3a6b1bb3bd177a0715ae403bb131da6ef937479457939e8f9
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 eca19d72a413e99e2f7d39cf38e09e39501864f44ce15aa0ae5dd448148518cd
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 eb2e8f65a0bd8d68b4223ec07856caad01d7c489e02e7f3c6b860769e0a09904
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675
@@ -155,19 +155,19 @@ page_fuzz_test.test.two development builds of one program agree on every seed, m
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 db44601cee0289ff6a3d9d3ca29e91311faf41f013b3ab83e5b58299538154b8
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 38e7c63d07b9cb509df45fc367b8f7bfc09e8e11b9ee8211de4d366a5aaf2d48
-platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 d0b234a2bbc9062b5723fb6c936cc75b273f148d3083fb3c00bb8caf050b8a6e
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 f2eb89eaa16eb2b0c0233313ac47b88a5d61b8cc6d01b318716c0c1277e4b7ed
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #2 7c1cc5e3ffbadd420a96ce277c9a584b0788cce72fda4511273078fe15ee6df4
-platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 4e435c78bc99003d5f0bd6757dee27adc80e2bf839e7b7590f1724accdb42c2a
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 c6c2a60b1468eaea00ccd65a1eb84bfa1b982b9e1a9dca65bba13bcdbb3e0d46
 platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #0 552778c27edf20abfb9ab735e12b97f7a6bf4ddff165405bd01ebccb27a8fae7
 platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #1 3ae44a88e14cb4d6e1698816bdba76e183aa4689f03b6d2ebf33ac249eb8a2dd
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 1b9e06b6d8b4d8b32aebc0d282010b2fba3a2f5a53c352efb7e9171edb86c7fa
-platform_test.test.release worker init runs when specialisation removes its unused state #0 7b70a1c034c6fe7fad501b53f0e67cca74cd5b759896591d730a6fb7a0fe3201
+platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 cfefd9bdbb347f5df45a2396f173ac4b4e6b9c1da849c0f98a0205be68d8bf3f
+platform_test.test.release worker init runs when specialisation removes its unused state #0 15b8ba920a0799fdcb85b4a28ee99b9775d01e342c6ad7688a7890e53a9cbad0
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 1093639f584107e0b9df9fcf2df078a3f53381f293073dd3e4c53e245b0c9192
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 d7cbf2b2e0fdfa5061eb94915334ae2fb7ce0329f7afafbb8d03dfad8cdceff3
 platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 83f4e32899685b548eee52e3d2e60c48bd9d042095009db6b2b5fd2df73b5f0d
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 2047667a8f9645119a058f790cb343e4b428cd4e8c77ff3d49f98e2322cdf31e
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 a544013d621e5b864ee4ee9395201a86b62ee72282c622b16bd5a92827d6740d
 platform_test.test.worker launch URLs stay relative to their module under release specialization #0 80cee573752adbd9ce8f6bae43df2b61ef85e639487fcfdacd2a4e4f1a7b6d2b
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 1e24effb0f3975defaac5f458a5b75bc9fe0c713f1fb99b361c0336d24e058d5
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 09f8ba5978f007fde083986156e1b67a8d1ad4580ff8d576f9cde33855fc9a1d

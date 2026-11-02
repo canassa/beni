@@ -1,0 +1,67 @@
+-- Equal atoms drop only inert tests. Immutable copies cross branches and
+-- loops, but a callback, a changing loop parameter and a captured binding stay.
+import Node exposing (Program)
+
+
+pub selected : String, Int → Int
+selected kind value =
+    picked =
+        if kind == "one" then
+            value
+        else if kind == "two" then
+            value
+        else
+            value
+    picked + 1
+
+
+pub checked : (Bool → Bool), Bool, Int → Int
+checked probe flag value =
+    picked = if probe flag then value else value
+    picked + 1
+
+
+type Box
+    = Box { value : Int }
+
+
+pub copied : Bool, Box → Int
+copied flag (Box state) =
+    if flag then
+        state.value + state.value
+    else
+        state.value - state.value
+
+
+pub loop : Int, Int → Int
+loop n value =
+    saved = value
+    if n ≤ 0 then
+        saved
+    else
+        loop (n - 1) (saved + saved)
+
+
+pub captured : Bool, Int → Int
+captured flag value =
+    saved = value
+    apply = λdelta → saved + delta
+    if flag then
+        apply 3
+    else
+        apply 7
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (selected "one" 4)
+        , String.fromInt (selected "other" 8)
+        , String.fromInt (checked (Debug.log "probe" _) True 9)
+        , String.fromInt (checked (Debug.log "probe" _) False 10)
+        , String.fromInt (copied True (Box { value = 6 }))
+        , String.fromInt (copied False (Box { value = 6 }))
+        , String.fromInt (loop 3 2)
+        , String.fromInt (captured True 10)
+        , String.fromInt (captured False 10)
+        ]
