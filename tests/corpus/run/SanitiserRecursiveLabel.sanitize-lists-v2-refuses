@@ -1,0 +1,4 @@
+# v2 refuses a capture write in a closure a recursive callee calls once per element (§2.11.3).
+26:18 list_still_used SanitiserRecursiveLabel.myMap
+30:16 list_still_used List.map
+34:20 list_still_used List.initialize
