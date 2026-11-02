@@ -9917,6 +9917,67 @@ At helpers, its measured price is the stage-8 ledger (143 lines), and the certif
 (65 lines). The alternative is v2's precision with `Dict` as a known limit. That choice is the owner's, with
 Astra's review. The report is `experiments/contracts-s6d/report.md` on the branch.
 
+*Q8, continued: the slot-domain experiment* [M 2026-11-02, #1372, #1590; Astra's second review §2, §4, §6,
+approved by the owner; a scratch prototype on branch `exp-slot-domain` over `89e320851`, self-hosted Debug;
+not built, not specified]. The question: can a first-order local domain of slots, positions and inferred
+separation contracts check `Dict`'s helpers under the default allowance, with no v2 value reader on its path? The
+answer is **yes, within the first-order scope**: every pass criterion of the review's §6 holds.
+- **The domain.**
+  - Slots are canonical paths, with join names expanded (`expandLevels`). Positions are source projections from a
+    root: a parameter, or one call site's result. Storage and payloads are separate slots. Unknown provenance is
+    `⊤`.
+  - The one separation condition is a *selection*: (parameter, slot) occurrences whose objects occur once among
+    them. A conjunction is a union, never a table of pairs.
+  - A contract has the arrivals per result slot, the slots written, `req` and `res_cond`. It is inferred from ⊥
+    to a fixed point, then validated by a separate evaluation of each body.
+  - A call is instantiated once per call site. Two distinct callee occurrences that reach one caller value by
+    one literal route ask for its separation; two parameters handed one value are that value twice.
+- **What is reused.** The typed BIR, `Place`, `Groups`' adapters, `Prepass` groups, `Ids.Account` and the
+  lowering channel. Liveness and the holder query are the evaluator's own. Every public function of `Shape`,
+  `KappaRead` and `Propagate` counts its calls: the slot path makes 0, and v2 on the same `removeMin` module
+  makes 605 664.
+- **Cost.** All records are charged to the one account, and no cap moved.
+  - Generic `removeMin`: walks of 421, 3 099, 5 110 and 5 792 records, then a validation walk of 5 792;
+    **20 214 in all, growth 0**. That is about 62 records per written instruction, against 7 400 for contracts
+    with S6d.
+  - Core's unchanged `Dict.removeMin`: 20 213. `balance`: 2 534. `moveRedLeft`: 1 207. Every writing witness is
+    under 1 000.
+  - Each total is under 65 536 even if every record counted as growth.
+  - Copies 1/2/4/8 cost exactly ×k. Payload fields 1/2/4/8 are linear: `removeMin*` costs 11 636 / 20 478 /
+    38 703 / 75 123 records.
+  - Reported apart: `Dict.descend`, the Cursor × Tree product, costs 33 930 records (growth 0). The shortened
+    `InitializationLimit.rotate` is O(N²), because the prototype re-walks each round where it should deliver.
+- **Useful separation.**
+  - Accepted: `useful`, `usefulParam`, **`rebuild` beside the surviving subtrees**, and `incAll (removeMinL t)`
+    over every payload of the answer.
+  - Refused: the old tree kept, an external alias, duplicate output payloads, a payload repeated from the start,
+    #1516, #1530 and `pushDup`.
+  - Under copy, plain and `--sanitize-lists` builds, the writers print the same output with no trap. A
+    forced-unsafe duplicating helper traps.
+  - An imported helper keeps its repeated calls, aliases and fresh identities. All 61 imported contracts encode
+    again to the same words. Declarations in reverse order give the same verdicts and contracts.
+- **Precision.** The review's sample and its §4 family table were compared with master: 22 fixtures, 280
+  demand positions.
+  - 229 have the same verdict, and **none** goes from accepted to refused.
+  - 17 go from refused to accepted. Each is a documented false refusal (#1495, #1501–#1503, #1562) or a twin the
+    fixture names safe.
+  - 26 partial refusals inside calls master refuses are now refused whole.
+  - 8 belong to declarations the prototype reports `unsupported` (`List.copy`, `List.append` and an imported
+    record).
+- **What it settles, and what it does not.** A slot-keyed local domain with inferred, validated selections
+  recovers `rebuild` and the certificate witnesses at about 1 % of the best earlier configuration's records.
+  The open work is:
+  - callbacks, accumulator folds, retained values and loans, which are the review's next checkpoint;
+  - deliveries along recursive edges instead of a re-walk per round;
+  - callee read footprints in liveness;
+  - the remaining core rows, and field steps in the block;
+  - the full ledger, and core and the platforms whole;
+  - a release-toolchain measurement.
+
+  A selection asks each region to be internally separate. That is stronger than a pairwise `apart`, and no
+  sampled fixture pays for it. The report, with every table, the seven requirements the controls found and a
+  staged plan, is `experiments/slot-domain/report.md` on the branch.
+
 *One walk of `removeMin`, attributed (#1372, #1590)* [M 2026-11-01, master `212f366bb`, self-hosted Debug,
 `dump --stage=ownership --ownership=v2 --jobs=1`, the module allowance at 4 194 304; scratch instrumentation
 that tagged every committed record with its walk, its phase and its innermost reader, and counted the state
