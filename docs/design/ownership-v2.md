@@ -813,7 +813,9 @@ entries', so a join and a leave are O(1), and a holder no demand meets live is n
 the sweep reads, by binding point and by last use, are counting sorts over the holders' own span of points. A demand's candidates are the live lists of its targets' keys, every parameter's
 for a parameter's target (a parameter's object may be held through another parameter), and the unknown list:
 O(the live holders it meets), never every holder its root ever had. In the push chain above, each demand meets
-no holder at all: `a(i-1)` was last used by the push being judged.
+no holder at all: `a(i-1)` was last used by the push being judged. The holder index and the escape index are
+built only for a frame that has something to judge (a demand or a label's supplied part): a tower of literals
+with no write pays for neither (`Rose [ r ]` at n = 160: 59 279 records, 7 115 without them).
 
 **The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
 every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
