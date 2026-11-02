@@ -1,4 +1,4 @@
-//! L8: demands judged offline (`docs/design/ownership-v2.md` §2.8,
+//! L9: demands judged offline (`docs/design/ownership-v2.md` §2.8,
 //! *Resolution on slots*): after a walk and its evaluation, when every use,
 //! holder and pending operand of the frame is known. A demand's targets are
 //! leaves; each condition is the one relation (§2.9.2) against what could
@@ -22,8 +22,10 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
+const Distinct = @import("Distinct.zig");
 const Contract = @import("Contract.zig");
 const Eval = @import("Eval.zig");
+const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
 
@@ -53,7 +55,7 @@ pub const Outcome = struct {
 
 /// One verdict line: the demand, its outcome, the holder and the use.
 pub const Line = struct {
-    demand: Eval.Demand,
+    demand: Walk.Demand,
     outcome: Outcome,
     holder: ?Holder = null,
     use_token: u32 = none,
@@ -219,7 +221,7 @@ const Resolver = struct {
                     defer own.deinit(g);
                     try r.ev().storageOf(it.v, it.tags, &own);
                     for (own.items) |l| {
-                        const o = try r.ev().overlap(l, target, true);
+                        const o = try Distinct.overlap(r.ev(), l, target, true);
                         if (o.kind != .no) try out.append(g, .{ it.q, o });
                     }
                     for (fr.kidsOf(x), 0..) |kv, n| {
@@ -239,7 +241,7 @@ const Resolver = struct {
                     defer ls.deinit(g);
                     try r.ev().leavesOf(it.v, it.tags, &ls);
                     for (ls.items) |l| {
-                        const o = try r.ev().overlap(l, target, true);
+                        const o = try Distinct.overlap(r.ev(), l, target, true);
                         if (o.kind == .no) continue;
                         // The path of the hold: below `q` by the steps from the
                         // leaf's position to the slots that meet the target's.
@@ -279,7 +281,7 @@ const Resolver = struct {
                                 if (rest.items.len != 0) {
                                     var rl = lf;
                                     rl.slots = try fr.slots.internSorted(g, fr.account, rest.items);
-                                    const o2 = try r.ev().overlap(try fr.leaf(rl), target, true);
+                                    const o2 = try Distinct.overlap(r.ev(), try fr.leaf(rl), target, true);
                                     if (o2.kind != .no) try out.append(g, .{ it.q, o2 });
                                 }
                                 continue;
@@ -399,7 +401,7 @@ const Resolver = struct {
             // storing what it consumes) is that write's own business.
             if (call != none and x.call == call) continue;
             if (x.point != point and !r.regions.compatible(x.point, point)) continue;
-            const o = try r.ev().overlap(x.leaf, t, false);
+            const o = try Distinct.overlap(r.ev(), x.leaf, t, false);
             switch (o.kind) {
                 .no => {},
                 .under => relied.* = try Cond.conj(r.ev().arena, r.account(), relied.*, o.cond),
@@ -415,7 +417,7 @@ const Resolver = struct {
     }
 
     /// Judge demand `d`.
-    fn judge(r: *Resolver, d: Eval.Demand) Error!Line {
+    fn judge(r: *Resolver, d: Walk.Demand) Error!Line {
         const w = r.e.w;
         const fr = r.f();
         const g = r.gpa();
@@ -466,7 +468,7 @@ const Resolver = struct {
             defer ls.deinit(g);
             try r.ev().leavesOf(v, 0, &ls);
             for (ls.items) |l| for (targets) |t| {
-                const ov = try r.ev().overlap(l, t, true);
+                const ov = try Distinct.overlap(r.ev(), l, t, true);
                 switch (ov.kind) {
                     .no => {},
                     .under => relied = try Cond.conj(r.ev().arena, r.account(), relied, ov.cond),
@@ -488,7 +490,7 @@ const Resolver = struct {
             defer ls.deinit(g);
             try r.ev().leavesOf(p.value, 0, &ls);
             for (ls.items) |l| for (targets) |t| {
-                const ov = try r.ev().overlap(l, t, true);
+                const ov = try Distinct.overlap(r.ev(), l, t, true);
                 switch (ov.kind) {
                     .no => {},
                     .under => {
@@ -583,7 +585,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 // The other arguments are its operands.
                 const o_start: u32 = @intCast(e.w.value_runs.items.len);
                 for (cb.args, 0..) |b, m| if (m != k) try e.w.value_runs.append(f.gpa, b);
-                const d: Eval.Demand = .{ .point = cb.point, .kind = .callsite, .token = 0, .base_inst = cb.inst, .targets = .{ .start = start, .len = 1 }, .operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) }, .pending = cb.pending };
+                const d: Walk.Demand = .{ .point = cb.point, .kind = .callsite, .token = 0, .base_inst = cb.inst, .targets = .{ .start = start, .len = 1 }, .operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) }, .pending = cb.pending };
                 const l = try r.judge(d);
                 switch (l.outcome.verdict) {
                     .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ @intCast(ci), @intCast(k), t }),

@@ -1,4 +1,4 @@
-//! L10: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
+//! L11: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
 //! §6, R-6.1–R-6.7, R-7.15): the operation, the base as written, the
 //! verdict, its cause and the detail naming the holder and its later use —
 //! v1's texts (`src/own/Ownership.zig`'s `resolveRaw`), so a golden compares
@@ -12,7 +12,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
-const Eval = @import("Eval.zig");
+const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
@@ -116,7 +116,7 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
 }
 
 /// The base as written, and below it the path a writer call writes.
-fn writtenText(f: Frame, a: Allocator, d: Eval.Demand) Allocator.Error![]const u8 {
+fn writtenText(f: Frame, a: Allocator, d: Walk.Demand) Allocator.Error![]const u8 {
     const base = try baseText(f, a, d.base_inst);
     if (d.write_path == .none) return base;
     var buf: std.Io.Writer.Allocating = .init(a);
