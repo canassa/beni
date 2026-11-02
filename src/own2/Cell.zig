@@ -186,14 +186,14 @@ pub const Alias = union(enum) {
 };
 
 pub const Table = struct {
-    cells: std.MultiArrayList(Cell) = .empty,
+    cells: Ids.Columns(Cell) = .empty,
     /// Keyed by `(origin·kind, a, b, c, place)`: a cell is one object at one
     /// place, so a `result`, `site` or refinement made at another place is
     /// another cell, whatever order made them.
     intern: Ids.FixedDict(5) = .{},
-    labels: std.MultiArrayList(Label) = .empty,
+    labels: Ids.Columns(Label) = .empty,
     label_intern: Ids.FixedDict(3) = .{},
-    splits: std.MultiArrayList(Split) = .empty,
+    splits: Ids.Columns(Split) = .empty,
     /// `(container, label)` → split.
     split_intern: Ids.FixedDict(2) = .{},
     sets: Radix = .{},
@@ -217,7 +217,7 @@ pub const Table = struct {
     }
 
     pub fn count(t: *const Table) u32 {
-        return @intCast(t.cells.len);
+        return @intCast(t.cells.len());
     }
 
     pub fn get(t: *const Table, c: CellId) Cell {
@@ -225,19 +225,19 @@ pub const Table = struct {
     }
 
     pub fn origin(t: *const Table, c: CellId) Origin {
-        return t.cells.items(.origin)[c.int()];
+        return t.cells.col.origin[c.int()];
     }
 
     pub fn kind(t: *const Table, c: CellId) Kind {
-        return t.cells.items(.kind)[c.int()];
+        return t.cells.col.kind[c.int()];
     }
 
     pub fn parent(t: *const Table, c: CellId) CellId {
-        return t.cells.items(.parent)[c.int()];
+        return t.cells.col.parent[c.int()];
     }
 
     pub fn place(t: *const Table, c: CellId) PlaceId {
-        return t.cells.items(.place)[c.int()];
+        return t.cells.col.place[c.int()];
     }
 
     /// The trie children of `c`, in first-sight order.
@@ -248,13 +248,13 @@ pub const Table = struct {
         pub fn next(it: *Children) ?CellId {
             if (it.at == .none) return null;
             const c = it.at;
-            it.at = it.t.cells.items(.next_sibling)[c.int()];
+            it.at = it.t.cells.col.next_sibling[c.int()];
             return c;
         }
     };
 
     pub fn children(t: *const Table, c: CellId) Children {
-        return .{ .t = t, .at = t.cells.items(.first_child)[c.int()] };
+        return .{ .t = t, .at = t.cells.col.first_child[c.int()] };
     }
 
     /// The first non-refinement above `c` (§2.2).
@@ -273,7 +273,7 @@ pub const Table = struct {
         try account.reserve(.label, 1);
         const got = try t.label_intern.getOrPut(gpa, .{ inst, callee_label.int(), @intFromBool(folded) });
         if (got.found_existing) return .from(got.value_ptr.*);
-        got.value_ptr.* = @intCast(t.labels.len);
+        got.value_ptr.* = @intCast(t.labels.len());
         try t.labels.append(gpa, .{ .inst = inst, .callee_label = callee_label, .folded = folded, .supplies = .empty });
         return .from(got.value_ptr.*);
     }
@@ -284,7 +284,7 @@ pub const Table = struct {
 
     /// The first instruction of a label's chain.
     pub fn labelInst(t: *const Table, l: LabelId) u32 {
-        return t.labels.items(.inst)[l.int()];
+        return t.labels.col.inst[l.int()];
     }
 
     // ---- interning ----------------------------------------------------------
@@ -300,9 +300,9 @@ pub const Table = struct {
         try t.cells.append(gpa, .{ .origin = o, .kind = k, .a = a, .b = b, .c = c, .place = at, .parent = trie_parent, .first_child = .none, .last_child = .none, .next_sibling = .none });
         if (trie_parent != .none) {
             const p = trie_parent.int();
-            const last = t.cells.items(.last_child)[p];
-            if (last == .none) t.cells.items(.first_child)[p] = id else t.cells.items(.next_sibling)[last.int()] = id;
-            t.cells.items(.last_child)[p] = id;
+            const last = t.cells.col.last_child[p];
+            if (last == .none) t.cells.col.first_child[p] = id else t.cells.col.next_sibling[last.int()] = id;
+            t.cells.col.last_child[p] = id;
         }
         return id;
     }
@@ -345,7 +345,7 @@ pub const Table = struct {
     /// The mark a `mark` cell carries.
     pub fn markOf(t: *const Table, c: CellId) Mark {
         std.debug.assert(t.origin(c) == .mark);
-        return @fromBackingInt(@intCast(t.cells.items(.a)[c.int()]));
+        return @fromBackingInt(@intCast(t.cells.col.a[c.int()]));
     }
 
     /// `result λ·k` or `esc λ·k`.
@@ -492,7 +492,7 @@ pub const Table = struct {
         try account.reserve(.other, 1);
         const got = try t.split_intern.getOrPut(gpa, .{ container.int(), l.int() });
         if (got.found_existing) return .from(got.value_ptr.*);
-        got.value_ptr.* = @intCast(t.splits.len);
+        got.value_ptr.* = @intCast(t.splits.len());
         try t.splits.append(gpa, .{ .container = container, .inst = inst, .label = l, .cond = cond });
         return .from(got.value_ptr.*);
     }
@@ -824,21 +824,19 @@ pub const Table = struct {
         var chain: std.ArrayList(CellId) = .empty;
         defer chain.deinit(gpa);
         // Columns, not `get`: a whole cell gathers all ten of them, and this
-        // reads two (#1560). `symbolic` below appends, so the down walk
-        // slices again per step.
+        // reads two (#1560). `symbolic` below appends, so the down walk reads
+        // `col` afresh per step.
         var at = c;
         {
-            const s = t.cells.slice();
-            const origins = s.items(.origin);
-            const parents = s.items(.parent);
+            const origins = t.cells.col.origin;
+            const parents = t.cells.col.parent;
             while (origins[at.int()].isRefinement()) : (at = parents[at.int()]) try chain.append(gpa, at);
             if (!(origins[at.int()].isSymbolic() and origins[at.int()] != .top)) return null;
         }
         var inner: CellId = at;
         while (chain.pop()) |r| {
-            const s = t.cells.slice();
-            const xo = s.items(.origin)[r.int()];
-            const xc = s.items(.c)[r.int()];
+            const xo = t.cells.col.origin[r.int()];
+            const xc = t.cells.col.c[r.int()];
             const step: ?Place.Step = switch (xo) {
                 .elem, .others => if (xc & positions_bit != 0) null else Place.Step.elem,
                 .below => Place.Step.fromWord(xc),
@@ -849,8 +847,8 @@ pub const Table = struct {
             };
             const st = step orelse continue;
             const i = inner.int();
-            const path = (try places.extend(gpa, .growth(account), .from(s.items(.b)[i]), st)) orelse return null;
-            inner = try t.symbolic(gpa, account, places, s.items(.origin)[i], s.items(.a)[i], path, s.items(.c)[i]);
+            const path = (try places.extend(gpa, .growth(account), .from(t.cells.col.b[i]), st)) orelse return null;
+            inner = try t.symbolic(gpa, account, places, t.cells.col.origin[i], t.cells.col.a[i], path, t.cells.col.c[i]);
         }
         return inner;
     }
@@ -871,7 +869,7 @@ pub const RadixNode = struct {
 };
 
 pub const Radix = struct {
-    nodes: std.MultiArrayList(RadixNode) = .empty,
+    nodes: Ids.Columns(RadixNode) = .empty,
     /// What a node is reserved as: a cell set's `set`, a node set's (the
     /// crossing's `region` and `bases`) `memo`. Instrumentation only.
     category: Ids.Category = .set,
@@ -903,7 +901,7 @@ pub const Radix = struct {
             Counters.setMakeRequest(&r.stats, got.value_ptr.*);
             return .from(got.value_ptr.*);
         }
-        const id: SetId = .from(@intCast(r.nodes.len));
+        const id: SetId = .from(@intCast(r.nodes.len()));
         got.value_ptr.* = id.int();
         try r.nodes.append(gpa, n);
         try Counters.setMade(&r.stats, gpa, n.mask == 0, n.left.int(), n.right.int());
@@ -1436,16 +1434,16 @@ test "a union adding nothing returns the destination root, and shares the larger
     small = try r.insert(gpa, g, small, 30, 0);
     try testing.expectEqual(big, try r.unionWith(gpa, g, big, small));
     try testing.expectEqual(big, try r.unionWith(gpa, g, small, big));
-    const before = r.nodes.len;
+    const before = r.nodes.len();
     var other: SetId = .none;
     other = try r.insert(gpa, g, other, 1, 0);
     const joined = try r.unionWith(gpa, g, big, other);
     try testing.expectEqual(@as(u32, 65), r.count(joined));
     // One path copied: at most 33 new nodes, plus the leaf.
-    try testing.expect(r.nodes.len - before <= 34);
+    try testing.expect(r.nodes.len() - before <= 34);
     // Every node was reserved (a hit as well, so at least one record per
     // node), and so was every inspection.
-    try testing.expect(a.growth_by[@backingInt(Ids.Category.set)] >= @as(u32, @intCast(r.nodes.len)));
+    try testing.expect(a.growth_by[@backingInt(Ids.Category.set)] >= @as(u32, @intCast(r.nodes.len())));
     try testing.expect(a.growth_by[@backingInt(Ids.Category.inspection)] > 0);
 }
 
@@ -1468,11 +1466,11 @@ test "a union that adds nothing still pays its inspections, before it reads" {
     // Exhaustion stops before any node is allocated or read.
     var tight: Account = .{ .allowance = 0 };
     defer tight.deinit(testing.allocator);
-    const nodes = r.nodes.len;
+    const nodes = r.nodes.len();
     try testing.expectError(error.OwnershipLimit, r.unionWith(gpa, .growth(&tight), x, y));
     try testing.expectError(error.OwnershipLimit, r.insert(gpa, .growth(&tight), x, 100, 0));
     try testing.expectError(error.OwnershipLimit, r.subset(gpa, .growth(&tight), y, x));
-    try testing.expectEqual(nodes, r.nodes.len);
+    try testing.expectEqual(nodes, r.nodes.len());
     // In a lane, the inspections are baseline, not growth.
     var lane_account: Account = .{ .allowance = 0 };
     defer lane_account.deinit(testing.allocator);
@@ -1489,13 +1487,13 @@ test "a refused reservation leaves the set table whole, and a hit is charged lik
     var broke: Account = .{ .allowance = 0 };
     defer broke.deinit(gpa);
     try testing.expectError(error.OwnershipLimit, r.insert(gpa, .growth(&broke), .none, 42, 0));
-    try testing.expectEqual(@as(usize, 0), r.nodes.len);
+    try testing.expectEqual(@as(usize, 0), r.nodes.len());
     // Another owner making the same node gets a real one, not the refused
     // owner's half-written entry.
     var a: Account = .{};
     defer a.deinit(gpa);
     const s = try r.insert(gpa, .growth(&a), .none, 42, 0);
-    try testing.expectEqual(@as(usize, 1), r.nodes.len);
+    try testing.expectEqual(@as(usize, 1), r.nodes.len());
     try testing.expectEqual(@as(u32, 0), s.int());
     try testing.expect(r.member(s, 42));
     // The same node again is a hit, and the request is charged all the same

@@ -296,15 +296,15 @@ pub const UseMerge = struct {
     }
 };
 pub const Table = struct {
-    classes: std.MultiArrayList(Class) = .empty,
+    classes: Ids.Columns(Class) = .empty,
     uses: std.ArrayList(NodeId) = .empty,
-    funs: std.MultiArrayList(Fun) = .empty,
-    supplies: std.MultiArrayList(Supply) = .empty,
-    keeps: std.MultiArrayList(Keep) = .empty,
-    slots: std.MultiArrayList(Slot) = .empty,
+    funs: Ids.Columns(Fun) = .empty,
+    supplies: Ids.Columns(Supply) = .empty,
+    keeps: Ids.Columns(Keep) = .empty,
+    slots: Ids.Columns(Slot) = .empty,
     nested: std.ArrayList(ClassId) = .empty,
     onces: std.ArrayList(PathId) = .empty,
-    backs: std.MultiArrayList(Back) = .empty,
+    backs: Ids.Columns(Back) = .empty,
     /// The classes whose fold certificates the induction proved (§8 slice
     /// 4, *The fold certificate, specified*, #1485): a settled recursive
     /// group's classes, each folded class of its `res` certified at its key
@@ -335,7 +335,7 @@ pub const Table = struct {
     }
 
     pub fn count(t: *const Table) u32 {
-        return @intCast(t.classes.len);
+        return @intCast(t.classes.len());
     }
 
     pub fn get(t: *const Table, c: ClassId) Class {
@@ -343,19 +343,19 @@ pub const Table = struct {
     }
 
     pub fn paramUses(t: *const Table, c: ClassId) []const NodeId {
-        const r = t.classes.items(.params)[c.int()];
+        const r = t.classes.col.params[c.int()];
         return t.uses.items[r.start..][0..r.len];
     }
 
     /// The `k`th fun of class `c`.
     pub fn fun(t: *const Table, c: ClassId, k: u32) Fun {
-        const r = t.classes.items(.funs)[c.int()];
+        const r = t.classes.col.funs[c.int()];
         std.debug.assert(k < r.len);
         return t.funs.get(r.start + k);
     }
 
     pub fn funCount(t: *const Table, c: ClassId) u32 {
-        return t.classes.items(.funs)[c.int()].len;
+        return t.classes.col.funs[c.int()].len;
     }
 
     pub fn supply(t: *const Table, f: Fun, k: u32) Supply {
@@ -374,18 +374,18 @@ pub const Table = struct {
     }
 
     pub fn slot(t: *const Table, c: ClassId, k: u32) Slot {
-        const r = t.classes.items(.slots)[c.int()];
+        const r = t.classes.col.slots[c.int()];
         std.debug.assert(k < r.len);
         return t.slots.get(r.start + k);
     }
 
     pub fn nestedOf(t: *const Table, c: ClassId) []const ClassId {
-        const r = t.classes.items(.classes)[c.int()];
+        const r = t.classes.col.classes[c.int()];
         return t.nested.items[r.start..][0..r.len];
     }
 
     pub fn oncesOf(t: *const Table, c: ClassId) []const PathId {
-        const r = t.classes.items(.once)[c.int()];
+        const r = t.classes.col.once[c.int()];
         return t.onces.items[r.start..][0..r.len];
     }
 
@@ -420,21 +420,21 @@ pub const Table = struct {
                 return fs[x].j < fs[y].j;
             }
         }.lessThan);
-        const funs: Ids.Range = .{ .start = @intCast(t.funs.len), .len = @intCast(d.funs.len) };
+        const funs: Ids.Range = .{ .start = @intCast(t.funs.len()), .len = @intCast(d.funs.len) };
         for (order.items) |i| {
             const f = d.funs[i];
-            const sr: Ids.Range = .{ .start = @intCast(t.supplies.len), .len = @intCast(f.supplies.len) };
+            const sr: Ids.Range = .{ .start = @intCast(t.supplies.len()), .len = @intCast(f.supplies.len) };
             for (f.supplies) |s| try t.supplies.append(gpa, s);
             try sortRun(Supply, gpa, &t.supplies, sr, supplyLess);
-            const kr: Ids.Range = .{ .start = @intCast(t.keeps.len), .len = @intCast(f.keeps.len) };
+            const kr: Ids.Range = .{ .start = @intCast(t.keeps.len()), .len = @intCast(f.keeps.len) };
             for (f.keeps) |k| try t.keeps.append(gpa, k);
             try sortRun(Keep, gpa, &t.keeps, kr, keepLess);
-            const br: Ids.Range = .{ .start = @intCast(t.backs.len), .len = @intCast(f.backs.len) };
+            const br: Ids.Range = .{ .start = @intCast(t.backs.len()), .len = @intCast(f.backs.len) };
             for (f.backs) |b| try t.backs.append(gpa, b);
             try sortRun(Back, gpa, &t.backs, br, backLess);
             try t.funs.append(gpa, .{ .j = f.j, .calls = f.calls, .need = f.need, .seen = f.seen, .supplies = sr, .keeps = kr, .backs = br });
         }
-        const slots: Ids.Range = .{ .start = @intCast(t.slots.len), .len = @intCast(d.slots.len) };
+        const slots: Ids.Range = .{ .start = @intCast(t.slots.len()), .len = @intCast(d.slots.len) };
         for (d.slots) |s| try t.slots.append(gpa, s);
         const classes: Ids.Range = .{ .start = @intCast(t.nested.items.len), .len = @intCast(d.classes.len) };
         try t.nested.appendSlice(gpa, d.classes);
@@ -2422,7 +2422,7 @@ test "fault injection: a join refused at any step leaves the class table whole" 
         tight.charge = .growth(&broke);
         const classes = f.sums.count();
         const uses = f.sums.uses.items.len;
-        const supplies = f.sums.supplies.len;
+        const supplies = f.sums.supplies.len();
         if (f.sums.join(tight, a, b, .choice)) |j| {
             try testing.expectEqual(classes + 1, f.sums.count());
             try testing.expect(try f.sums.leq(env, a, j));
@@ -2431,7 +2431,7 @@ test "fault injection: a join refused at any step leaves the class table whole" 
             try testing.expectEqual(error.OwnershipLimit, err);
             try testing.expectEqual(classes, f.sums.count());
             try testing.expectEqual(uses, f.sums.uses.items.len);
-            try testing.expectEqual(supplies, f.sums.supplies.len);
+            try testing.expectEqual(supplies, f.sums.supplies.len());
         }
     }
     try testing.expect(allowance < 4000);

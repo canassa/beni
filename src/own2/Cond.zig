@@ -98,17 +98,17 @@ const reads = KappaRead.Of(Table);
 const prop = Propagate.Of(Table, View, Traversal, Item);
 
 pub const Table = struct {
-    conds: std.MultiArrayList(Cond) = .empty,
+    conds: Ids.Columns(Cond) = .empty,
     intern: Ids.FixedDict(3) = .{},
     /// The persistent sets of atom ids (`flat`; `apart`'s groups are cell
     /// sets and live in `Cell.Table.sets`).
     atoms: Cell.Radix = .{},
     /// The κ maps' nodes, hash-consed.
-    kmaps: std.MultiArrayList(MapNode) = .empty,
+    kmaps: Ids.Columns(MapNode) = .empty,
     kmap_intern: Ids.FixedDict(4) = .{},
     kmap_stats: Counters.Sets = Counters.zero(Counters.Sets),
     /// The snapshots' positions, hash-consed (`Kappas` indexes them).
-    kpos: std.MultiArrayList(Position) = .empty,
+    kpos: Ids.Columns(Position) = .empty,
     kpos_intern: Ids.FixedDict(3) = .{},
     /// `flat`'s memo: the atom set of a condition (`.none` for `yes`).
     flat_memo: stamped.Column(CondId, SetId) = .{},
@@ -257,7 +257,7 @@ pub const Table = struct {
         try charge.reserve(gpa, .cond, 3);
         inline for (.{ Kind.yes, Kind.shared, Kind.lost }) |k| {
             const got = try t.intern.getOrPut(gpa, .{ @backingInt(k), 0, 0 });
-            got.value_ptr.* = @intCast(t.conds.len);
+            got.value_ptr.* = @intCast(t.conds.len());
             try t.conds.append(gpa, .{ .kind = k, .atom = .excl, .a = 0, .b = 0 });
         }
         return t;
@@ -1654,7 +1654,7 @@ test "a refused reservation leaves the condition table and the maps whole" {
     try testing.expectError(error.OwnershipLimit, f.conds.excl(gpa, .growth(&broke), p1));
     try testing.expectError(error.OwnershipLimit, f.conds.kappaSet(gpa, .growth(&broke), .none, l1, lost));
     try testing.expectEqual(n, f.conds.count());
-    try testing.expectEqual(@as(usize, 0), f.conds.kmaps.len);
+    try testing.expectEqual(@as(usize, 0), f.conds.kmaps.len());
     const e = try f.conds.excl(gpa, f.charge(), p1);
     try testing.expectEqual(n, e.int());
     const before = f.account.growth;
@@ -1766,7 +1766,7 @@ test "fault injection: a refusal before any dictionary, memo or path operation l
     const Snapshot = struct { conds: usize, kmaps: usize, atoms: usize, sets: usize, shapes: u32, cells: u32 };
     const snap = struct {
         fn take(ff: *Fixture) Snapshot {
-            return .{ .conds = ff.conds.conds.len, .kmaps = ff.conds.kmaps.len, .atoms = ff.conds.atoms.nodes.len, .sets = ff.cells.sets.nodes.len, .shapes = ff.shapes.count(), .cells = ff.cells.count() };
+            return .{ .conds = ff.conds.conds.len(), .kmaps = ff.conds.kmaps.len(), .atoms = ff.conds.atoms.nodes.len(), .sets = ff.cells.sets.nodes.len(), .shapes = ff.shapes.count(), .cells = ff.cells.count() };
         }
     };
     var allowance: u32 = 0;
@@ -1991,7 +1991,7 @@ test "red twin PositionsRepeatArg: `[ { a = a }, { a = b } ]` at `f x x` is shar
     };
     const xa = try f.shapes.map(gpa, &f.account, ea, &f, Subst.relabel);
     try testing.expectEqual(Shape.Kind.positions, f.shapes.kind(xa));
-    try testing.expectEqual(f.shapes.nodes.items(.a)[xa.int()], f.shapes.nodes.items(.b)[xa.int()]);
+    try testing.expectEqual(f.shapes.nodes.col.a[xa.int()], f.shapes.nodes.col.b[xa.int()]);
     try testing.expectEqual(shared, try f.kappa(.none, xa, true));
     try testing.expect((try t.rely(gpa, f.charge(), shared)) == .refused);
     // BranchSameElement: `if c then [ x ] else [ x ]` joins ALTERNATIVES. The

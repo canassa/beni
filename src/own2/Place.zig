@@ -260,15 +260,15 @@ pub const Limits = struct {
 };
 
 pub const Table = struct {
-    places: std.MultiArrayList(Place) = .empty,
-    step_tab: std.MultiArrayList(StepEntry) = .empty,
+    places: Ids.Columns(Place) = .empty,
+    step_tab: Ids.Columns(StepEntry) = .empty,
     /// The type walk's memo, type variable → place.
     by_var: stamped.Column(u32, PlaceId) = .{},
     /// `ofBlock`'s memo, a block's place number → place: a namespace of
     /// its own, so a block's places never meet a type variable of the
     /// module's (`Block.read`), cleared by `beginBlock`.
     block_var: stamped.Column(u32, PlaceId) = .{},
-    paths: std.MultiArrayList(PathNode) = .empty,
+    paths: Ids.Columns(PathNode) = .empty,
     /// `(parent path, step)` → path; a root is `(none, place)`.
     path_index: Ids.FixedDict(2) = .{},
     /// `extend`'s memo: `(path, step)` → the canonical result, `none` for
@@ -312,31 +312,31 @@ pub const Table = struct {
     }
 
     pub fn count(t: *const Table) u32 {
-        return @intCast(t.places.len);
+        return @intCast(t.places.len());
     }
 
     pub fn kind(t: *const Table, p: PlaceId) Kind {
-        return t.places.items(.kind)[p.int()];
+        return t.places.col.kind[p.int()];
     }
 
     pub fn head(t: *const Table, p: PlaceId) u32 {
-        return t.places.items(.head)[p.int()];
+        return t.places.col.head[p.int()];
     }
 
     pub fn holds(t: *const Table, p: PlaceId) Holds {
-        return t.places.items(.holds)[p.int()];
+        return t.places.col.holds[p.int()];
     }
 
     /// The steps out of `p` and the places they reach, in canonical order.
     pub const Steps = struct { steps: []const Step, children: []const PlaceId };
 
     pub fn steps(t: *const Table, p: PlaceId) Steps {
-        const r = t.places.items(.steps)[p.int()];
-        return .{ .steps = t.step_tab.items(.step)[r.start..][0..r.len], .children = t.step_tab.items(.child)[r.start..][0..r.len] };
+        const r = t.places.col.steps[p.int()];
+        return .{ .steps = t.step_tab.col.step[r.start..][0..r.len], .children = t.step_tab.col.child[r.start..][0..r.len] };
     }
 
     fn stepRange(t: *const Table, p: PlaceId) Ids.Range {
-        return t.places.items(.steps)[p.int()];
+        return t.places.col.steps[p.int()];
     }
 
     /// The place `step` reaches from `p`, or null when `p` has no such
@@ -345,14 +345,14 @@ pub const Table = struct {
     pub fn child(t: *const Table, p: PlaceId, step: Step) ?PlaceId {
         if (step.kind == .level) return p;
         const r = t.stepRange(p);
-        const words = t.step_tab.items(.step)[r.start..][0..r.len];
+        const words = t.step_tab.col.step[r.start..][0..r.len];
         var lo: usize = 0;
         var hi: usize = words.len;
         while (lo < hi) {
             const mid = (lo + hi) / 2;
             if (t.stepLess(words[mid], step)) lo = mid + 1 else hi = mid;
         }
-        if (lo < words.len and words[lo].word() == step.word()) return t.step_tab.items(.child)[r.start + lo];
+        if (lo < words.len and words[lo].word() == step.word()) return t.step_tab.col.child[r.start + lo];
         return null;
     }
 
@@ -420,7 +420,7 @@ pub const Table = struct {
         var added: std.ArrayList(u32) = .empty;
         defer added.deinit(gpa);
         const first_new = t.count();
-        const first_step: usize = t.step_tab.len;
+        const first_step: usize = t.step_tab.len();
         errdefer t.rollback(memo, first_new, first_step, added.items);
         const top = try t.open(memo, gpa, account, source, root, &scratch, &stack, &added);
         while (stack.items.len > 0) {
@@ -434,11 +434,11 @@ pub const Table = struct {
             const slot = t.stepRange(f.place).start + f.cursor;
             f.cursor += 1;
             if (memo.get(c.@"var")) |known| {
-                t.step_tab.items(.child)[slot] = known;
+                t.step_tab.col.child[slot] = known;
                 continue;
             }
             const made = try t.open(memo, gpa, account, source, c.@"var", &scratch, &stack, &added);
-            t.step_tab.items(.child)[slot] = made;
+            t.step_tab.col.child[slot] = made;
         }
         try t.settleHolds(gpa, first_new);
         try t.settleCycles(gpa, first_new);
@@ -464,7 +464,7 @@ pub const Table = struct {
         const id: PlaceId = .from(t.count());
         try added.append(gpa, v);
         try memo.put(gpa, v, id);
-        const start: u32 = @intCast(t.step_tab.len);
+        const start: u32 = @intCast(t.step_tab.len());
         // The canonical step order is the word order of `Step`: fields by
         // text rank, indices, `C#i` by (constructor, argument). A source
         // may describe children in any order.
@@ -487,10 +487,10 @@ pub const Table = struct {
     fn settleHolds(t: *Table, gpa: Allocator, first: u32) Error!void {
         const n = t.count() - first;
         if (n == 0) return;
-        const kinds = t.places.items(.kind);
-        const hs = t.places.items(.holds);
-        const ranges = t.places.items(.steps);
-        const children = t.step_tab.items(.child);
+        const kinds = t.places.col.kind;
+        const hs = t.places.col.holds;
+        const ranges = t.places.col.steps;
+        const children = t.step_tab.col.child;
         // Reverse edges among the new places, as a CSR: child → parents.
         const starts = try gpa.alloc(u32, n + 1);
         defer gpa.free(starts);
@@ -543,7 +543,7 @@ pub const Table = struct {
                 kinds[i] = .cross;
                 // A leaf names no type: the head would otherwise carry a
                 // session id into a block.
-                t.places.items(.head)[i] = 0;
+                t.places.col.head[i] = 0;
                 ranges[i].len = 0;
             }
         }
@@ -558,9 +558,9 @@ pub const Table = struct {
     fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
         const n = t.count() - first;
         if (n == 0) return;
-        const ranges = t.places.items(.steps);
-        const children = t.step_tab.items(.child);
-        const sccs = t.places.items(.scc);
+        const ranges = t.places.col.steps;
+        const children = t.step_tab.col.child;
+        const sccs = t.places.col.scc;
         const none = Ids.none_int;
         const index = try gpa.alloc(u32, n);
         defer gpa.free(index);
@@ -625,7 +625,7 @@ pub const Table = struct {
     /// `p` again (§2.2's `⟲` matching). O(1): a column compare, plus a
     /// child scan for the self-loop.
     pub fn sameCycle(t: *const Table, p: PlaceId, q: PlaceId) bool {
-        if (p != q) return t.places.items(.scc)[p.int()] == t.places.items(.scc)[q.int()];
+        if (p != q) return t.places.col.scc[p.int()] == t.places.col.scc[q.int()];
         const s = t.steps(p);
         for (s.children) |c| if (c == p) return true;
         return false;
@@ -634,7 +634,7 @@ pub const Table = struct {
     /// The strongly connected component of `p`: two places of one
     /// component are on one cycle (`sameCycle`) when they are distinct.
     pub fn sccOf(t: *const Table, p: PlaceId) u32 {
-        return t.places.items(.scc)[p.int()];
+        return t.places.col.scc[p.int()];
     }
 
     /// Whether `p` lies on a cycle of the place graph: one of its steps
@@ -651,33 +651,33 @@ pub const Table = struct {
     pub fn rootPath(t: *Table, gpa: Allocator, place: PlaceId) Allocator.Error!PathId {
         const got = try t.path_index.getOrPut(gpa, .{ Ids.none_int, place.int() });
         if (!got.found_existing) {
-            got.value_ptr.* = @intCast(t.paths.len);
+            got.value_ptr.* = @intCast(t.paths.len());
             try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .depth = 0, .summary = false });
         }
         return .from(got.value_ptr.*);
     }
 
     pub fn pathPlace(t: *const Table, p: PathId) PlaceId {
-        return t.paths.items(.place)[p.int()];
+        return t.paths.col.place[p.int()];
     }
 
     pub fn pathParent(t: *const Table, p: PathId) PathId {
-        return t.paths.items(.parent)[p.int()];
+        return t.paths.col.parent[p.int()];
     }
 
     pub fn pathStep(t: *const Table, p: PathId) Step {
-        return t.paths.items(.step)[p.int()];
+        return t.paths.col.step[p.int()];
     }
 
     /// `p` itself or its nearest ancestor that is a cycle anchor's prefix
     /// (`PathNode.anchor_up`), `.none` when there is none.
     pub fn anchorUp(t: *const Table, p: PathId) PathId {
         if (p == .none) return .none;
-        return t.paths.items(.anchor_up)[p.int()];
+        return t.paths.col.anchor_up[p.int()];
     }
 
     pub fn pathDepth(t: *const Table, p: PathId) u32 {
-        return t.paths.items(.depth)[p.int()];
+        return t.paths.col.depth[p.int()];
     }
 
     /// Whether `prefix` is `path` or an ancestor of it. O(depth) column
@@ -752,7 +752,7 @@ pub const Table = struct {
         }
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
         // A first return: a plain step back onto a place of the path.
-        if (out == null and deepest != .none) t.paths.items(.ret)[result.int()] = true;
+        if (out == null and deepest != .none) t.paths.col.ret[result.int()] = true;
         (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = result.int();
         return result;
     }
@@ -819,10 +819,10 @@ pub const Table = struct {
         try account.limitOver(.path_steps, depth, t.limits.path_steps);
         const got = try t.path_index.getOrPut(gpa, .{ parent.int(), step.word() });
         if (!got.found_existing) {
-            got.value_ptr.* = @intCast(t.paths.len);
-            const summary = t.paths.items(.summary)[parent.int()] or step.kind == .elem or step.kind == .level;
+            got.value_ptr.* = @intCast(t.paths.len());
+            const summary = t.paths.col.summary[parent.int()] or step.kind == .elem or step.kind == .level;
             const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
-            const up: PathId = if (anchor) .from(@intCast(t.paths.len)) else t.paths.items(.anchor_up)[parent.int()];
+            const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
             try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up, .ret = step.kind == .level });
         }
         return .from(got.value_ptr.*);
@@ -1001,7 +1001,7 @@ pub const Table = struct {
     /// Whether `path` is a summary position or below one: it holds a
     /// `[*]` or a `⟲` (§2.2's occurrence rule). O(1): a column.
     pub fn isSummary(t: *const Table, path: PathId) bool {
-        return t.paths.items(.summary)[path.int()];
+        return t.paths.col.summary[path.int()];
     }
 
     /// Whether `y` is a sealed first return (#1253): a plain step back onto
@@ -1025,7 +1025,7 @@ pub const Table = struct {
     /// Whether `path`'s last step re-entered a place on it: a first return
     /// or a `⟲` (`PathNode.ret`). O(1): a column.
     pub fn isReturn(t: *const Table, path: PathId) bool {
-        return t.paths.items(.ret)[path.int()];
+        return t.paths.col.ret[path.int()];
     }
 
     /// The node a return `path` came back to (`isReturn`): a `⟲`'s parent,
@@ -1061,7 +1061,7 @@ pub const Table = struct {
             const r = t.stepRange(p);
             // Pushed in reverse so the first child gets the next ordinal.
             var i = r.len;
-            while (i > 0) : (i -= 1) try stack.append(gpa, t.step_tab.items(.child)[r.start + i - 1]);
+            while (i > 0) : (i -= 1) try stack.append(gpa, t.step_tab.col.child[r.start + i - 1]);
         }
         try out.append(gpa, @intCast(order.items.len));
         for (order.items) |p| {
@@ -1069,7 +1069,7 @@ pub const Table = struct {
             const k = t.kind(p);
             const h = if (k == .tuple or k == .record) t.head(p) else names.head(names.ctx, t.head(p));
             try out.appendSlice(gpa, &.{ @backingInt(k), h, t.holds(p).bits(), r.len });
-            for (t.step_tab.items(.step)[r.start..][0..r.len], t.step_tab.items(.child)[r.start..][0..r.len]) |s, c| {
+            for (t.step_tab.col.step[r.start..][0..r.len], t.step_tab.col.child[r.start..][0..r.len]) |s, c| {
                 // A field's rank and a `C#i`'s intern index are this table's: the
                 // word carries the kind alone and the name or pair follows, so
                 // two tables write one type identically.
@@ -1120,7 +1120,7 @@ pub const Table = struct {
             if (hb > 0x7f) return error.Malformed;
             try account.limitOver(.type_places, @as(u64, t.count()) + 1, t.limits.type_places);
             if (kd.childLimit()) |l| try account.limitOver(l, len, t.limits.children);
-            const start: u32 = @intCast(t.step_tab.len);
+            const start: u32 = @intCast(t.step_tab.len());
             var j: u32 = 0;
             var last: u64 = 0;
             while (j < len) : (j += 1) {
@@ -1177,13 +1177,13 @@ pub const Table = struct {
             if (rx.len != ry.len) break false;
             var i: u32 = 0;
             const steps_same = while (i < rx.len) : (i += 1) {
-                const sx = ta.step_tab.items(.step)[rx.start + i];
-                const sy = tb.step_tab.items(.step)[ry.start + i];
+                const sx = ta.step_tab.col.step[rx.start + i];
+                const sy = tb.step_tab.col.step[ry.start + i];
                 if (sx.kind != sy.kind) break false;
                 if (sx.kind == .ctor_arg) {
                     if (!std.mem.eql(u32, &ta.ctorArgOf(sx), &tb.ctorArgOf(sy))) break false;
                 } else if (!sx.eql(sy)) break false;
-                try stack.append(gpa, .{ ta.step_tab.items(.child)[rx.start + i], tb.step_tab.items(.child)[ry.start + i] });
+                try stack.append(gpa, .{ ta.step_tab.col.child[rx.start + i], tb.step_tab.col.child[ry.start + i] });
             } else true;
             if (!steps_same) break false;
         } else true;
@@ -1333,7 +1333,7 @@ test "a recursive type is one place and its canonical paths fold with ⟲" {
     // The list's elements: `[*]` is a summary position.
     const elems = (try f.extend(p1, Step.elem)).?;
     try testing.expect(t.isSummary(elems));
-    try testing.expectEqual(@as(usize, 8), t.paths.len);
+    try testing.expectEqual(@as(usize, 8), t.paths.len());
     // The walk's memo answers a second ask with one read and no new place.
     try testing.expectEqual(tree, try f.of(0));
     try testing.expectEqual(@as(u32, 3), t.count());
@@ -1595,7 +1595,7 @@ test "a refused walk leaves no placeholder: the next owner gets the real place" 
     f.table.limits.children = 1;
     try testing.expectError(error.OwnershipLimit, f.of(0));
     try testing.expectEqual(@as(u32, 0), f.table.count());
-    try testing.expectEqual(@as(usize, 0), f.table.step_tab.len);
+    try testing.expectEqual(@as(usize, 0), f.table.step_tab.len());
     f.table.limits.children = Ids.Limit.record_fields.value();
     var b: Account = .{};
     defer b.deinit(testing.allocator);

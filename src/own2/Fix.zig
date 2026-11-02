@@ -175,7 +175,7 @@ pub const Invariant = struct { incoming: u32, owned: []const PathId, pairs: Cond
 const Spec = struct { incoming: u32, owned: Ids.Range, pairs: CondId };
 
 pub const Prover = struct {
-    goals: std.MultiArrayList(Record) = .empty,
+    goals: Ids.Columns(Record) = .empty,
     intern_goal: Ids.FixedDict(3) = .{},
     alts: std.ArrayList(Alt) = .empty,
     deps: std.ArrayList(TaskId) = .empty,
@@ -230,7 +230,7 @@ pub const Prover = struct {
     /// generation may be served.
     pub fn bump(p: *Prover, gpa: Allocator, charge: Charge, port_id: u32) Error!void {
         p.versions.items[port_id] += 1;
-        errdefer @memset(p.goals.items(.valid), false);
+        errdefer @memset(p.goals.col.valid, false);
         var stack: std.ArrayList(TaskId) = .empty;
         defer stack.deinit(gpa);
         var r = p.port_readers.items[port_id];
@@ -244,8 +244,8 @@ pub const Prover = struct {
     fn queueStale(p: *Prover, gpa: Allocator, charge: Charge, stack: *std.ArrayList(TaskId), e: Rev) Error!void {
         try charge.reserve(gpa, .inspection, 1);
         const i = e.goal.int();
-        if (!p.goals.items(.valid)[i] or p.goals.items(.epoch)[i] != e.epoch) return;
-        p.goals.items(.valid)[i] = false;
+        if (!p.goals.col.valid[i] or p.goals.col.epoch[i] != e.epoch) return;
+        p.goals.col.valid[i] = false;
         p.stats.invalidated += 1;
         try stack.append(gpa, e.goal);
     }
@@ -258,7 +258,7 @@ pub const Prover = struct {
         try p.goal_users.ensureUnusedCapacity(gpa, 1);
         const got = try p.intern_goal.getOrPut(gpa, .{ @backingInt(g.claim), g.port, g.arg });
         if (got.found_existing) return .from(got.value_ptr.*);
-        got.value_ptr.* = @intCast(p.goals.len);
+        got.value_ptr.* = @intCast(p.goals.len());
         p.goals.appendAssumeCapacity(.{ .claim = g.claim, .port = g.port, .arg = g.arg, .alts = .empty, .deps = .empty, .reads = .empty, .status = .waiting, .exactness = .approximate, .xreq = Cond.yes, .valid = false, .epoch = 0 });
         p.goal_users.appendAssumeCapacity(Ids.none_int);
         return .from(got.value_ptr.*);
@@ -278,7 +278,7 @@ pub const Prover = struct {
     pub fn cached(p: *const Prover, gpa: Allocator, charge: Charge, g: Goal) Error!?Answer {
         try charge.reserve(gpa, .memo, 1);
         const hit = p.intern_goal.get(.{ @backingInt(g.claim), g.port, g.arg }) orelse return null;
-        if (!p.goals.items(.valid)[hit]) return null;
+        if (!p.goals.col.valid[hit]) return null;
         return p.published(.from(hit));
     }
 
@@ -332,12 +332,12 @@ pub const Prover = struct {
         try p.enter(gpa, charge, eqs, root, &visit, &stack, &frames, &counter);
         while (frames.items.len > 0) {
             const top = &frames.items[frames.items.len - 1];
-            const deps = p.goals.items(.deps)[top.goal.int()];
+            const deps = p.goals.col.deps[top.goal.int()];
             if (top.cursor < deps.len) {
                 const d = p.deps.items[deps.start + top.cursor];
                 top.cursor += 1;
                 try charge.reserve(gpa, .inspection, 1);
-                if (p.goals.items(.valid)[d.int()] or answers.contains(d)) continue;
+                if (p.goals.col.valid[d.int()] or answers.contains(d)) continue;
                 if (visit.get(d)) |v| {
                     if (v.on_stack) {
                         const me = visit.getPtr(top.goal).?;
@@ -381,10 +381,10 @@ pub const Prover = struct {
         // Publish only what every read, and every published answer used,
         // still holds for: a version changed meanwhile is a newer generation.
         for (decided.items) |m| {
-            const rr = p.goals.items(.reads)[m.int()];
+            const rr = p.goals.col.reads[m.int()];
             for (p.reads.items[rr.start..][0..rr.len]) |r| if (p.versions.items[r[0]] != r[1]) return false;
-            const dr = p.goals.items(.deps)[m.int()];
-            for (p.deps.items[dr.start..][0..dr.len]) |d| if (!answers.contains(d) and !p.goals.items(.valid)[d.int()]) return false;
+            const dr = p.goals.col.deps[m.int()];
+            for (p.deps.items[dr.start..][0..dr.len]) |d| if (!answers.contains(d) and !p.goals.col.valid[d.int()]) return false;
         }
         try p.publishAll(gpa, charge, decided.items, &answers);
         return true;
@@ -402,9 +402,9 @@ pub const Prover = struct {
         var ex: Expansion = .{ .p = p, .gpa = gpa, .charge = charge, .goal = p.goalOf(g), .id = g, .first_alt = @intCast(p.alts.items.len), .first_dep = @intCast(p.deps.items.len), .first_read = @intCast(p.reads.items.len) };
         try eqs.expand(eqs.ctx, &ex);
         const alts: Ids.Range = .{ .start = ex.first_alt, .len = @as(u32, @intCast(p.alts.items.len)) - ex.first_alt };
-        p.goals.items(.alts)[g.int()] = alts;
-        p.goals.items(.deps)[g.int()] = .{ .start = ex.first_dep, .len = @as(u32, @intCast(p.deps.items.len)) - ex.first_dep };
-        p.goals.items(.reads)[g.int()] = .{ .start = ex.first_read, .len = @as(u32, @intCast(p.reads.items.len)) - ex.first_read };
+        p.goals.col.alts[g.int()] = alts;
+        p.goals.col.deps[g.int()] = .{ .start = ex.first_dep, .len = @as(u32, @intCast(p.deps.items.len)) - ex.first_dep };
+        p.goals.col.reads[g.int()] = .{ .start = ex.first_read, .len = @as(u32, @intCast(p.reads.items.len)) - ex.first_read };
         p.stats.expanded += 1;
     }
 
@@ -420,7 +420,7 @@ pub const Prover = struct {
         var waiting = false;
         var xreq: CondId = Cond.yes;
         for (members) |m| {
-            const ar = p.goals.items(.alts)[m.int()];
+            const ar = p.goals.col.alts[m.int()];
             for (p.alts.items[ar.start..][0..ar.len]) |alt| {
                 try charge.reserve(gpa, .inspection, 1);
                 switch (alt.local) {
@@ -462,7 +462,7 @@ pub const Prover = struct {
     /// is reserved before the first answer is served.
     fn publishAll(p: *Prover, gpa: Allocator, charge: Charge, decided: []const TaskId, answers: *const stamped.Column(TaskId, Answer)) Error!void {
         var edges: u32 = 0;
-        for (decided) |m| edges += p.goals.items(.reads)[m.int()].len + p.goals.items(.deps)[m.int()].len;
+        for (decided) |m| edges += p.goals.col.reads[m.int()].len + p.goals.col.deps[m.int()].len;
         try charge.reserve(gpa, .memo, @intCast(decided.len));
         try charge.reserve(gpa, .edge, edges);
         try p.revs.ensureUnusedCapacity(gpa, edges);
@@ -471,16 +471,16 @@ pub const Prover = struct {
 
     fn publish(p: *Prover, g: TaskId, a: Answer) void {
         const i = g.int();
-        const epoch = p.goals.items(.epoch)[i] + 1;
-        const rr = p.goals.items(.reads)[i];
+        const epoch = p.goals.col.epoch[i] + 1;
+        const rr = p.goals.col.reads[i];
         for (p.reads.items[rr.start..][0..rr.len]) |r| p.port_readers.items[r[0]] = p.rev(g, epoch, p.port_readers.items[r[0]]);
-        const dr = p.goals.items(.deps)[i];
+        const dr = p.goals.col.deps[i];
         for (p.deps.items[dr.start..][0..dr.len]) |d| p.goal_users.items[d.int()] = p.rev(g, epoch, p.goal_users.items[d.int()]);
-        p.goals.items(.status)[i] = a.status;
-        p.goals.items(.exactness)[i] = a.exactness;
-        p.goals.items(.xreq)[i] = a.xreq;
-        p.goals.items(.epoch)[i] = epoch;
-        p.goals.items(.valid)[i] = true;
+        p.goals.col.status[i] = a.status;
+        p.goals.col.exactness[i] = a.exactness;
+        p.goals.col.xreq[i] = a.xreq;
+        p.goals.col.epoch[i] = epoch;
+        p.goals.col.valid[i] = true;
         p.stats.published += 1;
     }
 
@@ -1781,7 +1781,7 @@ test "NestedTraversalShared, and across a block: single is cleared through a fol
 
     // NestedTraversalAcrossModules: the marks cross a block as words. Read
     // back, the same verdicts; a corrupt word reads as no mark, never single.
-    const counts = .{ f.cells.count(), @as(u32, @intCast(f.cells.labels.len)), f.conds.count() };
+    const counts = .{ f.cells.count(), @as(u32, @intCast(f.cells.labels.len())), f.conds.count() };
     const read_nested = decodeMark(encodeMark(out_of_each), counts[0], counts[1], counts[2]).?;
     try testing.expectEqual(out_of_each, read_nested);
     try testing.expectEqual(direct_mark, decodeMark(encodeMark(direct_mark), counts[0], counts[1], counts[2]).?);
@@ -2238,7 +2238,7 @@ test "#1189 review: holes pinned red-first" {
     const xs = try f.sym(.param, 1, 2, &.{});
     var flipped = encodeMark(try cross(&f.cells, gpa, &f.account, enter(xs, Cond.yes), 600, .folded_callback));
     flipped[2] ^= 1;
-    try testing.expectEqual(@as(?Mark, null), decodeMark(flipped, f.cells.count(), @intCast(f.cells.labels.len), f.conds.count()));
+    try testing.expectEqual(@as(?Mark, null), decodeMark(flipped, f.cells.count(), @intCast(f.cells.labels.len()), f.conds.count()));
 }
 
 test "within's emission (W1–W3): complete, separate through certified components, self pairs by multiplicity; the certificate is published" {

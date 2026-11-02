@@ -369,8 +369,8 @@ fn isOwn(comptime F: type) bool {
 /// attribute was asked about.
 fn rowsOf(comptime K: type, mod: anytype) ?usize {
     const name = @typeName(K);
-    if (comptime std.mem.endsWith(u8, name, "NodeId")) return mod.shapes.nodes.len;
-    if (comptime std.mem.endsWith(u8, name, "CondId")) return mod.conds.conds.len;
+    if (comptime std.mem.endsWith(u8, name, "NodeId")) return mod.shapes.nodes.len();
+    if (comptime std.mem.endsWith(u8, name, "CondId")) return mod.conds.conds.len();
     if (comptime std.mem.endsWith(u8, name, "PlaceId")) return mod.places.places.len;
     if (comptime std.mem.endsWith(u8, name, "CellId")) return mod.cells.cells.len;
     return null;
@@ -450,16 +450,16 @@ pub fn write(w: *std.Io.Writer, mod: anytype) Error!void {
 
 fn writeShapes(w: *std.Io.Writer, mod: anytype) Error!void {
     const t = &mod.shapes;
-    const NodeKind = @TypeOf(t.nodes.items(.kind)[0]);
+    const NodeKind = @TypeOf(t.nodes.col.kind[0]);
     var by_kind: [8]u32 = @splat(0);
     var reach: u32 = 0;
     var lazy: u32 = 0;
-    for (t.nodes.items(.kind), t.nodes.items(.reach), t.nodes.items(.cells)) |k, r, c| {
+    for (t.nodes.col.kind, t.nodes.col.reach, t.nodes.col.cells) |k, r, c| {
         by_kind[@backingInt(k)] += 1;
         if (r != .none) reach += 1;
         if (c == @TypeOf(t.*).lazy_cells) lazy += 1;
     }
-    try w.print("census nodes: {d} total, reach memo set on {d}, lazy cells {d}, counted {d}, ties {d}, kinds", .{ t.nodes.len, reach, lazy, t.counted.count(), t.ties });
+    try w.print("census nodes: {d} total, reach memo set on {d}, lazy cells {d}, counted {d}, ties {d}, kinds", .{ t.nodes.len(), reach, lazy, t.counted.count(), t.ties });
     inline for (@typeInfo(NodeKind).@"enum".field_names, 0..) |name, i| try w.print(" {s}:{d}", .{ name, by_kind[i] });
     try w.writeAll("\n");
     const c = &t.census;
@@ -481,7 +481,7 @@ fn writeShapes(w: *std.Io.Writer, mod: anytype) Error!void {
     }
     // The cell sets a node holds at its root.
     var held: Hist = .{};
-    for (t.nodes.items(.cells)) |cs| {
+    for (t.nodes.col.cells) |cs| {
         if (cs == @TypeOf(t.*).lazy_cells) continue;
         held.add(if (cs == .none) 0 else mod.cells.sets.stats.cards.items[cs.int()]);
     }
@@ -494,11 +494,11 @@ fn writeKappa(w: *std.Io.Writer, mod: anytype) Error!void {
     try writeSets(w, "conds.kmaps", "kmap", &t.kmap_stats);
     var here: Hist = .{};
     var links: Hist = .{};
-    for (t.kpos.items(.here), t.kpos.items(.links)) |h, l| {
+    for (t.kpos.col.here, t.kpos.col.links) |h, l| {
         here.add(if (h == none) 0 else t.kmap_stats.cards.items[h]);
         links.add(if (l == none) 0 else t.kmap_stats.cards.items[l]);
     }
     try here.write(w, "kmap", "conds.kpos.here", " (per position)");
     try links.write(w, "kmap", "conds.kpos.links", " (per position)");
-    try w.print("census kpos: {d} positions, {d} kmap nodes\n", .{ t.kpos.len, t.kmaps.len });
+    try w.print("census kpos: {d} positions, {d} kmap nodes\n", .{ t.kpos.len(), t.kmaps.len() });
 }

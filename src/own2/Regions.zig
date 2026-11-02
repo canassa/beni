@@ -72,7 +72,7 @@ pub const Region = struct {
 };
 
 pub const Tree = struct {
-    regions: std.MultiArrayList(Region) = .empty,
+    regions: Ids.Columns(Region) = .empty,
     /// Per instruction of the declaration (relative to `inst_start`): its
     /// innermost region.
     of: []RegionId = &.{},
@@ -88,7 +88,7 @@ pub const Tree = struct {
     }
 
     pub fn count(t: *const Tree) u32 {
-        return @intCast(t.regions.len);
+        return @intCast(t.regions.len());
     }
 
     /// The innermost region of point `p`.
@@ -102,8 +102,8 @@ pub const Tree = struct {
     }
 
     pub fn compatibleRegions(t: *const Tree, ra: RegionId, rb: RegionId) bool {
-        const depths = t.regions.items(.depth);
-        const parents = t.regions.items(.parent);
+        const depths = t.regions.col.depth;
+        const parents = t.regions.col.parent;
         var x = ra;
         var y = rb;
         var below_x: RegionId = .none;
@@ -123,19 +123,19 @@ pub const Tree = struct {
             y = parents[y.int()];
         }
         if (below_x == .none or below_y == .none) return true;
-        const kx = t.regions.items(.kind)[below_x.int()];
-        const ky = t.regions.items(.kind)[below_y.int()];
+        const kx = t.regions.col.kind[below_x.int()];
+        const ky = t.regions.col.kind[below_y.int()];
         if (!(kx == .arm or kx == .virtual_arm) or !(ky == .arm or ky == .virtual_arm)) return true;
-        const cases = t.regions.items(.case_inst);
-        const arms = t.regions.items(.arm);
+        const cases = t.regions.col.case_inst;
+        const arms = t.regions.col.arm;
         return !(cases[below_x.int()] == cases[below_y.int()] and arms[below_x.int()] != arms[below_y.int()]);
     }
 
     /// The `i == e` guard of the arm `p` lies in, or `none`.
     pub fn guard(t: *const Tree, p: u32) u32 {
         var r = t.regionOf(p);
-        while (r != .none) : (r = t.regions.items(.parent)[r.int()]) {
-            if (t.regions.items(.kind)[r.int()] == .arm) return t.regions.items(.guard)[r.int()];
+        while (r != .none) : (r = t.regions.col.parent[r.int()]) {
+            if (t.regions.col.kind[r.int()] == .arm) return t.regions.col.guard[r.int()];
         }
         return none;
     }
@@ -144,7 +144,7 @@ pub const Tree = struct {
     /// addition. For p < u, compatible ⇔ `rank2(p) < rank2(u)`.
     pub fn rank2(t: *const Tree, p: u32) u32 {
         const r = t.regionOf(p).int();
-        return t.regions.items(.base2)[r] + (p - t.regions.items(.start)[r]);
+        return t.regions.col.base2[r] + (p - t.regions.col.start[r]);
     }
 
     /// Whether point `q` lies in `[p + 1, ∞)` compatibly with `p`: the
@@ -162,19 +162,19 @@ pub const Tree = struct {
     /// (§4.1: "`base₂` per region … charging them to its source settlement
     /// lane", beside `Ancestry`'s slots).
     fn secondOrder(t: *Tree, gpa: Allocator, account: *Ids.Account, phase: Ids.Phase) Ids.ChargeError!void {
-        const kinds = t.regions.items(.kind);
-        const starts = t.regions.items(.start);
-        const ends = t.regions.items(.end);
-        const parents = t.regions.items(.parent);
-        const cases = t.regions.items(.case_inst);
-        const base2 = t.regions.items(.base2);
-        for (0..t.regions.len) |i| {
+        const kinds = t.regions.col.kind;
+        const starts = t.regions.col.start;
+        const ends = t.regions.col.end;
+        const parents = t.regions.col.parent;
+        const cases = t.regions.col.case_inst;
+        const base2 = t.regions.col.base2;
+        for (0..t.regions.len()) |i| {
             const lane: Ids.Charge = .in(account, .{ .atom = Ids.atom_region_bit | @as(u32, @intCast(i)), .role = .transfer_settlement, .phase = phase });
             try lane.reserve(gpa, .region, 1);
         }
         base2[0] = starts[0];
         var i: usize = 1;
-        while (i < t.regions.len) {
+        while (i < t.regions.len()) {
             const p = parents[i].int();
             if (kinds[i] != .arm and kinds[i] != .virtual_arm) {
                 base2[i] = base2[p] + (starts[i] - starts[p]);
@@ -182,7 +182,7 @@ pub const Tree = struct {
                 continue;
             }
             var j = i + 1;
-            while (j < t.regions.len and cases[j] == cases[i] and (kinds[j] == .arm or kinds[j] == .virtual_arm)) j += 1;
+            while (j < t.regions.len() and cases[j] == cases[i] and (kinds[j] == .arm or kinds[j] == .virtual_arm)) j += 1;
             // The arms were opened in source order, so the first starts the span.
             var later: u32 = 0;
             var k = j;
@@ -283,11 +283,11 @@ pub fn build(gpa: Allocator, account: *Ids.Account, phase: Ids.Phase, bir: *cons
     try t.secondOrder(gpa, account, phase);
     // The innermost region of every instruction: a sweep over the laminar
     // ranges, regions sorted by (start, -end).
-    const order = try gpa.alloc(u32, t.regions.len);
+    const order = try gpa.alloc(u32, t.regions.len());
     defer gpa.free(order);
     for (order, 0..) |*o, i| o.* = @intCast(i);
-    const starts = t.regions.items(.start);
-    const ends = t.regions.items(.end);
+    const starts = t.regions.col.start;
+    const ends = t.regions.col.end;
     const SortCtx = struct {
         s: []const u32,
         e: []const u32,
@@ -312,8 +312,8 @@ pub fn build(gpa: Allocator, account: *Ids.Account, phase: Ids.Phase, bir: *cons
 }
 
 fn open(t: *Tree, gpa: Allocator, k: Kind, start: u32, end: u32, parent: RegionId, case_inst: u32, arm: u32, g: u32) Allocator.Error!RegionId {
-    const id: RegionId = .from(@intCast(t.regions.len));
-    try t.regions.append(gpa, .{ .kind = k, .start = start, .end = end, .parent = parent, .depth = t.regions.items(.depth)[parent.int()] + 1, .case_inst = case_inst, .arm = arm, .guard = g, .base2 = 0 });
+    const id: RegionId = .from(@intCast(t.regions.len()));
+    try t.regions.append(gpa, .{ .kind = k, .start = start, .end = end, .parent = parent, .depth = t.regions.col.depth[parent.int()] + 1, .case_inst = case_inst, .arm = arm, .guard = g, .base2 = 0 });
     return id;
 }
 

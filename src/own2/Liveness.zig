@@ -85,7 +85,7 @@ fn groupOf(u: Use) u32 {
 }
 
 pub const Index = struct {
-    uses: std.MultiArrayList(Use) = .empty,
+    uses: Ids.Columns(Use) = .empty,
     /// Per local: its run of `uses`.
     by_local: []Ids.Range = &.{},
     /// Per local: its last point of use, or `none`.
@@ -118,7 +118,7 @@ pub const Index = struct {
     }
 
     pub fn count(x: *const Index) u32 {
-        return @intCast(x.uses.len);
+        return @intCast(x.uses.len());
     }
 
     pub fn get(x: *const Index, id: UseId) Use {
@@ -208,8 +208,8 @@ pub const Index = struct {
         @memset(x.by_local, .empty);
         x.last = try gpa.alloc(u32, max_local);
         @memset(x.last, none);
-        const locals = x.uses.items(.local);
-        const points = x.uses.items(.point);
+        const locals = x.uses.col.local;
+        const points = x.uses.col.point;
         var i: u32 = 0;
         while (i < n) {
             var j = i;
@@ -252,7 +252,7 @@ pub const Index = struct {
                     const take_a = ib == b.len or (ia < a.len and a[ia].point <= b[ib].point);
                     out[o] = if (take_a) a[ia] else b[ib];
                     if (take_a) ia += 1 else ib += 1;
-                    const charge: Charge = .in(account, .{ .atom = x.uses.items(.atom)[out[o].use], .role = .liveness_index, .phase = phase });
+                    const charge: Charge = .in(account, .{ .atom = x.uses.col.atom[out[o].use], .role = .liveness_index, .phase = phase });
                     try charge.reserve(gpa, .use, 1);
                 }
             }
@@ -363,7 +363,7 @@ pub const Index = struct {
     fn range(x: *const Index, places: *const Place.Table, h: u32, q_steps: []const Place.Step, subtree: bool) Ids.Range {
         if (h >= x.by_local.len) return .empty;
         const run = x.by_local[h];
-        const paths = x.uses.items(.path);
+        const paths = x.uses.col.path;
         // lo: the first use whose path is not below `q` in the order.
         var lo = run.start;
         var hi = run.start + run.len;
@@ -473,7 +473,7 @@ pub const Index = struct {
     }
 
     fn pairOf(x: *const Index, u: UseId) Pair {
-        return .{ .point = x.uses.items(.point)[u.int()], .use = u.int(), .rank2 = 0 };
+        return .{ .point = x.uses.col.point[u.int()], .use = u.int(), .rank2 = 0 };
     }
 
     /// The earliest use of index range `r` after `p` with `rank₂ > t`.
@@ -496,7 +496,7 @@ pub const Index = struct {
     /// The end of use `at`'s group within `[at, end)`: the uses of one path
     /// and group are contiguous, so a binary search.
     pub fn groupEnd(x: *const Index, at: u32, end: u32) u32 {
-        const paths = x.uses.items(.path);
+        const paths = x.uses.col.path;
         const g = x.groupKey(at);
         var lo = at + 1;
         var hi = end;
@@ -520,7 +520,7 @@ pub const Index = struct {
     pub fn childRange(x: *const Index, places: *const Place.Table, r: Ids.Range, depth: u32, s: Place.Step) Ids.Range {
         const Ctx = struct { x: *const Index, places: *const Place.Table, depth: u32, s: Place.Step };
         const c: Ctx = .{ .x = x, .places = places, .depth = depth, .s = s };
-        const items = x.uses.items(.path)[r.start..][0..r.len];
+        const items = x.uses.col.path[r.start..][0..r.len];
         const lo = std.sort.partitionPoint(PathId, items, c, struct {
             fn f(k: Ctx, p: PathId) bool {
                 const st = k.x.stepAt(p, k.depth) orelse return true;
@@ -539,7 +539,7 @@ pub const Index = struct {
     /// The end of the uses at the path of `depth` steps itself within its
     /// subtree range `r`: they come first.
     pub fn exactEnd(x: *const Index, r: Ids.Range, depth: u32) u32 {
-        const items = x.uses.items(.path)[r.start..][0..r.len];
+        const items = x.uses.col.path[r.start..][0..r.len];
         return r.start + @as(u32, @intCast(std.sort.partitionPoint(PathId, items, .{ x, depth }, struct {
             fn f(k: struct { *const Index, u32 }, p: PathId) bool {
                 return k[0].stepAt(p, k[1]) == null;
@@ -590,7 +590,7 @@ pub const Index = struct {
             try at.reserve(gpa, .inspection, 1);
             const r = x.range(places, h, steps.items[0 .. depth - 1], false);
             if (try x.earliest(gpa, at, r, p, t, filter)) |u| {
-                if (best == null or x.uses.items(.point)[u.int()] < x.uses.items(.point)[best.?.int()]) best = u;
+                if (best == null or x.uses.col.point[u.int()] < x.uses.col.point[best.?.int()]) best = u;
             }
         }
         return best;

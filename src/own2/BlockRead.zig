@@ -475,8 +475,8 @@ const Reader = struct {
             if (nk != .recast) for (parts[0..n]) |x| {
                 if (shapes.place(.from(x)) != p.place or (nk == .delta and shapes.kind(.from(x)) == .delta)) return error.Malformed;
             };
-            shapes.nodes.items(.a)[p.node.int()] = parts[0];
-            if (nk != .delta and nk != .recast) shapes.nodes.items(.b)[p.node.int()] = parts[1];
+            shapes.nodes.col.a[p.node.int()] = parts[0];
+            if (nk != .delta and nk != .recast) shapes.nodes.col.b[p.node.int()] = parts[1];
         }
         if (std.mem.indexOfScalar(bool, r.unfinished.items, true) != null) {
             try r.env.charge.reserve(gpa, .inspection, 5 * k);
@@ -492,7 +492,7 @@ const Reader = struct {
             for (r.edges.items[p.first..][0..p.len]) |e| {
                 if (e.stepped and !e.made) root = try shapes.overPut(gpa, r.env.account(), root, e.step, .from(r.vals.items[e.to]));
             }
-            if (nk == .node) shapes.nodes.items(.a)[p.node.int()] = root else shapes.nodes.items(.b)[p.node.int()] = root;
+            if (nk == .node) shapes.nodes.col.a[p.node.int()] = root else shapes.nodes.col.b[p.node.int()] = root;
         }
         // Only then the raw members' cells: a whole recast's are its inner's
         // reach, which a delta with no child map yet would leave short, in
@@ -566,7 +566,7 @@ const Reader = struct {
         var stack: std.ArrayList(NodeId) = .empty;
         defer stack.deinit(gpa);
         for (r.vals.items[base..][0..k]) |v| {
-            const memo = shapes.nodes.items(.reach)[v];
+            const memo = shapes.nodes.col.reach[v];
             if (memo == .none) continue;
             seen.clear();
             // The walk's cells, values joined as `unionWith` joins them.
@@ -2158,13 +2158,13 @@ test "a recursive class's widened knot is written once and read back as a knot" 
     const s0 = try b.places.ctorStep(testing.allocator, &b.account, 0, 0);
     const core = struct {
         fn of(t: *Tables, n: NodeId) NodeId {
-            return if (t.shapes.kind(n) == .@"union") .from(t.shapes.nodes.items(.a)[n.int()]) else n;
+            return if (t.shapes.kind(n) == .@"union") .from(t.shapes.nodes.col.a[n.int()]) else n;
         }
     }.of;
-    const sub = b.shapes.overGet(b.shapes.nodes.items(.a)[core(&b, res).int()], s0).?;
+    const sub = b.shapes.overGet(b.shapes.nodes.col.a[core(&b, res).int()], s0).?;
     const at = core(&b, sub);
-    const child = b.shapes.overGet(b.shapes.nodes.items(.a)[at.int()], s0).?;
-    try testing.expect(child == sub or child == at or b.shapes.nodes.items(.a)[child.int()] == at.int());
+    const child = b.shapes.overGet(b.shapes.nodes.col.a[at.int()], s0).?;
+    try testing.expect(child == sub or child == at or b.shapes.nodes.col.a[child.int()] == at.int());
     // Its stored κ came back with it.
     try testing.expect(b.conds.kappaGet(b.sums.get(back.items[0]).kappas, res) != null);
 }
@@ -2399,7 +2399,7 @@ test "a block merges two equal knots only where they read the same κ" {
     ch = try a.shapes.overPut(gpa, &a.account, ch, s[2], w2);
     const root = try a.shapes.node(gpa, &a.account, tree, .none, ch);
     // `yes` stored on the first knot's node only: the second reads `lost`.
-    const inner1: NodeId = if (a.shapes.kind(w1) == .@"union") .from(a.shapes.nodes.items(.a)[w1.int()]) else w1;
+    const inner1: NodeId = if (a.shapes.kind(w1) == .@"union") .from(a.shapes.nodes.col.a[w1.int()]) else w1;
     var km = (try a.conds.kappaSet(gpa, a.env().charge, .none, root, Cond.yes)).ctx;
     km = try setAtNode(&a, km, root, inner1, Cond.yes);
     const c = try a.sums.add(a.env(), .{ .params = &.{.none}, .res = root, .kappas = km });

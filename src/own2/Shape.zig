@@ -88,9 +88,9 @@ pub const OverNode = struct {
 };
 
 pub const Table = struct {
-    nodes: std.MultiArrayList(Node) = .empty,
+    nodes: Ids.Columns(Node) = .empty,
     intern: Ids.FixedDict(5) = .{},
-    overs: std.MultiArrayList(OverNode) = .empty,
+    overs: Ids.Columns(OverNode) = .empty,
     over_intern: Ids.FixedDict(4) = .{},
     memo_proj: Ids.FixedDict(2) = .{},
     /// The projection correspondence (§2.9 *Keyed where a reader looks*): a
@@ -288,7 +288,7 @@ pub const Table = struct {
     }
 
     pub fn count(t: *const Table) u32 {
-        return @intCast(t.nodes.len);
+        return @intCast(t.nodes.len());
     }
 
     pub fn get(t: *const Table, n: NodeId) Node {
@@ -298,16 +298,16 @@ pub const Table = struct {
 
     pub fn kind(t: *const Table, n: NodeId) Kind {
         Counters.kindRead(&t.census, n.int());
-        return t.nodes.items(.kind)[n.int()];
+        return t.nodes.col.kind[n.int()];
     }
 
     pub fn place(t: *const Table, n: NodeId) PlaceId {
-        return t.nodes.items(.place)[n.int()];
+        return t.nodes.col.place[n.int()];
     }
 
     /// The cells at `ε`.
     pub fn cells(t: *const Table, n: NodeId) SetId {
-        return t.nodes.items(.cells)[n.int()];
+        return t.nodes.col.cells[n.int()];
     }
 
     /// A `positions` node's cell set is lazy (§2.3, #1098): built when a
@@ -451,7 +451,7 @@ pub const Table = struct {
                     c = try w.cellsets.unionWith(w.gpa, .growth(w.account), c, t.cells(y));
                 };
             }
-            for (members) |m| t.nodes.items(.cells)[m.int()] = c;
+            for (members) |m| t.nodes.col.cells[m.int()] = c;
             // A cycle's fixed point: each member holds what it reads.
             if (std.debug.runtime_safety and members.len > 1) for (members) |m| for (try w.reads(m, true)) |y| if (y != .none) {
                 var it = w.cellsets.iterate(t.cells(y));
@@ -472,7 +472,7 @@ pub const Table = struct {
         try account.reserve(.shape, 1);
         const got = try t.over_intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
         if (got.found_existing) return got.value_ptr.*;
-        got.value_ptr.* = @intCast(t.overs.len);
+        got.value_ptr.* = @intCast(t.overs.len());
         try t.overs.append(gpa, n);
         return got.value_ptr.*;
     }
@@ -566,7 +566,7 @@ pub const Table = struct {
         const keyed: u32 = if (n.kind == .recast or n.kind == .delta) Ids.none_int else n.cells.int();
         const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), keyed, n.a, n.b });
         if (got.found_existing) return .from(got.value_ptr.*);
-        got.value_ptr.* = @intCast(t.nodes.len);
+        got.value_ptr.* = @intCast(t.nodes.len());
         try t.nodes.append(gpa, n);
         return .from(got.value_ptr.*);
     }
@@ -624,13 +624,13 @@ pub const Table = struct {
         const inn = try t.force(gpa, account, inner);
         // A cast of some value inside the inner stays one (#1311).
         if (t.isWhole(inn)) return t.wholeOver(gpa, account, at, inn, t.cells(inn));
-        const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.items(.a)[inn.int()]) else inner;
+        const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.col.a[inn.int()]) else inner;
         return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = t.cells(in), .a = in.int(), .b = 0, .reach = .none });
     }
 
     /// Whether `n` is a stepped recast that keeps its whole inner (`recastWhole`).
     pub fn isWhole(t: *const Table, n: NodeId) bool {
-        return t.kind(n) == .recast and t.nodes.items(.b)[n.int()] == 1;
+        return t.kind(n) == .recast and t.nodes.col.b[n.int()] == 1;
     }
 
     /// `n`'s image over its inner's image `inner`, whole where `n` is (#1311).
@@ -743,7 +743,7 @@ pub const Table = struct {
             }
             if (chain.items.len == 1) task = try account.enter(gpa, null);
             try chain.append(gpa, at);
-            const made = t.nodes.len;
+            const made = t.nodes.len();
             const next = try t.expandView(gpa, account, at);
             // A raw answer made here stands for this view (`eager`).
             if (next.int() >= made and t.kind(next) != .view) try t.answered.put(gpa, next, at);
@@ -771,9 +771,9 @@ pub const Table = struct {
     pub fn rerootKappa(t: *Table, gpa: Allocator, account: *Account, v: NodeId) Error!?Ids.KappaId {
         if (t.kind(v) != .view) return null;
         const inst = t.instantiation orelse return null;
-        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        const template: NodeId = .from(t.nodes.col.a[v.int()]);
         if (t.kind(template) != .leaf) return null;
-        return inst.reroot(inst.ctx, t, gpa, account, t.nodes.items(.b)[v.int()], template);
+        return inst.reroot(inst.ctx, t, gpa, account, t.nodes.col.b[v.int()], template);
     }
 
     /// The persistent set of `m`'s bases (*Bases*): what a `proj` or a join
@@ -1232,8 +1232,8 @@ pub const Table = struct {
     fn expandView(t: *Table, gpa: Allocator, account: *Account, v: NodeId) Error!NodeId {
         const inst = t.instantiation orelse unreachable; // a view exists only under one
         const cellsets = inst.sets;
-        const env = t.nodes.items(.b)[v.int()];
-        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        const env = t.nodes.col.b[v.int()];
+        const template: NodeId = .from(t.nodes.col.a[v.int()]);
         const d = t.get(template);
         return switch (d.kind) {
             .leaf => inst.leaf(inst.ctx, t, gpa, account, env, template),
@@ -1255,11 +1255,11 @@ pub const Table = struct {
                 // this force is one step.
                 const fb = try t.force(gpa, account, base);
                 if (t.kind(fb) == .delta) {
-                    var composed = t.nodes.items(.b)[fb.int()];
+                    var composed = t.nodes.col.b[fb.int()];
                     var ot = t.overEntries(over);
                     while (ot.next()) |e| composed = try t.overPut(gpa, account, composed, e.step, e.node);
                     over = composed;
-                    base = .from(t.nodes.items(.a)[fb.int()]);
+                    base = .from(t.nodes.col.a[fb.int()]);
                 }
                 break :blk t.make(gpa, account, .{ .kind = .delta, .place = t.place(v), .cells = lazy_cells, .a = base.int(), .b = over, .reach = .none });
             },
@@ -1277,8 +1277,8 @@ pub const Table = struct {
     /// parent's, so a depth-d value's reaches cost O(d), never O(d²).
     fn viewReach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, v: NodeId) Error!SetId {
         const inst = t.instantiation orelse unreachable;
-        const env = t.nodes.items(.b)[v.int()];
-        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        const env = t.nodes.col.b[v.int()];
+        const template: NodeId = .from(t.nodes.col.a[v.int()]);
         const whole = try t.reach(gpa, account, cellsets, template);
         const Frame = struct { set: SetId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
@@ -1325,7 +1325,7 @@ pub const Table = struct {
     /// own (#1310), and every rebuild keeps it whole (`recastAs`, #1311).
     fn wholeOver(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, inner: NodeId, c: SetId) Error!NodeId {
         const inn = try t.force(gpa, account, inner);
-        const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.items(.a)[inn.int()]) else inner;
+        const in = if (t.kind(inn) == .recast) NodeId.from(t.nodes.col.a[inn.int()]) else inner;
         return t.make(gpa, account, .{ .kind = .recast, .place = at, .cells = c, .a = in.int(), .b = 1, .reach = .none });
     }
 
@@ -1337,7 +1337,7 @@ pub const Table = struct {
 
     /// The lazy join of two nodes at one place (a binary DAG).
     pub fn @"union"(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
-        const before = t.nodes.len;
+        const before = t.nodes.len();
         const out = try t.unionMake(gpa, account, cellsets, l, r);
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
         return out;
@@ -1388,7 +1388,7 @@ pub const Table = struct {
     /// fixpoint's arms, one of which is the value. Interned apart from `union`;
     /// it absorbs only a member of its own choice DAG (the maximum allows it).
     pub fn choice(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
-        const before = t.nodes.len;
+        const before = t.nodes.len();
         const out = try t.choiceMake(gpa, account, cellsets, l, r);
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
         return out;
@@ -1415,7 +1415,7 @@ pub const Table = struct {
     /// item the split falls before: one node per item (§4.1, #1098).
     pub fn collectRoot(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId, root_cells: SetId, lanes: ?[]const Ids.Lane) Error!NodeId {
         const out = if (lanes) |ls| try t.collectLaned(gpa, account, cellsets, members, ls) else try t.collect(gpa, account, cellsets, members);
-        if (t.isLazy(out)) t.nodes.items(.cells)[out.int()] = root_cells;
+        if (t.isLazy(out)) t.nodes.col.cells[out.int()] = root_cells;
         return out;
     }
 
@@ -1515,10 +1515,10 @@ pub const Table = struct {
     /// so no other class meets it.
     pub fn rawCopy(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!NodeId {
         const id = try t.knot(gpa, account);
-        if (Counters.enabled) Counters.kindWrite(&t.census, .raw_copy, id.int(), t.nodes.items(.kind)[id.int()], t.nodes.items(.kind)[n.int()]);
+        if (Counters.enabled) Counters.kindWrite(&t.census, .raw_copy, id.int(), t.nodes.col.kind[id.int()], t.nodes.col.kind[n.int()]);
         t.nodes.set(id.int(), t.nodes.get(n.int()));
         const sb = &t.reach_short[0];
-        if (sb.bit_length <= id.int()) try sb.resize(gpa, @max(t.nodes.len, 2 * sb.bit_length), false);
+        if (sb.bit_length <= id.int()) try sb.resize(gpa, @max(t.nodes.len(), 2 * sb.bit_length), false);
         sb.setValue(id.int(), n.int() < sb.bit_length and sb.isSet(n.int()));
         return id;
     }
@@ -1526,7 +1526,7 @@ pub const Table = struct {
     /// Set a `knot`'s record: the caller's to make it one a constructor
     /// could have made but for the cycle.
     pub fn tie(t: *Table, id: NodeId, n: Node) void {
-        if (Counters.enabled) Counters.kindWrite(&t.census, .tie, id.int(), t.nodes.items(.kind)[id.int()], n.kind);
+        if (Counters.enabled) Counters.kindWrite(&t.census, .tie, id.int(), t.nodes.col.kind[id.int()], n.kind);
         t.nodes.set(id.int(), n);
         t.ties +%= 1;
     }
@@ -1537,7 +1537,7 @@ pub const Table = struct {
     /// the balanced tree over the members in first-occurrence order, each
     /// once or twice.
     fn positions(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
-        const before = t.nodes.len;
+        const before = t.nodes.len();
         // A side that is nothing (an empty leaf) is no position: no object
         // can be there (§2.3, #1120), so a projection of `[ x, Rose [] ]`'s
         // `[*]` past the empty list is `x`'s alone, not a new node per level.
@@ -1568,7 +1568,7 @@ pub const Table = struct {
         // a knot's) is not, and stays one member to a parent. The mark is a
         // bit of the node's record; its count map is made when a parent asks.
         if (out.int() >= before) {
-            try t.counted.resize(gpa, t.nodes.len, false);
+            try t.counted.resize(gpa, t.nodes.len(), false);
             t.counted.set(out.int());
         }
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
@@ -1875,7 +1875,7 @@ pub const Table = struct {
     fn materialize(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, view_or_n: NodeId) Error!u32 {
         // A view is written, recelled or materialized as its answer (§2.11).
         const n = try t.force(gpa, account, view_or_n);
-        if (t.kind(n) == .node) return t.nodes.items(.a)[n.int()];
+        if (t.kind(n) == .node) return t.nodes.col.a[n.int()];
         var m: u32 = over_none;
         const steps = places.steps(t.place(n));
         for (steps.steps) |s| {
@@ -1946,7 +1946,7 @@ pub const Table = struct {
     /// place with the step, where a call relabels a join's κ (§2.9 *Keyed
     /// where a reader looks*). Elsewhere it projects as its answer does (#1350).
     fn viewProjectsTemplate(t: *const Table, places: *const Place.Table, v: NodeId, s: Step) bool {
-        const template: NodeId = .from(t.nodes.items(.a)[v.int()]);
+        const template: NodeId = .from(t.nodes.col.a[v.int()]);
         if (!isJoinKind(t.kind(template))) return false;
         return t.place(v) == t.place(template) and places.child(t.place(template), s) != null;
     }
@@ -1985,7 +1985,7 @@ pub const Table = struct {
     /// `n`'s projection at `s`, what it reads projected already.
     fn projOne(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!void {
         const d = t.get(n);
-        const before = t.nodes.len;
+        const before = t.nodes.len();
         // A view projects as its answer does, whose place may have a step
         // the template's has not: the actual at a type variable's place
         // (§2.11 *Re-rooting at a parameter*, #1350).
@@ -2061,7 +2061,7 @@ pub const Table = struct {
     /// *Keyed where a reader looks*).
     pub fn isJoinNode(t: *const Table, n: NodeId) bool {
         const k = t.kind(n);
-        if (k == .view) return isJoinKind(t.kind(.from(t.nodes.items(.a)[n.int()])));
+        if (k == .view) return isJoinKind(t.kind(.from(t.nodes.col.a[n.int()])));
         return isJoinKind(k);
     }
 
@@ -2095,8 +2095,8 @@ pub const Table = struct {
     pub fn originHead(t: *const Table, n: NodeId, templates: bool) ?struct { head: u32, env: u32 } {
         if (t.proj_origin.get(.{n.int()})) |h| return .{ .head = h, .env = Ids.none_int };
         if (!templates or t.kind(n) != .view) return null;
-        const h = t.proj_origin.get(.{t.nodes.items(.a)[n.int()]}) orelse return null;
-        return .{ .head = h, .env = t.nodes.items(.b)[n.int()] };
+        const h = t.proj_origin.get(.{t.nodes.col.a[n.int()]}) orelse return null;
+        return .{ .head = h, .env = t.nodes.col.b[n.int()] };
     }
 
     /// Project a leaf's cells: every symbolic cell to its child at `s`
@@ -2165,13 +2165,13 @@ pub const Table = struct {
     /// cyclic value is one component), the component's set the union of its
     /// members' cells and its successors' sets. O(nodes · log C) once.
     pub fn reach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
-        if (t.nodes.items(.reach)[n.int()] != .none) return t.nodes.items(.reach)[n.int()];
+        if (t.nodes.col.reach[n.int()] != .none) return t.nodes.col.reach[n.int()];
         const walk = try t.dagWalk(gpa, account, n);
         defer if (walk) |k| account.leave(k);
         var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets, .s = try t.reach_pool.take(gpa) };
         defer t.reach_pool.give(r.s);
         try r.run(n);
-        return t.nodes.items(.reach)[n.int()];
+        return t.nodes.col.reach[n.int()];
     }
 
     /// The cells of `n`'s reach that construction does not make apart: an
@@ -2255,11 +2255,11 @@ pub const Table = struct {
         }
 
         fn settled(r: *Reach, k: NodeId) bool {
-            return if (r.filter != null) r.t.arrivals_memo.get(k) != null else r.t.nodes.items(.reach)[k.int()] != .none;
+            return if (r.filter != null) r.t.arrivals_memo.get(k) != null else r.t.nodes.col.reach[k.int()] != .none;
         }
 
         fn got(r: *Reach, k: NodeId) SetId {
-            return if (r.filter != null) r.t.arrivals_memo.get(k) orelse .none else r.t.nodes.items(.reach)[k.int()];
+            return if (r.filter != null) r.t.arrivals_memo.get(k) orelse .none else r.t.nodes.col.reach[k.int()];
         }
 
         /// A member's own cells, filtered in `arrivals` mode: a record each.
@@ -2322,7 +2322,7 @@ pub const Table = struct {
             const b = &r.t.reach_short[@intFromBool(r.filter != null)];
             if (m.int() >= b.bit_length) {
                 if (!v) return;
-                try b.resize(r.gpa, @max(r.t.nodes.len, 2 * b.bit_length), false);
+                try b.resize(r.gpa, @max(r.t.nodes.len(), 2 * b.bit_length), false);
             }
             b.setValue(m.int(), v);
         }
@@ -2411,7 +2411,7 @@ pub const Table = struct {
                 while (r.s.scc_stack.items.len > 0) {
                     const m = r.s.scc_stack.pop().?;
                     r.s.on_stack.remove(m);
-                    if (r.filter != null) try r.t.arrivals_memo.put(r.gpa, m, set) else r.t.nodes.items(.reach)[m.int()] = set;
+                    if (r.filter != null) try r.t.arrivals_memo.put(r.gpa, m, set) else r.t.nodes.col.reach[m.int()] = set;
                     if (m == n) break;
                 }
             }
@@ -2646,13 +2646,13 @@ pub const Table = struct {
     fn joinAs(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId, mode: Kind, flat: bool) Error!NodeId {
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
-        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode, .flat = flat, .before = t.nodes.len };
+        var w: JoinWalk = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .mode = mode, .flat = flat, .before = t.nodes.len() };
         defer w.deinit();
         return w.run(members);
     }
 
     fn baseOf(t: *const Table, n: NodeId) NodeId {
-        return if (t.kind(n) == .delta) .from(t.nodes.items(.a)[n.int()]) else n;
+        return if (t.kind(n) == .delta) .from(t.nodes.col.a[n.int()]) else n;
     }
 
     /// What a join groups a member by (§2.11): its eager image's base, as
@@ -2897,7 +2897,7 @@ pub const Table = struct {
             defer all.deinit(w.gpa);
             for (group) |m| {
                 if (t.kind(m) != .delta) continue;
-                var it = t.overEntries(t.nodes.items(.b)[m.int()]);
+                var it = t.overEntries(t.nodes.col.b[m.int()]);
                 while (it.next()) |e| {
                     try w.account.reserve(.memo, 1);
                     try all.append(w.gpa, .{ .step = e.step.word(), .node = e.node });
@@ -3020,7 +3020,7 @@ pub const Table = struct {
         const keyed: u32 = if (n.kind == .recast or n.kind == .delta) Ids.none_int else n.cells.int();
         const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), keyed, n.a, n.b });
         if (got.found_existing) {
-            if (Counters.enabled) Counters.kindWrite(&t.census, .map_adopt, slot.int(), t.nodes.items(.kind)[slot.int()], Kind.leaf);
+            if (Counters.enabled) Counters.kindWrite(&t.census, .map_adopt, slot.int(), t.nodes.col.kind[slot.int()], Kind.leaf);
             t.nodes.set(slot.int(), .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
             return .from(got.value_ptr.*);
         }
@@ -3172,7 +3172,7 @@ pub const Table = struct {
                         low = t.mapLowWith(low, e.node);
                     }
                     if (d.kind == .node) {
-                        t.nodes.items(.a)[out.int()] = mapped;
+                        t.nodes.col.a[out.int()] = mapped;
                     } else {
                         low = t.mapLowWith(low, .from(d.a));
                         var base = t.memo_map.get(.from(d.a)).?;
@@ -3181,14 +3181,14 @@ pub const Table = struct {
                         // is ever over a delta. Its image is finished here: a
                         // view's answer is mapped before the view.
                         if (t.kind(.from(d.a)) == .view and t.kind(base) == .delta) {
-                            var over = t.nodes.items(.b)[base.int()];
+                            var over = t.nodes.col.b[base.int()];
                             var mt = t.overEntries(mapped);
                             while (mt.next()) |e| over = try t.overPut(gpa, account, over, e.step, e.node);
                             mapped = over;
-                            base = .from(t.nodes.items(.a)[base.int()]);
+                            base = .from(t.nodes.col.a[base.int()]);
                         }
-                        t.nodes.items(.a)[out.int()] = base.int();
-                        t.nodes.items(.b)[out.int()] = mapped;
+                        t.nodes.col.a[out.int()] = base.int();
+                        t.nodes.col.b[out.int()] = mapped;
                     }
                     // Closed: a part that named it named the knot's own
                     // record; one that reaches an earlier open node is on
@@ -3232,7 +3232,7 @@ pub const Table = struct {
         // What an image made here is ordered by (`birth`): the node met before
         // this walk it stands for, as the eager graft made it then; within
         // one, the order this walk makes them, the graft's.
-        const start = t.nodes.len;
+        const start = t.nodes.len();
         const keyOf = struct {
             fn of(tt: *const Table, x: NodeId) u32 {
                 return tt.birth(tt.answered.get(x) orelse x);
@@ -3252,7 +3252,7 @@ pub const Table = struct {
             if (t.memo_eager.contains(n)) continue;
             if (f.expanded) {
                 open.remove(n);
-                const made = t.nodes.len;
+                const made = t.nodes.len();
                 const out = try t.eagerOne(gpa, account, places, cellt, n, parts.items[f.parts_first..][0..f.parts_len]);
                 try t.memo_eager.put(gpa, n, out);
                 // A node made here is ordered where the node it stands for was
@@ -3361,8 +3361,8 @@ pub const Table = struct {
                 var base = t.eagerOf(.from(d.a));
                 var over: u32 = over_none;
                 if (t.kind(base) == .delta) {
-                    over = t.nodes.items(.b)[base.int()];
-                    base = .from(t.nodes.items(.a)[base.int()]);
+                    over = t.nodes.col.b[base.int()];
+                    base = .from(t.nodes.col.a[base.int()]);
                 }
                 var it = t.overEntries(d.b);
                 while (it.next()) |e| over = try t.overPut(gpa, account, over, e.step, t.eagerOf(e.node));
@@ -3446,7 +3446,7 @@ pub const Table = struct {
                     // Last, a use shape's `⟲` child, no step of a place; a leaf `m` stands for it (#1523).
                     const s = if (top.step < steps.len) steps[top.step] else Step.level;
                     top.step += 1;
-                    const pn = (if (s.kind != .level) try t.proj(gpa, account, places, cellt, top.n, s) else if (t.kind(top.n) == .node) t.overGet(t.nodes.items(.a)[top.n.int()], s) else null) orelse continue;
+                    const pn = (if (s.kind != .level) try t.proj(gpa, account, places, cellt, top.n, s) else if (t.kind(top.n) == .node) t.overGet(t.nodes.col.a[top.n.int()], s) else null) orelse continue;
                     const pm = (if (s.kind == .level and t.kind(top.m) == .leaf) top.m else try t.proj(gpa, account, places, cellt, top.m, s)) orelse {
                         top.ok = false;
                         break;
@@ -3582,7 +3582,7 @@ pub const Table = struct {
         /// counted.
         uf: stamped.Column(NodeId, Uf) = .{},
         /// The step-map entries: `(step word, child node, next in class)`.
-        entries: std.MultiArrayList(Entry) = .empty,
+        entries: Ids.Columns(Entry) = .empty,
         /// `(class, step word)` → child node, for the live classes.
         edges: Ids.FixedDict(2) = .{},
         /// Canonical path → the class at it.
@@ -3674,10 +3674,10 @@ pub const Table = struct {
             const old = slot.*;
             slot.* = child;
             var e = w.uf(rep).edge_head;
-            while (e != none) : (e = w.s.entries.items(.next)[e]) {
+            while (e != none) : (e = w.s.entries.col.next[e]) {
                 try w.account.reserve(.inspection, 1);
-                if (w.s.entries.items(.step)[e] == step and w.s.entries.items(.child)[e] == old) {
-                    w.s.entries.items(.child)[e] = child;
+                if (w.s.entries.col.step[e] == step and w.s.entries.col.child[e] == old) {
+                    w.s.entries.col.child[e] = child;
                     return;
                 }
             }
@@ -3694,9 +3694,9 @@ pub const Table = struct {
                 return;
             }
             got.value_ptr.* = child;
-            const e: u32 = @intCast(w.s.entries.len);
+            const e: u32 = @intCast(w.s.entries.len());
             try w.s.entries.append(w.gpa, .{ .step = step, .child = child, .next = none });
-            if (w.uf(rep).edge_tail == none) w.uf(rep).edge_head = e else w.s.entries.items(.next)[w.uf(rep).edge_tail] = e;
+            if (w.uf(rep).edge_tail == none) w.uf(rep).edge_head = e else w.s.entries.col.next[w.uf(rep).edge_tail] = e;
             w.uf(rep).edge_tail = e;
             w.uf(rep).edge_count += 1;
         }
@@ -3716,17 +3716,17 @@ pub const Table = struct {
             w.uf(big).tail = w.uf(small).tail;
             var e = w.uf(small).edge_head;
             while (e != none) {
-                const next = w.s.entries.items(.next)[e];
+                const next = w.s.entries.col.next[e];
                 try w.account.reserve(.inspection, 1);
-                const step = w.s.entries.items(.step)[e];
-                const child = w.s.entries.items(.child)[e];
+                const step = w.s.entries.col.step[e];
+                const child = w.s.entries.col.child[e];
                 const got = try w.s.edges.getOrPut(w.gpa, .{ big, step });
                 if (got.found_existing) {
                     try w.settle(big, step, got.value_ptr, child);
                 } else {
                     got.value_ptr.* = child;
-                    w.s.entries.items(.next)[e] = none;
-                    if (w.uf(big).edge_tail == none) w.uf(big).edge_head = e else w.s.entries.items(.next)[w.uf(big).edge_tail] = e;
+                    w.s.entries.col.next[e] = none;
+                    if (w.uf(big).edge_tail == none) w.uf(big).edge_head = e else w.s.entries.col.next[w.uf(big).edge_tail] = e;
                     w.uf(big).edge_tail = e;
                     w.uf(big).edge_count += 1;
                 }
@@ -3752,7 +3752,7 @@ pub const Table = struct {
                     while (it.next()) |e| try w.s.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
                     const base = try w.t.force(w.gpa, w.account, .from(d.a));
                     if (w.t.kind(base) == .node) {
-                        var bt = w.t.overEntries(w.t.nodes.items(.a)[base.int()]);
+                        var bt = w.t.overEntries(w.t.nodes.col.a[base.int()]);
                         while (bt.next()) |e| if (w.t.overGet(d.b, e.step) == null) try w.s.kids.appendSlice(w.gpa, &.{ .from(e.step.word()), e.node });
                     }
                 },
@@ -3911,10 +3911,10 @@ pub const Table = struct {
                 if (!done.contains(img)) {
                     try done.put(w.gpa, img, {});
                     var e = w.uf(rep).edge_head;
-                    while (e != none) : (e = w.s.entries.items(.next)[e]) {
+                    while (e != none) : (e = w.s.entries.col.next[e]) {
                         try w.account.reserve(.inspection, 1);
-                        const child = w.s.image.get(.from(w.find(w.s.entries.items(.child)[e]))) orelse continue;
-                        (try fo.steps.getOrPut(w.gpa, .{ img.int(), w.s.entries.items(.step)[e] })).value_ptr.* = child.int();
+                        const child = w.s.image.get(.from(w.find(w.s.entries.col.child[e]))) orelse continue;
+                        (try fo.steps.getOrPut(w.gpa, .{ img.int(), w.s.entries.col.step[e] })).value_ptr.* = child.int();
                     }
                 }
                 if (fo.folded.contains(img)) continue;
@@ -3947,7 +3947,7 @@ pub const Table = struct {
                 try w.s.image.put(w.gpa, .from(rep), id);
                 try order.append(w.gpa, rep);
                 var e = w.uf(rep).edge_head;
-                while (e != none) : (e = w.s.entries.items(.next)[e]) try stack.append(w.gpa, w.find(w.s.entries.items(.child)[e]));
+                while (e != none) : (e = w.s.entries.col.next[e]) try stack.append(w.gpa, w.find(w.s.entries.col.child[e]));
             }
             var extra: std.ArrayList(NodeId) = .empty;
             defer extra.deinit(w.gpa);
@@ -3994,9 +3994,9 @@ pub const Table = struct {
                 }
                 var children: u32 = over_none;
                 var e = w.uf(rep).edge_head;
-                while (e != none) : (e = w.s.entries.items(.next)[e]) {
+                while (e != none) : (e = w.s.entries.col.next[e]) {
                     try w.account.reserve(.inspection, 1);
-                    children = try w.t.overPut(w.gpa, w.account, children, Step.fromWord(w.s.entries.items(.step)[e]), w.s.image.get(.from(w.find(w.s.entries.items(.child)[e]))).?);
+                    children = try w.t.overPut(w.gpa, w.account, children, Step.fromWord(w.s.entries.col.step[e]), w.s.image.get(.from(w.find(w.s.entries.col.child[e]))).?);
                 }
                 const at = w.t.place(id);
                 var side: ?NodeId = if (has_leaf) try w.t.leaf(w.gpa, w.account, at, leaf_cells) else null;
@@ -4004,17 +4004,17 @@ pub const Table = struct {
                 if (!explicit and children == over_none and side != null) {
                     // Nothing explicit at all: the class IS its side. Parents
                     // name `id`, so `id`'s record becomes a copy of it.
-                    if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_copy, id.int(), w.t.nodes.items(.kind)[id.int()], w.t.nodes.items(.kind)[side.?.int()]);
+                    if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_copy, id.int(), w.t.nodes.col.kind[id.int()], w.t.nodes.col.kind[side.?.int()]);
                     w.t.nodes.set(id.int(), w.t.nodes.get(side.?.int()));
                     // The copy keeps the side's reach memo, so its `short` bit too (#1517).
                     const sb = &w.t.reach_short[0];
-                    if (sb.bit_length <= id.int()) try sb.resize(w.gpa, @max(w.t.nodes.len, 2 * sb.bit_length), false);
+                    if (sb.bit_length <= id.int()) try sb.resize(w.gpa, @max(w.t.nodes.len(), 2 * sb.bit_length), false);
                     sb.setValue(id.int(), side.?.int() < sb.bit_length and sb.isSet(side.?.int()));
                     continue;
                 }
-                if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_keep, id.int(), w.t.nodes.items(.kind)[id.int()], w.t.nodes.items(.kind)[id.int()]);
-                w.t.nodes.items(.cells)[id.int()] = c;
-                w.t.nodes.items(.a)[id.int()] = children;
+                if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_keep, id.int(), w.t.nodes.col.kind[id.int()], w.t.nodes.col.kind[id.int()]);
+                w.t.nodes.col.cells[id.int()] = c;
+                w.t.nodes.col.a[id.int()] = children;
                 if (side) |s| {
                     try w.account.reserve(.shape, 1);
                     const u: NodeId = .from(w.t.count());
@@ -4022,10 +4022,10 @@ pub const Table = struct {
                     // Every parent's map names `id`; the union is what the
                     // class means, so the two records swap places.
                     const img = w.t.nodes.get(id.int());
-                    if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_swap, id.int(), w.t.nodes.items(.kind)[id.int()], w.t.nodes.items(.kind)[u.int()]);
+                    if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_swap, id.int(), w.t.nodes.col.kind[id.int()], w.t.nodes.col.kind[u.int()]);
                     w.t.nodes.set(id.int(), w.t.nodes.get(u.int()));
                     w.t.nodes.set(u.int(), img);
-                    w.t.nodes.items(.a)[id.int()] = u.int();
+                    w.t.nodes.col.a[id.int()] = u.int();
                 }
             }
             return w.s.image.get(.from(w.find(root.int()))).?;
@@ -4322,10 +4322,10 @@ test "a cyclic type is one place, and widen ties go's grafted levels back" {
     try testing.expectEqual(sub, try f.proj(w, s2));
     const knot = struct {
         fn of(x: NodeId, y: NodeId, sh: *const Table) bool {
-            return x == y or (sh.kind(x) == .@"union" and sh.nodes.items(.a)[x.int()] == y.int());
+            return x == y or (sh.kind(x) == .@"union" and sh.nodes.col.a[x.int()] == y.int());
         }
     }.of;
-    const sub_core: NodeId = if (f.shapes.kind(sub) == .@"union") .from(f.shapes.nodes.items(.a)[sub.int()]) else sub;
+    const sub_core: NodeId = if (f.shapes.kind(sub) == .@"union") .from(f.shapes.nodes.col.a[sub.int()]) else sub;
     try testing.expect(knot(try f.proj(sub_core, s0), sub_core, &f.shapes));
     const lists = try f.proj(sub, s1);
     // Inner's fresh list and, beside the image, the parameter's own list
@@ -4477,7 +4477,7 @@ test "join groups deltas by base, merges leaves, and unions the rest" {
     // A recast is approximate at every path and composes to one.
     const cast = try f.shapes.recast(gpa, &f.account, rec, x);
     const cast2 = try f.shapes.recast(gpa, &f.account, list, cast);
-    try testing.expectEqual(x.int(), f.shapes.nodes.items(.a)[cast2.int()]);
+    try testing.expectEqual(x.int(), f.shapes.nodes.col.a[cast2.int()]);
     try testing.expectEqual(Kind.recast, f.shapes.kind(try f.proj(cast, try Place.Step.field(&f.account, 10))));
 }
 
@@ -4755,8 +4755,8 @@ test "leq's coinductive answers are provisional: a failed outer pair does not le
             ka = try fx.shapes.overPut(g, &fx.account, ka, st1, try fx.shapes.leaf(g, &fx.account, li, try fx.site(site_a, li, .list)));
             var kb = try fx.one(st0, a);
             kb = try fx.shapes.overPut(g, &fx.account, kb, st1, try fx.shapes.leaf(g, &fx.account, li, try fx.site(site_b, li, .list)));
-            fx.shapes.nodes.items(.a)[a.int()] = ka;
-            fx.shapes.nodes.items(.a)[b.int()] = kb;
+            fx.shapes.nodes.col.a[a.int()] = ka;
+            fx.shapes.nodes.col.a[b.int()] = kb;
             return .{ a, b };
         }
     };
@@ -4824,7 +4824,7 @@ test "a union absorbs a member anywhere in its DAG, and reach is one set per cyc
     // the union's explicit side, which points back at it, shares the set.
     const sub = try f.proj(w, s0);
     try testing.expectEqual(Kind.@"union", f.shapes.kind(sub));
-    const sub_node: NodeId = .from(f.shapes.nodes.items(.a)[sub.int()]);
+    const sub_node: NodeId = .from(f.shapes.nodes.col.a[sub.int()]);
     const r2 = try f.shapes.reach(gpa, &f.account, &f.cells.sets, sub);
     try testing.expectEqual(@as(u32, 2), f.cells.sets.count(r2)); // site 3, π₂
     try testing.expectEqual(r2, try f.shapes.reach(gpa, &f.account, &f.cells.sets, sub_node));
@@ -4869,7 +4869,7 @@ test "widen is linearithmic on a grafted tower: k = 1000, 2000, 4000" {
         const s1 = try f.places.ctorStep(gpa, &f.account, 0, 1);
         try testing.expectEqual(@as(u32, 1), f.cells.sets.count(f.shapes.cells(try f.proj(w, s1))));
         const below = try f.proj(w, s0);
-        const core: NodeId = if (f.shapes.kind(below) == .@"union") .from(f.shapes.nodes.items(.a)[below.int()]) else below;
+        const core: NodeId = if (f.shapes.kind(below) == .@"union") .from(f.shapes.nodes.col.a[below.int()]) else below;
         const again = try f.proj(core, s0);
         try testing.expect(again == core or again == below);
         try testing.expectEqual(k, f.cells.sets.count(f.shapes.cells(try f.proj(below, s1))));
@@ -4902,7 +4902,7 @@ test "a refused reservation leaves the shape tables whole" {
     try testing.expectEqual(before + 1, f.account.growth);
     // The same for the step maps.
     try testing.expectError(error.OwnershipLimit, f.shapes.overPut(gpa, &broke, Table.over_none, Place.Step.elem, l));
-    try testing.expectEqual(@as(usize, 0), f.shapes.overs.len);
+    try testing.expectEqual(@as(usize, 0), f.shapes.overs.len());
     const m = try f.shapes.overPut(gpa, &f.account, Table.over_none, Place.Step.elem, l);
     try testing.expectEqual(l, f.shapes.overGet(m, Place.Step.elem).?);
 }
@@ -4971,8 +4971,8 @@ test "collect keeps positions: a repeated member stays two, proj and map keep th
     // `positions(x.a, x.a)`.
     const pa = try f.proj(xx, fa);
     try testing.expectEqual(Kind.positions, f.shapes.kind(pa));
-    try testing.expectEqual(f.shapes.nodes.items(.a)[pa.int()], f.shapes.nodes.items(.b)[pa.int()]);
-    try testing.expectEqual(try f.proj(x, fa), NodeId.from(f.shapes.nodes.items(.a)[pa.int()]));
+    try testing.expectEqual(f.shapes.nodes.col.a[pa.int()], f.shapes.nodes.col.b[pa.int()]);
+    try testing.expectEqual(try f.proj(x, fa), NodeId.from(f.shapes.nodes.col.a[pa.int()]));
     // map keeps the kind, and two sides that become equal stay two.
     const Relabel = struct {
         fn relabel(fx: *Fixture, s: SetId) Error!SetId {
@@ -4982,7 +4982,7 @@ test "collect keeps positions: a repeated member stays two, proj and map keep th
     };
     const mapped = try f.shapes.map(gpa, &f.account, xy, &f, Relabel.relabel);
     try testing.expectEqual(Kind.positions, f.shapes.kind(mapped));
-    try testing.expectEqual(f.shapes.nodes.items(.a)[mapped.int()], f.shapes.nodes.items(.b)[mapped.int()]);
+    try testing.expectEqual(f.shapes.nodes.col.a[mapped.int()], f.shapes.nodes.col.b[mapped.int()]);
     // join of two collections is a union over them, each keeping its kind;
     // every member is below it (O4), and leq is γ-inclusion, kind-blind:
     // the repeat in `[ x, x ]` is κ's to see, not the order's.
@@ -5057,7 +5057,7 @@ test "positions saturate at two: a third occurrence rebuilds the tree in first-o
     // Two occurrences are the record as written: no rebuild.
     const xy = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y });
     const xyx = try f.shapes.positions(gpa, &f.account, &f.cells.sets, xy, x);
-    try testing.expectEqual(xy.int(), f.shapes.nodes.items(.a)[xyx.int()]);
+    try testing.expectEqual(xy.int(), f.shapes.nodes.col.a[xyx.int()]);
     // `[ x, y, x, x ]`: the members in first-occurrence order, each at most
     // twice, is `[ x, x, y ]`.
     const g = try f.shapes.collect(gpa, &f.account, &f.cells.sets, &.{ x, y, x, x });
