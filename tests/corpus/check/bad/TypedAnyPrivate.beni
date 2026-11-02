@@ -1,0 +1,6 @@
+-- Ordinary applications cannot access core's heterogeneous storage primitive.
+import Js.Any exposing (Any)
+
+
+pub type alias Payload =
+    Any

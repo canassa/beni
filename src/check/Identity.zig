@@ -49,6 +49,8 @@ const Report = @import("Report.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
+const Schemes = @import("Schemes.zig");
+const Instantiate = @import("Instantiate.zig");
 
 const Var = TypeStore.Var;
 const TermIndex = Dispatch.TermIndex;
@@ -73,6 +75,9 @@ pub const Input = struct {
     roots: []const Var,
     decl_scheme: []const Var.Optional,
     let_schemes: []const Var,
+    checks: []const Var.Optional = &.{},
+    let_identity_roots: []const []const Var.Optional = &.{},
+    uses: []const Instantiate.IdentityUse = &.{},
     /// P6's trees, rewritten in place when a site gains identities.
     out: *Elaborate.Output,
 };
@@ -129,6 +134,8 @@ const Pass = struct {
     fields: std.ArrayList(TypeStore.Field) = .empty,
     stacks: Walk.Stacks = .{},
     any: bool = false,
+    quantifier_ranges: []const Dispatch.Range = &.{},
+    quantifiers: []const Var.Optional = &.{},
     /// Where the slot being written starts in `parts`: a text part before
     /// it is another slot's, and is never extended.
     slot_start: usize = 0,
@@ -142,12 +149,27 @@ const Pass = struct {
         return p.in.lets[b - p.in.decls.len].requirements;
     }
 
-    /// Mark binder `b`'s requirement `j` (an index into its list) as an
-    /// identity, and make every root `j` of a call of `b` a slot.
-    fn mark(p: *Pass, b: u32, j: u32) Error!void {
+    fn markRow(p: *const Pass, b: u32, j: u32) ?u32 {
+        if (j & Dispatch.identity_quantifier != 0) {
+            if (b >= p.quantifier_ranges.len) return null;
+            const r = p.quantifier_ranges[b];
+            const q = j & ~Dispatch.identity_quantifier;
+            if (q >= r.len) return null;
+            return @as(u32, @intCast(p.in.requirements.len)) + r.start + q;
+        }
         const r = p.reqRange(b);
-        if (j >= r.len) return;
-        const row = r.start + j;
+        return if (j < r.len) r.start + j else null;
+    }
+
+    fn quantifierOf(p: *const Pass, b: u32, j: u32) u32 {
+        if (j & Dispatch.identity_quantifier != 0) return j & ~Dispatch.identity_quantifier;
+        return p.in.requirements[p.reqRange(b).start + j].quantified;
+    }
+
+    /// Mark one hidden identity and awaken its own references. A tagged
+    /// index names a quantifier directly, with no dummy method evidence.
+    fn mark(p: *Pass, b: u32, j: u32) Error!void {
+        const row = p.markRow(b, j) orelse return;
         if (p.marked[row]) return;
         p.marked[row] = true;
         p.any = true;
@@ -174,6 +196,12 @@ const Pass = struct {
         const r = p.reqRange(b);
         for (p.in.roots[r.start..][0..r.len], 0..) |q, k| {
             if (p.store.find(q) == v) return @intCast(k);
+        }
+        if (b < p.quantifier_ranges.len) {
+            const qs = p.quantifier_ranges[b];
+            for (p.quantifiers[qs.start..][0..qs.len], 0..) |q, k| {
+                if (q.unwrap()) |root| if (p.store.find(root) == v) return Dispatch.identity_quantifier | @as(u32, @intCast(k));
+            }
         }
         return null;
     }
@@ -349,8 +377,11 @@ fn calleeOf(cx: *const Context, out: *const Elaborate.Output, lets: []const Disp
 }
 
 /// Whether this module is core's `Js`, whose `fingerprint` is the seed.
-fn isCoreJs(cx: *const Context) bool {
-    return cx.graph.modulePackage(cx.module) == .core and std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js");
+fn identityPrimitive(cx: *const Context, name: []const u8) bool {
+    if (cx.graph.modulePackage(cx.module) != .core) return false;
+    const module = cx.interner.slice(cx.graph.moduleName(cx.module));
+    return (std.mem.eql(u8, module, "Js") and std.mem.eql(u8, name, "fingerprint")) or
+        (std.mem.eql(u8, module, "Js.Any") and (std.mem.eql(u8, name, "pack") or std.mem.eql(u8, name, "unpack")));
 }
 
 pub fn run(in: Input) Error!Result {
@@ -358,6 +389,9 @@ pub fn run(in: Input) Error!Result {
     const gpa = cx.gpa;
     const scratch = cx.scratch;
     const bir = cx.bir;
+    const general = in.uses.len != 0 or (cx.graph.modulePackage(cx.module) == .core and std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Any"));
+    const quantifiers = if (general) try quantifiedBinders(in) else Quantified{};
+    if (general) try prepareSlots(in, quantifiers);
     const slots = in.out.slots;
     const decls_len: u32 = @intCast(in.decls.len);
 
@@ -368,7 +402,9 @@ pub fn run(in: Input) Error!Result {
         .store = cx.store,
         .callee = try scratch.alloc(Callee, slots.len),
         .keyed = try scratch.alloc(bool, slots.len),
-        .marked = try scratch.alloc(bool, in.requirements.len),
+        .marked = try scratch.alloc(bool, in.requirements.len + quantifiers.roots.len),
+        .quantifier_ranges = quantifiers.ranges,
+        .quantifiers = quantifiers.roots,
         .by_binder = &.{},
         .binder_start = &.{},
         .slot_parts = try scratch.alloc(Dispatch.Range, slots.len),
@@ -402,13 +438,13 @@ pub fn run(in: Input) Error!Result {
         }
     }
     // Core `Js`'s `fingerprint`, in its own module: identity 0.
-    var seeded_decl: ?u32 = null;
-    if (isCoreJs(cx)) for (bir.decls, 0..) |d, i| {
+    var seeded_decls: std.ArrayList(u32) = .empty;
+    for (bir.decls, 0..) |d, i| {
         if (d.kind != .foreign_value or i >= in.decls.len) continue;
-        if (!std.mem.eql(u8, cx.interner.slice(bir.symbol(d.name)), "fingerprint")) continue;
-        if (in.decls[i].requirements.len != 0) seeded_decl = @intCast(i);
-    };
-    if (seeds.items.len == 0 and seeded_decl == null) return .{};
+        if (!identityPrimitive(cx, cx.interner.slice(bir.symbol(d.name)))) continue;
+        try seeded_decls.append(scratch, @intCast(i));
+    }
+    if (seeds.items.len == 0 and seeded_decls.items.len == 0) return .{};
 
     for (1..counts.len) |b| counts[b] += counts[b - 1];
     p.binder_start = counts;
@@ -425,7 +461,7 @@ pub fn run(in: Input) Error!Result {
     }
 
     // Step 2: to the fixpoint.
-    if (seeded_decl) |d| try p.mark(d, 0);
+    for (seeded_decls.items) |d| try p.mark(d, if (in.decls[d].requirements.len != 0) 0 else Dispatch.identity_quantifier);
     try p.work.appendSlice(scratch, seeds.items);
     while (p.work.pop()) |s| try p.visit(s);
     if (!p.any and seeds.items.len == 0) return .{};
@@ -435,19 +471,38 @@ pub fn run(in: Input) Error!Result {
     errdefer identities.deinit(gpa);
     // Per requirement row that is marked, its position among its binder's
     // identities.
-    const position = try scratch.alloc(u32, in.requirements.len);
+    const position = try scratch.alloc(u32, p.marked.len);
     @memset(position, none);
     for (0..binders) |b| {
         const r = p.reqRange(@intCast(b));
         const start: u32 = @intCast(identities.items.len);
         for (0..r.len) |k| {
             if (!p.marked[r.start + k]) continue;
-            position[r.start + k] = @as(u32, @intCast(identities.items.len)) - start;
             try identities.append(gpa, @intCast(k));
+        }
+        if (b < p.quantifier_ranges.len) {
+            const qs = p.quantifier_ranges[b];
+            for (0..qs.len) |q| {
+                const j = Dispatch.identity_quantifier | @as(u32, @intCast(q));
+                if (p.marked[p.markRow(@intCast(b), j).?]) try identities.append(gpa, j);
+            }
+            const Sort = struct {
+                pass: *const Pass,
+                binder: u32,
+                fn lessThan(ctx: @This(), x: u32, y: u32) bool {
+                    return ctx.pass.quantifierOf(ctx.binder, x) < ctx.pass.quantifierOf(ctx.binder, y);
+                }
+            };
+            std.mem.sort(u32, identities.items[start..], Sort{ .pass = &p, .binder = @intCast(b) }, Sort.lessThan);
         }
         const range: Dispatch.Range = .{ .start = start, .len = @as(u32, @intCast(identities.items.len)) - start };
         if (range.len == 0) continue;
-        if (b < in.decls.len) in.decls[b].identities = range else in.lets[b - in.decls.len].identities = range;
+        for (identities.items[start..], 0..) |j, k| position[p.markRow(@intCast(b), j).?] = @intCast(k);
+        if (b < in.decls.len) {
+            in.decls[b].identities = range;
+            const d = bir.decls[b];
+            in.decls[b].convention = @import("Convention.zig").of(d.params, @import("Convention.zig").bodyIsLambda(bir, @intCast(b)), in.decls[b].value_arity, r.len + range.len);
+        } else in.lets[b - in.decls.len].identities = range;
     }
 
     // Step 3: the identity terms, and each site's roots with them.
@@ -558,7 +613,7 @@ fn identitiesOf(p: *const Pass, all: []const u32, b: u32) []const u32 {
 /// from its evidence.
 fn holeTerm(p: *const Pass, b: u32, row: u32, position: []const u32) Dispatch.Term {
     const r = p.reqRange(b);
-    const k = r.len + position[r.start + row];
+    const k = r.len + position[p.markRow(b, row).?];
     if (b < p.in.decls.len) return .{ .param = .{ .binder = .decl, .k = k } };
     return .{ .param = .{ .binder = .{ .let = p.in.lets[b - p.in.decls.len].inst }, .k = k } };
 }
@@ -688,4 +743,146 @@ fn argsOfTerm(terms: []const Dispatch.Term, args: []const TermIndex, t: TermInde
     const r = terms[t.int()].argsOf();
     if (r.len == 0) return &.{};
     return args[r.start..][0..r.len];
+}
+
+// General identities add no work to a module without an unconstrained seed.
+// Header quantifiers use Schemes' canonical order. Body roots are paired with
+// that order, while a let's snapshot excludes its captured outer variables.
+const Quantified = struct {
+    ranges: []const Dispatch.Range = &.{},
+    headers: []const Var = &.{},
+    roots: []const Var.Optional = &.{},
+};
+
+fn quantifiedBinders(in: Input) Error!Quantified {
+    const cx = in.cx;
+    const a = cx.scratch;
+    const ranges = try a.alloc(Dispatch.Range, in.decls.len + in.lets.len);
+    var headers: std.ArrayList(Var) = .empty;
+    var roots: std.ArrayList(Var.Optional) = .empty;
+    var body: std.ArrayList(Var) = .empty;
+    var header_vars: std.ArrayList(Var) = .empty;
+    for (ranges, 0..) |*range, b| {
+        const scheme = if (b < in.decls.len) in.decl_scheme[b].unwrap() else in.let_schemes[b - in.decls.len];
+        const start: u32 = @intCast(headers.items.len);
+        header_vars.clearRetainingCapacity();
+        if (scheme) |s| try Schemes.quantifierOrder(cx.store, cx.interner, s, &header_vars, a);
+        try headers.appendSlice(a, header_vars.items);
+        const len: u32 = @intCast(headers.items.len - start);
+        range.* = .{ .start = start, .len = len };
+        if (b < in.decls.len) {
+            body.clearRetainingCapacity();
+            const check = if (b < in.checks.len) in.checks[b].unwrap() else null;
+            if (check) |v| try Schemes.quantifierOrder(cx.store, cx.interner, v, &body, a);
+            for (0..len) |q| try roots.append(a, (if (q < body.items.len) body.items[q] else headers.items[start + q]).toOptional());
+        } else {
+            const l = b - in.decls.len;
+            const snapshot: []const Var.Optional = if (l < in.let_identity_roots.len) in.let_identity_roots[l] else &.{};
+            for (0..len) |q| try roots.append(a, if (q < snapshot.len) snapshot[q] else .none);
+        }
+    }
+    return .{ .ranges = ranges, .headers = headers.items, .roots = roots.items };
+}
+
+fn hasRequirement(in: Input, binder: u32, q: u32) bool {
+    const r = if (binder < in.decls.len) in.decls[binder].requirements else in.lets[binder - in.decls.len].requirements;
+    for (in.requirements[r.start..][0..r.len]) |req| if (req.quantified == q) return true;
+    return false;
+}
+
+fn prepareSlots(in: Input, quantified: Quantified) Error!void {
+    const cx = in.cx;
+    const a = cx.scratch;
+    const bir = cx.bir;
+    const call_of = try a.alloc(Bir.Inst.OptionalIndex, bir.insts.len);
+    @memset(call_of, .none);
+    for (bir.insts.items(.tag), bir.insts.items(.data), 0..) |tag, data, i| {
+        if (tag == .call and data.lhs < call_of.len) call_of[data.lhs] = (@as(Bir.Inst.Index, @fromBackingInt(@intCast(i)))).toOptional();
+    }
+    const scopes = try Elaborate.LetScopes.build(a, bir, in.lets);
+    in.out.let_parent = scopes.parent;
+    var slots: std.ArrayList(Elaborate.Slot) = .empty;
+    try slots.appendSlice(a, in.out.slots);
+    for (in.uses) |use| {
+        if (use.inst.int() >= bir.insts.len) continue;
+        const inst = call_of[use.inst.int()].unwrap() orelse use.inst;
+        try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | use.quantified, .type = use.v, .decl = use.decl, .let = scopes.of(use.inst) });
+    }
+    // Effects already retained every own instantiation's quantifier copies.
+    // Index the records by source instruction, including method-call copies.
+    const effects = cx.effects;
+    const first = try a.alloc(u32, bir.insts.len);
+    @memset(first, none);
+    const next = try a.alloc(u32, if (effects) |e| e.records.items.len else 0);
+    if (effects) |e| for (e.records.items, 0..) |record, i| {
+        next[i] = none;
+        if (record.site >= first.len) continue;
+        next[i] = first[record.site];
+        first[record.site] = @intCast(i);
+    };
+    for (bir.decls, 0..) |decl, owner| {
+        if (!decl.kind.isValue() and decl.kind != .schema) continue;
+        var i = decl.inst_start.int();
+        while (i < decl.inst_end.int() and i < bir.insts.len) : (i += 1) {
+            const original: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            const tag = bir.instTag(original);
+            if (tag != .top and tag != .local and tag != .method_call and tag != .type_dispatch) continue;
+            const inst = call_of[i].unwrap() orelse original;
+            const sample: Elaborate.Slot = .{ .inst = inst, .root = 0, .type = @fromBackingInt(0), .decl = @intCast(owner), .let = scopes.of(original) };
+            const callee = calleeOf(cx, in.out, in.lets, @intCast(in.decls.len), sample);
+            if (callee != .binder) continue;
+            const b = callee.binder;
+            if (b >= quantified.ranges.len) continue;
+            const r = quantified.ranges[b];
+            const scheme = if (b < in.decls.len) in.decl_scheme[b].unwrap() else in.let_schemes[b - in.decls.len];
+            for (quantified.headers[r.start..][0..r.len], 0..) |header, q| {
+                if (hasRequirement(in, b, @intCast(q))) continue;
+                var value = header;
+                if (effects) |e| {
+                    var record_index = first[i];
+                    while (record_index != none) : (record_index = next[record_index]) {
+                        const record = e.records.items[record_index];
+                        if (scheme) |s| if (cx.store.find(record.scheme) != cx.store.find(s)) continue;
+                        for (e.pairs.items[record.start..][0..record.len]) |pair| {
+                            if (cx.store.find(pair.a) == cx.store.find(header)) {
+                                value = pair.b;
+                                break;
+                            }
+                        }
+                    }
+                }
+                try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | @as(u32, @intCast(q)), .type = value, .decl = @intCast(owner), .let = scopes.of(original) });
+            }
+        }
+    }
+    const Sort = struct {
+        fn less(_: void, x: Elaborate.Slot, y: Elaborate.Slot) bool {
+            return if (x.inst != y.inst) x.inst.int() < y.inst.int() else x.root < y.root;
+        }
+    };
+    std.mem.sort(Elaborate.Slot, slots.items, {}, Sort.less);
+    var kept: usize = 0;
+    for (slots.items) |slot| {
+        if (kept != 0 and slots.items[kept - 1].inst == slot.inst and slots.items[kept - 1].root == slot.root) continue;
+        slots.items[kept] = slot;
+        kept += 1;
+    }
+    slots.shrinkRetainingCapacity(kept);
+    in.out.slots = slots.items;
+    var sites: std.ArrayList(Dispatch.Site) = .empty;
+    try sites.appendSlice(cx.gpa, in.out.sites);
+    // Merge empty evidence sites for references which had no method evidence.
+    // The identity fixpoint fills only those whose callee actually needs one.
+    const existing: Dispatch = .{ .sites = in.out.sites };
+    for (slots.items, 0..) |slot, k| {
+        if (k != 0 and slots.items[k - 1].inst == slot.inst) continue;
+        if (existing.siteOf(slot.inst) == null) try sites.append(cx.gpa, .{ .inst = slot.inst });
+    }
+    std.mem.sort(Dispatch.Site, sites.items, {}, struct {
+        fn less(_: void, x: Dispatch.Site, y: Dispatch.Site) bool {
+            return x.inst.int() < y.inst.int();
+        }
+    }.less);
+    cx.gpa.free(in.out.sites);
+    in.out.sites = try sites.toOwnedSlice(cx.gpa);
 }

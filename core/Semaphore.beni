@@ -30,19 +30,32 @@
 --! `Task.resume` and `Task.uninterruptibleMask`.
 
 import Js
+import Js.Chain as Chain
 import Task
 
 
 --| A count of permits, and the fibers that wait for them, in order.
 pub opaque type Semaphore
-    = Semaphore Js.Value
+    = Semaphore State
+
+
+type alias State =
+    permits : Js.Ref Int
+    taken : Js.Ref Int
+    waiters : Chain.Chain Waiter
+
+
+type alias Waiter =
+    got : Js.Ref Int
+    n : Int
+    resume : Task.Resume Int
 
 
 --| A new `Semaphore` with `permits` permits, all free. Fewer than 0 is 0.
 --| Each call makes a new one.
 pub make : Int → Semaphore
 make permits =
-    Semaphore (Js.from { permits = max 0 permits, taken = 0, head = Js.null, tail = Js.null })
+    Semaphore { permits = Js.ref (max 0 permits), taken = Js.ref 0, waiters = Chain.make ⊤ }
 
 
 --| Take `n` permits, run `work`, and give the permits back when `work`
@@ -74,12 +87,12 @@ tryWithPermits (Semaphore s) n work =
     if n ≤ 0 then
         Just (work ⊤)
     else
-        got = if Js.isNull (Js.get s "head") then grant s n else 0
+        got = if Chain.size s.waiters == 0 then grant s n else 0
 
         if got ≤ 0 then
             Nothing
         else
-            Js.set s "taken" (Js.from (takenOf s + got))
+            Js.write s.taken (takenOf s + got)
             Task.uninterruptibleMask λtoken →
                 Task.onExit (λ⊤ → Just (Task.restore token work)) λ_ → give s got
 
@@ -130,38 +143,23 @@ available (Semaphore s) = max 0 (permitsOf s - takenOf s)
 --| order.
 pub resize : Semaphore, Int → ⊤
 resize (Semaphore s) n =
-    Js.set s "permits" (Js.from (max 0 n))
+    Js.write s.permits (max 0 n)
     serve s
 
 
--- ---- The queue -------------------------------------------------------------
---
--- `s` is `{ permits, taken, head, tail }`. The waiters are a doubly linked
--- list, `head` first served: a waiter is `{ got, n, resume, queued, prev,
--- next }`, and a cancelled one unlinks itself in constant time, so closing a
--- scope of n waiters costs n, not n². (A `Set` would do for the order, but
--- reading its first element after deleting many from the front walks every
--- hole, which is the same n².) A waiter is served by its permits
--- being counted as taken, `got` set, and its fiber resumed — a hand-off,
--- so no later request can take them first. Its canceller sees `got`: a
--- waiter served but cancelled before it ran gives the permits back.
-
-permitsOf : Js.Value → Int
-permitsOf s = Js.to (Js.get s "permits")
+-- Typed waiters hand permits off before resuming; cancellation returns them.
+permitsOf : State → Int
+permitsOf s = Js.read s.permits
 
 
-takenOf : Js.Value → Int
-takenOf s = Js.to (Js.get s "taken")
+takenOf : State → Int
+takenOf s = Js.read s.taken
 
 
--- What a request for `n > 0` takes now, or 0 when it must wait. A request
--- for more than there are takes `n` once every permit is free, and waits
--- while there are none.
-grant : Js.Value, Int → Int
+grant : State, Int → Int
 grant s n =
     p = permitsOf s
     t = takenOf s
-
     if n ≤ p then
         if p - t ≥ n then n else 0
     else if t == 0 && p ≥ 1 then
@@ -170,88 +168,42 @@ grant s n =
         0
 
 
--- Take `n > 0` permits, at once when nobody waits and they fit, otherwise
--- at the end of the queue. Answers how many were taken.
-take : Js.Value, Int → Int
+take : State, Int → Int
 take s n =
-    now = if Js.isNull (Js.get s "head") then grant s n else 0
-
+    now = if Chain.size s.waiters == 0 then grant s n else 0
     if now > 0 then
-        Js.set s "taken" (Js.from (takenOf s + now))
+        Js.write s.taken (takenOf s + now)
         now
     else
         Task.callback λresume →
-            w =
-                Js.from
-                    { got = 0
-                    , n = n
-                    , resume = resume
-                    , queued = True
-                    , prev = Js.null
-                    , next = Js.null
-                    }
-            enqueue s w
-            λ⊤ → leave s w
+            w = { got = Js.ref 0, n = n, resume = resume }
+            link = Chain.append s.waiters w
+            λ⊤ →
+                got = Js.read w.got
+                if got > 0 then
+                    Js.write w.got 0
+                    give s got
+                else
+                    _ = Chain.remove s.waiters link
+                    serve s
 
 
--- Link `w` at the end of the queue.
-enqueue : Js.Value, Js.Value → ⊤
-enqueue s w =
-    tail = Js.get s "tail"
-    Js.set w "prev" tail
-    if Js.isNull tail then Js.set s "head" w else Js.set tail "next" w
-    Js.set s "tail" w
-
-
--- Take `w` off the queue, wherever it is.
-unlink : Js.Value, Js.Value → ⊤
-unlink s w =
-    prev = Js.get w "prev"
-    next = Js.get w "next"
-    if Js.isNull prev then Js.set s "head" next else Js.set prev "next" next
-    if Js.isNull next then Js.set s "tail" prev else Js.set next "prev" prev
-    Js.set w "prev" Js.null
-    Js.set w "next" Js.null
-    Js.set w "queued" (Js.from False)
-
-
--- A waiter's fiber is cancelled: give back what it was handed, or take it
--- off the queue — and, when it was the head, look at the queue again.
-leave : Js.Value, Js.Value → ⊤
-leave s w =
-    got : Int
-    got = Js.to (Js.get w "got")
-
-    -- `queued` guards the links: unlinking a node already unlinked would
-    -- null `head` and `tail`. `Task.halt` and the shutdown deadline's
-    -- `abandon` each clear the fiber's `parked` wait before they run its
-    -- canceller, so no program is known to run one twice; the check keeps
-    -- that a property of this module, not of its callers.
-    if got > 0 then
-        give s got
-    else if Js.to (Js.get w "queued") then
-        wasHead = Js.isNull (Js.get w "prev")
-        unlink s w
-        if wasHead then serve s
-
-
--- Give back `n` permits, never below none taken, and serve the queue.
-give : Js.Value, Int → ⊤
+give : State, Int → ⊤
 give s n =
-    Js.set s "taken" (Js.from (max 0 (takenOf s - n)))
+    Js.write s.taken (max 0 (takenOf s - n))
     serve s
 
 
--- Hand permits to the waiters at the head, in order, while they fit.
-serve : Js.Value → ⊤
+serve : State → ⊤
 serve s =
-    w = Js.get s "head"
-
-    if not (Js.isNull w) then
-        got = grant s (Js.to (Js.get w "n"))
-        if got > 0 then
-            unlink s w
-            Js.set s "taken" (Js.from (takenOf s + got))
-            Js.set w "got" (Js.from got)
-            Task.resume (Js.to (Js.get w "resume")) got
-            serve s
+    case Chain.first s.waiters of
+        Nothing →
+            ⊤
+        Just w →
+            got = grant s w.n
+            if got > 0 then
+                _ = Chain.shift s.waiters
+                Js.write s.taken (takenOf s + got)
+                Js.write w.got got
+                Task.resume w.resume got
+                serve s

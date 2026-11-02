@@ -1,0 +1,5 @@
+-- Even a non-Debug core module cannot use inspection primitives.
+import Js.Inspect as Inspect
+
+
+pub kind = Inspect.kind (Inspect.inspect 1)

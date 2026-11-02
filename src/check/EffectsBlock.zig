@@ -151,6 +151,23 @@ fn walkSites(
                     try sites.append(gpa, .{ .v = r, .node = e.solved.find(id), .root = @intCast(ri), .steps_start = steps_start, .steps_len = f.path_len });
                 }
             }
+            var stored_sites: std.ArrayList(@import("AnyValues.zig").Site) = .empty;
+            defer stored_sites.deinit(gpa);
+            try @import("AnyValues.zig").sites(e, r, &stored_sites, gpa);
+            defer for (stored_sites.items) |stored| if (stored.key.len != 0) gpa.free(stored.key);
+            for (stored_sites.items) |stored| {
+                const node = try e.nodeFor(stored.variable);
+                const start: u32 = @intCast(steps.items.len);
+                try steps.appendSlice(gpa, paths.items[f.path_start..][0..f.path_len]);
+                try steps.append(gpa, (@as(u32, 7) << 28) | @as(u32, @intCast(stored.key.len)));
+                var offset: usize = 0;
+                while (offset < stored.key.len) : (offset += 4) {
+                    var word: u32 = 0;
+                    for (stored.key[offset..@min(offset + 4, stored.key.len)], 0..) |byte, i| word |= @as(u32, byte) << @as(u5, @intCast(i * 8));
+                    try steps.append(gpa, word);
+                }
+                try sites.append(gpa, .{ .v = stored.variable, .node = node, .root = @intCast(ri), .steps_start = start, .steps_len = @as(u32, @intCast(steps.items.len)) - start });
+            }
             kids.clearRetainingCapacity();
             var k: u32 = 0;
             while (Walk.stepped(store, r, k)) |c| : (k += 1) try kids.append(gpa, c);

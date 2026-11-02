@@ -1,0 +1,33 @@
+-- Debug-only borrowed, read-only views. No inspected value becomes Js.Value.
+
+pub foreign type Raw
+
+
+pub foreign pure inspect : borrowed a → Raw
+
+
+pub foreign pure kind : borrowed Raw → String
+
+
+pub foreign pure tag : borrowed Raw → String
+
+
+pub foreign pure keys : borrowed Raw → List String
+
+
+pub foreign pure field : borrowed Raw, borrowed String → Raw
+
+
+pub foreign pure element : borrowed Raw, borrowed Int → Raw
+
+
+pub foreign pure length : borrowed Raw → Int
+
+
+pub foreign pure string : borrowed Raw → String
+
+
+pub foreign pure number : borrowed Raw → Float
+
+
+pub foreign pure boolean : borrowed Raw → Bool

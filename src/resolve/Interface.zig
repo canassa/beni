@@ -334,7 +334,16 @@ pub const EffectBlock = struct {
             if (words[@intCast(at)] >= classes) return null;
             const n = words[@intCast(at + 2)];
             if (at + 3 + n > words.len) return null;
-            for (words[@intCast(at + 3)..][0..n]) |s| if (stepKind(s) > 6) return null;
+            const path = words[@intCast(at + 3)..][0..n];
+            for (path, 0..) |step, index| {
+                if (stepKind(step) == 7) {
+                    const bytes = stepIndex(step);
+                    if ((@as(u64, bytes) + 3) / 4 != path.len - index - 1) return null;
+                    break;
+                }
+                if (stepKind(step) > 6) return null;
+            }
+
             at += 3 + n;
         }
         return @intCast(at);

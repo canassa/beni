@@ -1,0 +1,8 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type DOMRect
+
+
+pub foreign impure left : borrowed DOMRect → Float
+
+
+pub foreign impure top : borrowed DOMRect → Float

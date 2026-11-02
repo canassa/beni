@@ -1,0 +1,7 @@
+-- In-place Js.object literals must not hide a retained inspection view.
+import Js
+import Js.Inspect as Inspect
+
+
+pub bad : Int → Js.Value
+bad value = Js.object [ ( "view", Inspect.inspect value ) ]

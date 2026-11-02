@@ -1,0 +1,1 @@
+[{"code":"inspection_escape","severity":"error","span":{"file":"tests/corpus/check/bad/core/InspectionObject/Debug.beni","start":{"line":7,"col":35},"end":{"line":7,"col":50}},"title":"INSPECTION VIEW ESCAPES","message":"A borrowed inspection view cannot be retained in a record, union, List or raw\nJavaScript aggregate."}]

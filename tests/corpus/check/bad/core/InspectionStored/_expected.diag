@@ -1,0 +1,1 @@
+[{"code":"inspection_escape","severity":"error","span":{"file":"tests/corpus/check/bad/core/InspectionStored/Debug.beni","start":{"line":9,"col":9},"end":{"line":9,"col":15}},"title":"INSPECTION VIEW ESCAPES","message":"A borrowed inspection view cannot be stored in a record, union, List or cell."}]

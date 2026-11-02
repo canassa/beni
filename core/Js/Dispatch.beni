@@ -1,0 +1,78 @@
+-- Platform-only synchronous dispatch. Nested sends retain closed typed jobs.
+import Js
+import Js.Chain as Chain
+import Js.Protocol as Protocol
+
+
+pending : Js.Ref (Chain.Chain (⊤ → ⊤))
+pending = Js.ref (Chain.make ⊤)
+
+
+dead : Js.Ref Bool
+dead = Js.ref False
+
+
+running : Js.Ref Bool
+running = Js.ref False
+
+
+failure : Js.Ref (⊤ → ⊤)
+failure = Js.ref (λ⊤ → ⊤)
+
+
+pub onDefect : sync (⊤ → ⊤) → ⊤
+onDefect callback = Js.write failure callback
+
+
+pub busy : ⊤ → Bool
+busy ⊤ = Js.read running
+
+
+pub stopped : ⊤ → Bool
+stopped ⊤ = Js.read dead
+
+
+pub stop : ⊤ → ⊤
+stop ⊤ =
+    Js.write dead True
+    Chain.clear (Js.read pending)
+
+
+pub send : sync (a → ⊤), a → ⊤
+send callback value = read callback value identity
+
+
+-- An extractor runs inside the guard before a nested send is queued.
+pub read : sync (a → ⊤), b, sync (b → a) → ⊤
+read callback raw project =
+    if not (Js.read dead) then
+        nested = Js.read running
+        Js.write running True
+        ok = Js.ref False
+        Js.finally
+            (λ⊤ →
+                value = project raw
+                if nested then
+                    _ = Chain.append (Js.read pending) λ⊤ → callback value
+                    ⊤
+                else
+                    callback value
+                    drain ⊤
+                Js.write ok True
+            )
+            λ⊤ →
+                Js.write running nested
+                if not (Js.read ok) then
+                    stop ⊤
+                    (Js.read failure) ⊤
+
+
+drain : ⊤ → ⊤
+drain ⊤ =
+    if not (Js.read dead) then
+        case Chain.shift (Js.read pending) of
+            Just work →
+                Protocol.call work ⊤
+                drain ⊤
+            Nothing →
+                ⊤

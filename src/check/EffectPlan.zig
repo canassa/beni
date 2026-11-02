@@ -211,9 +211,17 @@ fn bucket(p: *Plan) Error!void {
         const start: u32 = @intCast(p.choice_nodes.items.len);
         for (e.pairs.items[r.start..][0..r.len]) |pair| {
             // Realm-only generic sources cannot select a suspendable body.
-            if (!e.carries(e.store.find(pair.a))) continue;
+            if (!e.carries(e.store.find(pair.a)) and !@import("Realms.zig").stored(e, e.store.find(pair.a))) continue;
             const node = nodeOf(p, pair.b) orelse continue;
             try p.choice_nodes.append(scratch, node);
+        }
+        var profile_images: std.ArrayList(Var) = .empty;
+        defer profile_images.deinit(scratch);
+        for (e.stored.images.items) |image| {
+            if (image.record != r.start) continue;
+            profile_images.clearRetainingCapacity();
+            try @import("AnyValues.zig").images(e, r, try e.nodeFor(e.stored.nodes.items[image.source].variable), &profile_images, scratch);
+            for (profile_images.items) |actual| if (nodeOf(p, actual)) |node| try p.choice_nodes.append(scratch, node);
         }
         try p.choices[r.owner].append(scratch, .{ .site = r.site, .target = target, .start = start, .len = @as(u32, @intCast(p.choice_nodes.items.len)) - start });
     }
@@ -252,7 +260,8 @@ fn typeNodes(p: *Plan, v: Var) Error!void {
             },
             else => {},
         }
-        if (e.carries(r)) if (nodeOf(p, r)) |node| try p.choice_nodes.append(p.in.scratch, node);
+        if (e.carries(r) or @import("Realms.zig").stored(e, r)) if (nodeOf(p, r)) |node| try p.choice_nodes.append(p.in.scratch, node);
+        try @import("AnyValues.zig").appendNodes(e, r, &p.choice_nodes, p.in.scratch);
         var k: u32 = 0;
         while (Walk.stepped(store, r, k)) |c| : (k += 1) try stack.append(p.in.scratch, c.v);
     }

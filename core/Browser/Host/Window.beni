@@ -1,8 +1,29 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Event as Event
+
+
 import Browser.Host.Document as Document
 
 
+pub foreign type Frame
+
+
 pub foreign type Window
+
+
+pub foreign impure requestFrame : escaped sync (⊤ → ⊤) → Frame
+
+
+pub foreign impure cancelFrame : borrowed Frame → ⊤
+
+
+pub foreign impure innerWidth : ⊤ → Int
+
+
+pub foreign impure innerHeight : ⊤ → Int
+
+
+pub foreign impure listen : String, escaped sync (Event.Event → ⊤) → (⊤ → ⊤)
 
 
 pub foreign impure document : ⊤ → Document.Document

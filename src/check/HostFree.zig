@@ -12,6 +12,7 @@ const Var = TypeStore.Var;
 const TypeId = Types.TypeId;
 const native: u8 = 1;
 const callable: u8 = 2;
+const inspection: u8 = 4;
 pub const Offense = struct { path: []const u8, kind: enum { callable, native } };
 const Range = struct { start: u32 = 0, len: u32 = 0 };
 const Info = struct { flags: u8 = 0, native_type: TypeId = .none, parameters: Range = .{}, body: Range = .{} };
@@ -87,6 +88,7 @@ pub const State = struct {
             if (entry.kind == .foreign) {
                 if (!plainForeign(cx, entry)) {
                     out.flags = native;
+                    if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js.Inspect") and std.mem.eql(u8, cx.interner.slice(entry.name), "Raw")) out.flags |= inspection;
                     out.native_type = @fromBackingInt(@intCast(i));
                 }
                 continue;
@@ -204,6 +206,10 @@ pub const State = struct {
         return result;
     }
 
+    pub fn containsInspection(s: *const State, value: Var) Allocator.Error!bool {
+        return (try s.evaluate(&.{value}, &.{}, &.{})).flags & inspection != 0;
+    }
+
     pub fn inspect(s: *const State, value: Var) Allocator.Error!?Offense {
         const a = s.cx.scratch;
         const store = s.cx.store;
@@ -259,6 +265,7 @@ fn plainForeign(cx: Environment, entry: Types.Entry) bool {
     if (std.mem.eql(u8, module, "String")) return std.mem.eql(u8, name, "String");
     if (std.mem.eql(u8, module, "Char")) return std.mem.eql(u8, name, "Char");
     if (std.mem.eql(u8, module, "Int32")) return std.mem.eql(u8, name, "Int32");
+    if (std.mem.eql(u8, module, "Schema")) return std.mem.eql(u8, name, "Value");
     if (std.mem.eql(u8, module, "List")) return std.mem.eql(u8, name, "List");
     if (std.mem.eql(u8, module, "Js")) return std.mem.eql(u8, name, "Value") or std.mem.eql(u8, name, "Ref") or std.mem.eql(u8, name, "Cell") or std.mem.eql(u8, name, "Opt");
     return false;

@@ -1,23 +1,9 @@
--- Core-private host adapters. Native resources stay in the sibling; every
--- callback crosses this boundary with its real type and summary.
+-- Core-private protocol primitives. Host scheduling is beni in Task.
 
 -- The unique parked sentinel, consumed only by the core suspension protocol.
 pub foreign pure parked : unused ⊤ → unknown a
 
 
-pub foreign impure microtask : escaped sync (⊤ → ⊤) → ⊤
-
-
-pub foreign impure macrotask : escaped sync (⊤ → ⊤) → ⊤
-
-
-pub foreign impure timer : borrowed Int, escaped sync (⊤ → ⊤) → fresh (⊤ → ⊤)
-
-
-pub foreign impure now : unused ⊤ → fresh Int
-
-
-pub foreign impure random : unused ⊤ → fresh Float
-
-
+-- Js.throw accepts Js.Value, which cannot hold the native Error this throws.
+-- Keep this exact defect primitive rather than erase an Error handle.
 pub foreign impure defect : borrowed String → unknown a

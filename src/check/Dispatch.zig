@@ -663,6 +663,10 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
 /// quantifier with the identity bit and a constraint, as the requirement
 /// index of its first constraint in `extRequirementCount`'s order. Writes
 /// the first `out.len` of them to `out` and returns how many there are.
+// A quantifier without a method requirement uses a tagged index.
+// Existing constrained identity slots keep their original numbering.
+pub const identity_quantifier: u32 = 1 << 31;
+
 pub fn extIdentities(interfaces: []const Interface, module: Graph.Index, value: u32, out: []u32) u32 {
     if (module.int() >= interfaces.len) return 0;
     const iface = &interfaces[module.int()];
@@ -675,8 +679,8 @@ pub fn extIdentities(interfaces: []const Interface, module: Graph.Index, value: 
     var i: u32 = 0;
     while (i < s.quantified_count) : (i += 1) {
         const q = iface.quantified(s, i);
-        if (q.identity and q.constraints_len != 0) {
-            if (n < out.len) out[n] = at;
+        if (q.identity) {
+            if (n < out.len) out[n] = if (q.constraints_len != 0) at else identity_quantifier | i;
             n += 1;
         }
         at += q.constraints_len;

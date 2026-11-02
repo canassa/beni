@@ -38,6 +38,7 @@
 
 import Int32
 import Js
+import Js.Data as Data
 
 
 -- ---- The public types ----------------------------------------------------
@@ -118,6 +119,8 @@ pub type UnknownKeys
 
 
 --| Root options shared by compiled runners and library interpretation.
+--| reportInput retains plain data only; a callable or native input is Nothing
+--| (the owner, 2026-11-02), and reporting is off by default.
 pub type alias Options =
     errors : ErrorMode
     unknownKeys : UnknownKeys
@@ -713,7 +716,7 @@ plain xs =
     if isArray xs then
         xs
     else
-        Js.call xs "$plain" []
+        Js.call (Js.get xs "b") "slice" [ Js.get xs "o" ]
 
 
 -- The first name of the host array `xs`, by `nameOf`, that occurs again
@@ -1898,10 +1901,19 @@ failAt c path code message input output =
         , endpoint = if output || c.cv then c.outE else c.inE
         , code = code
         , message = message
-        , input = if c.report then Just (cast input) else Nothing
+        , input = reportedInput c input
         }
     _ = Js.call c.issues "push" [ toHost entry ]
     c.fail
+
+
+-- Checked only on a reporting failure: native or callable input stays out.
+reportedInput : Context, a → Maybe Value
+reportedInput c input =
+    if c.report then
+        Maybe.map (Data.checked input) fromHost
+    else
+        Nothing
 
 
 rootErr : Direction, Endpoint, IssueCode, String → Result (List Issue) b
@@ -2990,7 +3002,7 @@ moved c prefix v given =
                 , endpoint = c.outE
                 , code = i.code
                 , message = i.message
-                , input = if c.report then Just (cast v) else Nothing
+                , input = reportedInput c v
                 }
             push c.issues (toHost entry)
 

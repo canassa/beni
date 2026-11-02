@@ -1,0 +1,19 @@
+-- The same core-private adapter that Hosted.Key uses.
+import Js.Key as Storage
+
+
+pub type alias Key =
+    Storage.Key
+
+
+pub key : k → Key
+    where k.compare : k, k → Order
+key value = Storage.key value
+
+
+pub compare : Key, Key → Order
+compare left right = Storage.compare left right
+
+
+pub eq : Key, Key → Bool
+eq left right = Storage.eq left right

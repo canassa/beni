@@ -1,3 +1,12 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+-- A browser numeric timer id or a Node Timeout handle; never plain data.
+pub foreign type Timer
+
+
+pub foreign impure queueMicrotask : escaped sync (⊤ → ⊤) → ⊤
+
+pub foreign impure start : escaped sync (⊤ → ⊤), Int → Timer
+
+pub foreign impure clear : borrowed Timer → ⊤
 
 pub foreign impure setTimeout : sync (⊤ → ⊤), Int → Int

@@ -1,0 +1,35 @@
+-- Platform-only heterogeneous keys. The payload and comparer stay typed.
+
+import Js
+import Js.Any as Any
+
+
+pub type alias Key =
+    Storage (Any.Any → Order) Any.Any
+
+
+-- Parameters keep the comparer class separate from the stored payload.
+type Storage comparer payload
+    = Storage String comparer payload
+
+
+pub key : k → Key
+    where k.compare : k, k → Order
+key value =
+    compareBox =
+        λbox →
+            case Any.unpack box of
+                Just other →
+                    value.compare other
+                Nothing →
+                    EQ
+    Storage (Js.fingerprint value EQ) compareBox (Any.pack value)
+
+
+pub compare : Key, Key → Order
+compare (Storage left compareLeft _) (Storage right _ value) = Js.pure λ⊤ →
+    if Js.same left right then compareLeft value else if Js.lt left right then LT else GT
+
+
+pub eq : Key, Key → Bool
+eq left right = compare left right == EQ

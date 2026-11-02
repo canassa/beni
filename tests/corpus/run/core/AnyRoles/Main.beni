@@ -1,0 +1,32 @@
+import Io
+import Js.Any as Any
+import Node
+import Packet
+
+
+onlySync : sync (⊤ → Int) → Int
+onlySync callback = callback ⊤
+
+
+onlySyncFactory : sync (⊤ → (⊤ → Int)) → (⊤ → Int)
+onlySyncFactory factory = factory ⊤
+
+
+work : ⊤ → ⊤
+work ⊤ =
+    restored : Maybe { quick : ⊤ → Int, factory : ⊤ → (⊤ → Int) }
+    restored = Any.unpack Packet.packet
+    case restored of
+        Just value →
+            _ = Debug.log "quick" (onlySync value.quick)
+            callback = onlySyncFactory value.factory
+            _ = Debug.log "factory" (callback ⊤)
+            ⊤
+        Nothing →
+            Debug.log "missing" ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    work ⊤
+    Node.print "done"

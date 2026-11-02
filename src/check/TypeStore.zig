@@ -367,6 +367,9 @@ proof_voids: u64 = 0,
 /// (`check/Module.zig`); a store nothing checks in (an interface dump's,
 /// a test's) does not prove, and pays one branch per content write.
 tracks_proofs: bool = false,
+// Set once a borrowed Raw type enters this module, including by inference.
+inspection_type: u32 = std.math.maxInt(u32),
+has_inspection: bool = false,
 /// Safety builds only: the nodes `Walk.assertProved` has visited in this store, so
 /// its re-walks of proved graphs stay within a budget linear in the store
 /// Never read outside that assert.
@@ -450,6 +453,7 @@ pub inline fn fresh(store: *TypeStore, desc_content: Content, desc_rank: u32) Al
     c.parent[i] = v;
     c.rank[i] = desc_rank;
     c.content[i] = desc_content;
+    store.noteInspection(desc_content);
     c.mark[i] = no_mark;
     c.copy[i] = .none;
     c.size[i] = 1;
@@ -673,6 +677,7 @@ pub fn setContent(store: *TypeStore, v: Var, c: Content) void {
         if (store.proved(v)) store.gains(v, c);
     }
     store.col.content[v.int()] = c;
+    store.noteInspection(c);
 }
 
 pub inline fn setRank(store: *TypeStore, v: Var, r: u32) void {
@@ -1276,4 +1281,9 @@ test "marks are monotone so a walk never has to clear them" {
     try testing.expect(first != no_mark and second != no_mark);
     store.setMark(a, first);
     try testing.expectEqual(first, store.mark(a));
+}
+
+inline fn noteInspection(store: *TypeStore, c: Content) void {
+    if (store.has_inspection or store.inspection_type == std.math.maxInt(u32)) return;
+    if (c == .structure and c.structure == .app and c.structure.app.type.int() == store.inspection_type) store.has_inspection = true;
 }

@@ -24,7 +24,7 @@
 --! Nothing here is `foreign`.
 
 import Duration exposing (Duration)
-import Js.Runtime as Runtime
+import Browser.Host.Date as HostDate
 import Task
 
 
@@ -40,7 +40,7 @@ pub now : ⊤ → Int
 now ⊤ =
     case Task.currentClock ⊤ of
         Nothing →
-            Runtime.now ⊤
+            HostDate.now ⊤
         Just reading →
             reading
 

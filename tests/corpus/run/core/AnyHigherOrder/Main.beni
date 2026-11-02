@@ -1,0 +1,36 @@
+import Io
+import Js
+import Store
+import Node
+import Task
+
+
+counter : Js.Ref Int
+counter = Js.ref 0
+
+
+body : (Int → ⊤) → ⊤
+body send =
+    send 42
+    ⊤
+
+
+work : ⊤ → ⊤
+work ⊤ =
+    restored : Maybe ((Int → ⊤) → ⊤)
+    restored = Store.restore (Store.store body)
+    case restored of
+        Just callback →
+            callback λvalue → Js.write counter value
+            callback λvalue →
+                Task.yieldNow ⊤
+                Js.write counter (value + 1)
+        Nothing →
+            ⊤
+    ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    work ⊤
+    Node.print (String.fromInt (Js.read counter))

@@ -103,6 +103,9 @@ wire: std.ArrayList(@import("Wire.zig").Use) = .empty,
 host_free: std.ArrayList(CrossingUse) = .empty,
 // Opt payload instantiations keep wrappers boxed when erasure could expose none.
 opt_payload: std.ArrayList(CrossingUse) = .empty,
+// Only unconstrained identity imports allocate this column. Own copies
+// already live in Effects.records, so ordinary modules record nothing new.
+identity_uses: std.ArrayList(IdentityUse) = .empty,
 /// Every own scheme quantifier's copy (`CopyPair`).
 copies: std.ArrayList(CopyPair) = .empty,
 /// The declaration a copy in progress notes its quantifiers for, while
@@ -116,6 +119,8 @@ pub const CastCopies = struct {
     root: Var.Optional = .none,
     vars: std.ArrayList(Var) = .empty,
 };
+
+pub const IdentityUse = struct { inst: Bir.Inst.Index, decl: u32, module: Graph.Index, value: u32, quantified: u32, v: Var };
 
 pub const CrossingUse = struct { inst: Bir.Inst.Index, decl: ?u32, v: Var };
 
@@ -136,6 +141,7 @@ pub fn deinit(in: *Instantiate) void {
     in.wire.deinit(in.cx.gpa);
     in.host_free.deinit(in.cx.gpa);
     in.opt_payload.deinit(in.cx.gpa);
+    in.identity_uses.deinit(in.cx.gpa);
     in.copies.deinit(in.cx.gpa);
 }
 
@@ -554,6 +560,14 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     // A value's summary, read from its record (transparent-effects-proposal.md
     // §14.3 rule 3): the use's classes get its rungs and dependencies now.
     if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@backingInt(scheme)], v, in.quantified.items, @backingInt(in.origin));
+    if (which == .value) {
+        const identity_scheme = iface.schemes[@backingInt(scheme)];
+        for (in.quantified.items, 0..) |q, i| {
+            if (i >= identity_scheme.quantified_count) break;
+            const info = iface.quantified(identity_scheme, @intCast(i));
+            if (info.identity and info.constraints_len == 0) try in.identity_uses.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl orelse std.math.maxInt(u32), .module = module, .value = index, .quantified = @intCast(i), .v = q });
+        }
+    }
     if (which == .value and in.track_crossing) {
         const s = iface.schemes[@backingInt(scheme)];
         for (in.quantified.items, 0..) |q, i| {

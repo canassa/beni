@@ -1,0 +1,9 @@
+import Js.Any as Any
+
+
+pub type Token a
+    = Token a
+
+
+pub store : Token a → Any.Any
+store token = Any.pack token

@@ -102,7 +102,7 @@ pub const Append = struct { inst: Bir.Inst.Index, result: Var };
 pub const Cast = struct { inst: Bir.Inst.Index, copy: Var, decl: u32, which: Which };
 
 /// `from`'s parameter or `to`'s result is what JavaScript holds.
-pub const Which = enum { from, to };
+pub const Which = enum { from, to, inspect, checked };
 
 /// A use of core's `Debug.toString` or `Debug.log` and the variable its
 /// copy was unified into (`debugs`, checker-v2.md §32).
@@ -720,7 +720,7 @@ fn noteCastImage(s: *Solve, which: Which, copy: Var, decl: u32) Error!void {
         return;
     };
     const relevant: ?Var = switch (which) {
-        .from => if (func.params.len == 1) func.params[0] else null,
+        .from, .inspect, .checked => if (func.params.len == 1) func.params[0] else null,
         .to => func.result,
     };
     try s.instantiate.noteCastRoot(decl, relevant);
@@ -737,10 +737,14 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= s.cx.graph.count()) return null;
     if (s.cx.graph.modulePackage(module) != .core) return null;
-    if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return null;
+    const module_name = s.cx.interner.slice(s.cx.graph.moduleName(module));
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
+    const name = s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (std.mem.eql(u8, module_name, "Js.Data")) return if (std.mem.eql(u8, name, "checked")) .checked else null;
+    if (std.mem.eql(u8, module_name, "Js.Inspect")) return if (std.mem.eql(u8, name, "inspect")) .inspect else null;
+    if (!std.mem.eql(u8, module_name, "Js")) return null;
+    return std.meta.stringToEnum(Which, name);
 }
 
 /// Whether the reference at `inst` is core's `Debug.toString` or
@@ -1007,7 +1011,7 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // the proven-undetermined default (§9.4).
     try Decide.close(s);
     // A `let` function binding's own requirements are promoted to it (§8.4).
-    if (!top and s.resolver.wanters.items.len != 0) try Resolve.closeLet(s, binders);
+    if (!top and (s.resolver.wanters.items.len != 0 or s.instantiate.identity_uses.items.len != 0)) try Resolve.closeLet(s, binders);
     if (members) |m| {
         if (s.resolver.wanters.items.len != 0) {
             // Step 7 unifies nothing: a default answers `undetermined`, a

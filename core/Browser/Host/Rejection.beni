@@ -1,0 +1,14 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type Rejection
+
+
+pub foreign impure isError : borrowed Rejection → Bool
+
+
+pub foreign impure name : borrowed Rejection → String
+
+
+pub foreign impure code : borrowed Rejection → Maybe String
+
+
+pub foreign impure raise : borrowed Rejection → a

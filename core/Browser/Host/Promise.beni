@@ -1,0 +1,8 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Rejection as Rejection
+
+
+pub foreign type Promise a
+
+
+pub foreign impure observe : borrowed Promise a, escaped sync (a → ⊤), escaped sync (Rejection.Rejection → ⊤) → ⊤

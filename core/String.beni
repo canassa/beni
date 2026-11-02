@@ -209,14 +209,13 @@ trimRight s = Js.pure λ⊤ → Js.to (Js.call (Js.from s) "trimEnd" [])
 --|     words "How are \n you? \t Good?" == [ "How", "are", "you?", "Good?" ]
 pub words : String → fresh exclusive List String
 words s = Js.pure λ⊤ →
-    Js.to
-        (Js.call (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ]) "filter"
-            [ Js.from isWord ]
-        )
+    pieces : List String
+    pieces = Js.to (Js.call (Js.from s) "split" [ Js.regExp "\\s+" "" ])
+    List.filter pieces isWord
 
 
-isWord : Js.Value → Bool
-isWord w = Js.to (Js.get w "length") ≠ 0
+isWord : String → Bool
+isWord w = length w ≠ 0
 
 
 --| Break a string into lines, splitting on newlines.
@@ -414,7 +413,7 @@ fromList list = Js.pure λ⊤ →
         if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
             xs
         else
-            Js.call xs "$plain" []
+            Js.call (Js.get xs "b") "slice" [ Js.get xs "o" ]
     Js.to (Js.call plain "join" [ Js.from "" ])
 
 
@@ -481,7 +480,7 @@ elements xs =
     if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
         xs
     else
-        Js.call xs "$plain" []
+        Js.call (Js.get xs "b") "slice" [ Js.get xs "o" ]
 
 
 --| Take `n` characters from the left side of a string.

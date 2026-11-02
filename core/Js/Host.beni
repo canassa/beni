@@ -1,0 +1,16 @@
+-- Platform machinery: a running program's two typed operations.
+
+pub opaque type Host sender queued
+    = Host sender queued
+
+
+pub make : sender, queued → Host sender queued
+make sender queued = Host sender queued
+
+
+pub send : Host (msg → ⊤) queued, msg → ⊤
+send (Host sender _) message = sender message
+
+
+pub after : Host sender ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → ⊤
+after (Host _ queue) work = queue work

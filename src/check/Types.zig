@@ -198,6 +198,7 @@ ref_ids: [][]TypeId,
 /// part of the run.
 well_known: WellKnown,
 host_free: @import("HostFree.zig").Facts = .{},
+inspection_type: TypeId = .none,
 
 /// The handful of types the checker has to be able to name on its own,
 /// because a literal, a list or a `?` has no written type to read them

@@ -39,6 +39,76 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .promise_observe => blk: {
+            if (a.len != 3 or !unit(cx, r)) break :blk false;
+            const item = argument(cx, a[0], "Browser.Host.Promise", "Promise", 0) orelse break :blk false;
+            const done = Walk.function(cx.store, a[1]) orelse break :blk false;
+            const failed = Walk.function(cx.store, a[2]) orelse break :blk false;
+            break :blk done.params.len == 1 and cx.store.find(done.params[0]) == cx.store.find(item) and unit(cx, done.result) and failed.params.len == 1 and native(cx, failed.params[0], "Rejection") and unit(cx, failed.result);
+        },
+        .rejection_is_error => a.len == 1 and native(cx, a[0], "Rejection") and named(cx, r, "Basics", "Bool"),
+        .rejection_name => a.len == 1 and native(cx, a[0], "Rejection") and named(cx, r, "String", "String"),
+        .rejection_code => a.len == 1 and native(cx, a[0], "Rejection") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
+        .rejection_raise => a.len == 1 and native(cx, a[0], "Rejection") and switch (cx.store.resolvedContent(r)) {
+            .flex, .rigid => true,
+            else => false,
+        },
+        .abort_create => a.len == 1 and unit(cx, a[0]) and native(cx, r, "AbortController"),
+        .abort_signal => a.len == 1 and native(cx, a[0], "AbortController") and native(cx, r, "AbortSignal"),
+        .abort_call => a.len == 1 and native(cx, a[0], "AbortController") and unit(cx, r),
+        .abort_aborted => a.len == 1 and native(cx, a[0], "AbortSignal") and named(cx, r, "Basics", "Bool"),
+        .node_read_utf8 => a.len == 2 and named(cx, a[0], "String", "String") and native(cx, a[1], "AbortSignal") and (if (argument(cx, r, "Browser.Host.Promise", "Promise", 0)) |item| named(cx, item, "String", "String") else false),
+        .node_read_dir => blk: {
+            if (a.len != 1 or !named(cx, a[0], "String", "String")) break :blk false;
+            const list = argument(cx, r, "Browser.Host.Promise", "Promise", 0) orelse break :blk false;
+            const item = argument(cx, list, "List", "List", 0) orelse break :blk false;
+            break :blk native(cx, item, "NodeDirent");
+        },
+        .dirent_name => a.len == 1 and native(cx, a[0], "NodeDirent") and named(cx, r, "String", "String"),
+        .dirent_file, .dirent_directory, .dirent_link => a.len == 1 and native(cx, a[0], "NodeDirent") and named(cx, r, "Basics", "Bool"),
+        .process_stdout, .process_stderr => a.len == 1 and named(cx, a[0], "String", "String") and unit(cx, r),
+        .process_exit_code => a.len == 1 and named(cx, a[0], "Basics", "Int") and unit(cx, r),
+        .process_before_exit => a.len == 1 and unitCallback(cx, a[0]) and unit(cx, r),
+        .event_listen => a.len == 3 and native(cx, a[0], "EventTarget") and named(cx, a[1], "String", "String") and eventCallback(cx, a[2]) and unitCallback(cx, r),
+        .frame_request => a.len == 1 and unitCallback(cx, a[0]) and named(cx, r, "Browser.Host.Window", "Frame"),
+        .frame_cancel => a.len == 1 and named(cx, a[0], "Browser.Host.Window", "Frame") and unit(cx, r),
+        .inner_width, .inner_height => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Int"),
+        .visibility_state, .document_title_read => a.len == 1 and unit(cx, a[0]) and named(cx, r, "String", "String"),
+        .document_title => a.len == 1 and named(cx, a[0], "String", "String") and unit(cx, r),
+        .event_prevented => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_button => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Int"),
+        .event_path => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "List", "List", 0)) |element| native(cx, element, "EventTarget") else false),
+        .as_anchor => a.len == 1 and native(cx, a[0], "EventTarget") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |element| native(cx, element, "HTMLAnchorElement") else false),
+        .anchor_has => a.len == 2 and native(cx, a[0], "HTMLAnchorElement") and named(cx, a[1], "String", "String") and named(cx, r, "Basics", "Bool"),
+        .anchor_href, .anchor_protocol, .anchor_host, .anchor_target => a.len == 1 and native(cx, a[0], "HTMLAnchorElement") and named(cx, r, "String", "String"),
+        .event_box => a.len == 1 and native(cx, a[0], "Event") and native(cx, r, "DOMRect"),
+        .rect_left, .rect_top => a.len == 1 and native(cx, a[0], "DOMRect") and named(cx, r, "Basics", "Float"),
+        .event_target_value => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .event_target_checked => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .listen_window, .listen_document => a.len == 2 and named(cx, a[0], "String", "String") and eventCallback(cx, a[1]) and unitCallback(cx, r),
+        .event_prevent => a.len == 1 and native(cx, a[0], "Event") and unit(cx, r),
+        .event_key => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .event_code => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .event_ctrlKey => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_shiftKey => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_altKey => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_metaKey => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_pointerId => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Int"),
+        .event_pointerType => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .event_isPrimary => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_clientX => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Float"),
+        .event_clientY => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Float"),
+        .queue_microtask => a.len == 1 and unitCallback(cx, a[0]) and unit(cx, r),
+        .timer_start => a.len == 2 and unitCallback(cx, a[0]) and named(cx, a[1], "Basics", "Int") and named(cx, r, "Browser.Host.Timers", "Timer"),
+        .timer_clear => a.len == 1 and named(cx, a[0], "Browser.Host.Timers", "Timer") and unit(cx, r),
+        .message_channel => a.len == 1 and unit(cx, a[0]) and native(cx, r, "MessageChannel"),
+        .message_port1, .message_port2 => a.len == 1 and native(cx, a[0], "MessageChannel") and native(cx, r, "MessagePort"),
+        .post_unit => a.len == 1 and native(cx, a[0], "MessagePort") and unit(cx, r),
+        .on_message => a.len == 2 and native(cx, a[0], "MessagePort") and unitCallback(cx, a[1]) and unit(cx, r),
+        .try_immediate => a.len == 1 and unitCallback(cx, a[0]) and named(cx, r, "Basics", "Bool"),
+        .date_now => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Int"),
+        .math_random => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Float"),
+
         .document => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Document"),
         .query_selector => blk: {
             if (a.len != 2 or !native(cx, a[0], "Document") or !named(cx, a[1], "String", "String")) break :blk false;
@@ -56,4 +126,13 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .timeout => a.len == 2 and named(cx, a[1], "Basics", "Int") and named(cx, r, "Basics", "Int") and (if (Walk.function(cx.store, a[0])) |callback| callback.params.len == 1 and unit(cx, callback.params[0]) and unit(cx, callback.result) else false),
         .worker_self => a.len == 1 and unit(cx, a[0]) and native(cx, r, "WorkerGlobalScope"),
     };
+}
+fn unitCallback(cx: *const Context, v: Var) bool {
+    const callback = Walk.function(cx.store, v) orelse return false;
+    return callback.params.len == 1 and unit(cx, callback.params[0]) and unit(cx, callback.result);
+}
+
+fn eventCallback(cx: *const Context, v: Var) bool {
+    const callback = Walk.function(cx.store, v) orelse return false;
+    return callback.params.len == 1 and native(cx, callback.params[0], "Event") and unit(cx, callback.result);
 }

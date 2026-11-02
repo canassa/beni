@@ -1,0 +1,14 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type NodeDirent
+
+
+pub foreign impure name : borrowed NodeDirent → String
+
+
+pub foreign impure isFile : borrowed NodeDirent → Bool
+
+
+pub foreign impure isDirectory : borrowed NodeDirent → Bool
+
+
+pub foreign impure isSymbolicLink : borrowed NodeDirent → Bool

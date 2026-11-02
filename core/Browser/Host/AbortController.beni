@@ -1,0 +1,14 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.AbortSignal as AbortSignal
+
+
+pub foreign type AbortController
+
+
+pub foreign impure create : ⊤ → AbortController
+
+
+pub foreign impure signal : borrowed AbortController → AbortSignal.AbortSignal
+
+
+pub foreign impure abort : borrowed AbortController → ⊤

@@ -4,7 +4,7 @@
 
 // A list's elements as a fresh array, which the host may keep and write
 // (boundary.md §4: a list crosses as a plain array, read by the protocol).
-const args = (xs) => (Array.isArray(xs) ? xs : xs.$plain()).slice();
+const args = (xs) => (Array.isArray(xs) ? xs : xs.b.slice(xs.o)).slice();
 
 const null_ = null;
 export { null_ as null };

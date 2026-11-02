@@ -49,7 +49,7 @@ pub const View = struct {
 
     fn addClass(view: *View, rung: Rung, deps: []const u32, sync: bool) Error!void {
         try view.classes.append(view.gpa, .{ .rung = rung, .deps_start = @intCast(view.deps.items.len), .deps_len = @intCast(deps.len), .dependant = false, .sync = sync });
-        for (deps) |d| if (d & Interface.EffectBlock.realm_only == 0) try view.deps.append(view.gpa, d);
+        for (deps) |d| if (d & Interface.EffectBlock.realm_only == 0) try view.deps.append(view.gpa, d & ~Interface.EffectBlock.realm_only);
         view.classes.items[view.classes.items.len - 1].deps_len = @intCast(view.deps.items.len - view.classes.items[view.classes.items.len - 1].deps_start);
         try view.names.append(view.gpa, none);
     }
@@ -111,7 +111,11 @@ pub const View = struct {
         var reader: Effects = .{ .gpa = gpa, .store = store, .types = undefined, .interner = undefined };
         var sites = block.sites();
         while (sites.next()) |site| {
-            const v = reader.follow(iface, site, body, quantified) orelse continue;
+            const stored_profile = for (site.steps) |word| {
+                if (Interface.EffectBlock.stepKind(word) == 7) break true;
+            } else false;
+            if (stored_profile) continue;
+            const v = try reader.follow(iface, site, body, quantified) orelse continue;
             const r, _ = store.resolved(v);
             if (r.int() < view.by_var.len) view.by_var[r.int()] = site.class + 1;
         }

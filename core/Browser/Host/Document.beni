@@ -1,4 +1,7 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Event as Event
+
+
 import Browser.Host.Element as Element
 
 
@@ -7,6 +10,18 @@ pub type QueryError
 
 
 pub foreign type Document
+
+
+pub foreign impure title : ⊤ → String
+
+
+pub foreign impure visibilityState : ⊤ → String
+
+
+pub foreign impure setTitle : String → ⊤
+
+
+pub foreign impure listen : String, escaped sync (Event.Event → ⊤) → (⊤ → ⊤)
 
 
 pub foreign impure querySelector : Document, String → Result QueryError (Maybe Element.Element)

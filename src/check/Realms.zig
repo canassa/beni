@@ -8,6 +8,20 @@ const Operations = @import("../native/Operations.zig");
 pub fn seed(e: *Effects, cx: *const Context, schemes: []const TypeStore.Var.Optional, report: *@import("Report.zig")) Effects.Error!void {
     if (cx.graph.modulePackage(cx.module) != .core) return;
     const name = cx.interner.slice(cx.graph.moduleName(cx.module));
+    if (std.mem.eql(u8, name, "Js.Inspect") or std.mem.eql(u8, name, "Js.Data")) {
+        e.noninvoking = true;
+        return;
+    }
+    if (std.mem.eql(u8, name, "Js.Any")) {
+        e.noninvoking = true;
+        for (cx.bir.decls, 0..) |d, i| {
+            if (d.kind != .foreign_value) continue;
+            const primitive = cx.interner.slice(cx.bir.symbol(d.name));
+            if (std.mem.eql(u8, primitive, "pack")) e.storage_pack = @intCast(i);
+            if (std.mem.eql(u8, primitive, "unpack")) e.storage_unpack = @intCast(i);
+        }
+        return;
+    }
     if (!Operations.nativeModule(name)) return;
     for (cx.bir.decls, 0..) |decl, i| {
         if (decl.kind != .foreign_value) continue;
@@ -112,7 +126,14 @@ pub fn foreignDependencies(e: *Effects, nodes: []const u32, calls: []const Forei
 
 /// Unknown types have realm obligations, but never effect rungs of their own.
 pub fn carrier(e: *const Effects, r: Effects.Var) bool {
-    return e.carries(r) or unknown(e.store, r);
+    return e.carries(r) or stored(e, r) or unknown(e.store, r);
+}
+
+pub fn stored(e: *const Effects, r: Effects.Var) bool {
+    const content = e.store.resolvedContent(r);
+    if (content != .structure or content.structure != .app or content.structure.app.type == .none) return false;
+    const entry = e.types.entry(content.structure.app.type);
+    return entry.package == .core and std.mem.eql(u8, e.interner.slice(entry.module_name), "Js.Any") and std.mem.eql(u8, e.interner.slice(entry.name), "Any");
 }
 
 /// Discharge each image of the source class independently. A generic parameter

@@ -1,0 +1,13 @@
+-- Platform-only synchronous protocol steps, over core's typed invocation.
+import Js
+import Js.Runtime as Runtime
+
+
+-- Used where a protocol has already established that this job cannot park.
+-- Waiting jobs use ordinary beni calls and their normal continuation.
+pub call : (a → b), a → b
+call callback argument = Js.invoke callback argument λ_ → ⊤
+
+
+pub defect : String → a
+defect message = Runtime.defect message

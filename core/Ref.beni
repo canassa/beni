@@ -26,22 +26,22 @@ import Js
 
 --| A mutable cell holding an `a`.
 pub opaque cell type Ref a
-    = Ref Js.Value
+    = Ref (Js.Ref a)
 
 
 --| A new cell holding `value`. Each call makes a new one.
 pub make : consumed a → cellnew Ref a
-make value = Ref (Js.array [ Js.from value ])
+make value = Ref (Js.ref value)
 
 
 --| What the cell holds now.
 pub get : cellread Ref a → lent a
-get (Ref cell) = Js.to (Js.at cell 0)
+get (Ref cell) = Js.read cell
 
 
 --| Make the cell hold `value`.
 pub set : cellwrite Ref a, consumed cellstored a → ⊤
-set (Ref cell) value = Js.setAt cell 0 (Js.from value)
+set (Ref cell) value = Js.write cell value
 
 
 --| Replace the value with what `f` makes of it. `f` must not suspend: no

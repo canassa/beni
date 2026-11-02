@@ -1,0 +1,31 @@
+-- A key may contain a callback when its declared compare ignores that field.
+-- Packing and comparing must neither erase that callback nor invoke it.
+import Keys
+import Node
+import Task
+
+
+type Token
+    = Token Int (⊤ → ⊤)
+
+
+pub compare : Token, Token → Order
+compare (Token left _) (Token right _) =
+    if left < right then LT else if left > right then GT else EQ
+
+
+unexpected : ⊤ → ⊤
+unexpected ⊤ =
+    Task.yieldNow ⊤
+    Debug.log "a comparison invoked the token's callback" ⊤
+
+
+main : Node.Program
+main =
+    first = Keys.key (Token 1 unexpected)
+    second = Keys.key (Token 2 unexpected)
+    same = Keys.key (Token 1 λ⊤ → ⊤)
+    _ = Debug.log "order" (Keys.compare first second)
+    _ = Debug.log "same key" (Keys.eq first same)
+    _ = Debug.log "different type" (Keys.eq (Keys.key 1) (Keys.key "1"))
+    Node.print "done"

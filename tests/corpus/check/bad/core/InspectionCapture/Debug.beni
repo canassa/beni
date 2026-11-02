@@ -1,0 +1,8 @@
+-- Capturing the view in a returned callback would outlive its borrow.
+import Js.Inspect as Inspect
+
+
+pub bad : Int → (⊤ → String)
+bad value =
+    view = Inspect.inspect value
+    λ⊤ → Inspect.kind view

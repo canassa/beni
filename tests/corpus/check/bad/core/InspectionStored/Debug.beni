@@ -1,0 +1,10 @@
+-- A read-only view cannot be retained by a cell.
+import Js
+import Js.Inspect as Inspect
+
+
+pub bad : Int → Int
+bad value =
+    view = Inspect.inspect value
+    _ = Js.ref view
+    0

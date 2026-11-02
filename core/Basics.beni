@@ -174,7 +174,7 @@ plain xs =
     if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
         xs
     else
-        Js.call xs "$plain" []
+        Js.call (Js.get xs "b") "slice" [ Js.get xs "o" ]
 
 
 --| Check if two values are not equal, by their type's own `eq`: exactly

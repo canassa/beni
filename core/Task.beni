@@ -27,6 +27,12 @@
 -- Typed controls store closed unit jobs. Each job retains its callback and
 -- matching result destination; native resources stay in Js.Runtime's sibling.
 
+import Browser.Host.Date as HostDate
+import Browser.Host.Immediate as Immediate
+import Browser.Host.Math as HostMath
+import Browser.Host.MessageChannel as MessageChannel
+import Browser.Host.MessagePort as MessagePort
+import Browser.Host.Timers as Timers
 import Duration exposing (Duration)
 import Js
 import Js.Runtime as Runtime
@@ -797,11 +803,52 @@ newScheduler runner more root =
 
 
 queueMicrotask : sync (⊤ → ⊤) → ⊤
-queueMicrotask task = Runtime.microtask task
+queueMicrotask task = Timers.queueMicrotask task
 
 
 macrotask : sync (⊤ → ⊤) → ⊤
-macrotask task = Runtime.macrotask task
+macrotask task =
+    if not (Immediate.trySchedule task) then
+        port = macroSender ⊤
+        pushStep macroQueue task
+        MessagePort.postUnit port
+
+
+macroQueue : Chain (⊤ → ⊤)
+macroQueue = newChain ⊤
+
+
+macroPort : Js.Ref (Maybe MessagePort.MessagePort)
+macroPort = Js.ref Nothing
+
+
+macroSender : ⊤ → MessagePort.MessagePort
+macroSender ⊤ =
+    case Js.read macroPort of
+        Just port →
+            port
+        Nothing →
+            channel = MessageChannel.create ⊤
+            MessagePort.onMessage (MessageChannel.port1 channel) runMacro
+            port = MessageChannel.port2 channel
+            Js.write macroPort (Just port)
+            port
+
+
+runMacro : ⊤ → ⊤
+runMacro ⊤ =
+    case shiftChain macroQueue of
+        Nothing →
+            ⊤
+        Just work →
+            Js.invoke work ⊤ λ_ → ⊤
+            ⊤
+
+
+nativeTimer : Int, sync (⊤ → ⊤) → (⊤ → ⊤)
+nativeTimer milliseconds work =
+    handle = Timers.start work milliseconds
+    λ⊤ → Timers.clear handle
 
 
 schedulerHere : ⊤ → Scheduler
@@ -1550,7 +1597,7 @@ queueTeardown ((Scheduler s) as sched) =
 
 arm : Scheduler → ⊤
 arm ((Scheduler s) as sched) =
-    Js.write s.timer (Just (Runtime.timer (Js.read s.deadline) λ⊤ → expire sched))
+    Js.write s.timer (Just (nativeTimer (Js.read s.deadline) λ⊤ → expire sched))
 
 
 teardown : Scheduler → ⊤
@@ -1973,7 +2020,7 @@ timerLimit = 2147483647
 
 realSleep : Int → ⊤
 realSleep ms =
-    callback λwake → Runtime.timer (Basics.min ms timerLimit) λ⊤ → fromHost λ⊤ → resume wake ⊤
+    callback λwake → nativeTimer (Basics.min ms timerLimit) λ⊤ → fromHost λ⊤ → resume wake ⊤
     if ms > timerLimit then realSleep (ms - timerLimit)
 
 
@@ -2067,7 +2114,7 @@ clockMillis : ⊤ → Int
 clockMillis ⊤ =
     case currentClock ⊤ of
         Nothing →
-            Runtime.now ⊤
+            HostDate.now ⊤
         Just now →
             now
 
@@ -2720,7 +2767,7 @@ metadata input attempt began =
     { input = input
     , attempt = attempt
     , elapsed = Duration.millis (clockMillis ⊤ - began)
-    , random = Runtime.random ⊤
+    , random = HostMath.random ⊤
     }
 
 

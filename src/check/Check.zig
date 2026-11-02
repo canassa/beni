@@ -343,7 +343,15 @@ pub fn run(
     // and `fast-compiler.md` §12 makes the trace the instrument of record.
     const types_token = if (options.profile) |p| p.begin() else null;
     check.types = try Types.build(gpa, graph, artifacts, interfaces, provenance, interner);
-    if (options.host_free) check.types.host_free = try @import("HostFree.zig").build(gpa, scratch.allocator(), &check.types, graph, artifacts, interfaces, interner);
+    var inspection_loaded = false;
+    for (check.types.entries, 0..) |entry, i| {
+        if (entry.package == .core and std.mem.eql(u8, interner.slice(entry.module_name), "Js.Inspect") and std.mem.eql(u8, interner.slice(entry.name), "Raw")) {
+            check.types.inspection_type = @fromBackingInt(@as(u32, @intCast(i)));
+            inspection_loaded = true;
+            break;
+        }
+    }
+    if (options.host_free or inspection_loaded) check.types.host_free = try @import("HostFree.zig").build(gpa, scratch.allocator(), &check.types, graph, artifacts, interfaces, interner);
     if (options.profile) |p| p.end(0, types_token.?, .types, Profile.Event.no_file, 0);
 
     const modules = graph.count();

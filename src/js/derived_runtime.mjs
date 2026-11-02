@@ -45,7 +45,7 @@ export const deep = (g, d) => {
 // core/List.js, handing their depth to every element, or their steps to
 // `deep` when asked. A list is read by backend.md §4's protocol: the array
 // itself, or a view's or a trie's plain copy.
-const plain = (xs) => (Array.isArray(xs) ? xs : xs.$plain());
+const plain = (xs) => (Array.isArray(xs) ? xs : xs.b.slice(xs.o));
 
 export const listEq = (m0, xs, ys, depth) => {
   if (depth >= request) return listSteps(m0, xs, ys, true);

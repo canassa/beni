@@ -1,0 +1,8 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type MessagePort
+
+
+pub foreign impure postUnit : borrowed MessagePort → ⊤
+
+
+pub foreign impure onMessage : borrowed MessagePort, escaped sync (⊤ → ⊤) → ⊤

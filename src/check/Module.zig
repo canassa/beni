@@ -146,6 +146,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // module's store does not map and unmap its own pages.
     var owned_store: TypeStore = .init(in.scratch.allocator());
     const store = if (in.keep) |k| &k.store else &owned_store;
+    store.inspection_type = in.types.inspection_type.int();
     defer if (in.keep == null) owned_store.deinit();
     // The checker makes two to three variables per instruction (2.1× on
     // the generated corpora, 3× on a module of 6 000 tuple comparisons, and
@@ -441,6 +442,8 @@ pub fn check(in: Input) Error!Check.Counters {
         p.record(in.tid, .solve, file.int(), 0, solve_ns);
         p.end(in.tid, exhaustive_token.?, .exhaustive, file.int(), 0);
     }
+
+    if (!quiet and report.errors == 0) try @import("Inspection.zig").run(&cx, inst_type, local_type, decl_scheme, &report);
 
     // The type-key artifact (checker-v2.md §36), while the store is alive,
     // and before P8, which publishes each declaration's crossing
@@ -983,6 +986,10 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     const lets = try gpa.alloc(Dispatch.LetInfo, let_rows.len);
     errdefer gpa.free(lets);
     const let_schemes = try scratch.alloc(Var, let_rows.len);
+    const let_identity_roots: [][]const Var.Optional = if (solver.instantiate.identity_uses.items.len != 0) try scratch.alloc([]const Var.Optional, let_rows.len) else &.{};
+    if (let_identity_roots.len != 0) {
+        for (let_identity_roots, let_rows) |*out_roots, row| out_roots.* = row.identity_roots;
+    }
     for (let_rows, lets, let_schemes) |row, *info, *scheme| {
         const start: u32 = @intCast(requirements.items.len);
         const kept = row.requirements;
@@ -1018,6 +1025,9 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .roots = roots.items,
         .decl_scheme = decl_scheme,
         .let_schemes = let_schemes,
+        .checks = groups.decl_display,
+        .let_identity_roots = let_identity_roots,
+        .uses = solver.instantiate.identity_uses.items,
         .out = &out,
     }) else .{};
     in.dispatch.deinit(gpa);

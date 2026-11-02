@@ -1,0 +1,6 @@
+-- Typed Any must never cross the Js.Value boundary, even when nested.
+import Js
+import Js.Any as Any
+
+
+pub erased = Js.from { values = [ Any.pack 1 ] }

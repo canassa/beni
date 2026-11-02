@@ -4,6 +4,6 @@ export const keep = (xs) => {
   return xs;
 };
 export const audit = (_) => {
-  (Array.isArray(kept) ? kept : kept.$plain()).slice();
+  (Array.isArray(kept) ? kept : kept.b.slice(kept.o)).slice();
   return [];
 };

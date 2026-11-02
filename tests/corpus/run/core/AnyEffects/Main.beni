@@ -1,0 +1,56 @@
+import Io
+import Js
+import Js.Any as Any
+import Node
+import Task
+
+
+store : a → Any.Any
+store value = Any.pack value
+
+
+restore : Any.Any → Maybe a
+restore value = Any.unpack value
+
+
+counter : Js.Ref Int
+counter = Js.ref 0
+
+
+bump : ⊤ → Int
+bump ⊤ =
+    Js.write counter (Js.read counter + 1)
+    17
+
+
+sleeping : ⊤ → Int
+sleeping ⊤ =
+    Task.yieldNow ⊤
+    42
+
+
+work : ⊤ → ⊤
+work ⊤ =
+    first : Maybe (⊤ → Int)
+    first = restore (store bump)
+    case first of
+        Just f →
+            _ = f ⊤
+            ⊤
+        Nothing →
+            ⊤
+    _ = Debug.log "counter" (Js.read counter)
+    second : Maybe { body : ⊤ → Int }
+    second = restore (store { body = sleeping })
+    case second of
+        Just value →
+            _ = Debug.log "resumed" (value.body ⊤)
+            ⊤
+        Nothing →
+            Debug.log "missing" ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    work ⊤
+    Node.print "done"

@@ -1,0 +1,4 @@
+import Js.Data as Data
+
+
+pub leaked = Data.checked 1

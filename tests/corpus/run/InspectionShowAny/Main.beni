@@ -1,0 +1,21 @@
+-- The formatter borrows callbacks and aggregates without erasing or invoking them.
+import Node
+
+
+showAny : a → String
+showAny value = Debug.toString value
+
+
+unexpected : ⊤ → ⊤
+unexpected ⊤ = Debug.log "a formatter invoked a callback" ⊤
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ showAny unexpected
+        , showAny { count = 3, callback = unexpected }
+        , showAny [ 1, 2, 3 ]
+        , showAny ( 1, "two" )
+        , Debug.toString 1.0
+        ]

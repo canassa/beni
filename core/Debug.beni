@@ -14,6 +14,7 @@
 --! and Elm makes too; it is inferred `impure`, so no optimiser drops it.
 
 import Js
+import Js.Inspect as Inspect
 
 
 --| Print a value to the console, tagged with a label, and return it
@@ -78,18 +79,14 @@ logAs descriptor tag value =
 pub toStringAs : Js.Value, a → String
 toStringAs descriptor value = Js.pure λ⊤ →
     parsed = Js.call (Js.global "JSON") "parse" [ descriptor ]
-    show (Js.at parsed 0) (Js.at parsed 1) (Js.array []) (Js.from value)
+    show (Js.at parsed 0) (Js.at parsed 1) (Js.array []) (Inspect.inspect value)
 
 
--- The descriptor of a type nothing is known about.
 untyped : String
 untyped = "[\"?\",[]]"
 
 
--- A value of type `t` (`backend.md` §4's descriptor grammar). `defs` holds
--- the definitions an `["n", k, …]` names; `env` the types a definition's
--- parameters stand for, each a pair of a type and the `env` it is read in.
-show : Js.Value, Js.Value, Js.Value, Js.Value → String
+show : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw → String
 show t defs env value =
     if Js.typeIs t "number" then
         bound = Js.at env t
@@ -102,19 +99,18 @@ show t defs env value =
         showRecord t defs env value
 
 
--- A type written as one letter.
-showCode : Js.Value, Js.Value, Js.Value, Js.Value → String
+showCode : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw → String
 showCode t defs env value =
     if Js.same t (Js.from "i") then
-        Js.to (Js.apply (Js.global "String") [ value ])
+        numberText (Inspect.number value)
     else if Js.same t (Js.from "f") then
-        showFloat value
+        showFloat (Inspect.number value)
     else if Js.same t (Js.from "s") then
-        quoted (Js.to value) "\""
+        quoted (Inspect.string value) "\""
     else if Js.same t (Js.from "c") then
-        quoted (Js.to value) "'"
+        quoted (Inspect.string value) "'"
     else if Js.same t (Js.from "b") then
-        if Js.to value then "True" else "False"
+        if Inspect.boolean value then "True" else "False"
     else if Js.same t (Js.from "u") then
         "⊤"
     else if Js.same t (Js.from "F") then
@@ -122,37 +118,43 @@ showCode t defs env value =
     else if Js.same t (Js.from "x") then
         "<internals>"
     else
-        untypedValue value (Js.construct (Js.global "Set") [])
+        untypedValue value
 
 
--- A tuple, a list, a `Dict`, a `Set` or a `type`, by the descriptor's
--- first element.
-showApplied : Js.Value, Js.Value, Js.Value, Js.Value → String
+showApplied : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw → String
 showApplied t defs env value =
     head = Js.at t 0
     if Js.same head (Js.from "t") then
         parts = Js.array []
-        n : Int
-        n = Js.to (Js.get t "length")
-        eachIndex 1 n λi → push parts (show (Js.at t i) defs env (Js.at value (slot (i - 1))))
+        tupleParts t defs env value 1 (Js.to (Js.get t "length")) parts
         "(${commas parts})"
     else if Js.same head (Js.from "l") then
         "[${commas (listItems (Js.at t 1) defs env value)}]"
     else if Js.same head (Js.from "D") then
         pairs = Js.array []
-        dictPairs (Js.at t 1) (Js.at t 2) defs env (Js.get value "a") pairs
+        dictPairs (Js.at t 1) (Js.at t 2) defs env (Inspect.field value "a") pairs
         "Dict.fromList [${commas pairs}]"
     else if Js.same head (Js.from "S") then
         keys = Js.array []
-        dictPairs (Js.at t 1) (Js.from "?") defs env (Js.get (Js.get value "a") "a") keys
+        dictPairs
+            (Js.at t 1)
+            (Js.from "?")
+            defs
+            env
+            (Inspect.field (Inspect.field value "a") "a")
+            keys
         "Set.fromList [${commas keys}]"
     else
         showType (Js.at defs (Js.at t 1)) (bindArgs t env) defs value
 
 
--- The types `["n", k, a, …]` applies its definition to, each read in
--- `env`: a parameter of the enclosing definition is the pair it stands
--- for already.
+tupleParts : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw, Int, Int, Js.Value → ⊤
+tupleParts t defs env value i n parts =
+    if i < n then
+        push parts (show (Js.at t i) defs env (Inspect.field value (slot (i - 1))))
+        tupleParts t defs env value (i + 1) n parts
+
+
 bindArgs : Js.Value, Js.Value → Js.Value
 bindArgs t env =
     bound = Js.array []
@@ -167,149 +169,170 @@ bindArgs t env =
     bound
 
 
--- A value of a `type` whose constructors `def` lists. An all-nullary type
--- is its tag; any other is `{$: tag, a, b, …}`, padded, so the arity is
--- the definition's and a `⊤` argument prints.
-showType : Js.Value, Js.Value, Js.Value, Js.Value → String
+showType : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw → String
 showType def env defs value =
-    if Js.typeIs value "string" then
-        Js.to value
+    if Inspect.kind value == "string" then
+        Inspect.string value
     else
-        tag = Js.get value "$"
-        if Js.to (Js.call (Js.global "Object") "hasOwn" [ def, tag ]) then
+        tag = Inspect.tag value
+        if Js.to (Js.call (Js.global "Object") "hasOwn" [ def, Js.from tag ]) then
             args = Js.at def tag
-            parts = Js.array [ tag ]
-            n : Int
-            n = Js.to (Js.get args "length")
-            eachIndex 0 n λi →
-                push parts (parenthesised (show (Js.at args i) defs env (Js.at value (slot i))))
+            parts = Js.array [ Js.from tag ]
+            constructorParts args defs env value 0 (Js.to (Js.get args "length")) parts
             joined parts " "
         else
-            untypedValue value (Js.construct (Js.global "Set") [])
+            untypedValue value
 
 
--- A record, each field by its type when the descriptor has it.
-showRecord : Js.Value, Js.Value, Js.Value, Js.Value → String
+constructorParts : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw, Int, Int, Js.Value → ⊤
+constructorParts args defs env value i n parts =
+    if i < n then
+        push parts (parenthesised (show (Js.at args i) defs env (Inspect.field value (slot i))))
+        constructorParts args defs env value (i + 1) n parts
+
+
+showRecord : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw → String
 showRecord t defs env value =
-    keys = Js.call (Js.global "Object") "keys" [ value ]
-    if Js.same (Js.get keys "length") (Js.from 0) then
-        -- Elm prints the empty record as `{}`, not `{  }`.
+    keys = Inspect.keys value
+    if List.isEmpty keys then
         "{}"
     else
         fields = Js.array []
-        Js.each keys λk →
-            key : String
-            key = Js.to k
-            field =
-                if Js.to (Js.call (Js.global "Object") "hasOwn" [ t, k ]) then
-                    show (Js.at t k) defs env (Js.at value k)
-                else
-                    untypedValue (Js.at value k) (Js.construct (Js.global "Set") [])
-            push fields "${key} = ${field}"
+        recordFields t defs env value keys fields
         "{ ${fieldList fields} }"
 
 
--- A list's elements, each printed: the list is an array, or answers one
--- (`backend.md` §4, *Lists are arrays*).
-listItems : Js.Value, Js.Value, Js.Value, Js.Value → Js.Value
+recordFields : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw, List String, Js.Value → ⊤
+recordFields t defs env value keys fields =
+    case keys of
+        [] →
+            ⊤
+        [ key, …rest ] →
+            field =
+                if Js.to (Js.call (Js.global "Object") "hasOwn" [ t, Js.from key ]) then
+                    show (Js.at t key) defs env (Inspect.field value key)
+                else
+                    untypedValue (Inspect.field value key)
+            push fields "${key} = ${field}"
+            recordFields t defs env value rest fields
+
+
+listItems : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw → Js.Value
 listItems t defs env value =
     parts = Js.array []
-    Js.each (plain value) λitem → push parts (show t defs env item)
+    listParts t defs env value 0 (Inspect.length value) parts
     parts
 
 
--- A `Dict`'s tree in key order, `(k,v)` pushed onto `out` for each node;
--- the key alone when `v` is `"?"`, which is how a `Set` is read. Core's
--- `Dict` is `Dict (Tree k v)`, and a tree node is `Node color key value
--- left right` or `Leaf` (`core/Dict.beni`).
-dictPairs : Js.Value, Js.Value, Js.Value, Js.Value, Js.Value, Js.Value → ⊤
+listParts : Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw, Int, Int, Js.Value → ⊤
+listParts t defs env value i n parts =
+    if i < n then
+        push parts (show t defs env (Inspect.element value i))
+        listParts t defs env value (i + 1) n parts
+
+
+dictPairs : Js.Value, Js.Value, Js.Value, Js.Value, borrowed Inspect.Raw, Js.Value → ⊤
 dictPairs k v defs env tree out =
-    if Js.same (Js.get tree "$") (Js.from "Node") then
-        dictPairs k v defs env (Js.get tree "d") out
-        key = show k defs env (Js.get tree "b")
+    if Inspect.tag tree == "Node" then
+        dictPairs k v defs env (Inspect.field tree "d") out
+        key = show k defs env (Inspect.field tree "b")
         entry =
             if Js.same v (Js.from "?") then
                 key
             else
-                "(${key},${show v defs env (Js.get tree (slot 2))})"
+                "(${key},${show v defs env (Inspect.field tree (slot 2))})"
         push out entry
-        dictPairs k v defs env (Js.get tree "e") out
+        dictPairs k v defs env (Inspect.field tree "e") out
 
 
--- A value read by its representation alone (`backend.md` §4). `seen` holds
--- the objects being printed, so a value that holds itself prints `<cycle>`
--- where it would recur.
-untypedValue : Js.Value, Js.Value → String
-untypedValue value seen =
-    if Js.typeIs value "string" then
-        quoted (Js.to value) "\""
-    else if Js.typeIs value "number" then
-        Js.to (Js.apply (Js.global "String") [ value ])
-    else if Js.typeIs value "boolean" then
-        if Js.to value then "True" else "False"
-    else if Js.isNullish value then
-        -- `⊤` is `null`, or `undefined` where a function whose result is
-        -- `⊤` wrote none (`backend.md` §4, *A `⊤` result is not written*).
+untypedValue : borrowed Inspect.Raw → String
+untypedValue value =
+    kind = Inspect.kind value
+    if kind == "string" then
+        quoted (Inspect.string value) "\""
+    else if kind == "number" then
+        numberText (Inspect.number value)
+    else if kind == "boolean" then
+        if Inspect.boolean value then "True" else "False"
+    else if kind == "null" || kind == "undefined" then
         "⊤"
-    else if Js.typeIs value "function" then
+    else if kind == "function" then
         "<function>"
-    else if Js.typeIs value "object" then
-        if Js.to (Js.call seen "has" [ value ]) then
-            "<cycle>"
-        else
-            _ = Js.call seen "add" [ value ]
-            Js.finally (λ⊤ → untypedObject value seen) λ⊤ → Js.to (Js.call seen "delete" [ value ])
+    else if kind == "cycle" then
+        "<cycle>"
+    else if kind == "object" || kind == "array" then
+        untypedObject value
     else
         "<internals>"
 
 
--- A list, a constructor or a record. A value is a list exactly when it is
--- an array or has a `$plain` function: no other beni value is an array,
--- and no record can have a field called `$plain` (`backend.md` §4).
-untypedObject : Js.Value, Js.Value → String
-untypedObject value seen =
-    if
-        Js.to (Js.call (Js.global "Array") "isArray" [ value ])
-            || Js.typeIs (Js.get value "$plain") "function"
-    then
+untypedObject : borrowed Inspect.Raw → String
+untypedObject value =
+    if Inspect.kind value == "array" then
         parts = Js.array []
-        Js.each (plain value) λitem → push parts (untypedValue item seen)
+        untypedItems value 0 (Inspect.length value) parts
         "[${commas parts}]"
     else
-        keys = Js.call (Js.global "Object") "keys" [ value ]
-        tag = Js.get value "$"
-        if Js.typeIs tag "string" then
-            -- A constructor's arguments, padding (`null`) left out: with no
-            -- type, padding and a `⊤` argument are one representation.
-            parts = Js.array [ tag ]
-            Js.each keys λk →
-                if Js.same k (Js.from "$") || Js.isNullish (Js.at value k) then
-                    ⊤
-                else
-                    push parts (parenthesised (untypedValue (Js.at value k) seen))
+        keys = Inspect.keys value
+        tag = Inspect.tag value
+        if tag ≠ "" then
+            parts = Js.array [ Js.from tag ]
+            untypedConstructor value keys parts
             joined parts " "
-        else if Js.same (Js.get keys "length") (Js.from 0) then
+        else if List.isEmpty keys then
             "{}"
         else
             fields = Js.array []
-            Js.each keys λk →
-                key : String
-                key = Js.to k
-                push fields "${key} = ${untypedValue (Js.at value k) seen}"
+            untypedFields value keys fields
             "{ ${fieldList fields} }"
+
+
+untypedItems : borrowed Inspect.Raw, Int, Int, Js.Value → ⊤
+untypedItems value i n parts =
+    if i < n then
+        push parts (untypedValue (Inspect.element value i))
+        untypedItems value (i + 1) n parts
+
+
+untypedConstructor : borrowed Inspect.Raw, List String, Js.Value → ⊤
+untypedConstructor value keys parts =
+    case keys of
+        [] →
+            ⊤
+        [ key, …rest ] →
+            if key ≠ "$" then
+                item = Inspect.field value key
+                kind = Inspect.kind item
+                if kind ≠ "null" && kind ≠ "undefined" then
+                    push parts (parenthesised (untypedValue item))
+            untypedConstructor value rest parts
+
+
+untypedFields : borrowed Inspect.Raw, List String, Js.Value → ⊤
+untypedFields value keys fields =
+    case keys of
+        [] →
+            ⊤
+        [ key, …rest ] →
+            push fields "${key} = ${untypedValue (Inspect.field value key)}"
+            untypedFields value rest fields
+
+
+numberText : Float → String
+numberText value = Js.to (Js.apply (Js.global "String") [ Js.from value ])
 
 
 -- A `Float` as beni source writes one: a whole number with its point, so
 -- `1.0` and not `1`, and `-0.0` for negative zero; `NaN`, `Infinity` and
 -- `-Infinity` as JavaScript spells them.
-showFloat : Js.Value → String
+showFloat : Float → String
 showFloat value =
     text : String
-    text = Js.to (Js.apply (Js.global "String") [ value ])
-    if Js.to (Js.call (Js.global "Object") "is" [ value, Js.from (-0.0) ]) then
+    text = Js.to (Js.apply (Js.global "String") [ Js.from value ])
+    if Js.to (Js.call (Js.global "Object") "is" [ Js.from value, Js.from (-0.0) ]) then
         "-0.0"
     else if
-        Js.to (Js.call (Js.global "Number") "isInteger" [ value ])
+        Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ])
             && not (Js.to (Js.call (Js.from text) "includes" [ Js.from "e" ]))
     then
         "${text}.0"
@@ -388,10 +411,10 @@ parenthesised s =
 -- A list's elements as one array.
 plain : Js.Value → Js.Value
 plain value =
-    if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+    if Js.to (Js.call (Js.global "Array") "isArray" [ Js.from value ]) then
         value
     else
-        Js.call value "$plain" []
+        Js.call (Js.get value "b") "slice" [ Js.get value "o" ]
 
 
 -- The strings of `parts` joined by `separator`.

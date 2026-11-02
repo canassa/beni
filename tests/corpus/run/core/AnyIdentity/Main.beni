@@ -1,0 +1,97 @@
+-- Identity evidence crosses generic functions, imports, lets and value references.
+import Js.Any as Any
+import Node
+import Storage
+import Token
+
+
+type First
+    = Item Int
+
+
+type Second
+    = Other Int
+
+
+wrap : a → Any.Any
+wrap value = Storage.store value
+
+
+unwrap : Any.Any → Maybe a
+unwrap value = Storage.restore value
+
+
+matched : Maybe a → String
+matched maybe =
+    case maybe of
+        Just _ →
+            "match"
+        Nothing →
+            "different"
+
+
+local : a → Maybe a
+local value =
+    package : b → Any.Any
+    package x = Any.pack x
+    recover : Any.Any → Maybe b
+    recover x = Any.unpack x
+    recover (package value)
+
+
+captured : a → Maybe a
+captured value =
+    package _ = Any.pack value
+    Any.unpack (package ⊤)
+
+
+mutualLeft : Int, a → Any.Any
+mutualLeft n value = if n == 0 then Any.pack value else mutualRight (n - 1) value
+
+
+mutualRight : Int, a → Any.Any
+mutualRight n value = mutualLeft n value
+
+
+callback : ⊤ → Int
+callback ⊤ = Debug.log "callback returned" 42
+
+
+main : Node.Program
+main =
+    integer : Maybe Int
+    integer = unwrap (wrap 7)
+    text : Maybe String
+    text = unwrap (wrap 7)
+    first : Maybe First
+    first = unwrap (wrap (Item 1))
+    second : Maybe Second
+    second = unwrap (wrap (Item 1))
+    function : Maybe (⊤ → Int)
+    function = Storage.roundTrip callback
+    wrongFunction : Maybe (String → Int)
+    wrongFunction = unwrap (wrap callback)
+    dispatched : Maybe (Token.Token String)
+    dispatched = Storage.restore ((Token.Token "method").store)
+    mutual : Maybe String
+    mutual = Storage.restore (mutualLeft 3 "recursive")
+    packed = List.map [ 1, 2, 3 ] Any.pack
+    unpacked : List (Maybe Int)
+    unpacked = List.map packed Any.unpack
+    Node.printLines
+        [ matched integer
+        , matched text
+        , matched first
+        , matched second
+        , String.fromInt (Maybe.withDefault (local 8) 0)
+        , Maybe.withDefault (captured "outer") "missing"
+        , matched dispatched
+        , Maybe.withDefault mutual "missing recursion"
+        , matched wrongFunction
+        , String.fromInt (List.sum (List.filterMap unpacked identity))
+        , case function of
+            Just f →
+                String.fromInt (f ⊤)
+            Nothing →
+                "missing callback"
+        ]

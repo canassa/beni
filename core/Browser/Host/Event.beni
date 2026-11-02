@@ -1,0 +1,62 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.EventTarget as EventTarget
+
+
+import Browser.Host.DOMRect as DOMRect
+
+
+pub foreign type Event
+
+
+pub foreign impure defaultPrevented : borrowed Event → Bool
+
+
+pub foreign impure button : borrowed Event → Int
+
+
+pub foreign impure composedPath : borrowed Event → List EventTarget.EventTarget
+
+
+pub foreign impure currentBox : borrowed Event → DOMRect.DOMRect
+
+
+pub foreign impure targetValue : borrowed Event → String
+
+
+pub foreign impure targetChecked : borrowed Event → Bool
+
+
+pub foreign impure preventDefault : borrowed Event → ⊤
+
+
+pub foreign impure key : borrowed Event → String
+
+
+pub foreign impure code : borrowed Event → String
+
+
+pub foreign impure ctrlKey : borrowed Event → Bool
+
+
+pub foreign impure shiftKey : borrowed Event → Bool
+
+
+pub foreign impure altKey : borrowed Event → Bool
+
+
+pub foreign impure metaKey : borrowed Event → Bool
+
+
+pub foreign impure pointerId : borrowed Event → Int
+
+
+pub foreign impure pointerType : borrowed Event → String
+
+
+pub foreign impure isPrimary : borrowed Event → Bool
+
+
+pub foreign impure clientX : borrowed Event → Float
+
+
+pub foreign impure clientY : borrowed Event → Float

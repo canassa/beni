@@ -10664,7 +10664,7 @@ pub const Lowerer = struct {
     noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
         if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
             switch (native.recipe) {
-                .query_selector, .text_content, .timeout => {}, // Precise generated adapters.
+                .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link => {}, // Precise generated adapters.
                 else => {
                     const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder;
                     const values = if (ignores_unit) blk: {
@@ -10828,6 +10828,29 @@ pub const Lowerer = struct {
                 for (arg_insts) |a| try l.discard(out, a, p);
                 const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
                 return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            }
+            // Any's guard and payload stay typed; only an exact compiler
+            // identity match can construct Just at the requested type.
+            if (which == .any_pack or which == .any_unpack) {
+                if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
+                    try l.reportEvidenceShape(inst);
+                    return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                }
+                const values = try l.orderedExprs(out, arg_insts, false);
+                const id = try l.identityValue(roots[roots.len - 1], p);
+                const type_key = try l.interner.getOrPut(l.gpa, "type");
+                const value_key = try l.interner.getOrPut(l.gpa, "value");
+                if (which == .any_pack) {
+                    const payload = try l.object(&.{
+                        try l.property(type_key, id, p),
+                        try l.property(value_key, values[0], p),
+                    }, p);
+                    const object_global = try l.member(try l.add(.global_this, p, Node.Data.unused, Node.Data.unused), try l.interner.getOrPut(l.gpa, "Object"), p);
+                    return l.hostCall(try l.member(object_global, try l.interner.getOrPut(l.gpa, "create"), p), &.{payload}, p);
+                }
+                const boxed = try l.bindSubject(out, values[0], p);
+                const matches = try l.binary(.strict_eq, try l.member(boxed, type_key, p), id, p);
+                return l.condOf(matches, try l.coreCtorApplied("Maybe", "Just", &.{try l.member(boxed, value_key, p)}, p), try l.coreCtorApplied("Maybe", "Nothing", &.{}, p), p);
             }
             // `Js.fingerprint x` is the identity its site carries, the last
             // root (`backend.md` §4, *`Js.fingerprint` is its type's
@@ -11714,7 +11737,8 @@ pub const Lowerer = struct {
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             // Answered at the call, from its site (`callExpr`).
-            W.fingerprint => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.any_fingerprint => l.member(v[0], try l.interner.getOrPut(l.gpa, "type"), p),
+            W.any_pack, W.any_unpack, W.fingerprint => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -11892,6 +11916,34 @@ pub const Lowerer = struct {
                 const slot = try l.add(.index_get, p, builder.int(), v[1].int());
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
                 break :blk builder;
+            },
+            .list_builder => blk: {
+                const array = try l.member(try l.add(.global_this, p, Node.Data.unused, Node.Data.unused), try l.interner.getOrPut(l.gpa, "Array"), p);
+                const n = try l.bindSubject(out, v[0], p);
+                const size = try l.condOf(try l.binary(.gt, n, try zero.node(l, p), p), n, try zero.node(l, p), p);
+                const range = try l.b.addRange(&.{size});
+                break :blk l.add(.new_call, p, array.int(), @backingInt(try l.b.addRecord(range)));
+            },
+            .list_done => blk: {
+                const builder = try l.bindSubject(out, v[0], p);
+                const size = try l.member(builder, try l.interner.getOrPut(l.gpa, "length"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), v[1].int()));
+                break :blk builder;
+            },
+            .list_base, .list_offset => blk: {
+                const xs = try l.bindSubject(out, v[0], p);
+                const array = try l.member(try l.add(.global_this, p, Node.Data.unused, Node.Data.unused), try l.interner.getOrPut(l.gpa, "Array"), p);
+                const plain = try l.hostCall(try l.member(array, try l.interner.getOrPut(l.gpa, "isArray"), p), &.{xs}, p);
+                break :blk l.condOf(plain, if (which == .list_base) xs else try zero.node(l, p), try l.member(xs, try l.interner.getOrPut(l.gpa, if (which == .list_base) "b" else "o"), p), p);
+            },
+            .list_viewOf => blk: {
+                const b = try l.bindSubject(out, v[0], p);
+                const o = try l.bindSubject(out, v[1], p);
+                break :blk l.object(&.{
+                    try l.property(try l.interner.getOrPut(l.gpa, "b"), b, p),
+                    try l.property(try l.interner.getOrPut(l.gpa, "o"), o, p),
+                    try l.property(try l.interner.getOrPut(l.gpa, "length"), try l.binary(.sub, try l.member(b, try l.interner.getOrPut(l.gpa, "length"), p), o, p), p),
+                }, p);
             },
             // ownership pin end: listPrimitives
         };
@@ -12265,6 +12317,15 @@ pub const Lowerer = struct {
         }
         if (l.entryDecl()) |index| if (index < decls.len) {
             dispatched[index] = true;
+        };
+        // A private event extractor is read by the renderer across modules.
+        // It has no ordinary BIR reference or public interface entry.
+        if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
+            const iface = &l.in.interfaces[l.in.module.int()];
+            for (0..iface.events.len) |row| {
+                const extractor_decl = Reach.privateExtractor(iface, l.bir, @intCast(row)) orelse continue;
+                dispatched[extractor_decl] = true;
+            }
         };
         // And `core/Schema`'s core-private values, which the specialised
         // path calls from other modules (`schema.md` §6).

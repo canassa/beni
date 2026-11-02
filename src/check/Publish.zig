@@ -102,7 +102,7 @@ pub fn fill(in: Input) Error!u32 {
             const reqs = table.declRequirements(d.int());
             const ids = table.declIdentities(d.int());
             quantifiers = try gpa.alloc(u16, ids.len);
-            for (ids, quantifiers) |j, *q| q.* = if (j < reqs.len) reqs[j].quantified else std.math.maxInt(u16);
+            for (ids, quantifiers) |j, *q| q.* = if (j & Dispatch.identity_quantifier != 0) @intCast(j & ~Dispatch.identity_quantifier) else if (j < reqs.len) reqs[j].quantified else std.math.maxInt(u16);
         };
         writer.identities = quantifiers;
         defer writer.identities = &.{};

@@ -1,0 +1,8 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.HTMLAnchorElement as HTMLAnchorElement
+
+
+pub foreign type EventTarget
+
+
+pub foreign impure asAnchor : borrowed EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement

@@ -1,0 +1,12 @@
+import Js.Any as Any
+import Task
+
+
+sleeping : ⊤ → Int
+sleeping ⊤ =
+    Task.yieldNow ⊤
+    43
+
+
+pub packet : Any.Any
+packet = Any.pack { quick = λ⊤ → 7, factory = λ⊤ → sleeping }

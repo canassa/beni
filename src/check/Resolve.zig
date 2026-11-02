@@ -147,7 +147,7 @@ pub const State = struct {
     }
 };
 
-pub const LetRow = struct { inst: Bir.Inst.Index, requirements: Dispatch.Range, scheme: Var };
+pub const LetRow = struct { inst: Bir.Inst.Index, requirements: Dispatch.Range, scheme: Var, identity_roots: []const Var.Optional = &.{} };
 
 pub const MemoKey = struct { root: Var, method: Symbol };
 const MissingKey = struct { origin: Bir.Inst.Index, rigid: Var, method: Symbol };
@@ -1042,14 +1042,28 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
     defer reqs.deinit(scratch);
     for (binders) |i| {
         const b = s.tree.binders.items[i];
-        if (!b.header or letBinding(s, b) != .function) continue;
+        const identities = s.instantiate.identity_uses.items.len != 0;
+        const binding_kind = letBinding(s, b);
+        if (!b.header or (binding_kind != .function and !(identities and binding_kind == .annotated))) continue;
         all.clearRetainingCapacity();
         try Evidence.requirements(st, s.cx.interner, b.v, scratch, &all);
         reqs.clearRetainingCapacity();
         for (all.items) |r| {
             if (own.contains(st.find(r.root))) try reqs.append(scratch, r);
         }
-        if (reqs.items.len == 0) continue;
+        var identity_roots: []const Var.Optional = &.{};
+        var scheme = b.v;
+        if (identities) {
+            const def = s.cx.bir.extraData(@fromBackingInt(@intCast(s.cx.bir.instData(b.region).lhs)), Bir.LetDef);
+            const at = s.cx.bir.decls[b.decl orelse continue].locals_start + def.local;
+            if (at < s.groups.local_type.len) scheme = s.groups.local_type[at].unwrap() orelse b.v;
+            var variables: std.ArrayList(Var) = .empty;
+            try Schemes.quantifierOrder(st, s.cx.interner, b.v, &variables, scratch);
+            const roots_out = try scratch.alloc(Var.Optional, variables.items.len);
+            identity_roots = roots_out;
+            for (variables.items, roots_out) |v, *out| out.* = if (st.rank(v) == TypeStore.generalized) v.toOptional() else .none;
+        }
+        if (reqs.items.len == 0 and identity_roots.len == 0) continue;
         for (reqs.items) |r| try listed.put(s.cx.gpa, st.find(r.root), {});
         const first: u32 = @intCast(s.resolver.requirement_rows.items.len);
         for (reqs.items) |r| {
@@ -1067,7 +1081,8 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
         try s.resolver.let_rows.append(s.cx.gpa, .{
             .inst = b.region,
             .requirements = .{ .start = first, .len = @intCast(reqs.items.len) },
-            .scheme = b.v,
+            .scheme = scheme,
+            .identity_roots = identity_roots,
         });
     }
     // Every carrier this frame quantified is some binding's (rule 1). It

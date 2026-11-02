@@ -521,6 +521,7 @@ pub const Code = enum {
     obsolete_host_promise,
     entry_runtime_suspends,
     worker_entry_not_static,
+    inspection_escape,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -627,6 +628,7 @@ pub fn title(code: Code) []const u8 {
         .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
         .worker_realm_violation => "WORKER REALM VIOLATION",
         .host_value_erasure => "HOST VALUE ERASURE",
+        .inspection_escape => "INSPECTION VIEW ESCAPES",
         .invalid_native_binding => "INVALID NATIVE BINDING",
         .obsolete_host_promise => "OBSOLETE HOST PROMISE",
         .worker_entry_not_static => "WORKER ENTRY NOT STATIC",

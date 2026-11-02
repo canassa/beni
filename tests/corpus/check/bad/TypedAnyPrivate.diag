@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"tests/corpus/check/bad/TypedAnyPrivate.beni","start":{"line":6,"col":5},"end":{"line":6,"col":8}},"title":"PRIVATE NAME","message":"This name is private to core runtime modules."}]

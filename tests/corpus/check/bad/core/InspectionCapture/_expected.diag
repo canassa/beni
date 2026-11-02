@@ -1,0 +1,1 @@
+[{"code":"inspection_escape","severity":"error","span":{"file":"tests/corpus/check/bad/core/InspectionCapture/Debug.beni","start":{"line":8,"col":5},"end":{"line":8,"col":6}},"title":"INSPECTION VIEW ESCAPES","message":"A borrowed inspection view cannot be captured by a closure."}]

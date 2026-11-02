@@ -1,0 +1,7 @@
+-- Core-only checked conversion of a value graph to plain host data.
+import Js
+
+
+-- The value is retained only after the whole reachable graph is checked.
+-- No function, accessor or native object is called or admitted.
+pub foreign pure checked : returned a → Maybe Js.Value

@@ -111,6 +111,9 @@ pub const Which = enum {
     /// carries, a string literal or a concatenation (`backend.md` §4,
     /// *`Js.fingerprint` is its type's identity*).
     fingerprint,
+    any_pack,
+    any_unpack,
+    any_fingerprint,
 };
 
 /// Whether `inst` is a `case` on `Js.development` or on `Js.testHooks` —
@@ -254,10 +257,18 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
     if (graph.modulePackage(module) != .core) return null;
-    if (!same(interner.slice(graph.moduleName(module)), "Js")) return null;
+    const module_name = interner.slice(graph.moduleName(module));
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
-    return std.meta.stringToEnum(Which, interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
+    const name = interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (same(module_name, "Js.Any")) {
+        if (same(name, "pack")) return .any_pack;
+        if (same(name, "unpack")) return .any_unpack;
+        if (same(name, "fingerprint")) return .any_fingerprint;
+        return null;
+    }
+    if (!same(module_name, "Js")) return null;
+    return std.meta.stringToEnum(Which, name);
 }
 
 /// These typed operations have no JavaScript sibling export. Both saturated

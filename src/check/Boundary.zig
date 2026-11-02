@@ -55,7 +55,7 @@ pub fn rows(
         // side is JavaScript's own.
         const func = Walk.function(store, cast.copy) orelse continue;
         try stack.append(gpa, switch (cast.which) {
-            .from => if (func.params.len == 1) func.params[0] else continue,
+            .from, .inspect, .checked => if (func.params.len == 1) func.params[0] else continue,
             .to => func.result,
         });
         for (images.vars.items) |v| try stack.append(gpa, v);

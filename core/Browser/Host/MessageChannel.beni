@@ -1,0 +1,14 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.MessagePort as MessagePort
+
+
+pub foreign type MessageChannel
+
+
+pub foreign impure create : ⊤ → MessageChannel
+
+
+pub foreign impure port1 : MessageChannel → MessagePort.MessagePort
+
+
+pub foreign impure port2 : MessageChannel → MessagePort.MessagePort

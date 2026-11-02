@@ -962,6 +962,7 @@ const Crossing = struct {
             const func = Walk.function(in.store, cast.copy) orelse continue;
             switch (cast.which) {
                 .from => if (func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
+                .inspect, .checked => if (!c.checking_host_free and func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
                 // A `Js.to` adds its closed types to the wild set and crosses
                 // no quantifier (`backend.md` §9's table).
                 .to => if (in.keyed or c.checking_host_free) try c.cross(func.result, cast.decl, c.checking_host_free),

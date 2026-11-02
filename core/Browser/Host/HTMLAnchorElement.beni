@@ -1,0 +1,17 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type HTMLAnchorElement
+
+
+pub foreign impure hasAttribute : borrowed HTMLAnchorElement, String → Bool
+
+
+pub foreign impure href : borrowed HTMLAnchorElement → String
+
+
+pub foreign impure protocol : borrowed HTMLAnchorElement → String
+
+
+pub foreign impure host : borrowed HTMLAnchorElement → String
+
+
+pub foreign impure target : borrowed HTMLAnchorElement → String

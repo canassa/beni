@@ -82,7 +82,7 @@ const own = (a) => (Array.isArray(a) ? a.slice() : a);
 // `poison` leaves alone.
 const fresh = (xs) => {
   if (Array.isArray(xs)) return xs.slice();
-  if (xs.o !== undefined || xs.T === undefined) return xs.$plain().slice();
+  if (xs.o !== undefined || xs.T === undefined) return xs.b.slice(xs.o);
   const { length, h, hc, T, t, $plain } = xs;
   const tree = T.tc > 0 ? { r: own(T.r), s: T.s, off: T.off, tc: T.tc } : T;
   return { length, h: own(h), hc, T: tree, t: own(t), p: null, $plain };

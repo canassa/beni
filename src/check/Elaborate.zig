@@ -217,7 +217,7 @@ pub const LetScopes = struct {
     owner: []u32 = &.{},
     parent: []u32 = &.{},
 
-    fn build(scratch: Allocator, bir: *const Bir, lets: []const Dispatch.LetInfo) Error!LetScopes {
+    pub fn build(scratch: Allocator, bir: *const Bir, lets: []const Dispatch.LetInfo) Error!LetScopes {
         if (lets.len == 0) return .{};
         const owner = try scratch.alloc(u32, bir.insts.len);
         @memset(owner, no_let);
@@ -244,7 +244,7 @@ pub const LetScopes = struct {
         scratch.free(s.parent);
     }
 
-    fn of(s: *const LetScopes, inst: Bir.Inst.Index) u32 {
+    pub fn of(s: *const LetScopes, inst: Bir.Inst.Index) u32 {
         return if (inst.int() < s.owner.len) s.owner[inst.int()] else no_let;
     }
 };

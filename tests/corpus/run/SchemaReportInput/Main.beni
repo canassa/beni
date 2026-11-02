@@ -1,0 +1,59 @@
+-- The owner, 2026-11-02: failures retain plain input data only.
+import Node
+import Schema
+
+
+callback : ⊤ → ⊤
+callback ⊤ = Debug.log "a reporting conversion invoked its input" ⊤
+
+
+callbacks : Schema.Schema String (⊤ → ⊤)
+callbacks =
+    Schema.converted Schema.string
+        (Schema.conversion (λ_ → Ok callback) λ_ → Err [ Schema.issue "callback failed" ])
+
+
+type alias Data =
+    count : Int
+    labels : List String
+
+
+data : Schema.Schema String Data
+data =
+    Schema.converted Schema.string
+        (Schema.conversion (λ_ → Ok { count = 7, labels = [ "a", "b" ] }) λ_ →
+            Err [ Schema.issue "data failed" ]
+        )
+
+
+reported : Schema.Options
+reported = { Record.copy (Schema.defaultOptions ⊤) | reportInput = True }
+
+
+summary : Result (List Schema.Issue) a → String
+summary result =
+    case result of
+        Err [ problem, …_ ] →
+            case problem.input of
+                Nothing →
+                    problem.message ++ ": no input"
+
+                Just input →
+                    case Schema.print Schema.value input of
+                        Ok json →
+                            problem.message ++ ": " ++ json
+
+                        Err _ →
+                            "unexpected unprintable input"
+
+        _ →
+            "unexpected success"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ summary (Schema.encodeWith callbacks reported callback)
+        , summary (Schema.encodeWith data reported { count = 7, labels = [ "a", "b" ] })
+        , summary (Schema.encode data { count = 7, labels = [ "a", "b" ] })
+        ]

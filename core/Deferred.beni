@@ -21,62 +21,66 @@
 --! `Task.resume`.
 
 import Js
+import Js.Chain as Chain
 import Task
 
 
 --| A value that is completed once, and may be waited for until it is.
 pub opaque cell type Deferred a
-    = Deferred Js.Value
+    = Deferred { value : Js.Ref (Maybe a), waiters : Chain.Chain (Task.Resume a) }
 
 
---| A new `Deferred`, not completed. Each call makes a new one.
+--| A new Deferred, not completed.
 pub make : unused ⊤ → cellempty Deferred a
-make ⊤ =
-    Deferred
-        (Js.from { done = False, value = Js.null, waiters = Js.construct (Js.global "Set") [] })
+make ⊤ = Deferred { value = Js.ref Nothing, waiters = Chain.make ⊤ }
 
 
---| The value, once the `Deferred` is completed: at once when it already is,
---| and otherwise when `complete` is called. Cancelling the fiber that waits
---| ends the wait.
+--| Wait for its value, or return it at once when already completed.
 pub wait : cellread Deferred a → lent a
 wait (Deferred d) =
-    if Js.to (Js.get d "done") then
-        Js.to (Js.get d "value")
-    else
-        Task.callback λresume →
-            waiter = Js.from resume
-            waiters = Js.get d "waiters"
-            _ = Js.call waiters "add" [ waiter ]
-
-            λ⊤ →
-                _ = Js.call waiters "delete" [ waiter ]
-                ⊤
+    case Js.read d.value of
+        Just value →
+            value
+        Nothing →
+            Task.callback λresume →
+                link = Chain.append d.waiters resume
+                λ⊤ →
+                    _ = Chain.remove d.waiters link
+                    ⊤
 
 
---| Complete the `Deferred` with `value`, and answer `True`: every fiber
---| waiting goes on with it, in the order they began to wait, each at a
---| later turn — never inside this call. When it was already completed,
---| nothing changes and the answer is `False`.
+--| Complete once and resume every waiting fiber in arrival order.
 pub complete : cellcomplete Deferred a, consumed cellstored a → Bool
 complete (Deferred d) value =
-    if Js.to (Js.get d "done") then
-        False
-    else
-        Js.set d "done" (Js.from True)
-        Js.set d "value" (Js.from value)
-        waiters = Js.get d "waiters"
-        Js.set d "waiters" (Js.construct (Js.global "Set") [])
-        Js.each waiters λw → Task.resume (Js.to w) value
-        True
+    case Js.read d.value of
+        Just _ →
+            False
+        Nothing →
+            Js.write d.value (Just value)
+            wake d.waiters value
+            True
 
 
---| `Just` the value once the `Deferred` is completed, `Nothing` before,
---| without waiting.
+wake : Chain.Chain (Task.Resume a), a → ⊤
+wake waiters value =
+    case Chain.shift waiters of
+        Nothing →
+            ⊤
+        Just resume →
+            Task.resume resume value
+            wake waiters value
+
+
+--| The completed value, or Nothing before completion, without waiting.
 pub poll : cellread Deferred a → lentoptional Maybe a
-poll (Deferred d) = if Js.to (Js.get d "done") then Just (Js.to (Js.get d "value")) else Nothing
+poll (Deferred d) = Js.read d.value
 
 
---| Whether the `Deferred` has been completed.
+--| Whether the Deferred has been completed.
 pub isDone : cellread Deferred a → Bool
-isDone (Deferred d) = Js.to (Js.get d "done")
+isDone deferred =
+    case poll deferred of
+        Just _ →
+            True
+        Nothing →
+            False

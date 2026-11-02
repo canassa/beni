@@ -127,7 +127,12 @@ edges: std.ArrayList(Pair) = .empty,
 seeds: std.ArrayList(Seed) = .empty,
 realm_seeds: std.ArrayList(RealmSeed) = .empty,
 realm_edges: std.ArrayList(Pair) = .empty,
+stored: @import("AnyValues.zig").State = .{},
+storage_pack: ?u32 = null,
+storage_unpack: ?u32 = null,
 has_realm_edges: bool = false,
+// Read-only inspection never invokes the borrowed value or its callbacks.
+noninvoking: bool = false,
 joins: std.ArrayList(Pair) = .empty,
 zips: std.ArrayList(Pair) = .empty,
 records: std.ArrayList(Record) = .empty,
@@ -225,6 +230,7 @@ pub fn deinit(e: *Effects) void {
     e.seeds.deinit(gpa);
     e.realm_seeds.deinit(gpa);
     e.realm_edges.deinit(gpa);
+    e.stored.deinit(gpa);
     e.joins.deinit(gpa);
     e.zips.deinit(gpa);
     e.records.deinit(gpa);
@@ -387,7 +393,7 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
     defer if (count > small.len) e.gpa.free(reps);
     @memset(reps, .none);
     for (e.block_sites.items) |site| {
-        const v = e.follow(iface, site, body, quantified) orelse continue;
+        const v = try e.follow(iface, site, body, quantified) orelse continue;
         if (reps[site.class].unwrap()) |rep| {
             try e.join(rep, v);
         } else reps[site.class] = v.toOptional();
@@ -489,22 +495,15 @@ fn importedDemand(e: *const Effects, iface: *const Interface, scheme: Interface.
     return d;
 }
 
-/// Whether `v`'s class is a nominal application's: a value that holds a
-/// function, rather than a function (§15.4's wording).
-pub fn isHolder(e: *const Effects, v: Var) bool {
-    const r, _ = e.store.resolved(v);
-    return switch (e.store.content(r)) {
-        .structure => |s| s == .app,
-        else => false,
-    };
-}
+pub const isHolder = @import("EffectCells.zig").isHolder;
 
 /// The variable a site's path reaches from the read's roots, or null for a
 /// path this type does not have (a record from disk that lies).
-pub fn follow(e: *Effects, iface: *const Interface, site: Interface.EffectBlock.Site, body: Var, quantified: []const Var) ?Var {
+pub fn follow(e: *Effects, iface: *const Interface, site: Interface.EffectBlock.Site, body: Var, quantified: []const Var) Error!?Var {
     const store = e.store;
     var at: Var = if (site.root == 0) body else whereType(store, quantified, site.root - 1) orelse return null;
-    for (site.steps) |word| {
+    for (site.steps, 0..) |word, si| {
+        if (Interface.EffectBlock.stepKind(word) == 7) return try @import("AnyValues.zig").followSite(e, at, site.steps[si..]);
         const kind = std.enums.fromInt(Walk.StepKind, Interface.EffectBlock.stepKind(word)) orelse return null;
         var index = Interface.EffectBlock.stepIndex(word);
         if (kind == .field) {
@@ -668,6 +667,12 @@ pub const Solved = struct {
 
     /// Root `r`'s node, made the first time the graph meets it.
     fn nodeAt(s: *Solved, gpa: Allocator, r: Var) Error!u32 {
+        if (r.int() >= s.slot.len) {
+            const old = s.slot.len;
+            s.slot = try gpa.realloc(s.slot, r.int() + 1);
+            @memset(s.slot[old..], 0);
+            s.n = @intCast(s.slot.len);
+        }
         const at = &s.slot[r.int()];
         if (at.* != 0) return at.* - 1;
         const id: u32 = @intCast(s.uf.items.len);
@@ -746,7 +751,7 @@ pub const Solved = struct {
 /// run: its union-find root, looked through aliases to what they stand for,
 /// and through the effect joins.
 pub fn nodeOf(e: *Effects, v: Var) ?u32 {
-    const r, _ = e.store.resolved(v);
+    const r, _ = e.store.resolved(@import("AnyValues.zig").canonical(e, v));
     const id = e.solved.nodeIfAny(r) orelse return null;
     return e.solved.find(id);
 }
@@ -775,6 +780,7 @@ pub fn run(e: *Effects, in: Input) Error!void {
     const gpa = e.gpa;
     const store = e.store;
     const scratch = in.scratch;
+    try @import("AnyValues.zig").seed(e, in.decl_scheme);
     const n = store.count();
     var s = &e.solved;
     s.n = n;
@@ -836,6 +842,7 @@ pub fn run(e: *Effects, in: Input) Error!void {
     };
     for (in.wanted_edges) |p| try e.addEdge(p.a, p.b, none);
     try @import("Realms.zig").connect(e, scratch);
+    try @import("AnyValues.zig").prepare(e);
     var work: std.ArrayList(u32) = .empty;
     defer work.deinit(scratch);
     for (e.seeds.items) |sd| try e.raise(try e.nodeFor(sd.v), sd.rung, &work, scratch);
@@ -901,7 +908,7 @@ pub fn run(e: *Effects, in: Input) Error!void {
 }
 
 /// A demand on node `src.node` (§15.2, §15.3).
-fn addSource(e: *Effects, src: Source) Error!void {
+pub fn addSource(e: *Effects, src: Source) Error!void {
     const s = &e.solved;
     s.demanded.items[src.node] = true;
     try s.sources.append(e.gpa, src);
@@ -912,7 +919,7 @@ pub const none = std.math.maxInt(u32);
 /// `v`'s node, through aliases and the effect joins, made the first time.
 pub fn nodeFor(e: *Effects, v: Var) Error!u32 {
     // Most variables are no alias: the root without `resolved`'s walk.
-    var r = e.store.find(v);
+    var r = e.store.find(@import("AnyValues.zig").canonical(e, v));
     if (e.store.content(r) == .alias) r, _ = e.store.resolved(r);
     return e.solved.findCompress(try e.solved.nodeAt(e.gpa, r));
 }
@@ -981,7 +988,7 @@ pub fn edgeNodes(e: *Effects, x: u32, y: u32, origin: u32) Error!void {
     s.head.items[x] = @intCast(s.to.items.len - 1);
 }
 
-fn raise(e: *Effects, x: u32, rung: Rung, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
+pub fn raise(e: *Effects, x: u32, rung: Rung, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
     const s = &e.solved;
     if (@backingInt(rung) <= @backingInt(s.level.items[x])) return;
     s.level.items[x] = rung;
@@ -1131,66 +1138,9 @@ fn solveComponent(e: *Effects, in: Input, members: []const u32, scheme_decl: Sch
     }
 }
 
-/// A copy of `target`'s scheme gets `target`'s summary (§14.3 rule 3): its
-/// copies of one class are one class, each gets the class's rung, and the
-/// copy of each class it depends on flows into it.
-fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
-    const s = &e.solved;
-    const classes = s.classesOf(target);
-    if (classes.len == 0) return;
-    const reps = try scratch.alloc(u32, classes.len);
-    defer scratch.free(reps);
-    @memset(reps, none);
-    for (e.pairs.items[r.start..][0..r.len]) |p| {
-        const sn = try e.nodeFor(p.a);
-        const c = s.classIndex(target, sn) orelse continue;
-        const i = try e.nodeFor(p.b);
-        if (reps[c] == none) {
-            reps[c] = i;
-        } else if (reps[c] != i) {
-            try e.edgeNodes(reps[c], i, none);
-            try e.edgeNodes(i, reps[c], none);
-            const lr = s.level.items[reps[c]];
-            const li = s.level.items[i];
-            if (@backingInt(lr) > @backingInt(li)) try e.raise(i, lr, work, scratch);
-            if (@backingInt(li) > @backingInt(lr)) try e.raise(reps[c], li, work, scratch);
-            try e.raiseRealm(i, e.realmOf(reps[c]), work, scratch);
-            try e.raiseRealm(reps[c], e.realmOf(i), work, scratch);
-        }
-    }
-    for (classes, 0..) |c, ci| {
-        const rep = reps[ci];
-        if (rep == none) continue;
-        try e.raise(rep, c.rung, work, scratch);
-        try e.raiseRealm(rep, c.realms, work, scratch);
-        for (s.depsOf(c)) |d| {
-            const from = reps[d & ~Interface.EffectBlock.realm_only];
-            if (from == none) continue;
-            const realm_only = d & Interface.EffectBlock.realm_only != 0;
-            if (realm_only) try @import("Realms.zig").applyCopy(e, r, classes[d & ~Interface.EffectBlock.realm_only].node, rep, work, scratch);
-            try e.edgeNodes(from, rep, if (realm_only) realm_origin else none);
-            if (!realm_only) try e.raise(rep, s.level.items[from], work, scratch);
-            try e.raiseRealm(rep, e.realmOf(from), work, scratch);
-        }
-        // §15.3: the use's copy of a `sync` class must not suspend. Where
-        // the class sits is read off `target`'s scheme when it is reported.
-        if (c.sync) try e.addSource(.{
-            .node = rep,
-            .demand = .{ .v = @fromBackingInt(@intCast(none)), .kind = .argument, .site = r.site, .decl = r.owner, .holder = try e.nodeIsHolder(r, ci, target) },
-            .target = target,
-            .class = @intCast(ci),
-        });
-    }
-}
+const applyRecord = @import("EffectCells.zig").applyRecord;
 
-/// Whether record `r`'s copy of `target`'s class `ci` is a nominal
-/// application's (`isHolder`).
-fn nodeIsHolder(e: *Effects, r: Record, ci: usize, target: u32) Error!bool {
-    for (e.pairs.items[r.start..][0..r.len]) |p| {
-        if (e.solved.classIndex(target, try e.nodeFor(p.a)) == @as(u32, @intCast(ci))) return e.isHolder(p.b);
-    }
-    return false;
-}
+const nodeIsHolder = @import("EffectCells.zig").nodeIsHolder;
 
 /// Read each member's summary off the graph: its scheme's classes, each
 /// one's rung, and — 64 classes at a time, one bit each, pushed forward
@@ -1227,6 +1177,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
                 if (e.isHolder(r)) try holders.append(scratch, nd);
             }
         } else try e.schemeNodes(scheme, nodes, &holders, scratch);
+        try @import("AnyValues.zig").appendSchemeNodes(e, scheme, nodes, e.gpa);
         // One class, the common case, depends on no other: no bits to push.
         if (nodes.items.len <= 1) {
             const old = s.classesOf(d);
@@ -1439,6 +1390,7 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
             try stack.append(scratch, .{ .v = c.v, .positive = if (flips) !item.positive else item.positive, .evidence = item.evidence, .realm_caller = realm_caller });
         }
     }
+    try @import("AnyValues.zig").foreignSeats(e, scheme, &nodes, &positive, &evidence, &sync, scratch);
     const own = if (is_function) try e.nodeFor(own_var) else none;
     const start: u32 = @intCast(s.classes.items.len);
     for (nodes.items, positive.items, evidence.items, sync.items) |nd, pos, _, is_sync| {
@@ -1451,7 +1403,7 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
                 }
             }
         }
-        try @import("Realms.zig").foreignDependencies(e, nodes.items, realm_calls.items, nd);
+        if (!e.noninvoking) try @import("Realms.zig").foreignDependencies(e, nodes.items, realm_calls.items, nd);
         const class_rung: Rung = if (pos and !isEvidence(nodes.items, evidence.items, nd)) rung else .pure;
         try s.classes.append(e.gpa, .{
             .node = nd,
@@ -1495,4 +1447,4 @@ pub const View = @import("EffectsView.zig").View;
 pub const realmCarrier = @import("Realms.zig").carrier;
 pub const realmOf = @import("Realms.zig").realmOf;
 pub const evalRealms = @import("Realms.zig").evalRealms;
-const raiseRealm = @import("Realms.zig").raiseRealm;
+pub const raiseRealm = @import("Realms.zig").raiseRealm;

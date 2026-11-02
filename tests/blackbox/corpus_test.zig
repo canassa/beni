@@ -655,15 +655,17 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     // not exist, and the one that wanted to be one carried an unrelated
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
-    // Dedicated module workers and their access fences use a test-only platform.
+    // Dedicated module workers are exercised on a test-only platform.
     if (kind == .build_bad or kind == .check_bad) {
-        const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, "dedicated" });
-        const start = fixtures.items.len;
-        try collect(arena, worker_dir, false, false, &fixtures, true);
-        const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
-        for (fixtures.items[start..]) |*fixture| {
-            fixture.platform = worker_platform;
-            fixture.unchecked_workers = true;
+        for ([_]bool{ false, true }) |core| {
+            const worker_dir = try std.fs.path.join(arena, if (core) &.{ kind_dir, "dedicated", "core" } else &.{ kind_dir, "dedicated" });
+            const start = fixtures.items.len;
+            try collect(arena, worker_dir, core, false, &fixtures, true);
+            const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
+            for (fixtures.items[start..]) |*fixture| {
+                fixture.platform = worker_platform;
+                fixture.unchecked_workers = true;
+            }
         }
     }
     if (kind == .browser) {

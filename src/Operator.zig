@@ -78,6 +78,11 @@ pub const Which = enum {
     list_put,
     list_half,
     list_length,
+    list_builder,
+    list_done,
+    list_base,
+    list_offset,
+    list_viewOf,
 
     /// Whether the primitive is pure and total on checked arguments.
     /// Unchecked indexed reads and in-place writes stay guarded.
@@ -91,7 +96,7 @@ pub const Which = enum {
     /// How many arguments a saturated call passes.
     pub fn arity(w: Which) u32 {
         return switch (w) {
-            .not, .negate, .int32_fromInt, .int32_toInt, .int32_toUnsignedInt, .list_half, .list_length => 1,
+            .not, .negate, .int32_fromInt, .int32_toInt, .int32_toUnsignedInt, .list_half, .list_length, .list_builder, .list_base, .list_offset => 1,
             .list_put => 3,
             else => 2,
         };
@@ -115,8 +120,10 @@ const int32 = [_]struct { []const u8, Which }{
 // ownership pin begin: listPrimitives (tests/corpus/ownership/word-bodies.txt:
 // List's `length`, `traverseAt` and `put` words describe this inlining)
 const list = [_]struct { []const u8, Which }{
-    .{ "at", .list_at },     .{ "traverseAt", .list_traverseAt }, .{ "put", .list_put },
-    .{ "half", .list_half }, .{ "length", .list_length },
+    .{ "at", .list_at },         .{ "traverseAt", .list_traverseAt }, .{ "put", .list_put },
+    .{ "half", .list_half },     .{ "length", .list_length },         .{ "builder", .list_builder },
+    .{ "done", .list_done },     .{ "base", .list_base },             .{ "offset", .list_offset },
+    .{ "viewOf", .list_viewOf },
 };
 // ownership pin end: listPrimitives
 

@@ -1,0 +1,39 @@
+-- The checked conversion never invokes a function and preserves plain identity.
+import Browser.Host.TextEncoder as Encoder
+import Js
+import Js.Data as Data
+import Js.Any as Any
+import Node
+
+
+callback : ⊤ → ⊤
+callback ⊤ = Debug.log "a data check invoked a function" ⊤
+
+
+type Payload
+    = Text String
+    | Callback (⊤ → ⊤)
+
+
+check : a → String
+check value =
+    case Data.checked value of
+        Just plain →
+            if Js.same plain value then "same data" else "copied data"
+
+        Nothing →
+            "not data"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ check { count = 7, labels = [ "a", "b" ] }
+        , check (Text "data")
+        , check (Callback callback)
+        , check { nested = [ { work = callback } ] }
+        , check callback
+        , check (Encoder.encode (Encoder.create ⊤) "data")
+        , check (Any.pack 1)
+        , check (List.drop [ 0, 1, 2 ] 1)
+        ]

@@ -1,0 +1,6 @@
+-- A test core Debug has permission to inspect, but cannot erase a view.
+import Js
+import Js.Inspect as Inspect
+
+
+pub erased = Js.from (Inspect.inspect 1)

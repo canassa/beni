@@ -341,7 +341,7 @@ const Sync = struct {
                 if (parent[from] != none or s.level.items[from] != .suspends) continue;
                 parent[from] = x;
                 const origin = s.origin.items[y.rev_edge.items[at]];
-                via[from] = if (origin == none or y.e.sites.items[origin].call == none) .handed else .{ .call = origin };
+                via[from] = if (origin >= y.e.sites.items.len or y.e.sites.items[origin].call == none) .handed else .{ .call = origin };
                 try queue.append(a, from);
             }
         } else return .none;
