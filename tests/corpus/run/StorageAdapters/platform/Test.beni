@@ -1,0 +1,7 @@
+-- The fixture runtime receives a named typed probe.
+pub opaque type Program
+    = Program (Int → String) String
+
+
+pub program : String, sync (Int → String) → Program
+program name probe = Program probe name

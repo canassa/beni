@@ -1,0 +1,11 @@
+storage adapters
+null: nothing/unavailable
+security: nothing/unavailable
+session security: nothing
+normal: old/ok/key,a/removed/nothing
+quota: quota
+non-DOM security unchanged
+non-DOM quota unchanged
+write security unchanged
+get error unchanged
+missing key: tail

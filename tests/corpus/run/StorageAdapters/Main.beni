@@ -1,0 +1,40 @@
+-- The generated storage adapters translate only the two documented DOM
+-- failures. Other thrown values retain their identity. No native handle
+-- or exception crosses Js.Value in this program or its typed platform.
+import Storage
+import Test
+
+
+found : Maybe String → String
+found result = Maybe.withDefault result "nothing"
+
+
+written : Result Storage.Error ⊤ → String
+written result =
+    case result of
+        Ok ⊤ →
+            "ok"
+        Err Storage.Unavailable →
+            "unavailable"
+        Err Storage.QuotaExceeded →
+            "quota"
+
+
+probe : Int → String
+probe phase =
+    case phase of
+        0 →
+            found (Storage.get Storage.Local "key")
+        1 →
+            written (Storage.set Storage.Local "key" "value")
+        2 →
+            found (Storage.get Storage.Session "key")
+        3 →
+            String.join (Storage.keys Storage.Local) ","
+        _ →
+            Storage.remove Storage.Local "key"
+            "removed"
+
+
+main : Test.Program
+main = Test.program "storage adapters" probe

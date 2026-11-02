@@ -1,0 +1,9 @@
+{
+  "platform": true,
+  "name": "storage-adapters",
+  "program": "Test.Program",
+  "entryHost": "window",
+  "runtime": "runtime.js",
+  "platforms": ["browser"],
+  "reexports": ["Storage"]
+}

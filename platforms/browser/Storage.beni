@@ -20,8 +20,8 @@
 --! throw a `QuotaExceededError`. Every other exception is thrown on: a
 --! defect. `getItem`, `removeItem`, `key` and `length` document none.
 
+import Browser.Host.Storage as HostStorage
 import Cmd exposing (Cmd)
-import Js
 
 
 --| Which storage: `Local`, kept across visits, or `Session`, kept while
@@ -40,31 +40,25 @@ pub type Error
 --| The text stored under the key, or `Nothing`.
 pub get : Area, String → Maybe String
 get area key =
-    s = storage area
-    if Js.isNullish s then
-        Nothing
-    else
-        v = Js.call s "getItem" [ Js.from key ]
-        if Js.isNull v then
+    case storage area of
+        Nothing →
             Nothing
-        else
-            Just (Js.to v)
+        Just native →
+            HostStorage.get native key
 
 
 --| Store the text under the key, replacing what was there.
 pub set : Area, String, String → Result Error ⊤
 set area key value =
-    s = storage area
-    if Js.isNullish s then
-        Err Unavailable
-    else
-        Js.catchIf
-            (λ⊤ →
-                _ = Js.call s "setItem" [ Js.from key, Js.from value ]
-                Ok ⊤
-            )
-            (λerror → isDomError error "QuotaExceededError")
-            λ_ → Err QuotaExceeded
+    case storage area of
+        Nothing →
+            Err Unavailable
+        Just native →
+            case HostStorage.set native key value of
+                Ok ⊤ →
+                    Ok ⊤
+                Err HostStorage.QuotaExceeded →
+                    Err QuotaExceeded
 
 
 --| The command form of `set`: store the text under the key when the
@@ -88,48 +82,39 @@ save area key text failed = Cmd.perform λsend →
 --| Forget the key.
 pub remove : Area, String → ⊤
 remove area key =
-    s = storage area
-    if Js.isNullish s then
-        ⊤
-    else
-        Js.to (Js.call s "removeItem" [ Js.from key ])
+    case storage area of
+        Nothing →
+            ⊤
+        Just native →
+            HostStorage.remove native key
 
 
 --| Every key stored, in the browser's order.
 pub keys : Area → List String
 keys area =
-    s = storage area
-    if Js.isNullish s then
-        []
+    case storage area of
+        Nothing →
+            []
+        Just native →
+            keysFrom native 0 (HostStorage.length native) []
+
+
+keysFrom : HostStorage.Storage, Int, Int, List String → List String
+keysFrom native index size found =
+    if index ≥ size then
+        found
     else
-        keysFrom s 0 (Js.to (Js.get s "length")) (Js.array [])
+        case HostStorage.key native index of
+            Nothing →
+                keysFrom native (index + 1) size found
+            Just name →
+                keysFrom native (index + 1) size [ …found, name ]
 
 
-keysFrom : Js.Value, Int, Int, Js.Value → List String
-keysFrom s i n found =
-    if i < n then
-        _ = Js.call found "push" [ Js.call s "key" [ Js.from i ] ]
-        keysFrom s (i + 1) n found
-    else
-        Js.to found
-
-
--- The area, or `null`: reading it may throw a `SecurityError`.
-storage : Area → Js.Value
+storage : Area → Maybe HostStorage.Storage
 storage area =
-    Js.catchIf
-        (λ⊤ →
-            case area of
-                Local →
-                    Js.global "localStorage"
-
-                Session →
-                    Js.global "sessionStorage"
-        )
-        (λerror → isDomError error "SecurityError")
-        λ_ → Js.null
-
-
-isDomError : Js.Value, String → Bool
-isDomError error name =
-    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
+    case area of
+        Local →
+            HostStorage.local ⊤
+        Session →
+            HostStorage.session ⊤
