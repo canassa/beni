@@ -55,6 +55,7 @@ pub const Input = struct {
     crossing: []const bool = &.{},
     wire: []const bool = &.{},
     wire_paths: []const @import("Wire.zig").Requirement = &.{},
+    host_free: []const bool = &.{},
 };
 
 /// Fill the module's record, round-trip it under the flag, and translate its
@@ -76,6 +77,7 @@ pub fn fill(in: Input) Error!u32 {
     writer.crossing = in.crossing;
     writer.wire = in.wire;
     writer.wire_paths = in.wire_paths;
+    writer.host_free = in.host_free;
     try writer.seedExtra(iface.extra);
     var p: Publisher = .{ .cx = cx, .stacks = in.stacks, .writer = &writer };
 

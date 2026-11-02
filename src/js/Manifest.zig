@@ -55,9 +55,9 @@
 //!   `ownership-checker.md` §28.2): the chain's code may write a list's
 //!   array in place, so `check` and `build` run the ownership checker and
 //!   its rejections are errors. No other value; inherited first-found.
-//! - `host` — `"page"`, since 2026-10-24 (`boundary.md` §5.2): the chain's
-//!   code always runs in a page, so a release build writes `window` bare
-//!   (`backend.md` §9, item 8). No other value; inherited first-found.
+//! - `entryHost` — the top entry realm (`workers.md` §4), inherited first-found.
+//!   `entryKinds` give worker entries their own realm. The old `host: page`
+//!   promise is diagnosed as obsolete before output.
 //! - `build` — an app's defaults for `build` and `serve` (`frontend.md`
 //!   §10.1): `platform`, `paths` and `out`, each used when the command line
 //!   does not say. A platform package's is ignored.
@@ -92,6 +92,7 @@ markup: Markup = .{},
 html: ?[]const u8 = null,
 lists: ?Lists = null,
 host: ?Host = null,
+entryHost: ?EntryHost = null,
 build: Build = .{},
 exports: Exports = .none,
 
@@ -139,6 +140,7 @@ pub const Lists = enum { @"in-place" };
 /// `"host"` (`boundary.md` §5.2, added 2026-10-24): where the chain's code
 /// always runs. One value, `"page"`; any other is a malformed manifest.
 pub const Host = enum { page };
+pub const EntryHost = enum { window, dedicatedWorker, sharedWorker, serviceWorker, node };
 
 /// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
 pub const Markup = struct {
@@ -194,6 +196,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         html: ?[]const u8 = null,
         lists: ?Lists = null,
         host: ?Host = null,
+        entryHost: ?EntryHost = null,
         build: ?Build = null,
         exports: ?std.json.Value = null,
     };
@@ -232,6 +235,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .html = parsed.html,
         .lists = parsed.lists,
         .host = parsed.host,
+        .entryHost = parsed.entryHost,
         .build = parsed.build orelse .{},
         .exports = exports,
     };

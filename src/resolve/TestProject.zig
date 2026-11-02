@@ -37,6 +37,7 @@ pub const Module = struct {
 pub const Options = struct {
     phases: Session.Phases = Session.resolve_phases,
     keep_type_stores: bool = false,
+    host_free: bool = false,
     /// How many workers check modules (checker.md §4.4). One by default, so
     /// a hermetic test spawns nothing; a scenario that is ABOUT the DAG
     /// scheduling asks for more.
@@ -61,6 +62,7 @@ pub fn initWith(gpa: Allocator, modules: []const Module, options: Options) !Test
             .jobs = options.jobs,
             .diagnostics = .json,
             .keep_type_stores = options.keep_type_stores,
+            .host_free = options.host_free,
             .pattern_budget = options.pattern_budget,
         }),
         .stderr = .init(gpa),

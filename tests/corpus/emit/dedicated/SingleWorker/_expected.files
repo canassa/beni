@@ -1,5 +1,17 @@
 SingleWorker.mjs
 SingleWorker.mjs.map
+_core/Browser/Host/Document.foreign.mjs
+_core/Browser/Host/Document.mjs
+_core/Browser/Host/Document.mjs.map
+_core/Browser/Host/Element.foreign.mjs
+_core/Browser/Host/Element.mjs
+_core/Browser/Host/Element.mjs.map
+_core/Browser/Host/Node.foreign.mjs
+_core/Browser/Host/Node.mjs
+_core/Browser/Host/Node.mjs.map
+_core/Browser/Host/Window.foreign.mjs
+_core/Browser/Host/Window.mjs
+_core/Browser/Host/Window.mjs.map
 _main.mjs
 _manifest.txt
 _platform/Page.foreign.mjs

@@ -96,7 +96,8 @@ pub const magic = "BENIDEP\x00";
 /// Version 2 (`checker-v2.md` §14.2): `arity` is a `u16`, with
 /// interface v3's `Type.arity`. Version 3: flag bit 4, `holds_markup`.
 // Version 5 includes whether a nominal payload can hold mutable cells.
-pub const digest_version: u32 = 5;
+/// Version 6 includes representation facts when internal HostFree is enabled.
+pub const digest_version: u32 = 6;
 
 pub const Digest = [16]u8;
 
@@ -124,6 +125,7 @@ pub const Type = struct {
     holds_markup: bool,
     holds_mutable: bool = false,
     key_kinds: []const u8 = &.{},
+    host_free: []const u8 = &.{},
     /// `type_body.zig`'s encoding of the alias's expansion, or empty.
     body: []const u8,
 };
@@ -175,6 +177,7 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
         try out.append(gpa, flags(ty));
         try appendText(gpa, out, ty.key_kinds);
         try appendText(gpa, out, ty.body);
+        if (ty.host_free.len != 0) try appendText(gpa, out, ty.host_free);
     }
 
     try appendInt(gpa, out, u32, @intCast(t.derived.len));
@@ -382,6 +385,7 @@ pub fn collect(
             .holds_mutable = e.holds_mutable,
             .key_kinds = std.mem.sliceAsBytes(s.types.keyKinds(id)),
             .body = body,
+            .host_free = try s.types.host_free.key(scratch, id),
         };
     }
     std.mem.sort(Type, rows, {}, typeLessThan);

@@ -196,6 +196,7 @@ ref_ids: [][]TypeId,
 /// list, `Result`/`Maybe` for `?`). `.none` when the core package is not
 /// part of the run.
 well_known: WellKnown,
+host_free: @import("HostFree.zig").Facts = .{},
 
 /// The handful of types the checker has to be able to name on its own,
 /// because a literal, a list or a `?` has no written type to read them
@@ -245,6 +246,7 @@ pub const empty: Types = .{
 };
 
 pub fn deinit(types: *Types, gpa: Allocator) void {
+    types.host_free.deinit(gpa);
     gpa.free(types.entries);
     gpa.free(types.key_kinds);
     gpa.free(types.by_decl);

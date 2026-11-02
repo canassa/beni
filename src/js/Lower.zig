@@ -10474,6 +10474,43 @@ pub const Lowerer = struct {
         return .{ .c = c, .x = x };
     }
 
+    // Keep native recipe temporaries out of the recursive ordinary-call frame.
+    noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
+        if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
+            switch (native.recipe) {
+                .query_selector, .text_content, .timeout => {}, // Precise generated adapters.
+                else => {
+                    const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder;
+                    const values = if (ignores_unit) blk: {
+                        // Unit arguments can perform effects before the native call.
+                        for (arg_insts) |arg| try l.discard(out, arg, p);
+                        break :blk @as([]const Node.Index, &.{});
+                    } else try l.orderedExprs(out, arg_insts, false);
+                    const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+                    switch (native.recipe) {
+                        .document, .worker_self => return try l.member(global, try l.interner.getOrPut(l.gpa, if (native.recipe == .document) "document" else "self"), p),
+                        .identity => return values[0],
+                        .byte_length => return try l.member(values[0], try l.interner.getOrPut(l.gpa, "byteLength"), p),
+                        .encode => return try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "encode"), p), values[1..], p),
+                        .text_encoder => {
+                            const target = try l.member(global, try l.interner.getOrPut(l.gpa, "TextEncoder"), p);
+                            const range = try l.b.addRange(&.{});
+                            const record = try l.b.addRecord(range);
+                            return try l.add(.new_call, p, target.int(), @backingInt(record));
+                        },
+                        .set_text_content => {
+                            const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "textContent"), p);
+                            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                            return try l.nullNode(p);
+                        },
+                        else => unreachable,
+                    }
+                },
+            }
+        }
+        return null;
+    }
+
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
         // this instruction is an evidence ARGUMENT and they are numbered
@@ -10591,6 +10628,7 @@ pub const Lowerer = struct {
             return l.binary(.add, v[0], v[1], p);
         }
 
+        if (try l.nativeCallExpr(out, callee_inst, arg_insts, p)) |native| return native;
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
         if (l.jsIntrinsicOf(callee_inst)) |which| {

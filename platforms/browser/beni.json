@@ -3,7 +3,7 @@
   "name": "browser",
   "program": "Browser.Program",
   "html": "index.html",
-  "host": "page",
+  "entryHost": "window",
   "platforms": ["html"],
   "reexports": ["Html"],
   "markup": { "lowering": "dom", "module": "Rt" },

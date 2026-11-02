@@ -1,0 +1,85 @@
+-- Native operations available in Window and Worker share ordinary typed code.
+-- The unreachable DOM body must not poison the worker projection.
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.Node as Node
+import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.Timers as Timers
+import Browser.Host.Uint8Array as Uint8Array
+import Browser.Host.Window as Window
+import Browser.Host.WorkerGlobalScope as WorkerGlobalScope
+import Page
+import Worker
+
+
+unreachable : ⊤ → String
+unreachable _ =
+    case Document.querySelector (Window.document ⊤) "body" of
+        Ok _ →
+            "page"
+        Err _ →
+            "invalid"
+
+
+encode : String → String
+encode message =
+    bytes = TextEncoder.encode (TextEncoder.create ⊤) message
+    String.fromInt (Uint8Array.byteLength bytes)
+
+
+ignore : (⊤ → String) → String
+ignore _ = ""
+
+
+worker : Worker.Program
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λmessage _ _ →
+                _self = WorkerGlobalScope.self ⊤
+                _timer = Timers.setTimeout (λ_ → ⊤) 0
+                encode message ++ ignore unreachable
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+pageDom : ⊤ → ⊤
+pageDom _ =
+    case Document.querySelector (Window.document ⊤) "output" of
+        Ok (Just element) →
+            node = Element.toNode element
+            Node.setTextContent node "native page"
+            case Node.textContent node of
+                Just text →
+                    Page.text text
+                Nothing →
+                    Page.text "missing native text"
+        _ →
+            ⊤
+
+
+start : ⊤ → ⊤
+start _ =
+    Page.text (encode "é")
+    case Document.querySelector (Window.document ⊤) "[" of
+        Err Document.SyntaxError →
+            pageDom ⊤
+        Ok _ →
+            Page.text "unexpected selector success"
+    Page.button launch
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle Page.text
+            Worker.send handle "hello é"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start

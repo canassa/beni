@@ -1805,3 +1805,44 @@ test "worker Wire follows opaque payload layouts across warm caches" {
         try w.expectProgram("probe.mjs", .{ .stdout = "3\n" });
     }
 }
+
+test "obsolete platform-wide page host is refused before output" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"stale","program":"App.Program","runtime":"runtime.js","host":"page"}
+    );
+    try w.write("platform/App.beni", "pub foreign type Program\n\n\npub foreign pure app : Program\n");
+    try w.write("platform/App.js", "export const app = null;\n");
+    try w.write("platform/runtime.js", "export const run = (program) => null;\n");
+    try w.write("Main.beni", "import App\n\n\nmain : App.Program\nmain = App.app\n");
+    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.obsolete_host_promise, result.diagnostics[0].code);
+    try testing.expect(!w.exists("out"));
+}
+
+test "native callable loading validates the trusted core signature" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "core", "_expected.");
+    try w.write("core/Browser/Host/TextEncoder.beni",
+        \\pub foreign type TextEncoder
+        \\
+        \\
+        \\pub foreign impure create : String → TextEncoder
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Browser.Host.TextEncoder as TextEncoder
+        \\
+        \\
+        \\pub value = TextEncoder.create "invalid signature"
+        \\
+    );
+    const result = try w.run(&.{ "check", "--core-root=core", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
+}

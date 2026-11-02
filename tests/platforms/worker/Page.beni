@@ -1,3 +1,10 @@
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.Node as NativeNode
+import Browser.Host.Window as Window
+import Js
+
+
 pub type Program
     = Program ((⊤ → ⊤))
 
@@ -13,10 +20,42 @@ run definition =
             init ⊤
 
 
-pub foreign impure text : String → ⊤
+pub text : String → ⊤
+text value =
+    document = Window.document ⊤
+    case Document.querySelector document "output" of
+        Ok (Just element) →
+            NativeNode.setTextContent (Element.toNode element) value
+        Ok Nothing →
+            createOutput document value
+        Err _ →
+            internalSelector ⊤
 
 
-pub foreign impure initializer : String → String
+pub initializer : String → String
+initializer value =
+    case Document.querySelector (Window.document ⊤) "body" of
+        Ok (Just element) →
+            setPage element value
+        Ok Nothing →
+            value
+        Err _ →
+            internalSelector ⊤
 
 
-pub foreign impure button : sync (⊤ → ⊤) → ⊤
+pub button : sync (⊤ → ⊤) → ⊤
+button callback = addButton (Window.document ⊤) callback
+
+
+foreign impure createOutput : Document.Document, String → ⊤
+
+
+foreign impure setPage : Element.Element, String → String
+
+
+foreign impure addButton : Document.Document, sync (⊤ → ⊤) → ⊤
+
+
+internalSelector : ⊤ → a
+internalSelector _ =
+    Js.throw (Js.construct (Js.global "Error") [ Js.from "invalid internal page selector" ])

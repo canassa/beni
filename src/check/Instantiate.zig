@@ -100,6 +100,7 @@ active_casts: std.ArrayList(u32) = .empty,
 /// `TypeKeys` follows once every type is final.
 crossing: std.ArrayList(CrossingUse) = .empty,
 wire: std.ArrayList(@import("Wire.zig").Use) = .empty,
+host_free: std.ArrayList(CrossingUse) = .empty,
 /// Every own scheme quantifier's copy (`CopyPair`).
 copies: std.ArrayList(CopyPair) = .empty,
 /// The declaration a copy in progress notes its quantifiers for, while
@@ -131,6 +132,7 @@ pub fn deinit(in: *Instantiate) void {
     in.active_casts.deinit(in.cx.gpa);
     in.crossing.deinit(in.cx.gpa);
     in.wire.deinit(in.cx.gpa);
+    in.host_free.deinit(in.cx.gpa);
     in.copies.deinit(in.cx.gpa);
 }
 
@@ -551,6 +553,7 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
         for (in.quantified.items, 0..) |q, i| {
             if (i >= s.quantified_count) break;
             if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & Interface.Quantified.wire_bit != 0) try in.wire.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
+            if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & (1 << 12) != 0) try in.host_free.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
             // The flag word alone: bit 10 is `crosses`.
             if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & Interface.Quantified.crosses_bit != 0) try in.crossing.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
         }

@@ -42,7 +42,7 @@ pub fn write(
     defer gpa.free(worth);
     @memset(worth, false);
     for (classes, 0..) |c, i| {
-        if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
+        if (c.rung != .pure or c.realms != 0 or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
         for (s.depsOf(c)) |d| worth[d] = true;
     }
 
@@ -97,7 +97,7 @@ pub fn write(
             if (number[d] != none) try deps.append(gpa, number[d]);
         }
         std.mem.sort(u32, deps.items, {}, std.sort.asc(u32));
-        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
+        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (@as(u32, class.realms) << 16) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
         try extra.append(extra_gpa, @intCast(deps.items.len));
         try extra.appendSlice(extra_gpa, deps.items);
     }

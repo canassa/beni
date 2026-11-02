@@ -983,17 +983,16 @@ a list on a chain that declares no `"exports"` is the warning `exports_ignored`.
 does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
 contract whole.
 
-**Whether the chain always runs in a page is part of that shape, and it is `"host"`** (*added
-2026-10-24*, the owner's decision on #936). `"host": "page"` says that every program built for
-the chain runs in a page, where `window` is a global, so a release build writes `Js.global
-"window"` as plain `window` (`backend.md` §9, item 8, amended the same day). No other value is
-accepted, and a chain that does not say it gets `globalThis.window`, because a bare `window`
-throws `ReferenceError` where there is no window — under Node, in Workers, in a Web Worker.
-Inherited first-found down the chain like every field (§9.1). `browser` and `browser-inline`
-declare it, so a platform layered on either does as well; `node`, `cloudflare`, `html` and the
-test platforms `page`, `toy`, `entry` and `entry-shape` do not. It is a promise about the host,
-which nothing checks: a chain that declares it and is loaded where there is no window fails at
-the first such read.
+**Each entry has an execution realm, checked by EntryHost** (`workers.md` §4).
+A platform declares its top entry with `"entryHost": "window"` for a page,
+or another realm from the native universe. Each `entryKinds` row supplies its
+own realm. The compiler checks native availability in each entry's execution
+projection before output. A proven Window entry permits a release build to
+write `Js.global "window"` as bare `window`; other entries keep
+`globalThis.window`. A worker projection never inherits the page's proof.
+The old `"host": "page"` promise reports `obsolete_host_promise` and names the
+replacement. The first declared `entryHost` is inherited down the platform
+chain like the other output fields (§9.1).
 
 ### 5.3 One project, several platforms
 

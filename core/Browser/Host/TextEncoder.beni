@@ -1,0 +1,11 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Uint8Array as Uint8Array
+
+
+pub foreign type TextEncoder
+
+
+pub foreign impure create : ⊤ → TextEncoder
+
+
+pub foreign impure encode : TextEncoder, String → Uint8Array.Uint8Array

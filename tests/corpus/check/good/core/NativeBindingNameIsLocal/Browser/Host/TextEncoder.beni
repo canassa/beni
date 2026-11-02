@@ -1,0 +1,5 @@
+-- An app module with a generated spelling has its own nominal identity.
+pub foreign type TextEncoder
+
+
+pub foreign impure create : String → TextEncoder

@@ -201,6 +201,7 @@ pub const Scheme = struct {
     total: bool = false,
     /// Optional block: count, then (quantifier, path length, field symbols).
     wire_paths: u32 = no_terms,
+    eval_realms: u8 = 0,
 };
 
 /// An effect block's words, read (transparent-effects-proposal.md §14.6).
@@ -213,13 +214,13 @@ pub const EffectBlock = struct {
     /// (transparent-effects-proposal.md §15.5, §16.2): the rung, whether a
     /// use must not let the class suspend, and whether the declaration's body
     /// reads it — so that the declaration has a second, suspendable body.
-    pub const Class = struct { rung: u32, sync: bool, sensitive: bool = false, deps: []const u32 };
+    pub const Class = struct { rung: u32, realms: u8 = 0, sync: bool, sensitive: bool = false, deps: []const u32 };
 
     pub const sync_bit: u32 = 1 << 8;
     pub const sensitive_bit: u32 = 1 << 9;
 
     fn validWord(word: u32) bool {
-        return word & ~(sync_bit | sensitive_bit | 0xff) == 0 and word & 0xff <= 2;
+        return word & ~(sync_bit | sensitive_bit | 0x1f0000 | 0xff) == 0 and word & 0xff <= 2;
     }
 
     /// Whether the declaration has a second, suspendable body (§16.2): some
@@ -245,7 +246,7 @@ pub const EffectBlock = struct {
         var k: u32 = 0;
         while (true) : (k += 1) {
             const deps = b.words[at + 1];
-            if (k == i) return .{ .rung = b.words[at] & 0xff, .sync = b.words[at] & sync_bit != 0, .sensitive = b.words[at] & sensitive_bit != 0, .deps = b.words[at + 2 ..][0..deps] };
+            if (k == i) return .{ .rung = b.words[at] & 0xff, .realms = @intCast((b.words[at] >> 16) & 0x1f), .sync = b.words[at] & sync_bit != 0, .sensitive = b.words[at] & sensitive_bit != 0, .deps = b.words[at + 2 ..][0..deps] };
             at += 2 + deps;
         }
     }
@@ -263,7 +264,7 @@ pub const EffectBlock = struct {
             const at = it.at;
             const deps = it.words[at + 1];
             it.at += 2 + deps;
-            return .{ .rung = it.words[at] & 0xff, .sync = it.words[at] & sync_bit != 0, .sensitive = it.words[at] & sensitive_bit != 0, .deps = it.words[at + 2 ..][0..deps] };
+            return .{ .rung = it.words[at] & 0xff, .realms = @intCast((it.words[at] >> 16) & 0x1f), .sync = it.words[at] & sync_bit != 0, .sensitive = it.words[at] & sensitive_bit != 0, .deps = it.words[at + 2 ..][0..deps] };
         }
     };
 
@@ -362,6 +363,7 @@ pub const Quantified = struct {
     /// *Declared-type filtering of fact 3*; checker-v2.md §36). Bit 10.
     crosses: bool = false,
     wire: bool = false,
+    host_free: bool = false,
     /// Index into this interface's own `symbols` column, NOT a `Symbol`.
     ///
     /// A `Symbol` is an index into the session's interner, whose numbering
@@ -392,7 +394,7 @@ pub const Quantified = struct {
     pub const words = 4;
 
     pub fn flags(q: Quantified) u32 {
-        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10) | (@as(u32, @intFromBool(q.wire)) << 11);
+        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10) | (@as(u32, @intFromBool(q.wire)) << 11) | (@as(u32, @intFromBool(q.host_free)) << 12);
     }
 
     pub const identity_bit: u32 = 1 << 9;
@@ -406,6 +408,7 @@ pub const Quantified = struct {
             .identity = (flag_word >> 9) & 1 == 1,
             .crosses = (flag_word >> 10) & 1 == 1,
             .wire = (flag_word >> 11) & 1 == 1,
+            .host_free = (flag_word >> 12) & 1 == 1,
             .name = @fromBackingInt(@intCast(name_word)),
             .constraints_start = start,
             .constraints_len = len,

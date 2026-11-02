@@ -1,6 +1,7 @@
 {
   "platform": true,
   "name": "worker-test",
+  "entryHost": "window",
   "program": "Page.Program",
   "runtime": "runtime.js",
   "entryKinds": [{

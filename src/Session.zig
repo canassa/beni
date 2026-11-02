@@ -306,6 +306,8 @@ pub const Options = struct {
     /// been extracted (§5), and keeping them costs memory proportional to
     /// the whole project rather than to one module.
     keep_type_stores: bool = false,
+    /// Internal rollout option. No CLI flag; typed Task storage must land first.
+    host_free: bool = false,
     /// `--roundtrip-interfaces` (`Cli.Common`, `fast-compiler.md` §8):
     /// replace every module's interface record with serialize → bytes →
     /// deserialize of itself the moment its check finishes, before any
@@ -2566,7 +2568,12 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
 /// compiler a pack is being made for (`Options.pack_build_id`), else
 /// `compilerBuildId`'s.
 fn keyBuildId(options: Options) [16]u8 {
-    return options.pack_build_id orelse compilerBuildId(options.cache_build_id);
+    const base = options.pack_build_id orelse compilerBuildId(options.cache_build_id);
+    if (!options.host_free) return base;
+    var bytes: [24]u8 = undefined;
+    @memcpy(bytes[0..16], &base);
+    @memcpy(bytes[16..], "hostfree");
+    return @import("resolve/iface_bytes.zig").hash(&bytes);
 }
 
 /// The build id a key is computed with: this compiler's, or the bytes
@@ -2701,6 +2708,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .entry_constructors = r.entry_constructors,
                     .entry_kinds = r.entry_kinds,
                     .keep_stores = r.session.options.keep_type_stores,
+                    .host_free = r.session.options.host_free,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,
                     .quiet = r.quiet,
