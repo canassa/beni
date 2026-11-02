@@ -278,15 +278,12 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         const params = st.params;
         for (fresh..ents.len) |i| try st.place(f, @intCast(i));
         fresh = ents.len;
-        if (params < 2 and st.params >= 2) for (st.groups.items) |*gr| {
-            if (gr.root != none and f.roots.items[gr.root].kind == .param) gr.dirty = true;
+        if (params < 2 and st.params >= 2) for (st.groups.items, 0..) |gr, gi| {
+            if (gr.root != none and f.roots.items[gr.root].kind == .param) try st.mark(g, @intCast(gi));
         };
-        dirty.clearRetainingCapacity();
-        for (st.groups.items, 0..) |*gr, gi| if (gr.dirty) {
-            gr.dirty = false;
-            try dirty.append(g, @intCast(gi));
-        };
-        try e.charge(.cond, @intCast(dirty.items.len));
+        std.mem.swap(std.ArrayList(u32), &dirty, &st.dirty);
+        st.dirty.clearRetainingCapacity();
+        for (dirty.items) |gi| st.groups.items[gi].dirty = false;
         for (dirty.items) |gi| {
             const gr = &st.groups.items[gi];
             const idx = gr.members.items;
