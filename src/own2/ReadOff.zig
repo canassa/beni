@@ -573,7 +573,7 @@ fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, out: ResL
         // A type variable's slot has no structure below it: what is open
         // there is all of it at the slot, which `arrive` keeps open.
         const wide = open and f.places.kind(f.places.pathPlace(.from(dest))) != .@"var";
-        if (wide) try describeWide(s, li, .from(dest), out) else try describeLeaf(s, li, .from(dest), true, out);
+        if (wide) try describeWide(s, try e.ev.widen(li, at), .from(dest), out) else try describeLeaf(s, li, .from(dest), true, out);
     }
 }
 
