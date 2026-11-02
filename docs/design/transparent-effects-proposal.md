@@ -1446,7 +1446,11 @@ diagnostics never do, so no message's text moves:
   and a pure class nothing depends on prints nothing;
 - names are `e1`, `e2`, … in order of first print, one namer per declaration shared by its locals;
   a function-typed result is parenthesised when its own arrow prints a class, so
-  `Int -> (Int -> Int !e1) !impure` cannot be misread;
+  `Int -> (Int -> Int !e1) !impure` cannot be misread. An effect-bearing named
+  result is always parenthesised: `Int → (Cmd msg !impure)` constructs data
+  purely; `Int → (Cmd msg !impure) !impure` also performs impure work while
+  constructing it;
+
 - `dump --stage=types` prints a top-level value's evaluation class, when it is not pure, as
   `  -- evaluates: impure` after its scheme.
 - A class the printed type does not show — a function field inside a record alias, which prints

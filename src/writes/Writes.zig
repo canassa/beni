@@ -2999,6 +2999,21 @@ fn funSuspendMode(a: *const Writes, t: u32) Dispatch.Suspend {
     };
 }
 
+/// A skipped core-row argument may be a callback. Unknown function values
+/// and alternatives are conservative; the command's sender is synchronous.
+fn argumentMaySuspend(a: *const Writes, t: u32, depth: u32) bool {
+    if (depth == 0) return true;
+    if (a.command_probe) |probe| if (t == probe.sender) return false;
+    return switch (a.termTag(t)) {
+        .fun => a.funSuspendMode(t) != .no,
+        .alt => for (0..a.altLen(t)) |i| {
+            if (a.argumentMaySuspend(a.altItem(t, @intCast(i)).term, depth - 1)) break true;
+        } else false,
+        .same, .fresh, .app => true,
+        else => false,
+    };
+}
+
 const CommandProbe = struct { sender: u32, suspends: bool = false };
 
 /// Resolve a polymorphic command with its real synchronous sender. Reuse the
@@ -3194,12 +3209,20 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
         const own = if (dispatch) |dt| dt.effectDecl(d).own else .yes;
         if (own == .yes) probe.suspends = true;
         if (own == .poly) {
-            // Core rows already apply their callbacks. Other helpers need
-            // the actual arguments here, rather than a cached generic summary.
+            // Only these rows apply every callback, including alternatives.
+            // Other write summaries can skip calls, so cannot prove that a
+            // command body is synchronous.
             const row = if (a.in.packages[m] == .core) Core.row(a.in.module_names[m], a.declName(m, d)) else null;
-            if (decl.kind == .foreign_value) {
+            if (row) |r| {
+                switch (r) {
+                    .map, .update, .indexed_map, .filter_map, .log_scope => {},
+                    else => for (args) |arg| {
+                        if (a.argumentMaySuspend(arg, 64)) probe.suspends = true;
+                    },
+                }
+            } else if (decl.kind == .foreign_value) {
                 probe.suspends = true;
-            } else if (row == null and decl.params > 0) return a.direct(m, d, args, g);
+            } else if (decl.params > 0) return a.direct(m, d, args, g);
         }
     }
     if (a.in.effects) |fx| if (try a.effectCall(fx, m, d, args)) |t| return t;

@@ -503,7 +503,16 @@ fn write(
                     .structure => |r| r == .func,
                     else => false,
                 };
-                const result_prec: Prec = if (suffix != null and result_is_function) .arg else .top;
+                // A nominal result carries the effects of stored callbacks, not
+                // of calling this arrow. Parentheses distinguish the two.
+                const result_is_nominal = cx.store.content(cx.store.find(f.result)) == .alias or switch (cx.store.resolvedContent(f.result)) {
+                    .structure => |r| r == .app,
+                    else => false,
+                };
+                const result_suffix = if (result_is_nominal) try effectSuffix(cx, f.result) else null;
+                defer if (result_suffix) |t| cx.effects.?.gpa.free(t);
+                const result_prec: Prec = if ((suffix != null and result_is_function) or result_suffix != null) .arg else .top;
+
                 try write(w, cx, namer, f.result, result_prec, depth + 1);
                 if (suffix) |t| try w.writeAll(t);
                 if (wrap) try w.writeByte(')');

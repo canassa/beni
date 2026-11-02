@@ -337,20 +337,20 @@ module Random.Pcg
     Generator
   type Seed
     Seed
-  value andThen : (Generator a), (a → Generator b) → Generator b
+  value andThen : (Generator a), (a → (Generator b)) → (Generator b)
   value constant : a → Generator a
   value float : Float, Float → Generator Float
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
-  value lazy : (⊤ → Generator a) → Generator a
-  value list : (Generator a), Int → Generator (List a)
-  value map : (Generator a), (a → b) → Generator b
-  value map2 : (Generator a), (Generator b), (a, b → c) → Generator c
-  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → Generator d
+  value lazy : (⊤ → (Generator a)) → (Generator a)
+  value list : (Generator a), Int → (Generator (List a))
+  value map : (Generator a), (a → b) → (Generator b)
+  value map2 : (Generator a), (Generator b), (a, b → c) → (Generator c)
+  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → (Generator d)
   value maxInt : Int
   value minInt : Int
-  value pair : (Generator a), (Generator b) → Generator (a × b)
+  value pair : (Generator a), (Generator b) → (Generator (a × b))
   value step : (Generator a), Seed → a × Seed
   value uniform : a, List a → Generator a
   value weighted : Float × a, List (Float × a) → Generator a
@@ -397,12 +397,12 @@ module Schedule
   value jittered : Schedule i → Schedule i
   value max : Schedule i, Schedule i → Schedule i
   value min : Schedule i, Schedule i → Schedule i
-  value modifyDelay : (Schedule i), (Metadata i, Duration → Duration) → Schedule i
+  value modifyDelay : (Schedule i), (Metadata i, Duration → Duration) → (Schedule i)
   value recurs : Int → Schedule i
   value spaced : Duration → Schedule i
-  value step : (Schedule i), Metadata i → Step i
+  value step : (Schedule i), Metadata i → (Step i)
   value upTo : Schedule i, Duration → Schedule i
-  value while : (Schedule i), (Metadata i → Bool) → Schedule i
+  value while : (Schedule i), (Metadata i → Bool) → (Schedule i)
 module Schema
   alias Codec a
   alias ConstructorShape
@@ -709,23 +709,23 @@ module Url.Builder
   value toQuery : List QueryParameter → String
 module Url.Parser
   opaque type Parser a b
-  value custom : String, (String → Maybe a) → Parser (a → b) b
-  value fragment : (Maybe String → fragment) → Parser (fragment → a) a
+  value custom : String, (String → Maybe a) → (Parser (a → b) b)
+  value fragment : (Maybe String → fragment) → (Parser (fragment → a) a)
   value int : Parser (Int → a) a
-  value map : (Parser a b), a → Parser (b → c) c
-  value map2 : (Parser (a → b → r) r), (a, b → r) → Parser (r → c) c
-  value map3 : (Parser (a → b → d → r) r), (a, b, d → r) → Parser (r → c) c
-  value map4 : (Parser (a → b → d → e → r) r), (a, b, d, e → r) → Parser (r → c) c
-  value map5 : (Parser (a → b → d → e → g → r) r), (a, b, d, e, g → r) → Parser (r → c) c
-  value map6 : (Parser (a → b → d → e → g → h → r) r), (a, b, d, e, g, h → r) → Parser (r → c) c
-  value map7 : (Parser (a → b → d → e → g → h → i → r) r), (a, b, d, e, g, h, i → r) → Parser (r → c) c
-  value map8 : (Parser (a → b → d → e → g → h → i → j → r) r), (a, b, d, e, g, h, i, j → r) → Parser (r → c) c
+  value map : (Parser a b), a → (Parser (b → c) c)
+  value map2 : (Parser (a → b → r) r), (a, b → r) → (Parser (r → c) c)
+  value map3 : (Parser (a → b → d → r) r), (a, b, d → r) → (Parser (r → c) c)
+  value map4 : (Parser (a → b → d → e → r) r), (a, b, d, e → r) → (Parser (r → c) c)
+  value map5 : (Parser (a → b → d → e → g → r) r), (a, b, d, e, g → r) → (Parser (r → c) c)
+  value map6 : (Parser (a → b → d → e → g → h → r) r), (a, b, d, e, g, h → r) → (Parser (r → c) c)
+  value map7 : (Parser (a → b → d → e → g → h → i → r) r), (a, b, d, e, g, h, i → r) → (Parser (r → c) c)
+  value map8 : (Parser (a → b → d → e → g → h → i → j → r) r), (a, b, d, e, g, h, i, j → r) → (Parser (r → c) c)
   value oneOf : List (Parser a b) → Parser a b
   value parse : (Parser (a → a) a), Url → Maybe a
-  value query : (QueryParser query) → Parser (query → a) a
-  value questionMark : (Parser a (query → b)), (QueryParser query) → Parser a b
+  value query : (QueryParser query) → (Parser (query → a) a)
+  value questionMark : (Parser a (query → b)), (QueryParser query) → (Parser a b)
   value s : String → Parser a a
-  value slash : (Parser a b), (Parser b c) → Parser a c
+  value slash : (Parser a b), (Parser b c) → (Parser a c)
   value string : Parser (String → a) a
   value top : Parser a a
 module Url.Parser.Internal
@@ -733,16 +733,16 @@ module Url.Parser.Internal
     Q
 module Url.Parser.Query
   alias Parser a
-  value custom : String, (List String → a) → Parser a
+  value custom : String, (List String → a) → (Parser a)
   value enum : String, Dict String a → Parser (Maybe a)
   value int : String → Parser (Maybe Int)
-  value map : (Parser a), (a → b) → Parser b
-  value map2 : (Parser a), (Parser b), (a, b → r) → Parser r
-  value map3 : (Parser a), (Parser b), (Parser c), (a, b, c → r) → Parser r
-  value map4 : (Parser a), (Parser b), (Parser c), (Parser d), (a, b, c, d → r) → Parser r
-  value map5 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (a, b, c, d, e → r) → Parser r
-  value map6 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (a, b, c, d, e, f → r) → Parser r
-  value map7 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (Parser g), (a, b, c, d, e, f, g → r) → Parser r
-  value map8 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (Parser g), (Parser h), (a, b, c, d, e, f, g, h → r) → Parser r
+  value map : (Parser a), (a → b) → (Parser b)
+  value map2 : (Parser a), (Parser b), (a, b → r) → (Parser r)
+  value map3 : (Parser a), (Parser b), (Parser c), (a, b, c → r) → (Parser r)
+  value map4 : (Parser a), (Parser b), (Parser c), (Parser d), (a, b, c, d → r) → (Parser r)
+  value map5 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (a, b, c, d, e → r) → (Parser r)
+  value map6 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (a, b, c, d, e, f → r) → (Parser r)
+  value map7 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (Parser g), (a, b, c, d, e, f, g → r) → (Parser r)
+  value map8 : (Parser a), (Parser b), (Parser c), (Parser d), (Parser e), (Parser f), (Parser g), (Parser h), (a, b, c, d, e, f, g, h → r) → (Parser r)
   value string : String → Parser (Maybe String)
 ```
