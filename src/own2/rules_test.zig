@@ -72,45 +72,47 @@ const layers = [_]Entry{
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
+    // One walk of a value along several paths, below `Distinct` (#1714).
+    .{ .file = "Paths.zig", .layer = 8, .max_lines = 140 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
-    // A demand says whether it is a cell operation (#1727).
-    .{ .file = "Walk.zig", .layer = 8, .max_lines = 1240 },
-    // One entry of many objects; an answer apart from nothing (#1710,
-    // #1711); what an answer may hold (§2.9.2 step 7).
-    .{ .file = "Distinct.zig", .layer = 8, .max_lines = 750 },
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
+    // A demand says whether it is a cell operation (#1727).
+    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
+    // One entry of many objects; an answer apart from nothing (#1710,
+    // #1711); what an answer may hold (§2.9.2 step 7).
+    .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
-    .{ .file = "Eval.zig", .layer = 9, .max_lines = 640 },
+    .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
-    .{ .file = "Holders.zig", .layer = 9, .max_lines = 700 },
+    .{ .file = "Holders.zig", .layer = 10, .max_lines = 700 },
     // The holder index and its sweep, split from `Holders` (#1714): holds
     // listed once a holder, buckets by next use, the aggregated holders.
     // A holder's later uses, split from `Resolve` for the best-hold descent (#1714).
-    .{ .file = "Later.zig", .layer = 9, .max_lines = 180 },
-    .{ .file = "Sweep.zig", .layer = 9, .max_lines = 720 },
+    .{ .file = "Later.zig", .layer = 10, .max_lines = 180 },
+    .{ .file = "Sweep.zig", .layer = 10, .max_lines = 720 },
     // The pending operands by clock and key, split from the walk's copies (#1714).
-    .{ .file = "Stack.zig", .layer = 9, .max_lines = 380 },
+    .{ .file = "Stack.zig", .layer = 10, .max_lines = 380 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
-    .{ .file = "ReadOff.zig", .layer = 10, .max_lines = 1160 },
+    .{ .file = "ReadOff.zig", .layer = 11, .max_lines = 1160 },
     // The best-hold descent over a holder DAG, below Resolve (#1714).
-    .{ .file = "Descent.zig", .layer = 10, .max_lines = 330 },
-    .{ .file = "Deliver.zig", .layer = 10, .max_lines = 300 },
+    .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
+    .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
-    .{ .file = "Closures.zig", .layer = 10, .max_lines = 140 },
-    .{ .file = "Resolve.zig", .layer = 11, .max_lines = 680 },
+    .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
+    .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // Evidence terms as function values (#1708).
-    .{ .file = "Groups.zig", .layer = 12, .max_lines = 1900 },
-    .{ .file = "Block.zig", .layer = 13, .max_lines = 380 },
-    .{ .file = "Message.zig", .layer = 13, .max_lines = 280 },
-    .{ .file = "Report.zig", .layer = 13, .max_lines = 150 },
-    .{ .file = "Hoists.zig", .layer = 13, .max_lines = 170 },
-    .{ .file = "Ownership.zig", .layer = 14, .max_lines = 340 },
-    .{ .file = "Enforce.zig", .layer = 15, .max_lines = 510 },
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
+    .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
+    .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
+    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 170 },
+    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 340 },
+    .{ .file = "Enforce.zig", .layer = 16, .max_lines = 510 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -398,7 +400,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 45), layers.len);
+    try testing.expectEqual(@as(usize, 46), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

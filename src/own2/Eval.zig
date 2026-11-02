@@ -22,6 +22,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
+const Paths = @import("Paths.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -211,8 +212,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             }
             try e.ev.label_map.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
             try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
-            // What the passed-on code answers is stored in the cell, and it
-            // is unknown here (§2.13.7).
+            // What the passed-on code answers is stored in the cell, and it is unknown here (§2.13.7).
             if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellTaint(e, q, cs, &.{}, false, none);
             continue;
         }
@@ -315,7 +315,11 @@ fn callEffects(e: *Evaluation, q: u32) Error!void {
     };
     const h = e.contracts.head(call.contract);
     for (e.contracts.effectsOf(h.escapes)) |x| try callEscape(e, q, x);
-    for (e.contracts.effectsOf(h.writes)) |x| try callWrite(e, q, x);
+    // The writes of one argument by one walk of it (`Paths`).
+    const ws = e.contracts.effectsOf(h.writes);
+    const pre = try Paths.ofWrites(&e.ev, call.args, ws);
+    defer for (pre) |*p| if (p.*) |*l| l.deinit(e.gpa());
+    for (ws, pre) |x, p| try callWriteFrom(e, q, x, if (p) |l| l.items else null);
 }
 
 /// An escape of call `q`'s callee: its projections escape at the call.
@@ -336,6 +340,10 @@ pub const cellWrite = Cells.cellWrite;
 /// A write of call `q`'s callee: a demand at the call. What it relies on
 /// is instantiated once the group's facts are in (`finishDemands`).
 pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
+    return callWriteFrom(e, q, x, null);
+}
+
+fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relation.Proj) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const call = f.calls.items[q];
@@ -344,7 +352,9 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     const arg = call.args[x.j];
     const words = f.slots.relWords(x.slot);
     const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
-    if (x.deep) {
+    if (pre) |ps| {
+        for (ps) |p| try e.w.leaf_runs.append(gpa, p.leaf);
+    } else if (x.deep) {
         var ps: std.ArrayList(Relation.Proj) = .empty;
         defer ps.deinit(gpa);
         try e.ev.project(arg, words, true, 0, 0, &ps);
