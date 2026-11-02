@@ -3,12 +3,12 @@ import Js
 import Task
 
 
-pub type Program
+pub type Program request reply state
     = Program
-        { init : (⊤, ⊤ → ⊤)
-        , start : (⊤, ⊤ → ⊤)
-        , handle : (String, ⊤, ⊤ → String)
-        , stream : (⊤, ⊤, ⊤, ⊤ → ⊤)
+        { init : (⊤, ⊤ → state)
+        , start : (state, ⊤ → ⊤)
+        , handle : (request, state, ⊤ → reply)
+        , stream : (⊤, state, ⊤, ⊤ → ⊤)
         }
 
 
@@ -17,49 +17,54 @@ pub type OpenError
     | SecurityError
 
 
-pub foreign type Handle
+pub foreign type Handle request reply
 
 
 pub program :
-      { init : (⊤, ⊤ → ⊤)
-      , start : (⊤, ⊤ → ⊤)
-      , handle : (String, ⊤, ⊤ → String)
-      , stream : (⊤, ⊤, ⊤, ⊤ → ⊤)
+      { init : (⊤, ⊤ → state)
+      , start : (state, ⊤ → ⊤)
+      , handle : (request, state, ⊤ → reply)
+      , stream : (⊤, state, ⊤, ⊤ → ⊤)
       }
-    → Program
+    → Program request reply state
 program callbacks = Program callbacks
 
 
-pub open : Program → Result OpenError Handle
+pub open : Program request reply state → Result OpenError (Handle request reply)
 open definition = nativeOpen (Js.from definition)
 
 
-foreign impure nativeOpen : Js.Value → Result OpenError Handle
+foreign impure nativeOpen : Js.Value → Result OpenError (Handle request reply)
 
 
-pub foreign impure send : Handle, String → ⊤
+pub foreign impure send : Handle request reply, request → ⊤
 
 
-pub foreign impure receive : Handle, sync (String → ⊤) → ⊤
+pub foreign impure receive : Handle request reply, sync (reply → ⊤) → ⊤
 
 
-pub run : Program → ⊤
+pub run : Program request reply state → ⊤
 run definition =
     case definition of
         Program callbacks →
-            listen λmessage → Task.start (λ⊤ → reply (callbacks.handle message ⊤ ⊤)) λ_ → ⊤
+            configure (Js.from definition)
             Task.start
                 (λ⊤ →
-                    callbacks.init ⊤ ⊤
-                    callbacks.start ⊤ ⊤
+                    state = callbacks.init ⊤ ⊤
+                    listen λmessage →
+                        Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+                    callbacks.start state ⊤
                 )
                 λ_ → ⊤
 
 
-foreign impure listen : sync (String → ⊤) → ⊤
+foreign impure configure : Js.Value → ⊤
 
 
-foreign impure reply : String → ⊤
+foreign impure listen : sync (request → ⊤) → ⊤
+
+
+foreign impure reply : reply → ⊤
 
 
 pub foreign impure initializer : String → String

@@ -199,6 +199,8 @@ pub const Scheme = struct {
     effects: u32 = no_terms,
     /// Pure and terminating by the declaration call graph (effects §14.9).
     total: bool = false,
+    /// Optional block: count, then (quantifier, path length, field symbols).
+    wire_paths: u32 = no_terms,
 };
 
 /// An effect block's words, read (transparent-effects-proposal.md §14.6).
@@ -359,6 +361,7 @@ pub const Quantified = struct {
     /// the value is applied at crosses into JavaScript (`backend.md` §9,
     /// *Declared-type filtering of fact 3*; checker-v2.md §36). Bit 10.
     crosses: bool = false,
+    wire: bool = false,
     /// Index into this interface's own `symbols` column, NOT a `Symbol`.
     ///
     /// A `Symbol` is an index into the session's interner, whose numbering
@@ -389,11 +392,12 @@ pub const Quantified = struct {
     pub const words = 4;
 
     pub fn flags(q: Quantified) u32 {
-        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10);
+        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10) | (@as(u32, @intFromBool(q.wire)) << 11);
     }
 
     pub const identity_bit: u32 = 1 << 9;
     pub const crosses_bit: u32 = 1 << 10;
+    pub const wire_bit: u32 = 1 << 11;
 
     pub fn unpack(flag_word: u32, name_word: u32, start: u32, len: u32) Quantified {
         return .{
@@ -401,6 +405,7 @@ pub const Quantified = struct {
             .equatable = (flag_word >> 8) & 1 == 1,
             .identity = (flag_word >> 9) & 1 == 1,
             .crosses = (flag_word >> 10) & 1 == 1,
+            .wire = (flag_word >> 11) & 1 == 1,
             .name = @fromBackingInt(@intCast(name_word)),
             .constraints_start = start,
             .constraints_len = len,

@@ -108,6 +108,7 @@ pub const Record = struct { fields: Range, open: bool };
 /// One module's artifact, owned by `gpa`. Empty for embedded core,
 /// platforms and modules checked silently or with an error.
 pub const Artifact = struct {
+    wire: @import("Wire.zig").Artifact = .{},
     records: []const Record = &.{},
     record_labels: []const InternPool.Symbol = &.{},
 
@@ -130,6 +131,7 @@ pub const Artifact = struct {
     pub const empty: Artifact = .{};
 
     pub fn deinit(a: *Artifact, gpa: Allocator) void {
+        a.wire.deinit(gpa);
         gpa.free(a.records);
         gpa.free(a.record_labels);
         gpa.free(a.nodes);
@@ -276,6 +278,20 @@ fn sortedBySymbol(row: []const InternPool.Symbol) bool {
     if (row.len < 2) return true;
     for (row[0 .. row.len - 1], row[1..]) |a, b| if (@backingInt(a) > @backingInt(b)) return false;
     return true;
+}
+
+/// The scheme quantifiers an annotated body's rigid variables stand for.
+/// Wire uses the same mapping as JavaScript crossing, without running another
+/// analysis for programs that have no entry-role obligations.
+pub fn schemeVariables(in: Input) Error![]?[]const Var {
+    var b: Builder = .{ .gpa = in.scratch, .scratch = in.scratch, .store = in.store, .types = in.types, .interner = in.interner, .memo = &.{}, .named0 = &.{}, .alias0 = &.{} };
+    defer b.deinit();
+    var c: Crossing = .{ .in = in, .b = &b };
+    defer c.deinit();
+    c.crossing = try in.scratch.alloc(bool, in.store.count());
+    @memset(c.crossing, false);
+    for (in.bir.decls, 0..) |_, di| _ = try c.ownedBy(@intCast(di));
+    return c.owned;
 }
 
 pub fn build(in: Input) Error!Output {
@@ -934,6 +950,7 @@ const Crossing = struct {
             }
         }
         for (in.uses) |u| try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
+
         if (c.queue.items.len == 0) return;
         // Passes over the copies until none wakes: a copy is read once its
         // quantifier crosses, and a pass is a test per copy.

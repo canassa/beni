@@ -85,6 +85,7 @@ const Var = TypeStore.Var;
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
     entry_constructors: []const []const u8 = &.{},
+    entry_kinds: []const @import("../js/Manifest.zig").EntryKind = &.{},
     gpa: Allocator,
     scratch: *Arena,
     patterns: *Arena,
@@ -458,7 +459,37 @@ pub fn check(in: Input) Error!Check.Counters {
         in.type_keys.* = t.artifact;
     }
 
-    // Declaration termination needs the elaborated callees and the solved
+    var wire_quantifiers: []const bool = &.{};
+    var wire_paths: []const @import("Wire.zig").Requirement = &.{};
+    if (!quiet and report.errors == 0 and (in.entry_kinds.len != 0 or solver.instantiate.wire.items.len != 0)) {
+        const wire = try @import("Wire.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .local_type = local_type,
+            .inst_type = inst_type,
+            .decl_scheme = decl_scheme,
+            .decl_display = decl_display,
+            .casts = &.{},
+            .uses = &.{},
+            .copies = solver.instantiate.copies.items,
+            .schemas = &schemas,
+            .dispatch = in.dispatch,
+            .keyed = false,
+        }, solver.instantiate.wire.items, in.entry_kinds, report.staging().items);
+        in.type_keys.wire = wire.artifact;
+        wire_quantifiers = wire.quantifiers;
+        wire_paths = wire.paths;
+
+        try report.flush();
+    }
+
+    // Declaration termination needs
+    // the elaborated callees and the solved
     // effect rungs. Publish only a closed, acyclic pure call graph.
     if (!quiet) try @import("Totality.zig").run(&effects, .{
         .scratch = scratch,
@@ -486,6 +517,8 @@ pub fn check(in: Input) Error!Check.Counters {
         .contexts = &solver.contexts,
         .dispatch = in.dispatch,
         .crossing = if (type_keys) |t| t.crossing else &.{},
+        .wire = wire_quantifiers,
+        .wire_paths = wire_paths,
     });
     try reportKeyErrors(&report, key_errors.items, &reported_keys);
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);

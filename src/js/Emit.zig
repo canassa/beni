@@ -1400,6 +1400,7 @@ const Emitter = struct {
     fuzz_seeds: []const Fields.Seed = &.{},
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
+    wire_names: ?*const Fields.Table = null,
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
@@ -1542,7 +1543,7 @@ const Emitter = struct {
                 });
                 // Input-derived identity, independent of discovery order and jobs.
                 const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
-                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id });
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire });
             }
         }
         std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {
@@ -1743,6 +1744,7 @@ const Emitter = struct {
             .worker_candidates = e.worker_candidates,
             .deferred = e.deferred,
             .worker_entries = e.worker_entries,
+            .wire_names = e.wire_names,
             .worker_runtime = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime,
             .output_prefix = try std.fmt.allocPrint(e.scratch, "_workers/{s}/", .{descriptor.id}),
         };
@@ -1776,6 +1778,7 @@ const Emitter = struct {
         for (e.worker_candidates, selected) |d, keep| if (keep) try entries.append(e.scratch, d);
         if (e.hasErrors()) return;
         e.worker_entries = entries.items;
+        try e.planWireNames();
         for (entries.items) |d| try e.session.entry_plan.entries.append(e.gpa, .{
             .module = d.module,
             .decl = d.decl,
@@ -2732,7 +2735,7 @@ const Emitter = struct {
                 const t = argument.iface.term(argument.at);
                 if (t.tag != .@"var" or t.lhs >= scheme.quantified_count) return false;
                 const quantified = view.iface.quantified(scheme, t.lhs);
-                if (quantified.flags() != 0 or quantified.constraints_len != 0) return false;
+                if ((quantified.flags() & ~(Interface.Quantified.wire_bit | Interface.Quantified.crosses_bit)) != 0 or quantified.constraints_len != 0) return false;
                 for (seen[0..i]) |previous| if (previous == t.lhs) return false;
                 seen[i] = t.lhs;
             }
@@ -5558,9 +5561,61 @@ const Emitter = struct {
     /// name, and a build that reaches `Debug` — only under the harness's
     /// `--allow-debug` — prints field names and tags: neither renames a
     /// field or gives a type integer tags.
+    /// Union the real entry boundaries before assigning the wire palette.
+    /// Complete solved row facts supply interference, including private fields
+    /// that will be shortened independently in each projection.
+    fn planWireNames(e: *Emitter) !void {
+        if (!e.options.release or e.worker_entries.len == 0) return;
+        var wire_fields: std.StringArrayHashMapUnmanaged(void) = .empty;
+        for (e.worker_entries) |descriptor| {
+            const plan = descriptor.wire orelse continue;
+            for (plan.nodes) |node| {
+                if (node.kind != .record) continue;
+                for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
+                    const label = edge.label.unwrap() orelse continue;
+                    try wire_fields.put(e.scratch, try e.scratch.dupe(u8, e.session.interner.slice(label)), {});
+                }
+            }
+        }
+        if (wire_fields.count() == 0) return;
+        var pinned: std.StringHashMapUnmanaged(void) = .empty;
+        var plain: std.StringHashMapUnmanaged(void) = .empty;
+        // Constructor slots and representation/runtime properties are plain
+        // JavaScript properties, not record fields.
+        for ("abcdefghijklmnopqrstuvwxyz") |ch| {
+            const text = try e.scratch.dupe(u8, &.{ch});
+            try plain.put(e.scratch, text, {});
+        }
+        for ([_][]const u8{ "$", "$wire", "$plain", "$b", "$o", "length", "id", "url" }) |text| try plain.put(e.scratch, text, {});
+        try e.closeBoundary();
+        if (e.boundary) |boundary| {
+            var it = boundary.pinned.keyIterator();
+            while (it.next()) |text| try pinned.put(e.scratch, text.*, {});
+        } else for (wire_fields.keys()) |text| try pinned.put(e.scratch, text, {});
+        for (e.worker_entries) |descriptor| {
+            var projection = try e.workerProjection(descriptor);
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            try projection.eliminate(.{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) });
+            try projection.closeBoundary();
+            if (projection.boundary) |boundary| {
+                var it = boundary.pinned.keyIterator();
+                while (it.next()) |text| try pinned.put(e.scratch, text.*, {});
+            } else for (wire_fields.keys()) |text| try pinned.put(e.scratch, text, {});
+            projection.diagnostics.deinit(e.gpa);
+        }
+        var it = pinned.keyIterator();
+        while (it.next()) |text| try plain.put(e.scratch, text.*, {});
+        const counts = try e.scratch.alloc(Fields.Count, wire_fields.count());
+        for (counts, wire_fields.keys()) |*count, text| count.* = .{ .text = text, .uses = 1 };
+        var conflicts = try e.fieldConflicts(counts);
+        const table = try e.scratch.create(Fields.Table);
+        table.* = try Fields.assignReserved(e.scratch, counts, &pinned, &plain, &conflicts, &plain);
+        e.wire_names = table;
+    }
+
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
-        if (!e.options.release or e.options.library or e.reachesDebug() or e.worker_entries.len != 0) return; // #1296: one build-wide wire naming table will replace this.
+        if (!e.options.release or e.options.library or e.reachesDebug()) return;
         // `--fuzz`: every program's message type, and what its payloads
         // name, is a type JavaScript sees (`browser-direct.md` §8.3, the
         // contract's item 2) — a message a fuzzer builds in the development
@@ -5575,7 +5630,16 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
+        var runtime_types: std.ArrayList(Dispatch.TypeId) = .empty;
+        if (e.worker_entries.len != 0 and e.options.platform.runtime != null) {
+            if (e.options.platform.program) |qualified| {
+                const id = e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(qualified)), try e.session.interner.getOrPut(e.gpa, shortName(qualified)));
+                if (id != .none) try runtime_types.append(e.scratch, id);
+            }
+        }
         e.boundary = try Fields.close(.{
+            .observed_types = runtime_types.items,
+
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,
@@ -5585,6 +5649,10 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .seeds = e.fuzz_seeds,
         });
+        if (e.boundary) |*boundary| for (e.worker_entries) |descriptor| {
+            const plan = descriptor.wire orelse continue;
+            for (plan.types) |id| if (id != .none and id.int() < boundary.integer_tags.bit_length) boundary.integer_tags.unset(id.int());
+        };
     }
 
     /// `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type
@@ -5762,7 +5830,29 @@ const Emitter = struct {
         for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
         var conflicts = try e.fieldConflicts(counts);
         for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
-        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
+        var reserved: std.StringHashMapUnmanaged(void) = .empty;
+        // Reserve the wire palette before assigning entry-local names. A
+        // page-private field can never steal a wire spelling in this entry.
+        if (e.wire_names) |wire| {
+            var kept = wire.kept.keyIterator();
+            while (kept.next()) |text| {
+                try boundary.pinned.put(e.scratch, text.*, {});
+                try reserved.put(e.scratch, text.*, {});
+            }
+            var names = wire.map.iterator();
+            while (names.next()) |entry| {
+                try boundary.pinned.put(e.scratch, entry.key_ptr.*, {});
+                try reserved.put(e.scratch, entry.value_ptr.*, {});
+            }
+        }
+        e.field_table = try Fields.assignReserved(e.scratch, counts, &boundary.pinned, &plain, &conflicts, &reserved);
+        if (e.wire_names) |wire| {
+            var names = wire.map.iterator();
+            while (names.next()) |entry| {
+                _ = e.field_table.?.kept.remove(entry.key_ptr.*);
+                try e.field_table.?.map.put(e.scratch, entry.key_ptr.*, entry.value_ptr.*);
+            }
+        }
     }
 
     /// `browser-inline.md` §8.4, amended 2026-10-24: a route whose function
@@ -6865,6 +6955,7 @@ const Emitter = struct {
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .worker_wire = &e.session.checked.type_keys[m.int()].wire,
                 .worker_descriptors = slot.worker_descriptors,
                 .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,
                 .birs = e.reach.birs,

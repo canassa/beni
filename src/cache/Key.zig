@@ -459,6 +459,7 @@ pub const Keys = struct {
 pub const Asset = struct { path: []const u8, bytes: []const u8 };
 
 pub const Options = struct {
+    entry_roles: []const u8 = "",
     entry_constructors: []const []const u8 = &.{},
     build_id: [16]u8,
     informational: bool,
@@ -568,11 +569,13 @@ fn ownTermsOf(
         .pattern_budget = options.pattern_budget,
         .crossing = options.crossing,
     });
-    const option_string = if (options.entry_constructors.len != 0)
+    const constructor_options = if (options.entry_constructors.len != 0)
         try std.fmt.allocPrint(scratch, "{s};entry_constructors={s}", .{ base_options, try std.mem.join(scratch, ",", options.entry_constructors) })
     else
         base_options;
-    // The markup term (`frontend.md` §9.8): a module that writes markup, and
+    const option_string = if (options.entry_roles.len != 0) try std.fmt.allocPrint(scratch, "{s};entry_roles={s}", .{ constructor_options, options.entry_roles }) else constructor_options;
+    // The markup term (`frontend.md` §9.8):
+    // a module that writes markup, and
     // the vocabulary module, are checked against the chain's markup
     // settings, which reach them through no import — why a module has no
     // vocabulary, and which type is the markup type. Every other module's

@@ -3,7 +3,7 @@ import Page
 import Worker
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤
@@ -13,7 +13,7 @@ worker =
         }
 
 
-openIt : Worker.Program → Result Worker.OpenError Worker.Handle
+openIt : Worker.Program String String ⊤ → Result Worker.OpenError (Worker.Handle String String)
 openIt = Worker.open
 
 

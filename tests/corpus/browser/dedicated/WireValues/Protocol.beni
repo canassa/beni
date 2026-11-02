@@ -1,0 +1,20 @@
+import Int32
+
+
+pub type Choice
+    = Added { count : Int, data : List String }
+    | Empty
+
+
+pub type Tree
+    = Leaf (List Int)
+    | Node Tree Tree
+
+
+pub type alias Message =
+    longWireLabel : String
+    hash : Int32.Int32
+    choice : Choice
+    tree : Tree
+    items : List (List Int)
+    pair : String × List Int

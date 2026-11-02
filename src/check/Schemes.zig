@@ -147,6 +147,8 @@ pub const Writer = struct {
     /// cross into JavaScript (checker-v2.md §36): its flag word gets the
     /// `crosses` bit.
     crossing: []const bool = &.{},
+    wire: []const bool = &.{},
+    wire_paths: []const @import("Wire.zig").Requirement = &.{},
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -241,6 +243,7 @@ pub const Writer = struct {
         }
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
+        const wire_paths = try w.writeWirePaths();
         const effects = if (w.effects) |p| try w.writeEffects(p, v) else Interface.no_terms;
         const index: u32 = @intCast(w.schemes.items.len);
         try w.schemes.append(w.gpa, .{
@@ -248,6 +251,7 @@ pub const Writer = struct {
             .quantified_count = count,
             .body = body,
             .effects = effects,
+            .wire_paths = wire_paths,
             .total = if (w.effects) |p| p.decl < p.effects.total.len and p.effects.total[p.decl] else false,
         });
         try w.finish(mark);
@@ -717,6 +721,36 @@ pub const Writer = struct {
         return base;
     }
 
+    fn writeWirePaths(w: *Writer) Error!u32 {
+        if (w.wire_paths.len == 0) return Interface.no_terms;
+        const Path = struct { quantifier: u32, fields: []const Symbol };
+        var paths: std.ArrayList(Path) = .empty;
+        defer paths.deinit(w.gpa);
+        for (w.pending_roots.items, 0..) |root, qi| for (w.wire_paths) |requirement| {
+            if (requirement.path.len == 0 or w.store.find(root) != requirement.variable) continue;
+            try paths.append(w.gpa, .{ .quantifier = @intCast(qi), .fields = requirement.path });
+        };
+        if (paths.items.len == 0) return Interface.no_terms;
+        std.mem.sort(Path, paths.items, w.interner, struct {
+            fn less(pool: *const InternPool.Global, a: Path, b: Path) bool {
+                if (a.quantifier != b.quantifier) return a.quantifier < b.quantifier;
+                for (0..@min(a.fields.len, b.fields.len)) |i| {
+                    const x = pool.slice(a.fields[i]);
+                    const y = pool.slice(b.fields[i]);
+                    if (!std.mem.eql(u8, x, y)) return std.mem.lessThan(u8, x, y);
+                }
+                return a.fields.len < b.fields.len;
+            }
+        }.less);
+        const offset: u32 = @intCast(w.extra.items.len);
+        try w.extra.append(w.gpa, @intCast(paths.items.len));
+        for (paths.items) |path| {
+            try w.extra.appendSlice(w.gpa, &.{ path.quantifier, @intCast(path.fields.len) });
+            for (path.fields) |field| try w.extra.append(w.gpa, try w.symbolIndex(field));
+        }
+        return offset;
+    }
+
     fn quantifierOf(w: *Writer, root: Var, flags: TypeStore.Flags) Error!u32 {
         if (w.live(root) and w.quantified[root.int()] != unbound) {
             return w.quantified[root.int()];
@@ -728,6 +762,7 @@ pub const Writer = struct {
             .kind = @backingInt(flags.kind),
             .equatable = flags.equatable,
             .crosses = root.int() < w.crossing.len and w.crossing[root.int()],
+            .wire = root.int() < w.wire.len and w.wire[root.int()],
             // Into the interface's own column, never the interner's — see
             // `Interface.Quantified.name`.
             // A name that disagrees with the kind is not published: it was
