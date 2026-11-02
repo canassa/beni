@@ -925,6 +925,68 @@ pub const Eval = struct {
         return got;
     }
 
+    /// The callee's `res_cond` on call `call`'s arguments, for a check that
+    /// asks some of the call's slots only to be apart (§2.9.1): an
+    /// occurrence of the callee that arrives at no plain slot of the check
+    /// is asked apart, so that what an apart slot repeats inside it is not
+    /// asked once (`List.unzipHelp`'s builders, whose elements come from one
+    /// family of its parameter). `idx`: the call's entries of `ents`.
+    fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error!Cond {
+        const g = e.gpa();
+        const c = e.contractOf(call) orelse return Cond.unprovable;
+        const h = e.contracts.head(c);
+        const full = try e.contracts.cond(e.arena, h.res_cond);
+        if (full.no or full.sel.len == 0) return full;
+        // The plain slots of the check, as words from the call's root.
+        var plain: std.ArrayList([]const u32) = .empty;
+        defer plain.deinit(g);
+        for (idx) |i| {
+            if (Contract.isApart(ents[i].occ)) continue;
+            for (e.f.slots.items(e.f.leafAt(ents[i].leaf).slots)) |x| {
+                try plain.append(g, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
+            }
+        }
+        const out = try e.arena.alloc(u64, full.sel.len);
+        for (full.sel, 0..) |o, k| {
+            out[k] = o;
+            if (Contract.isApart(o)) continue;
+            if (!try e.arrivesAtPlain(h.res, o, plain.items)) out[k] = o | Contract.apart_bit;
+        }
+        return e.instSel(try Cond.of(e.account(), out), call);
+    }
+
+    /// Whether occurrence `o` of a callee may arrive at one of the result
+    /// slots `plain` (words from the result's root) by `res`. A slot `res`
+    /// does not name may hold anything.
+    fn arrivesAtPlain(e: *Eval, res: Ids.Range, o: u64, plain: []const []const u32) Error!bool {
+        const ow = e.f.slots.relWords(Contract.occRel(o));
+        for (plain) |words| {
+            var named = false;
+            for (e.contracts.resOf(res)) |rs| {
+                try e.charge(.cond, 1);
+                const rw = e.f.slots.relWords(rs.slot);
+                const exact = std.mem.eql(u32, rw, words);
+                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
+                if (!exact and !opened) continue;
+                named = true;
+                const suffix = words[rw.len..];
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+                    if (a.kind != .param or a.j != Contract.occParam(o)) continue;
+                    // The arrival's slot is its own steps, then what the
+                    // plain slot takes on below an open one; a deep arrival
+                    // reaches every slot below that.
+                    const aw = e.f.slots.relWords(a.slot);
+                    if (aw.len + suffix.len > ow.len) continue;
+                    if (!std.mem.eql(u32, aw, ow[0..aw.len])) continue;
+                    if (!std.mem.eql(u32, suffix, ow[aw.len..][0..suffix.len])) continue;
+                    if (a.deep or aw.len + suffix.len == ow.len) return true;
+                }
+            }
+            if (!named) return true;
+        }
+        return false;
+    }
+
     /// A callee's condition (a selection over its parameters) on call
     /// `call`'s arguments (§2.9.3's routed rule): every object at a selected
     /// occurrence, projected, distinct from every other.
@@ -1070,7 +1132,7 @@ pub const Eval = struct {
                         // A call that does not vouch for its parts is read
                         // through what they come from (§2.9.2 step 3),
                         // each part on its own.
-                        const c = try e.instCond(r.a);
+                        const c = if (anyApart(ents.items, idx.items)) try e.instCondMixed(r.a, ents.items, idx.items) else try e.instCond(r.a);
                         if (c.no) {
                             if (must == none or root > must) {
                                 must = root;
@@ -1128,6 +1190,11 @@ pub const Eval = struct {
         }
         if (occs.run.items.len == 0) return acc;
         return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
+    }
+
+    fn anyApart(ents: []const Ent, idx: []const u32) bool {
+        for (idx) |i| if (Contract.isApart(ents[i].occ)) return true;
+        return false;
     }
 
     fn allApart(ents: []const Ent, idx: []const u32) bool {

@@ -1751,11 +1751,16 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
         .ref => {
             const r = f.roots.items[l.root];
             const pslot = f.pos.items[l.pos].slot;
+            // A value read back at its own place is read by its own
+            // structure: an unstepped cast at a place structurally identical
+            // to its inner's restores the inner exactly (§2.13.9), so the
+            // result's storage is the position's, not every object below it.
+            const by_structure = !whole or f.places.pathPlace(pslot) == f.places.pathPlace(q);
             for (f.slots.items(l.slots)) |sl| {
                 // The result slot of this object: q, below by the steps from
                 // the position to the slot.
                 var at = q;
-                if (!whole) {
+                if (by_structure) {
                     const rel = (try f.slots.relBelow(gpa, f.account, f.places, pslot, .from(sl))) orelse Slots.root;
                     var ps: std.ArrayList(u32) = .empty;
                     defer ps.deinit(gpa);
