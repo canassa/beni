@@ -1,0 +1,4 @@
+A runtime catch for the loan rule at a cell callback (ownership-v2.md §2.13.7): a Ref.update or Ref.modify callback
+edits the contents in place while a loan of them is live. Built again under --ownership=v2 and the list stale-read
+sanitiser. v2 refuses each edit; were it to accept one, the sanitised run would show the stale read of the loan, or
+of the list the cell shares.

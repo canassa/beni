@@ -21,6 +21,7 @@ const Forest = @import("Forest.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const Cells = @import("Cells.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -195,6 +196,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 f.calls.items[vi].contract = (if (wild) null else e.ctx.contractOf(e.ctx.ctx, x.head)) orelse try e.ctx.pessimistic(e.ctx.ctx, @intCast(kids.len));
             }
             try e.ev.known.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
+            if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellAnswer(e, q, l, cs, got.value_ptr.*);
             continue;
         }
         if (x.kind == .ref and x.family == Slots.empty and f.roots.items[x.root].kind == .param) {
@@ -209,6 +211,9 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             }
             try e.ev.label_map.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
             try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
+            // What the passed-on code answers is stored in the cell, and it
+            // is unknown here (§2.13.7).
+            if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellTaint(e, q, cs, &.{}, false, none);
             continue;
         }
         // Unknown code: its answer is unknown, and what it is handed escapes.
@@ -231,6 +236,41 @@ pub fn entriesOf(e: *Evaluation, root: Contract.Node) Error!*Forest.Entries {
     es.* = .{};
     try es.of(&e.contracts.trees, e.ev.arena, e.fr().places, root, &.{});
     return es;
+}
+
+/// What a known cell callback answers is stored back in the cell
+/// (§2.13.7). Where it may share what the cell holds with something else
+/// (`Cells.shared`: a capture, a top-level value, an unknown answer), that
+/// part of the contents escapes at the call (`cellTaint`), so a later edit
+/// of it in place is refused `escaped`.
+fn cellAnswer(e: *Evaluation, q: u32, l: Contract.Label, cs: Contract.Arrival, vi: u32) Error!void {
+    const f = e.fr();
+    const vc = f.calls.items[vi];
+    const kh = e.contracts.head(vc.contract);
+    // A code of the group being solved has no final contract yet.
+    const solving = if (e.solver) |sv| vc.code != none and sv.member(sv.ctx, vc.code) != null else false;
+    if (kh.flags.pessimistic or solving) return cellTaint(e, q, cs, &.{}, false, vi);
+    var sh: std.ArrayList(Cells.Shared) = .empty;
+    defer sh.deinit(e.gpa());
+    // `Rows.fromWords` gives a `cellmodify` label offset 1: only `.1` is stored.
+    try Cells.shared(try entriesOf(e, kh.res_root), l.origin[2] == 1, &sh, e.gpa());
+    for (sh.items) |x| try cellTaint(e, q, cs, x.words, x.drop, vi);
+}
+
+/// What call `q`'s cell holds at `below` under its `◆` (less its first
+/// step when `drop`) escapes at the call (§2.13.7): it may be held elsewhere
+/// now. `vi`: the callback's virtual call, whose own writes of what it was
+/// supplied this does not refuse.
+fn cellTaint(e: *Evaluation, q: u32, cs: Contract.Arrival, bw: []const u32, drop: bool, vi: u32) Error!void {
+    const f = e.fr();
+    const gpa = e.gpa();
+    const call = f.calls.items[q];
+    if (cs.j >= call.args.len) return;
+    const words = try std.mem.concat(e.ev.arena, u32, &.{ f.slots.relWords(cs.slot), bw[@min(@intFromBool(drop), bw.len)..] });
+    var ps: std.ArrayList(Relation.Proj) = .empty;
+    defer ps.deinit(gpa);
+    try e.ev.project(call.args[cs.j], words, true, 0, 0, &ps);
+    for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, vi);
 }
 
 /// An arrival of call `q`'s supply, as leaves (`Relation.arrivalLeaves`'
@@ -290,50 +330,8 @@ pub fn callEscape(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, q);
 }
 
-/// Whether write `x` is a cell operation (§2.13.7): a shallow write of a
-/// `◆` slot, `Ref.set`/`update`/`modify`. Rewriting the cell stales no
-/// reader, so it never makes a closure `once` (§2.11.4).
-pub fn cellWrite(slots: *const Slots.Table, x: Contract.Effect) bool {
-    const words = slots.relWords(x.slot);
-    return !x.deep and words.len != 0 and Step.fromWord(words[words.len - 1]).kind == .contents;
-}
-
-/// A cell's `◆` (§2.13.7), `words` ending in it, below value `arg`: the
-/// contents position of each cell the argument names, whatever its
-/// contents' type, appended to `leaf_runs`. A parameter's projection may
-/// name its cells by slots below its position (`m.world` of a captured
-/// record): each named slot's `◆`.
-fn cellTargets(e: *Evaluation, arg: u32, words: []const u32) Error!void {
-    const f = e.fr();
-    const gpa = e.gpa();
-    var ps: std.ArrayList(Relation.Proj) = .empty;
-    defer ps.deinit(gpa);
-    try e.ev.project(arg, words[0 .. words.len - 1], false, 0, 0, &ps);
-    each: for (ps.items) |p| {
-        const l = f.leafAt(p.leaf);
-        if (l.kind == .ref) if (try f.child(l.pos, .plain, Step.contents.word(), 0)) |cp| {
-            const set = try f.slots.internSorted(gpa, f.account, &.{f.pos.items[cp].slot.int()});
-            try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .ref, .root = l.root, .pos = cp, .slots = set, .tags = l.tags, .at_pos = true }));
-            continue;
-        };
-        if (l.kind == .ref and !l.at_pos and l.slots != Slots.empty) {
-            var cs: std.ArrayList(u32) = .empty;
-            defer cs.deinit(gpa);
-            for (f.slots.elems(l.slots)) |el| {
-                if (Slots.isNot(el)) continue;
-                if (Slots.isSub(el)) break;
-                const c = (try f.places.extend(gpa, f.gc(), Slots.pathOf(el), Step.contents)) orelse break;
-                try cs.append(gpa, c.int());
-            } else if (cs.items.len != 0) {
-                std.mem.sort(u32, cs.items, {}, std.sort.asc(u32));
-                const set = try f.slots.internSorted(gpa, f.account, cs.items);
-                try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = set, .tags = l.tags }));
-                continue :each;
-            }
-        }
-        try e.w.leaf_runs.append(gpa, p.leaf);
-    }
-}
+/// Whether write `x` is a cell operation (`Cells.cellWrite`, §2.13.7).
+pub const cellWrite = Cells.cellWrite;
 
 /// A write of call `q`'s callee: a demand at the call. What it relies on
 /// is instantiated once the group's facts are in (`finishDemands`).
@@ -352,7 +350,7 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
         try e.ev.project(arg, words, true, 0, 0, &ps);
         for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
     } else if (cellWrite(f.slots, x)) {
-        try cellTargets(e, arg, words);
+        try Cells.targets(&e.ev, arg, words, &e.w.leaf_runs);
     } else if (words.len == 0) {
         var ls: std.ArrayList(u32) = .empty;
         defer ls.deinit(gpa);
@@ -404,6 +402,12 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
             d.pending = e.w.sites.items[o[0]].pending;
             const oc = f.calls.items[o[0]];
             const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
+            // A cell callback's write of the contents is deep at the cell's
+            // `◆`: an edit of what the cell holds, never a cell operation
+            // (`cellWrite`), for every caller (§2.13.7).
+            for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) for ((try entriesOf(e, su.res_root)).items.items) |rs| for (rs.arrivals) |a| {
+                if (a.kind == .param and Cells.throughContents(f.slots, a.slot)) d.deep = true;
+            };
             for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) {
                 for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), words)) {
                     d.kept = true;
@@ -521,7 +525,7 @@ fn onceDemands(e: *Evaluation) Error!void {
             const cell = cellWrite(f.slots, wr);
             if (!cell and !h.flags.once) continue;
             const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
-            if (cell) try cellTargets(e, caps[wr.j - sig.own], f.slots.relWords(wr.slot)) else {
+            if (cell) try Cells.targets(&e.ev, caps[wr.j - sig.own], f.slots.relWords(wr.slot), &e.w.leaf_runs) else {
                 var ps: std.ArrayList(Relation.Proj) = .empty;
                 defer ps.deinit(gpa);
                 try e.ev.project(caps[wr.j - sig.own], f.slots.relWords(wr.slot), wr.deep, 0, 0, &ps);

@@ -1,0 +1,11 @@
+# v2 refuses each in-place edit at a cell callback while a loan of the contents is live (§2.13.7).
+26:5 list_still_used Ref.update
+34:5 list_still_used Ref.update
+42:5 list_still_used Ref.update
+51:9 list_still_used Ref.modify
+59:5 list_still_used Ref.update
+# and a call of a function that makes the edit, at the call.
+71:5 list_still_used SanitiserCellLoan.bump
+# and an edit after a callback stored a list that a capture, or another cell, still holds.
+80:5 list_still_used Ref.update
+89:5 list_still_used Ref.update

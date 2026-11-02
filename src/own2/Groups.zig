@@ -902,7 +902,7 @@ pub const Module = struct {
         const k = try mod.worded.find(mod.gpa, mod.account, .{ owner, di, @backingInt(result) }, params);
         if (k.contract) |c| return c;
         const fill = mod.account.beginFill();
-        const c = mod.wordedFill(owner, mod.in.birs[owner].decls[di], params, result) catch |err| {
+        const c = mod.wordedFill(owner, di, params, result) catch |err| {
             _ = mod.account.endFill(fill);
             return err;
         };
@@ -910,7 +910,8 @@ pub const Module = struct {
         return c;
     }
 
-    fn wordedFill(mod: *Module, owner: u32, decl: Bir.Decl, params: []const PlaceId, result: PlaceId) Error!u32 {
+    fn wordedFill(mod: *Module, owner: u32, di: u32, params: []const PlaceId, result: PlaceId) Error!u32 {
+        const decl = mod.in.birs[owner].decls[di];
         var arena: std.heap.ArenaAllocator = .init(mod.gpa);
         defer arena.deinit();
         const words = mod.in.birs[owner].ownSlotsV2(decl);
@@ -927,7 +928,7 @@ pub const Module = struct {
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
         };
-        return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words });
+        return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words, .origin = .{ owner, di } });
     }
 
     /// The contract of declaration `t` (another module's, or this one's when
@@ -1625,7 +1626,7 @@ pub fn declaredContract(mod: *Module, di: u32) Error!?u32 {
     var ps: std.ArrayList(PlaceId) = .empty;
     defer ps.deinit(mod.gpa);
     const result = (try mod.fnPlaces(scheme, &ps)) orelse try mod.adapter.placeOfVar(scheme);
-    if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedFill(mod.in.module, d, ps.items, result);
+    if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedFill(mod.in.module, di, ps.items, result);
     if (d.kind == .foreign_value) return try mod.pessimisticOf(@intCast(ps.items.len));
     return null;
 }
