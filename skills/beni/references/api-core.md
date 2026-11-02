@@ -80,6 +80,7 @@ module Browser.Host.AbortSignal
   value reasonIs : AbortSignal, DOMException → Bool  -- impure
 module Browser.Host.Console
   type Console
+  value errorData : String, Value → ⊤  -- impure
   value warn : String → ⊤  -- impure
 module Browser.Host.DOMException
   type DOMException
@@ -137,7 +138,9 @@ module Browser.Host.Event
   value composedPath : Event → List EventTarget  -- impure
   value ctrlKey : Event → Bool  -- impure
   value currentBox : Event → DOMRect  -- impure
+  value dataOnly : Event → Maybe Value  -- impure
   value defaultPrevented : Event → Bool  -- impure
+  value error : Event → Maybe Rejection  -- impure
   value isPrimary : Event → Bool  -- impure
   value key : Event → String  -- impure
   value metaKey : Event → Bool  -- impure
@@ -150,6 +153,7 @@ module Browser.Host.Event
 module Browser.Host.EventTarget
   type EventTarget
   value asAnchor : EventTarget → Maybe HTMLAnchorElement  -- impure
+  value current : ⊤ → EventTarget  -- impure
 module Browser.Host.Events
   value listen : EventTarget, String, (Event → ⊤) → (⊤ → ⊤)  -- impure
 module Browser.Host.Fetch
@@ -241,6 +245,7 @@ module Browser.Host.Rejection
   value isTypeError : Rejection → Bool  -- impure
   value name : Rejection → String  -- impure
   value raise : Rejection → a  -- impure
+  value setAbandoned : Rejection, Value → ⊤  -- impure
   value typeErrorMessage : Rejection → Maybe String  -- impure
 module Browser.Host.Response
   type Response
@@ -313,6 +318,22 @@ module Browser.Host.Window
   value requestFrame : (⊤ → ⊤) → Frame  -- impure
   value scrollX : ⊤ → Float  -- impure
   value scrollY : ⊤ → Float  -- impure
+module Browser.Host.Worker
+  type CreateError
+    SyntaxError
+    SecurityError
+    TypeError
+  type Endpoint
+  type PostError
+    DataCloneError
+  type Worker
+  value endpoint : Worker → Endpoint
+  value post : Endpoint, Value → Result PostError ⊤  -- impure
+  value self : ⊤ → Endpoint  -- impure
+  value supported : ⊤ → Bool  -- impure
+  value terminate : Worker → ⊤  -- impure
+  value toEventTarget : Endpoint → EventTarget
+  value tryCreate : String, String, String → Result CreateError Worker  -- impure
 module Browser.Host.WorkerGlobalScope
   type WorkerGlobalScope
   value self : ⊤ → WorkerGlobalScope  -- impure

@@ -696,6 +696,10 @@ Schema calls it only on the failure path with reportInput enabled. Otherwise
 Issue.input is Nothing. Schema.Value remains plain host data and Issues remain
 Wire-safe; Any is not used for Schema's reported input.
 
+The runtime graph check is shared with generated native message-data
+projections. `Browser.Host.Event.dataOnly` returns inspected plain data;
+`Event.error` retains an opaque native rejection handle instead.
+
 **Checked Any** (owner, 2026-11-02; #1295, #1612) replaces the
 Key-only Dynamic. It is one core/platform-only checked existential, distinct
 from Js.Value: `pack : a → Any` records the real payload and its compiler

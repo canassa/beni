@@ -250,3 +250,10 @@ plain Wire values. Strings use generated native TextEncoder/Uint8Array
 operations; object traversal uses typed data keys. Wire's native refusal makes
 the former ArrayBuffer branch unreachable. UTF-8 limits and reservation release
 are exercised by the managed ByteLimits fixture in Chromium.
+
+**As built, 2026-11-03:** generated worker bindings retain native Worker,
+endpoint and EventTarget handles. Construction and postMessage map only their
+documented exception classes. Event data uses the shared checked graph
+conversion before reaching Js.Value; native error reasons remain Rejection.
+Adapter fixtures preserve unknown thrown identities and retained callback
+behavior in development and release.
