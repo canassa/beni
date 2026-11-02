@@ -145,14 +145,14 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 14b30c7ff7ee51f14951aed9a5adc7b2c4a876d7c4d4a4624a09e1d509f542ba
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 b46ddba369fbfdec5cbe9b0901ccd3dbbb6793d6b1ab4fd91f359d9fa6f46fed
 ordering_test.test.nullary methods and record defaults print the same reversed #0 4b82a541713d2a1be9f08f673e10fddf5148f81cdff5a101513a016cb029fa79
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 a88b4aecfde7091a71276b1360d510df92399f9caf700f450b849561167d2f44
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 3c0cb0a84f8aa6fff13780a31c0edc8e87855fa653edbf0edefa4a47c48161cf
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 8b55d048399d11d915414540956ec648fbab2ff8b5eb8c1c6a79bfb9e381fafc
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 94a506655e253a8fc4e3ce65e6635596b262bef890bf4a30be5906794e25c959
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 c1e26b29d8480029c020ca10644fb2765aa68195f2c837007cc7302c1aa74993
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 b243eb25e17e6de21ee1b85b6ce938b31c4b5af3a056ac2ab0f97f24578c0c3f
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 5c9a57add03cf52b074c7ce93d389d9a79f8dccde2bd43ab24d1d2ab3fe3afe7
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 172ab02246fa7e628cbf121087ea82816ae8561b15105d58e1134c11b7db5419
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 50310276e9d969ab493a4a2a5f4bc16054b31be5aefecf9b9a54d3a06b286222
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 c87460abe1a9ce38d5f98a0af8920f59e11b5438bcad2d630c28920ab00d0232
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 a7a8cf3173b4855a36f2a8c82a066157307694ce4b9e0f3ff20f00b5698676c8
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 15df0abc9225959e25e8f823c215236dfbd75237033e5a2e4a3ffae9a96d435c
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 f5577514cacd4ecacef788d492b5735190b22a972d8cd6a8f9f6c7c7b1d0e016
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 972c8b9e3d4bc1d6422d0ba132a1d9f7f450b9ce55d2526709098c611ec44616
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 1c58a84b43b83a35818e31cc5200b4aa9e92161e98daa46c6df12206b13c10e2
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 f61e4dc0eaf5a8e35473b00c26806f05ba5cec52134bcad2fcea5b4bd8255cdb
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 8ba974faf541f84bc4795458b43371c5bc342e4b447eee8c99b8ea5f9e712aa2
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 d0b234a2bbc9062b5723fb6c936cc75b273f148d3083fb3c00bb8caf050b8a6e
@@ -163,9 +163,9 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 aee0222c1c3fcb96a0f3ece3e719557fe8a59a9deb7f19a8502a18c705237e7c
-platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 fc746b4013ecb2d75cf19b75509169bfa90884ea4f8a4b9fe995df10a1c95302
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 56fa0cca6496a59df5415409a4647b213a4f64f9cbe5feee2e002b14e8c95fcb
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 85f12b3d807d9d9685bbaf4c57ae39deb7346edf7cc4298007c2d6497b7f5bfd
-platform_test.test.worker launch URLs stay relative to their module under release specialization #0 7a88663093c6599693d03eb41d22a641809337012bf702754abee51cd10075ab
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 16edc0cdf3a9a9f27a3200fb4612cfa216c19ab7c5e388c518803d9decccf36d
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 be77a7fcd478bf73dabfe02702fc821ed4cfa79b9d97807df32596917d027c6d
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 457635d950f51790e0c452d837b163e2d9ff0e059ca2eb014a64b1604a7b45ab
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 ca23f026487126ca9e9866f27f4da41e8e430fe59100964d33ad5c7b568f4925
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 63674c59a9f7544870234bc603b082c516b3e6498be83b2ed6c3b262e4b11f9c
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 8ab541452b44a7d21fd8fabe2d91ac207366a8487daceba55e36106fbf3aec37
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 82fac5278d638185ee8ec0d4496d8b92d77a73e63f97b6efae08e78464f703fc
