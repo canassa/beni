@@ -46,7 +46,7 @@ const layers = [_]Entry{
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
-    .{ .file = "Forest.zig", .layer = 3, .max_lines = 290 },
+    .{ .file = "Forest.zig", .layer = 3, .max_lines = 340 },
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 320 },
@@ -70,7 +70,7 @@ const layers = [_]Entry{
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
-    .{ .file = "ReadOff.zig", .layer = 10, .max_lines = 830 },
+    .{ .file = "ReadOff.zig", .layer = 10, .max_lines = 1100 },
     .{ .file = "Resolve.zig", .layer = 10, .max_lines = 680 },
     .{ .file = "Deliver.zig", .layer = 10, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).

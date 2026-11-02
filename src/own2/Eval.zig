@@ -71,6 +71,9 @@ pub const Evaluation = struct {
             e.sink.label_at.deinit(g);
             e.sink.described.deinit(g);
             e.sink.effected.deinit(g);
+            e.sink.building.deinit(g);
+            e.sink.nodes.deinit(g);
+            e.sink.acyclic.deinit(g);
         }
     }
 
@@ -526,7 +529,26 @@ pub const Sink = struct {
     /// `(leaf, deep, list)`: a leaf whose parameter effects are said
     /// already. Effects only grow, so saying them again adds nothing.
     effected: Ids.FixedDict(3) = .{},
+    /// The subtrees being described once per place (§2.10): arrivals go
+    /// to the innermost, relative to its path.
+    building: std.ArrayList(Builder) = .empty,
+    /// `(kind, a, b, c, place, d)` → a subtree described already; `none`
+    /// while it is, `none - 1` where it cannot be.
+    nodes: Ids.FixedDict(6) = .{},
+    /// Per place: 1 when no place below it is on a cycle, else 2.
+    acyclic: Ids.FixedDict(1) = .{},
+    /// 0 not known; 1 nothing the frame reads grows; 2 something does.
+    frozen: u8 = 0,
+    /// The subtrees begun so far.
+    serial: u32 = 0,
+    /// The shallowest subtree in progress that a description met again:
+    /// what is made below it is not kept.
+    cut: usize = std.math.maxInt(usize),
 };
+
+/// A subtree being described at path `q` (`depth` steps from its root).
+/// `depth`: its serial number in the evaluation.
+pub const Builder = struct { q: PathId, depth: u32, res: Contract.Draft.Res = .{} };
 
 /// What `Resolve` tells the read-off: the accepted demands' reliance and
 /// each direct label's kept slots and condition.
@@ -556,8 +578,8 @@ pub const Group = struct {
     member: *const fn (ctx: *anyopaque, code: u32) ?Member,
     /// Evaluation `y`'s call `call` of member `x` gets `x`'s later writes and escapes.
     watchEffects: *const fn (ctx: *anyopaque, x: u32, y: u32, call: u32) Error!void,
-    /// Member `x` gained arrival `a` at result slot `rel`.
-    resFact: *const fn (ctx: *anyopaque, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void,
+    /// Member `x` gained arrival `a` at result slot `rel` (or subtree `n` below it).
+    resFact: *const fn (ctx: *anyopaque, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival, n: Contract.Node) Error!void,
     /// Member `x` gained a write (or an escape).
     effFact: *const fn (ctx: *anyopaque, x: u32, write: bool, eff: Contract.Effect) Error!void,
 
