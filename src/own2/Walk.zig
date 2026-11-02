@@ -75,6 +75,10 @@ pub const Context = struct {
     contractOf: *const fn (ctx: *anyopaque, code: u32) ?Contract.Id,
     /// A code's places: its parameters' (own, then captures) and its result's.
     codeSig: *const fn (ctx: *anyopaque, code: u32) Error!Sig,
+    /// The places of the function type instruction `inst` has at its site:
+    /// its parameters' appended, its result's returned; null when it has
+    /// no function type.
+    siteSig: *const fn (ctx: *anyopaque, inst: u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
     /// The pessimistic contract of a call of `arity` arguments.
     pessimistic: *const fn (ctx: *anyopaque, arity: u32) Error!Contract.Id,
     /// A `try`'s shape: `(success ordinal, failure ordinal, failure

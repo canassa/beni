@@ -152,6 +152,26 @@ fn valueAt(e: *Evaluation, v0: u32, words: []const u32) Error!u32 {
     return v;
 }
 
+/// Whether a type variable's or an opaque place is at or below `p`: a
+/// place no step below it can name.
+fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
+    if (p == .none) return false;
+    var seen: std.AutoHashMapUnmanaged(PlaceId, void) = .empty;
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(PlaceId) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, p);
+    while (stack.pop()) |x| {
+        if ((try seen.getOrPut(gpa, x)).found_existing) continue;
+        switch (places.kind(x)) {
+            .@"var", .@"opaque" => return true,
+            else => {},
+        }
+        try stack.appendSlice(gpa, places.steps(x).children);
+    }
+    return false;
+}
+
 /// Map or apply the labels of call `q`'s callee (§2.11.3).
 fn labelsOf(e: *Evaluation, q: u32) Error!void {
     const f = e.fr();
@@ -169,13 +189,27 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             const got = try e.w.virt.getOrPut(gpa, .{ q, @intCast(li) });
             if (!got.found_existing) {
                 const sig = try e.ctx.codeSig(e.ctx.ctx, x.head);
+                // The supplies and the answer at the call site's function
+                // type, never the code's own: a polymorphic code (`a → a`)
+                // has a type variable's place, which no step below it can
+                // name (`.values` of an `R → R` label). Where the site's
+                // type is not to hand, a code with such a place is unknown.
+                var site: std.ArrayList(PlaceId) = .empty;
+                defer site.deinit(gpa);
+                const site_result: ?PlaceId = if (f.slots.relWords(l.slot).len == 0 and l.j < call.arg_insts.len) try e.ctx.siteSig(e.ctx.ctx, call.arg_insts[l.j], &site) else null;
+                const at_site = site_result != null and site.items.len == sig.own;
+                var wild = false;
+                if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
+                    wild = wild or try wildBelow(gpa, f.places, p);
+                };
+                if (!at_site) wild = wild or try wildBelow(gpa, f.places, sig.result);
                 var args: std.ArrayList(u32) = .empty;
                 defer args.deinit(gpa);
                 for (0..sig.own) |k| {
                     const sk = try e.w.supply_of.getOrPut(gpa, .{ q, @intCast(li), @intCast(k) });
                     if (!sk.found_existing) {
                         const si: u32 = @intCast(f.supplies.items.len);
-                        const root = try f.addRoot(.supply, si, if (k < sig.params.len) sig.params[k] else .none);
+                        const root = try f.addRoot(.supply, si, if (at_site) site.items[k] else if (k < sig.params.len) sig.params[k] else .none);
                         try f.supplies.append(gpa, .{ .call = q, .label = @intCast(li), .k = @intCast(k), .root = root });
                         sk.value_ptr.* = si;
                     }
@@ -183,11 +217,11 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 }
                 try args.appendSlice(gpa, f.kidsOf(x));
                 const vi: u32 = @intCast(f.calls.items.len);
-                const root = try f.addRoot(.call, vi, sig.result);
+                const root = try f.addRoot(.call, vi, if (at_site) site_result.? else sig.result);
                 const kids = try f.mkKids(args.items);
-                try f.calls.append(gpa, .{ .inst = call.inst, .point = call.point, .args = kids, .arg_insts = &.{}, .root = root, .code = x.head, .virtual = true, .answers = @intCast(li), .callee_val = fv });
+                try f.calls.append(gpa, .{ .inst = call.inst, .point = call.point, .args = kids, .arg_insts = &.{}, .root = root, .code = if (wild) none else x.head, .virtual = true, .answers = @intCast(li), .callee_val = fv });
                 got.value_ptr.* = vi;
-                f.calls.items[vi].contract = (e.ctx.contractOf(e.ctx.ctx, x.head)) orelse try e.ctx.pessimistic(e.ctx.ctx, @intCast(kids.len));
+                f.calls.items[vi].contract = (if (wild) null else e.ctx.contractOf(e.ctx.ctx, x.head)) orelse try e.ctx.pessimistic(e.ctx.ctx, @intCast(kids.len));
             }
             try e.ev.known.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
             continue;
