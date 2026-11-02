@@ -996,6 +996,17 @@ has both keeps the plain one only. Without the mark, a write beside a list of re
 field to be distinct from every other's, and `List.unzipHelp`'s builder writes and `collect rest []` over a
 list that repeats an element were refused `disjoint` where nothing aliases the written list.
 
+The same holds below a deep apart occurrence [#1714, as built]: `π1{ε*~,[*]#0.0}` asks every object below
+`ε` apart except the ones at `[*]#0.0`, which it asks plain, exactly as the same selection written out
+(`π1{ε~,[*]#0.0,[*]#0.1~,…}`) does. A call's instantiation (§2.9.3's routed rule) reads such a parameter
+part by part: the deep projection of a literal gives each part's own objects at the part's own route, so a
+route names one place in the argument. An object a plain occurrence reaches at a route is then taken from the
+apart ones at that route, once for each time a plain one reaches it there, never by leaf alone: one object
+at a plain slot and at another slot below the apart one is two entries, and the check still refuses it. A
+reference's slots lose the plain ones' at its route by `Subtree.without`. Without this, a `↓p` symbol
+(§2.3.1) read a family more coarsely than its slots written out: the deep projection gave the object at
+`[*]#0.0` apart and the plain one gave it again, and the check refused `incLabels [ Rose [] [], Rose [] [] ]`.
+
 #### 2.9.2 The one relation
 
 `overlap(x, t)` of a holder's leaf `x` (deep) and a target leaf `t` answers **no**, **under** a condition, or
