@@ -390,18 +390,18 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
 /// distinct check reads every expansion whole.
 pub fn finishDemands(e: *Evaluation) Error!void {
     const f = e.fr();
-    for (0..e.demands.items.len) |di| {
-        const d = &e.demands.items[di];
+    // A call's instantiated `req`, made once a call (§2.11.2 item 4).
+    const req_of = try e.ev.arena.alloc(?Cond, f.calls.items.len);
+    @memset(req_of, null);
+    for (e.demands.items) |*d| {
         if (d.call == none) continue;
         const call = f.calls.items[d.call];
-        const h = e.contracts.head(call.contract);
-        d.relies = try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, h.req), d.call);
+        if (req_of[d.call] == null) req_of[d.call] = try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req), d.call);
+        d.relies = req_of[d.call].?;
         if (!call.virtual) continue;
         const outer = virtualOuter(e, d.call) orelse continue;
-        const oc = f.calls.items[outer[0]];
-        const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[outer[1]];
-        const j = d.arg;
-        for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == j) {
+        const lab = e.contracts.labelsOf(e.contracts.head(f.calls.items[outer[0]].contract).labels)[outer[1]];
+        for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == d.arg) {
             d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), outer[0]));
         };
     }
