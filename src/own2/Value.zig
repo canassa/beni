@@ -75,8 +75,8 @@ pub const Cb = struct {
     args: []const u32 = &.{},
     /// Direct invocations of the label in this frame.
     calls: u8 = 0,
-    /// A direct call's pending operands (a run of the walk's).
-    pending: Ids.Range = .{},
+    /// The operand stack's clock at a direct call (the walk's entries).
+    pending: u32 = Ids.none_int,
 };
 
 /// A supply root (§2.11.3): what call `call`'s callee hands its label
