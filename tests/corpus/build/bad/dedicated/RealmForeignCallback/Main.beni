@@ -11,7 +11,7 @@ go _ =
             ⊤
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

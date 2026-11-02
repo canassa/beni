@@ -17,7 +17,7 @@ dom _ =
 apply callback unit = callback unit
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

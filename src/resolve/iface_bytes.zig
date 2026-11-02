@@ -989,7 +989,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         for (0..s.quantified_count) |i| {
             const at = s.quantified_start + i * Interface.Quantified.words;
             const flag_word = iface.extra[at];
-            if (flag_word & ~@as(u32, 0xfff) != 0 or flag_word & 0xff > 5) return false;
+            if (flag_word & ~@as(u32, 0x1fff) != 0 or flag_word & 0xff > 5) return false;
             const name = iface.extra[at + 1];
             if (name != std.math.maxInt(u32) and name >= symbols) return false;
             const start = iface.extra[at + 2];

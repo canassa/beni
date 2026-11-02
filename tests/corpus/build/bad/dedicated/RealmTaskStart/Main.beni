@@ -18,7 +18,7 @@ dom _ =
 go _ = Task.start (λ⊤ → Page.text (dom ⊤)) λ_ → ⊤
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

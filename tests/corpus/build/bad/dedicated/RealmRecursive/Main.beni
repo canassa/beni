@@ -17,7 +17,7 @@ dom _ =
 helper n = if n == 0 then dom ⊤ else helper (n - 1)
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

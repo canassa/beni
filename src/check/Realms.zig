@@ -91,3 +91,15 @@ pub fn evalRealms(e: *Effects, decl: u32) u8 {
     const v = e.eval[decl].unwrap() orelse return 0;
     return if (e.nodeOf(v)) |node| e.realmOf(node) else 0;
 }
+
+pub const ForeignCall = struct { caller: u32, callback: u32 };
+
+/// A foreign's returned callback receiver calls its own callbacks when it
+/// executes. The factory's arrow does not own those realm dependencies.
+pub fn foreignDependencies(e: *Effects, nodes: []const u32, calls: []const ForeignCall, caller: u32) Effects.Error!void {
+    for (calls) |relation| {
+        if (relation.caller != caller) continue;
+        const index = std.mem.indexOfScalar(u32, nodes, relation.callback) orelse continue;
+        try e.solved.deps.append(e.gpa, @as(u32, @intCast(index)) | @import("../resolve/Interface.zig").EffectBlock.realm_only);
+    }
+}

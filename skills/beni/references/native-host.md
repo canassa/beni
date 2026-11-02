@@ -19,6 +19,14 @@ that reaches a page operation reports `worker_realm_violation`. The diagnostic
 names the operation, entry realm, allowed realms and call chain. An unreachable
 declaration does not restrict an entry. An evaluated initializer does.
 
+Stored callbacks restrict the writer's realm. This includes Ref, Js.Ref, Deferred
+and Queue writes. A foreign function that returns a callback receiver keeps
+the callback dependency on that returned function.
+
+Generic erasure through an unknown type variable has a known gap. Core and
+platform code must keep concrete callback types until generic realm
+obligations are implemented.
+
 A platform declares the top entry realm with `entryHost`. Each `entryKinds`
 row declares its own realm. Without `entryHost`, an entry has an unknown realm
 and accepts only operations available in all known realms. The old `host: page` key reports
