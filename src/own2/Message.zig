@@ -216,6 +216,8 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
         .construction => "construction",
         .append => "++",
         .once => "once",
+        // A closure's cell operation on a capture, at its creation.
+        .writer => if (d.cell and d.call == none) "cell" else op_name,
         else => op_name,
     };
     var detail: []const u8 = "";

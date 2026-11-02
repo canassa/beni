@@ -1,0 +1,4 @@
+A runtime catch for a closure called many times that writes a captured list in place, or edits in place a list it
+takes out of a captured cell while a loan of that list is live (ownership-v2.md §2.11.4, §2.13.7): built again
+under --ownership=v2 and the list stale-read sanitiser. v2 refuses the program; were it to accept it, the sanitised
+run would show the stale read of `xs` or of `v`.
