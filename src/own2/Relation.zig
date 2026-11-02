@@ -216,23 +216,25 @@ pub const Eval = struct {
 
     fn readSet(e: *Eval, s: u32, tags: u32, pass: u32, out: *std.ArrayList(u32)) Error!void {
         var it = e.f.sets.iterate(s, pass);
-        while (try it.next(e.gpa(), e.account())) |el| for (e.f.sets.routesOf(el.routes)) |vt| {
-            try e.charge(.inspection, 1);
-            const vw = (try e.f.mergeTags(vt, el.tags)) orelse continue;
-            const t = (try e.f.mergeTags(vw, tags)) orelse continue;
-            var l = e.f.leafAt(el.key);
-            if (l.kind == .recons) {
-                // A prepend's own storage: its base's on a re-cons (§2.13.6).
-                const x = e.f.val(l.atom);
-                if (try e.mayRecons(x)) try e.readSet(e.f.shallow.items[x.head - 1], t, pass, out);
-                continue;
+        while (try it.next(e.gpa(), e.account())) |el| {
+            var routes = try e.f.sets.tags.routeIter(e.gpa(), el.routes, (try e.f.mergeTags(el.tags, tags)) orelse continue);
+            defer routes.deinit(e.gpa());
+            while (try routes.next(e.gpa(), e.account())) |t| {
+                try e.charge(.inspection, 1);
+                var l = e.f.leafAt(el.key);
+                if (l.kind == .recons) {
+                    // A prepend's own storage: its base's on a re-cons (§2.13.6).
+                    const x = e.f.val(l.atom);
+                    if (try e.mayRecons(x)) try e.readSet(e.f.shallow.items[x.head - 1], t, pass, out);
+                    continue;
+                }
+                if (l.kind == .ref and l.extra != 0) l = (try e.f.resolveRef(l)) orelse continue;
+                l.tags = t;
+                const id = try e.f.leaf(l);
+                try out.append(e.gpa(), id);
+                if (el.many) try out.append(e.gpa(), id);
             }
-            if (l.kind == .ref and l.extra != 0) l = (try e.f.resolveRef(l)) orelse continue;
-            l.tags = t;
-            const id = try e.f.leaf(l);
-            try out.append(e.gpa(), id);
-            if (el.many) try out.append(e.gpa(), id);
-        };
+        }
     }
 
     /// A leaf of a value and the slot it sits at: `leavesOf`'s leaves, each
