@@ -1,0 +1,5 @@
+-- The test host measures retained heap; no production Task internals are read.
+pub foreign impure begin : ⊤ → ⊤
+
+
+pub foreign impure check : ⊤ → ⊤
