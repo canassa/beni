@@ -787,20 +787,25 @@ storage write, the base's own storage at the written position (`at_position`); f
 **Base keys** (#1714, 2026-11-02). A leaf's *base keys* are what it comes from: a parameter for a parameter's
 `ref`, the atom for a `site`, `fresh` or `shared` leaf, *unknown* for `⊤`, an answer or a callback's root, and
 for a call's or a supply's leaf the union of the base keys of its expansion (§2.9.2 step 4). They are part of
-the leaf's representation: a run per leaf, in a column of the frame's leaf table beside its slots and tags,
-made once, after the walk, by one post-order pass over the expansions that resolution reaches. Every reader
-of what a leaf comes from — a demand's ground and step 1, the holder index, the escape index — reads the run;
-none expands a call again. A chain of n calls (`a1 = List.push xs 1`, `a2 = List.push a1 1`, …) costs n
-leaves' runs in all, where expanding the chain once per demand cost n².
+the leaf's representation, two columns by leaf id made after the walk by a post-order (Tarjan) pass over the
+expansions, strongly connected leaves sharing one entry, so each leaf is expanded once a column. The **facts**
+are one word: whether the leaf reaches unknown objects, whether it reaches a parameter's, and the least shared
+value it reaches by `(module, declaration)`, the one a `top-level` refusal names. Step 1 and the ground read
+the facts, made for every target. The **run** of keys (sorted, once each) is made only for a target that meets
+a live holder, a holder a demand meets live, and an escape's leaf: a value that comes from k atoms has k keys,
+and a chain `x_k = step x_(k-1) [ k ]` would cost Σk to key every leaf. None of the readers expands a call
+again.
 
 **The holder index and its sweep** (#1714, 2026-11-02; #1214's live chains, restated on slots). Step 5 asks
 only the holders that are *live at the demand*: bound before its point and used after it (`Liveness.lastUse`).
 Each local is indexed under the base keys of its value's leaves; a local whose value reaches an unknown leaf
 is indexed under the unknown key, which every target meets. Resolution judges its demands in point order (each line
 keeps the walk's order, and the callback judgments of §2.11.3 are judged in the same sweep at their call's
-point): a holder joins its keys' **live lists** when the sweep passes its binding point and leaves them when
-the sweep reaches its last use. The lists are doubly linked in flat arrays over `(key, holder)` entries, so a
-join and a leave are O(1). A demand's candidates are the live lists of its targets' keys, every parameter's
+point): a holder joins the **unkeyed list** when the sweep passes its binding point and leaves its lists when the
+sweep reaches its last use. The first demand that meets live holders keys each unkeyed one, linking it into
+its keys' **live lists**. The lists are doubly linked in flat arrays, the holders' and the `(key, holder)`
+entries', so a join and a leave are O(1), and a holder no demand meets live is never keyed. The two orders
+the sweep reads, by binding point and by last use, are counting sorts over the holders' own span of points. A demand's candidates are the live lists of its targets' keys, every parameter's
 for a parameter's target (a parameter's object may be held through another parameter), and the unknown list:
 O(the live holders it meets), never every holder its root ever had. In the push chain above, each demand meets
 no holder at all: `a(i-1)` was last used by the push being judged.
@@ -902,6 +907,11 @@ list that repeats an element were refused `disjoint` where nothing aliases the w
 4. **A call leaf and a leaf of another root.** The later root is **expanded** first: a call's leaf becomes the
    leaves the callee's contract says arrive at its slots, projected onto the call's arguments (§2.11.2), and
    the relation is the join of the relations of the parts (no < under < may; two unders conjoin).
+   *Amended 2026-11-02 (#1714):* an atom made after the call (a literal's site, or a later call's `fresh`) is
+   none of the call's objects: **no**, without expanding, by comparing the two points. An object that does not
+   exist yet when a call returns cannot arrive in its result. `mayRecons` already reads a base this way
+   (`PrependFresh`). Without it, the literal `[ k ]` handed to the kth call of a chain
+   `x_k = step x_(k-1) [ k ]` was compared with every earlier call's result: the chain's demands cost n².
 5. **Two parameters**: **under** the selection of both leaves' occurrences (one selection: their objects are
    pairwise distinct).
 6. **Two atoms** (`site`, `fresh`, `shared`): **may** when they are the same atom, else **no**. An atom and a
