@@ -1,0 +1,130 @@
+@ownership_summary_size(module, 20000000)
+
+import List
+import Node exposing (Program)
+import String
+
+
+-- A recursive helper that repeats every element of its list.
+dupEach : List (List Int) → List (List Int)
+dupEach xs =
+    case xs of
+        [] →
+            []
+
+        [ x, …r ] →
+            List.append [ x, x ] (dupEach r)
+
+
+-- Its dependent writer: edits the first element and keeps the rest.
+bumpFirst : List (List Int) → List (List Int)
+bumpFirst ys =
+    case dupEach ys of
+        [ a, …rest ] →
+            [ List.push a 9, …rest ]
+
+        [] →
+            []
+
+
+-- removeMin's useful caller, run: the minimum removed from a tree of
+-- distinct lists, the old tree gone, a surviving payload edited.
+type NColor
+    = Red
+    | Black
+
+
+type TreeL
+    = NodeL NColor Int (List Int) TreeL TreeL
+    | LeafL
+balanceL : NColor, Int, (List Int), TreeL, TreeL → TreeL
+balanceL color key value left right =
+    case right of
+        NodeL Red rK rV rLeft rRight →
+            case left of
+                NodeL Red lK lV lLeft lRight →
+                    NodeL
+                        Red
+                        key
+                        value
+                        (NodeL Black lK lV lLeft lRight)
+                        (NodeL Black rK rV rLeft rRight)
+
+                _ →
+                    NodeL color rK rV (NodeL Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                NodeL Red lK lV (NodeL Red llK llV llLeft llRight) lRight →
+                    NodeL
+                        Red
+                        lK
+                        lV
+                        (NodeL Black llK llV llLeft llRight)
+                        (NodeL Black key value lRight right)
+
+                _ →
+                    NodeL color key value left right
+
+
+removeMinL : TreeL → TreeL
+removeMinL tree =
+    case tree of
+        NodeL color key value ((NodeL lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeL Red _ _ _ _ →
+                            NodeL color key value (removeMinL left) right
+
+                        _ →
+                            case moveRedLeftL tree of
+                                NodeL nColor nKey nValue nLeft nRight →
+                                    balanceL nColor nKey nValue (removeMinL nLeft) nRight
+
+                                LeafL →
+                                    LeafL
+
+                _ →
+                    NodeL color key value (removeMinL left) right
+
+        _ →
+            LeafL
+
+
+moveRedLeftL : TreeL → TreeL
+moveRedLeftL tree =
+    case tree of
+        NodeL _ k v (NodeL _ lK lV lLeft lRight) (NodeL _ rK rV rLeft rRight) →
+            case rLeft of
+                NodeL Red rlK rlV rlL rlR →
+                    NodeL
+                        Red
+                        rlK
+                        rlV
+                        (NodeL Black k v (NodeL Red lK lV lLeft lRight) rlL)
+                        (NodeL Black rK rV rlR rRight)
+
+                _ →
+                    NodeL Black k v (NodeL Red lK lV lLeft lRight) (NodeL Red rK rV rLeft rRight)
+
+        _ →
+            tree
+
+
+useful : Int → List Int
+useful n =
+    case removeMinL (NodeL Black 2 [ n ] (NodeL Red 1 [ n + 1 ] LeafL LeafL) (NodeL Red 3 [ n + 2 ] LeafL LeafL)) of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+show : List Int → String
+show xs = "[" ++ String.join (List.map xs λx → String.fromInt x) "," ++ "]"
+
+
+main : Program
+main = Node.printLines (List.map (List.append (bumpFirst [ [ 1 ], [ 2 ] ]) [ useful 5 ]) λxs → show xs)

@@ -1,0 +1,145 @@
+module Lib
+  contract same: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct same: source 25, total 2469, growth 0 of 65536, continuation 2469 of 25600, rounds 5, evaluations 6, validation 643, slots 10, arrivals 5, relations 89 (memo 0), deliveries 5, substitutions 84, positions 34, leaves 43, values 53, calls 12, demands 0, peak bytes 13552, v2 reads 0, walks { 100, 253, 327, 503, 643, 643 }
+  contract unroll: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct unroll: source 29, total 1792, growth 0 of 65536, continuation 1792 of 29696, rounds 5, evaluations 6, validation 412, slots 10, arrivals 7, relations 1 (memo 0), deliveries 5, substitutions 84, positions 34, leaves 29, values 65, calls 12, demands 0, peak bytes 13048, v2 reads 0, walks { 57, 257, 286, 368, 412, 412 }
+  contract swap: res #0.0#0.1 π1#0.2#0.1, #0.0⟲#0.1 π1#0.2⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct swap: source 25, total 2393, growth 0 of 65536, continuation 2393 of 25600, rounds 5, evaluations 6, validation 643, slots 10, arrivals 5, relations 89 (memo 0), deliveries 5, substitutions 84, positions 34, leaves 43, values 53, calls 12, demands 0, peak bytes 13552, v2 reads 0, walks { 51, 236, 323, 497, 643, 643 }
+  contract dupL: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup no
+  slotacct dupL: source 25, total 1588, growth 0 of 65536, continuation 1588 of 25600, rounds 5, evaluations 6, validation 353, slots 10, arrivals 5, relations 3 (memo 0), deliveries 5, substitutions 58, positions 34, leaves 23, values 53, calls 12, demands 0, peak bytes 13552, v2 reads 0, walks { 50, 235, 308, 289, 353, 353 }
+  contract shareL: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.0#0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct shareL: source 43, total 1044, growth 0 of 65536, continuation 1044 of 44032, rounds 0, evaluations 1, validation 0, slots 10, arrivals 6, relations 54 (memo 0), deliveries 0, substitutions 45, positions 10, leaves 15, values 16, calls 3, demands 0, peak bytes 22954, v2 reads 0, walks { 1044 }
+  contract deeper: res #0.0#0.1 π1#0.0⟲#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct deeper: source 49, total 5243, growth 0 of 65536, continuation 5243 of 50176, rounds 4, evaluations 5, validation 1688, slots 10, arrivals 8, relations 294 (memo 0), deliveries 4, substitutions 192, positions 51, leaves 58, values 89, calls 20, demands 0, peak bytes 28856, v2 reads 0, walks { 97, 618, 1152, 1688, 1688 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+    20:19 Main.incAll l#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:19 Main.incAll l#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:19 Main.incAll l#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:19 Main.incAll l#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:19 Main.incAll l#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:30 List.push xs: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:47 Main.incAll r#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:47 Main.incAll r#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:47 Main.incAll r#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:47 Main.incAll r#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    20:47 Main.incAll r#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract incAll: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct incAll: source 28, total 5707, growth 0 of 65536, continuation 5707 of 28672, rounds 5, evaluations 6, validation 1399, slots 10, arrivals 5, relations 316 (memo 61), deliveries 5, substitutions 189, positions 40, leaves 81, values 65, calls 18, demands 16, peak bytes 27146, v2 reads 0, walks { 197, 578, 887, 1247, 1399, 1399 }
+    30:21 List.push xs: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract incRoot: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct incRoot: source 24, total 349, growth 0 of 65536, continuation 349 of 24576, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 6 (memo 0), deliveries 0, substitutions 4, positions 5, leaves 7, values 9, calls 1, demands 1, peak bytes 12868, v2 reads 0, walks { 349 }
+    40:16 Main.incAll a#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:16 Main.incAll a#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:16 Main.incAll a#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:16 Main.incAll a#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:16 Main.incAll a#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:27 Main.incAll b#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:27 Main.incAll b#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:27 Main.incAll b#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:27 Main.incAll b#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+    40:27 Main.incAll b#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1})
+  contract incP: res #0.0#0.0#0.1 π1#0.0#0.0#0.1, #0.0#0.0⟲#0.1 π1#0.0#0.0⟲#0.1, #0.0#0.1 π1#0.0#0.1, #0.0#0.2#0.1 π1#0.0#0.2#0.1, #0.0#0.2⟲#0.1 π1#0.0#0.2⟲#0.1, #0.1#0.0#0.1 π1#0.1#0.0#0.1, #0.1#0.0⟲#0.1 π1#0.1#0.0⟲#0.1, #0.1#0.1 π1#0.1#0.1, #0.1#0.2#0.1 π1#0.1#0.2#0.1, #0.1#0.2⟲#0.1 π1#0.1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1}; writes π1#0.0#0.0#0.1 π1#0.0#0.0⟲#0.1 π1#0.0#0.1 π1#0.0#0.2#0.1 π1#0.0#0.2⟲#0.1 π1#0.1#0.0#0.1 π1#0.1#0.0⟲#0.1 π1#0.1#0.1 π1#0.1#0.2#0.1 π1#0.1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.0#0.1,#0.0#0.0⟲#0.1,#0.0#0.1,#0.0#0.2#0.1,#0.0#0.2⟲#0.1,#0.1#0.0#0.1,#0.1#0.0⟲#0.1,#0.1#0.1,#0.1#0.2#0.1,#0.1#0.2⟲#0.1}
+  slotacct incP: source 19, total 1792, growth 0 of 65536, continuation 1792 of 19456, rounds 0, evaluations 1, validation 0, slots 20, arrivals 10, relations 85 (memo 0), deliveries 0, substitutions 50, positions 5, leaves 13, values 6, calls 2, demands 2, peak bytes 28062, v2 reads 0, walks { 1792 }
+    44:14 Main.incP <expr>#0.0#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.0#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.0#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.0#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.1#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.1#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.1#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.1#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    44:14 Main.incP <expr>#0.1#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract twoViews: res #0.0#0.0#0.1 π1#0.0#0.1, #0.0#0.0⟲#0.1 π1#0.0⟲#0.1, #0.0#0.1 π1#0.1, #0.0#0.2#0.1 π1#0.2#0.1, #0.0#0.2⟲#0.1 π1#0.2⟲#0.1, #0.1#0.0#0.1 π1#0.0#0.1, #0.1#0.0⟲#0.1 π1#0.0⟲#0.1, #0.1#0.1 π1#0.1, #0.1#0.2#0.1 π1#0.2#0.1, #0.1#0.2⟲#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct twoViews: source 14, total 1426, growth 0 of 65536, continuation 1426 of 14336, rounds 0, evaluations 1, validation 0, slots 15, arrivals 10, relations 102 (memo 0), deliveries 0, substitutions 120, positions 4, leaves 16, values 5, calls 3, demands 1, peak bytes 27732, v2 reads 0, walks { 1426 }
+    48:17 Main.incP <expr>#0.0#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.0#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.0#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.0#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.1#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.1#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.1#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.1#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    48:17 Main.incP <expr>#0.1#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract twoTrees: res #0.0#0.0#0.1 π1#0.0#0.1, #0.0#0.0⟲#0.1 π1#0.0⟲#0.1, #0.0#0.1 π1#0.1, #0.0#0.2#0.1 π1#0.2#0.1, #0.0#0.2⟲#0.1 π1#0.2⟲#0.1, #0.1#0.0#0.1 π2#0.0#0.1, #0.1#0.0⟲#0.1 π2#0.0⟲#0.1, #0.1#0.1 π2#0.1, #0.1#0.2#0.1 π2#0.2#0.1, #0.1#0.2⟲#0.1 π2#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1 π2#0.0#0.1 π2#0.0⟲#0.1 π2#0.1 π2#0.2#0.1 π2#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct twoTrees: source 16, total 1380, growth 0 of 65536, continuation 1380 of 16384, rounds 0, evaluations 1, validation 0, slots 20, arrivals 10, relations 140 (memo 0), deliveries 0, substitutions 120, positions 5, leaves 21, values 6, calls 3, demands 1, peak bytes 25840, v2 reads 0, walks { 1380 }
+    52:13 Main.incAll <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    52:13 Main.incAll <expr>#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    52:13 Main.incAll <expr>#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    52:13 Main.incAll <expr>#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    52:13 Main.incAll <expr>#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract oneView: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct oneView: source 9, total 503, growth 0 of 65536, continuation 503 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 30 (memo 0), deliveries 0, substitutions 40, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13372, v2 reads 0, walks { 503 }
+    56:16 Main.incRoot <expr>#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract rootOfView: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct rootOfView: source 9, total 459, growth 0 of 65536, continuation 459 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 30 (memo 0), deliveries 0, substitutions 36, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13556, v2 reads 0, walks { 459 }
+    60:18 Main.incRoot <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract rootOfUnroll: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct rootOfUnroll: source 9, total 466, growth 0 of 65536, continuation 466 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 7, relations 0 (memo 0), deliveries 0, substitutions 35, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13100, v2 reads 0, walks { 466 }
+    64:14 Main.incAll <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    64:14 Main.incAll <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    64:14 Main.incAll <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    64:14 Main.incAll <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    64:14 Main.incAll <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract unrolled: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct unrolled: source 9, total 385, growth 0 of 65536, continuation 385 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 7, relations 0 (memo 0), deliveries 0, substitutions 39, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13236, v2 reads 0, walks { 385 }
+    70:5 Main.incP <expr>#0.0#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.0#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.0#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.0#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.1#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.1#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.1#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.1#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    70:5 Main.incP <expr>#0.1#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract viewTwice: res #0.0#0.0#0.1 π1#0.0#0.1, #0.0#0.0⟲#0.1 π1#0.0⟲#0.1, #0.0#0.1 π1#0.1, #0.0#0.2#0.1 π1#0.2#0.1, #0.0#0.2⟲#0.1 π1#0.2⟲#0.1, #0.1#0.0#0.1 π1#0.0#0.1, #0.1#0.0⟲#0.1 π1#0.0⟲#0.1, #0.1#0.1 π1#0.1, #0.1#0.2#0.1 π1#0.2#0.1, #0.1#0.2⟲#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct viewTwice: source 15, total 918, growth 0 of 65536, continuation 918 of 15360, rounds 0, evaluations 1, validation 0, slots 15, arrivals 10, relations 12 (memo 0), deliveries 0, substitutions 105, positions 3, leaves 11, values 4, calls 2, demands 1, peak bytes 14400, v2 reads 0, walks { 918 }
+    74:10 Main.incAll <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    74:10 Main.incAll <expr>#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    74:10 Main.incAll <expr>#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    74:10 Main.incAll <expr>#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    74:10 Main.incAll <expr>#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract row1: res #0.0#0.1 π1#0.2#0.1, #0.0⟲#0.1 π1#0.2⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct row1: source 9, total 652, growth 0 of 65536, continuation 652 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 30 (memo 0), deliveries 0, substitutions 40, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13372, v2 reads 0, walks { 652 }
+    78:10 Main.incAll <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    78:10 Main.incAll <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    78:10 Main.incAll <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    78:10 Main.incAll <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    78:10 Main.incAll <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract row2: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup no
+  slotacct row2: source 9, total 471, growth 0 of 65536, continuation 471 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 0 (memo 0), deliveries 0, substitutions 35, positions 3, leaves 9, values 3, calls 2, demands 1, peak bytes 13204, v2 reads 0, walks { 471 }
+    82:10 Main.incAll <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    82:10 Main.incAll <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    82:10 Main.incAll <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    82:10 Main.incAll <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    82:10 Main.incAll <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract row3: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.0#0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct row3: source 9, total 491, growth 0 of 65536, continuation 491 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 37, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13244, v2 reads 0, walks { 491 }
+    86:10 Main.incAll <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    86:10 Main.incAll <expr>#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    86:10 Main.incAll <expr>#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    86:10 Main.incAll <expr>#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    86:10 Main.incAll <expr>#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract row4: res #0.0#0.1 π1#0.0⟲#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct row4: source 9, total 725, growth 0 of 65536, continuation 725 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 8, relations 30 (memo 0), deliveries 0, substitutions 46, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13408, v2 reads 0, walks { 725 }
+    90:13 Main.incAll <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    90:13 Main.incAll <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    90:13 Main.incAll <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    90:13 Main.incAll <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    90:13 Main.incAll <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract row5: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1, #0.1 π2ε, #0.2#0.1 π1#0.1, #0.2⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct row5: source 19, total 1016, growth 0 of 65536, continuation 1016 of 19456, rounds 0, evaluations 1, validation 0, slots 11, arrivals 11, relations 48 (memo 0), deliveries 0, substitutions 75, positions 5, leaves 11, values 6, calls 3, demands 1, peak bytes 13440, v2 reads 0, walks { 1016 }
+    94:16 Main.incAll <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε})
+    94:16 Main.incAll <expr>#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε})
+    94:16 Main.incAll <expr>#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε})
+    94:16 Main.incAll <expr>#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε})
+    94:16 Main.incAll <expr>#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε})
+  contract row6: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1, #0.1 π3ε, #0.2#0.1 π2#0.1, #0.2⟲#0.1 π2#0.0#0.1 π2#0.0⟲#0.1 π2#0.2#0.1 π2#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1 π2#0.0#0.1 π2#0.0⟲#0.1 π2#0.1 π2#0.2#0.1 π2#0.2⟲#0.1 π3ε; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π2{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1} π3{ε}
+  slotacct row6: source 21, total 1086, growth 0 of 65536, continuation 1086 of 21504, rounds 0, evaluations 1, validation 0, slots 16, arrivals 11, relations 86 (memo 0), deliveries 0, substitutions 75, positions 6, leaves 16, values 7, calls 3, demands 1, peak bytes 14108, v2 reads 0, walks { 1086 }
+  slots module: v2 value-reader calls 0, imported contracts 6 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

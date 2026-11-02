@@ -93,6 +93,7 @@ pub fn Of(comptime Table: type) type {
         pub const DagFacts = struct { approx: bool = false, positions: bool = false, dups: SetId = .none, dups_approx: SetId = .none };
 
         pub fn isDag(k: Shape.Kind) bool {
+            @import("ReaderProbe.zig").hit();
             return k == .@"union" or k == .choice or k == .positions;
         }
 
@@ -101,6 +102,7 @@ pub fn Of(comptime Table: type) type {
         pub const Pending = struct { which: enum(u8) { dag, inner, deep }, key: [3]u32, value: u32 };
 
         pub fn memoPut(t: *Table, gpa: Allocator, which: @FieldType(Pending, "which"), key: [3]u32, value: u32, crossed: bool) Error!void {
+            @import("ReaderProbe.zig").hit();
             if (t.no_memo) return;
             if (crossed) return t.pending.append(gpa, .{ .which = which, .key = key, .value = value });
             const m = switch (which) {
@@ -119,6 +121,7 @@ pub fn Of(comptime Table: type) type {
         /// another position*). The entry is then stored under `key` too. Only
         /// an entry made with no crossing is a home (`memoPut`).
         pub fn memoAt(t: *Table, gpa: Allocator, charge: Charge, v: View, which: @FieldType(Pending, "which"), key: [3]u32) Error!?u32 {
+            @import("ReaderProbe.zig").hit();
             if (t.memoGet(which, key)) |hit| return hit;
             if (t.no_memo) return null;
             const home = t.home_read.get(.{ @backingInt(which), key[1], key[2] }) orelse return null;
@@ -134,6 +137,7 @@ pub fn Of(comptime Table: type) type {
         /// key of the region that the two entry maps bind differently
         /// (`diffKeys`, memoised per pair of map nodes). A growth task (§4.1).
         pub fn readsAlike(t: *Table, gpa: Allocator, asking: Charge, v: View, c: Kappas, h: Kappas, region: SetId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (c == h) return true;
             const task = try asking.account.enter(gpa, null);
             defer asking.account.leave(task);
@@ -147,6 +151,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn memoGet(t: *const Table, which: @FieldType(Pending, "which"), key: [3]u32) ?u32 {
+            @import("ReaderProbe.zig").hit();
             if (t.no_memo) return null;
             const v = switch (which) {
                 .dag => t.memo_dag.get(key),
@@ -161,6 +166,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The pending entries from `from` on: kept, or dropped with the read.
         pub fn settle(t: *Table, gpa: Allocator, from: usize, kept: bool) Error!void {
+            @import("ReaderProbe.zig").hit();
             if (kept) for (t.pending.items[from..]) |p| {
                 const m = switch (p.which) {
                     .dag => &t.memo_dag,
@@ -179,6 +185,7 @@ pub fn Of(comptime Table: type) type {
         /// again while open adding nothing and keeping no memo. A record per node
         /// and repeated cell.
         pub fn dagFacts(t: *Table, gpa: Allocator, charge: Charge, v: View, root: NodeId) Error!DagFacts {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .memo, 1);
             if (t.dag_facts.get(root)) |i| return t.facts.items[i];
             const Frame = struct { node: NodeId, expanded: bool };
@@ -244,6 +251,7 @@ pub fn Of(comptime Table: type) type {
         /// position, a positions node below making it one, the leaf rule over its
         /// cells and the repeats its positions nodes found (*`dagKappa`*).
         pub fn dagRoot(t: *Table, gpa: Allocator, charge: Charge, v: View, root: NodeId, at_summary: bool, inner: CondId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             const facts = try t.dagFacts(gpa, charge, v, root);
             if (!at_summary and !facts.positions) return inner;
             return t.@"and"(gpa, charge, inner, try t.derivedCells(gpa, charge, v, try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, root), true, facts.dups, facts.dups_approx));
@@ -255,6 +263,7 @@ pub fn Of(comptime Table: type) type {
         /// per `(ctx, view)`, each view on a chain once: a chain of L views costs
         /// L, never L². Null when no id on the chain stores anything.
         pub fn chainStored(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId) Error!?CondId {
+            @import("ReaderProbe.zig").hit();
             // Down the chain to its end or to a view already joined.
             var views: std.ArrayList(NodeId) = .empty;
             defer views.deinit(gpa);
@@ -295,6 +304,7 @@ pub fn Of(comptime Table: type) type {
         /// What is stored at `n` itself, a view's chain and answer joined in:
         /// what a reader of one position (a recast's inner, `innersOf`) takes.
         pub fn storedAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId) Error!?CondId {
+            @import("ReaderProbe.zig").hit();
             if (v.shapes.kind(n) != .view) return t.kappaGet(ctx, n);
             const answer = try v.shapes.force(gpa, charge.account, n);
             const chain = try t.chainStored(gpa, charge, v, ctx, n);
@@ -306,6 +316,7 @@ pub fn Of(comptime Table: type) type {
         /// κ(n) in `ctx` by the header's rules; `at_summary` is whether `n`'s
         /// path crossed a `[*]` or `⟲` (`excl` there for an arrival `isFolded`).
         pub fn kappaOf(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             return t.readAt(gpa, charge, v, ctx, n, at_summary, &.{});
         }
 
@@ -314,10 +325,12 @@ pub fn Of(comptime Table: type) type {
         /// A crossed read notes `base_epoch`; if it moved, the read is made again
         /// at `ctx`, exact, its memo entries dropped (*A read in flight*).
         pub fn readAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, pairs: []const Pair) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             return t.resolved(gpa, charge, try t.readAtRaw(gpa, charge, v, ctx, n, at_summary, pairs));
         }
 
         pub fn readAtRaw(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, pairs: []const Pair) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             // A node that walks nothing below it (no view, no DAG): read at once,
             // as the machine would, with no task of its own.
             if (v.shapes.kind(n) != .view and !isDag(v.shapes.kind(n))) {
@@ -353,6 +366,7 @@ pub fn Of(comptime Table: type) type {
         /// no memo, gives the same kind and atom set. On an account and caches
         /// of its own: a check never changes what the read it checks charges (#1545).
         pub fn crossCheck(t: *Table, gpa: Allocator, comptime deep_walk: bool, v: View, ctx: Kappas, n: NodeId, at_summary: bool, k: CondId) Error!void {
+            @import("ReaderProbe.zig").hit();
             var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
             defer scratch.deinit(gpa);
             const charge: Charge = .growth(&scratch);
@@ -373,6 +387,7 @@ pub fn Of(comptime Table: type) type {
         /// `R`, the actual and its region, when `eqOn(ctx, R)` holds on the
         /// region; null where the read stays at `ctx`.
         pub fn crossAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId) Error!?struct { r: Kappas, region: SetId } {
+            @import("ReaderProbe.zig").hit();
             if (t.no_cross) return null;
             const r = (try v.shapes.rerootKappa(gpa, charge.account, n)) orelse return null;
             const answer = try v.shapes.force(gpa, charge.account, n);
@@ -386,6 +401,7 @@ pub fn Of(comptime Table: type) type {
         /// carried pair's `R_Q` when the node is wholly of its region, else `ctx`
         /// (*Carried along the walk*). `true` when it crossed.
         pub fn carried(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, pairs: []const Pair) Error!?Kappas {
+            @import("ReaderProbe.zig").hit();
             if (t.no_cross) return null;
             for (pairs) |p| if (p.epoch == v.shapes.base_epoch and try v.shapes.wholly(gpa, charge.account, n, p.region)) return p.r;
             return null;
@@ -405,6 +421,7 @@ pub fn Of(comptime Table: type) type {
         /// one run each task is made once; a task met again while it is open (a
         /// cycle) reads `yes`, and the run then keeps no memo entry.
         pub fn machine(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx0: Kappas, n0: NodeId, s0: bool, pairs: []const Pair) Error!Read {
+            @import("ReaderProbe.zig").hit();
             const Op = enum(u8) { read, inner };
             const Frame = struct {
                 op: Op,
@@ -562,6 +579,7 @@ pub fn Of(comptime Table: type) type {
         /// `kappaRead` of a node that is no view: a DAG node's read through the
         /// machine, any other kind's at once.
         pub fn kappaRead(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, extra: ?CondId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             if (!isDag(v.shapes.kind(n))) return t.resolved(gpa, charge, try t.kappaReadOne(gpa, charge, v, ctx, n, at_summary, extra));
             const k = try t.readAt(gpa, charge, v, ctx, n, at_summary, &.{});
             return t.resolved(gpa, charge, if (extra) |e| try t.join(gpa, charge, e, k) else k);
@@ -570,6 +588,7 @@ pub fn Of(comptime Table: type) type {
         /// The read of a node of a kind that walks nothing below it (no view, no
         /// DAG): its stored entry, `extra` joined, and the derived read.
         pub fn kappaReadOne(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool, extra: ?CondId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             const own = t.kappaGet(ctx, n);
             const stored: ?CondId = if (extra) |e| (if (own) |s| try t.join(gpa, charge, s, e) else e) else own;
             // THE RULE (header): stored ⊔ derived at the read's position.
@@ -612,6 +631,7 @@ pub fn Of(comptime Table: type) type {
         /// (*No crossing at a fold*): memoised per position, post-order on an
         /// explicit stack.
         pub fn foldBelow(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (ctx == .none) return false;
             try charge.reserve(gpa, .memo, 1);
             if (t.memo_fold_below.get(ctx)) |hit| return hit == 1;
@@ -652,6 +672,7 @@ pub fn Of(comptime Table: type) type {
         /// within one `base_epoch`; a pair of equal positions is equal at once,
         /// and the entry maps are compared per pair of map nodes (`mapsEqOn`).
         pub fn eqOn(t: *Table, gpa: Allocator, asking: Charge, v: View, c: Kappas, r: Kappas, region: SetId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             // The crossing's comparison, a growth task (§4.1).
             const task = try asking.account.enter(gpa, null);
             defer asking.account.leave(task);
@@ -667,6 +688,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn eqOnWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, c0: Kappas, r0: Kappas, region: SetId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             var stack: std.ArrayList([2]Kappas) = .empty;
             defer stack.deinit(gpa);
             var seen: Ids.FixedDict(2) = .{};
@@ -697,6 +719,7 @@ pub fn Of(comptime Table: type) type {
         /// value, which is tested for every region, and none whose `bases*`
         /// meets the region (`diffReach`, memoised per radix node).
         pub fn mapsEqOn(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32, region: SetId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (a == b) return true;
             const d = try t.diffKeys(gpa, charge, v, a, b);
             if (d == .none) return true;
@@ -709,6 +732,7 @@ pub fn Of(comptime Table: type) type {
         /// Memoised per unordered pair of map nodes, for good (maps and their
         /// entries never change); the recursion is the key width.
         pub fn diffKeys(t: *Table, gpa: Allocator, charge: Charge, v: View, a: u32, b: u32) Error!SetId {
+            @import("ReaderProbe.zig").hit();
             if (a == b) return .none;
             if (a == Ids.none_int) return t.mapKeys(gpa, charge, v, b);
             if (b == Ids.none_int) return t.mapKeys(gpa, charge, v, a);
@@ -754,6 +778,7 @@ pub fn Of(comptime Table: type) type {
         /// The keys of an entry map, as a node set: memoised per map node, for
         /// good, made from its two halves' sets; the recursion is the key width.
         pub fn mapKeys(t: *Table, gpa: Allocator, charge: Charge, v: View, m: u32) Error!SetId {
+            @import("ReaderProbe.zig").hit();
             if (m == Ids.none_int) return .none;
             const n = t.mapNode(m);
             if (n.mask == 0) return v.shapes.node_sets.insert(gpa, charge, .none, n.prefix, 0);
@@ -771,6 +796,7 @@ pub fn Of(comptime Table: type) type {
         const NodesPart = enum(u8) { empty, reach };
 
         pub fn nodesPart(t: *Table, gpa: Allocator, charge: Charge, v: View, which: NodesPart, s: SetId) Error!SetId {
+            @import("ReaderProbe.zig").hit();
             if (s == .none) return .none;
             const sets = &v.shapes.node_sets;
             const epoch: u32 = if (which == .reach) v.shapes.base_epoch else 0;
@@ -793,6 +819,7 @@ pub fn Of(comptime Table: type) type {
 
         /// One kind and one atom set (`flat`): what a block and a verdict see.
         pub fn sameCond(t: *Table, gpa: Allocator, charge: Charge, a: CondId, b: CondId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (a == b) return true;
             if (fails(a) or fails(b) or a == yes or b == yes) return false;
             return try t.flat(gpa, charge, a) == try t.flat(gpa, charge, b);
@@ -801,6 +828,7 @@ pub fn Of(comptime Table: type) type {
         /// Two link maps with the same steps, each pair of differing children
         /// queued for `eqOn`: an extra link is no equality (*The equality*).
         pub fn linksEq(t: *Table, gpa: Allocator, charge: Charge, a: u32, b: u32, out: *std.ArrayList([2]Kappas)) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (a == b) return true;
             var ia = t.mapEntries(a);
             var ib = t.mapEntries(b);
@@ -818,6 +846,7 @@ pub fn Of(comptime Table: type) type {
         /// κ from the cells at the read's position (header), `extra` arrivals
         /// counted besides them at a summary position; charged per read.
         pub fn derivedCells(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, at_summary: bool, dups: SetId, dups_approx: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             // At a plain path: `lost` for an approximate cell or `⊤`, the first one
             // found; a set read once costs its cells up to it.
             if (!at_summary) {
@@ -855,6 +884,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `derivedCells` the old way, a list sorted once (the cross-check's).
         pub fn derivedCellsFlat(t: *Table, gpa: Allocator, charge: Charge, v: View, cells: SetId, dups: SetId, dups_approx: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var items: std.ArrayList(Item) = .empty;
             defer items.deinit(gpa);
             var dt = v.cells.sets.iterate(dups);
@@ -872,6 +902,7 @@ pub fn Of(comptime Table: type) type {
         const Part = enum(u8) { approx, unfolded };
 
         pub fn cellPart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, which: Part, cells: SetId) Error!SetId {
+            @import("ReaderProbe.zig").hit();
             if (cells == .none) return .none;
             if (cellt.sets.branches(cells) == null) {
                 try charge.reserve(gpa, .inspection, 1);
@@ -921,6 +952,7 @@ pub fn Of(comptime Table: type) type {
         /// radix node, a node's the disjoint join of its two halves' (`aggJoin`).
         /// Post-order on an explicit stack.
         pub fn setAgg(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, cells: SetId) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             if (cells == .none) return .{};
             if (cellt.sets.branches(cells) == null) {
                 var it = cellt.sets.iterate(cells);
@@ -971,6 +1003,7 @@ pub fn Of(comptime Table: type) type {
         /// adds them, the smaller side's cells of that base one by one. No repeat
         /// arises: the keys are disjoint.
         pub fn aggJoin(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             if (x.all == .none) return y;
             if (y.all == .none) return x;
             try charge.reserve(gpa, .inspection, 1);
@@ -1065,6 +1098,7 @@ pub fn Of(comptime Table: type) type {
         /// `lost`; arrivals `alias` tells apart the atom, that may be one `lost`;
         /// a split's two sides its κ; two `taken` elements the traversal rule.
         pub fn sep(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: CellId, b: CellId, approx: bool, traversal: ?Traversal) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .inspection, 1);
             if (approx or cellt.origin(a) == .top or cellt.origin(b) == .top) return lost;
             if (a == b) return if (isFolded(cellt, places, a)) lost else shared;
@@ -1101,6 +1135,7 @@ pub fn Of(comptime Table: type) type {
         /// `excl` of that cell may stand for them. One position (`elem`,
         /// `level`) is one canonical position, whatever the list holds.
         pub fn repeatingSplit(cellt: *const Cell.Table, c: CellId) ?CondId {
+            @import("ReaderProbe.zig").hit();
             var at = c;
             while (cellt.origin(at).isRefinement()) : (at = cellt.parent(at)) {
                 const o = cellt.origin(at);
@@ -1128,6 +1163,7 @@ pub fn Of(comptime Table: type) type {
         /// `excl c` for a frame cell: the failed κ of a split on its chain whose
         /// list repeats a position (`repeatingSplit`), which no `excl` stands for.
         pub fn exclOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, c: CellId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             return repeatingSplit(cellt, c) orelse t.excl(gpa, charge, c);
         }
 
@@ -1190,6 +1226,7 @@ pub fn Of(comptime Table: type) type {
         };
 
         pub fn agg(t: *Table, gpa: Allocator, a: Agg) Error!u32 {
+            @import("ReaderProbe.zig").hit();
             try t.aggs.append(gpa, a);
             return @intCast(t.aggs.items.len - 1);
         }
@@ -1198,6 +1235,7 @@ pub fn Of(comptime Table: type) type {
         /// a repeat (two members holding it); otherwise the occurrences join as
         /// a set's do (`a` is one member's reach).
         pub fn aggAdd(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, c: CellId, approx: bool, multiset: bool) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             var a = a0;
             try charge.reserve(gpa, .inspection, 1);
             const sets = &cellt.sets;
@@ -1307,6 +1345,7 @@ pub fn Of(comptime Table: type) type {
 
         /// Every cell of `from` added to `a` (`multiset` as `aggAdd`).
         pub fn aggAll(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a0: Agg, from: SetId, multiset: bool) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             var a = a0;
             var it = cellt.sets.iterate(from);
             while (it.next()) |e| a = try t.aggAdd(gpa, charge, cellt, places, a, .from(e.key), e.value == 1, multiset);
@@ -1315,6 +1354,7 @@ pub fn Of(comptime Table: type) type {
 
         /// Two aggregates as one: the smaller's cells added to the larger's.
         pub fn aggMerge(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg, multiset: bool) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
             // What the smaller side adds, its subtrees the larger shares
             // skipped whole (a DAG's two sides share most of their reach).
@@ -1349,6 +1389,7 @@ pub fn Of(comptime Table: type) type {
         /// their changed spines, never the smaller side's size. The recursion is
         /// the key width.
         pub fn aggMergeSets(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             var out = try t.aggMergeSetsAt(gpa, charge, cellt, places, a, b);
             // A member's own approximation, which `all`'s join forgets.
             out.lost_extra = out.lost_extra or try t.anyLost(gpa, charge, cellt, a) or try t.anyLost(gpa, charge, cellt, b);
@@ -1356,6 +1397,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn aggMergeSetsAt(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, a: SetId, b: SetId) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             if (a == .none) return t.setAgg(gpa, charge, cellt, places, b);
             if (b == .none) return t.setAgg(gpa, charge, cellt, places, a);
             const sets = &cellt.sets;
@@ -1405,6 +1447,7 @@ pub fn Of(comptime Table: type) type {
         /// `aggMerge` of two multisets (an atom's sides): an empty side is the
         /// other, as it is.
         pub fn aggMergeMulti(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             if (x.all == .none) return y;
             if (y.all == .none) return x;
             return t.aggMerge(gpa, charge, cellt, places, x, y, true);
@@ -1412,6 +1455,7 @@ pub fn Of(comptime Table: type) type {
 
         /// §2.9's apart condition of an aggregate: `apart`'s over its cells.
         pub fn aggCond(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: Agg) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             // A cell met twice: `sep(c, c)` (§2.9), `shared` for one exact, not `⊤`
             // and standing for one position, `lost` otherwise. Decided over the
             // repeats' set: memoised per radix node, never cell by cell.
@@ -1432,6 +1476,7 @@ pub fn Of(comptime Table: type) type {
         /// Whether a cell set holds an approximate pair or `⊤`, memoised per
         /// node of the persistent set, so a new root reads its changed spine.
         pub fn anyLost(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, s: SetId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (s == .none) return false;
             // One cell: read at once, never memoised.
             if (cellt.sets.branches(s) == null) {
@@ -1478,6 +1523,7 @@ pub fn Of(comptime Table: type) type {
         /// own (so a tower's level adds its own cells, O(log) each); a node on
         /// or above a cycle, from its reach set.
         pub fn reachAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .memo, 1);
             if (t.reachMemo(v, n)) |hit| return t.aggs.items[hit];
             const walk = try v.shapes.dagWalk(gpa, charge.account, n);
@@ -1528,6 +1574,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `n`'s reach aggregate, if made since the last knot was tied.
         pub fn reachMemo(t: *const Table, v: View, n: NodeId) ?u32 {
+            @import("ReaderProbe.zig").hit();
             return t.reach_agg.getAt(n, v.shapes.ties);
         }
 
@@ -1588,6 +1635,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn apartImage(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, group: SetId, memo: *Ids.FixedDict(1), ctx: anytype, image: *const fn (@TypeOf(ctx), CellId) Error!CellId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var chain: std.ArrayList([2]u32) = .empty;
             defer chain.deinit(gpa);
             var at = group;
@@ -1647,6 +1695,7 @@ pub fn Of(comptime Table: type) type {
         /// One key holding each of `cells` once: a source node's own contents at
         /// its position (a cell's approximation is its set value).
         pub fn classesOf(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, key: u32, cells: SetId) Error!ClassAggs {
+            @import("ReaderProbe.zig").hit();
             if (cells == .none) return .{};
             const a = try t.aggAll(gpa, charge, cellt, places, .{}, cells, false);
             return .{ .map = try t.mapPut(gpa, charge, Ids.none_int, key, try t.agg(gpa, a)), .len = 1 };
@@ -1655,6 +1704,7 @@ pub fn Of(comptime Table: type) type {
         /// Two contributions as one: coexisting (`together`, a multiset sum) or
         /// a choice's arms (the maximum, whole arm by whole arm).
         pub fn classesMerge(t: *Table, gpa: Allocator, charge: Charge, v: View, x: ClassAggs, y: ClassAggs, together: bool) Error!ClassAggs {
+            @import("ReaderProbe.zig").hit();
             if (x.len == 0) return y;
             if (y.len == 0) return x;
             return t.classMerge(gpa, charge, v, x, y, together);
@@ -1663,6 +1713,7 @@ pub fn Of(comptime Table: type) type {
         /// Every occurrence repeated: a source on a cycle reaches each key below
         /// it at unboundedly many coexisting positions.
         pub fn classesRepeated(t: *Table, gpa: Allocator, charge: Charge, x: ClassAggs) Error!ClassAggs {
+            @import("ReaderProbe.zig").hit();
             var out: ClassAggs = .{ .saturated = true };
             var it = t.mapEntries(x.map);
             while (it.next()) |e| {
@@ -1681,6 +1732,7 @@ pub fn Of(comptime Table: type) type {
         /// a summary path, which stands for many objects whose own separation is
         /// its holder's (#1199); `yes` where no occurrence maps.
         pub fn classesRead(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, x: ClassAggs, key: u32) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .memo, 1);
             const a = t.mapGet(x.map, key) orelse return yes;
             var k = try t.foldCond(gpa, charge, cellt, places, t.aggs.items[a]);
@@ -1696,6 +1748,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The cells occurring at `key`, as a set (their approximation kept).
         pub fn classesCells(t: *const Table, x: ClassAggs, key: u32) SetId {
+            @import("ReaderProbe.zig").hit();
             const a = t.mapGet(x.map, key) orelse return .none;
             return t.aggs.items[a].all;
         }
@@ -1703,12 +1756,14 @@ pub fn Of(comptime Table: type) type {
         /// A client walk's result by `(node, key)`, kept across reads and calls:
         /// both are immutable, so an answer is never stale. Charged, hit or miss.
         pub fn classesMemo(t: *Table, gpa: Allocator, charge: Charge, n: NodeId, key: u32) Error!?ClassAggs {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .memo, 1);
             const i = t.classes_memo.get(.{ n.int(), key }) orelse return null;
             return t.classes_done.items[i];
         }
 
         pub fn classesRemember(t: *Table, gpa: Allocator, charge: Charge, n: NodeId, key: u32, x: ClassAggs) Error!void {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .memo, 1);
             try t.classes_done.ensureUnusedCapacity(gpa, 1);
             const got = try t.classes_memo.getOrPut(gpa, .{ n.int(), key });
@@ -1721,6 +1776,7 @@ pub fn Of(comptime Table: type) type {
         /// own, and through a union, choice or positions DAG its sides' (a class
         /// image rides there beside the class's other members).
         pub fn foldCondOf(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             if (t.fold_cond_n == 0) return yes;
             // Memoised per node: `fold_cond` only gains entries for fresh image
             // ids, which no existing DAG holds, so an answer never goes stale.
@@ -1735,6 +1791,7 @@ pub fn Of(comptime Table: type) type {
         /// least fixed point: every member owes what every member owns and what
         /// enters the cycle (§2.11 *A cycle with no node on it*).
         pub fn foldCondWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var w: FoldWalk = .{ .t = t, .gpa = gpa, .charge = charge, .v = v };
             try v.shapes.cycleWalk(gpa, n, &w);
             return t.fold_of.get(n).?;
@@ -1772,6 +1829,7 @@ pub fn Of(comptime Table: type) type {
             }
 
             pub fn from(w: *FoldWalk, x: NodeId) Error![2]NodeId {
+                @import("ReaderProbe.zig").hit();
                 try w.charge.reserve(w.gpa, .inspection, 1);
                 const two = try w.parts(x);
                 if (try w.answer(x, two)) |k| try w.t.fold_of.put(w.gpa, x, k);
@@ -1779,10 +1837,12 @@ pub fn Of(comptime Table: type) type {
             }
 
             pub fn settled(w: *const FoldWalk, x: NodeId) bool {
+                @import("ReaderProbe.zig").hit();
                 return w.t.fold_of.get(x) != null;
             }
 
             pub fn settle(w: *FoldWalk, members: []const NodeId) Error!void {
+                @import("ReaderProbe.zig").hit();
                 const t = w.t;
                 if (members.len == 1 and w.settled(members[0])) return;
                 try w.charge.reserve(w.gpa, .inspection, @intCast(members.len));
@@ -1808,6 +1868,7 @@ pub fn Of(comptime Table: type) type {
         /// identified through the fold (`lost`, never `shared`: the levels it
         /// merged were never compared), distinct arrivals `apart`.
         pub fn foldCond(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *const Cell.Places, a: Agg) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var plain = a;
             plain.dups = .none;
             plain.dups_approx = .none;
@@ -1823,6 +1884,7 @@ pub fn Of(comptime Table: type) type {
         /// a choice). A source on a cycle has no finite multiset by this walk:
         /// every class it reaches reads all its cells repeated (sound, `lost`).
         pub fn arrivalAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, fold: *const Shape.Table.Fold) Error!ClassAggs {
+            @import("ReaderProbe.zig").hit();
             const memo = try t.class_marks.take(gpa);
             defer t.class_marks.give(memo);
             const open = try t.marks.take(gpa);
@@ -1921,6 +1983,7 @@ pub fn Of(comptime Table: type) type {
         /// The environment of `n` when it is a hypothesis node (§8 slice 4,
         /// *The hypothesis node*, #1485), null for any other node.
         pub fn hypEnv(t: *const Table, v: View, n: NodeId) ?u32 {
+            @import("ReaderProbe.zig").hit();
             const h = t.hyp orelse return null;
             if (t.hyp_knots.contains(n)) return identity_env;
             const view = t.hyp_nodes.get(n) orelse n;
@@ -1942,6 +2005,7 @@ pub fn Of(comptime Table: type) type {
         /// group, and classes at distinct images, add. Null where the caller's fold has no class
         /// for a template class: the walk then saturates, as before.
         pub fn hypAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, e: u32) Error!?ClassAggs {
+            @import("ReaderProbe.zig").hit();
             const shapes = v.shapes;
             const view = t.hyp_nodes.get(n) orelse n;
             const template: NodeId = if (e == identity_env) n else .from(shapes.get(view).a);
@@ -2003,6 +2067,7 @@ pub fn Of(comptime Table: type) type {
         /// of them merged onto one image owing `exclOf` (#1485). `keys` and
         /// `merged` are scratch.
         pub fn certClassAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, tn: NodeId, keys: *std.ArrayList(HypKey), merged: *Ids.FixedDict(2)) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             keys.clearRetainingCapacity();
             try t.classKeys(gpa, charge, v, e, tn, keys);
             merged.deinit(gpa);
@@ -2017,6 +2082,7 @@ pub fn Of(comptime Table: type) type {
         /// `e`, appended to `keys`, each image as the caller names it (in a
         /// read-off the class's cell, `hyp_image`): `certClassAgg`'s input.
         pub fn classKeys(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, tn: NodeId, keys: *std.ArrayList(HypKey)) Error!void {
+            @import("ReaderProbe.zig").hit();
             const h = t.hyp.?;
             const cells = v.cells;
             const first = keys.items.len;
@@ -2050,6 +2116,7 @@ pub fn Of(comptime Table: type) type {
         /// the maximum over the distinct keys of its group, and each further
         /// distinct key there owes `exclOf`. Keys in no group add.
         pub fn ruleFourAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, keys: []const ClassKey) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             var dropped = try t.ruleFourDropped(gpa, charge, v, keys);
             defer dropped.deinit(gpa);
             if (std.debug.runtime_safety) {
@@ -2068,6 +2135,7 @@ pub fn Of(comptime Table: type) type {
         /// as one set over all the classes, by `Cell.keysOverlap`'s trie,
         /// memoised by that set.
         pub fn ruleFourDropped(t: *Table, gpa: Allocator, charge: Charge, v: View, keys: []const ClassKey) Error!Ids.FixedDict(1) {
+            @import("ReaderProbe.zig").hit();
             _ = t;
             const cells = v.cells;
             // (a′), before any maximum or `exclOf`, in every build. The
@@ -2090,6 +2158,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `ruleFourAgg`'s multiset, the groups in `dropped` read as no group.
         pub fn ruleFourCount(t: *Table, gpa: Allocator, charge: Charge, v: View, keys: []const ClassKey, dropped: *const Ids.FixedDict(1)) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             const cells = v.cells;
             var a: Agg = .{};
             // `seen`: `(group, image, key, class)` met; `count`: the classes
@@ -2139,6 +2208,7 @@ pub fn Of(comptime Table: type) type {
         /// multiset, and their conditions are conjoined there. Distinct `at`s
         /// add, as distinct positions of one result. `items` is sorted here.
         pub fn certClassesAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, items: []CertItem) Error!ClassAggs {
+            @import("ReaderProbe.zig").hit();
             const Order = struct {
                 fn lt(_: void, x: CertItem, y: CertItem) bool {
                     return x.at < y.at;
@@ -2186,6 +2256,7 @@ pub fn Of(comptime Table: type) type {
         /// keys there. The two reads must be equal. `runtime_safety` only, on
         /// an account of its own; quadratic in the keys.
         pub fn assertClassesSum(t: *Table, gpa: Allocator, v: View, keys: []const ClassKey, dropped: *const Ids.FixedDict(1), got: Agg) Error!void {
+            @import("ReaderProbe.zig").hit();
             t.classes_sum_checks += 1;
             var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
             defer scratch.deinit(gpa);
@@ -2255,6 +2326,7 @@ pub fn Of(comptime Table: type) type {
         /// of `K`) is only in that κ (`lost`): a read of the keys alone takes
         /// it as once (#1485, *As built, part 2*).
         pub fn certRead(t: *Table, gpa: Allocator, charge: Charge, v: View, e: u32, k: NodeId, path: []const Step) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var keys: std.ArrayList(HypKey) = .empty;
             defer keys.deinit(gpa);
             var merged: Ids.FixedDict(2) = .{};
@@ -2288,6 +2360,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The root of the class at environment `e`.
         pub fn classPos(t: *Table, v: View, e: u32) ClassPos {
+            @import("ReaderProbe.zig").hit();
             const h = t.hyp.?;
             const cls = h.class(h.ctx, e);
             const k = v.shapes.kind(cls.res);
@@ -2295,6 +2368,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn classStep(t: *Table, gpa: Allocator, charge: Charge, v: View, p0: ClassPos, s: Step) Error!ClassPos {
+            @import("ReaderProbe.zig").hit();
             var p = p0;
             p.summary = p.summary or s.kind == .elem or s.kind == .level;
             if (s.kind == .level) return p;
@@ -2311,6 +2385,7 @@ pub fn Of(comptime Table: type) type {
         /// its keys' images are (`hyp_image`). A key met at two coexisting
         /// positions of `K` is one key of the set and only this κ's `lost`.
         pub fn classCond(t: *Table, gpa: Allocator, charge: Charge, v: View, p: ClassPos, k: NodeId, e: u32) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             const r = t.resolver orelse return yes;
             var kk = try t.kappaOf(gpa, charge, v, p.cur, k, p.summary);
             for ([_]NodeId{ p.at, p.dag }) |x| if (x != .none and x != k) {
@@ -2327,6 +2402,7 @@ pub fn Of(comptime Table: type) type {
         /// coexist, except an opened choice's arms, which the caller takes by the
         /// maximum (§2.3: two source occurrences add, one execution has one arm).
         pub fn sourceParts(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+            @import("ReaderProbe.zig").hit();
             const from = out.items.len;
             defer for (out.items[from..]) |*p| {
                 // The widen forced each child as it descended: its source nodes
@@ -2359,6 +2435,7 @@ pub fn Of(comptime Table: type) type {
         /// whole (its sides' set; what it repeats inside is `dagKappa`'s), a
         /// recast's approximate. An opened one holds nothing of its own.
         pub fn ownAgg(t: *Table, gpa: Allocator, charge: Charge, v: View, fold: *const Shape.Table.Fold, n: NodeId) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             const d = v.shapes.get(n);
             if ((d.kind == .@"union" or d.kind == .choice or d.kind == .positions) and fold.opened.contains(n)) return .{};
             const own = try v.shapes.cellsOf(gpa, charge.account, &v.cells.sets, n);
@@ -2372,6 +2449,7 @@ pub fn Of(comptime Table: type) type {
         /// Two arms of a choice: a cell in both is still one (the maximum), a
         /// repeat in either stays a repeat.
         pub fn aggChoice(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, x: Agg, y: Agg) Error!Agg {
+            @import("ReaderProbe.zig").hit();
             const big, const small = if (x.all_len >= y.all_len) .{ x, y } else .{ y, x };
             var a = try t.aggMerge(gpa, charge, cellt, places, big, small, false);
             a.dups = try cellt.sets.unionWith(gpa, charge, a.dups, small.dups);
@@ -2383,6 +2461,7 @@ pub fn Of(comptime Table: type) type {
         /// Two class maps as one, coexisting: each class the smaller names
         /// merged into the larger's as a multiset.
         pub fn classMerge(t: *Table, gpa: Allocator, charge: Charge, v: View, x: ClassAggs, y: ClassAggs, together: bool) Error!ClassAggs {
+            @import("ReaderProbe.zig").hit();
             const big, const small = if (x.len >= y.len) .{ x, y } else .{ y, x };
             var out = big;
             var it = t.mapEntries(small.map);
@@ -2404,6 +2483,7 @@ pub fn Of(comptime Table: type) type {
         /// decided one by one; concrete cells are apart by construction.
         /// `items` is scratch and is reordered.
         pub fn apart(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, items: []Item, traversal: ?Traversal) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             try charge.reserve(gpa, .inspection, @intCast(items.len));
             std.mem.sort(Item, items, {}, struct {
                 fn lessThan(_: void, x: Item, y: Item) bool {
@@ -2462,6 +2542,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The pairs of `arrivals` over one base that `alias` does not tell apart.
         pub fn sameBasePairs(t: *Table, gpa: Allocator, charge: Charge, cellt: *Cell.Table, places: *Cell.Places, arrivals: []CellId, traversal: ?Traversal) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var acc: CondId = yes;
             // By base, then by split: one split's members answer `sep` alike
             // (`under` it), so its run is one pair; runs pair across (linear).
@@ -2532,10 +2613,12 @@ pub fn Of(comptime Table: type) type {
         /// (*Carried along the walk*): a node wholly of the actual's region is
         /// read at `R_Q`, where earlier reads met it.
         pub fn deep(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             return t.resolved(gpa, charge, try t.deepRaw(gpa, charge, v, ctx, n, at_summary));
         }
 
         pub fn deepRaw(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             const epoch = v.shapes.base_epoch;
             const from = t.pending.items.len;
             const r = try t.deepWalk(gpa, charge, v, ctx, n, at_summary);
@@ -2558,6 +2641,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn deepWalk(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, at_summary: bool) Error!Read {
+            @import("ReaderProbe.zig").hit();
             const Frame = struct {
                 at: Kappas,
                 node: NodeId,
@@ -2698,6 +2782,7 @@ pub fn Of(comptime Table: type) type {
         /// has for sides (a view that is no re-root view read at its answer),
         /// each where `eqOn` holds, appended to `out` once per region.
         pub fn crossingsAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, out: *std.ArrayList(Pair)) Error!void {
+            @import("ReaderProbe.zig").hit();
             var stack: std.ArrayList(NodeId) = .empty;
             defer stack.deinit(gpa);
             const seen = try t.marks.take(gpa);
@@ -2735,6 +2820,7 @@ pub fn Of(comptime Table: type) type {
         const PerCell = enum(u8) { summary, shallow };
 
         pub fn perCell(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, which: PerCell, cells: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             if (cells == .none) return yes;
             // One cell: its term at once, never memoised.
             if (cellt.sets.branches(cells) == null) return switch (which) {
@@ -2778,15 +2864,18 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn summaryExcl(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             return t.perCell(gpa, charge, cellt, places, .summary, cells);
         }
 
         pub fn shallow(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             return t.perCell(gpa, charge, cellt, places, .shallow, cells);
         }
 
         /// At a summary position: `excl c` per arrival standing for many positions.
         pub fn summaryExclFlat(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             var acc: CondId = yes;
             var it = cellt.sets.iterate(cells);
             while (it.next()) |e| {
@@ -2802,6 +2891,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `excl c` for every arrival in a cell set (a DEEP condition's part).
         pub fn shallowFlat(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, places: *const Cell.Places, cells: SetId) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             _ = places;
             var acc: CondId = yes;
             var it = cellt.sets.iterate(cells);
@@ -2818,6 +2908,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The `apart` group atom at the top of a container's κ, and the rest.
         pub fn splitGroup(t: *Table, k: CondId) struct { atom: CondId, rest: CondId } {
+            @import("ReaderProbe.zig").hit();
             if (k == yes or fails(k)) return .{ .atom = .none, .rest = k };
             const d = t.get(k);
             if (d.kind == .atom) return if (d.atom == .apart) .{ .atom = k, .rest = yes } else .{ .atom = .none, .rest = k };
@@ -2833,6 +2924,7 @@ pub fn Of(comptime Table: type) type {
         /// top of κ) grows by insertion, the base scanned only while it has no
         /// group; plus the stored value's κ as a position. W fresh stores O(W log W).
         pub fn lower(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, base_kappa0: CondId, base_cells: SetId, stored: NodeId, at_summary: bool, traversal: ?Traversal) Error!CondId {
+            @import("ReaderProbe.zig").hit();
             // `splitGroup` tests the base's condition's shape: resolved first.
             const base_kappa = try t.resolved(gpa, charge, base_kappa0);
             if (base_kappa == shared) return shared;
@@ -2895,6 +2987,7 @@ pub fn Of(comptime Table: type) type {
 
         /// Whether a set has at least two members: two steps of its iterator.
         pub fn groupSize2(t: *Table, gpa: Allocator, charge: Charge, cellt: *const Cell.Table, s: SetId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             _ = t;
             try charge.reserve(gpa, .inspection, 1);
             var it = cellt.sets.iterate(s);
@@ -2905,6 +2998,7 @@ pub fn Of(comptime Table: type) type {
 
         /// Record a position a reader reads (`trace`, for tests).
         pub fn traced(t: *Table, gpa: Allocator, n: NodeId, summary: bool) Error!void {
+            @import("ReaderProbe.zig").hit();
             if (t.trace) |l| try l.append(gpa, n.int() << 1 | @intFromBool(summary));
         }
 
@@ -2927,6 +3021,7 @@ pub fn Of(comptime Table: type) type {
         pub const Next = struct { node: NodeId, summary: bool, step: u32, explicit: bool = true, via: NodeId = .none };
 
         pub fn frontier(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cursors: []const Kappas, out: *std.ArrayList(Next)) Error!void {
+            @import("ReaderProbe.zig").hit();
             var words: std.ArrayList(u64) = .empty;
             defer words.deinit(gpa);
             const fold = try t.cursorSteps(gpa, charge, cursors, &words);
@@ -2936,6 +3031,7 @@ pub fn Of(comptime Table: type) type {
         /// `frontier` against cursors read already: the frames reading one
         /// run read its cursors once (#1273).
         pub fn frontierWith(t: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cs: CursorSteps, out: *std.ArrayList(Next)) Error!void {
+            @import("ReaderProbe.zig").hit();
             try t.steps(gpa, charge, v, n, summary, cs, .none, out);
             var inners: std.ArrayList(NodeId) = .empty;
             defer inners.deinit(gpa);
@@ -2956,6 +3052,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The cursors' steps appended to `out`, sorted; whether one is a fold.
         pub fn cursorSteps(t: *Table, gpa: Allocator, charge: Charge, cursors: []const Kappas, out: *std.ArrayList(u64)) Error!bool {
+            @import("ReaderProbe.zig").hit();
             const from = out.items.len;
             var fold = false;
             const seen = try t.step_marks.take(gpa);
@@ -2979,6 +3076,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn steps(_: *Table, gpa: Allocator, charge: Charge, v: View, n: NodeId, summary: bool, cs: CursorSteps, via: NodeId, out: *std.ArrayList(Next)) Error!void {
+            @import("ReaderProbe.zig").hit();
             var named: std.ArrayList(u32) = .empty;
             defer named.deinit(gpa);
             try explicitSteps(gpa, charge, v, n, &named);
@@ -3043,6 +3141,7 @@ pub fn Of(comptime Table: type) type {
         /// recast's inner `via`, the join of the inners of its own recasts at
         /// that place (null: it has none, so nothing it stores is there).
         pub fn side(gpa: Allocator, charge: Charge, v: View, m: NodeId, via: NodeId) Error!?NodeId {
+            @import("ReaderProbe.zig").hit();
             if (via == .none) return m;
             var inners: std.ArrayList(NodeId) = .empty;
             defer inners.deinit(gpa);
@@ -3059,11 +3158,13 @@ pub fn Of(comptime Table: type) type {
 
         /// A sort of `n` items: n·⌈log₂(n + 1)⌉ comparisons, each a record.
         pub fn sortCost(n: usize) u32 {
+            @import("ReaderProbe.zig").hit();
             const lg: usize = std.math.log2_int_ceil(usize, n + 1);
             return @intCast(@min(n * lg, std.math.maxInt(u32)));
         }
 
         pub fn below(s: Step) bool {
+            @import("ReaderProbe.zig").hit();
             return s.kind == .elem or s.kind == .level;
         }
 
@@ -3074,6 +3175,7 @@ pub fn Of(comptime Table: type) type {
         /// `runtime_safety` check's test: it walks the `and` trees itself and
         /// writes no memo, so it changes no later read or charge.
         pub fn impliedBy(t: *Table, gpa: Allocator, v: View, e: CondId, r: CondId) Error!bool {
+            @import("ReaderProbe.zig").hit();
             if (e == yes or e == r or r == shared) return true;
             if (e == shared) return false;
             if (r == lost) return true;
@@ -3117,6 +3219,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The atoms of `c`'s `and` tree, each once, read with no memo.
         pub fn atomsOf(t: *Table, gpa: Allocator, c: CondId, out: *std.ArrayList(CondId)) Error!void {
+            @import("ReaderProbe.zig").hit();
             var stack: std.ArrayList(CondId) = .empty;
             defer stack.deinit(gpa);
             try stack.append(gpa, c);
@@ -3134,6 +3237,7 @@ pub fn Of(comptime Table: type) type {
         /// per pair of positions, `b` projected in lockstep along every step
         /// of `a`'s frontier, both snapshots' links included (#1063).
         pub fn kappaLeq(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx_a: Kappas, a: NodeId, ctx_b: Kappas, b: NodeId, at_summary: bool) Error!bool {
+            @import("ReaderProbe.zig").hit();
             var seen: Ids.FixedDict(5) = .{};
             defer seen.deinit(gpa);
             const Frame = struct { a: NodeId, b: NodeId, summary: bool, ca: Kappas, cb: Kappas };

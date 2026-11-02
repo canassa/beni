@@ -1,0 +1,76 @@
+module RefinementFoldMultiplicity
+    27:28 List.push kids: accepted param
+    27:19 RefinementFoldMultiplicity.incList <expr>[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    27:19 RefinementFoldMultiplicity.incList <expr>[*]#0.0⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract incAll: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct incAll: source 20, total 1922, growth 0 of 65536, continuation 1922 of 20480, rounds 5, evaluations 6, validation 340, slots 6, arrivals 3, relations 30 (memo 0), deliveries 5, substitutions 207, positions 23, leaves 49, values 43, calls 12, demands 11, peak bytes 12960, v2 reads 0, walks { 254, 315, 333, 340, 340, 340 }
+    34:15 RefinementFoldMultiplicity.incAll s#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    34:15 RefinementFoldMultiplicity.incAll s#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    34:15 RefinementFoldMultiplicity.incAll s#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    34:26 RefinementFoldMultiplicity.incList rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    34:26 RefinementFoldMultiplicity.incList rest[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract incList: res ε fresh, [*]#0.0 fresh, [*]#0.0⟲ fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct incList: source 26, total 3335, growth 0 of 65536, continuation 3335 of 26624, rounds 5, evaluations 6, validation 665, slots 6, arrivals 3, relations 167 (memo 18), deliveries 5, substitutions 173, positions 33, leaves 138, values 47, calls 17, demands 11, peak bytes 26734, v2 reads 0, walks { 97, 595, 648, 665, 665, 665 }
+    41:13 RefinementFoldMultiplicity.incAll <expr>#0.0: accepted fresh (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    41:13 RefinementFoldMultiplicity.incAll <expr>#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    41:13 RefinementFoldMultiplicity.incAll <expr>#0.0[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract nestOne: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct nestOne: source 10, total 173, growth 0 of 65536, continuation 173 of 10240, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 1 (memo 0), deliveries 0, substitutions 19, positions 2, leaves 5, values 4, calls 1, demands 1, peak bytes 6152, v2 reads 0, walks { 173 }
+    45:14 RefinementFoldMultiplicity.nestOne <expr>#0.0: accepted fresh
+    45:14 RefinementFoldMultiplicity.nestOne <expr>#0.0[*]#0.0: accepted fresh
+    45:14 RefinementFoldMultiplicity.nestOne <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract freshOne: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct freshOne: source 12, total 116, growth 0 of 65536, continuation 116 of 12288, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 21, positions 2, leaves 4, values 6, calls 1, demands 1, peak bytes 6392, v2 reads 0, walks { 116 }
+    53:15 RefinementFoldMultiplicity.nestOne a#0.0: rejected alias: t holds it and is read at 53:26
+    53:15 RefinementFoldMultiplicity.nestOne a#0.0[*]#0.0: rejected alias: t holds it and is read at 53:26
+    53:15 RefinementFoldMultiplicity.nestOne a#0.0[*]⟲#0.0: accepted fresh
+  contract takenOneBeside: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh, .1#0.0 fresh, .1#0.0[*]#0.0 fresh, .1#0.0[*]⟲#0.0 fresh; nondup no
+  slotacct takenOneBeside: source 44, total 419, growth 0 of 65536, continuation 419 of 45056, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 7 (memo 0), deliveries 0, substitutions 21, positions 2, leaves 14, values 15, calls 1, demands 1, peak bytes 13190, v2 reads 0, walks { 419 }
+    64:13 RefinementFoldMultiplicity.nestOne a#0.0: accepted fresh
+    64:13 RefinementFoldMultiplicity.nestOne a#0.0[*]#0.0: accepted fresh
+    64:13 RefinementFoldMultiplicity.nestOne a#0.0[*]⟲#0.0: accepted fresh
+  contract takenOne: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct takenOne: source 38, total 212, growth 0 of 65536, continuation 212 of 38912, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 21, positions 2, leaves 9, values 13, calls 1, demands 1, peak bytes 13664, v2 reads 0, walks { 212 }
+    71:15 RefinementFoldMultiplicity.incAll <expr>#0.0: accepted fresh (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    71:15 RefinementFoldMultiplicity.incAll <expr>#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    71:15 RefinementFoldMultiplicity.incAll <expr>#0.0[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract nestTwo: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0 π2#0.0 π2#0.0[*]#0.0 π2#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct nestTwo: source 16, total 263, growth 0 of 65536, continuation 263 of 16384, rounds 0, evaluations 1, validation 0, slots 9, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 27, positions 3, leaves 8, values 7, calls 1, demands 1, peak bytes 12650, v2 reads 0, walks { 263 }
+    79:13 RefinementFoldMultiplicity.nestTwo a#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    79:13 RefinementFoldMultiplicity.nestTwo a#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    79:13 RefinementFoldMultiplicity.nestTwo a#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    79:13 RefinementFoldMultiplicity.nestTwo a#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    79:13 RefinementFoldMultiplicity.nestTwo a#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    79:13 RefinementFoldMultiplicity.nestTwo a#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract takenTwice: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct takenTwice: source 39, total 261, growth 0 of 65536, continuation 261 of 39936, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 9, values 13, calls 1, demands 1, peak bytes 12734, v2 reads 0, walks { 261 }
+    90:13 RefinementFoldMultiplicity.nestTwo a#0.0: accepted fresh
+    90:13 RefinementFoldMultiplicity.nestTwo a#0.0[*]#0.0: accepted fresh
+    90:13 RefinementFoldMultiplicity.nestTwo a#0.0[*]⟲#0.0: accepted fresh
+    90:13 RefinementFoldMultiplicity.nestTwo b#0.0: accepted fresh
+    90:13 RefinementFoldMultiplicity.nestTwo b#0.0[*]#0.0: accepted fresh
+    90:13 RefinementFoldMultiplicity.nestTwo b#0.0[*]⟲#0.0: accepted fresh
+  contract takenTwo: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct takenTwo: source 46, total 296, growth 0 of 65536, continuation 296 of 47104, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 13, values 17, calls 1, demands 1, peak bytes 13002, v2 reads 0, walks { 296 }
+  contract regraft: res #0.0 π1#0.0 fresh, #0.0[*]#0.0 π1#0.0 π1#0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; nondup no
+  slotacct regraft: source 24, total 185, growth 0 of 65536, continuation 185 of 24576, rounds 0, evaluations 1, validation 0, slots 6, arrivals 7, relations 1 (memo 0), deliveries 0, substitutions 0, positions 4, leaves 5, values 9, calls 0, demands 0, peak bytes 6348, v2 reads 0, walks { 185 }
+    107:19 RefinementFoldMultiplicity.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    107:19 RefinementFoldMultiplicity.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    107:19 RefinementFoldMultiplicity.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract regraftShared: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct regraftShared: source 17, total 196, growth 0 of 65536, continuation 196 of 17408, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 33, positions 3, leaves 9, values 9, calls 2, demands 1, peak bytes 13470, v2 reads 0, walks { 196 }
+  contract apartKids: res #0.0 π1#0.0 fresh, #0.0[*]#0.0 π1#0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct apartKids: source 25, total 185, growth 0 of 65536, continuation 185 of 25600, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 3 (memo 0), deliveries 0, substitutions 0, positions 5, leaves 5, values 10, calls 0, demands 0, peak bytes 6348, v2 reads 0, walks { 185 }
+    121:16 RefinementFoldMultiplicity.incAll <expr>#0.0: accepted call
+    121:16 RefinementFoldMultiplicity.incAll <expr>#0.0[*]#0.0: accepted call
+    121:16 RefinementFoldMultiplicity.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract apartFresh: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct apartFresh: source 23, total 287, growth 0 of 65536, continuation 287 of 23552, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 56, positions 3, leaves 11, values 13, calls 2, demands 1, peak bytes 13306, v2 reads 0, walks { 287 }
+    127:5 RefinementFoldMultiplicity.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    127:5 RefinementFoldMultiplicity.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    127:5 RefinementFoldMultiplicity.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract apartShared: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct apartShared: source 21, total 280, growth 0 of 65536, continuation 280 of 21504, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 56, positions 3, leaves 9, values 9, calls 2, demands 1, peak bytes 13024, v2 reads 0, walks { 280 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

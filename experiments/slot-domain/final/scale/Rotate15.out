@@ -1,0 +1,14 @@
+module Rotate15
+  contract rotate: res ε π2ε π3ε π4ε π5ε π6ε π7ε π8ε π9ε π10ε π11ε π12ε π13ε π14ε π15ε π16ε; nondup ⇐ sel π2{ε} π3{ε} π4{ε} π5{ε} π6{ε} π7{ε} π8{ε} π9{ε} π10{ε} π11{ε} π12{ε} π13{ε} π14{ε} π15{ε} π16{ε}
+  slotacct rotate: source 98, total 6559, growth 0 of 65536, continuation 6559 of 100352, rounds 16, evaluations 17, validation 570, slots 16, arrivals 15, relations 2 (memo 0), deliveries 16, substitutions 405, positions 288, leaves 303, values 373, calls 51, demands 0, peak bytes 27720, v2 reads 0, walks { 160, 202, 233, 259, 285, 311, 337, 363, 389, 415, 441, 467, 493, 519, 545, 570 }
+  contract seed: res ε fresh; nondup yes
+  slotacct seed: source 22, total 174, growth 0 of 65536, continuation 174 of 22528, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 45, positions 1, leaves 16, values 18, calls 1, demands 0, peak bytes 12752, v2 reads 0, walks { 174 }
+    31:8 List.push <expr>: rejected shared: it writes a top-level value
+  contract dest: res ε shared; nondup no
+  slotacct dest: source 7, total 41, growth 0 of 65536, continuation 41 of 7168, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 4, positions 1, leaves 2, values 3, calls 1, demands 1, peak bytes 6144, v2 reads 0, walks { 41 }
+    35:11 List.push <expr>: accepted fresh
+  contract local: res ε fresh; nondup yes
+  slotacct local: source 28, total 154, growth 0 of 65536, continuation 154 of 28672, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 34, positions 3, leaves 17, values 20, calls 2, demands 1, peak bytes 12508, v2 reads 0, walks { 154 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

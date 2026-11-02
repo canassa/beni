@@ -1,0 +1,23 @@
+module Controls
+  14:10 List.push l0: rejected element: l0 holds it and is read at 15:5 (approx)
+  21:5 List.push l0: accepted fresh
+  47:13 List.push kids: rejected alias: w#Rose.0 holds it and is read at 47:35
+  54:16 List.push kids: accepted param
+  account wrapN: source 27, baseline 1759, growth 0 of 65536, total 1759, continuation 1699 of 27648, demands 2, walks 2, inference 2, deliveries 2, direct_data lanes 4, liveness_index lanes 8, call_view lanes 6, transfer_settlement lanes 60
+  crossing: reads 2, redone 0, base moves 7
+  summary wrapN: π2 RA; res [*] π2, fresh1 fresh2; cert
+  account push: source 33, baseline 982, growth 0 of 65536, total 982, continuation 848 of 33792, demands 117, direct_data lanes 2, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 35
+  summary push: π2 RA; res .0 fresh1 fresh2, .0[*] π2, .1 fresh1 fresh2, .1[*] fresh3 π2{excl π2}
+  account pushOnce: source 23, baseline 747, growth 0 of 65536, total 747, continuation 635 of 23552, demands 31, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 25
+  summary pushOnce: π2 RA; res [*] fresh3 π2{excl π2}, fresh1 fresh2
+  account deepLen: source 25, baseline 781, growth 0 of 65536, total 781, continuation 577 of 25600, demands 2, walks 2, inference 1, deliveries 3, direct_data lanes 2, liveness_index lanes 4, call_view lanes 2, transfer_settlement lanes 58
+  summary deepLen: π1 R, π1#Rose.0 R, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 R, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 R; cert
+  account readAfter: source 23, baseline 946, growth 0 of 65536, total 946, continuation 821 of 23552, demands 61, hold listings 1, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 25
+  summary readAfter: π1 RAW, π1[*] RA, π1[*]#Rose.0 R, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ R, π1[*]#Rose.0⟲[*] R; res .0#Rose.0 π1{lost}, .0#Rose.0[*] π1[*]{lost}
+  account readBefore: source 25, baseline 941, growth 0 of 65536, total 941, continuation 813 of 25600, demands 25, direct_data lanes 1, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 27
+  summary readBefore: π1 RAW, π1[*] RA, π1[*]#Rose.0 R, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ R, π1[*]#Rose.0⟲[*] R; res .1#Rose.0 π1{lost}, .1#Rose.0[*] π1[*]{lost}
+  block: 2276 bytes, hash 363f21cb313adb2c
+  demands 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 1
+cause element 1

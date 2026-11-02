@@ -227,6 +227,7 @@ pub const Table = struct {
     drop_links: std.ArrayList([2]u32) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        @import("ReaderProbe.zig").hit();
         t.reach_pool.deinit(gpa);
         t.widen_pool.deinit(gpa);
         t.marks.deinit(gpa);
@@ -289,25 +290,30 @@ pub const Table = struct {
     }
 
     pub fn count(t: *const Table) u32 {
+        @import("ReaderProbe.zig").hit();
         return @intCast(t.nodes.len());
     }
 
     pub fn get(t: *const Table, n: NodeId) Node {
+        @import("ReaderProbe.zig").hit();
         Counters.kindRead(&t.census, n.int());
         return t.nodes.get(n.int());
     }
 
     pub fn kind(t: *const Table, n: NodeId) Kind {
+        @import("ReaderProbe.zig").hit();
         Counters.kindRead(&t.census, n.int());
         return t.nodes.col.kind[n.int()];
     }
 
     pub fn place(t: *const Table, n: NodeId) PlaceId {
+        @import("ReaderProbe.zig").hit();
         return t.nodes.col.place[n.int()];
     }
 
     /// The cells at `ε`.
     pub fn cells(t: *const Table, n: NodeId) SetId {
+        @import("ReaderProbe.zig").hit();
         return t.nodes.col.cells[n.int()];
     }
 
@@ -318,6 +324,7 @@ pub const Table = struct {
     pub const lazy_cells: SetId = .from(std.math.maxInt(u32) - 1);
 
     pub fn isLazy(t: *const Table, n: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         return t.cells(n) == lazy_cells;
     }
 
@@ -330,6 +337,7 @@ pub const Table = struct {
     /// by its producers (§4.1, #1098). A view's answer may be one, or a
     /// chain (§2.11). From any other node, the kernel's.
     pub fn dagWalk(t: *const Table, gpa: Allocator, account: *Account, n: NodeId) Error!?Account.Kernel {
+        @import("ReaderProbe.zig").hit();
         return switch (t.kind(n)) {
             .positions, .@"union", .choice, .view => try account.enter(gpa, null),
             else => null,
@@ -344,6 +352,7 @@ pub const Table = struct {
     /// entered once, so a cycle with no `node` on it (`U = union(leaf,
     /// delta(U, o))` under a view, #1314) ends at its least fixed point.
     pub fn cycleWalk(t: *Table, gpa: Allocator, start: NodeId, r: anytype) Error!void {
+        @import("ReaderProbe.zig").hit();
         const Frame = struct { node: NodeId, from: [2]NodeId, next: u8 = 0 };
         var frames: std.ArrayList(Frame) = .empty;
         defer frames.deinit(gpa);
@@ -403,6 +412,7 @@ pub const Table = struct {
     /// reads its cells as their least fixed point, the join of what enters it
     /// from outside (§2.11 *Cycles, links and folds*, `cycleWalk`).
     pub fn cellsOf(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         if (!t.isLazy(n)) return t.cells(n);
         const walk = try t.dagWalk(gpa, account, n);
         defer if (walk) |k| account.leave(k);
@@ -473,6 +483,7 @@ pub const Table = struct {
     const OverKeys = struct {
         t: *const Table,
         pub fn keyAt(c: OverKeys, i: u32) [4]u32 {
+            @import("ReaderProbe.zig").hit();
             const n = c.t.overs.items[i];
             return .{ n.prefix, n.mask, n.left, n.right };
         }
@@ -502,6 +513,7 @@ pub const Table = struct {
 
     /// The node at `step` in map `root`, or null.
     pub fn overGet(t: *const Table, root: u32, step: Step) ?NodeId {
+        @import("ReaderProbe.zig").hit();
         var at = root;
         while (at != over_none) {
             const n = t.overNode(at);
@@ -514,6 +526,7 @@ pub const Table = struct {
 
     /// `root` with `step ↦ node` (replacing), path-copied: ≤ 33 new nodes.
     pub fn overPut(t: *Table, gpa: Allocator, account: *Account, root: u32, step: Step, value: NodeId) Error!u32 {
+        @import("ReaderProbe.zig").hit();
         const key = step.word();
         if (root == over_none) return t.makeOver(gpa, account, .{ .prefix = key, .mask = 0, .left = value.int(), .right = over_none });
         const n = t.overNode(root);
@@ -543,6 +556,7 @@ pub const Table = struct {
         pub const Entry = struct { step: Step, node: NodeId };
 
         pub fn next(it: *OverIterator) ?Entry {
+            @import("ReaderProbe.zig").hit();
             while (it.depth > 0) {
                 it.depth -= 1;
                 const n = it.t.overNode(it.stack[it.depth]);
@@ -556,6 +570,7 @@ pub const Table = struct {
     };
 
     pub fn overEntries(t: *const Table, root: u32) OverIterator {
+        @import("ReaderProbe.zig").hit();
         var it: OverIterator = .{ .t = t };
         if (root != over_none) {
             it.stack[0] = root;
@@ -584,6 +599,7 @@ pub const Table = struct {
     /// Whether `n` is the node its constructor interns for its record, one
     /// any other maker of that record meets (`make`).
     pub fn interned(t: *const Table, n: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         const d = t.nodes.get(n.int());
         const keyed: u32 = if (d.kind == .recast or d.kind == .delta) Ids.none_int else d.cells.int();
         const got = t.intern.get(.{ @backingInt(d.kind), d.place.int(), keyed, d.a, d.b }) orelse return false;
@@ -591,11 +607,13 @@ pub const Table = struct {
     }
 
     pub fn leaf(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, c: SetId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.make(gpa, account, .{ .kind = .leaf, .place = at, .cells = c, .a = 0, .b = 0, .reach = .none });
     }
 
     /// Whether `n` is the empty value, a view read at its answer (§2.11).
     pub fn isNothing(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!bool {
+        @import("ReaderProbe.zig").hit();
         const x = try t.force(gpa, account, n);
         return t.kind(x) == .leaf and t.cells(x) == .none;
     }
@@ -606,29 +624,34 @@ pub const Table = struct {
     /// at every path that holds it, and as a member it united those paths'
     /// classes (the root's `xs` of `Node l xs r` became every level's).
     pub fn isAtom(t: *const Table, n: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         const d = t.get(n);
         return d.cells == .none and (d.kind == .leaf or (d.kind == .node and d.a == over_none));
     }
 
     /// The empty value at `at`: provably no cell (§2.3).
     pub fn nothing(t: *Table, gpa: Allocator, account: *Account, at: PlaceId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.leaf(gpa, account, at, .none);
     }
 
     /// A built value with explicit children, a map `(step ↦ node)`.
     pub fn node(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, c: SetId, children: u32) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.make(gpa, account, .{ .kind = .node, .place = at, .cells = c, .a = children, .b = 0, .reach = .none });
     }
 
     /// `base` written with the overrides (never a delta over a delta: the
     /// chain is one delta whose map is the composition, O(k log F)).
     pub fn delta(t: *Table, gpa: Allocator, account: *Account, base: NodeId, over: u32) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         std.debug.assert(t.kind(base) != .delta);
         if (over == over_none) return base;
         return t.make(gpa, account, .{ .kind = .delta, .place = t.place(base), .cells = t.cells(base), .a = base.int(), .b = over, .reach = .none });
     }
 
     pub fn recast(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, inner: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         // Casts compose to one recast (§2.13.9).
         // Casts compose through a view's answer too (§2.11).
         const inn = try t.force(gpa, account, inner);
@@ -640,11 +663,13 @@ pub const Table = struct {
 
     /// Whether `n` is a stepped recast that keeps its whole inner (`recastWhole`).
     pub fn isWhole(t: *const Table, n: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         return t.kind(n) == .recast and t.nodes.col.b[n.int()] == 1;
     }
 
     /// `n`'s image over its inner's image `inner`, whole where `n` is (#1311).
     pub fn recastAs(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, inner: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         if (t.isWhole(n)) return t.recastWhole(gpa, account, cellsets, t.place(n), inner);
         return t.recast(gpa, account, t.place(n), inner);
     }
@@ -687,6 +712,7 @@ pub const Table = struct {
     /// `view(template, env)`: a call's result by reference, interned, its
     /// cells lazy until a reader asks.
     pub fn view(t: *Table, gpa: Allocator, account: *Account, template: NodeId, env: u32) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         // A view stands at the place its call instantiates its template's
         // to, so every reader that compares places, or steps through one,
         // reads a view as it reads its answer (§2.11, #1350).
@@ -712,6 +738,7 @@ pub const Table = struct {
     /// `n`, or the answer of a view already forced: a reader past the force
     /// (a fold's source walk) reads what the force left.
     pub fn forced(t: *const Table, n: NodeId) NodeId {
+        @import("ReaderProbe.zig").hit();
         if (t.kind(n) != .view) return n;
         return t.memo_force.get(n).?;
     }
@@ -719,6 +746,7 @@ pub const Table = struct {
     /// A view's answer when it has been forced, null for one that has not
     /// or for a node that is no view.
     pub fn answerOf(t: *const Table, n: NodeId) ?NodeId {
+        @import("ReaderProbe.zig").hit();
         if (t.kind(n) != .view) return null;
         return t.memo_force.get(n);
     }
@@ -728,6 +756,7 @@ pub const Table = struct {
     /// view's leaf image is built so; `join` would read its members' cells
     /// and cascade through the views below them.
     pub fn joinRaw(t: *Table, gpa: Allocator, account: *Account, at: PlaceId, members: []const NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         var out = members[0];
         for (members[1..]) |m| out = try t.make(gpa, account, .{ .kind = .@"union", .place = at, .cells = lazy_cells, .a = out.int(), .b = m.int(), .reach = .none });
         return out;
@@ -738,6 +767,7 @@ pub const Table = struct {
     /// followed once, in growth past its first step, and every view on it
     /// then answers the first node that is not one.
     pub fn force(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         if (t.kind(n) != .view) return n;
         try account.reserve(.memo, 1);
         if (t.memo_force.get(n)) |hit| return hit;
@@ -770,6 +800,7 @@ pub const Table = struct {
     /// The view a forced view `v`'s one step answered, when that was a view
     /// again (a chain, §2.11); null at the chain's last view.
     pub fn chainNext(t: *const Table, v: NodeId) ?NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.memo_step.get(v);
     }
 
@@ -779,6 +810,7 @@ pub const Table = struct {
     /// no re-root view (a view whose template is a leaf of one exact parameter
     /// cell, *The crossing*).
     pub fn rerootKappa(t: *Table, gpa: Allocator, account: *Account, v: NodeId) Error!?Ids.KappaId {
+        @import("ReaderProbe.zig").hit();
         if (t.kind(v) != .view) return null;
         const inst = t.instantiation orelse return null;
         const template: NodeId = .from(t.nodes.col.a[v.int()]);
@@ -789,6 +821,7 @@ pub const Table = struct {
     /// The persistent set of `m`'s bases (*Bases*): what a `proj` or a join
     /// made it from. `.none` for none.
     pub fn basesOf(t: *const Table, m: NodeId) SetId {
+        @import("ReaderProbe.zig").hit();
         return if (t.bases.get(m)) |s| .from(s) else .none;
     }
 
@@ -841,17 +874,20 @@ pub const Table = struct {
     /// key or in `bases*` of one (*Bases*). Every node is, until the κ table
     /// reports its keys (`trackRelevance`).
     pub fn isRelevant(t: *const Table, m: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         return !t.track_relevance or t.relevant.contains(m);
     }
 
     /// The κ table reports its keys from now on (`markRelevant`).
     pub fn trackRelevance(t: *Table) void {
+        @import("ReaderProbe.zig").hit();
         t.track_relevance = true;
     }
 
     /// `n` and its `bases*` relevant, each node marked once: `n` became a κ
     /// key, or a relevant node gained `n` as a base.
     pub fn markRelevant(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!void {
+        @import("ReaderProbe.zig").hit();
         if (!t.track_relevance or t.relevant.contains(n)) return;
         const task = try account.enter(gpa, null);
         defer account.leave(task);
@@ -872,6 +908,7 @@ pub const Table = struct {
     /// memoised per node (until a knot is tied) and made from its parts' sets
     /// by `unionMemo`.
     pub fn region(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         const task = try account.enter(gpa, null);
         defer account.leave(task);
         return t.closure(gpa, account, .region, n);
@@ -879,6 +916,7 @@ pub const Table = struct {
 
     /// `bases*(m)` with `m` itself (*Bases*), memoised within one `base_epoch`.
     pub fn basesClosure(t: *Table, gpa: Allocator, account: *Account, m: NodeId) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         const task = try account.enter(gpa, null);
         defer account.leave(task);
         return t.closure(gpa, account, .bases, m);
@@ -887,6 +925,7 @@ pub const Table = struct {
     /// Whether key `m` is based on `reg` at all (*tested*): in it, or a base
     /// chain from `m` reaches it. Memoised within one `base_epoch`.
     pub fn tested(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.inspection, 1);
         if (t.node_sets.member(reg, m.int())) return true;
         // The empty value, met past every missing child: always compared.
@@ -907,6 +946,7 @@ pub const Table = struct {
     /// a yes when `m` is made again; it is kept within one `base_epoch`, and
     /// not when a construction cycles (a member open on the way, read as no).
     pub fn wholly(t: *Table, gpa: Allocator, account: *Account, m: NodeId, reg: SetId) Error!bool {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.inspection, 1);
         if (t.node_sets.member(reg, m.int())) return true;
         if (t.cons_head.get(m) == null) return false;
@@ -972,6 +1012,7 @@ pub const Table = struct {
     /// `unionMemo`, so a chain of views below views costs its new nodes, not
     /// its length. Where the DAG cycles, the plain walk, kept nowhere.
     pub fn inners(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         const n0 = try t.force(gpa, account, n);
         switch (t.kind(n0)) {
             .recast, .@"union", .choice, .positions => {},
@@ -1192,6 +1233,7 @@ pub const Table = struct {
     /// only what it adds: a check over the whole DAG at every class made
     /// deep snapshots' codec tests quadratic.
     pub fn holdsView(t: *Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
+        @import("ReaderProbe.zig").hit();
         if (n == .none) return false;
         const seen = try t.marks.take(gpa);
         defer t.marks.give(seen);
@@ -1312,6 +1354,7 @@ pub const Table = struct {
     /// own cells, which are the value around it (#1132's defect, through a
     /// call's instantiated place).
     pub fn recastWhole(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, at: PlaceId, inner: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.wholeOver(gpa, account, at, inner, try t.approxReach(gpa, account, cellsets, try t.force(gpa, account, inner)));
     }
 
@@ -1333,6 +1376,7 @@ pub const Table = struct {
 
     /// The lazy join of two nodes at one place (a binary DAG).
     pub fn @"union"(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         const before = t.nodes.len();
         const out = try t.unionMake(gpa, account, cellsets, l, r);
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
@@ -1384,6 +1428,7 @@ pub const Table = struct {
     /// fixpoint's arms, one of which is the value. Interned apart from `union`;
     /// it absorbs only a member of its own choice DAG (the maximum allows it).
     pub fn choice(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, l: NodeId, r: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         const before = t.nodes.len();
         const out = try t.choiceMake(gpa, account, cellsets, l, r);
         try t.joinBases(gpa, account, out, &.{ l, r }, before);
@@ -1410,6 +1455,7 @@ pub const Table = struct {
     /// With `lanes`, the internal node at each split is made on the lane of the
     /// item the split falls before: one node per item (§4.1, #1098).
     pub fn collectRoot(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId, root_cells: SetId, lanes: ?[]const Ids.Lane) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         const out = if (lanes) |ls| try t.collectLaned(gpa, account, cellsets, members, ls) else try t.collect(gpa, account, cellsets, members);
         if (t.isLazy(out)) t.nodes.col.cells[out.int()] = root_cells;
         return out;
@@ -1426,6 +1472,7 @@ pub const Table = struct {
     }
 
     pub fn collect(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, members: []const NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         std.debug.assert(members.len > 0);
         if (members.len == 1) return members[0];
         const mid = members.len / 2;
@@ -1440,6 +1487,7 @@ pub const Table = struct {
     /// positions (a pattern's element), so a positions node becomes the
     /// union of its sides — alternatives.
     pub fn without(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId, drop: SetId, one: bool) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         if (drop == .none and !one) return n;
         // Rebuilding a positions, union or choice DAG is as large as the
         // value: a growth task chosen before it, never the asking lane (a
@@ -1497,6 +1545,7 @@ pub const Table = struct {
     /// reader rebuilds a knot (`widen`'s, `map`'s), whose parts name it
     /// before it is whole. The empty leaf until it is tied.
     pub fn knot(t: *Table, gpa: Allocator, account: *Account) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.shape, 1);
         const id: NodeId = .from(t.count());
         try t.nodes.append(gpa, .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
@@ -1510,6 +1559,7 @@ pub const Table = struct {
     /// by the class it is an image of (`fold_cond`, #1570) is one of these,
     /// so no other class meets it.
     pub fn rawCopy(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         const id = try t.knot(gpa, account);
         if (Counters.enabled) Counters.kindWrite(&t.census, .raw_copy, id.int(), t.nodes.col.kind[id.int()], t.nodes.col.kind[n.int()]);
         t.nodes.set(id.int(), t.nodes.get(n.int()));
@@ -1522,6 +1572,7 @@ pub const Table = struct {
     /// Set a `knot`'s record: the caller's to make it one a constructor
     /// could have made but for the cycle.
     pub fn tie(t: *Table, id: NodeId, n: Node) void {
+        @import("ReaderProbe.zig").hit();
         if (Counters.enabled) Counters.kindWrite(&t.census, .tie, id.int(), t.nodes.col.kind[id.int()], n.kind);
         t.nodes.set(id.int(), n);
         t.ties +%= 1;
@@ -1748,6 +1799,7 @@ pub const Table = struct {
         at: u32,
 
         pub fn next(it: *Drops) ?NodeId {
+            @import("ReaderProbe.zig").hit();
             if (it.at == Ids.none_int) return null;
             const l = it.t.drop_links.items[it.at];
             it.at = l[1];
@@ -1756,6 +1808,7 @@ pub const Table = struct {
     };
 
     pub fn dropsOf(t: *const Table, n: NodeId) Drops {
+        @import("ReaderProbe.zig").hit();
         return .{ .t = t, .at = t.drop_head.get(n) orelse Ids.none_int };
     }
 
@@ -1764,6 +1817,7 @@ pub const Table = struct {
     /// counted nodes of the tree the constructors would have made that `n`
     /// does not hold. A record per node.
     pub fn dropsClosure(t: *Table, gpa: Allocator, account: *Account, n: NodeId, out: *std.ArrayList(NodeId)) Error!void {
+        @import("ReaderProbe.zig").hit();
         if (t.drop_head.get(n) == null) return;
         const seen = try t.marks.take(gpa);
         defer t.marks.give(seen);
@@ -1841,6 +1895,7 @@ pub const Table = struct {
     /// delta over `n`; a construction is a copy with one child changed, a
     /// fresh base with `n`'s children and `fresh` at `ε`.
     pub fn put(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, view_or_n: NodeId, s: Step, m: NodeId, same_object: bool, fresh: SetId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         // A view is written, recelled or materialized as its answer (§2.11).
         const n = try t.force(gpa, account, view_or_n);
         if (same_object) {
@@ -1858,6 +1913,7 @@ pub const Table = struct {
     /// a leaf stays a leaf, anything else becomes a `node` over its
     /// materialised children (what a use shape's builder needs, §2.10).
     pub fn withCells(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, view_or_n: NodeId, c: SetId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         // A view is written, recelled or materialized as its answer (§2.11).
         const n = try t.force(gpa, account, view_or_n);
         if (t.kind(n) == .leaf) return t.leaf(gpa, account, t.place(n), c);
@@ -1894,6 +1950,7 @@ pub const Table = struct {
     /// of sides (§3.6): later readers then meet the node the block's κ is
     /// keyed on.
     pub fn setProj(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.memo, 1);
         (try t.memo_proj.getOrPut(gpa, .{ n.int(), s.word() })).value_ptr.* = m.int();
         try t.noteOrigin(gpa, account, n, s, m);
@@ -1902,10 +1959,12 @@ pub const Table = struct {
     /// `m`, decoded as the projection of `n` at `s` (`BlockRead`), takes that
     /// origin as one `proj` made does (§2.9 *Keyed where a reader looks*).
     pub fn noteOrigin(t: *Table, gpa: Allocator, account: *Account, n: NodeId, s: Step, m: NodeId) Error!void {
+        @import("ReaderProbe.zig").hit();
         return t.addOrigin(gpa, account, n, s, m);
     }
 
     pub fn proj(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, s: Step) Error!?NodeId {
+        @import("ReaderProbe.zig").hit();
         // Reserved before the memo is touched, a hit charged like a miss
         // (§2.3 *Memo safety*); the memo is written only once the answer
         // exists, so a refusal in the middle leaves no "no such step" for
@@ -2056,6 +2115,7 @@ pub const Table = struct {
     /// alternatives keys, and what its projections' origins name (§2.9
     /// *Keyed where a reader looks*).
     pub fn isJoinNode(t: *const Table, n: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         const k = t.kind(n);
         if (k == .view) return isJoinKind(t.kind(.from(t.nodes.col.a[n.int()])));
         return isJoinKind(k);
@@ -2079,6 +2139,7 @@ pub const Table = struct {
     /// Whether DAG node `n` is the projection of a DAG node (§2.9 *Keyed
     /// where a reader looks*).
     pub fn hasOrigin(t: *const Table, n: NodeId) bool {
+        @import("ReaderProbe.zig").hit();
         return t.proj_origin.get(n) != null;
     }
 
@@ -2089,6 +2150,7 @@ pub const Table = struct {
     /// reader looks*). `templates` false: own origins only (a recursive group's
     /// read-off, whose rounds the port join carries, #1466).
     pub fn originHead(t: *const Table, n: NodeId, templates: bool) ?struct { head: u32, env: u32 } {
+        @import("ReaderProbe.zig").hit();
         if (t.proj_origin.get(n)) |h| return .{ .head = h, .env = Ids.none_int };
         if (!templates or t.kind(n) != .view) return null;
         const h = t.proj_origin.get(.from(t.nodes.col.a[n.int()])) orelse return null;
@@ -2147,6 +2209,7 @@ pub const Table = struct {
 
     /// `cellsAt(n, q)`: `proj` along `steps`; `.none` past a missing step.
     pub fn cellsAt(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, steps: []const Step) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         var at = n;
         for (steps) |s| at = (try t.proj(gpa, account, places, cellt, at, s)) orelse return .none;
         return t.cellsOf(gpa, account, &cellt.sets, at);
@@ -2161,6 +2224,7 @@ pub const Table = struct {
     /// cyclic value is one component), the component's set the union of its
     /// members' cells and its successors' sets. O(nodes · log C) once.
     pub fn reach(t: *Table, gpa: Allocator, account: *Account, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         if (t.nodes.col.reach[n.int()] != .none) return t.nodes.col.reach[n.int()];
         const walk = try t.dagWalk(gpa, account, n);
         defer if (walk) |k| account.leave(k);
@@ -2176,6 +2240,7 @@ pub const Table = struct {
     /// reads (§2.9): the rest is apart by construction. Memoised per node,
     /// built as `reach` is, so a tower costs each level its own cells.
     pub fn arrivals(t: *Table, gpa: Allocator, account: *Account, cellt: *const Cell.Table, cellsets: *Cell.Radix, n: NodeId) Error!SetId {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.memo, 1);
         if (t.arrivals_memo.get(n)) |s| return s;
         var r: Reach = .{ .t = t, .gpa = gpa, .account = account, .sets = cellsets, .filter = cellt, .s = try t.reach_pool.take(gpa) };
@@ -2197,6 +2262,7 @@ pub const Table = struct {
         kids: std.ArrayList(NodeId) = .empty,
 
         pub fn clear(x: *ReachScratch) void {
+            @import("ReaderProbe.zig").hit();
             x.index.clear();
             x.low.clear();
             x.on_stack.clear();
@@ -2206,6 +2272,7 @@ pub const Table = struct {
         }
 
         pub fn deinit(x: *ReachScratch, gpa: Allocator) void {
+            @import("ReaderProbe.zig").hit();
             x.index.deinit(gpa);
             x.low.deinit(gpa);
             x.on_stack.deinit(gpa);
@@ -2424,6 +2491,7 @@ pub const Table = struct {
     /// names what every record on it names, its least fixed point
     /// (`cycleWalk`). The slice is valid until the next call.
     pub fn namedSteps(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error![]const u32 {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.memo, 1);
         if (t.named_memo.get(n)) |r| return t.named_pool.items[r[0]..][0..r[1]];
         const walk = try t.dagWalk(gpa, account, n);
@@ -2529,6 +2597,7 @@ pub const Table = struct {
     /// explicit stack, a record per node and edge. Asked only of finished
     /// nodes: a knot is tied before anything walks it.
     pub fn rank(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!u32 {
+        @import("ReaderProbe.zig").hit();
         try account.reserve(.memo, 1);
         if (t.rank_memo.get(n)) |r| return r;
         const walk = try t.dagWalk(gpa, account, n);
@@ -2617,6 +2686,7 @@ pub const Table = struct {
     /// into one leaf; what is left into a balanced union DAG. `members` is
     /// scratch and is reordered.
     pub fn join(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.joinAs(gpa, account, places, cellt, members, .@"union", false);
     }
 
@@ -2625,6 +2695,7 @@ pub const Table = struct {
     /// child join made of `choice`; leaves still merge into one leaf (a cell
     /// in two arms is one, the maximum).
     pub fn joinChoice(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.joinAs(gpa, account, places, cellt, members, .choice, false);
     }
 
@@ -2636,6 +2707,7 @@ pub const Table = struct {
     /// read through the member it was. `eager`'s rebuild keeps `joinChoice`,
     /// since a published value's κ is carried by node (`kappaRelabel`).
     pub fn joinAlternatives(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, members: []NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         return t.joinAs(gpa, account, places, cellt, members, .choice, true);
     }
 
@@ -2970,6 +3042,7 @@ pub const Table = struct {
     /// the record, never by absorption: a union, choice or positions image
     /// keeps both its sides, so no occurrence is dropped (§2.9).
     pub fn map(t: *Table, gpa: Allocator, account: *Account, n: NodeId, ctx: anytype, f: *const fn (@TypeOf(ctx), SetId) Error!SetId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         t.memo_map.clear();
         t.map_open.clear();
         t.map_low.clear();
@@ -2983,6 +3056,7 @@ pub const Table = struct {
     /// The built node of the last `map` that `x` stands for: itself, or
     /// what `eager` made of it or of a view's answer; null for none.
     pub fn mapSource(t: *const Table, x: NodeId) ?NodeId {
+        @import("ReaderProbe.zig").hit();
         for ([_]?NodeId{ x, t.eagerOf(x), t.answerOf(x), if (t.answerOf(x)) |a| t.eagerOf(a) else null }) |c| {
             if (c) |s| if (t.map_src.contains(s)) return s;
         }
@@ -3217,6 +3291,7 @@ pub const Table = struct {
     /// per node until a knot is tied: a chain of calls costs each call the
     /// nodes its template adds. A cyclic value (a widened knot) stays as it is.
     pub fn eager(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, root: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         if (root == .none) return root;
         if (t.eager_ties != t.ties) {
             t.memo_eager.clear();
@@ -3377,6 +3452,7 @@ pub const Table = struct {
     /// was made. So publishing a value made of views orders it as the eager
     /// image did, and its fresh cells are numbered alike.
     pub fn birth(t: *const Table, n: NodeId) u32 {
+        @import("ReaderProbe.zig").hit();
         return (t.born.get(n) orelse n).int();
     }
 
@@ -3393,6 +3469,7 @@ pub const Table = struct {
     /// What `eager` made of `n`: the image of the view whose raw answer it is,
     /// `n` itself when `eager` met neither.
     pub fn eagerOf(t: *const Table, n: NodeId) NodeId {
+        @import("ReaderProbe.zig").hit();
         if (t.eager_ties != t.ties) return n;
         if (t.memo_eager.get(n)) |e| return e;
         if (t.answered.get(n)) |v| if (t.memo_eager.get(v)) |e| return e;
@@ -3409,6 +3486,7 @@ pub const Table = struct {
     /// order and tree shape of their members — multiplicity is κ's
     /// (`Cond.kappaLeq`), not γ's.
     pub fn leq(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, m: NodeId) Error!bool {
+        @import("ReaderProbe.zig").hit();
         if (n == m) return true;
         const outermost = t.leq_depth == 0;
         t.leq_depth += 1;
@@ -3500,6 +3578,7 @@ pub const Table = struct {
     const leq_unknown: u32 = 3;
 
     pub fn eq(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, m: NodeId) Error!bool {
+        @import("ReaderProbe.zig").hit();
         return n == m or (try t.leq(gpa, account, places, cellt, n, m) and try t.leq(gpa, account, places, cellt, m, n));
     }
 
@@ -3522,6 +3601,7 @@ pub const Table = struct {
     /// the larger and queues the children that now share a step. Every node
     /// and edge read, every merge and every moved entry is a charged record.
     pub fn widen(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         var w: Widen = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .s = try t.widen_pool.take(gpa) };
         defer t.widen_pool.give(w.s);
         return w.run(n);
@@ -3542,6 +3622,7 @@ pub const Table = struct {
         steps: Ids.FixedDict(2) = .{},
 
         pub fn deinit(f: *Fold, gpa: Allocator) void {
+            @import("ReaderProbe.zig").hit();
             f.image.deinit(gpa);
             f.folded.deinit(gpa);
             f.opened.deinit(gpa);
@@ -3552,6 +3633,7 @@ pub const Table = struct {
         /// class (a re-entry is its ancestor's class); null where no source
         /// position is.
         pub fn classAt(f: *const Fold, steps: []const Step) ?NodeId {
+            @import("ReaderProbe.zig").hit();
             var at = f.root;
             for (steps) |s| {
                 if (s.kind == .level) continue;
@@ -3563,6 +3645,7 @@ pub const Table = struct {
 
     /// `widen`, its path map into `out`.
     pub fn widenFold(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, out: *Fold) Error!NodeId {
+        @import("ReaderProbe.zig").hit();
         var w: Widen = .{ .t = t, .gpa = gpa, .account = account, .places = places, .cellt = cellt, .out = out, .s = try t.widen_pool.take(gpa) };
         defer t.widen_pool.give(w.s);
         return w.run(n);
@@ -3610,6 +3693,7 @@ pub const Table = struct {
         }
 
         pub fn clear(x: *WidenScratch) void {
+            @import("ReaderProbe.zig").hit();
             inline for (@typeInfo(WidenScratch).@"struct".field_names) |name| {
                 const v = &@field(x, name);
                 if (@hasDecl(@TypeOf(v.*), "clear")) v.clear() else v.clearRetainingCapacity();
@@ -3617,6 +3701,7 @@ pub const Table = struct {
         }
 
         pub fn deinit(x: *WidenScratch, gpa: Allocator) void {
+            @import("ReaderProbe.zig").hit();
             inline for (@typeInfo(WidenScratch).@"struct".field_names) |name| @field(x, name).deinit(gpa);
         }
     };
@@ -4036,6 +4121,7 @@ pub const Table = struct {
     pub const Expanded = struct { depth: u32, step: Step, cells: SetId };
 
     pub fn expand(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, bound: u32, out: *std.ArrayList(Expanded)) Error!void {
+        @import("ReaderProbe.zig").hit();
         const Frame = struct { node: NodeId, depth: u32, step: Step };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
@@ -4056,6 +4142,7 @@ pub const Table = struct {
     /// the union of the members' cells at that path, by enumeration of the
     /// projections. Safety builds under the flag only.
     pub fn crossCheckJoin(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, joined: NodeId, members: []const NodeId) Error!void {
+        @import("ReaderProbe.zig").hit();
         if (!(std.debug.runtime_safety and full_cross_check)) return;
         var pending: std.ArrayList(NodeId) = .empty;
         defer pending.deinit(gpa);
@@ -4084,6 +4171,7 @@ pub const Table = struct {
 
     /// §7.5: widening is extensive.
     pub fn crossCheckWiden(t: *Table, gpa: Allocator, account: *Account, places: *Place.Table, cellt: *Cell.Table, n: NodeId, widened: NodeId) Error!void {
+        @import("ReaderProbe.zig").hit();
         if (!(std.debug.runtime_safety and full_cross_check)) return;
         std.debug.assert(try t.leq(gpa, account, places, cellt, n, widened));
     }
@@ -5505,6 +5593,7 @@ pub const TestInstantiation = struct {
     places: ?*Place.Table = null,
 
     pub fn inst(x: *TestInstantiation) Table.Instantiation {
+        @import("ReaderProbe.zig").hit();
         return .{ .ctx = x, .sets = &x.cellt.sets, .leaf = leaf, .cells = cells, .reach = reach, .reroot = reroot, .parts = parts };
     }
 

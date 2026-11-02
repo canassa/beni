@@ -1,0 +1,71 @@
+module TestSet
+  221:24 List.push v: accepted param
+  221:40 TestSet.incAll l#NodeL.4⟨TreeL⟩#NodeL.2: accepted param
+  221:40 TestSet.incAll l#NodeL.4#NodeL.2: accepted param
+  221:40 TestSet.incAll l#NodeL.3⟨TreeL⟩#NodeL.2: accepted param
+  221:40 TestSet.incAll l#NodeL.3#NodeL.2: accepted param
+  221:40 TestSet.incAll l#NodeL.2: accepted param
+  221:51 TestSet.incAll r#NodeL.4⟨TreeL⟩#NodeL.2: accepted param
+  221:51 TestSet.incAll r#NodeL.4#NodeL.2: accepted param
+  221:51 TestSet.incAll r#NodeL.3⟨TreeL⟩#NodeL.2: accepted param
+  221:51 TestSet.incAll r#NodeL.3#NodeL.2: accepted param
+  221:51 TestSet.incAll r#NodeL.2: accepted param
+  337:13 List.push v: accepted param
+  account balanceS: source 116, baseline 363, growth 0 of 65536, total 363, continuation 38 of 118784, demands 1, direct_data lanes 5, liveness_index lanes 36, call_view lanes 9, transfer_settlement lanes 123
+  crossing: reads 157, redone 2, base moves 146
+  summary balanceS: unused
+  account moveRedLeftS: source 86, baseline 243, growth 0 of 65536, total 243, continuation 26 of 88064, demands 1, direct_data lanes 1, liveness_index lanes 26, call_view lanes 7, transfer_settlement lanes 91
+  summary moveRedLeftS: unused
+  account removeMinS: source 87, baseline 317, growth 0 of 65536, total 317, continuation 133 of 89088, demands 1, walks 1, inference 1, deliveries 0, direct_data lanes 1, liveness_index lanes 19, call_view lanes 7, transfer_settlement lanes 96
+  summary removeMinS: cert
+  account balanceL: source 118, baseline 7877, growth 0 of 65536, total 7877, continuation 6999 of 120832, demands 1, direct_data lanes 5, liveness_index lanes 36, call_view lanes 9, transfer_settlement lanes 125
+  summary balanceL: π3 RA, π4 RA, π4#NodeL.1 RA, π4#NodeL.2 RA, π4#NodeL.3 RA, π4#NodeL.3#NodeL.1 RA, π4#NodeL.3#NodeL.2 RA, π4#NodeL.3⟲ RA, π4#NodeL.4 RA, π5 RA, π5#NodeL.1 RA, π5#NodeL.2 RA, π5#NodeL.3 RA, π5#NodeL.4 RA; res #NodeL.1 π4#NodeL.1, #NodeL.1 π5#NodeL.1, #NodeL.2 π3, #NodeL.2 π4#NodeL.2, #NodeL.2 π5#NodeL.2, #NodeL.3 π4, #NodeL.3#NodeL.1 π4#NodeL.1, #NodeL.3#NodeL.1 π4#NodeL.3#NodeL.1, #NodeL.3#NodeL.2 π3, #NodeL.3#NodeL.2 π4#NodeL.2, #NodeL.3#NodeL.2 π4#NodeL.3#NodeL.2, #NodeL.3#NodeL.3 π4, #NodeL.3#NodeL.3 π4#NodeL.3, #NodeL.3#NodeL.3 π4#NodeL.3⟲, #NodeL.3#NodeL.4 π4#NodeL.3⟲, #NodeL.3#NodeL.4 π4#NodeL.4, #NodeL.3#NodeL.4 π5#NodeL.3, #NodeL.4 π5, #NodeL.4 π5#NodeL.4, #NodeL.4#NodeL.1 π5#NodeL.1, #NodeL.4#NodeL.2 π3, #NodeL.4#NodeL.2 π5#NodeL.2, #NodeL.4#NodeL.3 π4#NodeL.4, #NodeL.4#NodeL.3 π5#NodeL.3, #NodeL.4#NodeL.4 π5, #NodeL.4#NodeL.4 π5#NodeL.4
+  account moveRedLeftL: source 86, baseline 6195, growth 0 of 65536, total 6195, continuation 5368 of 88064, demands 1, direct_data lanes 1, liveness_index lanes 26, call_view lanes 7, transfer_settlement lanes 91
+  summary moveRedLeftL: π1 RA, π1#NodeL.1 RA, π1#NodeL.2 RA, π1#NodeL.3#NodeL.1 RA, π1#NodeL.3#NodeL.2 RA, π1#NodeL.3⟲ RA, π1#NodeL.4#NodeL.1 RA, π1#NodeL.4#NodeL.2 RA, π1#NodeL.4⟲ RA, π1#NodeL.4⟲#NodeL.1 RA, π1#NodeL.4⟲#NodeL.2 RA; res #NodeL.1 π1#NodeL.1, #NodeL.1 π1#NodeL.4⟲#NodeL.1, #NodeL.2 π1#NodeL.2, #NodeL.2 π1#NodeL.4⟲#NodeL.2, #NodeL.3#NodeL.1 π1#NodeL.1, #NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1, #NodeL.3#NodeL.2 π1#NodeL.2, #NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2, #NodeL.3#NodeL.3 π1#NodeL.3⟲, #NodeL.3#NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1, #NodeL.3#NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2, #NodeL.3#NodeL.3#NodeL.3 π1#NodeL.3⟲, #NodeL.3#NodeL.3#NodeL.4 π1#NodeL.3⟲, #NodeL.3#NodeL.4 π1#NodeL.3⟲, #NodeL.3#NodeL.4 π1#NodeL.4⟲, #NodeL.4#NodeL.1 π1#NodeL.4#NodeL.1, #NodeL.4#NodeL.2 π1#NodeL.4#NodeL.2, #NodeL.4#NodeL.3 π1#NodeL.4⟲, #NodeL.4#NodeL.4 π1#NodeL.4⟲, π1
+  unchecked removeMinL: lines 116-138 (limit)
+  limit removeMinL: ownership_summary_size
+  account descend: source 39, baseline 40242, growth 41937 of 65536, total 82179, continuation 39936 of 39936, demands 2, walks 2, inference 2, deliveries 5, cell 71, label 2, set 1362, shape 1654, cond 1637, class 10, memo 21876, task 1, edge 94, path 718, inspection 14512, direct_data lanes 4, liveness_index lanes 14, call_view lanes 4, transfer_settlement lanes 84
+  summary descend: π1 R, π1#NodeL.1 RA, π1#NodeL.2 RA, π1#NodeL.3 R, π1#NodeL.3#NodeL.1 RA, π1#NodeL.3#NodeL.2 RA, π1#NodeL.3⟲ RA, π1#NodeL.3⟲#NodeL.1 RA, π1#NodeL.3⟲#NodeL.2 RA, π1#NodeL.4 RA, π2 RA; res #Step.0 π1#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3⟲#NodeL.1{lost}, #Step.1 π1#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3⟲#NodeL.2{lost}, #Step.2 π1#NodeL.3⟲ π1#NodeL.3⟲ π1#NodeL.4{lost}, #Step.3 π2 π2{lost}, #Step.3#Step.0 π1#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3⟲#NodeL.1{lost}, #Step.3#Step.1 π1#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3⟲#NodeL.2{lost}, #Step.3#Step.2 π1#NodeL.3⟲ π1#NodeL.3⟲ π1#NodeL.4{lost}, #Step.3#Step.3 π2 π2{lost}, #Step.3#Step.3#Step.0 π1#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3⟲#NodeL.1{lost}, #Step.3#Step.3#Step.1 π1#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3⟲#NodeL.2{lost}, #Step.3#Step.3#Step.2 π1#NodeL.3⟲ π1#NodeL.3⟲ π1#NodeL.4{lost}, π2 π2{lost}; cert
+  account moveRedLeftDup: source 48, baseline 2436, growth 0 of 65536, total 2436, continuation 1920 of 49152, demands 1, direct_data lanes 1, liveness_index lanes 12, call_view lanes 3, transfer_settlement lanes 51
+  summary moveRedLeftDup: π1 RA, π1#NodeL.1 RA, π1#NodeL.2 RA, π1#NodeL.3#NodeL.1 RA, π1#NodeL.3#NodeL.2 RA, π1#NodeL.3⟲ RA, π1#NodeL.4#NodeL.1 RA, π1#NodeL.4⟲ RA; res #NodeL.1 π1#NodeL.1, #NodeL.2 π1#NodeL.2, #NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1, #NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2, #NodeL.3#NodeL.3 π1#NodeL.3⟲, #NodeL.3#NodeL.4 π1#NodeL.3⟲, #NodeL.4#NodeL.1 π1#NodeL.4#NodeL.1, #NodeL.4#NodeL.2 π1#NodeL.2, #NodeL.4#NodeL.3 π1#NodeL.4⟲, #NodeL.4#NodeL.4 π1#NodeL.4⟲, π1
+  unchecked removeMinDup: lines 192-214 (limit)
+  limit removeMinDup: ownership_summary_size
+  account incAll: source 32, baseline 33186, growth 38984 of 65536, total 72170, continuation 32768 of 32768, demands 3722, walks 5, inference 4, deliveries 11, cell 179, label 9, set 2675, shape 2774, cond 2006, use 48, class 14, memo 8623, task 34, edge 263, path 7285, region 3, inspection 15066, other 5, direct_data lanes 2, liveness_index lanes 12, direct_demand_query lanes 2, call_view lanes 8, transfer_settlement lanes 70
+  summary incAll: π1 R, π1#NodeL.0 RA, π1#NodeL.1 RA, π1#NodeL.2 RAW, π1#NodeL.2[*] A, π1#NodeL.3 R, π1#NodeL.3#NodeL.0 RA, π1#NodeL.3#NodeL.1 RA, π1#NodeL.3#NodeL.2 RAW, π1#NodeL.3#NodeL.2[*] RA, π1#NodeL.3⟲ R, π1#NodeL.3⟲#NodeL.0 RA, π1#NodeL.3⟲#NodeL.1 RA, π1#NodeL.3⟲#NodeL.2 RAW, π1#NodeL.3⟲#NodeL.2[*] RA, π1#NodeL.4 R, π1#NodeL.4#NodeL.0 RA, π1#NodeL.4#NodeL.1 RA, π1#NodeL.4#NodeL.2 RAW, π1#NodeL.4#NodeL.2[*] RA, π1#NodeL.4⟲ R, π1#NodeL.4⟲#NodeL.0 RA, π1#NodeL.4⟲#NodeL.1 RA, π1#NodeL.4⟲#NodeL.2 RAW, π1#NodeL.4⟲#NodeL.2[*] RA; res #NodeL.0 π1#NodeL.0, #NodeL.1 π1#NodeL.1, #NodeL.2 π1#NodeL.2, #NodeL.2[*] π1#NodeL.2[*]{excl π1#NodeL.2[*]}, #NodeL.3#NodeL.0 π1#NodeL.3#NodeL.0 π1#NodeL.3⟲#NodeL.0{apart [π1#NodeL.3#NodeL.0] [π1#NodeL.3⟲#NodeL.0], excl π1#NodeL.3⟲, excl π1#NodeL.3⟲#NodeL.0}, #NodeL.3#NodeL.1 π1#NodeL.3#NodeL.1 π1#NodeL.3⟲#NodeL.1{apart [π1#NodeL.3#NodeL.1] [π1#NodeL.3⟲#NodeL.1], excl π1#NodeL.3⟲, excl π1#NodeL.3⟲#NodeL.1}, #NodeL.3#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3⟲#NodeL.2{apart [π1#NodeL.3#NodeL.2] [π1#NodeL.3⟲#NodeL.2], excl π1#NodeL.3⟲, excl π1#NodeL.3⟲#NodeL.2}, #NodeL.3#NodeL.2[*] π1#NodeL.3#NodeL.2[*] π1#NodeL.3⟲#NodeL.2[*]{apart [π1#NodeL.3#NodeL.2[*]] [π1#NodeL.3⟲#NodeL.2[*]], excl π1#NodeL.3#NodeL.2[*], excl π1#NodeL.3⟲, excl π1#NodeL.3⟲#NodeL.2[*]}, #NodeL.4#NodeL.0 π1#NodeL.4#NodeL.0 π1#NodeL.4⟲#NodeL.0{apart [π1#NodeL.4#NodeL.0] [π1#NodeL.4⟲#NodeL.0], excl π1#NodeL.4⟲, excl π1#NodeL.4⟲#NodeL.0}, #NodeL.4#NodeL.1 π1#NodeL.4#NodeL.1 π1#NodeL.4⟲#NodeL.1{apart [π1#NodeL.4#NodeL.1] [π1#NodeL.4⟲#NodeL.1], excl π1#NodeL.4⟲, excl π1#NodeL.4⟲#NodeL.1}, #NodeL.4#NodeL.2 π1#NodeL.4#NodeL.2 π1#NodeL.4⟲#NodeL.2{apart [π1#NodeL.4#NodeL.2] [π1#NodeL.4⟲#NodeL.2], excl π1#NodeL.4⟲, excl π1#NodeL.4⟲#NodeL.2}, #NodeL.4#NodeL.2[*] π1#NodeL.4#NodeL.2[*] π1#NodeL.4⟲#NodeL.2[*]{apart [π1#NodeL.4#NodeL.2[*]] [π1#NodeL.4⟲#NodeL.2[*]], excl π1#NodeL.4#NodeL.2[*], excl π1#NodeL.4⟲, excl π1#NodeL.4⟲#NodeL.2[*]}; cert; xreq excl π1#NodeL.3⟲, excl π1#NodeL.3⟲#NodeL.2, excl π1#NodeL.4⟲, excl π1#NodeL.4⟲#NodeL.2
+  account rootLen: source 21, baseline 215, growth 0 of 65536, total 215, continuation 77 of 21504, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 1, transfer_settlement lanes 24
+  summary rootLen: π1 R, π1#NodeL.2 R
+  unchecked useful: lines 238-245 (not built: call)
+  account useful: source 53, baseline 189, growth 0 of 65536, total 189, continuation 81 of 54272, demands 0, direct_data lanes 1, call_view lanes 6, transfer_settlement lanes 39
+  summary useful: not built: call (pessimistic)
+  unchecked usefulParam: lines 249-256 (not built: call)
+  account usefulParam: source 26, baseline 40, growth 0 of 65536, total 40, continuation 32 of 26624, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 12
+  summary usefulParam: not built: call (pessimistic)
+  unchecked rebuild: lines 260-267 (not built: call)
+  account rebuild: source 30, baseline 40, growth 0 of 65536, total 40, continuation 32 of 30720, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 10
+  summary rebuild: not built: call (pessimistic)
+  unchecked keepOld: lines 271-278 (not built: call)
+  account keepOld: source 36, baseline 40, growth 0 of 65536, total 40, continuation 32 of 36864, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 14
+  summary keepOld: not built: call (pessimistic)
+  unchecked extAlias: lines 282-290 (not built: call)
+  account extAlias: source 51, baseline 142, growth 0 of 65536, total 142, continuation 67 of 52224, demands 0, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 33
+  summary extAlias: not built: call (pessimistic)
+  unchecked usefulDup: lines 294-301 (not built: call)
+  account usefulDup: source 53, baseline 191, growth 0 of 65536, total 191, continuation 83 of 54272, demands 0, direct_data lanes 1, call_view lanes 6, transfer_settlement lanes 39
+  summary usefulDup: not built: call (pessimistic)
+  unchecked rebuildDup: lines 304-311 (not built: call)
+  account rebuildDup: source 30, baseline 42, growth 0 of 65536, total 42, continuation 34 of 30720, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 10
+  summary rebuildDup: not built: call (pessimistic)
+  unchecked allDup: lines 314-316 (not built: call)
+  account allDup: source 9, baseline 37, growth 0 of 65536, total 37, continuation 31 of 9216, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 9
+  summary allDup: not built: call (pessimistic)
+  unchecked repeated: lines 320-323 (not built: call)
+  account repeated: source 32, baseline 166, growth 0 of 65536, total 166, continuation 67 of 32768, demands 0, direct_data lanes 1, call_view lanes 4, transfer_settlement lanes 32
+  summary repeated: not built: call (pessimistic)
+  unchecked allParam: lines 327-329 (not built: call)
+  account allParam: source 9, baseline 37, growth 0 of 65536, total 37, continuation 31 of 9216, demands 0, direct_data lanes 1, call_view lanes 1, transfer_settlement lanes 9
+  summary allParam: not built: call (pessimistic)
+  account cursorPush: source 26, baseline 5218, growth 0 of 65536, total 5218, continuation 5137 of 26624, demands 56, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 29
+  summary cursorPush: π1 R, π1#NodeL.1 R, π1#NodeL.2 RAW, π1#NodeL.2[*] A, π1#NodeL.3 R, π1#NodeL.3#NodeL.1 R, π1#NodeL.3#NodeL.2 RAW, π1#NodeL.3#NodeL.2[*] A, π1#NodeL.3⟲ R, π1#NodeL.3⟲#NodeL.1 R, π1#NodeL.3⟲#NodeL.2 RAW, π1#NodeL.3⟲#NodeL.2[*] A, π1#NodeL.4 R; res [*] π1#NodeL.2[*] π1#NodeL.3#NodeL.2[*] π1#NodeL.3⟲#NodeL.2[*]{apart [π1#NodeL.2[*]] [π1#NodeL.3#NodeL.2[*]], apart [π1#NodeL.2[*]] [π1#NodeL.3#NodeL.2[*]] [π1#NodeL.3⟲#NodeL.2[*]], apart [π1#NodeL.3#NodeL.2[*]] [π1#NodeL.3⟲#NodeL.2[*]], excl π1#NodeL.2[*], excl π1#NodeL.3#NodeL.2[*], excl π1#NodeL.3⟲#NodeL.2[*]}, fresh1 π1#NodeL.2 π1#NodeL.3#NodeL.2 π1#NodeL.3⟲#NodeL.2{lost}
+  demands 12: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 12: accepted 12 (fresh 0, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+limits 2

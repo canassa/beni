@@ -1,0 +1,109 @@
+module CrossDepthKids
+  22:19 CrossDepthKids.incList <call List.push>[*]#Rose.0: accepted param
+  22:19 CrossDepthKids.incList <call List.push>[*]#Rose.0⟨Rose⟩: accepted param
+  22:28 List.push kids: accepted param
+  29:15 CrossDepthKids.incAll s#Rose.0: accepted param
+  29:15 CrossDepthKids.incAll s#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  29:15 CrossDepthKids.incAll s#Rose.0[*]#Rose.0: accepted param
+  29:26 CrossDepthKids.incList rest[*]#Rose.0: accepted param
+  29:26 CrossDepthKids.incList rest[*]#Rose.0⟨Rose⟩: accepted param
+  38:12 construction <literal>: accepted fresh
+  46:11 List.push <literal>: accepted fresh
+  54:12 construction <literal>: accepted fresh
+  62:11 List.push <literal>: accepted fresh
+  68:5 CrossDepthKids.incAll <call CrossDepthKids.minimalOf>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  68:5 CrossDepthKids.incAll <call CrossDepthKids.minimalOf>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  68:5 CrossDepthKids.incAll <call CrossDepthKids.minimalOf>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  74:5 CrossDepthKids.incAll <call CrossDepthKids.kidsPushOf>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  74:5 CrossDepthKids.incAll <call CrossDepthKids.kidsPushOf>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  74:5 CrossDepthKids.incAll <call CrossDepthKids.kidsPushOf>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  80:5 CrossDepthKids.incAll <call CrossDepthKids.kidsSpreadOf>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  80:5 CrossDepthKids.incAll <call CrossDepthKids.kidsSpreadOf>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  80:5 CrossDepthKids.incAll <call CrossDepthKids.kidsSpreadOf>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  86:5 CrossDepthKids.incAll <call CrossDepthKids.onePushOf>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  86:5 CrossDepthKids.incAll <call CrossDepthKids.onePushOf>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  86:5 CrossDepthKids.incAll <call CrossDepthKids.onePushOf>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  94:5 CrossDepthKids.incAll <Rose …>#Rose.0: accepted fresh
+  94:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  94:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]#Rose.0: accepted fresh
+  94:19 List.push <literal>: accepted fresh
+  104:5 CrossDepthKids.incAll <Rose …>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list
+  104:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it
+  104:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it
+  110:5 CrossDepthKids.incAll <Rose …>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list
+  110:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it
+  110:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it
+  116:5 CrossDepthKids.incAll <Rose …>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list
+  116:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it
+  116:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it
+  123:5 CrossDepthKids.incAll <Rose …>#Rose.0: accepted fresh
+  123:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  123:5 CrossDepthKids.incAll <Rose …>#Rose.0[*]#Rose.0: accepted fresh
+  140:16 CrossDepthKids.incBs bs[*]#B.0: accepted param
+  140:16 CrossDepthKids.incBs bs[*]#B.0[*]#A.0⟨A⟩[*]#B.0: accepted param
+  140:16 CrossDepthKids.incBs bs[*]#B.0[*]#A.0[*]#B.0: accepted param
+  150:18 CrossDepthKids.incAs <call List.push>[*]#A.0[*]#B.0: accepted param
+  150:18 CrossDepthKids.incAs <call List.push>[*]#A.0[*]#B.0⟨B⟩: accepted param
+  150:25 List.push kids: accepted param
+  150:51 CrossDepthKids.incBs rest[*]#B.0: accepted param
+  150:51 CrossDepthKids.incBs rest[*]#B.0[*]#A.0⟨A⟩[*]#B.0: accepted param
+  150:51 CrossDepthKids.incBs rest[*]#B.0[*]#A.0[*]#B.0: accepted param
+  161:15 CrossDepthKids.incA a#A.0[*]#B.0: accepted param
+  161:15 CrossDepthKids.incA a#A.0[*]#B.0[*]⟨A⟩#A.0[*]#B.0: accepted param
+  161:15 CrossDepthKids.incA a#A.0[*]#B.0[*]#A.0[*]#B.0: accepted param
+  161:24 CrossDepthKids.incAs rest[*]#A.0[*]#B.0: accepted param
+  161:24 CrossDepthKids.incAs rest[*]#A.0[*]#B.0⟨B⟩: accepted param
+  170:5 CrossDepthKids.incA <A …>#A.0[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  170:5 CrossDepthKids.incA <A …>#A.0[*]#B.0[*]⟨A⟩#A.0[*]#B.0: accepted fresh
+  170:5 CrossDepthKids.incA <A …>#A.0[*]#B.0[*]#A.0[*]#B.0: accepted fresh
+  177:5 CrossDepthKids.incA <A …>#A.0[*]#B.0: accepted fresh
+  177:5 CrossDepthKids.incA <A …>#A.0[*]#B.0[*]⟨A⟩#A.0[*]#B.0: accepted fresh
+  177:5 CrossDepthKids.incA <A …>#A.0[*]#B.0[*]#A.0[*]#B.0: accepted fresh
+  account incAll: source 20, baseline 12472, growth 0 of 65536, total 12472, continuation 12192 of 20480, demands 813, walks 5, inference 4, deliveries 8, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 2, call_view lanes 8, transfer_settlement lanes 44
+  crossing: reads 27, redone 0, base moves 121
+  summary incAll: π1 R, π1#Rose.0 RW, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RW, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 RW; res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}; cert; xreq excl π1#Rose.0[*], excl π1#Rose.0[*]#Rose.0, excl π1#Rose.0[*]⟲, excl π1#Rose.0[*]⟲#Rose.0
+  account incList: source 26, baseline 20694, growth 0 of 65536, total 20694, continuation 20572 of 26624, demands 2177, hold listings 18, walks 7, inference 6, deliveries 13, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incList: π1 R, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res [*] {lost}, [*]#Rose.0 fresh3 fresh3{lost}, [*]#Rose.0 fresh3{lost}, [*]#Rose.0 fresh4{lost}, [*]#Rose.0[*] {lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account minimalOf: source 27, baseline 2323, growth 0 of 65536, total 2323, continuation 2264 of 27648, demands 46, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 29
+  summary minimalOf: π1 RA; res #Rose.0 fresh1, #Rose.0[*]#Rose.0 fresh2 fresh3 π1 π1{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}
+  account kidsPushOf: source 36, baseline 3372, growth 0 of 65536, total 3372, continuation 3191 of 36864, demands 31, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 8, transfer_settlement lanes 38
+  summary kidsPushOf: π1 RA; res #Rose.0 fresh1, #Rose.0[*] {shared}, #Rose.0[*]#Rose.0 fresh2 fresh3 fresh4 fresh5 π1 π1{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 fresh4 fresh5 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 fresh4 fresh5 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0[*] {apart [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], apart [π1[*]] [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], apart [π1[*]] [π1[*]#Rose.0⟲[*]], excl π1[*], excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲[*]}
+  account kidsSpreadOf: source 37, baseline 3128, growth 0 of 65536, total 3128, continuation 3035 of 37888, demands 65, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 7, transfer_settlement lanes 39
+  summary kidsSpreadOf: π1 RA; res #Rose.0 fresh1, #Rose.0[*]#Rose.0 fresh2 fresh3 fresh4 fresh5 π1 π1{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 fresh4 fresh5 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 fresh4 fresh5 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}
+  account onePushOf: source 30, baseline 2577, growth 0 of 65536, total 2577, continuation 2422 of 30720, demands 27, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 6, transfer_settlement lanes 32
+  summary onePushOf: π1 RA; res #Rose.0 fresh1, #Rose.0[*] {shared}, #Rose.0[*]#Rose.0 fresh2 fresh3 π1 π1{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh2 fresh3 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0[*] {apart [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], apart [π1[*]] [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], apart [π1[*]] [π1[*]#Rose.0⟲[*]], excl π1[*], excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲[*]}
+  account minimal: source 15, baseline 3756, growth 0 of 65536, total 3756, continuation 3729 of 15360, demands 52, direct_data lanes 1, liveness_index lanes 1, call_view lanes 3, transfer_settlement lanes 17
+  summary minimal: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account kidsPush: source 15, baseline 4211, growth 0 of 65536, total 4211, continuation 4184 of 15360, demands 64, direct_data lanes 1, liveness_index lanes 1, call_view lanes 3, transfer_settlement lanes 17
+  summary kidsPush: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account kidsSpread: source 15, baseline 4198, growth 0 of 65536, total 4198, continuation 4171 of 15360, demands 64, direct_data lanes 1, liveness_index lanes 1, call_view lanes 3, transfer_settlement lanes 17
+  summary kidsSpread: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account onePush: source 15, baseline 3778, growth 0 of 65536, total 3778, continuation 3751 of 15360, demands 52, direct_data lanes 1, liveness_index lanes 1, call_view lanes 3, transfer_settlement lanes 17
+  summary onePush: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account plainPush: source 42, baseline 3777, growth 0 of 65536, total 3777, continuation 3577 of 43008, demands 176, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 11, transfer_settlement lanes 44
+  summary plainPush: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account nest: source 8, baseline 110, growth 0 of 65536, total 110, continuation 94 of 8192, demands 1, direct_data lanes 1, liveness_index lanes 1, call_view lanes 1, transfer_settlement lanes 9
+  summary nest: π1 RA; res #Rose.0 fresh1, #Rose.0[*] π1
+  account gap1: source 23, baseline 2176, growth 0 of 65536, total 2176, continuation 2127 of 23552, demands 43, direct_data lanes 1, liveness_index lanes 2, call_view lanes 6, transfer_settlement lanes 25
+  summary gap1: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account gap2: source 25, baseline 2857, growth 0 of 65536, total 2857, continuation 2802 of 25600, demands 47, direct_data lanes 1, liveness_index lanes 2, call_view lanes 7, transfer_settlement lanes 27
+  summary gap2: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account gap6: source 33, baseline 5795, growth 0 of 65536, total 5795, continuation 5716 of 33792, demands 63, direct_data lanes 1, liveness_index lanes 2, call_view lanes 11, transfer_settlement lanes 35
+  summary gap6: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account gap6Apart: source 38, baseline 4953, growth 0 of 65536, total 4953, continuation 4858 of 38912, demands 155, direct_data lanes 1, liveness_index lanes 2, call_view lanes 12, transfer_settlement lanes 40
+  summary gap6Apart: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account incA: source 15, baseline 15430, growth 4117 of 65536, total 19547, continuation 15360 of 15360, demands 1304, walks 7, inference 6, deliveries 11, cell 69, label 2, set 177, shape 535, cond 161, use 8, class 12, memo 872, task 16, edge 52, path 844, region 2, inspection 1366, other 1, direct_data lanes 2, liveness_index lanes 4, call_view lanes 4, transfer_settlement lanes 34
+  summary incA: π1 R, π1#A.0 R, π1#A.0[*]#B.0 RW, π1#A.0[*]#B.0[*] R, π1#A.0[*]#B.0[*]#A.0 R, π1#A.0[*]#B.0[*]#A.0[*]#B.0 RW, π1#A.0[*]#B.0[*]⟲ R, π1#A.0[*]#B.0[*]⟲#A.0 R, π1#A.0[*]#B.0[*]⟲#A.0[*]#B.0 RW; res #A.0 fresh1, #A.0[*] {lost}, #A.0[*]#B.0 fresh2{lost}, #A.0[*]#B.0[*] {lost}, #A.0[*]#B.0[*]#A.0 fresh1{lost}; cert; xreq excl π1#A.0[*], excl π1#A.0[*]#B.0[*], excl π1#A.0[*]#B.0[*]#A.0, excl π1#A.0[*]#B.0[*]#A.0[*], excl π1#A.0[*]#B.0[*]#A.0[*]#B.0, excl π1#A.0[*]#B.0[*]⟲, excl π1#A.0[*]#B.0[*]⟲#A.0, excl π1#A.0[*]#B.0[*]⟲#A.0[*], excl π1#A.0[*]#B.0[*]⟲#A.0[*]#B.0
+  account incAs: source 26, baseline 26749, growth 72705 of 88000, total 99454, continuation 26624 of 26624, demands 6713, hold listings 33, walks 12, inference 10, deliveries 22, cell 715, label 18, set 1598, shape 8550, cond 2948, use 54, class 50, memo 28162, task 165, edge 1287, path 7247, region 18, inspection 21887, other 6, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incAs: π1 R, π1[*] R, π1[*]#A.0 R, π1[*]#A.0[*]#B.0 RW, π1[*]#A.0[*]#B.0[*] R, π1[*]#A.0[*]#B.0[*]#A.0 R, π1[*]#A.0[*]#B.0⟲ RW, π1[*]#A.0[*]#B.0⟲[*] R, π1[*]#A.0[*]#B.0⟲[*]#A.0 R; res [*] {lost}, [*]#A.0 = [*]#A.0[*]#B.0[*]#A.0, [*]#A.0 fresh4{lost}, [*]#A.0 fresh6 fresh6{lost}, [*]#A.0 fresh6{lost}, [*]#A.0[*] {lost}, [*]#A.0[*]#B.0 = [*]#A.0[*]#B.0[*]#A.0[*]#B.0, [*]#A.0[*]#B.0 fresh3 fresh3{lost}, [*]#A.0[*]#B.0 fresh3{lost}, [*]#A.0[*]#B.0 fresh5{lost}, [*]#A.0[*]#B.0[*] {lost}, [*]#A.0[*]#B.0[*]#A.0 fresh6 fresh6{lost}, [*]#A.0[*]#B.0[*]#A.0[*] {lost}, [*]#A.0[*]#B.0[*]#A.0[*]#B.0 fresh3 fresh3{lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*], excl π1[*]#A.0[*], excl π1[*]#A.0[*]#B.0, excl π1[*]#A.0[*]#B.0[*], excl π1[*]#A.0[*]#B.0[*]#A.0, excl π1[*]#A.0[*]#B.0[*]#A.0[*], excl π1[*]#A.0[*]#B.0⟲, excl π1[*]#A.0[*]#B.0⟲[*], excl π1[*]#A.0[*]#B.0⟲[*]#A.0, excl π1[*]#A.0[*]#B.0⟲[*]#A.0[*]
+  account incBs: source 35, baseline 36250, growth 74924 of 88000, total 111174, continuation 35840 of 35840, demands 6517, hold listings 30, walks 11, inference 9, deliveries 23, cell 772, label 25, set 2012, shape 7486, cond 3286, use 54, class 54, memo 27040, task 184, edge 967, path 9088, region 15, inspection 23931, other 10, direct_data lanes 2, liveness_index lanes 6, direct_demand_query lanes 2, call_view lanes 10, transfer_settlement lanes 76
+  summary incBs: π1 R, π1[*]#B.0 RW, π1[*]#B.0[*] R, π1[*]#B.0[*]#A.0 R, π1[*]#B.0[*]#A.0[*]#B.0 RW, π1[*]#B.0[*]#A.0[*]#B.0[*] R, π1[*]#B.0[*]#A.0⟲ R, π1[*]#B.0[*]#A.0⟲[*]#B.0 RW, π1[*]#B.0[*]#A.0⟲[*]#B.0[*] R; res [*] {lost}, [*]#B.0 fresh3 fresh4{lost}, [*]#B.0[*] {lost}, [*]#B.0[*]#A.0 fresh5 fresh6{lost}, fresh1 fresh2; cert; xreq excl π1[*], excl π1[*]#B.0[*], excl π1[*]#B.0[*]#A.0, excl π1[*]#B.0[*]#A.0[*], excl π1[*]#B.0[*]#A.0[*]#B.0, excl π1[*]#B.0[*]#A.0[*]#B.0[*], excl π1[*]#B.0[*]#A.0⟲, excl π1[*]#B.0[*]#A.0⟲[*], excl π1[*]#B.0[*]#A.0⟲[*]#B.0, excl π1[*]#B.0[*]#A.0⟲[*]#B.0[*]
+  account mutualShared: source 27, baseline 1749, growth 0 of 65536, total 1749, continuation 1679 of 27648, demands 39, direct_data lanes 1, liveness_index lanes 2, call_view lanes 7, transfer_settlement lanes 29
+  summary mutualShared: res #A.0 fresh1, #A.0[*] {lost}, #A.0[*]#B.0 fresh2{lost}, #A.0[*]#B.0[*] {lost}, #A.0[*]#B.0[*]#A.0 fresh1{lost}
+  account mutualApart: source 32, baseline 2262, growth 0 of 65536, total 2262, continuation 2176 of 32768, demands 59, direct_data lanes 1, liveness_index lanes 2, call_view lanes 8, transfer_settlement lanes 34
+  summary mutualApart: res #A.0 fresh1, #A.0[*] {lost}, #A.0[*]#B.0 fresh2{lost}, #A.0[*]#B.0[*] {lost}, #A.0[*]#B.0[*]#A.0 fresh1{lost}
+  block: 1408 bytes, hash 52d3df481c254956
+  demands 60: accepted 38 (fresh 16, call 0, param 22, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 22
+total 60: accepted 38 (fresh 16, call 0, param 22, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 22
+cause disjoint 15
+cause exclusive 7

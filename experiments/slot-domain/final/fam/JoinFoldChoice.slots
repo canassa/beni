@@ -1,0 +1,51 @@
+module JoinFoldChoice
+    22:28 List.push kids: accepted param
+    22:19 JoinFoldChoice.incList <expr>[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    22:19 JoinFoldChoice.incList <expr>[*]#0.0⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract incAll: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct incAll: source 20, total 1922, growth 0 of 65536, continuation 1922 of 20480, rounds 5, evaluations 6, validation 340, slots 6, arrivals 3, relations 30 (memo 0), deliveries 5, substitutions 207, positions 23, leaves 49, values 43, calls 12, demands 11, peak bytes 12960, v2 reads 0, walks { 254, 315, 333, 340, 340, 340 }
+    29:15 JoinFoldChoice.incAll s#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:15 JoinFoldChoice.incAll s#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:15 JoinFoldChoice.incAll s#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:26 JoinFoldChoice.incList rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:26 JoinFoldChoice.incList rest[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract incList: res ε fresh, [*]#0.0 fresh, [*]#0.0⟲ fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct incList: source 26, total 3335, growth 0 of 65536, continuation 3335 of 26624, rounds 5, evaluations 6, validation 665, slots 6, arrivals 3, relations 167 (memo 18), deliveries 5, substitutions 173, positions 33, leaves 138, values 47, calls 17, demands 11, peak bytes 26734, v2 reads 0, walks { 97, 595, 648, 665, 665, 665 }
+  contract same: res #0.0 fresh, #0.0[*]#0.0 π2#0.0, #0.0[*]⟲#0.0 π2#0.0[*]#0.0 π2#0.0[*]⟲#0.0; nondup ⇐ sel π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct same: source 22, total 146, growth 0 of 65536, continuation 146 of 22528, rounds 0, evaluations 1, validation 0, slots 6, arrivals 4, relations 1 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 4, values 7, calls 0, demands 0, peak bytes 6176, v2 reads 0, walks { 146 }
+    44:14 JoinFoldChoice.incAll <expr>#0.0: accepted call
+    44:14 JoinFoldChoice.incAll <expr>#0.0[*]#0.0: accepted fresh
+    44:14 JoinFoldChoice.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract sameArms: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct sameArms: source 15, total 205, growth 0 of 65536, continuation 205 of 15360, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 30, positions 3, leaves 8, values 7, calls 2, demands 1, peak bytes 13600, v2 reads 0, walks { 205 }
+  contract twoDepths: res #0.0 fresh, #0.0[*]#0.0 π1ε fresh, #0.0[*]⟲#0.0 π1ε π1[*]#0.0 π1[*]#0.0⟲; nondup no
+  slotacct twoDepths: source 18, total 135, growth 0 of 65536, continuation 135 of 18432, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 1 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 3, values 7, calls 0, demands 0, peak bytes 6420, v2 reads 0, walks { 135 }
+    54:5 JoinFoldChoice.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 JoinFoldChoice.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 JoinFoldChoice.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract twoDepthsShared: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct twoDepthsShared: source 15, total 171, growth 0 of 65536, continuation 171 of 15360, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 22, positions 3, leaves 8, values 6, calls 2, demands 1, peak bytes 13650, v2 reads 0, walks { 171 }
+  contract sharedOr: res #0.0 fresh, #0.0[*]#0.0 π2ε fresh, #0.0[*]⟲#0.0 π2ε π2[*]#0.0 π2[*]#0.0⟲; nondup no
+  slotacct sharedOr: source 25, total 169, growth 0 of 65536, continuation 169 of 25600, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 10, positions 3, leaves 7, values 7, calls 1, demands 0, peak bytes 13684, v2 reads 0, walks { 169 }
+    68:5 JoinFoldChoice.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 JoinFoldChoice.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 JoinFoldChoice.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract sharedArm: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct sharedArm: source 16, total 176, growth 0 of 65536, continuation 176 of 16384, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 22, positions 3, leaves 8, values 6, calls 2, demands 1, peak bytes 13658, v2 reads 0, walks { 176 }
+  contract depthOr: res #0.0 fresh, #0.0[*]#0.0 π2ε fresh, #0.0[*]⟲#0.0 π2ε π2[*]#0.0 π2[*]#0.0⟲; nondup ⇐ sel π2{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct depthOr: source 31, total 168, growth 0 of 65536, continuation 168 of 31744, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 1 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 5, values 11, calls 0, demands 0, peak bytes 6216, v2 reads 0, walks { 168 }
+    82:5 JoinFoldChoice.incAll <expr>#0.0: accepted call
+    82:5 JoinFoldChoice.incAll <expr>#0.0[*]#0.0: accepted call
+    82:5 JoinFoldChoice.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract depthArms: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct depthArms: source 16, total 203, growth 0 of 65536, continuation 203 of 16384, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 29, positions 3, leaves 8, values 6, calls 2, demands 1, peak bytes 13440, v2 reads 0, walks { 203 }
+  contract distinctOr: res #0.0 fresh, #0.0[*]#0.0 π2ε fresh, #0.0[*]⟲#0.0 π2[*]#0.0 π2[*]#0.0⟲ π3ε π3[*]#0.0 π3[*]#0.0⟲; nondup ⇐ sel π2{ε,[*]#0.0,[*]#0.0⟲} π3{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct distinctOr: source 41, total 228, growth 0 of 65536, continuation 228 of 41984, rounds 0, evaluations 1, validation 0, slots 9, arrivals 8, relations 0 (memo 0), deliveries 0, substitutions 0, positions 3, leaves 7, values 16, calls 0, demands 0, peak bytes 12790, v2 reads 0, walks { 228 }
+    97:5 JoinFoldChoice.incAll <expr>#0.0: accepted call
+    97:5 JoinFoldChoice.incAll <expr>#0.0[*]#0.0: accepted call
+    97:5 JoinFoldChoice.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract distinctArms: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct distinctArms: source 22, total 250, growth 0 of 65536, continuation 250 of 22528, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 43, positions 3, leaves 10, values 9, calls 2, demands 1, peak bytes 12794, v2 reads 0, walks { 250 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

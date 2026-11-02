@@ -1,0 +1,14 @@
+module KappaAtView
+  contract twoOf: res ε fresh, [*] π1ε; nondup no
+  slotacct twoOf: source 13, total 63, growth 0 of 65536, continuation 63 of 13312, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 2, calls 0, demands 0, peak bytes 6624, v2 reads 0, walks { 63 }
+  contract twoFresh: res ε fresh, [*] fresh; nondup yes
+  slotacct twoFresh: source 13, total 42, growth 0 of 65536, continuation 42 of 13312, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 3, values 6, calls 0, demands 0, peak bytes 3172, v2 reads 0, walks { 42 }
+    17:15 List.push a: rejected alias: rest holds it and is read at 17:42
+  contract sharedHead: res .0 fresh; nondup yes
+  slotacct sharedHead: source 31, total 167, growth 0 of 65536, continuation 167 of 31744, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 3 (memo 0), deliveries 0, substitutions 7, positions 5, leaves 8, values 14, calls 3, demands 1, peak bytes 13170, v2 reads 0, walks { 167 }
+    27:15 List.push a: accepted call
+  contract freshHead: res .0 fresh; nondup yes
+  slotacct freshHead: source 30, total 150, growth 0 of 65536, continuation 150 of 30720, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 1 (memo 0), deliveries 0, substitutions 6, positions 5, leaves 7, values 13, calls 3, demands 1, peak bytes 13068, v2 reads 0, walks { 150 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

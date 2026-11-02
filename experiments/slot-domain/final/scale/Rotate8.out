@@ -1,0 +1,14 @@
+module Rotate8
+  contract rotate: res ε π2ε π3ε π4ε π5ε π6ε π7ε π8ε π9ε; nondup ⇐ sel π2{ε} π3{ε} π4{ε} π5{ε} π6{ε} π7{ε} π8{ε} π9{ε}
+  slotacct rotate: source 63, total 2436, growth 0 of 65536, continuation 2436 of 64512, rounds 9, evaluations 10, validation 339, slots 9, arrivals 8, relations 2 (memo 0), deliveries 9, substitutions 132, positions 99, leaves 107, values 149, calls 30, demands 0, peak bytes 13638, v2 reads 0, walks { 111, 153, 184, 210, 236, 262, 288, 314, 339, 339 }
+  contract seed: res ε fresh; nondup yes
+  slotacct seed: source 15, total 104, growth 0 of 65536, continuation 104 of 15360, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 24, positions 1, leaves 9, values 11, calls 1, demands 0, peak bytes 6158, v2 reads 0, walks { 104 }
+    24:8 List.push <expr>: rejected shared: it writes a top-level value
+  contract dest: res ε shared; nondup no
+  slotacct dest: source 7, total 41, growth 0 of 65536, continuation 41 of 7168, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 4, positions 1, leaves 2, values 3, calls 1, demands 1, peak bytes 6144, v2 reads 0, walks { 41 }
+    28:11 List.push <expr>: accepted fresh
+  contract local: res ε fresh; nondup yes
+  slotacct local: source 21, total 112, growth 0 of 65536, continuation 112 of 21504, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 20, positions 3, leaves 10, values 13, calls 2, demands 1, peak bytes 13884, v2 reads 0, walks { 112 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,0 +1,18 @@
+file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/_core/_sanitize.mjs:40
+  throw new Error(`beni: a stale read of a list (${what}), which ${site} changed in place`);
+        ^
+
+Error: beni: a stale read of a list (read 0), which `List.push` in UnsafeDup (at byte 6338, a caller may be unchecked) changed in place
+    at stale (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/_core/_sanitize.mjs:40:9)
+    at Object.get (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/_core/_sanitize.mjs:45:22)
+    at List$unsafeGet (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/_core/List.mjs:163:15)
+    at UnsafeDup$showL (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/UnsafeDup.mjs:454:17)
+    at UnsafeDup$show (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/UnsafeDup.mjs:459:67)
+    at UnsafeDup$showTree (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/UnsafeDup.mjs:466:157)
+    at UnsafeDup$showTree (file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/UnsafeDup.mjs:466:45)
+    at file:///home/canassa/.cache/beni-agents/slot-exp/oracle/u-m3san/UnsafeDup.mjs:482:41
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:643:26
+
+Node.js v24.19.0
+rc 1

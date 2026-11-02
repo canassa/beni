@@ -1,0 +1,40 @@
+module WriteOneLevel
+    18:23 List.push ys: accepted param (⇐ sel π1{#1.0#1.1,#1.2#1.1,#1.2⟲#1.1})
+  contract f: res .0 π1#1.0#1.1 fresh, .1#1.0#1.1 π1#1.2⟲#1.1, .1#1.0⟲#1.1 π1#1.2⟲#1.1, .1#1.1 π1#1.2#1.1, .1#1.2#1.1 π1#1.2⟲#1.1, .1#1.2⟲#1.1 π1#1.2⟲#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.2#1.1,#1.2⟲#1.1}; writes π1#1.0#1.1; req ⇐ sel π1{#1.0#1.1,#1.2#1.1,#1.2⟲#1.1}
+  slotacct f: source 42, total 535, growth 0 of 65536, continuation 535 of 43008, rounds 0, evaluations 1, validation 0, slots 11, arrivals 7, relations 5 (memo 0), deliveries 0, substitutions 4, positions 8, leaves 8, values 17, calls 1, demands 1, peak bytes 13460, v2 reads 0, walks { 535 }
+    28:10 WriteOneLevel.f <expr>#1.0#1.1: accepted param
+  contract run: res .0 π1ε fresh, .1#1.1 fresh; nondup yes; writes π1ε; req yes
+  slotacct run: source 30, total 300, growth 0 of 65536, continuation 300 of 30720, rounds 0, evaluations 1, validation 0, slots 7, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 48, positions 2, leaves 4, values 13, calls 1, demands 1, peak bytes 13402, v2 reads 0, walks { 300 }
+    34:5 WriteOneLevel.f <expr>#1.0#1.1: accepted fresh
+  contract runFresh: res .0 fresh, .1#1.1 fresh; nondup yes
+  slotacct runFresh: source 32, total 275, growth 0 of 65536, continuation 275 of 32768, rounds 0, evaluations 1, validation 0, slots 6, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 48, positions 2, leaves 4, values 15, calls 1, demands 1, peak bytes 13164, v2 reads 0, walks { 275 }
+    41:18 List.push xs: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:19 WriteOneLevel.incAll2 l#1.0#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:19 WriteOneLevel.incAll2 l#1.0⟲#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:19 WriteOneLevel.incAll2 l#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:19 WriteOneLevel.incAll2 l#1.2#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:19 WriteOneLevel.incAll2 l#1.2⟲#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:34 WriteOneLevel.incAll2 r#1.0#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:34 WriteOneLevel.incAll2 r#1.0⟲#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:34 WriteOneLevel.incAll2 r#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:34 WriteOneLevel.incAll2 r#1.2#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+    42:34 WriteOneLevel.incAll2 r#1.2⟲#1.1: accepted param (⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1})
+  contract incAll2: res #1.0#1.1 π1#1.0#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1, #1.1 π1#1.1, #1.2#1.1 π1#1.2#1.1, #1.2⟲#1.1 π1#1.2⟲#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; writes π1#1.0#1.1 π1#1.0⟲#1.1 π1#1.1 π1#1.2#1.1 π1#1.2⟲#1.1; req ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}
+  slotacct incAll2: source 31, total 5855, growth 0 of 65536, continuation 5855 of 31744, rounds 5, evaluations 6, validation 1419, slots 10, arrivals 5, relations 335 (memo 54), deliveries 5, substitutions 193, positions 40, leaves 81, values 65, calls 18, demands 16, peak bytes 28512, v2 reads 0, walks { 172, 666, 910, 1269, 1419, 1419 }
+    49:9 WriteOneLevel.incAll2 <expr>#1.0#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    49:9 WriteOneLevel.incAll2 <expr>#1.0⟲#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    49:9 WriteOneLevel.incAll2 <expr>#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    49:9 WriteOneLevel.incAll2 <expr>#1.2#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    49:9 WriteOneLevel.incAll2 <expr>#1.2⟲#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract c1: res #1.0#1.1 π1ε, #1.0⟲#1.1 π1ε, #1.1 fresh; nondup no
+  slotacct c1: source 21, total 313, growth 0 of 65536, continuation 313 of 21504, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 67, positions 2, leaves 3, values 10, calls 1, demands 1, peak bytes 13196, v2 reads 0, walks { 313 }
+    53:9 WriteOneLevel.incAll2 <expr>#1.0#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:9 WriteOneLevel.incAll2 <expr>#1.0⟲#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:9 WriteOneLevel.incAll2 <expr>#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:9 WriteOneLevel.incAll2 <expr>#1.2#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:9 WriteOneLevel.incAll2 <expr>#1.2⟲#1.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract c2: res #1.0#1.1 π1ε, #1.1 π1ε; nondup no
+  slotacct c2: source 17, total 267, growth 0 of 65536, continuation 267 of 17408, rounds 0, evaluations 1, validation 0, slots 6, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 54, positions 2, leaves 2, values 7, calls 1, demands 1, peak bytes 13770, v2 reads 0, walks { 267 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,0 +1,50 @@
+module JoinedCallContexts
+    21:15 List.push xs: accepted param (⇐ sel π1{ε,[*]})
+    21:32 JoinedCallContexts.pushAll rest[*]: accepted param (⇐ sel π1{ε,[*]})
+  contract pushAll: res ε fresh, [*] π1[*]; nondup ⇐ sel π1{[*]}; writes π1[*]; req ⇐ sel π1{ε,[*]}
+  slotacct pushAll: source 31, total 1460, growth 0 of 65536, continuation 1460 of 31744, rounds 4, evaluations 5, validation 352, slots 4, arrivals 2, relations 31 (memo 0), deliveries 4, substitutions 79, positions 28, leaves 78, values 44, calls 14, demands 9, peak bytes 13338, v2 reads 0, walks { 111, 305, 340, 352, 352 }
+  contract ident: res ε π1ε, [*] π1[*]; nondup ⇐ sel π1{ε,[*]}
+  slotacct ident: source 13, total 40, growth 0 of 65536, continuation 40 of 13312, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 1, calls 0, demands 0, peak bytes 3172, v2 reads 0, walks { 40 }
+    32:16 JoinedCallContexts.pushAll <expr>[*]: accepted fresh
+    32:50 JoinedCallContexts.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract twoCalls: res .0 fresh, .0[*] fresh, .1 fresh, .1[*] π1ε; nondup no
+  slotacct twoCalls: source 33, total 269, growth 0 of 65536, continuation 269 of 33792, rounds 0, evaluations 1, validation 0, slots 5, arrivals 4, relations 5 (memo 0), deliveries 0, substitutions 36, positions 5, leaves 14, values 12, calls 4, demands 2, peak bytes 12572, v2 reads 0, walks { 269 }
+    37:5 JoinedCallContexts.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract joined: res ε fresh, [*] π2ε fresh; nondup no
+  slotacct joined: source 34, total 235, growth 0 of 65536, continuation 235 of 34816, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 1 (memo 0), deliveries 0, substitutions 40, positions 5, leaves 14, values 12, calls 3, demands 1, peak bytes 12856, v2 reads 0, walks { 235 }
+    47:5 JoinedCallContexts.pushAll <expr>[*]: accepted fresh
+  contract bothFresh: res ε fresh, [*] fresh; nondup yes
+  slotacct bothFresh: source 30, total 256, growth 0 of 65536, continuation 256 of 30720, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 3 (memo 0), deliveries 0, substitutions 37, positions 4, leaves 16, values 13, calls 3, demands 1, peak bytes 13782, v2 reads 0, walks { 256 }
+  contract sharedOf: res ε fresh, [*] π1ε; nondup no
+  slotacct sharedOf: source 13, total 54, growth 0 of 65536, continuation 54 of 13312, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 2, calls 0, demands 0, peak bytes 6624, v2 reads 0, walks { 54 }
+  unsupported freshOf: callee List.copy: result word not read by the slot evaluator
+  contract freshOf: res ⊥; nondup yes
+  slotacct freshOf: source 17, total 13, growth 0 of 65536, continuation 13 of 17408, rounds 0, evaluations 1, validation 0, slots 1, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 0, values 4, calls 0, demands 0, peak bytes 2896, v2 reads 0, walks { 13 }
+    64:18 JoinedCallContexts.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract sharedActual: res ε fresh, [*] π1ε; nondup no
+  slotacct sharedActual: source 17, total 115, growth 0 of 65536, continuation 115 of 17408, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 16, positions 4, leaves 8, values 4, calls 3, demands 1, peak bytes 12544, v2 reads 0, walks { 115 }
+  unsupported freshActual: callee JoinedCallContexts.freshOf: callee List.copy: result word not read by the slot evaluator
+  contract freshActual: res ⊥; nondup yes
+  slotacct freshActual: source 17, total 58, growth 0 of 65536, continuation 58 of 17408, rounds 0, evaluations 1, validation 0, slots 1, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 12, positions 3, leaves 4, values 4, calls 2, demands 1, peak bytes 6338, v2 reads 0, walks { 58 }
+    72:14 JoinedCallContexts.pushAll <expr>[*]: accepted param (⇐ sel π1{ε} π2{ε})
+  contract pairOf: res ε fresh, [*] π1ε π2ε; nondup ⇐ sel π1{ε} π2{ε}; writes π1ε π2ε; req ⇐ sel π1{ε} π2{ε}
+  slotacct pairOf: source 21, total 146, growth 0 of 65536, continuation 146 of 21504, rounds 0, evaluations 1, validation 0, slots 4, arrivals 3, relations 1 (memo 0), deliveries 0, substitutions 18, positions 4, leaves 7, values 5, calls 2, demands 1, peak bytes 7064, v2 reads 0, walks { 146 }
+    79:5 JoinedCallContexts.pairOf a: accepted fresh
+    79:5 JoinedCallContexts.pairOf b: accepted fresh
+  contract apartParams: res ε fresh, [*] fresh; nondup yes
+  slotacct apartParams: source 19, total 84, growth 0 of 65536, continuation 84 of 19456, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 11, positions 2, leaves 4, values 6, calls 1, demands 1, peak bytes 6352, v2 reads 0, walks { 84 }
+    83:16 JoinedCallContexts.pairOf x: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    83:16 JoinedCallContexts.pairOf x: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract sameParams: res ε fresh, [*] π1ε; nondup no
+  slotacct sameParams: source 14, total 93, growth 0 of 65536, continuation 93 of 14336, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 11, positions 2, leaves 3, values 2, calls 1, demands 1, peak bytes 6360, v2 reads 0, walks { 93 }
+  contract keep: res .0 π1ε, .1 π2ε; nondup ⇐ sel π1{ε} π2{ε}
+  slotacct keep: source 19, total 80, growth 0 of 65536, continuation 80 of 19456, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 2, values 3, calls 0, demands 0, peak bytes 6404, v2 reads 0, walks { 80 }
+    94:15 List.push a: rejected alias: b holds it and is read at 94:30
+  contract aliasedKeep: res .0 π1ε, .1 π1ε; nondup no
+  slotacct aliasedKeep: source 27, total 162, growth 0 of 65536, continuation 162 of 27648, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 3 (memo 0), deliveries 0, substitutions 10, positions 5, leaves 4, values 7, calls 2, demands 1, peak bytes 13336, v2 reads 0, walks { 162 }
+    101:15 List.push a: accepted param (⇐ sel π1{ε} π2{ε})
+  contract distinctKeep: res .0 π1ε, .1 π2ε; nondup ⇐ sel π1{ε} π2{ε}; writes π1ε; req ⇐ sel π1{ε} π2{ε}
+  slotacct distinctKeep: source 31, total 178, growth 0 of 65536, continuation 178 of 31744, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 10, positions 6, leaves 5, values 8, calls 2, demands 1, peak bytes 13308, v2 reads 0, walks { 178 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

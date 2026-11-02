@@ -1,0 +1,31 @@
+import Lib exposing (NColor, Red, Black, TreeL, NodeL, LeafL)
+
+
+rootLen : TreeL → Int
+rootLen t =
+    case t of
+        NodeL _ _ v _ _ →
+            List.length v
+
+        LeafL →
+            0
+
+
+pub usefulImported : Int → List Int
+usefulImported n =
+    case Lib.removeMinL (NodeL Black 2 [ n ] (NodeL Red 1 [ n + 1 ] LeafL LeafL) (NodeL Red 3 [ n + 2 ] LeafL LeafL)) of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+pub keepOldImported : TreeL → List Int × Int
+keepOldImported t =
+    case Lib.removeMinL t of
+        NodeL _ _ v _ _ →
+            ( List.push v 9, rootLen t )
+
+        LeafL →
+            ( [], rootLen t )

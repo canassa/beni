@@ -17,6 +17,7 @@ const Message = @import("Message.zig");
 const Report = @import("Report.zig");
 const Block = @import("Block.zig");
 const Hoists = @import("Hoists.zig");
+const Slots = @import("Slots.zig");
 
 pub const Names = Message.Names;
 pub const ModuleReport = Report.Module;
@@ -63,6 +64,30 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         const mod = try gpa.create(Groups.Module);
         defer gpa.destroy(mod);
         Counters.reset();
+        // EXPERIMENT (`--ownership-slots`): the slot evaluator replaces v2's
+        // local analysis for this module; core keeps v2 unless bit 8 is set.
+        if (mi.slots != 0 and (!mi.isCore(mi.module) or mi.slots & 8 != 0)) {
+            // Bit 16: v2 checks the module first, in tables of its own, so the
+            // reader count shows the instrument fires on v2's path.
+            const v2_reads: ?u64 = if (mi.slots & 16 != 0) blk: {
+                const probe = @import("ReaderProbe.zig");
+                const before = probe.calls.load(.monotonic);
+                const other = try gpa.create(Groups.Module);
+                defer gpa.destroy(other);
+                try Groups.checkModule(mi, other, false);
+                other.deinit();
+                break :blk probe.calls.load(.monotonic) - before;
+            } else null;
+            try Groups.initModule(mi, mod);
+            defer mod.deinit();
+            var others: std.ArrayList([]const u8) = .empty;
+            var channel: Hoists.Builder = .{};
+            if (v2_reads) |n| try others.append(arena, try std.fmt.allocPrint(arena, "v2 on this module first: value-reader calls {d}", .{n}));
+            try Slots.run(gpa, arena, mi, mod, in.names, &channel, &others);
+            if (in.channels) |c| c[at] = try channel.finish(arena, gpa, false) else channel.writes.deinit(arena);
+            r.* = .{ .module = mi.module, .lines = &.{}, .others = others.items, .limits = 0, .block = null, .word_errors = &.{} };
+            continue;
+        }
         try Groups.checkModule(mi, mod, in.format_summaries);
         defer mod.deinit();
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;

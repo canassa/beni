@@ -1,0 +1,83 @@
+module FoldRelabelCall
+  23:19 List.push l: accepted param
+  23:35 FoldRelabelCall.incKids ks[*]#Rose.1⟨Rose⟩[*]#Rose.0: accepted param
+  23:35 FoldRelabelCall.incKids ks[*]#Rose.1[*]#Rose.0: accepted param
+  23:35 FoldRelabelCall.incKids ks[*]#Rose.0: accepted param
+  30:15 FoldRelabelCall.incAll k#Rose.1[*]⟨Rose⟩#Rose.0: accepted param
+  30:15 FoldRelabelCall.incAll k#Rose.1[*]#Rose.0: accepted param
+  30:15 FoldRelabelCall.incAll k#Rose.0: accepted param
+  30:26 FoldRelabelCall.incKids rest[*]#Rose.1⟨Rose⟩[*]#Rose.0: accepted param
+  30:26 FoldRelabelCall.incKids rest[*]#Rose.1[*]#Rose.0: accepted param
+  30:26 FoldRelabelCall.incKids rest[*]#Rose.0: accepted param
+  58:12 FoldRelabelCall.incAll <call FoldRelabelCall.shared>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  58:12 FoldRelabelCall.incAll <call FoldRelabelCall.shared>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  58:12 FoldRelabelCall.incAll <call FoldRelabelCall.shared>#Rose.0: accepted fresh
+  62:17 FoldRelabelCall.incAll <call FoldRelabelCall.apart>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  62:17 FoldRelabelCall.incAll <call FoldRelabelCall.apart>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  62:17 FoldRelabelCall.incAll <call FoldRelabelCall.apart>#Rose.0: accepted fresh
+  66:14 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  66:14 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  66:14 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  70:19 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  70:19 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  70:19 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  74:13 FoldRelabelCall.incAll <call FoldRelabelCall.rewrap>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  74:13 FoldRelabelCall.incAll <call FoldRelabelCall.rewrap>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  74:13 FoldRelabelCall.incAll <call FoldRelabelCall.rewrap>#Rose.0: accepted fresh
+  78:18 FoldRelabelCall.incAll <call FoldRelabelCall.rewrap>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  78:18 FoldRelabelCall.incAll <call FoldRelabelCall.rewrap>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  78:18 FoldRelabelCall.incAll <call FoldRelabelCall.rewrap>#Rose.0: accepted fresh
+  82:12 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  82:12 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  82:12 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  86:17 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  86:17 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  86:17 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  90:21 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: accepted fresh
+  90:21 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: accepted fresh
+  90:21 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  94:19 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: accepted fresh
+  94:19 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: accepted fresh
+  94:19 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  100:5 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it
+  100:5 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.1[*]#Rose.0: accepted fresh
+  100:5 FoldRelabelCall.incAll <call FoldRelabelCall.ident>#Rose.0: accepted fresh
+  account incAll: source 20, baseline 20716, growth 8422 of 65536, total 29138, continuation 20480 of 20480, demands 1805, walks 9, inference 6, deliveries 11, cell 120, label 8, set 598, shape 876, cond 560, use 18, class 22, memo 1985, task 42, edge 46, path 980, region 4, inspection 3159, other 4, direct_data lanes 2, liveness_index lanes 6, direct_demand_query lanes 2, call_view lanes 6, transfer_settlement lanes 44
+  crossing: reads 0, redone 0, base moves 12
+  summary incAll: π1 R, π1#Rose.0 RAW, π1#Rose.0[*] A, π1#Rose.1 R, π1#Rose.1[*] R, π1#Rose.1[*]#Rose.0 RAW, π1#Rose.1[*]#Rose.0[*] RA, π1#Rose.1[*]#Rose.1 R, π1#Rose.1[*]⟲ R, π1#Rose.1[*]⟲#Rose.0 RAW, π1#Rose.1[*]⟲#Rose.0[*] RA, π1#Rose.1[*]⟲#Rose.1 R; res #Rose.0 π1#Rose.0, #Rose.0[*] π1#Rose.0[*]{excl π1#Rose.0[*]}, #Rose.1 fresh1{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 π1#Rose.1[*]#Rose.0 π1#Rose.1[*]⟲#Rose.0{lost}, #Rose.1[*]#Rose.0[*] π1#Rose.1[*]#Rose.0[*] π1#Rose.1[*]⟲#Rose.0[*]{lost}, #Rose.1[*]#Rose.1 fresh1{lost}; cert; xreq excl π1#Rose.1[*], excl π1#Rose.1[*]#Rose.1, excl π1#Rose.1[*]⟲, excl π1#Rose.1[*]⟲#Rose.1
+  account incKids: source 26, baseline 26749, growth 29387 of 65536, total 56136, continuation 26624 of 26624, demands 4955, hold listings 27, walks 10, inference 6, deliveries 20, cell 350, label 12, set 2050, shape 2860, cond 1864, use 36, class 31, memo 6883, task 111, edge 275, path 4480, region 12, inspection 10419, other 4, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incKids: π1 R, π1[*] R, π1[*]#Rose.0 RAW, π1[*]#Rose.0[*] RA, π1[*]#Rose.1 R, π1[*]#Rose.1[*] R, π1[*]#Rose.1[*]#Rose.0 RAW, π1[*]#Rose.1[*]#Rose.0[*] RA, π1[*]#Rose.1⟲ R, π1[*]#Rose.1⟲[*] R, π1[*]#Rose.1⟲[*]#Rose.0 RAW, π1[*]#Rose.1⟲[*]#Rose.0[*] RA; res [*]#Rose.0 π1[*]#Rose.0{lost}, [*]#Rose.0[*] π1[*]#Rose.0[*]{lost}, [*]#Rose.1 fresh3 fresh4{lost}, [*]#Rose.1[*] {lost}, [*]#Rose.1[*]#Rose.0 π1[*]#Rose.1[*]#Rose.0 π1[*]#Rose.1⟲[*]#Rose.0{lost}, [*]#Rose.1[*]#Rose.0[*] π1[*]#Rose.1[*]#Rose.0[*] π1[*]#Rose.1⟲[*]#Rose.0[*]{lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*], excl π1[*]#Rose.1, excl π1[*]#Rose.1[*], excl π1[*]#Rose.1⟲, excl π1[*]#Rose.1⟲[*]
+  account ident: source 5, baseline 28, growth 0 of 65536, total 28, continuation 23 of 5120, demands 1, direct_data lanes 1, liveness_index lanes 1, transfer_settlement lanes 6
+  summary ident: π1 RA; res π1
+  account rewrap: source 15, baseline 168, growth 0 of 65536, total 168, continuation 101 of 15360, demands 1, direct_data lanes 1, liveness_index lanes 3, call_view lanes 1, transfer_settlement lanes 17
+  summary rewrap: π1 R, π1#Rose.0 RA, π1#Rose.1 RA; res #Rose.0 π1#Rose.0, #Rose.1 π1#Rose.1
+  account shared: source 24, baseline 1773, growth 0 of 65536, total 1773, continuation 1682 of 24576, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 4, transfer_settlement lanes 26
+  summary shared: res #Rose.0 fresh1, #Rose.1 fresh2, #Rose.1[*] {shared}, #Rose.1[*]#Rose.0 fresh3 fresh5 ~fresh5{lost}, #Rose.1[*]#Rose.1 fresh4 fresh6 fresh7
+  account apart: source 22, baseline 1633, growth 0 of 65536, total 1633, continuation 1543 of 22528, demands 1, direct_data lanes 1, call_view lanes 4, transfer_settlement lanes 23
+  summary apart: res #Rose.0 fresh1, #Rose.1 fresh2, #Rose.1[*]#Rose.0 fresh3 fresh5 fresh7, #Rose.1[*]#Rose.1 fresh4 fresh6 fresh8
+  account direct: source 9, baseline 2405, growth 0 of 65536, total 2405, continuation 2392 of 9216, demands 94, direct_data lanes 1, call_view lanes 2, transfer_settlement lanes 10
+  summary direct: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7{shared}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account directApart: source 9, baseline 2248, growth 0 of 65536, total 2248, continuation 2235 of 9216, demands 103, direct_data lanes 1, call_view lanes 2, transfer_settlement lanes 10
+  summary directApart: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4 fresh5{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7 ~fresh8{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account viaIdent: source 11, baseline 2426, growth 0 of 65536, total 2426, continuation 2412 of 11264, demands 94, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 12
+  summary viaIdent: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7{shared}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account viaIdentApart: source 11, baseline 2281, growth 0 of 65536, total 2281, continuation 2267 of 11264, demands 103, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 12
+  summary viaIdentApart: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4 fresh5{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7 ~fresh8{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account viaWrap: source 11, baseline 2435, growth 0 of 65536, total 2435, continuation 2414 of 11264, demands 62, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 12
+  summary viaWrap: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7{shared}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account viaWrapApart: source 11, baseline 2264, growth 0 of 65536, total 2264, continuation 2243 of 11264, demands 66, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 12
+  summary viaWrapApart: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4 fresh5{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7 ~fresh8{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account viaTwo: source 13, baseline 2448, growth 0 of 65536, total 2448, continuation 2426 of 13312, demands 62, direct_data lanes 1, call_view lanes 4, transfer_settlement lanes 14
+  summary viaTwo: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7{shared}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account viaTwoApart: source 13, baseline 2274, growth 0 of 65536, total 2274, continuation 2252 of 13312, demands 66, direct_data lanes 1, call_view lanes 4, transfer_settlement lanes 14
+  summary viaTwoApart: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4 fresh5{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7 ~fresh8{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account literalViaIdent: source 26, baseline 2527, growth 0 of 65536, total 2527, continuation 2437 of 26624, demands 78, direct_data lanes 1, call_view lanes 6, transfer_settlement lanes 27
+  summary literalViaIdent: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4 fresh5{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7 ~fresh8{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account literalViaTwo: source 28, baseline 2636, growth 0 of 65536, total 2636, continuation 2537 of 28672, demands 80, direct_data lanes 1, call_view lanes 7, transfer_settlement lanes 29
+  summary literalViaTwo: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh3 fresh4 fresh5{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7 ~fresh8{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  account literalSharedViaTwo: source 30, baseline 2449, growth 0 of 65536, total 2449, continuation 2349 of 30720, demands 66, direct_data lanes 1, liveness_index lanes 2, call_view lanes 7, transfer_settlement lanes 32
+  summary literalSharedViaTwo: res #Rose.0 fresh1, #Rose.1 fresh2{lost}, #Rose.1[*] {lost}, #Rose.1[*]#Rose.0 fresh4 ~fresh3{lost}, #Rose.1[*]#Rose.0[*] ~fresh3 ~fresh4 ~fresh5 ~fresh6 ~fresh7{lost}, #Rose.1[*]#Rose.1 fresh2{lost}
+  block: 4804 bytes, hash 12257a7093566778
+  demands 43: accepted 26 (fresh 16, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 17
+total 43: accepted 26 (fresh 16, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 17
+cause disjoint 17

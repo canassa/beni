@@ -1,0 +1,50 @@
+module ViewFoldRoute
+    22:28 List.push kids: accepted param
+    22:19 ViewFoldRoute.incList <expr>[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    22:19 ViewFoldRoute.incList <expr>[*]#0.0⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract incAll: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct incAll: source 20, total 1922, growth 0 of 65536, continuation 1922 of 20480, rounds 5, evaluations 6, validation 340, slots 6, arrivals 3, relations 30 (memo 0), deliveries 5, substitutions 207, positions 23, leaves 49, values 43, calls 12, demands 11, peak bytes 12960, v2 reads 0, walks { 254, 315, 333, 340, 340, 340 }
+    29:15 ViewFoldRoute.incAll s#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:15 ViewFoldRoute.incAll s#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:15 ViewFoldRoute.incAll s#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:26 ViewFoldRoute.incList rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:26 ViewFoldRoute.incList rest[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract incList: res ε fresh, [*]#0.0 fresh, [*]#0.0⟲ fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct incList: source 26, total 3335, growth 0 of 65536, continuation 3335 of 26624, rounds 5, evaluations 6, validation 665, slots 6, arrivals 3, relations 167 (memo 18), deliveries 5, substitutions 173, positions 33, leaves 138, values 47, calls 17, demands 11, peak bytes 26734, v2 reads 0, walks { 97, 595, 648, 665, 665, 665 }
+  contract ident: res #0.0 π1#0.0, #0.0[*]#0.0 π1#0.0[*]#0.0, #0.0[*]⟲#0.0 π1#0.0[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct ident: source 5, total 63, growth 0 of 65536, continuation 63 of 5120, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 1, calls 0, demands 0, peak bytes 6394, v2 reads 0, walks { 63 }
+  contract deep: res #0.0 fresh, #0.0[*]#0.0 π1ε, #0.0[*]⟲#0.0 π1[*]#0.0 π1[*]#0.0⟲; nondup ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct deep: source 12, total 84, growth 0 of 65536, continuation 84 of 12288, rounds 0, evaluations 1, validation 0, slots 6, arrivals 4, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 4, calls 0, demands 0, peak bytes 6390, v2 reads 0, walks { 84 }
+  contract deeper: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 π1ε π1[*]#0.0 π1[*]#0.0⟲; nondup ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct deeper: source 15, total 89, growth 0 of 65536, continuation 89 of 15360, rounds 0, evaluations 1, validation 0, slots 6, arrivals 5, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 3, values 6, calls 0, demands 0, peak bytes 5950, v2 reads 0, walks { 89 }
+    51:15 ViewFoldRoute.incAll <expr>#0.0: accepted call (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    51:15 ViewFoldRoute.incAll <expr>#0.0[*]#0.0: rejected alias: xs holds it and is read at 51:35
+    51:15 ViewFoldRoute.incAll <expr>#0.0[*]⟲#0.0: rejected alias: xs holds it and is read at 51:35
+  contract viewRead: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh, .1 π1ε, .1[*]#0.0 π1[*]#0.0, .1[*]#0.0⟲ π1[*]#0.0⟲; nondup ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct viewRead: source 31, total 532, growth 0 of 65536, continuation 532 of 31744, rounds 0, evaluations 1, validation 0, slots 9, arrivals 6, relations 14 (memo 0), deliveries 0, substitutions 19, positions 5, leaves 14, values 10, calls 2, demands 1, peak bytes 13572, v2 reads 0, walks { 532 }
+    61:15 ViewFoldRoute.incAll <expr>#0.0: accepted call (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    61:15 ViewFoldRoute.incAll <expr>#0.0[*]#0.0: rejected alias: xs holds it and is read at 61:43
+    61:15 ViewFoldRoute.incAll <expr>#0.0[*]⟲#0.0: rejected alias: xs holds it and is read at 61:43
+  contract viewIdent: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh, .1 π1ε, .1[*]#0.0 π1[*]#0.0, .1[*]#0.0⟲ π1[*]#0.0⟲; nondup ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct viewIdent: source 33, total 536, growth 0 of 65536, continuation 536 of 33792, rounds 0, evaluations 1, validation 0, slots 9, arrivals 6, relations 20 (memo 0), deliveries 0, substitutions 28, positions 6, leaves 17, values 11, calls 3, demands 1, peak bytes 25686, v2 reads 0, walks { 536 }
+    71:13 ViewFoldRoute.incAll <expr>#0.0: accepted call (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    71:13 ViewFoldRoute.incAll <expr>#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    71:13 ViewFoldRoute.incAll <expr>#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract viewDead: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1ε π1[*]#0.0 π1[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct viewDead: source 23, total 275, growth 0 of 65536, continuation 275 of 23552, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 6 (memo 0), deliveries 0, substitutions 19, positions 5, leaves 11, values 8, calls 2, demands 1, peak bytes 13360, v2 reads 0, walks { 275 }
+  unsupported copyRead: callee List.copy: result word not read by the slot evaluator
+  contract copyRead: res ⊥; nondup yes
+  slotacct copyRead: source 33, total 142, growth 0 of 65536, continuation 142 of 33792, rounds 0, evaluations 1, validation 0, slots 3, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 19, positions 5, leaves 6, values 10, calls 2, demands 1, peak bytes 6072, v2 reads 0, walks { 142 }
+    91:15 ViewFoldRoute.incAll <expr>#0.0: accepted call
+    91:15 ViewFoldRoute.incAll <expr>#0.0[*]#0.0: accepted fresh
+    91:15 ViewFoldRoute.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract freshRead: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh, .1 π1ε, .1[*]#0.0 π1[*]#0.0, .1[*]#0.0⟲ π1[*]#0.0⟲; nondup ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct freshRead: source 36, total 489, growth 0 of 65536, continuation 489 of 36864, rounds 0, evaluations 1, validation 0, slots 9, arrivals 6, relations 17 (memo 0), deliveries 0, substitutions 35, positions 6, leaves 16, values 14, calls 3, demands 1, peak bytes 25572, v2 reads 0, walks { 489 }
+    98:17 ViewFoldRoute.incAll <expr>#0.0: accepted call
+    98:17 ViewFoldRoute.incAll <expr>#0.0[*]#0.0: accepted call
+    98:17 ViewFoldRoute.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract freshDeeper: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct freshDeeper: source 12, total 190, growth 0 of 65536, continuation 190 of 12288, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 27, positions 3, leaves 8, values 6, calls 2, demands 1, peak bytes 12766, v2 reads 0, walks { 190 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

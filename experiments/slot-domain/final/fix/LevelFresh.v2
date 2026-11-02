@@ -1,0 +1,18 @@
+module LevelFresh
+  46:23 List.push xs: accepted fresh
+  56:23 List.push xs: rejected element: l#Node.0#Node.1 holds it and is read at 56:15 (approx)
+  account build: source 31, baseline 10168, growth 0 of 65536, total 10168, continuation 10077 of 31744, demands 4, walks 4, inference 4, deliveries 6, direct_data lanes 2, liveness_index lanes 8, call_view lanes 12, transfer_settlement lanes 68
+  crossing: reads 0, redone 0, base moves 0
+  summary build: res #Node.0#Node.1 fresh2{lost}, #Node.1 fresh1, #Node.2#Node.1 fresh3{lost}; cert
+  account dup: source 33, baseline 5876, growth 0 of 65536, total 5876, continuation 5724 of 33792, demands 3, walks 3, inference 3, deliveries 2, direct_data lanes 2, liveness_index lanes 10, call_view lanes 10, transfer_settlement lanes 74
+  summary dup: res #Node.0#Node.1 fresh1 fresh2{lost}, #Node.1 fresh1 fresh2{lost}; cert
+  account size: source 29, baseline 976, growth 0 of 65536, total 976, continuation 788 of 29696, demands 2, walks 2, inference 1, deliveries 5, direct_data lanes 2, liveness_index lanes 8, call_view lanes 10, transfer_settlement lanes 64
+  summary size: π1 R, π1#Node.0 R, π1#Node.0#Node.1 R, π1#Node.0⟲ R, π1#Node.0⟲#Node.1 R, π1#Node.1 R, π1#Node.2 R, π1#Node.2#Node.1 R, π1#Node.2⟲ R, π1#Node.2⟲#Node.1 R; cert
+  account pushRoot: source 34, baseline 1247, growth 0 of 65536, total 1247, continuation 1113 of 34816, demands 35, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 37
+  summary pushRoot: res .0#Node.0#Node.1 fresh1{lost}, .0#Node.1 fresh2, .0#Node.2#Node.1 fresh3{lost}
+  account pushDup: source 34, baseline 1543, growth 0 of 65536, total 1543, continuation 1411 of 34816, demands 311, hold listings 2, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 4, transfer_settlement lanes 37
+  summary pushDup: res .0#Node.0#Node.1 fresh1 fresh2{lost}, .0#Node.1 fresh1 fresh2{lost}
+  block: 1772 bytes, hash ef3b7c4f40c67a7e
+  demands 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause element 1

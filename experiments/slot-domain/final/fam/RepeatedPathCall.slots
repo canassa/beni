@@ -1,0 +1,37 @@
+module RepeatedPathCall
+  contract pair: res .0 π1ε, .1.0 π1ε, .1.1 π2ε; nondup no
+  slotacct pair: source 25, total 113, growth 0 of 65536, continuation 113 of 25600, rounds 0, evaluations 1, validation 0, slots 5, arrivals 3, relations 1 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 2, values 4, calls 0, demands 0, peak bytes 6364, v2 reads 0, walks { 113 }
+    20:13 List.push a: accepted param
+  contract writeFirst: res ε π1.0; nondup yes; writes π1.0; req yes
+  slotacct writeFirst: source 22, total 89, growth 0 of 65536, continuation 89 of 22528, rounds 0, evaluations 1, validation 0, slots 3, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 4, positions 4, leaves 2, values 5, calls 1, demands 1, peak bytes 6880, v2 reads 0, walks { 89 }
+    27:15 RepeatedPathCall.writeFirst inner.0: rejected alias: first holds it and is read at 27:33
+  contract refused: res .0 π1ε, .1 π1ε; nondup no
+  slotacct refused: source 30, total 149, growth 0 of 65536, continuation 149 of 30720, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 9, positions 6, leaves 5, values 7, calls 2, demands 1, peak bytes 13272, v2 reads 0, walks { 149 }
+    34:15 List.push a: rejected alias: first holds it and is read at 34:30
+  contract matchedWhole: res .0 π1ε, .1 π1ε; nondup no
+  slotacct matchedWhole: source 33, total 167, growth 0 of 65536, continuation 167 of 33792, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 10, positions 8, leaves 5, values 10, calls 2, demands 1, peak bytes 13292, v2 reads 0, walks { 167 }
+  unsupported copied: callee List.copy: result word not read by the slot evaluator
+  contract copied: res ⊥; nondup yes
+  slotacct copied: source 39, total 76, growth 0 of 65536, continuation 76 of 39936, rounds 0, evaluations 1, validation 0, slots 2, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 6, positions 7, leaves 2, values 11, calls 1, demands 0, peak bytes 6392, v2 reads 0, walks { 76 }
+    50:24 RepeatedPathCall.writeFirst inner.0: accepted param
+    50:13 List.push <expr>: accepted param
+  contract readBefore: res ε π1ε; nondup yes; writes π1ε; req yes
+  slotacct readBefore: source 32, total 191, growth 0 of 65536, continuation 191 of 32768, rounds 0, evaluations 1, validation 0, slots 3, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 13, positions 7, leaves 5, values 8, calls 4, demands 2, peak bytes 13640, v2 reads 0, walks { 191 }
+    59:23 RepeatedPathCall.writeFirst inner.0: accepted param (⇐ sel π1{ε} π2{ε})
+  contract otherRead: res .0 π1ε, .1 π2ε; nondup no; writes π1ε; req ⇐ sel π1{ε} π2{ε}
+  slotacct otherRead: source 36, total 172, growth 0 of 65536, continuation 172 of 36864, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 9, positions 8, leaves 5, values 9, calls 2, demands 1, peak bytes 13612, v2 reads 0, walks { 172 }
+    66:15 List.push xs: accepted param (⇐ sel π1{ε,[*]})
+    66:32 RepeatedPathCall.pushAll rest[*]: accepted param (⇐ sel π1{ε,[*]})
+  contract pushAll: res ε fresh, [*] π1[*]; nondup ⇐ sel π1{[*]}; writes π1[*]; req ⇐ sel π1{ε,[*]}
+  slotacct pushAll: source 31, total 1457, growth 0 of 65536, continuation 1457 of 31744, rounds 4, evaluations 5, validation 352, slots 4, arrivals 2, relations 31 (memo 0), deliveries 4, substitutions 79, positions 28, leaves 78, values 44, calls 14, demands 9, peak bytes 13338, v2 reads 0, walks { 108, 305, 340, 352, 352 }
+  contract both: res ε fresh, [*] π1ε π2ε; nondup ⇐ sel π1{ε} π2{ε}
+  slotacct both: source 17, total 71, growth 0 of 65536, continuation 71 of 17408, rounds 0, evaluations 1, validation 0, slots 4, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 3, values 3, calls 0, demands 0, peak bytes 6008, v2 reads 0, walks { 71 }
+    77:14 RepeatedPathCall.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract oneTwice: res ε fresh, [*] π1ε; nondup no
+  slotacct oneTwice: source 16, total 109, growth 0 of 65536, continuation 109 of 16384, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 14, positions 3, leaves 6, values 3, calls 2, demands 1, peak bytes 6372, v2 reads 0, walks { 109 }
+    81:16 RepeatedPathCall.pushAll <expr>[*]: accepted param (⇐ sel π1{ε} π2{ε})
+  contract twoLists: res ε fresh, [*] π1ε π2ε; nondup ⇐ sel π1{ε} π2{ε}; writes π1ε π2ε; req ⇐ sel π1{ε} π2{ε}
+  slotacct twoLists: source 20, total 134, growth 0 of 65536, continuation 134 of 20480, rounds 0, evaluations 1, validation 0, slots 4, arrivals 3, relations 1 (memo 0), deliveries 0, substitutions 14, positions 4, leaves 7, values 4, calls 2, demands 1, peak bytes 6412, v2 reads 0, walks { 134 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

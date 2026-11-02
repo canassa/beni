@@ -1,0 +1,40 @@
+module ChoiceArmsParams
+    14:17 List.push a: accepted param (⇐ sel π1{.0,.1})
+  contract t2: res .0 π1.0, .1 π1.1; nondup ⇐ sel π1{.0,.1}; writes π1.0; req ⇐ sel π1{.0,.1}
+  slotacct t2: source 24, total 155, growth 0 of 65536, continuation 155 of 24576, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 4, positions 4, leaves 3, values 6, calls 1, demands 1, peak bytes 6740, v2 reads 0, walks { 155 }
+    18:17 List.push a: accepted param (⇐ sel π1{.0,.1.0,.1.1})
+  contract t3: res .0 π1.0, .1.0 π1.1.0, .1.1 π1.1.1; nondup ⇐ sel π1{.0,.1.0,.1.1}; writes π1.0; req ⇐ sel π1{.0,.1.0,.1.1}
+  slotacct t3: source 32, total 203, growth 0 of 65536, continuation 203 of 32768, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 4, positions 4, leaves 3, values 6, calls 1, demands 1, peak bytes 6740, v2 reads 0, walks { 203 }
+    23:5 ChoiceArmsParams.t2 <expr>.0: accepted param (⇐ sel π2{ε} π3{ε})
+  contract swap: res .0 π2ε π3ε, .1 π2ε π3ε; nondup ⇐ sel π2{ε} π3{ε}; writes π2ε π3ε; req ⇐ sel π2{ε} π3{ε}
+  slotacct swap: source 34, total 254, growth 0 of 65536, continuation 254 of 34816, rounds 0, evaluations 1, validation 0, slots 4, arrivals 4, relations 4 (memo 0), deliveries 0, substitutions 39, positions 4, leaves 5, values 7, calls 1, demands 1, peak bytes 6648, v2 reads 0, walks { 254 }
+    33:5 ChoiceArmsParams.t2 <expr>.0: accepted param (⇐ sel π2{ε})
+  contract same: res .0 π2ε fresh, .1 π2ε fresh; nondup ⇐ sel π2{ε}; writes π2ε; req ⇐ sel π2{ε}
+  slotacct same: source 30, total 204, growth 0 of 65536, continuation 204 of 30720, rounds 0, evaluations 1, validation 0, slots 3, arrivals 4, relations 2 (memo 0), deliveries 0, substitutions 39, positions 3, leaves 5, values 8, calls 1, demands 1, peak bytes 6384, v2 reads 0, walks { 204 }
+    43:5 ChoiceArmsParams.t2 <expr>.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract both: res .0 π2ε fresh, .1 π2ε fresh; nondup no
+  slotacct both: source 30, total 191, growth 0 of 65536, continuation 191 of 30720, rounds 0, evaluations 1, validation 0, slots 3, arrivals 4, relations 2 (memo 0), deliveries 0, substitutions 39, positions 3, leaves 4, values 8, calls 1, demands 1, peak bytes 6384, v2 reads 0, walks { 191 }
+    53:5 ChoiceArmsParams.t3 <expr>.0: accepted param (⇐ sel π2{ε})
+  contract nestp: res .0 π2ε fresh, .1.0 π2ε fresh, .1.1 fresh; nondup ⇐ sel π2{ε}; writes π2ε; req ⇐ sel π2{ε}
+  slotacct nestp: source 38, total 294, growth 0 of 65536, continuation 294 of 38912, rounds 0, evaluations 1, validation 0, slots 4, arrivals 5, relations 2 (memo 0), deliveries 0, substitutions 68, positions 3, leaves 7, values 12, calls 1, demands 1, peak bytes 13748, v2 reads 0, walks { 294 }
+    62:26 List.push a: accepted param (⇐ sel π1{.0.0,.0.1,.1.0,.1.1})
+  contract w2: res .0.0 π1.0.0, .0.1 π1.0.1, .1.0 π1.1.0, .1.1 π1.1.1; nondup ⇐ sel π1{.0.0,.0.1,.1.0,.1.1}; writes π1.0.0; req ⇐ sel π1{.0.0,.0.1,.1.0,.1.1}
+  slotacct w2: source 20, total 310, growth 0 of 65536, continuation 310 of 20480, rounds 0, evaluations 1, validation 0, slots 8, arrivals 4, relations 6 (memo 0), deliveries 0, substitutions 4, positions 6, leaves 4, values 9, calls 1, demands 1, peak bytes 13588, v2 reads 0, walks { 310 }
+    66:29 List.push a: accepted param (⇐ sel π1{.0.0,.0.1,.1.0,.1.1})
+  contract u2: res .0.0 π1.0.0, .0.1 π1.0.1, .1.0 π1.1.0, .1.1 π1.1.1; nondup ⇐ sel π1{.0.0,.0.1,.1.0,.1.1}; writes π1.1.0; req ⇐ sel π1{.0.0,.0.1,.1.0,.1.1}
+  slotacct u2: source 20, total 266, growth 0 of 65536, continuation 266 of 20480, rounds 0, evaluations 1, validation 0, slots 8, arrivals 4, relations 6 (memo 0), deliveries 0, substitutions 4, positions 6, leaves 4, values 9, calls 1, demands 1, peak bytes 13612, v2 reads 0, walks { 266 }
+    71:5 ChoiceArmsParams.w2 <expr>.0.0: accepted param (⇐ sel π2{.0,.1} π3{.0,.1})
+  contract swapPairs: res .0.0 π2.0 π3.0, .0.1 π2.1 π3.1, .1.0 π2.0 π3.0, .1.1 π2.1 π3.1; nondup ⇐ sel π2{.0,.1} π3{.0,.1}; writes π2.0 π3.0; req ⇐ sel π2{.0,.1} π3{.0,.1}
+  slotacct swapPairs: source 26, total 561, growth 0 of 65536, continuation 561 of 26624, rounds 0, evaluations 1, validation 0, slots 8, arrivals 8, relations 24 (memo 0), deliveries 0, substitutions 73, positions 4, leaves 9, values 7, calls 1, demands 1, peak bytes 13296, v2 reads 0, walks { 561 }
+    82:5 ChoiceArmsParams.w2 <expr>.0.0: accepted param (⇐ sel π2{.0,.1})
+  contract fromP: res .0.0 π2.0 fresh, .0.1 π2.1 fresh, .1.0 π2.0 fresh, .1.1 fresh; nondup ⇐ sel π2{.0,.1}; writes π2.0; req ⇐ sel π2{.0,.1}
+  slotacct fromP: source 36, total 440, growth 0 of 65536, continuation 440 of 36864, rounds 0, evaluations 1, validation 0, slots 6, arrivals 7, relations 6 (memo 0), deliveries 0, substitutions 92, positions 5, leaves 9, values 16, calls 1, demands 1, peak bytes 12232, v2 reads 0, walks { 440 }
+    92:5 ChoiceArmsParams.u2 <expr>.1.0: accepted param (⇐ sel π2{.0,.1} π3{.0,.1})
+  contract swapU: res .0.0 π2.0 π3.0, .0.1 π2.1 π3.1, .1.0 π2.0 π3.0, .1.1 π2.1 π3.1; nondup ⇐ sel π2{.0,.1} π3{.0,.1}; writes π2.0 π3.0; req ⇐ sel π2{.0,.1} π3{.0,.1}
+  slotacct swapU: source 26, total 561, growth 0 of 65536, continuation 561 of 26624, rounds 0, evaluations 1, validation 0, slots 8, arrivals 8, relations 24 (memo 0), deliveries 0, substitutions 73, positions 4, leaves 9, values 7, calls 1, demands 1, peak bytes 13296, v2 reads 0, walks { 561 }
+    103:5 ChoiceArmsParams.u2 <expr>.1.0: accepted param (⇐ sel π2{.0,.1})
+  contract fromPU: res .0.0 π2.0 fresh, .0.1 π2.1 fresh, .1.0 π2.0 fresh, .1.1 fresh; nondup ⇐ sel π2{.0,.1}; writes π2.0; req ⇐ sel π2{.0,.1}
+  slotacct fromPU: source 36, total 440, growth 0 of 65536, continuation 440 of 36864, rounds 0, evaluations 1, validation 0, slots 6, arrivals 7, relations 6 (memo 0), deliveries 0, substitutions 93, positions 5, leaves 9, values 16, calls 1, demands 1, peak bytes 13636, v2 reads 0, walks { 440 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,0 +1,23 @@
+module Main
+  12:26 List.push r: accepted fresh
+  22:26 List.push r: rejected exclusive: the elements of the list it was taken from may share one list
+  31:18 List.push b.a: accepted param
+  account distinct: source 34, baseline 1834, growth 0 of 65536, total 1834, continuation 1436 of 34816, demands 279, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 37
+  crossing: reads 2, redone 0, base moves 0
+  summary distinct: unused
+  account twice: source 34, baseline 1614, growth 0 of 65536, total 1614, continuation 1212 of 34816, demands 240, direct_data lanes 1, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 37
+  summary twice: π1 RW
+  account boxed: source 30, baseline 831, growth 0 of 65536, total 831, continuation 448 of 30720, demands 130, direct_data lanes 1, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 5, transfer_settlement lanes 32
+  summary boxed: π1 RW
+  block: 440 bytes, hash 4251102edeec99ec
+  demands 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+module Rows
+  account four: source 27, baseline 498, growth 0 of 65536, total 498, continuation 465 of 27648, demands 1, direct_data lanes 4, liveness_index lanes 4, transfer_settlement lanes 28
+  crossing: reads 0, redone 0, base moves 0
+  summary four: π1 RA, π2 RA, π3 RA, π4 RA; res [*] π1 π2 π3 π4{apart [π1] [π2] [π3] [π4]}, fresh1
+  account box: source 23, baseline 172, growth 0 of 65536, total 172, continuation 134 of 23552, demands 1, direct_data lanes 4, liveness_index lanes 4, transfer_settlement lanes 24
+  summary box: π1 RA, π2 RA, π3 RA, π4 RA; res .a π1, .b π2, .c π3, .d π4, fresh1
+  block: 1416 bytes, hash 66756b09f0481489
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

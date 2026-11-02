@@ -1,0 +1,134 @@
+@ownership_summary_size(module, 20000000)
+
+pub type NColor
+    = Red
+    | Black
+
+
+pub type TreeL
+    = NodeL NColor Int (List Int) TreeL TreeL
+    | LeafL
+pub balanceL : NColor, Int, (List Int), TreeL, TreeL → TreeL
+balanceL color key value left right =
+    case right of
+        NodeL Red rK rV rLeft rRight →
+            case left of
+                NodeL Red lK lV lLeft lRight →
+                    NodeL
+                        Red
+                        key
+                        value
+                        (NodeL Black lK lV lLeft lRight)
+                        (NodeL Black rK rV rLeft rRight)
+
+                _ →
+                    NodeL color rK rV (NodeL Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                NodeL Red lK lV (NodeL Red llK llV llLeft llRight) lRight →
+                    NodeL
+                        Red
+                        lK
+                        lV
+                        (NodeL Black llK llV llLeft llRight)
+                        (NodeL Black key value lRight right)
+
+                _ →
+                    NodeL color key value left right
+
+
+pub removeMinL : TreeL → TreeL
+removeMinL tree =
+    case tree of
+        NodeL color key value ((NodeL lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeL Red _ _ _ _ →
+                            NodeL color key value (removeMinL left) right
+
+                        _ →
+                            case moveRedLeftL tree of
+                                NodeL nColor nKey nValue nLeft nRight →
+                                    balanceL nColor nKey nValue (removeMinL nLeft) nRight
+
+                                LeafL →
+                                    LeafL
+
+                _ →
+                    NodeL color key value (removeMinL left) right
+
+        _ →
+            LeafL
+
+
+pub moveRedLeftL : TreeL → TreeL
+moveRedLeftL tree =
+    case tree of
+        NodeL _ k v (NodeL _ lK lV lLeft lRight) (NodeL _ rK rV rLeft rRight) →
+            case rLeft of
+                NodeL Red rlK rlV rlL rlR →
+                    NodeL
+                        Red
+                        rlK
+                        rlV
+                        (NodeL Black k v (NodeL Red lK lV lLeft lRight) rlL)
+                        (NodeL Black rK rV rlR rRight)
+
+                _ →
+                    NodeL Black k v (NodeL Red lK lV lLeft lRight) (NodeL Red rK rV rLeft rRight)
+
+        _ →
+            tree
+
+
+pub type Cursor
+    = Step Int (List Int) TreeL Cursor
+    | End
+
+
+pub descend : TreeL, Cursor → Cursor
+descend tree rest =
+    case tree of
+        LeafL →
+            rest
+
+        NodeL _ key value left right →
+            descend left (Step key value right rest)
+
+
+pub useful : Int → List Int
+useful n =
+    case removeMinL (NodeL Black 2 [ n ] (NodeL Red 1 [ n + 1 ] LeafL LeafL) (NodeL Red 3 [ n + 2 ] LeafL LeafL)) of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+pub usefulParam : TreeL → List Int
+usefulParam t =
+    case removeMinL t of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+pub cursorPush : TreeL → List Int
+cursorPush t =
+    case descend t End of
+        Step _ v _ _ →
+            List.push v 7
+
+        End →
+            []
+
+
+pub mkTree : Int → TreeL
+mkTree n = NodeL Black 4 [ n ] (NodeL Black 2 [ n + 1 ] (NodeL Red 1 [ n + 2 ] LeafL LeafL) LeafL) (NodeL Black 6 [ n + 3 ] LeafL LeafL)
+
+

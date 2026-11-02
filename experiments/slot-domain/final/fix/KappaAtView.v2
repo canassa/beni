@@ -1,0 +1,16 @@
+module KappaAtView
+  17:15 List.push a: rejected exclusive: the elements of the list it was taken from may share one list
+  27:15 List.push a: accepted fresh
+  account twoOf: source 13, baseline 132, growth 0 of 65536, total 132, continuation 118 of 13312, demands 1, direct_data lanes 1, liveness_index lanes 2, transfer_settlement lanes 14
+  crossing: reads 1, redone 0, base moves 5
+  summary twoOf: π1 RA; res [*] π1{shared}, fresh1
+  account twoFresh: source 13, baseline 266, growth 0 of 65536, total 266, continuation 245 of 13312, demands 1, direct_data lanes 1, transfer_settlement lanes 14
+  summary twoFresh: res [*] fresh2 fresh3, fresh1
+  account sharedHead: source 31, baseline 924, growth 0 of 65536, total 924, continuation 804 of 31744, demands 66, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 34
+  summary sharedHead: res .0 fresh1, .0 fresh2
+  account freshHead: source 30, baseline 1030, growth 0 of 65536, total 1030, continuation 915 of 30720, demands 129, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 33
+  summary freshHead: res .0 fresh1 fresh2, .0 fresh3
+  block: 1088 bytes, hash 47ae2c9fcdf2098e
+  demands 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

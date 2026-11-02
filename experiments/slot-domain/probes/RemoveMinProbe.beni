@@ -1,0 +1,83 @@
+type NColor
+    = Red
+    | Black
+
+
+type Tree k v
+    = Node NColor k v (Tree k v) (Tree k v)
+    | Leaf
+
+
+balance : NColor, k, v, Tree k v, Tree k v → Tree k v
+balance color key value left right =
+    case right of
+        Node Red rK rV rLeft rRight →
+            case left of
+                Node Red lK lV lLeft lRight →
+                    Node
+                        Red
+                        key
+                        value
+                        (Node Black lK lV lLeft lRight)
+                        (Node Black rK rV rLeft rRight)
+
+                _ →
+                    Node color rK rV (Node Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                Node Red lK lV (Node Red llK llV llLeft llRight) lRight →
+                    Node
+                        Red
+                        lK
+                        lV
+                        (Node Black llK llV llLeft llRight)
+                        (Node Black key value lRight right)
+
+                _ →
+                    Node color key value left right
+
+
+removeMin : Tree k v → Tree k v
+removeMin tree =
+    case tree of
+        Node color key value ((Node lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        Node Red _ _ _ _ →
+                            Node color key value (removeMin left) right
+
+                        _ →
+                            case moveRedLeft tree of
+                                Node nColor nKey nValue nLeft nRight →
+                                    balance nColor nKey nValue (removeMin nLeft) nRight
+
+                                Leaf →
+                                    Leaf
+
+                _ →
+                    Node color key value (removeMin left) right
+
+        _ →
+            Leaf
+
+
+moveRedLeft : Tree k v → Tree k v
+moveRedLeft tree =
+    case tree of
+        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) →
+            case rLeft of
+                Node Red rlK rlV rlL rlR →
+                    Node
+                        Red
+                        rlK
+                        rlV
+                        (Node Black k v (Node Red lK lV lLeft lRight) rlL)
+                        (Node Black rK rV rlR rRight)
+
+                _ →
+                    Node Black k v (Node Red lK lV lLeft lRight) (Node Red rK rV rLeft rRight)
+
+        _ →
+            tree

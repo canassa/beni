@@ -1,0 +1,57 @@
+module ViewFoldRoute
+  22:19 ViewFoldRoute.incList <call List.push>[*]#Rose.0: accepted param
+  22:19 ViewFoldRoute.incList <call List.push>[*]#Rose.0⟨Rose⟩: accepted param
+  22:28 List.push kids: accepted param
+  29:15 ViewFoldRoute.incAll s#Rose.0: accepted param
+  29:15 ViewFoldRoute.incAll s#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  29:15 ViewFoldRoute.incAll s#Rose.0[*]#Rose.0: accepted param
+  29:26 ViewFoldRoute.incList rest[*]#Rose.0: accepted param
+  29:26 ViewFoldRoute.incList rest[*]#Rose.0⟨Rose⟩: accepted param
+  51:15 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0: accepted fresh
+  51:15 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0[*]⟨Rose⟩#Rose.0: rejected element: xs holds it and is read at 51:13 (approx)
+  51:15 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0[*]#Rose.0: rejected alias: xs holds it and is read at 51:13
+  61:15 ViewFoldRoute.incAll <call ViewFoldRoute.ident>#Rose.0: accepted fresh
+  61:15 ViewFoldRoute.incAll <call ViewFoldRoute.ident>#Rose.0[*]⟨Rose⟩#Rose.0: rejected element: xs holds it and is read at 61:13 (approx)
+  61:15 ViewFoldRoute.incAll <call ViewFoldRoute.ident>#Rose.0[*]#Rose.0: rejected alias: xs holds it and is read at 61:13
+  71:13 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0: accepted fresh
+  71:13 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  71:13 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0[*]#Rose.0: accepted param
+  81:15 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  81:15 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0[*]⟨Rose⟩#Rose.0: rejected element: xs holds it and is read at 81:13 (approx)
+  81:15 ViewFoldRoute.incAll <call ViewFoldRoute.deep>#Rose.0[*]#Rose.0: accepted fresh
+  91:15 ViewFoldRoute.incAll <call ViewFoldRoute.ident>#Rose.0: accepted fresh
+  91:15 ViewFoldRoute.incAll <call ViewFoldRoute.ident>#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  91:15 ViewFoldRoute.incAll <call ViewFoldRoute.ident>#Rose.0[*]#Rose.0: accepted fresh
+  98:17 ViewFoldRoute.incAll <call ViewFoldRoute.deeper>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  98:17 ViewFoldRoute.incAll <call ViewFoldRoute.deeper>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  98:17 ViewFoldRoute.incAll <call ViewFoldRoute.deeper>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  account incAll: source 20, baseline 12472, growth 0 of 65536, total 12472, continuation 12192 of 20480, demands 813, walks 5, inference 4, deliveries 8, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 2, call_view lanes 8, transfer_settlement lanes 44
+  crossing: reads 9, redone 0, base moves 12
+  summary incAll: π1 R, π1#Rose.0 RW, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RW, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 RW; res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}; cert; xreq excl π1#Rose.0[*], excl π1#Rose.0[*]#Rose.0, excl π1#Rose.0[*]⟲, excl π1#Rose.0[*]⟲#Rose.0
+  account incList: source 26, baseline 20694, growth 0 of 65536, total 20694, continuation 20572 of 26624, demands 2177, hold listings 18, walks 7, inference 6, deliveries 13, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incList: π1 R, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res [*] {lost}, [*]#Rose.0 fresh3 fresh3{lost}, [*]#Rose.0 fresh3{lost}, [*]#Rose.0 fresh4{lost}, [*]#Rose.0[*] {lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account ident: source 5, baseline 28, growth 0 of 65536, total 28, continuation 23 of 5120, demands 1, direct_data lanes 1, liveness_index lanes 1, transfer_settlement lanes 6
+  summary ident: π1 RA; res π1
+  account deep: source 12, baseline 122, growth 0 of 65536, total 122, continuation 102 of 12288, demands 1, direct_data lanes 1, liveness_index lanes 1, call_view lanes 2, transfer_settlement lanes 13
+  summary deep: π1 RA; res #Rose.0 fresh1, #Rose.0[*]#Rose.0 π1
+  account deeper: source 15, baseline 1211, growth 0 of 65536, total 1211, continuation 1180 of 15360, demands 1, direct_data lanes 1, liveness_index lanes 1, call_view lanes 3, transfer_settlement lanes 16
+  summary deeper: π1 RA; res #Rose.0 fresh1, #Rose.0[*]#Rose.0 fresh2 π1 π1{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh2 π1 π1{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh2 π1 π1{apart [π1] [π1[*]#Rose.0] [π1[*]#Rose.0⟲], excl π1[*]#Rose.0, excl π1[*]#Rose.0⟲}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0[*] {apart [π1[*]] [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], excl π1[*], excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲[*]}
+  account viewRead: source 31, baseline 2682, growth 0 of 65536, total 2682, continuation 2593 of 31744, demands 314, hold listings 2, direct_data lanes 1, liveness_index lanes 4, call_view lanes 3, transfer_settlement lanes 34
+  summary viewRead: π1 RAW, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res .0#Rose.0 fresh1{lost}, .0#Rose.0 fresh2{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}, .1 π1; xreq apart [π1[*]#Rose.0] [π1[*]#Rose.0⟲], apart [π1[*]] [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], excl π1, excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account viewIdent: source 33, baseline 2691, growth 0 of 65536, total 2691, continuation 2601 of 33792, demands 314, hold listings 2, direct_data lanes 1, liveness_index lanes 4, call_view lanes 4, transfer_settlement lanes 36
+  summary viewIdent: π1 RAW, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res .0#Rose.0 fresh1{lost}, .0#Rose.0 fresh2{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}, .1 π1; xreq apart [π1[*]#Rose.0] [π1[*]#Rose.0⟲], apart [π1[*]] [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], excl π1, excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account viewDead: source 23, baseline 2299, growth 0 of 65536, total 2299, continuation 2234 of 23552, demands 192, direct_data lanes 1, liveness_index lanes 2, call_view lanes 3, transfer_settlement lanes 26
+  summary viewDead: π1 RW, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res #Rose.0 fresh1{lost}, #Rose.0 fresh2{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}; xreq apart [π1[*]#Rose.0] [π1[*]#Rose.0⟲], apart [π1[*]] [π1[*]#Rose.0[*]] [π1[*]#Rose.0⟲[*]], excl π1, excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account copyRead: source 33, baseline 2458, growth 0 of 65536, total 2458, continuation 2331 of 33792, demands 284, hold listings 2, direct_data lanes 1, liveness_index lanes 4, call_view lanes 4, transfer_settlement lanes 36
+  summary copyRead: π1 RA, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res .0#Rose.0 fresh1{lost}, .0#Rose.0 fresh2{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}, .1 π1
+  account freshRead: source 36, baseline 1895, growth 0 of 65536, total 1895, continuation 1789 of 36864, demands 70, direct_data lanes 1, liveness_index lanes 3, call_view lanes 5, transfer_settlement lanes 39
+  summary freshRead: π1 RA, π1[*] A; res .0#Rose.0 fresh1{lost}, .0#Rose.0 fresh2{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}, .1 π1, .1[*] π1[*]{excl π1[*]}
+  account freshDeeper: source 12, baseline 3454, growth 0 of 65536, total 3454, continuation 3429 of 12288, demands 46, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 13
+  summary freshDeeper: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  block: 3016 bytes, hash e9531a3b3f05e6b3
+  demands 26: accepted 17 (fresh 7, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 26: accepted 17 (fresh 7, call 0, param 10, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause disjoint 2
+cause alias 2
+cause element 3
+cause exclusive 2

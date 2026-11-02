@@ -1,0 +1,81 @@
+module FoldedBCall
+    23:25 List.push xs: accepted param (⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:16 FoldedBCall.incList <expr>[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:16 FoldedBCall.incList <expr>[*]#0.0⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:16 FoldedBCall.incList <expr>[*]#0.1⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:51 FoldedBCall.incList ys[*]#0.0: accepted param (⇐ sel π1{#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:51 FoldedBCall.incList ys[*]#0.0⟲: accepted param (⇐ sel π1{#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:51 FoldedBCall.incList ys[*]#0.1⟲: accepted param (⇐ sel π1{#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+  contract incAll: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0 π1#0.0[*]⟲#0.1 π1#0.1[*]#0.0 π1#0.1[*]⟲#0.0 π1#0.1[*]⟲#0.1; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1}
+  slotacct incAll: source 25, total 6411, growth 0 of 65536, continuation 6411 of 25600, rounds 5, evaluations 6, validation 1178, slots 20, arrivals 10, relations 237 (memo 36), deliveries 5, substitutions 563, positions 34, leaves 107, values 61, calls 18, demands 16, peak bytes 27538, v2 reads 0, walks { 700, 1035, 1142, 1178, 1178, 1178 }
+    30:15 FoldedBCall.incAll b#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:15 FoldedBCall.incAll b#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:15 FoldedBCall.incAll b#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:15 FoldedBCall.incAll b#0.0[*]⟲#0.1: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:15 FoldedBCall.incAll b#0.1[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:15 FoldedBCall.incAll b#0.1[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:15 FoldedBCall.incAll b#0.1[*]⟲#0.1: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:26 FoldedBCall.incList rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:26 FoldedBCall.incList rest[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+    30:26 FoldedBCall.incList rest[*]#0.1⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲})
+  contract incList: res ε fresh, [*]#0.0 fresh, [*]#0.0⟲ fresh, [*]#0.1 fresh, [*]#0.1⟲ fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0⟲ π1[*]#0.1⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲,[*]#0.1,[*]#0.1⟲}
+  slotacct incList: source 26, total 8256, growth 0 of 65536, continuation 8256 of 26624, rounds 5, evaluations 6, validation 1673, slots 10, arrivals 5, relations 545 (memo 113), deliveries 5, substitutions 413, positions 33, leaves 250, values 47, calls 17, demands 11, peak bytes 26434, v2 reads 0, walks { 247, 1375, 1615, 1673, 1673, 1673 }
+  contract both: res #0.0 fresh, #0.0[*]#0.0 π1ε, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 π1[*]#0.0 π1[*]#0.0⟲ π1[*]#0.1⟲, #0.0[*]⟲#0.1 π1[*]#0.0⟲ π1[*]#0.1 π1[*]#0.1⟲, #0.1 fresh, #0.1[*]#0.0 π1ε, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 π1[*]#0.0 π1[*]#0.0⟲ π1[*]#0.1⟲, #0.1[*]⟲#0.1 π1[*]#0.0⟲ π1[*]#0.1 π1[*]#0.1⟲; nondup no
+  slotacct both: source 18, total 281, growth 0 of 65536, continuation 281 of 18432, rounds 0, evaluations 1, validation 0, slots 15, arrivals 18, relations 1 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 5, values 8, calls 0, demands 0, peak bytes 13096, v2 reads 0, walks { 281 }
+    41:13 FoldedBCall.incAll v#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    41:13 FoldedBCall.incAll v#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    41:13 FoldedBCall.incAll v#0.0[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    41:13 FoldedBCall.incAll v#0.0[*]⟲#0.1: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    41:13 FoldedBCall.incAll v#0.1[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    41:13 FoldedBCall.incAll v#0.1[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    41:13 FoldedBCall.incAll v#0.1[*]⟲#0.1: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+  contract wrapper: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0 π1#0.0[*]⟲#0.1 π1#0.1[*]#0.0 π1#0.1[*]⟲#0.0 π1#0.1[*]⟲#0.1; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.1,#0.0[*]⟲#0.0,#0.0[*]⟲#0.1,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1}
+  slotacct wrapper: source 7, total 459, growth 0 of 65536, continuation 459 of 7168, rounds 0, evaluations 1, validation 0, slots 20, arrivals 10, relations 0 (memo 0), deliveries 0, substitutions 27, positions 2, leaves 12, values 2, calls 1, demands 1, peak bytes 11726, v2 reads 0, walks { 459 }
+    47:5 FoldedBCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    47:5 FoldedBCall.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    47:5 FoldedBCall.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    47:5 FoldedBCall.incAll <expr>#0.0[*]⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    47:5 FoldedBCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    47:5 FoldedBCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    47:5 FoldedBCall.incAll <expr>#0.1[*]⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract shared: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct shared: source 22, total 429, growth 0 of 65536, continuation 429 of 22528, rounds 0, evaluations 1, validation 0, slots 10, arrivals 10, relations 0 (memo 0), deliveries 0, substitutions 80, positions 1, leaves 9, values 12, calls 1, demands 1, peak bytes 13122, v2 reads 0, walks { 429 }
+    53:5 FoldedBCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:5 FoldedBCall.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:5 FoldedBCall.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:5 FoldedBCall.incAll <expr>#0.0[*]⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:5 FoldedBCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:5 FoldedBCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    53:5 FoldedBCall.incAll <expr>#0.1[*]⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract viaHelper: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct viaHelper: source 13, total 494, growth 0 of 65536, continuation 494 of 13312, rounds 0, evaluations 1, validation 0, slots 10, arrivals 10, relations 0 (memo 0), deliveries 0, substitutions 75, positions 2, leaves 16, values 6, calls 2, demands 1, peak bytes 25350, v2 reads 0, walks { 494 }
+    59:5 FoldedBCall.wrapper <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    59:5 FoldedBCall.wrapper <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    59:5 FoldedBCall.wrapper <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    59:5 FoldedBCall.wrapper <expr>#0.0[*]⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    59:5 FoldedBCall.wrapper <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    59:5 FoldedBCall.wrapper <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    59:5 FoldedBCall.wrapper <expr>#0.1[*]⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract viaWrapper: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct viaWrapper: source 22, total 429, growth 0 of 65536, continuation 429 of 22528, rounds 0, evaluations 1, validation 0, slots 10, arrivals 10, relations 0 (memo 0), deliveries 0, substitutions 80, positions 1, leaves 9, values 12, calls 1, demands 1, peak bytes 13122, v2 reads 0, walks { 429 }
+    66:5 FoldedBCall.incAll <expr>#0.0: accepted fresh
+    66:5 FoldedBCall.incAll <expr>#0.0[*]#0.0: accepted fresh
+    66:5 FoldedBCall.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+    66:5 FoldedBCall.incAll <expr>#0.0[*]⟲#0.1: accepted fresh
+    66:5 FoldedBCall.incAll <expr>#0.1[*]#0.0: accepted fresh
+    66:5 FoldedBCall.incAll <expr>#0.1[*]⟲#0.0: accepted fresh
+    66:5 FoldedBCall.incAll <expr>#0.1[*]⟲#0.1: accepted fresh
+  contract distinct: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct distinct: source 28, total 440, growth 0 of 65536, continuation 440 of 28672, rounds 0, evaluations 1, validation 0, slots 10, arrivals 10, relations 0 (memo 0), deliveries 0, substitutions 80, positions 1, leaves 12, values 16, calls 1, demands 1, peak bytes 14392, v2 reads 0, walks { 440 }
+    77:5 FoldedBCall.incAll v#0.0: accepted fresh
+    77:5 FoldedBCall.incAll v#0.0[*]#0.0: accepted fresh
+    77:5 FoldedBCall.incAll v#0.0[*]⟲#0.0: accepted fresh
+    77:5 FoldedBCall.incAll v#0.0[*]⟲#0.1: accepted fresh
+    77:5 FoldedBCall.incAll v#0.1[*]#0.0: accepted fresh
+    77:5 FoldedBCall.incAll v#0.1[*]⟲#0.0: accepted fresh
+    77:5 FoldedBCall.incAll v#0.1[*]⟲#0.1: accepted fresh
+  contract chosen: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.1 fresh, #0.0[*]⟲#0.0 fresh, #0.0[*]⟲#0.1 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct chosen: source 39, total 575, growth 0 of 65536, continuation 575 of 39936, rounds 0, evaluations 1, validation 0, slots 10, arrivals 10, relations 0 (memo 0), deliveries 0, substitutions 131, positions 2, leaves 14, values 17, calls 1, demands 1, peak bytes 25650, v2 reads 0, walks { 575 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

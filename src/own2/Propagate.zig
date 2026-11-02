@@ -70,10 +70,12 @@ pub const Working = struct {
     const fields = .{ "index", "slice_at", "below_at", "front_at", "node_at", "node_edge_at" };
 
     pub fn clear(w: *Working) void {
+        @import("ReaderProbe.zig").hit();
         inline for (fields) |f| @field(w, f).clear();
     }
 
     pub fn deinit(w: *Working, gpa: Allocator) void {
+        @import("ReaderProbe.zig").hit();
         inline for (fields) |f| @field(w, f).deinit(gpa);
     }
 };
@@ -115,11 +117,13 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
         /// `joined` cycles (a knot `widen` tied) the position becomes a fold
         /// (§2.9 *Fold first*).
         pub fn propagate(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, traversal: ?Traversal) Error!Kappas {
+            @import("ReaderProbe.zig").hit();
             return propagateFrom(t, gpa, charge, v, out, joined, members, member_ctxs, mode, at_summary, at_summary, traversal);
         }
 
         /// `propagate`, the members read at their own class (a literal's `vᵢ`, §2.9).
         pub fn propagateFrom(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, member_summary: bool, traversal: ?Traversal) Error!Kappas {
+            @import("ReaderProbe.zig").hit();
             std.debug.assert(members.len == member_ctxs.len);
             const in: Input = .{ .v = v, .out = out, .joined = joined, .members = members, .ctxs = member_ctxs, .mode = mode, .at_summary = at_summary, .member_summary = member_summary, .traversal = traversal };
             const call = t.prop_calls;
@@ -151,6 +155,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
 
         /// The reference (§2.9), for tests: null past `reference_cap` frames.
         pub fn propagateReference(t: *Table, gpa: Allocator, charge: Charge, v: View, out: Kappas, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas, mode: Mode, at_summary: bool, reverse: bool) Error!?Kappas {
+            @import("ReaderProbe.zig").hit();
             const in: Input = .{ .v = v, .out = out, .joined = joined, .members = members, .ctxs = member_ctxs, .mode = mode, .at_summary = at_summary, .member_summary = at_summary, .traversal = null };
             return reference(t, gpa, charge, &in, reverse);
         }
@@ -158,6 +163,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
         /// The rule alone, with no memo and no check: `widenValue`'s
         /// bisimulation check reads two images with it.
         pub fn propagatePlain(t: *Table, gpa: Allocator, charge: Charge, v: View, joined: NodeId, members: []const NodeId, member_ctxs: []const Kappas) Error!Kappas {
+            @import("ReaderProbe.zig").hit();
             const in: Input = .{ .v = v, .out = .none, .joined = joined, .members = members, .ctxs = member_ctxs, .mode = .alternatives, .at_summary = false, .member_summary = false, .traversal = null };
             return rule(t, gpa, charge, &in, false, false, false);
         }

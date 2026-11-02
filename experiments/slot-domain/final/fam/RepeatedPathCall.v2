@@ -1,0 +1,40 @@
+module RepeatedPathCall
+  20:13 List.push a: accepted param
+  27:15 RepeatedPathCall.writeFirst inner.0: rejected alias: first holds it and is read at 27:13
+  34:15 List.push a: rejected alias: first holds it and is read at 34:13
+  42:15 RepeatedPathCall.writeFirst p.0: accepted fresh
+  50:13 List.push <call RepeatedPathCall.writeFirst>: accepted param
+  50:24 RepeatedPathCall.writeFirst inner.0: accepted param
+  59:23 RepeatedPathCall.writeFirst inner.0: accepted param
+  66:15 List.push xs: accepted param
+  66:32 RepeatedPathCall.pushAll rest[*]: accepted param
+  77:14 RepeatedPathCall.pushAll <call RepeatedPathCall.both>[*]: rejected exclusive: the elements of the list it was taken from may share one list
+  81:16 RepeatedPathCall.pushAll <call RepeatedPathCall.both>[*]: accepted param
+  account pair: source 25, baseline 120, growth 0 of 65536, total 120, continuation 90 of 25600, demands 1, direct_data lanes 2, liveness_index lanes 3, transfer_settlement lanes 26
+  crossing: reads 3, redone 0, base moves 2
+  summary pair: π1 RA, π2 RA; res .0 π1, .1.0 π1, .1.1 π2
+  account writeFirst: source 22, baseline 364, growth 0 of 65536, total 364, continuation 291 of 22528, demands 21, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 24, step lanes 1
+  summary writeFirst: π1 R, π1.0 RAW, π1.0[*] A; res [*] π1.0[*]{excl π1.0[*]}, π1.0
+  account refused: source 30, baseline 468, growth 0 of 65536, total 468, continuation 421 of 30720, demands 45, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 32
+  summary refused: π1 RAW, π1[*] RA, π2 R; res .0 π1, .0[*] π1[*]{excl π1[*]}, .1 π1
+  account matchedWhole: source 33, baseline 459, growth 0 of 65536, total 459, continuation 366 of 33792, demands 37, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 35
+  summary matchedWhole: π1 RAW, π1[*] A, π2 R; res .0 π1, .0[*] π1[*]{excl π1[*]}, .1 π1
+  account copied: source 39, baseline 494, growth 0 of 65536, total 494, continuation 408 of 39936, demands 31, direct_data lanes 2, liveness_index lanes 6, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 42
+  summary copied: π1 RA, π1[*] R, π2 R; res .0 fresh1, .1 π1
+  account readBefore: source 32, baseline 760, growth 0 of 65536, total 760, continuation 647 of 32768, demands 54, direct_data lanes 2, liveness_index lanes 5, direct_demand_query lanes 2, call_view lanes 4, transfer_settlement lanes 35
+  summary readBefore: π1 RAW, π1[*] RA, π2 R; res [*] π1[*]{excl π1[*]}, π1
+  account otherRead: source 36, baseline 491, growth 0 of 65536, total 491, continuation 440 of 36864, demands 33, direct_data lanes 2, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 39
+  summary otherRead: π1 RAW, π1[*] RA, π2 RA; res .0 π1, .0[*] π1[*]{excl π1[*]}, .1 π2
+  account pushAll: source 31, baseline 4357, growth 0 of 65536, total 4357, continuation 4118 of 31744, demands 269, walks 3, inference 2, deliveries 3, direct_data lanes 2, liveness_index lanes 6, direct_demand_query lanes 3, call_view lanes 4, transfer_settlement lanes 68
+  summary pushAll: π1 R, π1[*] RAW, π1[*][*] RA; res [*] π1[*]{lost}, [*][*] π1[*][*]{lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*]
+  account both: source 17, baseline 239, growth 0 of 65536, total 239, continuation 222 of 17408, demands 1, direct_data lanes 2, liveness_index lanes 2, transfer_settlement lanes 18
+  summary both: π1 RA, π2 RA; res [*] π1 π2{apart [π1] [π2]}, fresh1
+  account oneTwice: source 16, baseline 884, growth 0 of 65536, total 884, continuation 867 of 16384, demands 31, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 17
+  summary oneTwice: π1 RAW, π1[*] RA; res [*] π1{shared}, [*][*] π1[*]{lost}, fresh2 fresh3 ~fresh1{lost}
+  account twoLists: source 20, baseline 1366, growth 0 of 65536, total 1366, continuation 1348 of 20480, demands 54, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 21
+  summary twoLists: π1 RAW, π1[*] RA, π2 RAW, π2[*] RA; res [*] π1 π2{shared}, [*][*] π1[*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}; xreq apart [π1] [π2], excl π1, excl π2
+  block: 3008 bytes, hash 847ee53fc9e1d1e8
+  demands 11: accepted 8 (fresh 1, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 11: accepted 8 (fresh 1, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause alias 2
+cause exclusive 1

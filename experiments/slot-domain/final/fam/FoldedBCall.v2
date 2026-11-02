@@ -1,0 +1,83 @@
+module FoldedBCall
+  23:16 FoldedBCall.incList <call List.push>[*]#B.1⟨B⟩: accepted param
+  23:16 FoldedBCall.incList <call List.push>[*]#B.0: accepted param
+  23:16 FoldedBCall.incList <call List.push>[*]#B.0⟨B⟩: accepted param
+  23:25 List.push xs: accepted param
+  23:51 FoldedBCall.incList ys[*]#B.1⟨B⟩: accepted param
+  23:51 FoldedBCall.incList ys[*]#B.0: accepted param
+  23:51 FoldedBCall.incList ys[*]#B.0⟨B⟩: accepted param
+  30:15 FoldedBCall.incAll b#B.1[*]#B.1⟨B⟩: accepted param
+  30:15 FoldedBCall.incAll b#B.1[*]#B.0: accepted param
+  30:15 FoldedBCall.incAll b#B.1[*]#B.0⟨B⟩: accepted param
+  30:15 FoldedBCall.incAll b#B.0: accepted param
+  30:15 FoldedBCall.incAll b#B.0[*]#B.1⟨B⟩: accepted param
+  30:15 FoldedBCall.incAll b#B.0[*]#B.0: accepted param
+  30:15 FoldedBCall.incAll b#B.0[*]#B.0⟨B⟩: accepted param
+  30:26 FoldedBCall.incList rest[*]#B.1⟨B⟩: accepted param
+  30:26 FoldedBCall.incList rest[*]#B.0: accepted param
+  30:26 FoldedBCall.incList rest[*]#B.0⟨B⟩: accepted param
+  41:13 FoldedBCall.incAll v#B.1[*]#B.1⟨B⟩: accepted param
+  41:13 FoldedBCall.incAll v#B.1[*]#B.0: accepted param
+  41:13 FoldedBCall.incAll v#B.1[*]#B.0⟨B⟩: accepted param
+  41:13 FoldedBCall.incAll v#B.0: accepted param
+  41:13 FoldedBCall.incAll v#B.0[*]#B.1⟨B⟩: accepted param
+  41:13 FoldedBCall.incAll v#B.0[*]#B.0: accepted param
+  41:13 FoldedBCall.incAll v#B.0[*]#B.0⟨B⟩: accepted param
+  47:5 FoldedBCall.incAll <B …>#B.1[*]#B.1⟨B⟩: accepted fresh
+  47:5 FoldedBCall.incAll <B …>#B.1[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  47:5 FoldedBCall.incAll <B …>#B.1[*]#B.0⟨B⟩: rejected disjoint: another path of the same argument reaches it
+  47:5 FoldedBCall.incAll <B …>#B.0: accepted fresh
+  47:5 FoldedBCall.incAll <B …>#B.0[*]#B.1⟨B⟩: accepted fresh
+  47:5 FoldedBCall.incAll <B …>#B.0[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  47:5 FoldedBCall.incAll <B …>#B.0[*]#B.0⟨B⟩: rejected disjoint: another path of the same argument reaches it
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.1[*]#B.1⟨B⟩: accepted fresh
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.1[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.1[*]#B.0⟨B⟩: rejected disjoint: another path of the same argument reaches it
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.0: accepted fresh
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.0[*]#B.1⟨B⟩: accepted fresh
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.0[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  53:5 FoldedBCall.incAll <call FoldedBCall.both>#B.0[*]#B.0⟨B⟩: rejected disjoint: another path of the same argument reaches it
+  59:5 FoldedBCall.wrapper <B …>#B.1[*]⟨B⟩#B.1: rejected disjoint: another path of the same argument reaches it
+  59:5 FoldedBCall.wrapper <B …>#B.1[*]⟨B⟩#B.0: rejected disjoint: another path of the same argument reaches it
+  59:5 FoldedBCall.wrapper <B …>#B.1[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  59:5 FoldedBCall.wrapper <B …>#B.0: accepted fresh
+  59:5 FoldedBCall.wrapper <B …>#B.0[*]⟨B⟩#B.1: rejected disjoint: another path of the same argument reaches it
+  59:5 FoldedBCall.wrapper <B …>#B.0[*]⟨B⟩#B.0: rejected disjoint: another path of the same argument reaches it
+  59:5 FoldedBCall.wrapper <B …>#B.0[*]#B.0: rejected disjoint: another path of the same argument reaches it
+  66:5 FoldedBCall.incAll <B …>#B.1[*]#B.1⟨B⟩: accepted fresh
+  66:5 FoldedBCall.incAll <B …>#B.1[*]#B.0: accepted fresh
+  66:5 FoldedBCall.incAll <B …>#B.1[*]#B.0⟨B⟩: accepted fresh
+  66:5 FoldedBCall.incAll <B …>#B.0: accepted fresh
+  66:5 FoldedBCall.incAll <B …>#B.0[*]#B.1⟨B⟩: accepted fresh
+  66:5 FoldedBCall.incAll <B …>#B.0[*]#B.0: accepted fresh
+  66:5 FoldedBCall.incAll <B …>#B.0[*]#B.0⟨B⟩: accepted fresh
+  77:5 FoldedBCall.incAll v#B.1[*]#B.1⟨B⟩: accepted fresh
+  77:5 FoldedBCall.incAll v#B.1[*]#B.0: accepted fresh
+  77:5 FoldedBCall.incAll v#B.1[*]#B.0⟨B⟩: accepted fresh
+  77:5 FoldedBCall.incAll v#B.0: accepted fresh
+  77:5 FoldedBCall.incAll v#B.0[*]#B.1⟨B⟩: accepted fresh
+  77:5 FoldedBCall.incAll v#B.0[*]#B.0: accepted fresh
+  77:5 FoldedBCall.incAll v#B.0[*]#B.0⟨B⟩: accepted fresh
+  account incAll: source 25, baseline 25956, growth 11170 of 65536, total 37126, continuation 25600 of 25600, demands 2701, walks 7, inference 4, deliveries 20, cell 155, label 10, set 614, shape 1186, cond 491, use 18, class 21, memo 2226, task 57, edge 42, path 2133, region 4, inspection 4209, other 4, direct_data lanes 2, liveness_index lanes 6, direct_demand_query lanes 2, call_view lanes 10, transfer_settlement lanes 54
+  crossing: reads 6, redone 0, base moves 3
+  summary incAll: π1 R, π1#B.0 RW, π1#B.0[*] R, π1#B.0[*]#B.0 RW, π1#B.0[*]#B.0⟲ RW, π1#B.0[*]#B.1 R, π1#B.0[*]#B.1⟲ RW, π1#B.0[*]⟲ R, π1#B.0[*]⟲#B.0 R, π1#B.0[*]⟲#B.1 R, π1#B.1 R, π1#B.1[*] R, π1#B.1[*]#B.0 RW, π1#B.1[*]#B.0⟲ RW, π1#B.1[*]#B.1 R, π1#B.1[*]#B.1⟲ RW, π1#B.1[*]⟲ R, π1#B.1[*]⟲#B.0 R, π1#B.1[*]⟲#B.1 R; res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0; cert; xreq apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1], apart [π1#B.1[*]⟲#B.0] [π1#B.1[*]⟲#B.1], excl π1#B.0[*], excl π1#B.0[*]#B.0, excl π1#B.0[*]#B.1, excl π1#B.0[*]⟲, excl π1#B.0[*]⟲#B.0, excl π1#B.0[*]⟲#B.1, excl π1#B.1[*], excl π1#B.1[*]#B.0, excl π1#B.1[*]#B.1, excl π1#B.1[*]⟲, excl π1#B.1[*]⟲#B.0, excl π1#B.1[*]⟲#B.1
+  account incList: source 26, baseline 26746, growth 24892 of 65536, total 51638, continuation 26624 of 26624, demands 8175, hold listings 56, walks 9, inference 6, deliveries 17, cell 490, label 9, set 1350, shape 2769, cond 909, use 36, class 29, memo 4263, task 88, edge 157, path 5015, region 9, inspection 9765, other 3, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incList: π1 R, π1[*] R, π1[*]#B.0 RW, π1[*]#B.0[*] R, π1[*]#B.0⟲ RW, π1[*]#B.0⟲[*] R, π1[*]#B.1 R, π1[*]#B.1[*] R, π1[*]#B.1⟲ RW, π1[*]#B.1⟲[*] R; res [*] {lost}, [*]#B.0 fresh3 fresh4{lost}, [*]#B.1 = [*]#B.0, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*], excl π1[*]#B.0, excl π1[*]#B.0[*], excl π1[*]#B.0⟲, excl π1[*]#B.0⟲[*], excl π1[*]#B.1, excl π1[*]#B.1[*], excl π1[*]#B.1⟲, excl π1[*]#B.1⟲[*]
+  account both: source 18, baseline 325, growth 0 of 65536, total 325, continuation 270 of 18432, demands 1, direct_data lanes 1, liveness_index lanes 2, call_view lanes 3, transfer_settlement lanes 19
+  summary both: π1 RA; res #B.0 fresh1, #B.0[*]#B.0 π1, #B.0[*]#B.1 fresh2, #B.1 fresh3, #B.1[*]#B.0 π1, #B.1[*]#B.1 fresh4
+  account wrapper: source 7, baseline 3183, growth 0 of 65536, total 3183, continuation 3179 of 7168, demands 201, direct_data lanes 1, liveness_index lanes 1, call_view lanes 1, transfer_settlement lanes 8
+  summary wrapper: π1 R, π1#B.0 RW, π1#B.0[*] R, π1#B.0[*]#B.0 RW, π1#B.0[*]#B.1 R, π1#B.0[*]⟲ R, π1#B.0[*]⟲#B.0 RW, π1#B.0[*]⟲#B.1 RW, π1#B.1 R, π1#B.1[*] R, π1#B.1[*]#B.0 RW, π1#B.1[*]#B.1 R, π1#B.1[*]⟲ R, π1#B.1[*]⟲#B.0 RW, π1#B.1[*]⟲#B.1 RW; res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0; xreq apart [π1#B.0[*]⟲#B.0] [π1#B.0[*]⟲#B.1], apart [π1#B.1[*]⟲#B.0] [π1#B.1[*]⟲#B.1], excl π1#B.0[*], excl π1#B.0[*]#B.0, excl π1#B.0[*]#B.1, excl π1#B.0[*]⟲, excl π1#B.0[*]⟲#B.0, excl π1#B.0[*]⟲#B.1, excl π1#B.1[*], excl π1#B.1[*]#B.0, excl π1#B.1[*]#B.1, excl π1#B.1[*]⟲, excl π1#B.1[*]⟲#B.0, excl π1#B.1[*]⟲#B.1
+  account shared: source 22, baseline 3858, growth 0 of 65536, total 3858, continuation 3773 of 22528, demands 78, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 24
+  summary shared: res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0
+  account viaHelper: source 13, baseline 4321, growth 0 of 65536, total 4321, continuation 4282 of 13312, demands 84, liveness_index lanes 1, call_view lanes 3, transfer_settlement lanes 15
+  summary viaHelper: res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0
+  account viaWrapper: source 22, baseline 3615, growth 0 of 65536, total 3615, continuation 3530 of 22528, demands 81, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 24
+  summary viaWrapper: res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0
+  account distinct: source 28, baseline 2532, growth 0 of 65536, total 2532, continuation 2421 of 28672, demands 146, liveness_index lanes 2, call_view lanes 6, transfer_settlement lanes 30
+  summary distinct: res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0
+  account chosen: source 39, baseline 6097, growth 0 of 65536, total 6097, continuation 5979 of 39936, demands 127, direct_data lanes 1, liveness_index lanes 4, call_view lanes 6, transfer_settlement lanes 43
+  summary chosen: res #B.0 fresh1{lost}, #B.0[*] {lost}, #B.0[*]#B.0 fresh1{lost}, #B.0[*]#B.1 = #B.0[*]#B.0, #B.1 fresh2{lost}, #B.1[*] {lost}, #B.1[*]#B.0 fresh2{lost}, #B.1[*]#B.1 = #B.1[*]#B.0
+  block: 1424 bytes, hash e8d24ffae0cd10de
+  demands 59: accepted 45 (fresh 21, call 0, param 24, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 14
+total 59: accepted 45 (fresh 21, call 0, param 24, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 14
+cause disjoint 14

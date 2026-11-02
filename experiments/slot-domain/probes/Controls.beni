@@ -1,0 +1,54 @@
+-- #1516 through a recursive generic producer: the local bound to its
+-- answer holds it, so a write read again later is refused.
+wrapN : Int, a → List a
+wrapN n x =
+    if n == 0 then
+        [ x ]
+    else
+        wrapN (n - 1) x
+
+
+pub push : Int, List Int → List (List Int) × List (List Int)
+push n b =
+    l0 = wrapN n b
+    l3 = List.push l0 [ 5 ]
+    ( l0, l3 )
+
+
+pub pushOnce : Int, List Int → List (List Int)
+pushOnce n b =
+    l0 = wrapN n b
+    List.push l0 [ 5 ]
+
+
+-- #1530 through a recursive pattern-only reader: its tests read the
+-- lists, so the push before the read is refused.
+type Rose
+    = Rose (List Rose)
+    | Leaf
+
+
+deepLen : Rose → Int
+deepLen r =
+    case r of
+        Rose [ s, …_ ] →
+            deepLen s
+
+        Rose [] →
+            100
+
+        Leaf →
+            0
+
+
+pub readAfter : List Rose → Rose × Int
+readAfter kids =
+    w = Rose kids
+    ( Rose (List.push kids Leaf), deepLen w )
+
+
+pub readBefore : List Rose → Int × Rose
+readBefore kids =
+    w = Rose kids
+    n = deepLen w
+    ( n, Rose (List.push kids Leaf) )

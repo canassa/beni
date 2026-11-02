@@ -83,6 +83,7 @@ pub const Input = struct {
     imports: ?Imports = null,
     order_check: bool = false, // `--ownership-order-check` (test-only)
     rewalk_check: bool = false, // `--ownership-rewalk-check` (test-only)
+    slots: u8 = 0, // `--ownership-slots` (experiment: the slot-domain evaluator)
     propagate_dump: bool = false, // `--ownership-propagate` (test-only)
 
     pub fn isCore(in: *const Input, m: u32) bool {
@@ -737,19 +738,19 @@ pub const Module = struct {
         return @ptrCast(@alignCast(ctx));
     }
 
-    fn placeOfInst(ctx: *anyopaque, inst: u32) Error!PlaceId {
+    pub fn placeOfInst(ctx: *anyopaque, inst: u32) Error!PlaceId {
         const mod = self(ctx);
         const v: Var.Optional = if (inst < mod.in.inst_type.len) mod.in.inst_type[inst] else .none;
         return mod.adapter.placeOfVar(v);
     }
 
-    fn placeOfLocal(ctx: *anyopaque, local: u32) Error!PlaceId {
+    pub fn placeOfLocal(ctx: *anyopaque, local: u32) Error!PlaceId {
         const mod = self(ctx);
         const v: Var.Optional = if (mod.cur_locals + local < mod.in.local_type.len) mod.in.local_type[mod.cur_locals + local] else .none;
         return mod.adapter.placeOfVar(v);
     }
 
-    fn fieldRank(ctx: *anyopaque, s: Bir.SymbolIndex) u32 {
+    pub fn fieldRank(ctx: *anyopaque, s: Bir.SymbolIndex) u32 {
         const mod = self(ctx);
         return mod.adapter.rank(mod.in.bir.symbol(s));
     }
@@ -788,7 +789,7 @@ pub const Module = struct {
     }
 
     /// The `(module, decl)` a call or method call runs, aliases followed.
-    fn calledDecl(mod: *const Module, inst: u32) ?[2]u32 {
+    pub fn calledDecl(mod: *const Module, inst: u32) ?[2]u32 {
         const bir = mod.in.bir;
         const t = switch (bir.instTag(@fromBackingInt(inst))) {
             .call => mod.declOf(bir.instData(@fromBackingInt(inst)).lhs),
@@ -872,7 +873,7 @@ pub const Module = struct {
         };
         return if (at[0] < mod.in.birs.len and at[1] < mod.in.birs[at[0]].ctors.len) at else null;
     }
-    fn ctorOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
+    pub fn ctorOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
         const mod = self(ctx);
         const bir = mod.in.bir;
         const d = bir.instData(@fromBackingInt(ref));
@@ -913,7 +914,7 @@ pub const Module = struct {
     }
 
     /// The arguments of a call or a method call (the receiver first).
-    fn argsOf(mod: *const Module, inst: u32, out: *std.ArrayList(u32)) Allocator.Error!void {
+    pub fn argsOf(mod: *const Module, inst: u32, out: *std.ArrayList(u32)) Allocator.Error!void {
         const bir = mod.in.bir;
         const d = bir.instData(@fromBackingInt(inst));
         if (bir.instTag(@fromBackingInt(inst)) == .call) {
@@ -1241,7 +1242,7 @@ pub fn checkModule(in: *const Input, mod: *Module, cold_accounts: bool) Allocato
 /// Whether declaration `di` is walked: a value with a body and no words,
 /// and no alias of a function, which is checked at its calls (R-5.5.6:
 /// a call of it is a call of what it names, `Module.aliasTarget`).
-fn isWalked(in: *const Input, di: u32) bool {
+pub fn isWalked(in: *const Input, di: u32) bool {
     const bir = in.bir;
     const d = bir.decls[di];
     if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len != 0) return false;
@@ -1252,7 +1253,7 @@ fn isWalked(in: *const Input, di: u32) bool {
 }
 
 /// Whether declaration `di`'s scheme is a function's.
-fn isFunctionScheme(in: *const Input, di: u32) bool {
+pub fn isFunctionScheme(in: *const Input, di: u32) bool {
     if (di >= in.decl_scheme.len) return false;
     const v = in.decl_scheme[di].unwrap() orelse return false;
     return switch (in.store.resolvedContent(v)) {
@@ -1263,13 +1264,13 @@ fn isFunctionScheme(in: *const Input, di: u32) bool {
 
 /// R_f (§4.4): the declaration's `@ownership_summary_size`, else the
 /// module's, else the default.
-fn allowanceOf(bir: *const Bir, di: u32) u32 {
+pub fn allowanceOf(bir: *const Bir, di: u32) u32 {
     const d = bir.decls[di];
     return if (d.summary_size != 0) d.summary_size else if (bir.summary_size != 0) bir.summary_size else Ids.Account.default_allowance;
 }
 
 /// Group `gi`'s walked declarations not yet in `skip`, by name (§3.8).
-fn groupMembers(gpa: Allocator, in: *const Input, prepass: *const Facts.Prepass, gi: usize, skip: ?[]const bool, out: *std.ArrayList(u32)) Allocator.Error!void {
+pub fn groupMembers(gpa: Allocator, in: *const Input, prepass: *const Facts.Prepass, gi: usize, skip: ?[]const bool, out: *std.ArrayList(u32)) Allocator.Error!void {
     out.clearRetainingCapacity();
     for (prepass.order[prepass.starts[gi]..prepass.starts[gi + 1]]) |di| {
         if (isWalked(in, di) and (skip == null or !skip.?[di])) try out.append(gpa, di);
@@ -1402,7 +1403,7 @@ fn coldRun(mod: *Module, pool: *ColdPool, ds: []const u32, recursive: bool, prep
 }
 
 /// Empty tables for `in`'s module.
-fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
+pub fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.* = .{
         .in = in,
         .gpa = in.gpa,
@@ -1431,7 +1432,7 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
 }
 
 /// `mod` charging `account` from here on.
-fn charging(mod: *Module, account: *Ids.Account) void {
+pub fn charging(mod: *Module, account: *Ids.Account) void {
     mod.account = account;
     mod.adapter.account = account;
 }
@@ -1450,7 +1451,7 @@ fn walkIn(mod: *Module, d: Bir.Decl, prepass: *const Facts.Prepass, r: *DeclResu
 /// The places of `d`'s parameters, appended to `out`, and of its result.
 /// The parameters' places are the scheme's: a pattern parameter (a tuple,
 /// a record, a constructor) has no type of its own.
-fn declPlaces(mod: *Module, d: Bir.Decl, di: u32, out: *std.ArrayList(PlaceId)) Error!PlaceId {
+pub fn declPlaces(mod: *Module, d: Bir.Decl, di: u32, out: *std.ArrayList(PlaceId)) Error!PlaceId {
     const gpa = mod.gpa;
     const start = out.items.len;
     const params = mod.in.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);

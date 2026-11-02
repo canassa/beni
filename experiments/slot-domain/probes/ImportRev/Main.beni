@@ -1,0 +1,73 @@
+import Lib exposing (NColor, Red, Black, TreeL, NodeL, LeafL)
+
+
+pub keepOldImported : TreeL → List Int × TreeL
+keepOldImported t =
+    case Lib.removeMinL t of
+        NodeL _ _ v _ _ →
+            ( List.push v 9, t )
+
+        LeafL →
+            ( [], t )
+
+
+
+pub rebuildImported : TreeL → TreeL
+rebuildImported t =
+    case Lib.removeMinL t of
+        NodeL c k v l r →
+            NodeL c k (List.push v 9) l r
+
+        LeafL →
+            LeafL
+
+
+pub pairApart : List Int, List Int → List Int × List Int
+pairApart xs ys =
+    case Lib.pairOf xs ys of
+        ( a, b ) →
+            ( List.push a 1, b )
+
+
+pub pairSame : List Int → List Int × List Int
+pairSame xs =
+    case Lib.pairOf xs xs of
+        ( a, b ) →
+            ( List.push a 1, b )
+
+
+pub aliasDead : List Int → List Int
+aliasDead xs = List.push (Lib.idl xs) 1
+
+
+pub aliasKept : List Int → List Int × List Int
+aliasKept xs =
+    a = Lib.idl xs
+    ( List.push a 1, xs )
+
+
+pub oneCall : Int → List Int × List Int
+oneCall n =
+    a = Lib.mk n
+    ( List.push a 1, a )
+
+
+pub twoCalls : Int → List Int × List Int
+twoCalls n =
+    a = Lib.mk n
+    b = Lib.mk n
+    ( List.push a 1, b )
+
+
+pub sharedPair : Int → List Int × List Int
+sharedPair n =
+    case Lib.oneTwice n of
+        ( a, b ) →
+            ( List.push a 1, b )
+
+
+pub freshPair : Int → List Int × List Int
+freshPair n =
+    case Lib.twoFresh n of
+        ( a, b ) →
+            ( List.push a 1, b )

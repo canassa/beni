@@ -1,0 +1,91 @@
+module LinkedFoldCoverage
+    23:28 List.push kids: accepted param
+    23:19 LinkedFoldCoverage.incList <expr>[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    23:19 LinkedFoldCoverage.incList <expr>[*]#0.0⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract incAll: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct incAll: source 20, total 1922, growth 0 of 65536, continuation 1922 of 20480, rounds 5, evaluations 6, validation 340, slots 6, arrivals 3, relations 30 (memo 0), deliveries 5, substitutions 207, positions 23, leaves 49, values 43, calls 12, demands 11, peak bytes 12960, v2 reads 0, walks { 254, 315, 333, 340, 340, 340 }
+    30:15 LinkedFoldCoverage.incAll s#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    30:15 LinkedFoldCoverage.incAll s#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    30:15 LinkedFoldCoverage.incAll s#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    30:26 LinkedFoldCoverage.incList rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    30:26 LinkedFoldCoverage.incList rest[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract incList: res ε fresh, [*]#0.0 fresh, [*]#0.0⟲ fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct incList: source 26, total 3335, growth 0 of 65536, continuation 3335 of 26624, rounds 5, evaluations 6, validation 665, slots 6, arrivals 3, relations 167 (memo 18), deliveries 5, substitutions 173, positions 33, leaves 138, values 47, calls 17, demands 11, peak bytes 26734, v2 reads 0, walks { 97, 595, 648, 665, 665, 665 }
+  contract ident: res #0.0 π1#0.0, #0.0[*]#0.0 π1#0.0[*]#0.0, #0.0[*]⟲#0.0 π1#0.0[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct ident: source 5, total 63, growth 0 of 65536, continuation 63 of 5120, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 1, calls 0, demands 0, peak bytes 6394, v2 reads 0, walks { 63 }
+    41:17 LinkedFoldCoverage.incAll <expr>#0.0: accepted fresh (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{ε,[*]#0.0,[*]#0.0⟲})
+    41:17 LinkedFoldCoverage.incAll <expr>#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{ε,[*]#0.0,[*]#0.0⟲})
+    41:17 LinkedFoldCoverage.incAll <expr>#0.0[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{ε,[*]#0.0,[*]#0.0⟲})
+  contract withKids: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0 π2ε π2[*]#0.0 π2[*]#0.0⟲; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct withKids: source 17, total 271, growth 0 of 65536, continuation 271 of 17408, rounds 0, evaluations 1, validation 0, slots 9, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 25, positions 3, leaves 7, values 6, calls 1, demands 1, peak bytes 6632, v2 reads 0, walks { 271 }
+  contract kidsOf: res ε π1#0.0, [*]#0.0 π1#0.0[*]#0.0, [*]#0.0⟲ π1#0.0[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct kidsOf: source 13, total 79, growth 0 of 65536, continuation 79 of 13312, rounds 0, evaluations 1, validation 0, slots 6, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 1, values 2, calls 0, demands 0, peak bytes 6398, v2 reads 0, walks { 79 }
+    54:5 LinkedFoldCoverage.withKids t#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 LinkedFoldCoverage.withKids t#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 LinkedFoldCoverage.withKids t#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 LinkedFoldCoverage.withKids <expr>: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 LinkedFoldCoverage.withKids <expr>[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    54:5 LinkedFoldCoverage.withKids <expr>[*]#0.0⟲: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract kidsOfItself: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct kidsOfItself: source 18, total 248, growth 0 of 65536, continuation 248 of 18432, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 47, positions 3, leaves 7, values 7, calls 2, demands 1, peak bytes 13132, v2 reads 0, walks { 248 }
+    58:15 LinkedFoldCoverage.withKids <expr>#0.0: accepted fresh
+    58:15 LinkedFoldCoverage.withKids <expr>#0.0[*]#0.0: accepted fresh
+    58:15 LinkedFoldCoverage.withKids <expr>#0.0[*]⟲#0.0: accepted fresh
+    58:15 LinkedFoldCoverage.withKids <expr>: accepted fresh
+    58:15 LinkedFoldCoverage.withKids <expr>[*]#0.0: accepted fresh
+    58:15 LinkedFoldCoverage.withKids <expr>[*]#0.0⟲: accepted fresh
+  contract kidsApart: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct kidsApart: source 16, total 154, growth 0 of 65536, continuation 154 of 16384, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 35, positions 2, leaves 6, values 9, calls 1, demands 1, peak bytes 6746, v2 reads 0, walks { 154 }
+    62:16 LinkedFoldCoverage.incAll <expr>#0.0: accepted fresh (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    62:16 LinkedFoldCoverage.incAll <expr>#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    62:16 LinkedFoldCoverage.incAll <expr>#0.0[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract twoTrees: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0 π2#0.0 π2#0.0[*]#0.0 π2#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct twoTrees: source 13, total 238, growth 0 of 65536, continuation 238 of 13312, rounds 0, evaluations 1, validation 0, slots 9, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 23, positions 3, leaves 7, values 5, calls 1, demands 1, peak bytes 6776, v2 reads 0, walks { 238 }
+    68:5 LinkedFoldCoverage.twoTrees t#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 LinkedFoldCoverage.twoTrees t#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 LinkedFoldCoverage.twoTrees t#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 LinkedFoldCoverage.twoTrees t#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 LinkedFoldCoverage.twoTrees t#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    68:5 LinkedFoldCoverage.twoTrees t#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract sameTree: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct sameTree: source 16, total 168, growth 0 of 65536, continuation 168 of 16384, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 4, values 6, calls 1, demands 1, peak bytes 6492, v2 reads 0, walks { 168 }
+    75:5 LinkedFoldCoverage.twoTrees t#0.0: accepted fresh
+    75:5 LinkedFoldCoverage.twoTrees t#0.0[*]#0.0: accepted fresh
+    75:5 LinkedFoldCoverage.twoTrees t#0.0[*]⟲#0.0: accepted fresh
+    75:5 LinkedFoldCoverage.twoTrees u#0.0: accepted fresh
+    75:5 LinkedFoldCoverage.twoTrees u#0.0[*]#0.0: accepted fresh
+    75:5 LinkedFoldCoverage.twoTrees u#0.0[*]⟲#0.0: accepted fresh
+  contract twoFresh: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct twoFresh: source 23, total 179, growth 0 of 65536, continuation 179 of 23552, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 6, values 10, calls 1, demands 1, peak bytes 6746, v2 reads 0, walks { 179 }
+    82:7 LinkedFoldCoverage.twoTrees t#0.0: rejected alias: t holds it and is read at 82:21
+    82:7 LinkedFoldCoverage.twoTrees t#0.0[*]#0.0: rejected alias: t holds it and is read at 82:21
+    82:7 LinkedFoldCoverage.twoTrees t#0.0[*]⟲#0.0: accepted fresh
+    82:7 LinkedFoldCoverage.twoTrees u#0.0: accepted fresh
+    82:7 LinkedFoldCoverage.twoTrees u#0.0[*]#0.0: accepted fresh
+    82:7 LinkedFoldCoverage.twoTrees u#0.0[*]⟲#0.0: accepted fresh
+  contract treeReadAfter: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh, .1#0.0 fresh, .1#0.0[*]#0.0 fresh; nondup yes
+  slotacct treeReadAfter: source 27, total 345, growth 0 of 65536, continuation 345 of 27648, rounds 0, evaluations 1, validation 0, slots 6, arrivals 5, relations 7 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 6, values 11, calls 1, demands 1, peak bytes 13170, v2 reads 0, walks { 345 }
+    86:21 LinkedFoldCoverage.incAll <expr>#0.0: accepted fresh (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    86:21 LinkedFoldCoverage.incAll <expr>#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    86:21 LinkedFoldCoverage.incAll <expr>#0.0[*]⟲#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract twoTreesIdent: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0 π2#0.0 π2#0.0[*]#0.0 π2#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0} π2{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct twoTreesIdent: source 15, total 324, growth 0 of 65536, continuation 324 of 15360, rounds 0, evaluations 1, validation 0, slots 9, arrivals 3, relations 5 (memo 0), deliveries 0, substitutions 34, positions 4, leaves 10, values 6, calls 2, demands 1, peak bytes 12796, v2 reads 0, walks { 324 }
+    92:5 LinkedFoldCoverage.twoTreesIdent t#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:5 LinkedFoldCoverage.twoTreesIdent t#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:5 LinkedFoldCoverage.twoTreesIdent t#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:5 LinkedFoldCoverage.twoTreesIdent t#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:5 LinkedFoldCoverage.twoTreesIdent t#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:5 LinkedFoldCoverage.twoTreesIdent t#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract sameTreeIdent: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct sameTreeIdent: source 16, total 168, growth 0 of 65536, continuation 168 of 16384, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 4, values 6, calls 1, demands 1, peak bytes 6492, v2 reads 0, walks { 168 }
+    99:5 LinkedFoldCoverage.twoTreesIdent t#0.0: accepted fresh
+    99:5 LinkedFoldCoverage.twoTreesIdent t#0.0[*]#0.0: accepted fresh
+    99:5 LinkedFoldCoverage.twoTreesIdent t#0.0[*]⟲#0.0: accepted fresh
+    99:5 LinkedFoldCoverage.twoTreesIdent u#0.0: accepted fresh
+    99:5 LinkedFoldCoverage.twoTreesIdent u#0.0[*]#0.0: accepted fresh
+    99:5 LinkedFoldCoverage.twoTreesIdent u#0.0[*]⟲#0.0: accepted fresh
+  contract twoFreshIdent: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct twoFreshIdent: source 23, total 179, growth 0 of 65536, continuation 179 of 23552, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 39, positions 2, leaves 6, values 10, calls 1, demands 1, peak bytes 6746, v2 reads 0, walks { 179 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

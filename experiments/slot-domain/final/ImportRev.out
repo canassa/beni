@@ -1,0 +1,66 @@
+module Lib
+  contract balanceL: res #0.2 π3ε π4#0.2 π5#0.2, #0.3#0.2 π3ε π4#0.2 π4#0.3#0.2, #0.3⟲#0.2 π4#0.2 π4#0.3#0.2 π4#0.3⟲#0.2 π4#0.4#0.2 π4#0.4⟲#0.2 π5#0.3#0.2 π5#0.3⟲#0.2, #0.4#0.2 π3ε π5#0.2 π5#0.4#0.2, #0.4⟲#0.2 π4#0.4#0.2 π4#0.4⟲#0.2 π5#0.2 π5#0.3#0.2 π5#0.3⟲#0.2 π5#0.4#0.2 π5#0.4⟲#0.2; nondup ⇐ sel π3{ε} π4{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2} π5{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2}
+  slotacct balanceL: source 118, total 1817, growth 0 of 20000000, continuation 1817 of 120832, rounds 0, evaluations 1, validation 0, slots 16, arrivals 23, relations 67 (memo 0), deliveries 0, substitutions 0, positions 20, leaves 22, values 44, calls 0, demands 0, peak bytes 27292, v2 reads 0, walks { 1817 }
+  contract moveRedLeftL: res #0.2 π1#0.2 π1#0.4⟲#0.2, #0.3#0.2 π1#0.2 π1#0.3#0.2, #0.3⟲#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2, #0.4#0.2 π1#0.4#0.2, #0.4⟲#0.2 π1#0.4⟲#0.2; nondup ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2}
+  slotacct moveRedLeftL: source 86, total 917, growth 0 of 20000000, continuation 917 of 88064, rounds 0, evaluations 1, validation 0, slots 10, arrivals 9, relations 25 (memo 0), deliveries 0, substitutions 0, positions 21, leaves 17, values 37, calls 0, demands 0, peak bytes 28046, v2 reads 0, walks { 917 }
+  contract removeMinL: res #0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2, #0.3#0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2, #0.3⟲#0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2, #0.4#0.2 π1#0.2 π1#0.4#0.2 π1#0.4⟲#0.2, #0.4⟲#0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2; nondup ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2}
+  slotacct removeMinL: source 87, total 11636, growth 0 of 20000000, continuation 11636 of 89088, rounds 4, evaluations 5, validation 3239, slots 10, arrivals 21, relations 711 (memo 0), deliveries 4, substitutions 701, positions 126, leaves 165, values 167, calls 24, demands 0, peak bytes 52376, v2 reads 0, walks { 307, 1923, 2928, 3239, 3239 }
+  contract descend: res #0.1 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π2#0.1, #0.2#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π2#0.2#0.2, #0.2#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.3#0.2, #0.2#0.3⟲#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.3⟲#0.2, #0.2#0.4#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.4#0.2, #0.2#0.4⟲#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.4⟲#0.2, #0.3#0.1 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π2#0.1 π2#0.3#0.1, #0.3#0.2#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π2#0.2#0.2 π2#0.3#0.2#0.2, #0.3#0.2#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.3#0.2 π2#0.3#0.2#0.3#0.2, #0.3#0.2#0.3⟲#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.3⟲#0.2 π2#0.3#0.2#0.3⟲#0.2, #0.3#0.2#0.4#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.4#0.2 π2#0.3#0.2#0.4#0.2, #0.3#0.2#0.4⟲#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.4⟲#0.2 π2#0.3#0.2#0.4⟲#0.2, #0.3⟲#0.1 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π2#0.1 π2#0.3#0.1 π2#0.3⟲#0.1, #0.3⟲#0.2#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π2#0.2#0.2 π2#0.3#0.2#0.2 π2#0.3⟲#0.2#0.2, #0.3⟲#0.2#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.3#0.2 π2#0.3#0.2#0.3#0.2 π2#0.3⟲#0.2#0.3#0.2, #0.3⟲#0.2#0.3⟲#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.3⟲#0.2 π2#0.3#0.2#0.3⟲#0.2 π2#0.3⟲#0.2#0.3⟲#0.2, #0.3⟲#0.2#0.4#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.4#0.2 π2#0.3#0.2#0.4#0.2 π2#0.3⟲#0.2#0.4#0.2, #0.3⟲#0.2#0.4⟲#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2 π2#0.2#0.4⟲#0.2 π2#0.3#0.2#0.4⟲#0.2 π2#0.3⟲#0.2#0.4⟲#0.2; nondup ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2} π2{#0.1,#0.2#0.2,#0.2#0.3#0.2,#0.2#0.3⟲#0.2,#0.2#0.4#0.2,#0.2#0.4⟲#0.2,#0.3#0.1,#0.3#0.2#0.2,#0.3#0.2#0.3#0.2,#0.3#0.2#0.3⟲#0.2,#0.3#0.2#0.4#0.2,#0.3#0.2#0.4⟲#0.2,#0.3⟲#0.1,#0.3⟲#0.2#0.2,#0.3⟲#0.2#0.3#0.2,#0.3⟲#0.2#0.3⟲#0.2,#0.3⟲#0.2#0.4#0.2,#0.3⟲#0.2#0.4⟲#0.2}
+  slotacct descend: source 29, total 20442, growth 0 of 20000000, continuation 20442 of 29696, rounds 7, evaluations 8, validation 2949, slots 41, arrivals 75, relations 271 (memo 0), deliveries 7, substitutions 1306, positions 63, leaves 249, values 79, calls 8, demands 0, peak bytes 57148, v2 reads 0, walks { 1294, 2312, 2436, 2704, 2860, 2938, 2949, 2949 }
+    116:13 List.push v: accepted fresh
+  contract useful: res ε fresh; nondup yes
+  slotacct useful: source 53, total 366, growth 0 of 20000000, continuation 366 of 54272, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 83, positions 8, leaves 10, values 31, calls 4, demands 1, peak bytes 13116, v2 reads 0, walks { 366 }
+    126:13 List.push v: accepted param
+  contract usefulParam: res ε π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2 fresh; nondup ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2}; writes π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2; req yes
+  slotacct usefulParam: source 26, total 389, growth 0 of 20000000, continuation 389 of 26624, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 10 (memo 0), deliveries 0, substitutions 46, positions 8, leaves 14, values 11, calls 2, demands 1, peak bytes 12980, v2 reads 0, walks { 389 }
+    136:13 List.push v: accepted param
+  contract cursorPush: res ε π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 fresh; nondup ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2}; writes π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2; req yes
+  slotacct cursorPush: source 26, total 697, growth 0 of 20000000, continuation 697 of 26624, rounds 0, evaluations 1, validation 0, slots 6, arrivals 4, relations 3 (memo 0), deliveries 0, substitutions 118, positions 7, leaves 12, values 11, calls 2, demands 1, peak bytes 14640, v2 reads 0, walks { 697 }
+  contract mkTree: res #0.2 fresh, #0.3#0.2 fresh, #0.3⟲#0.2 fresh, #0.4#0.2 fresh; nondup yes
+  slotacct mkTree: source 42, total 163, growth 0 of 20000000, continuation 163 of 43008, rounds 0, evaluations 1, validation 0, slots 5, arrivals 4, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 4, values 28, calls 3, demands 0, peak bytes 5770, v2 reads 0, walks { 163 }
+  contract twoFresh: res .0 fresh, .1 fresh; nondup yes
+  slotacct twoFresh: source 18, total 56, growth 0 of 20000000, continuation 56 of 18432, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 6, calls 1, demands 0, peak bytes 2884, v2 reads 0, walks { 56 }
+  contract oneTwice: res .0 fresh, .1 fresh; nondup no
+  slotacct oneTwice: source 17, total 42, growth 0 of 20000000, continuation 42 of 17408, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 3, calls 0, demands 0, peak bytes 2884, v2 reads 0, walks { 42 }
+  contract idl: res ε π1ε; nondup ⇐ sel π1{ε}
+  slotacct idl: source 9, total 28, growth 0 of 20000000, continuation 28 of 9216, rounds 0, evaluations 1, validation 0, slots 2, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 1, calls 0, demands 0, peak bytes 3172, v2 reads 0, walks { 28 }
+  contract pairOf: res .0 π1ε, .1 π2ε; nondup ⇐ sel π1{ε} π2{ε}
+  slotacct pairOf: source 19, total 69, growth 0 of 20000000, continuation 69 of 19456, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 2, leaves 2, values 3, calls 0, demands 0, peak bytes 6404, v2 reads 0, walks { 69 }
+  contract mk: res ε fresh; nondup yes
+  slotacct mk: source 8, total 21, growth 0 of 20000000, continuation 21 of 8192, rounds 0, evaluations 1, validation 0, slots 1, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 2, calls 0, demands 0, peak bytes 2884, v2 reads 0, walks { 21 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+    8:15 List.push v: rejected alias: t holds it and is read at 8:30
+  contract keepOldImported: res .0 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2 fresh, .1#0.2 π1#0.2, .1#0.3#0.2 π1#0.3#0.2, .1#0.3⟲#0.2 π1#0.3⟲#0.2, .1#0.4#0.2 π1#0.4#0.2, .1#0.4⟲#0.2 π1#0.4⟲#0.2; nondup no
+  slotacct keepOldImported: source 32, total 1178, growth 0 of 65536, continuation 1178 of 32768, rounds 0, evaluations 1, validation 0, slots 11, arrivals 11, relations 9 (memo 0), deliveries 0, substitutions 46, positions 8, leaves 17, values 13, calls 2, demands 1, peak bytes 13660, v2 reads 0, walks { 1178 }
+    19:24 List.push v: accepted param (⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2})
+  contract rebuildImported: res #0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2, #0.3#0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2, #0.3⟲#0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4⟲#0.2, #0.4#0.2 π1#0.2 π1#0.4#0.2 π1#0.4⟲#0.2, #0.4⟲#0.2 π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2; nondup ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2}; writes π1#0.2 π1#0.3#0.2 π1#0.3⟲#0.2 π1#0.4#0.2 π1#0.4⟲#0.2; req ⇐ sel π1{#0.2,#0.3#0.2,#0.3⟲#0.2,#0.4#0.2,#0.4⟲#0.2}
+  slotacct rebuildImported: source 30, total 707, growth 0 of 65536, continuation 707 of 30720, rounds 0, evaluations 1, validation 0, slots 10, arrivals 21, relations 16 (memo 0), deliveries 0, substitutions 51, positions 8, leaves 12, values 12, calls 2, demands 1, peak bytes 13176, v2 reads 0, walks { 707 }
+    29:15 List.push a: accepted param (⇐ sel π1{ε} π2{ε})
+  contract pairApart: res .0 π1ε, .1 π2ε; nondup ⇐ sel π1{ε} π2{ε}; writes π1ε; req ⇐ sel π1{ε} π2{ε}
+  slotacct pairApart: source 31, total 226, growth 0 of 65536, continuation 226 of 31744, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 10, positions 6, leaves 5, values 8, calls 2, demands 1, peak bytes 13308, v2 reads 0, walks { 226 }
+    36:15 List.push a: rejected alias: b holds it and is read at 36:30
+  contract pairSame: res .0 π1ε, .1 π1ε; nondup no
+  slotacct pairSame: source 27, total 157, growth 0 of 65536, continuation 157 of 27648, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 3 (memo 0), deliveries 0, substitutions 10, positions 5, leaves 4, values 7, calls 2, demands 1, peak bytes 13336, v2 reads 0, walks { 157 }
+    40:16 List.push <expr>: accepted param
+  contract aliasDead: res ε π1ε; nondup yes; writes π1ε; req yes
+  slotacct aliasDead: source 14, total 88, growth 0 of 65536, continuation 88 of 14336, rounds 0, evaluations 1, validation 0, slots 2, arrivals 1, relations 0 (memo 0), deliveries 0, substitutions 6, positions 3, leaves 3, values 4, calls 2, demands 1, peak bytes 6480, v2 reads 0, walks { 88 }
+    46:7 List.push a: rejected alias: xs holds it and is read at 46:22
+  contract aliasKept: res .0 π1ε, .1 π1ε; nondup no
+  slotacct aliasKept: source 23, total 131, growth 0 of 65536, continuation 131 of 23552, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 3 (memo 0), deliveries 0, substitutions 6, positions 3, leaves 4, values 5, calls 2, demands 1, peak bytes 6560, v2 reads 0, walks { 131 }
+    52:7 List.push a: rejected alias: a holds it and is read at 52:22
+  contract oneCall: res .0 fresh, .1 fresh; nondup no
+  slotacct oneCall: source 21, total 131, growth 0 of 65536, continuation 131 of 21504, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 5, positions 3, leaves 4, values 5, calls 2, demands 1, peak bytes 6640, v2 reads 0, walks { 131 }
+    59:7 List.push a: accepted call
+  contract twoCalls: res .0 fresh, .1 fresh; nondup yes
+  slotacct twoCalls: source 25, total 136, growth 0 of 65536, continuation 136 of 25600, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 3 (memo 0), deliveries 0, substitutions 6, positions 4, leaves 5, values 6, calls 3, demands 1, peak bytes 12808, v2 reads 0, walks { 136 }
+    66:15 List.push a: rejected alias: b holds it and is read at 66:30
+  contract sharedPair: res .0 fresh, .1 fresh; nondup no
+  slotacct sharedPair: source 24, total 152, growth 0 of 65536, continuation 152 of 24576, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 6, positions 5, leaves 4, values 7, calls 2, demands 1, peak bytes 13264, v2 reads 0, walks { 152 }
+    73:15 List.push a: accepted call
+  contract freshPair: res .0 fresh, .1 fresh; nondup yes
+  slotacct freshPair: source 24, total 160, growth 0 of 65536, continuation 160 of 24576, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 6, positions 5, leaves 4, values 7, calls 2, demands 1, peak bytes 13264, v2 reads 0, walks { 160 }
+  slots module: v2 value-reader calls 0, imported contracts 6 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

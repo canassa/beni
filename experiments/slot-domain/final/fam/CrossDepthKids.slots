@@ -1,0 +1,102 @@
+module CrossDepthKids
+    22:28 List.push kids: accepted param
+    22:19 CrossDepthKids.incList <expr>[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+    22:19 CrossDepthKids.incList <expr>[*]#0.0⟲: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0})
+  contract incAll: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes; writes π1#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct incAll: source 20, total 1922, growth 0 of 65536, continuation 1922 of 20480, rounds 5, evaluations 6, validation 340, slots 6, arrivals 3, relations 30 (memo 0), deliveries 5, substitutions 207, positions 23, leaves 49, values 43, calls 12, demands 11, peak bytes 12960, v2 reads 0, walks { 254, 315, 333, 340, 340, 340 }
+    29:15 CrossDepthKids.incAll s#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:15 CrossDepthKids.incAll s#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:15 CrossDepthKids.incAll s#0.0[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:26 CrossDepthKids.incList rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+    29:26 CrossDepthKids.incList rest[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract incList: res ε fresh, [*]#0.0 fresh, [*]#0.0⟲ fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲}
+  slotacct incList: source 26, total 3335, growth 0 of 65536, continuation 3335 of 26624, rounds 5, evaluations 6, validation 665, slots 6, arrivals 3, relations 167 (memo 18), deliveries 5, substitutions 173, positions 33, leaves 138, values 47, calls 17, demands 11, peak bytes 26734, v2 reads 0, walks { 97, 595, 648, 665, 665, 665 }
+  unsupported minimalOf: callee List.append: result word not read by the slot evaluator
+  contract minimalOf: res ⊥; nondup yes
+  slotacct minimalOf: source 27, total 33, growth 0 of 65536, continuation 33 of 27648, rounds 0, evaluations 1, validation 0, slots 3, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 0, values 11, calls 0, demands 0, peak bytes 2884, v2 reads 0, walks { 33 }
+    46:11 List.push <expr>: accepted fresh (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract kidsPushOf: res #0.0 fresh, #0.0[*]#0.0 π1ε fresh, #0.0[*]⟲#0.0 π1ε π1[*]#0.0 π1[*]#0.0⟲ fresh; nondup no
+  slotacct kidsPushOf: source 36, total 470, growth 0 of 65536, continuation 470 of 36864, rounds 0, evaluations 1, validation 0, slots 6, arrivals 7, relations 5 (memo 0), deliveries 0, substitutions 52, positions 2, leaves 10, values 14, calls 1, demands 1, peak bytes 13628, v2 reads 0, walks { 470 }
+  unsupported kidsSpreadOf: callee List.append: result word not read by the slot evaluator
+  contract kidsSpreadOf: res ⊥; nondup yes
+  slotacct kidsSpreadOf: source 37, total 47, growth 0 of 65536, continuation 47 of 37888, rounds 0, evaluations 1, validation 0, slots 3, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 0, values 15, calls 0, demands 0, peak bytes 2884, v2 reads 0, walks { 47 }
+    62:11 List.push <expr>: accepted fresh (⇐ sel π1{ε,[*]#0.0,[*]#0.0⟲})
+  contract onePushOf: res #0.0 fresh, #0.0[*]#0.0 π1ε fresh, #0.0[*]⟲#0.0 π1ε π1[*]#0.0 π1[*]#0.0⟲ fresh; nondup no
+  slotacct onePushOf: source 30, total 410, growth 0 of 65536, continuation 410 of 30720, rounds 0, evaluations 1, validation 0, slots 6, arrivals 7, relations 5 (memo 0), deliveries 0, substitutions 46, positions 2, leaves 8, values 10, calls 1, demands 1, peak bytes 14026, v2 reads 0, walks { 410 }
+  unsupported minimal: callee CrossDepthKids.minimalOf: callee List.append: result word not read by the slot evaluator
+  contract minimal: res ⊥; nondup yes
+  slotacct minimal: source 15, total 50, growth 0 of 65536, continuation 50 of 15360, rounds 0, evaluations 1, validation 0, slots 0, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 9, positions 2, leaves 2, values 6, calls 1, demands 1, peak bytes 6332, v2 reads 0, walks { 50 }
+    74:5 CrossDepthKids.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    74:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    74:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract kidsPush: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct kidsPush: source 15, total 172, growth 0 of 65536, continuation 172 of 15360, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 23, positions 3, leaves 8, values 6, calls 2, demands 1, peak bytes 13658, v2 reads 0, walks { 172 }
+  unsupported kidsSpread: callee CrossDepthKids.kidsSpreadOf: callee List.append: result word not read by the slot evaluator
+  contract kidsSpread: res ⊥; nondup yes
+  slotacct kidsSpread: source 15, total 49, growth 0 of 65536, continuation 49 of 15360, rounds 0, evaluations 1, validation 0, slots 0, arrivals 0, relations 0 (memo 0), deliveries 0, substitutions 9, positions 2, leaves 2, values 6, calls 1, demands 1, peak bytes 6332, v2 reads 0, walks { 49 }
+    86:5 CrossDepthKids.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    86:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    86:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract onePush: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct onePush: source 15, total 172, growth 0 of 65536, continuation 172 of 15360, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 23, positions 3, leaves 8, values 6, calls 2, demands 1, peak bytes 13658, v2 reads 0, walks { 172 }
+    94:19 List.push <expr>: accepted fresh
+    94:5 CrossDepthKids.incAll <expr>#0.0: accepted fresh
+    94:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: accepted fresh
+    94:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: accepted fresh
+  contract plainPush: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct plainPush: source 42, total 452, growth 0 of 65536, continuation 452 of 43008, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 77, positions 3, leaves 14, values 21, calls 2, demands 2, peak bytes 13348, v2 reads 0, walks { 452 }
+  contract nest: res #0.0 fresh, #0.0[*]#0.0 π1#0.0, #0.0[*]⟲#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}
+  slotacct nest: source 8, total 76, growth 0 of 65536, continuation 76 of 8192, rounds 0, evaluations 1, validation 0, slots 6, arrivals 4, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 3, calls 0, demands 0, peak bytes 6390, v2 reads 0, walks { 76 }
+    104:5 CrossDepthKids.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    104:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    104:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract gap1: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct gap1: source 23, total 280, growth 0 of 65536, continuation 280 of 23552, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 1 (memo 0), deliveries 0, substitutions 50, positions 3, leaves 8, values 10, calls 2, demands 1, peak bytes 13632, v2 reads 0, walks { 280 }
+    110:5 CrossDepthKids.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    110:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    110:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract gap2: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct gap2: source 25, total 373, growth 0 of 65536, continuation 373 of 25600, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 7 (memo 0), deliveries 0, substitutions 60, positions 4, leaves 12, values 11, calls 3, demands 1, peak bytes 13792, v2 reads 0, walks { 373 }
+    116:5 CrossDepthKids.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    116:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    116:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract gap6: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct gap6: source 33, total 803, growth 0 of 65536, continuation 803 of 33792, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 31 (memo 0), deliveries 0, substitutions 100, positions 8, leaves 28, values 15, calls 7, demands 1, peak bytes 26680, v2 reads 0, walks { 803 }
+    123:5 CrossDepthKids.incAll <expr>#0.0: accepted fresh
+    123:5 CrossDepthKids.incAll <expr>#0.0[*]#0.0: accepted call
+    123:5 CrossDepthKids.incAll <expr>#0.0[*]⟲#0.0: accepted call
+  contract gap6Apart: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 fresh; nondup yes
+  slotacct gap6Apart: source 38, total 812, growth 0 of 65536, continuation 812 of 38912, rounds 0, evaluations 1, validation 0, slots 3, arrivals 3, relations 31 (memo 0), deliveries 0, substitutions 100, positions 8, leaves 30, values 18, calls 7, demands 1, peak bytes 29530, v2 reads 0, walks { 812 }
+    140:16 CrossDepthKids.incBs bs[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]⟲#0.0,#0.0[*]#0.0[*]⟲#0.0[*]#0.0})
+    140:16 CrossDepthKids.incBs bs[*]#0.0[*]#0.0[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]⟲#0.0,#0.0[*]#0.0[*]⟲#0.0[*]#0.0})
+    140:16 CrossDepthKids.incBs bs[*]#0.0[*]#0.0⟲[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]⟲#0.0,#0.0[*]#0.0[*]⟲#0.0[*]#0.0})
+  contract incA: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.0[*]#0.0 fresh, #0.0[*]#0.0[*]#0.0[*]#0.0 fresh, #0.0[*]#0.0[*]⟲#0.0 fresh, #0.0[*]#0.0[*]⟲#0.0[*]#0.0 fresh; nondup yes; writes π1#0.0[*]#0.0 π1#0.0[*]#0.0[*]#0.0[*]#0.0 π1#0.0[*]#0.0[*]⟲#0.0[*]#0.0; req ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]#0.0[*]#0.0,#0.0[*]#0.0[*]⟲#0.0,#0.0[*]#0.0[*]⟲#0.0[*]#0.0}
+  slotacct incA: source 15, total 1950, growth 0 of 65536, continuation 1950 of 15360, rounds 6, evaluations 7, validation 321, slots 12, arrivals 6, relations 90 (memo 0), deliveries 6, substitutions 78, positions 20, leaves 48, values 29, calls 7, demands 6, peak bytes 13702, v2 reads 0, walks { 110, 295, 272, 310, 321, 321, 321 }
+    161:15 CrossDepthKids.incA a#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    161:15 CrossDepthKids.incA a#0.0[*]#0.0[*]#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    161:15 CrossDepthKids.incA a#0.0[*]#0.0[*]⟲#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    161:24 CrossDepthKids.incAs rest[*]#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    161:24 CrossDepthKids.incAs rest[*]#0.0[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+  contract incAs: res ε fresh, [*]#0.0 fresh, [*]#0.0[*]#0.0 fresh, [*]#0.0[*]#0.0[*]#0.0 fresh, [*]#0.0[*]#0.0⟲ fresh, [*]#0.0[*]#0.0⟲[*]#0.0 fresh; nondup yes; writes π1[*]#0.0[*]#0.0 π1[*]#0.0[*]#0.0⟲; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0}
+  slotacct incAs: source 26, total 8274, growth 0 of 88000, continuation 8274 of 26624, rounds 6, evaluations 7, validation 1452, slots 12, arrivals 6, relations 778 (memo 44), deliveries 6, substitutions 364, positions 39, leaves 264, values 55, calls 20, demands 11, peak bytes 27144, v2 reads 0, walks { 132, 1072, 1296, 1418, 1452, 1452, 1452 }
+    150:25 List.push kids: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    150:18 CrossDepthKids.incAs <expr>[*]#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    150:18 CrossDepthKids.incAs <expr>[*]#0.0[*]#0.0⟲: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    150:51 CrossDepthKids.incBs rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    150:51 CrossDepthKids.incBs rest[*]#0.0[*]#0.0[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+    150:51 CrossDepthKids.incBs rest[*]#0.0[*]#0.0⟲[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0})
+  contract incBs: res ε fresh, [*]#0.0 fresh, [*]#0.0[*]#0.0 fresh, [*]#0.0[*]#0.0[*]#0.0 fresh, [*]#0.0[*]#0.0⟲ fresh, [*]#0.0[*]#0.0⟲[*]#0.0 fresh; nondup yes; writes π1[*]#0.0 π1[*]#0.0[*]#0.0[*]#0.0 π1[*]#0.0[*]#0.0⟲[*]#0.0; req ⇐ sel π1{ε,[*]#0.0,[*]#0.0[*]#0.0,[*]#0.0[*]#0.0[*]#0.0,[*]#0.0[*]#0.0⟲,[*]#0.0[*]#0.0⟲[*]#0.0}
+  slotacct incBs: source 35, total 11948, growth 0 of 88000, continuation 11948 of 35840, rounds 6, evaluations 7, validation 1927, slots 12, arrivals 6, relations 936 (memo 67), deliveries 6, substitutions 831, positions 54, leaves 321, values 90, calls 27, demands 19, peak bytes 55748, v2 reads 0, walks { 609, 1818, 1824, 1916, 1927, 1927, 1927 }
+    170:5 CrossDepthKids.incA <expr>#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    170:5 CrossDepthKids.incA <expr>#0.0[*]#0.0[*]#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    170:5 CrossDepthKids.incA <expr>#0.0[*]#0.0[*]⟲#0.0[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract mutualShared: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.0[*]#0.0 fresh, #0.0[*]#0.0[*]#0.0[*]#0.0 fresh, #0.0[*]#0.0[*]⟲#0.0 fresh, #0.0[*]#0.0[*]⟲#0.0[*]#0.0 fresh; nondup yes
+  slotacct mutualShared: source 27, total 359, growth 0 of 65536, continuation 359 of 27648, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 84, positions 2, leaves 7, values 13, calls 1, demands 1, peak bytes 12130, v2 reads 0, walks { 359 }
+    177:5 CrossDepthKids.incA <expr>#0.0[*]#0.0: accepted fresh
+    177:5 CrossDepthKids.incA <expr>#0.0[*]#0.0[*]#0.0[*]#0.0: accepted fresh
+    177:5 CrossDepthKids.incA <expr>#0.0[*]#0.0[*]⟲#0.0[*]#0.0: accepted fresh
+  contract mutualApart: res #0.0 fresh, #0.0[*]#0.0 fresh, #0.0[*]#0.0[*]#0.0 fresh, #0.0[*]#0.0[*]#0.0[*]#0.0 fresh, #0.0[*]#0.0[*]⟲#0.0 fresh, #0.0[*]#0.0[*]⟲#0.0[*]#0.0 fresh; nondup yes
+  slotacct mutualApart: source 32, total 368, growth 0 of 65536, continuation 368 of 32768, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 84, positions 2, leaves 9, values 16, calls 1, demands 1, peak bytes 12996, v2 reads 0, walks { 368 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

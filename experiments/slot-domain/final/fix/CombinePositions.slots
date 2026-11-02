@@ -1,0 +1,33 @@
+module CombinePositions
+    24:39 List.push values: accepted param (⇐ sel π1{ε,[*]#0.0} π2{ε})
+    24:21 CombinePositions.combineHelp <expr>: accepted param (⇐ sel π1{ε,[*]#0.0} π2{ε})
+  contract combineHelp: res #0.0 π2ε, #0.0[*] π1[*]#0.0 π2[*]; nondup ⇐ sel π1{[*]#0.0} π2{ε,[*]}; writes π2ε; req ⇐ sel π1{ε,[*]#0.0} π2{ε}
+  slotacct combineHelp: source 56, total 1931, growth 0 of 65536, continuation 1931 of 57344, rounds 3, evaluations 4, validation 575, slots 6, arrivals 3, relations 34 (memo 0), deliveries 3, substitutions 81, positions 31, leaves 52, values 47, calls 8, demands 7, peak bytes 13556, v2 reads 0, walks { 278, 503, 575, 575 }
+    12:19 CombinePositions.combineHelp <expr>: accepted fresh (⇐ sel π1{ε,[*]#0.0})
+  contract combine: res #0.0 fresh, #0.0[*] π1[*]#0.0; nondup ⇐ sel π1{[*]#0.0}
+  slotacct combine: source 22, total 118, growth 0 of 65536, continuation 118 of 22528, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 12, positions 2, leaves 4, values 3, calls 1, demands 1, peak bytes 6400, v2 reads 0, walks { 118 }
+    36:26 List.push first: accepted param (⇐ sel π1{[*]#0.0})
+  contract bump: res #0.0 fresh, #0.0[*] π1[*]#0.0; nondup ⇐ sel π1{[*]#0.0}; writes π1[*]#0.0; req ⇐ sel π1{[*]#0.0}
+  slotacct bump: source 54, total 354, growth 0 of 65536, continuation 354 of 55296, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 9 (memo 0), deliveries 0, substitutions 17, positions 8, leaves 17, values 15, calls 3, demands 1, peak bytes 12326, v2 reads 0, walks { 354 }
+    46:16 CombinePositions.bump <expr>[*]#0.0: accepted param (⇐ sel π1{ε} π2{ε})
+  contract distinct: res #0.0 fresh, #0.0[*] π1ε π2ε; nondup ⇐ sel π1{ε} π2{ε}; writes π1ε π2ε; req ⇐ sel π1{ε} π2{ε}
+  slotacct distinct: source 26, total 158, growth 0 of 65536, continuation 158 of 26624, rounds 0, evaluations 1, validation 0, slots 4, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 23, positions 3, leaves 4, values 6, calls 1, demands 1, peak bytes 6652, v2 reads 0, walks { 158 }
+    50:13 CombinePositions.bump <expr>[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract aliased: res #0.0 fresh, #0.0[*] π1ε; nondup no
+  slotacct aliased: source 22, total 133, growth 0 of 65536, continuation 133 of 22528, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 23, positions 2, leaves 3, values 5, calls 1, demands 1, peak bytes 6632, v2 reads 0, walks { 133 }
+    55:10 CombinePositions.combineHelp <expr>: accepted fresh
+    59:26 List.push first: rejected alias: rest holds it and is read at 59:46
+  contract mixed: res #0.0 fresh, #0.0[*] π1ε; nondup no
+  slotacct mixed: source 54, total 345, growth 0 of 65536, continuation 345 of 55296, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 4 (memo 0), deliveries 0, substitutions 34, positions 8, leaves 11, values 18, calls 3, demands 2, peak bytes 13456, v2 reads 0, walks { 345 }
+    69:11 CombinePositions.bump <expr>[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract twice: res #0.0 fresh, #0.0[*] π1#0.0; nondup no
+  slotacct twice: source 21, total 150, growth 0 of 65536, continuation 150 of 21504, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 15, positions 2, leaves 3, values 3, calls 1, demands 1, peak bytes 6740, v2 reads 0, walks { 150 }
+    73:12 CombinePositions.bump <expr>[*]#0.0: rejected alias: b holds it and is read at 73:27
+  contract held: res .0#0.0 fresh, .0#0.0[*] π1ε, .1 π1ε; nondup no
+  slotacct held: source 25, total 162, growth 0 of 65536, continuation 162 of 25600, rounds 0, evaluations 1, validation 0, slots 4, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 14, positions 2, leaves 4, values 5, calls 1, demands 1, peak bytes 6700, v2 reads 0, walks { 162 }
+    82:23 List.push a: rejected alias: c holds it and is read at 82:38
+  contract twoMatches: res ε fresh, [*] π1[*]#0.0; nondup no
+  slotacct twoMatches: source 52, total 232, growth 0 of 65536, continuation 232 of 53248, rounds 0, evaluations 1, validation 0, slots 4, arrivals 2, relations 2 (memo 0), deliveries 0, substitutions 4, positions 7, leaves 8, values 17, calls 1, demands 1, peak bytes 13020, v2 reads 0, walks { 232 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

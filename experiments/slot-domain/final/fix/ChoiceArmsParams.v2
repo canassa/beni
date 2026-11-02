@@ -1,0 +1,42 @@
+module ChoiceArmsParams
+  14:17 List.push a: accepted param
+  18:17 List.push a: accepted param
+  23:5 ChoiceArmsParams.t2 <expression>.0: accepted param
+  33:5 ChoiceArmsParams.t2 <expression>.0: accepted param
+  43:5 ChoiceArmsParams.t2 <expression>.0: rejected disjoint: another path of the same argument reaches it
+  53:5 ChoiceArmsParams.t3 <expression>.0: accepted param
+  62:26 List.push a: accepted param
+  66:29 List.push a: accepted param
+  71:5 ChoiceArmsParams.w2 <expression>.0.0: accepted param
+  82:5 ChoiceArmsParams.w2 <expression>.0.0: accepted param
+  92:5 ChoiceArmsParams.u2 <expression>.1.0: accepted param
+  103:5 ChoiceArmsParams.u2 <expression>.1.0: accepted param
+  account t2: source 24, baseline 416, growth 0 of 65536, total 416, continuation 336 of 24576, demands 24, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 25, step lanes 1
+  crossing: reads 0, redone 0, base moves 4
+  summary t2: π1.0 RAW, π1.0[*] A, π1.1 RA; res .0 π1.0, .0[*] π1.0[*]{excl π1.0[*]}, .1 π1.1
+  account t3: source 32, baseline 416, growth 0 of 65536, total 416, continuation 336 of 32768, demands 24, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 33, step lanes 1
+  summary t3: π1.0 RAW, π1.0[*] A, π1.1 RA; res .0 π1.0, .0[*] π1.0[*]{excl π1.0[*]}, .1 π1.1
+  account swap: source 34, baseline 1031, growth 0 of 65536, total 1031, continuation 988 of 34816, demands 41, direct_data lanes 3, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 37
+  summary swap: π2 RAW, π2[*] RA, π3 RAW, π3[*] RA; res .0 π2 π3, .0[*] π2[*] π3[*]{apart [π2[*]] [π3[*]], excl π2[*], excl π3[*]}, .1 π2 π3
+  account same: source 30, baseline 893, growth 0 of 65536, total 893, continuation 850 of 30720, demands 48, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 33
+  summary same: π2 RAW, π2[*] RA; res .0 fresh1 π2, .0[*] π2[*]{excl π2[*]}, .1 fresh2 π2
+  account both: source 30, baseline 852, growth 0 of 65536, total 852, continuation 808 of 30720, demands 9, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 33
+  summary both: π2 RAW, π2[*] RA; res .0 fresh1 π2, .0[*] π2[*]{excl π2[*]}, .1 fresh2 π2
+  account nestp: source 38, baseline 1285, growth 0 of 65536, total 1285, continuation 1210 of 38912, demands 62, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 41
+  summary nestp: π2 RAW, π2[*] RA; res .0 fresh1 π2, .0[*] π2[*]{excl π2[*]}, .1.0 fresh2, .1.0 π2, .1.1 fresh3, .1.1 fresh4
+  account w2: source 20, baseline 548, growth 0 of 65536, total 548, continuation 444 of 20480, demands 29, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 21, step lanes 2
+  summary w2: π1.0.0 RAW, π1.0.0[*] A, π1.0.1 RA, π1.1 RA; res .0.0 π1.0.0, .0.0[*] π1.0.0[*]{excl π1.0.0[*]}, .0.1 π1.0.1, .1 π1.1
+  account u2: source 20, baseline 548, growth 0 of 65536, total 548, continuation 444 of 20480, demands 29, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 21, step lanes 2
+  summary u2: π1.0 RA, π1.1.0 RAW, π1.1.0[*] A, π1.1.1 RA; res .0 π1.0, .1.0 π1.1.0, .1.0[*] π1.1.0[*]{excl π1.1.0[*]}, .1.1 π1.1.1
+  account swapPairs: source 26, baseline 1402, growth 0 of 65536, total 1402, continuation 1359 of 26624, demands 45, direct_data lanes 3, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 29
+  summary swapPairs: π2 RA, π2.0 RAW, π2.0[*] RA, π2.1 RA, π3 RA, π3.0 RAW, π3.0[*] RA, π3.1 RA; res .0.0 π2.0 π3.0, .0.0[*] π2.0[*] π3.0[*]{apart [π2.0[*]] [π3.0[*]], excl π2.0[*], excl π3.0[*]}, .0.1 π2.1 π3.1, .1 π2 π3
+  account fromP: source 36, baseline 1816, growth 0 of 65536, total 1816, continuation 1711 of 36864, demands 77, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 40
+  summary fromP: π2 R, π2.0 RAW, π2.0[*] RA, π2.1 RA; res .0.0 fresh1 π2.0, .0.0[*] π2.0[*]{excl π2.0[*]}, .0.1 fresh2 π2.1, .1.0 fresh3, .1.0 π2.0, .1.1 fresh4, .1.1 fresh5
+  account swapU: source 26, baseline 1402, growth 0 of 65536, total 1402, continuation 1359 of 26624, demands 45, direct_data lanes 3, liveness_index lanes 5, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 29
+  summary swapU: π2 RA, π2.0 RAW, π2.0[*] RA, π2.1 RA, π3 RA, π3.0 RAW, π3.0[*] RA, π3.1 RA; res .0 π2 π3, .1.0 π2.0 π3.0, .1.0[*] π2.0[*] π3.0[*]{apart [π2.0[*]] [π3.0[*]], excl π2.0[*], excl π3.0[*]}, .1.1 π2.1 π3.1
+  account fromPU: source 36, baseline 1729, growth 0 of 65536, total 1729, continuation 1624 of 36864, demands 77, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 40
+  summary fromPU: π2 RA, π2.0 RAW, π2.0[*] RA; res .0 π2, .0.0 fresh1, .0.1 fresh2, .1.0 fresh3 π2.0, .1.0[*] π2.0[*]{excl π2.0[*]}, .1.1 fresh4 fresh5
+  block: 4908 bytes, hash 03cf56425e3b0259
+  demands 12: accepted 11 (fresh 0, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 12: accepted 11 (fresh 0, call 0, param 11, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause disjoint 1

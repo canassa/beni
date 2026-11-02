@@ -1,0 +1,340 @@
+type NColor
+    = Red
+    | Black
+
+
+balanceS : NColor, Int, Int, TreeS, TreeS → TreeS
+balanceS color key value left right =
+    case right of
+        NodeS Red rK rV rLeft rRight →
+            case left of
+                NodeS Red lK lV lLeft lRight →
+                    NodeS
+                        Red
+                        key
+                        value
+                        (NodeS Black lK lV lLeft lRight)
+                        (NodeS Black rK rV rLeft rRight)
+
+                _ →
+                    NodeS color rK rV (NodeS Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                NodeS Red lK lV (NodeS Red llK llV llLeft llRight) lRight →
+                    NodeS
+                        Red
+                        lK
+                        lV
+                        (NodeS Black llK llV llLeft llRight)
+                        (NodeS Black key value lRight right)
+
+                _ →
+                    NodeS color key value left right
+
+
+removeMinS : TreeS → TreeS
+removeMinS tree =
+    case tree of
+        NodeS color key value ((NodeS lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeS Red _ _ _ _ →
+                            NodeS color key value (removeMinS left) right
+
+                        _ →
+                            case moveRedLeftS tree of
+                                NodeS nColor nKey nValue nLeft nRight →
+                                    balanceS nColor nKey nValue (removeMinS nLeft) nRight
+
+                                LeafS →
+                                    LeafS
+
+                _ →
+                    NodeS color key value (removeMinS left) right
+
+        _ →
+            LeafS
+
+
+moveRedLeftS : TreeS → TreeS
+moveRedLeftS tree =
+    case tree of
+        NodeS _ k v (NodeS _ lK lV lLeft lRight) (NodeS _ rK rV rLeft rRight) →
+            case rLeft of
+                NodeS Red rlK rlV rlL rlR →
+                    NodeS
+                        Red
+                        rlK
+                        rlV
+                        (NodeS Black k v (NodeS Red lK lV lLeft lRight) rlL)
+                        (NodeS Black rK rV rlR rRight)
+
+                _ →
+                    NodeS Black k v (NodeS Red lK lV lLeft lRight) (NodeS Red rK rV rLeft rRight)
+
+        _ →
+            tree
+
+
+type TreeS
+    = NodeS NColor Int Int TreeS TreeS
+    | LeafS
+
+
+balanceL : NColor, Int, (List Int), TreeL, TreeL → TreeL
+balanceL color key value left right =
+    case right of
+        NodeL Red rK rV rLeft rRight →
+            case left of
+                NodeL Red lK lV lLeft lRight →
+                    NodeL
+                        Red
+                        key
+                        value
+                        (NodeL Black lK lV lLeft lRight)
+                        (NodeL Black rK rV rLeft rRight)
+
+                _ →
+                    NodeL color rK rV (NodeL Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                NodeL Red lK lV (NodeL Red llK llV llLeft llRight) lRight →
+                    NodeL
+                        Red
+                        lK
+                        lV
+                        (NodeL Black llK llV llLeft llRight)
+                        (NodeL Black key value lRight right)
+
+                _ →
+                    NodeL color key value left right
+
+
+removeMinL : TreeL → TreeL
+removeMinL tree =
+    case tree of
+        NodeL color key value ((NodeL lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeL Red _ _ _ _ →
+                            NodeL color key value (removeMinL left) right
+
+                        _ →
+                            case moveRedLeftL tree of
+                                NodeL nColor nKey nValue nLeft nRight →
+                                    balanceL nColor nKey nValue (removeMinL nLeft) nRight
+
+                                LeafL →
+                                    LeafL
+
+                _ →
+                    NodeL color key value (removeMinL left) right
+
+        _ →
+            LeafL
+
+
+moveRedLeftL : TreeL → TreeL
+moveRedLeftL tree =
+    case tree of
+        NodeL _ k v (NodeL _ lK lV lLeft lRight) (NodeL _ rK rV rLeft rRight) →
+            case rLeft of
+                NodeL Red rlK rlV rlL rlR →
+                    NodeL
+                        Red
+                        rlK
+                        rlV
+                        (NodeL Black k v (NodeL Red lK lV lLeft lRight) rlL)
+                        (NodeL Black rK rV rlR rRight)
+
+                _ →
+                    NodeL Black k v (NodeL Red lK lV lLeft lRight) (NodeL Red rK rV rLeft rRight)
+
+        _ →
+            tree
+
+
+type TreeL
+    = NodeL NColor Int (List Int) TreeL TreeL
+    | LeafL
+
+
+type Cursor k v
+    = Step k v (TreeL) (Cursor k v)
+    | End
+
+
+descend : TreeL, Cursor Int (List Int) → Cursor Int (List Int)
+descend tree rest =
+    case tree of
+        LeafL →
+            rest
+
+        NodeL _ key value left right →
+            descend left (Step key value right rest)
+
+
+-- 4: a scratch helper that puts the root's value at a second node.
+moveRedLeftDup : TreeL → TreeL
+moveRedLeftDup tree =
+    case tree of
+        NodeL _ k v (NodeL _ lK lV lLeft lRight) (NodeL _ rK _ rLeft rRight) →
+            NodeL Black k v (NodeL Red lK lV lLeft lRight) (NodeL Red rK v rLeft rRight)
+
+        _ →
+            tree
+
+
+removeMinDup : TreeL → TreeL
+removeMinDup tree =
+    case tree of
+        NodeL color key value ((NodeL lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeL Red _ _ _ _ →
+                            NodeL color key value (removeMinDup left) right
+
+                        _ →
+                            case moveRedLeftDup tree of
+                                NodeL nColor nKey nValue nLeft nRight →
+                                    balanceL nColor nKey nValue (removeMinDup nLeft) nRight
+
+                                LeafL →
+                                    LeafL
+
+                _ →
+                    NodeL color key value (removeMinDup left) right
+
+        _ →
+            LeafL
+
+
+incAll : TreeL → TreeL
+incAll t =
+    case t of
+        NodeL c k v l r →
+            NodeL c k (List.push v 1) (incAll l) (incAll r)
+
+        LeafL →
+            LeafL
+
+
+rootLen : TreeL → Int
+rootLen t =
+    case t of
+        NodeL _ _ v _ _ →
+            List.length v
+
+        LeafL →
+            0
+
+
+-- 2: the useful caller, on a tree it built, the old tree discarded.
+pub useful : Int → List Int
+useful n =
+    case removeMinL (NodeL Black 2 [ n ] (NodeL Red 1 [ n + 1 ] LeafL LeafL) (NodeL Red 3 [ n + 2 ] LeafL LeafL)) of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+-- 2b: the same on a parameter (accepted relying on the caller).
+pub usefulParam : TreeL → List Int
+usefulParam t =
+    case removeMinL t of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+-- 2c: the edited payload put back beside the surviving subtrees.
+pub rebuild : TreeL → TreeL
+rebuild t =
+    case removeMinL t of
+        NodeL c k v l r →
+            NodeL c k (List.push v 9) l r
+
+        LeafL →
+            LeafL
+
+
+-- 3: the old tree kept and read after the edit.
+pub keepOld : TreeL → List Int × Int
+keepOld t =
+    case removeMinL t of
+        NodeL _ _ v _ _ →
+            ( List.push v 9, rootLen t )
+
+        LeafL →
+            ( [], rootLen t )
+
+
+-- 3b: an external alias of the payload.
+pub extAlias : Int → List Int × List Int
+extAlias n =
+    xs = [ n ]
+    case removeMinL (NodeL Black 2 xs (NodeL Red 1 [ 0 ] LeafL LeafL) LeafL) of
+        NodeL _ _ v _ _ →
+            ( List.push v 9, xs )
+
+        LeafL →
+            ( [], xs )
+
+
+-- 4: the duplicating helper's dependent writers.
+pub usefulDup : Int → List Int
+usefulDup n =
+    case removeMinDup (NodeL Black 2 [ n ] (NodeL Black 1 [ n + 1 ] LeafL LeafL) (NodeL Black 3 [ n + 2 ] LeafL LeafL)) of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+pub rebuildDup : TreeL → TreeL
+rebuildDup t =
+    case removeMinDup t of
+        NodeL c k v l r →
+            NodeL c k (List.push v 9) l r
+
+        LeafL →
+            LeafL
+
+
+pub allDup : TreeL → TreeL
+allDup t =
+    incAll (removeMinDup t)
+
+
+-- 5: a tree that repeats a payload; every payload written.
+pub repeated : Int → TreeL
+repeated n =
+    xs = [ n ]
+    incAll (removeMinL (NodeL Black 2 xs (NodeL Red 1 [ 0 ] LeafL LeafL) (NodeL Red 3 xs LeafL LeafL)))
+
+
+-- 5b: every payload written, a parameter's tree.
+pub allParam : TreeL → TreeL
+allParam t =
+    incAll (removeMinL t)
+
+
+-- 1b: descend's cursor, its payload edited.
+pub cursorPush : TreeL → List Int
+cursorPush t =
+    case descend t End of
+        Step _ v _ _ →
+            List.push v 9
+
+        End →
+            []

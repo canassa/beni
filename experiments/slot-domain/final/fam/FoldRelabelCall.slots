@@ -1,0 +1,81 @@
+module FoldRelabelCall
+    23:19 List.push l: accepted param (⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:35 FoldRelabelCall.incKids ks[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:35 FoldRelabelCall.incKids ks[*]#0.1[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+    23:35 FoldRelabelCall.incKids ks[*]#0.1⟲[*]#0.0: accepted param (⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1})
+  contract incAll: res #0.0 π1#0.0, #0.1 fresh, #0.1[*]#0.0 π1#0.1[*]#0.0, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 π1#0.1[*]⟲#0.0, #0.1[*]⟲#0.1 fresh; nondup ⇐ sel π1{#0.0,#0.1[*]#0.0,#0.1[*]⟲#0.0}; writes π1#0.0 π1#0.1[*]#0.0 π1#0.1[*]⟲#0.0; req ⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1}
+  slotacct incAll: source 20, total 2748, growth 0 of 65536, continuation 2748 of 20480, rounds 5, evaluations 6, validation 590, slots 12, arrivals 6, relations 122 (memo 3), deliveries 5, substitutions 103, positions 29, leaves 52, values 43, calls 12, demands 11, peak bytes 14030, v2 reads 0, walks { 206, 380, 436, 546, 590, 590 }
+    30:15 FoldRelabelCall.incAll k#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0})
+    30:15 FoldRelabelCall.incAll k#0.1[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0})
+    30:15 FoldRelabelCall.incAll k#0.1[*]⟲#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0})
+    30:26 FoldRelabelCall.incKids rest[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0})
+    30:26 FoldRelabelCall.incKids rest[*]#0.1[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0})
+    30:26 FoldRelabelCall.incKids rest[*]#0.1⟲[*]#0.0: accepted param (⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0})
+  contract incKids: res ε fresh, [*]#0.0 π1[*]#0.0, [*]#0.1 fresh, [*]#0.1[*]#0.0 π1[*]#0.1[*]#0.0, [*]#0.1⟲ fresh, [*]#0.1⟲[*]#0.0 π1[*]#0.1⟲[*]#0.0; nondup ⇐ sel π1{[*]#0.0,[*]#0.1[*]#0.0,[*]#0.1⟲[*]#0.0}; writes π1[*]#0.0 π1[*]#0.1[*]#0.0 π1[*]#0.1⟲[*]#0.0; req ⇐ sel π1{ε,[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0}
+  slotacct incKids: source 26, total 8083, growth 0 of 65536, continuation 8083 of 26624, rounds 5, evaluations 6, validation 1773, slots 12, arrivals 6, relations 823 (memo 20), deliveries 5, substitutions 363, positions 33, leaves 253, values 47, calls 17, demands 11, peak bytes 26026, v2 reads 0, walks { 319, 1141, 1394, 1683, 1773, 1773 }
+  contract ident: res #0.0 π1#0.0, #0.1 π1#0.1, #0.1[*]#0.0 π1#0.1[*]#0.0, #0.1[*]#0.1 π1#0.1[*]#0.1, #0.1[*]⟲#0.0 π1#0.1[*]⟲#0.0, #0.1[*]⟲#0.1 π1#0.1[*]⟲#0.1; nondup ⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1}
+  slotacct ident: source 5, total 116, growth 0 of 65536, continuation 116 of 5120, rounds 0, evaluations 1, validation 0, slots 12, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 1, values 1, calls 0, demands 0, peak bytes 6360, v2 reads 0, walks { 116 }
+  contract rewrap: res #0.0 π1#0.0, #0.1 π1#0.1, #0.1[*]#0.0 π1#0.1[*]#0.0, #0.1[*]#0.1 π1#0.1[*]#0.1, #0.1[*]⟲#0.0 π1#0.1[*]⟲#0.0, #0.1[*]⟲#0.1 π1#0.1[*]⟲#0.1; nondup ⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1}
+  slotacct rewrap: source 15, total 156, growth 0 of 65536, continuation 156 of 15360, rounds 0, evaluations 1, validation 0, slots 12, arrivals 6, relations 1 (memo 0), deliveries 0, substitutions 0, positions 3, leaves 2, values 4, calls 0, demands 0, peak bytes 6256, v2 reads 0, walks { 156 }
+  contract shared: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup no
+  slotacct shared: source 24, total 109, growth 0 of 65536, continuation 109 of 24576, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 7, values 13, calls 0, demands 0, peak bytes 6576, v2 reads 0, walks { 109 }
+  contract apart: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct apart: source 22, total 109, growth 0 of 65536, continuation 109 of 22528, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 8, values 15, calls 0, demands 0, peak bytes 6362, v2 reads 0, walks { 109 }
+    58:12 FoldRelabelCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    58:12 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    58:12 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract direct: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup no
+  slotacct direct: source 9, total 289, growth 0 of 65536, continuation 289 of 9216, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 27, positions 3, leaves 9, values 4, calls 2, demands 1, peak bytes 13240, v2 reads 0, walks { 289 }
+    62:17 FoldRelabelCall.incAll <expr>#0.0: accepted call
+    62:17 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: accepted call
+    62:17 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: accepted call
+  contract directApart: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct directApart: source 9, total 320, growth 0 of 65536, continuation 320 of 9216, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 18 (memo 0), deliveries 0, substitutions 27, positions 3, leaves 9, values 4, calls 2, demands 1, peak bytes 13240, v2 reads 0, walks { 320 }
+    66:14 FoldRelabelCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    66:14 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    66:14 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract viaIdent: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup no
+  slotacct viaIdent: source 11, total 439, growth 0 of 65536, continuation 439 of 11264, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 45, positions 4, leaves 15, values 5, calls 3, demands 1, peak bytes 12466, v2 reads 0, walks { 439 }
+    70:19 FoldRelabelCall.incAll <expr>#0.0: accepted call
+    70:19 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: accepted call
+    70:19 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: accepted call
+  contract viaIdentApart: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct viaIdentApart: source 11, total 492, growth 0 of 65536, continuation 492 of 11264, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 33 (memo 0), deliveries 0, substitutions 45, positions 4, leaves 15, values 5, calls 3, demands 1, peak bytes 12466, v2 reads 0, walks { 492 }
+    74:13 FoldRelabelCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    74:13 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    74:13 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract viaWrap: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup no
+  slotacct viaWrap: source 11, total 439, growth 0 of 65536, continuation 439 of 11264, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 45, positions 4, leaves 15, values 5, calls 3, demands 1, peak bytes 12466, v2 reads 0, walks { 439 }
+    78:18 FoldRelabelCall.incAll <expr>#0.0: accepted call
+    78:18 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: accepted call
+    78:18 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: accepted call
+  contract viaWrapApart: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct viaWrapApart: source 11, total 492, growth 0 of 65536, continuation 492 of 11264, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 33 (memo 0), deliveries 0, substitutions 45, positions 4, leaves 15, values 5, calls 3, demands 1, peak bytes 12466, v2 reads 0, walks { 492 }
+    82:12 FoldRelabelCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    82:12 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    82:12 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract viaTwo: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup no
+  slotacct viaTwo: source 13, total 589, growth 0 of 65536, continuation 589 of 13312, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 63, positions 5, leaves 21, values 6, calls 4, demands 1, peak bytes 26832, v2 reads 0, walks { 589 }
+    86:17 FoldRelabelCall.incAll <expr>#0.0: accepted call
+    86:17 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: accepted call
+    86:17 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: accepted call
+  contract viaTwoApart: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct viaTwoApart: source 13, total 664, growth 0 of 65536, continuation 664 of 13312, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 48 (memo 0), deliveries 0, substitutions 63, positions 5, leaves 21, values 6, calls 4, demands 1, peak bytes 26832, v2 reads 0, walks { 664 }
+    90:21 FoldRelabelCall.incAll <expr>#0.0: accepted fresh
+    90:21 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: accepted fresh
+    90:21 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: accepted fresh
+  contract literalViaIdent: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct literalViaIdent: source 26, total 502, growth 0 of 65536, continuation 502 of 26624, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 18 (memo 0), deliveries 0, substitutions 81, positions 3, leaves 16, values 17, calls 2, demands 1, peak bytes 14782, v2 reads 0, walks { 502 }
+    94:19 FoldRelabelCall.incAll <expr>#0.0: accepted fresh
+    94:19 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: accepted fresh
+    94:19 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: accepted fresh
+  contract literalViaTwo: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup yes
+  slotacct literalViaTwo: source 28, total 674, growth 0 of 65536, continuation 674 of 28672, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 33 (memo 0), deliveries 0, substitutions 99, positions 4, leaves 22, values 18, calls 3, demands 1, peak bytes 27530, v2 reads 0, walks { 674 }
+    100:5 FoldRelabelCall.incAll <expr>#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    100:5 FoldRelabelCall.incAll <expr>#0.1[*]#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    100:5 FoldRelabelCall.incAll <expr>#0.1[*]⟲#0.0: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract literalSharedViaTwo: res #0.0 fresh, #0.1 fresh, #0.1[*]#0.0 fresh, #0.1[*]#0.1 fresh, #0.1[*]⟲#0.0 fresh, #0.1[*]⟲#0.1 fresh; nondup no
+  slotacct literalSharedViaTwo: source 30, total 624, growth 0 of 65536, continuation 624 of 30720, rounds 0, evaluations 1, validation 0, slots 6, arrivals 6, relations 0 (memo 0), deliveries 0, substitutions 99, positions 4, leaves 21, values 16, calls 3, demands 1, peak bytes 27772, v2 reads 0, walks { 624 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

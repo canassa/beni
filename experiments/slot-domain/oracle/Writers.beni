@@ -1,0 +1,306 @@
+import List
+import Node exposing (Program)
+import String
+
+
+type NColor
+    = Red
+    | Black
+
+
+type TreeL
+    = NodeL NColor Int (List Int) TreeL TreeL
+    | LeafL
+
+
+balanceL : NColor, Int, (List Int), TreeL, TreeL → TreeL
+balanceL color key value left right =
+    case right of
+        NodeL Red rK rV rLeft rRight →
+            case left of
+                NodeL Red lK lV lLeft lRight →
+                    NodeL
+                        Red
+                        key
+                        value
+                        (NodeL Black lK lV lLeft lRight)
+                        (NodeL Black rK rV rLeft rRight)
+
+                _ →
+                    NodeL color rK rV (NodeL Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                NodeL Red lK lV (NodeL Red llK llV llLeft llRight) lRight →
+                    NodeL
+                        Red
+                        lK
+                        lV
+                        (NodeL Black llK llV llLeft llRight)
+                        (NodeL Black key value lRight right)
+
+                _ →
+                    NodeL color key value left right
+
+
+removeMinL : TreeL → TreeL
+removeMinL tree =
+    case tree of
+        NodeL color key value ((NodeL lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeL Red _ _ _ _ →
+                            NodeL color key value (removeMinL left) right
+
+                        _ →
+                            case moveRedLeftL tree of
+                                NodeL nColor nKey nValue nLeft nRight →
+                                    balanceL nColor nKey nValue (removeMinL nLeft) nRight
+
+                                LeafL →
+                                    LeafL
+
+                _ →
+                    NodeL color key value (removeMinL left) right
+
+        _ →
+            LeafL
+
+
+moveRedLeftL : TreeL → TreeL
+moveRedLeftL tree =
+    case tree of
+        NodeL _ k v (NodeL _ lK lV lLeft lRight) (NodeL _ rK rV rLeft rRight) →
+            case rLeft of
+                NodeL Red rlK rlV rlL rlR →
+                    NodeL
+                        Red
+                        rlK
+                        rlV
+                        (NodeL Black k v (NodeL Red lK lV lLeft lRight) rlL)
+                        (NodeL Black rK rV rlR rRight)
+
+                _ →
+                    NodeL Black k v (NodeL Red lK lV lLeft lRight) (NodeL Red rK rV rLeft rRight)
+
+        _ →
+            tree
+
+
+type Tree k v
+    = NodeG NColor k v (Tree k v) (Tree k v)
+    | LeafG
+
+
+balance : NColor, k, v, Tree k v, Tree k v → Tree k v
+balance color key value left right =
+    case right of
+        NodeG Red rK rV rLeft rRight →
+            case left of
+                NodeG Red lK lV lLeft lRight →
+                    NodeG
+                        Red
+                        key
+                        value
+                        (NodeG Black lK lV lLeft lRight)
+                        (NodeG Black rK rV rLeft rRight)
+
+                _ →
+                    NodeG color rK rV (NodeG Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                NodeG Red lK lV (NodeG Red llK llV llLeft llRight) lRight →
+                    NodeG
+                        Red
+                        lK
+                        lV
+                        (NodeG Black llK llV llLeft llRight)
+                        (NodeG Black key value lRight right)
+
+                _ →
+                    NodeG color key value left right
+
+
+removeMin : Tree k v → Tree k v
+removeMin tree =
+    case tree of
+        NodeG color key value ((NodeG lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeG Red _ _ _ _ →
+                            NodeG color key value (removeMin left) right
+
+                        _ →
+                            case moveRedLeft tree of
+                                NodeG nColor nKey nValue nLeft nRight →
+                                    balance nColor nKey nValue (removeMin nLeft) nRight
+
+                                LeafG →
+                                    LeafG
+
+                _ →
+                    NodeG color key value (removeMin left) right
+
+        _ →
+            LeafG
+
+
+moveRedLeft : Tree k v → Tree k v
+moveRedLeft tree =
+    case tree of
+        NodeG _ k v (NodeG _ lK lV lLeft lRight) (NodeG _ rK rV rLeft rRight) →
+            case rLeft of
+                NodeG Red rlK rlV rlL rlR →
+                    NodeG
+                        Red
+                        rlK
+                        rlV
+                        (NodeG Black k v (NodeG Red lK lV lLeft lRight) rlL)
+                        (NodeG Black rK rV rlR rRight)
+
+                _ →
+                    NodeG Black k v (NodeG Red lK lV lLeft lRight) (NodeG Red rK rV rLeft rRight)
+
+        _ →
+            tree
+
+
+incAll : TreeL → TreeL
+incAll t =
+    case t of
+        NodeL c k v l r →
+            NodeL c k (List.push v 1) (incAll l) (incAll r)
+
+        LeafL →
+            LeafL
+
+
+useful : Int → List Int
+useful n =
+    case
+        removeMinL
+            (NodeL
+                Black
+                2
+                [ n ]
+                (NodeL Red 1 [ n + 1 ] LeafL LeafL)
+                (NodeL Red 3 [ n + 2 ] LeafL LeafL)
+            )
+    of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+usefulParam : TreeL → List Int
+usefulParam t =
+    case removeMinL t of
+        NodeL _ _ v _ _ →
+            List.push v 9
+
+        LeafL →
+            []
+
+
+rebuild : TreeL → TreeL
+rebuild t =
+    case removeMinL t of
+        NodeL c k v l r →
+            NodeL c k (List.push v 9) l r
+
+        LeafL →
+            LeafL
+
+
+allParam : TreeL → TreeL
+allParam t = incAll (removeMinL t)
+
+
+rebuildG : Tree Int (List Int) → Tree Int (List Int)
+rebuildG t =
+    case removeMin t of
+        NodeG c k v l r →
+            NodeG c k (List.push v 7) l r
+
+        LeafG →
+            LeafG
+
+
+mkTree : Int → TreeL
+mkTree n =
+    NodeL
+        Black
+        4
+        [ n ]
+        (NodeL Black 2 [ n + 1 ] (NodeL Red 1 [ n + 2 ] LeafL LeafL) LeafL)
+        (NodeL Black 6 [ n + 3 ] LeafL LeafL)
+
+
+mkBlack : Int → TreeL
+mkBlack n =
+    NodeL Black 2 [ n ] (NodeL Black 1 [ n + 1 ] LeafL LeafL) (NodeL Black 3 [ n + 2 ] LeafL LeafL)
+
+
+mkG : Int → Tree Int (List Int)
+mkG n =
+    NodeG Black 2 [ n ] (NodeG Black 1 [ n + 1 ] LeafG LeafG) (NodeG Black 3 [ n + 2 ] LeafG LeafG)
+
+
+show : List Int → String
+show xs = "[" ++ showL xs ++ "]"
+
+
+showL : List Int → String
+showL xs =
+    case xs of
+        [] →
+            ""
+
+        [ x, …r ] →
+            String.fromInt x ++ "," ++ showL r
+
+
+showTree : TreeL → String
+showTree t =
+    case t of
+        NodeL _ k v l r →
+            "("
+                ++ showTree l
+                ++ " "
+                ++ String.fromInt k
+                ++ ":"
+                ++ show v
+                ++ " "
+                ++ showTree r
+                ++ ")"
+
+        LeafL →
+            "."
+
+
+showG : Tree Int (List Int) → String
+showG t =
+    case t of
+        NodeG _ k v l r →
+            "(" ++ showG l ++ " " ++ String.fromInt k ++ ":" ++ show v ++ " " ++ showG r ++ ")"
+
+        LeafG →
+            "."
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (useful 5)
+        , show (usefulParam (mkTree 10))
+        , showTree (rebuild (mkTree 20))
+        , showTree (rebuild (mkBlack 40))
+        , showTree (allParam (mkTree 30))
+        , showTree (allParam (mkBlack 50))
+        , showG (rebuildG (mkG 60))
+        ]

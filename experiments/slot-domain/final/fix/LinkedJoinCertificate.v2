@@ -1,0 +1,48 @@
+module LinkedJoinCertificate
+  19:15 List.push xs: accepted param
+  19:32 LinkedJoinCertificate.pushAll rest[*]: accepted param
+  35:5 LinkedJoinCertificate.pushAll <expression>[*]: accepted param
+  45:5 LinkedJoinCertificate.pushAll <expression>[*]: rejected exclusive: the elements of the list it was taken from may share one list
+  54:10 LinkedJoinCertificate.pushAll <call LinkedJoinCertificate.two>[*]: rejected exclusive: the elements of the list it was taken from may share one list
+  59:5 LinkedJoinCertificate.pushAll <expression>[*]: accepted fresh
+  69:5 LinkedJoinCertificate.pushAll <expression>[*]: accepted param
+  79:5 LinkedJoinCertificate.pushAll <expression>[*]: rejected exclusive: the elements of the list it was taken from may share one list
+  89:5 LinkedJoinCertificate.pushAll <expression>[*]: accepted param
+  99:5 LinkedJoinCertificate.pushAll <expression>[*]: rejected exclusive: the elements of the list it was taken from may share one list
+  124:17 LinkedJoinCertificate.pushAll <call LinkedJoinCertificate.chooseOne>[*]: accepted param
+  128:18 LinkedJoinCertificate.pushAll <call LinkedJoinCertificate.choose>[*]: rejected exclusive: the elements of the list it was taken from may share one list
+  account pushAll: source 31, baseline 4357, growth 0 of 65536, total 4357, continuation 4118 of 31744, demands 269, walks 3, inference 2, deliveries 3, direct_data lanes 2, liveness_index lanes 6, direct_demand_query lanes 3, call_view lanes 4, transfer_settlement lanes 68
+  crossing: reads 21, redone 0, base moves 5
+  summary pushAll: π1 R, π1[*] RAW, π1[*][*] RA; res [*] π1[*]{lost}, [*][*] π1[*][*]{lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*]
+  account one: source 12, baseline 86, growth 0 of 65536, total 86, continuation 76 of 12288, demands 1, direct_data lanes 1, liveness_index lanes 1, transfer_settlement lanes 13
+  summary one: π1 RA; res [*] π1, fresh1
+  account two: source 13, baseline 132, growth 0 of 65536, total 132, continuation 118 of 13312, demands 1, direct_data lanes 1, liveness_index lanes 2, transfer_settlement lanes 14
+  summary two: π1 RA; res [*] π1{shared}, fresh1
+  account sameSingle: source 28, baseline 1228, growth 0 of 65536, total 1228, continuation 1208 of 28672, demands 56, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 31
+  summary sameSingle: π2 RAW, π2[*] RA; res [*] π2{shared}, [*][*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}; xreq excl π2
+  account singleOrTwin: source 28, baseline 1445, growth 0 of 65536, total 1445, continuation 1426 of 28672, demands 55, direct_data lanes 2, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 31
+  summary singleOrTwin: π2 RAW, π2[*] RA; res [*] π2{shared}, [*][*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}
+  account twin: source 15, baseline 767, growth 0 of 65536, total 767, continuation 753 of 15360, demands 31, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 16
+  summary twin: π1 RAW, π1[*] RA; res [*] π1{shared}, [*][*] π1[*]{lost}, fresh2 fresh3 ~fresh1{lost}
+  account freshMembers: source 27, baseline 1528, growth 0 of 65536, total 1528, continuation 1498 of 27648, demands 84, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 30
+  summary freshMembers: res [*] fresh4 fresh5 fresh6{lost}, fresh2 fresh3 ~fresh1{lost}
+  account leafOrOne: source 32, baseline 1560, growth 0 of 65536, total 1560, continuation 1539 of 32768, demands 58, direct_data lanes 3, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 35
+  summary leafOrOne: π2 R, π2[*] RAW, π2[*][*] RA, π3 RAW, π3[*] RA; res [*] π2[*] π3{shared}, [*][*] π2[*][*] π3[*]{lost}, fresh2 fresh3 ~fresh1{lost}; xreq apart [π2[*]] [π3], excl π2[*], excl π3
+  account leafOrTwin: source 32, baseline 1567, growth 0 of 65536, total 1567, continuation 1547 of 32768, demands 57, direct_data lanes 3, liveness_index lanes 3, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 35
+  summary leafOrTwin: π2 R, π2[*] RAW, π2[*][*] RA, π3 RAW, π3[*] RA; res [*] π2[*] π3{shared}, [*][*] π2[*][*] π3[*]{lost}, fresh2 fresh3 ~fresh1{lost}
+  account emptyOrOne: source 26, baseline 949, growth 0 of 65536, total 949, continuation 929 of 26624, demands 45, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 29
+  summary emptyOrOne: π2 RAW, π2[*] RA; res [*] π2{shared}, [*][*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}; xreq excl π2
+  account emptyOrTwin: source 26, baseline 1045, growth 0 of 65536, total 1045, continuation 1026 of 26624, demands 44, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 29
+  summary emptyOrTwin: π2 RAW, π2[*] RA; res [*] π2{shared}, [*][*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}
+  account choose: source 26, baseline 633, growth 0 of 65536, total 633, continuation 616 of 26624, demands 1, direct_data lanes 2, liveness_index lanes 3, call_view lanes 2, transfer_settlement lanes 29
+  summary choose: π2 RA; res [*] π2{shared}, fresh1 fresh2
+  account chooseOne: source 24, baseline 328, growth 0 of 65536, total 328, continuation 311 of 24576, demands 1, direct_data lanes 2, liveness_index lanes 2, call_view lanes 1, transfer_settlement lanes 27
+  summary chooseOne: π2 RA; res [*] π2, fresh1 fresh2
+  account chosenOne: source 18, baseline 1034, growth 0 of 65536, total 1034, continuation 1016 of 18432, demands 46, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 19
+  summary chosenOne: π2 RAW, π2[*] RA; res [*] π2{shared}, [*][*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}; xreq excl π2
+  account chosenTwin: source 18, baseline 1163, growth 0 of 65536, total 1163, continuation 1146 of 18432, demands 45, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 2, transfer_settlement lanes 19
+  summary chosenTwin: π2 RAW, π2[*] RA; res [*] π2{shared}, [*][*] π2[*]{lost}, fresh2 fresh3 ~fresh1{lost}
+  block: 4656 bytes, hash b4c6b3a5caa71adf
+  demands 12: accepted 7 (fresh 1, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 12: accepted 7 (fresh 1, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause exclusive 5

@@ -1,0 +1,78 @@
+type NColor
+    = Red
+    | Black
+
+
+type TreeF
+    = NodeF NColor Int (List Int) (List Int) (List Int) (List Int) (List Int) (List Int) (List Int) (List Int) TreeF TreeF
+    | LeafF
+
+
+balanceF : NColor, Int, List Int, List Int, List Int, List Int, List Int, List Int, List Int, List Int, TreeF, TreeF → TreeF
+balanceF color key v0 v1 v2 v3 v4 v5 v6 v7 left right =
+    case right of
+        NodeF Red rK rV0 rV1 rV2 rV3 rV4 rV5 rV6 rV7 rLeft rRight →
+            case left of
+                NodeF Red lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 lLeft lRight →
+                    NodeF Red key v0 v1 v2 v3 v4 v5 v6 v7 (NodeF Black lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 lLeft lRight) (NodeF Black rK rV0 rV1 rV2 rV3 rV4 rV5 rV6 rV7 rLeft rRight)
+
+                _ →
+                    NodeF color rK rV0 rV1 rV2 rV3 rV4 rV5 rV6 rV7 (NodeF Red key v0 v1 v2 v3 v4 v5 v6 v7 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeF Red lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 (NodeF Red llK llV0 llV1 llV2 llV3 llV4 llV5 llV6 llV7 llLeft llRight) lRight →
+                    NodeF Red lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 (NodeF Black llK llV0 llV1 llV2 llV3 llV4 llV5 llV6 llV7 llLeft llRight) (NodeF Black key v0 v1 v2 v3 v4 v5 v6 v7 lRight right)
+
+                _ →
+                    NodeF color key v0 v1 v2 v3 v4 v5 v6 v7 left right
+
+
+removeMinF : TreeF → TreeF
+removeMinF tree =
+    case tree of
+        NodeF color key v0 v1 v2 v3 v4 v5 v6 v7 ((NodeF lColor _ _ _ _ _ _ _ _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeF Red _ _ _ _ _ _ _ _ _ _ _ →
+                            NodeF color key v0 v1 v2 v3 v4 v5 v6 v7 (removeMinF left) right
+
+                        _ →
+                            case moveRedLeftF tree of
+                                NodeF nColor nKey nV0 nV1 nV2 nV3 nV4 nV5 nV6 nV7 nLeft nRight →
+                                    balanceF nColor nKey nV0 nV1 nV2 nV3 nV4 nV5 nV6 nV7 (removeMinF nLeft) nRight
+
+                                LeafF →
+                                    LeafF
+
+                _ →
+                    NodeF color key v0 v1 v2 v3 v4 v5 v6 v7 (removeMinF left) right
+
+        _ →
+            LeafF
+
+
+moveRedLeftF : TreeF → TreeF
+moveRedLeftF tree =
+    case tree of
+        NodeF _ k v0 v1 v2 v3 v4 v5 v6 v7 (NodeF _ lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 lLeft lRight) (NodeF _ rK rV0 rV1 rV2 rV3 rV4 rV5 rV6 rV7 rLeft rRight) →
+            case rLeft of
+                NodeF Red rlK rlV0 rlV1 rlV2 rlV3 rlV4 rlV5 rlV6 rlV7 rlL rlR →
+                    NodeF Red rlK rlV0 rlV1 rlV2 rlV3 rlV4 rlV5 rlV6 rlV7 (NodeF Black k v0 v1 v2 v3 v4 v5 v6 v7 (NodeF Red lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 lLeft lRight) rlL) (NodeF Black rK rV0 rV1 rV2 rV3 rV4 rV5 rV6 rV7 rlR rRight)
+
+                _ →
+                    NodeF Black k v0 v1 v2 v3 v4 v5 v6 v7 (NodeF Red lK lV0 lV1 lV2 lV3 lV4 lV5 lV6 lV7 lLeft lRight) (NodeF Red rK rV0 rV1 rV2 rV3 rV4 rV5 rV6 rV7 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildF : TreeF → TreeF
+rebuildF t =
+    case removeMinF t of
+        NodeF c k v0 v1 v2 v3 v4 v5 v6 v7 l r →
+            NodeF c k (List.push v0 9) (List.push v1 9) (List.push v2 9) (List.push v3 9) (List.push v4 9) (List.push v5 9) (List.push v6 9) (List.push v7 9) l r
+
+        LeafF →
+            LeafF

@@ -1,0 +1,76 @@
+module FoldedKnotCall
+    19:19 FoldedKnotCall.incAll l#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:19 FoldedKnotCall.incAll l#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:19 FoldedKnotCall.incAll l#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:19 FoldedKnotCall.incAll l#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:19 FoldedKnotCall.incAll l#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:30 List.push xs: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:47 FoldedKnotCall.incAll r#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:47 FoldedKnotCall.incAll r#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:47 FoldedKnotCall.incAll r#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:47 FoldedKnotCall.incAll r#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    19:47 FoldedKnotCall.incAll r#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract incAll: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct incAll: source 28, total 5707, growth 0 of 65536, continuation 5707 of 28672, rounds 5, evaluations 6, validation 1399, slots 10, arrivals 5, relations 316 (memo 61), deliveries 5, substitutions 189, positions 40, leaves 81, values 65, calls 18, demands 16, peak bytes 27146, v2 reads 0, walks { 197, 578, 887, 1247, 1399, 1399 }
+    29:19 FoldedKnotCall.incAll l#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:19 FoldedKnotCall.incAll l#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:19 FoldedKnotCall.incAll l#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:19 FoldedKnotCall.incAll l#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:19 FoldedKnotCall.incAll l#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:33 FoldedKnotCall.incAll r#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:33 FoldedKnotCall.incAll r#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:33 FoldedKnotCall.incAll r#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:33 FoldedKnotCall.incAll r#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    29:33 FoldedKnotCall.incAll r#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract incBelow: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct incBelow: source 25, total 1263, growth 0 of 65536, continuation 1263 of 25600, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 83 (memo 18), deliveries 0, substitutions 50, positions 6, leaves 14, values 9, calls 2, demands 2, peak bytes 26828, v2 reads 0, walks { 1263 }
+  contract same: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct same: source 25, total 2393, growth 0 of 65536, continuation 2393 of 25600, rounds 5, evaluations 6, validation 643, slots 10, arrivals 5, relations 89 (memo 0), deliveries 5, substitutions 84, positions 34, leaves 43, values 53, calls 12, demands 0, peak bytes 13552, v2 reads 0, walks { 51, 236, 323, 497, 643, 643 }
+  contract unroll: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct unroll: source 29, total 1792, growth 0 of 65536, continuation 1792 of 29696, rounds 5, evaluations 6, validation 412, slots 10, arrivals 7, relations 1 (memo 0), deliveries 5, substitutions 84, positions 34, leaves 29, values 65, calls 12, demands 0, peak bytes 13048, v2 reads 0, walks { 57, 257, 286, 368, 412, 412 }
+  contract swap: res #0.0#0.1 π1#0.2#0.1, #0.0⟲#0.1 π1#0.2⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct swap: source 25, total 2393, growth 0 of 65536, continuation 2393 of 25600, rounds 5, evaluations 6, validation 643, slots 10, arrivals 5, relations 89 (memo 0), deliveries 5, substitutions 84, positions 34, leaves 43, values 53, calls 12, demands 0, peak bytes 13552, v2 reads 0, walks { 51, 236, 323, 497, 643, 643 }
+  contract dupL: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup no
+  slotacct dupL: source 25, total 1588, growth 0 of 65536, continuation 1588 of 25600, rounds 5, evaluations 6, validation 353, slots 10, arrivals 5, relations 3 (memo 0), deliveries 5, substitutions 58, positions 34, leaves 23, values 53, calls 12, demands 0, peak bytes 13552, v2 reads 0, walks { 50, 235, 308, 289, 353, 353 }
+    76:13 FoldedKnotCall.incAll <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    76:13 FoldedKnotCall.incAll <expr>#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    76:13 FoldedKnotCall.incAll <expr>#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    76:13 FoldedKnotCall.incAll <expr>#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    76:13 FoldedKnotCall.incAll <expr>#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract oneView: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct oneView: source 9, total 503, growth 0 of 65536, continuation 503 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 30 (memo 0), deliveries 0, substitutions 40, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13372, v2 reads 0, walks { 503 }
+    80:14 FoldedKnotCall.incAll <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    80:14 FoldedKnotCall.incAll <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    80:14 FoldedKnotCall.incAll <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    80:14 FoldedKnotCall.incAll <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    80:14 FoldedKnotCall.incAll <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract unrolled: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct unrolled: source 9, total 385, growth 0 of 65536, continuation 385 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 7, relations 0 (memo 0), deliveries 0, substitutions 39, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13236, v2 reads 0, walks { 385 }
+    84:13 FoldedKnotCall.incAll <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    84:13 FoldedKnotCall.incAll <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    84:13 FoldedKnotCall.incAll <expr>#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    84:13 FoldedKnotCall.incAll <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    84:13 FoldedKnotCall.incAll <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract doubled: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup no
+  slotacct doubled: source 9, total 365, growth 0 of 65536, continuation 365 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 0 (memo 0), deliveries 0, substitutions 35, positions 3, leaves 9, values 3, calls 2, demands 1, peak bytes 13204, v2 reads 0, walks { 365 }
+    88:15 FoldedKnotCall.incBelow <expr>#0.0#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    88:15 FoldedKnotCall.incBelow <expr>#0.0⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    88:15 FoldedKnotCall.incBelow <expr>#0.2#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+    88:15 FoldedKnotCall.incBelow <expr>#0.2⟲#0.1: accepted param (⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1})
+  contract belowView: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2⟲#0.1; nondup ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}; writes π1#0.0#0.1 π1#0.0⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; req ⇐ sel π1{#0.0#0.1,#0.0⟲#0.1,#0.1,#0.2#0.1,#0.2⟲#0.1}
+  slotacct belowView: source 9, total 495, growth 0 of 65536, continuation 495 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 30 (memo 0), deliveries 0, substitutions 39, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13636, v2 reads 0, walks { 495 }
+    92:19 FoldedKnotCall.incBelow <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:19 FoldedKnotCall.incBelow <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:19 FoldedKnotCall.incBelow <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    92:19 FoldedKnotCall.incBelow <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract belowUnrolled: res #0.0#0.1 π1#0.1, #0.0⟲#0.1 π1#0.0#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.2#0.1, #0.2⟲#0.1 π1#0.2#0.1 π1#0.2⟲#0.1; nondup no
+  slotacct belowUnrolled: source 9, total 378, growth 0 of 65536, continuation 378 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 7, relations 0 (memo 0), deliveries 0, substitutions 38, positions 3, leaves 11, values 3, calls 2, demands 1, peak bytes 13500, v2 reads 0, walks { 378 }
+    96:18 FoldedKnotCall.incBelow <expr>#0.0#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    96:18 FoldedKnotCall.incBelow <expr>#0.0⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    96:18 FoldedKnotCall.incBelow <expr>#0.2#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+    96:18 FoldedKnotCall.incBelow <expr>#0.2⟲#0.1: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract belowDoubled: res #0.0#0.1 π1#0.0#0.1, #0.0⟲#0.1 π1#0.0⟲#0.1, #0.1 π1#0.1, #0.2#0.1 π1#0.0#0.1, #0.2⟲#0.1 π1#0.0⟲#0.1; nondup no
+  slotacct belowDoubled: source 9, total 358, growth 0 of 65536, continuation 358 of 9216, rounds 0, evaluations 1, validation 0, slots 10, arrivals 5, relations 0 (memo 0), deliveries 0, substitutions 34, positions 3, leaves 9, values 3, calls 2, demands 1, peak bytes 13488, v2 reads 0, walks { 358 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

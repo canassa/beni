@@ -1,0 +1,46 @@
+module LinkedJoinCertificate
+    19:15 List.push xs: accepted param (⇐ sel π1{ε,[*]})
+    19:32 LinkedJoinCertificate.pushAll rest[*]: accepted param (⇐ sel π1{ε,[*]})
+  contract pushAll: res ε fresh, [*] π1[*]; nondup ⇐ sel π1{[*]}; writes π1[*]; req ⇐ sel π1{ε,[*]}
+  slotacct pushAll: source 31, total 1460, growth 0 of 65536, continuation 1460 of 31744, rounds 4, evaluations 5, validation 352, slots 4, arrivals 2, relations 31 (memo 0), deliveries 4, substitutions 79, positions 28, leaves 78, values 44, calls 14, demands 9, peak bytes 13338, v2 reads 0, walks { 111, 305, 340, 352, 352 }
+  contract one: res ε fresh, [*] π1ε; nondup ⇐ sel π1{ε}
+  slotacct one: source 12, total 38, growth 0 of 65536, continuation 38 of 12288, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 2, calls 0, demands 0, peak bytes 6584, v2 reads 0, walks { 38 }
+  contract two: res ε fresh, [*] π1ε; nondup no
+  slotacct two: source 13, total 53, growth 0 of 65536, continuation 53 of 13312, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 0, positions 1, leaves 2, values 2, calls 0, demands 0, peak bytes 6624, v2 reads 0, walks { 53 }
+    35:5 LinkedJoinCertificate.pushAll <expr>[*]: accepted param (⇐ sel π2{ε})
+  contract sameSingle: res ε fresh, [*] π2ε; nondup ⇐ sel π2{ε}; writes π2ε; req ⇐ sel π2{ε}
+  slotacct sameSingle: source 28, total 250, growth 0 of 65536, continuation 250 of 28672, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 5 (memo 0), deliveries 0, substitutions 26, positions 5, leaves 13, values 6, calls 3, demands 1, peak bytes 11880, v2 reads 0, walks { 250 }
+    45:5 LinkedJoinCertificate.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract singleOrTwin: res ε fresh, [*] π2ε; nondup no
+  slotacct singleOrTwin: source 28, total 175, growth 0 of 65536, continuation 175 of 28672, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 25, positions 5, leaves 11, values 6, calls 3, demands 1, peak bytes 13258, v2 reads 0, walks { 175 }
+    54:10 LinkedJoinCertificate.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract twin: res ε fresh, [*] π1ε; nondup no
+  slotacct twin: source 15, total 84, growth 0 of 65536, continuation 84 of 15360, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 10, positions 3, leaves 6, values 3, calls 2, demands 1, peak bytes 6362, v2 reads 0, walks { 84 }
+    59:5 LinkedJoinCertificate.pushAll <expr>[*]: accepted fresh
+  contract freshMembers: res ε fresh, [*] fresh; nondup yes
+  slotacct freshMembers: source 27, total 189, growth 0 of 65536, continuation 189 of 27648, rounds 0, evaluations 1, validation 0, slots 2, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 31, positions 3, leaves 11, values 11, calls 2, demands 1, peak bytes 13336, v2 reads 0, walks { 189 }
+    69:5 LinkedJoinCertificate.pushAll <expr>[*]: accepted param (⇐ sel π2{ε,[*]} π3{ε})
+  contract leafOrOne: res ε fresh, [*] π2[*] π3ε; nondup ⇐ sel π2{[*]} π3{ε}; writes π2[*] π3ε; req ⇐ sel π2{ε,[*]} π3{ε}
+  slotacct leafOrOne: source 32, total 238, growth 0 of 65536, continuation 238 of 32768, rounds 0, evaluations 1, validation 0, slots 5, arrivals 3, relations 3 (memo 0), deliveries 0, substitutions 22, positions 5, leaves 10, values 6, calls 2, demands 1, peak bytes 13124, v2 reads 0, walks { 238 }
+    79:5 LinkedJoinCertificate.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract leafOrTwin: res ε fresh, [*] π2[*] π3ε; nondup no
+  slotacct leafOrTwin: source 32, total 166, growth 0 of 65536, continuation 166 of 32768, rounds 0, evaluations 1, validation 0, slots 5, arrivals 3, relations 0 (memo 0), deliveries 0, substitutions 21, positions 5, leaves 9, values 6, calls 2, demands 1, peak bytes 13284, v2 reads 0, walks { 166 }
+    89:5 LinkedJoinCertificate.pushAll <expr>[*]: accepted param
+  contract emptyOrOne: res ε fresh, [*] π2ε; nondup yes; writes π2ε; req yes
+  slotacct emptyOrOne: source 26, total 152, growth 0 of 65536, continuation 152 of 26624, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 21, positions 4, leaves 9, values 6, calls 2, demands 1, peak bytes 12984, v2 reads 0, walks { 152 }
+    99:5 LinkedJoinCertificate.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract emptyOrTwin: res ε fresh, [*] π2ε; nondup no
+  slotacct emptyOrTwin: source 26, total 125, growth 0 of 65536, continuation 125 of 26624, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 20, positions 4, leaves 8, values 6, calls 2, demands 1, peak bytes 13180, v2 reads 0, walks { 125 }
+  contract choose: res ε fresh, [*] π2ε; nondup no
+  slotacct choose: source 26, total 97, growth 0 of 65536, continuation 97 of 26624, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 7, positions 4, leaves 5, values 5, calls 2, demands 0, peak bytes 6362, v2 reads 0, walks { 97 }
+  contract chooseOne: res ε fresh, [*] π2ε; nondup yes
+  slotacct chooseOne: source 24, total 85, growth 0 of 65536, continuation 85 of 24576, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 4, positions 3, leaves 6, values 5, calls 1, demands 0, peak bytes 6362, v2 reads 0, walks { 85 }
+    124:17 LinkedJoinCertificate.pushAll <expr>[*]: accepted param
+  contract chosenOne: res ε fresh, [*] π2ε; nondup yes; writes π2ε; req yes
+  slotacct chosenOne: source 18, total 103, growth 0 of 65536, continuation 103 of 18432, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 1 (memo 0), deliveries 0, substitutions 10, positions 4, leaves 6, values 4, calls 2, demands 1, peak bytes 6362, v2 reads 0, walks { 103 }
+    128:18 LinkedJoinCertificate.pushAll <expr>[*]: rejected disjoint: the callee needs this argument apart (from its other paths or the other arguments), and it may not be
+  contract chosenTwin: res ε fresh, [*] π2ε; nondup no
+  slotacct chosenTwin: source 18, total 94, growth 0 of 65536, continuation 94 of 18432, rounds 0, evaluations 1, validation 0, slots 3, arrivals 2, relations 0 (memo 0), deliveries 0, substitutions 10, positions 4, leaves 6, values 4, calls 2, demands 1, peak bytes 6362, v2 reads 0, walks { 94 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

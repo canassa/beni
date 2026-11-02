@@ -1,0 +1,16 @@
+module LevelFresh
+  contract build: res #1.0#1.1 fresh, #1.0⟲#1.1 fresh, #1.1 fresh, #1.2#1.1 fresh, #1.2⟲#1.1 fresh; nondup yes
+  slotacct build: source 31, total 1454, growth 0 of 65536, continuation 1454 of 31744, rounds 5, evaluations 6, validation 297, slots 5, arrivals 5, relations 0 (memo 0), deliveries 5, substitutions 28, positions 16, leaves 31, values 77, calls 30, demands 0, peak bytes 13516, v2 reads 0, walks { 100, 238, 247, 275, 297, 297 }
+  contract dup: res #1.0#1.1 fresh, #1.0⟲#1.1 fresh, #1.1 fresh; nondup no
+  slotacct dup: source 33, total 722, growth 0 of 65536, continuation 722 of 33792, rounds 4, evaluations 5, validation 172, slots 5, arrivals 3, relations 0 (memo 0), deliveries 4, substitutions 8, positions 9, leaves 11, values 64, calls 15, demands 0, peak bytes 13440, v2 reads 0, walks { 52, 160, 166, 172, 172 }
+  contract size: res crossing; nondup yes
+  slotacct size: source 29, total 171, growth 0 of 65536, continuation 171 of 29696, rounds 2, evaluations 3, validation 57, slots 5, arrivals 0, relations 0 (memo 0), deliveries 2, substitutions 0, positions 12, leaves 0, values 32, calls 13, demands 0, peak bytes 2980, v2 reads 0, walks { 57, 57, 57 }
+    46:23 List.push xs: accepted call
+  contract pushRoot: res .0#1.0#1.1 fresh, .0#1.0⟲#1.1 fresh, .0#1.1 fresh, .0#1.2#1.1 fresh, .0#1.2⟲#1.1 fresh; nondup yes
+  slotacct pushRoot: source 34, total 389, growth 0 of 65536, continuation 389 of 34816, rounds 0, evaluations 1, validation 0, slots 5, arrivals 5, relations 7 (memo 1), deliveries 0, substitutions 9, positions 6, leaves 8, values 14, calls 3, demands 1, peak bytes 13360, v2 reads 0, walks { 389 }
+    56:23 List.push xs: rejected held-operand: a pending operand holds it
+  contract pushDup: res .0#1.0#1.1 fresh, .0#1.0⟲#1.1 fresh, .0#1.1 fresh; nondup no
+  slotacct pushDup: source 34, total 233, growth 0 of 65536, continuation 233 of 34816, rounds 0, evaluations 1, validation 0, slots 5, arrivals 3, relations 2 (memo 0), deliveries 0, substitutions 6, positions 6, leaves 6, values 14, calls 3, demands 1, peak bytes 12564, v2 reads 0, walks { 233 }
+  slots module: v2 value-reader calls 0, imported contracts 0 (round trip mismatches 0)
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,0 +1,80 @@
+module RefinementFoldMultiplicity
+  27:19 RefinementFoldMultiplicity.incList <call List.push>[*]#Rose.0: accepted param
+  27:19 RefinementFoldMultiplicity.incList <call List.push>[*]#Rose.0⟨Rose⟩: accepted param
+  27:28 List.push kids: accepted param
+  34:15 RefinementFoldMultiplicity.incAll s#Rose.0: accepted param
+  34:15 RefinementFoldMultiplicity.incAll s#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  34:15 RefinementFoldMultiplicity.incAll s#Rose.0[*]#Rose.0: accepted param
+  34:26 RefinementFoldMultiplicity.incList rest[*]#Rose.0: accepted param
+  34:26 RefinementFoldMultiplicity.incList rest[*]#Rose.0⟨Rose⟩: accepted param
+  41:13 RefinementFoldMultiplicity.incAll <Rose …>#Rose.0: accepted fresh
+  41:13 RefinementFoldMultiplicity.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  41:13 RefinementFoldMultiplicity.incAll <Rose …>#Rose.0[*]#Rose.0: accepted param
+  45:14 RefinementFoldMultiplicity.nestOne <Rose …>#Rose.0: accepted fresh
+  45:14 RefinementFoldMultiplicity.nestOne <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  45:14 RefinementFoldMultiplicity.nestOne <Rose …>#Rose.0[*]#Rose.0: accepted fresh
+  53:15 RefinementFoldMultiplicity.nestOne a#Rose.0: rejected element: t#Rose.0 holds it and is read at 53:13 (approx)
+  53:15 RefinementFoldMultiplicity.nestOne a#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  53:15 RefinementFoldMultiplicity.nestOne a#Rose.0[*]#Rose.0: rejected element: t#Rose.0 holds it and is read at 53:13 (approx)
+  64:13 RefinementFoldMultiplicity.nestOne a#Rose.0: accepted fresh
+  64:13 RefinementFoldMultiplicity.nestOne a#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  64:13 RefinementFoldMultiplicity.nestOne a#Rose.0[*]#Rose.0: accepted fresh
+  71:15 RefinementFoldMultiplicity.incAll <Rose …>#Rose.0: accepted fresh
+  71:15 RefinementFoldMultiplicity.incAll <Rose …>#Rose.0[*]⟨Rose⟩#Rose.0: accepted param
+  71:15 RefinementFoldMultiplicity.incAll <Rose …>#Rose.0[*]#Rose.0: accepted param
+  79:13 RefinementFoldMultiplicity.nestTwo a#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  79:13 RefinementFoldMultiplicity.nestTwo a#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  79:13 RefinementFoldMultiplicity.nestTwo a#Rose.0[*]#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  79:13 RefinementFoldMultiplicity.nestTwo a#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  79:13 RefinementFoldMultiplicity.nestTwo a#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  79:13 RefinementFoldMultiplicity.nestTwo a#Rose.0[*]#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  90:13 RefinementFoldMultiplicity.nestTwo a#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  90:13 RefinementFoldMultiplicity.nestTwo a#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  90:13 RefinementFoldMultiplicity.nestTwo a#Rose.0[*]#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  90:13 RefinementFoldMultiplicity.nestTwo b#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  90:13 RefinementFoldMultiplicity.nestTwo b#Rose.0[*]⟨Rose⟩#Rose.0: accepted fresh
+  90:13 RefinementFoldMultiplicity.nestTwo b#Rose.0[*]#Rose.0: rejected disjoint: another operand of the same operation reaches it
+  107:19 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.regraft>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list
+  107:19 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.regraft>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  107:19 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.regraft>#Rose.0[*]#Rose.0: accepted fresh
+  121:16 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.apartKids>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  121:16 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.apartKids>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  121:16 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.apartKids>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it
+  127:5 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.apartKids>#Rose.0: rejected exclusive: the elements of the list it was taken from may share one list
+  127:5 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.apartKids>#Rose.0[*]⟨Rose⟩#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  127:5 RefinementFoldMultiplicity.incAll <call RefinementFoldMultiplicity.apartKids>#Rose.0[*]#Rose.0: rejected disjoint: another path of the same argument reaches it
+  account incAll: source 20, baseline 12472, growth 0 of 65536, total 12472, continuation 12192 of 20480, demands 813, walks 5, inference 4, deliveries 8, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 2, call_view lanes 8, transfer_settlement lanes 44
+  crossing: reads 3, redone 0, base moves 12
+  summary incAll: π1 R, π1#Rose.0 RW, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RW, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 RW; res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}; cert; xreq excl π1#Rose.0[*], excl π1#Rose.0[*]#Rose.0, excl π1#Rose.0[*]⟲, excl π1#Rose.0[*]⟲#Rose.0
+  account incList: source 26, baseline 20694, growth 0 of 65536, total 20694, continuation 20572 of 26624, demands 2177, hold listings 18, walks 7, inference 6, deliveries 13, direct_data lanes 2, liveness_index lanes 6, call_view lanes 4, transfer_settlement lanes 58
+  summary incList: π1 R, π1[*] R, π1[*]#Rose.0 RW, π1[*]#Rose.0[*] R, π1[*]#Rose.0⟲ RW, π1[*]#Rose.0⟲[*] R; res [*] {lost}, [*]#Rose.0 fresh3 fresh3{lost}, [*]#Rose.0 fresh3{lost}, [*]#Rose.0 fresh4{lost}, [*]#Rose.0[*] {lost}, fresh1 fresh2 ~fresh3{lost}; cert; xreq excl π1[*], excl π1[*]#Rose.0, excl π1[*]#Rose.0[*], excl π1[*]#Rose.0⟲, excl π1[*]#Rose.0⟲[*]
+  account nestOne: source 10, baseline 1190, growth 0 of 65536, total 1190, continuation 1175 of 10240, demands 86, direct_data lanes 1, liveness_index lanes 1, call_view lanes 2, transfer_settlement lanes 11
+  summary nestOne: π1 R, π1#Rose.0 RW, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RW, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 RW; res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}; xreq apart [π1#Rose.0[*]#Rose.0] [π1#Rose.0[*]⟲#Rose.0], apart [π1#Rose.0[*]] [π1#Rose.0[*]⟲], excl π1, excl π1#Rose.0, excl π1#Rose.0[*], excl π1#Rose.0[*]#Rose.0, excl π1#Rose.0[*]⟲, excl π1#Rose.0[*]⟲#Rose.0
+  account freshOne: source 12, baseline 588, growth 0 of 65536, total 588, continuation 563 of 12288, demands 38, direct_data lanes 1, call_view lanes 3, transfer_settlement lanes 13
+  summary freshOne: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}, {lost}
+  account takenOneBeside: source 44, baseline 2286, growth 0 of 65536, total 2286, continuation 2160 of 45056, demands 188, hold listings 2, direct_data lanes 1, liveness_index lanes 5, call_view lanes 5, transfer_settlement lanes 48
+  summary takenOneBeside: res .0 {lost}, .0#Rose.0 fresh1{lost}, .0#Rose.0 fresh2{lost}, .0#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0 fresh1{lost}, .0#Rose.0[*]#Rose.0 fresh3{lost}, .0#Rose.0[*]#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0[*]#Rose.0 fresh4{lost}, .0#Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, .0#Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh5{lost}, .1#Rose.0 fresh2, .1#Rose.0[*]#Rose.0 fresh3, .1#Rose.0[*]#Rose.0[*]#Rose.0 fresh4, .1#Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh5
+  account takenOne: source 38, baseline 2122, growth 0 of 65536, total 2122, continuation 2029 of 38912, demands 170, hold listings 2, direct_data lanes 1, liveness_index lanes 3, call_view lanes 5, transfer_settlement lanes 42
+  summary takenOne: res #Rose.0 fresh1{lost}, #Rose.0 fresh5{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh2{lost}, #Rose.0[*]#Rose.0 fresh5{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh3{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh4{lost}, {lost}
+  account nestTwo: source 16, baseline 3281, growth 0 of 65536, total 3281, continuation 3249 of 16384, demands 161, direct_data lanes 2, liveness_index lanes 2, call_view lanes 3, transfer_settlement lanes 17
+  summary nestTwo: π1 R, π1#Rose.0 RW, π1#Rose.0[*] R, π1#Rose.0[*]#Rose.0 RW, π1#Rose.0[*]⟲ R, π1#Rose.0[*]⟲#Rose.0 RW, π2 R, π2#Rose.0 RW, π2#Rose.0[*] R, π2#Rose.0[*]#Rose.0 RW, π2#Rose.0[*]⟲ R, π2#Rose.0[*]⟲#Rose.0 RW; res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}; xreq apart [π1#Rose.0[*]#Rose.0] [π1#Rose.0[*]⟲#Rose.0] [π2#Rose.0] [π2#Rose.0[*]#Rose.0] [π2#Rose.0[*]⟲#Rose.0], apart [π1#Rose.0[*]] [π1#Rose.0[*]⟲] [π2] [π2#Rose.0[*]] [π2#Rose.0[*]⟲], apart [π1#Rose.0[*]] [π2], apart [π1] [π2], excl π1, excl π1#Rose.0, excl π1#Rose.0[*], excl π1#Rose.0[*]#Rose.0, excl π1#Rose.0[*]⟲, excl π1#Rose.0[*]⟲#Rose.0, excl π2, excl π2#Rose.0[*], excl π2#Rose.0[*]#Rose.0, excl π2#Rose.0[*]⟲, excl π2#Rose.0[*]⟲#Rose.0
+  account takenTwice: source 39, baseline 2049, growth 0 of 65536, total 2049, continuation 1953 of 39936, demands 68, direct_data lanes 1, liveness_index lanes 4, call_view lanes 5, transfer_settlement lanes 43
+  summary takenTwice: res #Rose.0 fresh1{lost}, #Rose.0 fresh5{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh2{lost}, #Rose.0[*]#Rose.0 fresh5{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh3{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh4{lost}, {lost}
+  account takenTwo: source 46, baseline 3012, growth 0 of 65536, total 3012, continuation 2893 of 47104, demands 116, direct_data lanes 1, liveness_index lanes 4, call_view lanes 7, transfer_settlement lanes 50
+  summary takenTwo: res #Rose.0 fresh1{lost}, #Rose.0 fresh7{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh2{lost}, #Rose.0[*]#Rose.0 fresh7{lost}, #Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh3{lost}, #Rose.0[*]#Rose.0[*]#Rose.0 fresh5{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*] {lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh4{lost}, #Rose.0[*]#Rose.0[*]#Rose.0[*]#Rose.0 fresh6{lost}, {lost}
+  account regraft: source 24, baseline 1446, growth 0 of 65536, total 1446, continuation 1328 of 24576, demands 1, direct_data lanes 1, liveness_index lanes 4, call_view lanes 2, transfer_settlement lanes 27
+  summary regraft: π1 RA, π1#Rose.0 R, π1#Rose.0[*] RA; res #Rose.0 fresh1, #Rose.0[*] π1{lost}, #Rose.0[*]#Rose.0 fresh2{apart [π1#Rose.0] [π1#Rose.0[*]#Rose.0], excl π1#Rose.0[*]#Rose.0}, #Rose.0[*]#Rose.0[*] π1#Rose.0[*]{lost}, π1
+  account regraftShared: source 17, baseline 4303, growth 0 of 65536, total 4303, continuation 4261 of 17408, demands 86, direct_data lanes 1, call_view lanes 5, transfer_settlement lanes 18
+  summary regraftShared: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account apartKids: source 25, baseline 1674, growth 0 of 65536, total 1674, continuation 1553 of 25600, demands 1, direct_data lanes 1, liveness_index lanes 4, call_view lanes 2, transfer_settlement lanes 28
+  summary apartKids: π1 RA, π1#Rose.0 R, π1#Rose.0[*] RA; res #Rose.0 fresh1, #Rose.0[*] π1#Rose.0[*]{excl π1#Rose.0[*]}, #Rose.0[*]#Rose.0 fresh2{excl π1#Rose.0[*]#Rose.0}, #Rose.0[*]#Rose.0[*] π1#Rose.0[*]{apart [π1#Rose.0[*]] [π1#Rose.0[*]⟲], excl π1#Rose.0[*], excl π1#Rose.0[*]⟲}, π1
+  account apartFresh: source 23, baseline 6349, growth 0 of 65536, total 6349, continuation 6284 of 23552, demands 87, direct_data lanes 1, call_view lanes 7, transfer_settlement lanes 24
+  summary apartFresh: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  account apartShared: source 21, baseline 3638, growth 0 of 65536, total 3638, continuation 3590 of 21504, demands 70, direct_data lanes 1, liveness_index lanes 2, call_view lanes 5, transfer_settlement lanes 23
+  summary apartShared: res #Rose.0 fresh1{lost}, #Rose.0[*] {lost}, #Rose.0[*]#Rose.0 fresh1{lost}
+  block: 3908 bytes, hash 78602c27db98bdec
+  demands 44: accepted 26 (fresh 14, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 18
+total 44: accepted 26 (fresh 14, call 0, param 12, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 18
+cause disjoint 13
+cause element 2
+cause exclusive 3

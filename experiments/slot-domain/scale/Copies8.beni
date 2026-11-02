@@ -1,0 +1,603 @@
+type NColor
+    = Red
+    | Black
+
+
+type TreeA
+    = NodeA NColor Int (List Int) TreeA TreeA
+    | LeafA
+
+
+balanceA : NColor, Int, List Int, TreeA, TreeA → TreeA
+balanceA color key v0 left right =
+    case right of
+        NodeA Red rK rV0 rLeft rRight →
+            case left of
+                NodeA Red lK lV0 lLeft lRight →
+                    NodeA Red key v0 (NodeA Black lK lV0 lLeft lRight) (NodeA Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeA color rK rV0 (NodeA Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeA Red lK lV0 (NodeA Red llK llV0 llLeft llRight) lRight →
+                    NodeA Red lK lV0 (NodeA Black llK llV0 llLeft llRight) (NodeA Black key v0 lRight right)
+
+                _ →
+                    NodeA color key v0 left right
+
+
+removeMinA : TreeA → TreeA
+removeMinA tree =
+    case tree of
+        NodeA color key v0 ((NodeA lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeA Red _ _ _ _ →
+                            NodeA color key v0 (removeMinA left) right
+
+                        _ →
+                            case moveRedLeftA tree of
+                                NodeA nColor nKey nV0 nLeft nRight →
+                                    balanceA nColor nKey nV0 (removeMinA nLeft) nRight
+
+                                LeafA →
+                                    LeafA
+
+                _ →
+                    NodeA color key v0 (removeMinA left) right
+
+        _ →
+            LeafA
+
+
+moveRedLeftA : TreeA → TreeA
+moveRedLeftA tree =
+    case tree of
+        NodeA _ k v0 (NodeA _ lK lV0 lLeft lRight) (NodeA _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeA Red rlK rlV0 rlL rlR →
+                    NodeA Red rlK rlV0 (NodeA Black k v0 (NodeA Red lK lV0 lLeft lRight) rlL) (NodeA Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeA Black k v0 (NodeA Red lK lV0 lLeft lRight) (NodeA Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildA : TreeA → TreeA
+rebuildA t =
+    case removeMinA t of
+        NodeA c k v0 l r →
+            NodeA c k (List.push v0 9) l r
+
+        LeafA →
+            LeafA
+
+
+type TreeB
+    = NodeB NColor Int (List Int) TreeB TreeB
+    | LeafB
+
+
+balanceB : NColor, Int, List Int, TreeB, TreeB → TreeB
+balanceB color key v0 left right =
+    case right of
+        NodeB Red rK rV0 rLeft rRight →
+            case left of
+                NodeB Red lK lV0 lLeft lRight →
+                    NodeB Red key v0 (NodeB Black lK lV0 lLeft lRight) (NodeB Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeB color rK rV0 (NodeB Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeB Red lK lV0 (NodeB Red llK llV0 llLeft llRight) lRight →
+                    NodeB Red lK lV0 (NodeB Black llK llV0 llLeft llRight) (NodeB Black key v0 lRight right)
+
+                _ →
+                    NodeB color key v0 left right
+
+
+removeMinB : TreeB → TreeB
+removeMinB tree =
+    case tree of
+        NodeB color key v0 ((NodeB lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeB Red _ _ _ _ →
+                            NodeB color key v0 (removeMinB left) right
+
+                        _ →
+                            case moveRedLeftB tree of
+                                NodeB nColor nKey nV0 nLeft nRight →
+                                    balanceB nColor nKey nV0 (removeMinB nLeft) nRight
+
+                                LeafB →
+                                    LeafB
+
+                _ →
+                    NodeB color key v0 (removeMinB left) right
+
+        _ →
+            LeafB
+
+
+moveRedLeftB : TreeB → TreeB
+moveRedLeftB tree =
+    case tree of
+        NodeB _ k v0 (NodeB _ lK lV0 lLeft lRight) (NodeB _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeB Red rlK rlV0 rlL rlR →
+                    NodeB Red rlK rlV0 (NodeB Black k v0 (NodeB Red lK lV0 lLeft lRight) rlL) (NodeB Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeB Black k v0 (NodeB Red lK lV0 lLeft lRight) (NodeB Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildB : TreeB → TreeB
+rebuildB t =
+    case removeMinB t of
+        NodeB c k v0 l r →
+            NodeB c k (List.push v0 9) l r
+
+        LeafB →
+            LeafB
+
+
+type TreeC
+    = NodeC NColor Int (List Int) TreeC TreeC
+    | LeafC
+
+
+balanceC : NColor, Int, List Int, TreeC, TreeC → TreeC
+balanceC color key v0 left right =
+    case right of
+        NodeC Red rK rV0 rLeft rRight →
+            case left of
+                NodeC Red lK lV0 lLeft lRight →
+                    NodeC Red key v0 (NodeC Black lK lV0 lLeft lRight) (NodeC Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeC color rK rV0 (NodeC Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeC Red lK lV0 (NodeC Red llK llV0 llLeft llRight) lRight →
+                    NodeC Red lK lV0 (NodeC Black llK llV0 llLeft llRight) (NodeC Black key v0 lRight right)
+
+                _ →
+                    NodeC color key v0 left right
+
+
+removeMinC : TreeC → TreeC
+removeMinC tree =
+    case tree of
+        NodeC color key v0 ((NodeC lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeC Red _ _ _ _ →
+                            NodeC color key v0 (removeMinC left) right
+
+                        _ →
+                            case moveRedLeftC tree of
+                                NodeC nColor nKey nV0 nLeft nRight →
+                                    balanceC nColor nKey nV0 (removeMinC nLeft) nRight
+
+                                LeafC →
+                                    LeafC
+
+                _ →
+                    NodeC color key v0 (removeMinC left) right
+
+        _ →
+            LeafC
+
+
+moveRedLeftC : TreeC → TreeC
+moveRedLeftC tree =
+    case tree of
+        NodeC _ k v0 (NodeC _ lK lV0 lLeft lRight) (NodeC _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeC Red rlK rlV0 rlL rlR →
+                    NodeC Red rlK rlV0 (NodeC Black k v0 (NodeC Red lK lV0 lLeft lRight) rlL) (NodeC Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeC Black k v0 (NodeC Red lK lV0 lLeft lRight) (NodeC Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildC : TreeC → TreeC
+rebuildC t =
+    case removeMinC t of
+        NodeC c k v0 l r →
+            NodeC c k (List.push v0 9) l r
+
+        LeafC →
+            LeafC
+
+
+type TreeD
+    = NodeD NColor Int (List Int) TreeD TreeD
+    | LeafD
+
+
+balanceD : NColor, Int, List Int, TreeD, TreeD → TreeD
+balanceD color key v0 left right =
+    case right of
+        NodeD Red rK rV0 rLeft rRight →
+            case left of
+                NodeD Red lK lV0 lLeft lRight →
+                    NodeD Red key v0 (NodeD Black lK lV0 lLeft lRight) (NodeD Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeD color rK rV0 (NodeD Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeD Red lK lV0 (NodeD Red llK llV0 llLeft llRight) lRight →
+                    NodeD Red lK lV0 (NodeD Black llK llV0 llLeft llRight) (NodeD Black key v0 lRight right)
+
+                _ →
+                    NodeD color key v0 left right
+
+
+removeMinD : TreeD → TreeD
+removeMinD tree =
+    case tree of
+        NodeD color key v0 ((NodeD lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeD Red _ _ _ _ →
+                            NodeD color key v0 (removeMinD left) right
+
+                        _ →
+                            case moveRedLeftD tree of
+                                NodeD nColor nKey nV0 nLeft nRight →
+                                    balanceD nColor nKey nV0 (removeMinD nLeft) nRight
+
+                                LeafD →
+                                    LeafD
+
+                _ →
+                    NodeD color key v0 (removeMinD left) right
+
+        _ →
+            LeafD
+
+
+moveRedLeftD : TreeD → TreeD
+moveRedLeftD tree =
+    case tree of
+        NodeD _ k v0 (NodeD _ lK lV0 lLeft lRight) (NodeD _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeD Red rlK rlV0 rlL rlR →
+                    NodeD Red rlK rlV0 (NodeD Black k v0 (NodeD Red lK lV0 lLeft lRight) rlL) (NodeD Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeD Black k v0 (NodeD Red lK lV0 lLeft lRight) (NodeD Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildD : TreeD → TreeD
+rebuildD t =
+    case removeMinD t of
+        NodeD c k v0 l r →
+            NodeD c k (List.push v0 9) l r
+
+        LeafD →
+            LeafD
+
+
+type TreeE
+    = NodeE NColor Int (List Int) TreeE TreeE
+    | LeafE
+
+
+balanceE : NColor, Int, List Int, TreeE, TreeE → TreeE
+balanceE color key v0 left right =
+    case right of
+        NodeE Red rK rV0 rLeft rRight →
+            case left of
+                NodeE Red lK lV0 lLeft lRight →
+                    NodeE Red key v0 (NodeE Black lK lV0 lLeft lRight) (NodeE Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeE color rK rV0 (NodeE Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeE Red lK lV0 (NodeE Red llK llV0 llLeft llRight) lRight →
+                    NodeE Red lK lV0 (NodeE Black llK llV0 llLeft llRight) (NodeE Black key v0 lRight right)
+
+                _ →
+                    NodeE color key v0 left right
+
+
+removeMinE : TreeE → TreeE
+removeMinE tree =
+    case tree of
+        NodeE color key v0 ((NodeE lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeE Red _ _ _ _ →
+                            NodeE color key v0 (removeMinE left) right
+
+                        _ →
+                            case moveRedLeftE tree of
+                                NodeE nColor nKey nV0 nLeft nRight →
+                                    balanceE nColor nKey nV0 (removeMinE nLeft) nRight
+
+                                LeafE →
+                                    LeafE
+
+                _ →
+                    NodeE color key v0 (removeMinE left) right
+
+        _ →
+            LeafE
+
+
+moveRedLeftE : TreeE → TreeE
+moveRedLeftE tree =
+    case tree of
+        NodeE _ k v0 (NodeE _ lK lV0 lLeft lRight) (NodeE _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeE Red rlK rlV0 rlL rlR →
+                    NodeE Red rlK rlV0 (NodeE Black k v0 (NodeE Red lK lV0 lLeft lRight) rlL) (NodeE Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeE Black k v0 (NodeE Red lK lV0 lLeft lRight) (NodeE Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildE : TreeE → TreeE
+rebuildE t =
+    case removeMinE t of
+        NodeE c k v0 l r →
+            NodeE c k (List.push v0 9) l r
+
+        LeafE →
+            LeafE
+
+
+type TreeF
+    = NodeF NColor Int (List Int) TreeF TreeF
+    | LeafF
+
+
+balanceF : NColor, Int, List Int, TreeF, TreeF → TreeF
+balanceF color key v0 left right =
+    case right of
+        NodeF Red rK rV0 rLeft rRight →
+            case left of
+                NodeF Red lK lV0 lLeft lRight →
+                    NodeF Red key v0 (NodeF Black lK lV0 lLeft lRight) (NodeF Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeF color rK rV0 (NodeF Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeF Red lK lV0 (NodeF Red llK llV0 llLeft llRight) lRight →
+                    NodeF Red lK lV0 (NodeF Black llK llV0 llLeft llRight) (NodeF Black key v0 lRight right)
+
+                _ →
+                    NodeF color key v0 left right
+
+
+removeMinF : TreeF → TreeF
+removeMinF tree =
+    case tree of
+        NodeF color key v0 ((NodeF lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeF Red _ _ _ _ →
+                            NodeF color key v0 (removeMinF left) right
+
+                        _ →
+                            case moveRedLeftF tree of
+                                NodeF nColor nKey nV0 nLeft nRight →
+                                    balanceF nColor nKey nV0 (removeMinF nLeft) nRight
+
+                                LeafF →
+                                    LeafF
+
+                _ →
+                    NodeF color key v0 (removeMinF left) right
+
+        _ →
+            LeafF
+
+
+moveRedLeftF : TreeF → TreeF
+moveRedLeftF tree =
+    case tree of
+        NodeF _ k v0 (NodeF _ lK lV0 lLeft lRight) (NodeF _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeF Red rlK rlV0 rlL rlR →
+                    NodeF Red rlK rlV0 (NodeF Black k v0 (NodeF Red lK lV0 lLeft lRight) rlL) (NodeF Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeF Black k v0 (NodeF Red lK lV0 lLeft lRight) (NodeF Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildF : TreeF → TreeF
+rebuildF t =
+    case removeMinF t of
+        NodeF c k v0 l r →
+            NodeF c k (List.push v0 9) l r
+
+        LeafF →
+            LeafF
+
+
+type TreeG
+    = NodeG NColor Int (List Int) TreeG TreeG
+    | LeafG
+
+
+balanceG : NColor, Int, List Int, TreeG, TreeG → TreeG
+balanceG color key v0 left right =
+    case right of
+        NodeG Red rK rV0 rLeft rRight →
+            case left of
+                NodeG Red lK lV0 lLeft lRight →
+                    NodeG Red key v0 (NodeG Black lK lV0 lLeft lRight) (NodeG Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeG color rK rV0 (NodeG Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeG Red lK lV0 (NodeG Red llK llV0 llLeft llRight) lRight →
+                    NodeG Red lK lV0 (NodeG Black llK llV0 llLeft llRight) (NodeG Black key v0 lRight right)
+
+                _ →
+                    NodeG color key v0 left right
+
+
+removeMinG : TreeG → TreeG
+removeMinG tree =
+    case tree of
+        NodeG color key v0 ((NodeG lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeG Red _ _ _ _ →
+                            NodeG color key v0 (removeMinG left) right
+
+                        _ →
+                            case moveRedLeftG tree of
+                                NodeG nColor nKey nV0 nLeft nRight →
+                                    balanceG nColor nKey nV0 (removeMinG nLeft) nRight
+
+                                LeafG →
+                                    LeafG
+
+                _ →
+                    NodeG color key v0 (removeMinG left) right
+
+        _ →
+            LeafG
+
+
+moveRedLeftG : TreeG → TreeG
+moveRedLeftG tree =
+    case tree of
+        NodeG _ k v0 (NodeG _ lK lV0 lLeft lRight) (NodeG _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeG Red rlK rlV0 rlL rlR →
+                    NodeG Red rlK rlV0 (NodeG Black k v0 (NodeG Red lK lV0 lLeft lRight) rlL) (NodeG Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeG Black k v0 (NodeG Red lK lV0 lLeft lRight) (NodeG Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildG : TreeG → TreeG
+rebuildG t =
+    case removeMinG t of
+        NodeG c k v0 l r →
+            NodeG c k (List.push v0 9) l r
+
+        LeafG →
+            LeafG
+
+
+type TreeH
+    = NodeH NColor Int (List Int) TreeH TreeH
+    | LeafH
+
+
+balanceH : NColor, Int, List Int, TreeH, TreeH → TreeH
+balanceH color key v0 left right =
+    case right of
+        NodeH Red rK rV0 rLeft rRight →
+            case left of
+                NodeH Red lK lV0 lLeft lRight →
+                    NodeH Red key v0 (NodeH Black lK lV0 lLeft lRight) (NodeH Black rK rV0 rLeft rRight)
+
+                _ →
+                    NodeH color rK rV0 (NodeH Red key v0 left rLeft) rRight
+
+        _ →
+            case left of
+                NodeH Red lK lV0 (NodeH Red llK llV0 llLeft llRight) lRight →
+                    NodeH Red lK lV0 (NodeH Black llK llV0 llLeft llRight) (NodeH Black key v0 lRight right)
+
+                _ →
+                    NodeH color key v0 left right
+
+
+removeMinH : TreeH → TreeH
+removeMinH tree =
+    case tree of
+        NodeH color key v0 ((NodeH lColor _ _ lLeft _) as left) right →
+            case lColor of
+                Black →
+                    case lLeft of
+                        NodeH Red _ _ _ _ →
+                            NodeH color key v0 (removeMinH left) right
+
+                        _ →
+                            case moveRedLeftH tree of
+                                NodeH nColor nKey nV0 nLeft nRight →
+                                    balanceH nColor nKey nV0 (removeMinH nLeft) nRight
+
+                                LeafH →
+                                    LeafH
+
+                _ →
+                    NodeH color key v0 (removeMinH left) right
+
+        _ →
+            LeafH
+
+
+moveRedLeftH : TreeH → TreeH
+moveRedLeftH tree =
+    case tree of
+        NodeH _ k v0 (NodeH _ lK lV0 lLeft lRight) (NodeH _ rK rV0 rLeft rRight) →
+            case rLeft of
+                NodeH Red rlK rlV0 rlL rlR →
+                    NodeH Red rlK rlV0 (NodeH Black k v0 (NodeH Red lK lV0 lLeft lRight) rlL) (NodeH Black rK rV0 rlR rRight)
+
+                _ →
+                    NodeH Black k v0 (NodeH Red lK lV0 lLeft lRight) (NodeH Red rK rV0 rLeft rRight)
+
+        _ →
+            tree
+
+
+rebuildH : TreeH → TreeH
+rebuildH t =
+    case removeMinH t of
+        NodeH c k v0 l r →
+            NodeH c k (List.push v0 9) l r
+
+        LeafH →
+            LeafH

@@ -1,0 +1,35 @@
+rotate :
+      Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    → List Int
+rotate k p00 p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 p12 p13 p14 =
+    if k == 0 then
+        p00
+    else
+        rotate (k - 1) p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 p12 p13 p14 p00
+
+
+seed : List Int
+seed = rotate 3 [ 7 ] [] [] [] [] [] [] [] [] [] [] [] [] [] []
+
+
+pub dest : List Int
+dest = List.push seed 2
+
+
+pub local : Int → List Int
+local x = List.push (rotate 3 [ x ] [] [] [] [] [] [] [] [] [] [] [] [] [] []) 2
