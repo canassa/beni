@@ -54,7 +54,7 @@ pub fn Of(comptime Table: type) type {
                 Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
                 return got.value_ptr.*;
             }
-            got.value_ptr.* = @intCast(t.kmaps.len);
+            got.value_ptr.* = @intCast(t.kmaps.len());
             try t.kmaps.append(gpa, n);
             try Counters.setMade(&t.kmap_stats, gpa, n.mask == 0, n.left, n.right);
             Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
@@ -229,7 +229,7 @@ pub fn Of(comptime Table: type) type {
             try charge.reserve(gpa, .cond, 1);
             const got = try t.kpos_intern.getOrPut(gpa, .{ p.here, p.links, p.fold });
             if (got.found_existing) return .from(got.value_ptr.*);
-            got.value_ptr.* = @intCast(t.kpos.len);
+            got.value_ptr.* = @intCast(t.kpos.len());
             try t.kpos.append(gpa, p);
             return .from(got.value_ptr.*);
         }

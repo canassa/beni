@@ -19,7 +19,8 @@
 //! (§3.9) and counts B_f, G_f, S_f and N_f = B_f + G_f per category.
 //!
 //! **Records** are fixed-size, at most 16 words (`max_record_words`);
-//! `assertRecord` is the one check and every table in `own2/` makes it.
+//! `assertRecord` is the one check and every table in `own2/` makes it,
+//! through `Columns`, which holds each table with its columns hoisted.
 //! Variable-length runs are chains of `Chunks`, each chunk reserved before it
 //! is filled.
 //!
@@ -49,6 +50,133 @@ pub const max_record_words: u32 = 16;
 /// so a record that grows past §4.1's bound is a compile error.
 pub fn assertRecord(comptime T: type) void {
     if (@sizeOf(T) > max_record_words * 4) @compileError("an own2 record exceeds 16 words: " ++ @typeName(T));
+}
+
+// ---------------------------------------------------------------------------
+// Columns: a table's MultiArrayList with its columns hoisted (§4.1)
+// ---------------------------------------------------------------------------
+
+/// A table of `T` records, stored as a `std.MultiArrayList(T)`, whose
+/// columns are read and written through `col`: one plain slice per field of
+/// `T`, over the list's storage. `MultiArrayList.items` and `get` recompute
+/// every column's address per call, and where the code generator does not
+/// fold that away — Zig's own backend, which builds the compiler the test
+/// suites run — it cost about 100 ns a read and a third of the checker's
+/// cycles (`check/TypeStore.zig`'s `col` met the same wall).
+///
+/// `list` is never changed but through this type: the one method that moves
+/// the storage (`ensureTotalCapacity`) re-reads `col`, and every one that
+/// changes its length cuts or extends `col` to match, so a stale
+/// column cannot be observed. `rules_test` keeps every other `own2/` file
+/// off `MultiArrayList` and `items`.
+pub fn Columns(comptime T: type) type {
+    assertRecord(T);
+    const names = @typeInfo(T).@"struct".field_names;
+    return struct {
+        const Self = @This();
+        const List = std.MultiArrayList(T);
+
+        /// One slice per field of `T`, named as the field.
+        pub const Col = blk: {
+            var types: [names.len]type = undefined;
+            for (names, &types) |n, *ty| ty.* = []@FieldType(T, n);
+            break :blk @Struct(.auto, null, names, &types, &@splat(.{}));
+        };
+
+        const no_col: Col = blk: {
+            var c: Col = undefined;
+            for (names) |n| @field(c, n) = &.{};
+            break :blk c;
+        };
+
+        /// The storage. Changed only by the methods below, which keep `col`
+        /// its columns.
+        list: List = .empty,
+        col: Col = no_col,
+
+        pub const empty: Self = .{};
+
+        pub fn deinit(s: *Self, gpa: Allocator) void {
+            s.list.deinit(gpa);
+            s.* = undefined;
+        }
+
+        pub inline fn len(s: *const Self) usize {
+            return s.list.len;
+        }
+
+        /// Re-read `col` after `list` moved.
+        fn sync(s: *Self) void {
+            const sl = s.list.slice();
+            inline for (names) |n| @field(s.col, n) = sl.items(@field(List.Field, n));
+        }
+
+        /// The one place the storage moves, and so the one place `col` is
+        /// re-read; safety builds check it was in step before.
+        pub fn ensureTotalCapacity(s: *Self, gpa: Allocator, n: usize) Allocator.Error!void {
+            if (std.debug.runtime_safety) s.assertSynced();
+            try s.list.ensureTotalCapacity(gpa, n);
+            s.sync();
+        }
+
+        pub fn ensureUnusedCapacity(s: *Self, gpa: Allocator, n: usize) Allocator.Error!void {
+            return s.ensureTotalCapacity(gpa, s.list.len + n);
+        }
+
+        /// Append `elem`: the capacity test inline, the growth and the
+        /// re-read of `col` it needs out of line.
+        pub inline fn append(s: *Self, gpa: Allocator, elem: T) Allocator.Error!void {
+            if (s.list.len == s.list.capacity) try s.ensureUnusedCapacity(gpa, 1);
+            s.appendAssumeCapacity(elem);
+        }
+
+        /// Written column by column through `col`: the list's own
+        /// `appendAssumeCapacity` would recompute every column's address.
+        pub inline fn appendAssumeCapacity(s: *Self, elem: T) void {
+            std.debug.assert(s.list.len < s.list.capacity);
+            const i = s.list.len;
+            s.list.len = i + 1;
+            inline for (names) |n| {
+                const c = &@field(s.col, n);
+                c.* = c.ptr[0 .. i + 1];
+                c.*[i] = @field(elem, n);
+            }
+        }
+
+        pub inline fn get(s: *const Self, i: usize) T {
+            var r: T = undefined;
+            inline for (names) |n| @field(r, n) = @field(s.col, n)[i];
+            return r;
+        }
+
+        pub inline fn set(s: *Self, i: usize, elem: T) void {
+            inline for (names) |n| @field(s.col, n)[i] = @field(elem, n);
+        }
+
+        /// The storage stays where it is: `col` is cut, not re-read.
+        pub fn shrinkRetainingCapacity(s: *Self, n: usize) void {
+            std.debug.assert(n <= s.list.len);
+            s.list.len = n;
+            inline for (names) |f| {
+                const c = &@field(s.col, f);
+                c.* = c.ptr[0..n];
+            }
+        }
+
+        pub fn clearRetainingCapacity(s: *Self) void {
+            s.shrinkRetainingCapacity(0);
+        }
+
+        /// `col` is exactly the list's columns (the tests' check).
+        pub fn assertSynced(s: *const Self) void {
+            const sl = s.list.slice();
+            inline for (names) |n| {
+                const want = sl.items(@field(List.Field, n));
+                const got = @field(s.col, n);
+                std.debug.assert(got.len == want.len and (want.len == 0 or got.ptr == want.ptr));
+            }
+        }
+    };
 }
 
 fn IdType(comptime Self: type) type {
@@ -514,7 +642,7 @@ pub const words_per_chunk = 14;
 /// Runs of `u32` as chains of chunks. A run is `(first chunk, count)`;
 /// appending reserves the chunk it opens, in `category`, before writing.
 pub const Chunks = struct {
-    table: std.MultiArrayList(Chunk) = .empty,
+    table: Columns(Chunk) = .empty,
 
     pub const Run = struct {
         first: ChunkId = .none,
@@ -529,16 +657,16 @@ pub const Chunks = struct {
     /// Append one word to `run`, opening a chunk (one record in `charge`) when
     /// the last is full.
     pub fn append(c: *Chunks, gpa: Allocator, charge: Charge, category: Category, run: *Run, word: u32) ChargeError!void {
-        if (run.last == .none or c.table.items(.len)[run.last.int()] == words_per_chunk) {
+        if (run.last == .none or c.table.col.len[run.last.int()] == words_per_chunk) {
             try charge.reserve(gpa, category, 1);
-            const id: ChunkId = .from(@intCast(c.table.len));
+            const id: ChunkId = .from(@intCast(c.table.len()));
             try c.table.append(gpa, .{ .next = .none, .len = 0, .words = undefined });
-            if (run.last == .none) run.first = id else c.table.items(.next)[run.last.int()] = id;
+            if (run.last == .none) run.first = id else c.table.col.next[run.last.int()] = id;
             run.last = id;
         }
         const i = run.last.int();
-        const len = &c.table.items(.len)[i];
-        c.table.items(.words)[i][len.*] = word;
+        const len = &c.table.col.len[i];
+        c.table.col.words[i][len.*] = word;
         len.* += 1;
         run.count += 1;
     }
@@ -551,12 +679,12 @@ pub const Chunks = struct {
         pub fn next(it: *Iterator) ?u32 {
             while (it.at != .none) {
                 const k = it.at.int();
-                if (it.i < it.chunks.table.items(.len)[k]) {
-                    const w = it.chunks.table.items(.words)[k][it.i];
+                if (it.i < it.chunks.table.col.len[k]) {
+                    const w = it.chunks.table.col.words[k][it.i];
                     it.i += 1;
                     return w;
                 }
-                it.at = it.chunks.table.items(.next)[k];
+                it.at = it.chunks.table.col.next[k];
                 it.i = 0;
             }
             return null;
@@ -715,7 +843,7 @@ pub const Task = struct {
 };
 
 pub const Tasks = struct {
-    table: std.MultiArrayList(Task) = .empty,
+    table: Columns(Task) = .empty,
     head: TaskId = .none,
     tail: TaskId = .none,
     /// Instrumentation (§7.6): tasks executed, i.e. dequeued.
@@ -728,17 +856,17 @@ pub const Tasks = struct {
     /// A new task, one record in `charge`, not yet queued.
     pub fn add(t: *Tasks, gpa: Allocator, charge: Charge, kind: u8, payload: [4]u32) ChargeError!TaskId {
         try charge.reserve(gpa, .task, 1);
-        const id: TaskId = .from(@intCast(t.table.len));
+        const id: TaskId = .from(@intCast(t.table.len()));
         try t.table.append(gpa, .{ .kind = kind, .state = .fresh, .next = .none, .a = payload[0], .b = payload[1], .c = payload[2], .d = payload[3] });
         return id;
     }
 
     /// Queue `id` unless it was queued or has run: at most once per task.
     pub fn enqueueOnce(t: *Tasks, id: TaskId) void {
-        const states = t.table.items(.state);
+        const states = t.table.col.state;
         if (states[id.int()] != .fresh) return;
         states[id.int()] = .queued;
-        if (t.tail == .none) t.head = id else t.table.items(.next)[t.tail.int()] = id;
+        if (t.tail == .none) t.head = id else t.table.col.next[t.tail.int()] = id;
         t.tail = id;
     }
 
@@ -746,9 +874,9 @@ pub const Tasks = struct {
     pub fn dequeue(t: *Tasks) ?TaskId {
         if (t.head == .none) return null;
         const id = t.head;
-        t.head = t.table.items(.next)[id.int()];
+        t.head = t.table.col.next[id.int()];
         if (t.head == .none) t.tail = .none;
-        t.table.items(.state)[id.int()] = .done;
+        t.table.col.state[id.int()] = .done;
         t.executed += 1;
         return id;
     }
@@ -770,6 +898,46 @@ comptime {
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+
+test "a table's hoisted columns follow its storage across every reallocation" {
+    const Rec = struct { a: u32, b: u8, c: NodeId };
+    const gpa = testing.allocator;
+    var t: Columns(Rec) = .empty;
+    defer t.deinit(gpa);
+    // Grown one record at a time from nothing, so `append` reallocates
+    // several times; after each, every earlier record is read back through
+    // `col` and `get`, which a column left on the freed block would fail
+    // (and the testing allocator would report as a use after free).
+    var moves: u32 = 0;
+    for (0..1000) |i| {
+        const before = t.col.a.ptr;
+        try t.append(gpa, .{ .a = @intCast(i), .b = @truncate(i), .c = .from(@intCast(i * 3)) });
+        if (t.col.a.ptr != before) moves += 1;
+        t.assertSynced();
+        try testing.expectEqual(i + 1, t.col.a.len);
+        try testing.expectEqual(t.len(), t.col.c.len);
+        for (0..i + 1) |j| {
+            try testing.expectEqual(@as(u32, @intCast(j)), t.col.a[j]);
+            try testing.expectEqual(@as(u32, @intCast(j * 3)), t.get(j).c.int());
+        }
+    }
+    try testing.expect(moves > 3);
+    // A write through `col` is a write to the table.
+    t.col.b[7] = 99;
+    try testing.expectEqual(@as(u8, 99), t.get(7).b);
+    t.set(8, .{ .a = 1, .b = 2, .c = .none });
+    try testing.expectEqual(NodeId.none, t.col.c[8]);
+    // Shrinking and reserving keep `col` the list's columns too.
+    t.shrinkRetainingCapacity(10);
+    t.assertSynced();
+    try testing.expectEqual(@as(usize, 10), t.col.b.len);
+    try t.ensureTotalCapacity(gpa, 5000);
+    t.assertSynced();
+    try testing.expectEqual(@as(u32, 9), t.col.a[9]);
+    t.clearRetainingCapacity();
+    t.assertSynced();
+    try testing.expectEqual(@as(usize, 0), t.col.a.len);
+}
 
 test "growth is reserved before work and the allowance is terminal" {
     var a: Account = .{ .allowance = 3 };

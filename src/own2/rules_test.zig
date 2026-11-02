@@ -18,8 +18,10 @@
 //!    `Demands` and `Rows` compare no name to a string literal unless the
 //!    line is allowlisted with a reason; `Facts.Cause` declares exactly
 //!    R-6.3's causes in its order.
-//! 4. **Records.** Every `MultiArrayList(T)` in `own2/` has its `T` under
-//!    `Ids.assertRecord`, so no table's record can pass 16 words (§4.1).
+//! 4. **Records.** Every table is an `Ids.Columns(T)`, which puts its `T` under
+//!    `Ids.assertRecord`, so no table's record can pass 16 words (§4.1), and
+//!    reads it through plain column slices: no other `MultiArrayList`, and
+//!    no `items(.f)` but on the BIR's instructions.
 //! 5. **Obligations.** Every production file's header says which of §2.14's
 //!    obligations it keeps (`Obligations kept here:`), or that it keeps
 //!    none.
@@ -35,7 +37,8 @@ const layers = [_]Entry{
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
     // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 770 },
+    // 900 since #1646 and the counters: `Columns`, a table with its columns hoisted.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 900 },
     // The data-oriented measurement (S0): imported by any file, whatever its
     // layer, and imports nothing of own2/.
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 520 },
@@ -499,19 +502,28 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
                 fail(&bad, "Facts.zig: `Cause` has `{s}` where R-6.3's order has `{s}`", .{ m, c });
             };
         }
-        // Every table's record type is asserted.
+        // Every table is an `Ids.Columns`, which asserts its record (§4.1: at
+        // most 16 words) and keeps its columns as plain slices in step with
+        // every growth: `MultiArrayList`'s `items(.f)` and `get(i)` recompute
+        // every column's address per call, a third of the checker's cycles
+        // under Zig's own backend. Only `Ids.Columns` holds one.
         var from: usize = 0;
         while (std.mem.indexOfPos(u8, s.text, from, "MultiArrayList(")) |at| {
             from = at + 1;
             const line_start = if (std.mem.lastIndexOfScalar(u8, s.text[0..at], '\n')) |nl| nl + 1 else 0;
             if (isComment(s.text[line_start..at])) continue;
-            const open = at + "MultiArrayList(".len;
-            const close = std.mem.indexOfScalarPos(u8, s.text, open, ')') orelse continue;
-            const ty = s.text[open..close];
-            if (std.mem.indexOfScalar(u8, ty, '.') != null) continue; // another file's record, asserted there
-            var needle_buf: [128]u8 = undefined;
-            const needle = std.fmt.bufPrint(&needle_buf, "assertRecord({s})", .{ty}) catch continue;
-            if (std.mem.indexOf(u8, s.text, needle) == null) fail(&bad, "{s}: `{s}` is a table's record and has no `Ids.assertRecord({s})` (§4.1: at most 16 words)", .{ s.name, ty, ty });
+            if (std.mem.eql(u8, s.name, "Ids.zig") and std.mem.startsWith(u8, s.text[at..], "MultiArrayList(T)")) continue;
+            fail(&bad, "{s}: a `MultiArrayList` table: make it an `Ids.Columns` and read it through `col`", .{s.name});
+        }
+        // Only the BIR's instructions, another module's list, are read
+        // through `items`.
+        var lines = std.mem.splitScalar(u8, production(s.text), '\n');
+        var n: u32 = 0;
+        while (lines.next()) |line| {
+            n += 1;
+            if (isComment(line) or std.mem.indexOf(u8, line, ".items(.") == null) continue;
+            if (std.mem.indexOf(u8, line, "bir.insts.items(.") != null) continue;
+            fail(&bad, "{s}:{d}: a column read through `items`: read the table's `col`", .{ s.name, n });
         }
     }
     for (literal_allowlist, used) |a, u| {

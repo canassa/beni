@@ -1866,7 +1866,7 @@ pub const Views = struct {
     /// the induction proved (`Summary.Table.certified`).
     fn hypEnvOf(ctx: *anyopaque, shapes: *Shape.Table, n: NodeId) ?u32 {
         const v = of(ctx);
-        const e = shapes.nodes.items(.b)[n.int()];
+        const e = shapes.nodes.col.b[n.int()];
         if (e >= v.envs.items.len) return null;
         const class = v.envs.items[e].class;
         if (v.sums.certified(class)) return e;

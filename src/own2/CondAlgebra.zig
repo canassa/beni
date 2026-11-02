@@ -70,7 +70,7 @@ pub fn Of(comptime Table: type) type {
         pub const Interp = struct { ctx: *anyopaque, atom: *const fn (ctx: *anyopaque, t: *Table, gpa: Allocator, charge: Charge, atom: Cond) Error!CondId };
 
         pub fn count(t: *const Table) u32 {
-            return @intCast(t.conds.len);
+            return @intCast(t.conds.len());
         }
 
         pub fn get(t: *const Table, c: CondId) Cond {
@@ -78,7 +78,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         pub fn kind(t: *const Table, c: CondId) Kind {
-            return t.conds.items(.kind)[c.int()];
+            return t.conds.col.kind[c.int()];
         }
 
         /// Whether `c` fails (`shared` or `lost`).
@@ -91,7 +91,7 @@ pub fn Of(comptime Table: type) type {
             try charge.reserve(gpa, .cond, 1);
             const got = try t.intern.getOrPut(gpa, .{ key0(c), c.a, c.b });
             if (got.found_existing) return .from(got.value_ptr.*);
-            got.value_ptr.* = @intCast(t.conds.len);
+            got.value_ptr.* = @intCast(t.conds.len());
             try t.conds.append(gpa, c);
             return .from(got.value_ptr.*);
         }
@@ -292,7 +292,7 @@ pub fn Of(comptime Table: type) type {
         /// distributes over `and`. A new atom is queued in creation order.
         pub fn instAtom(t: *Table, gpa: Allocator, charge: Charge, k: CondId, env: u32) Error!CondId {
             if (k == yes or fails(k)) return k;
-            const before = t.conds.len;
+            const before = t.conds.len();
             const a = try t.make(gpa, charge, .{ .kind = .atom, .atom = .inst, .a = k.int(), .b = env });
             if (a.int() >= before) try t.inst_queue.append(gpa, a);
             return a;
@@ -303,7 +303,7 @@ pub fn Of(comptime Table: type) type {
         pub fn instSet(t: *Table, gpa: Allocator, charge: Charge, s: SetId, env: u32) Error!CondId {
             if (s == .none) return yes;
             std.debug.assert(env & inst_set_bit == 0);
-            const before = t.conds.len;
+            const before = t.conds.len();
             const a = try t.make(gpa, charge, .{ .kind = .atom, .atom = .inst, .a = s.int(), .b = env | inst_set_bit });
             if (a.int() >= before) try t.inst_queue.append(gpa, a);
             return a;
