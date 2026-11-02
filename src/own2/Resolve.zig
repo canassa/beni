@@ -552,6 +552,17 @@ const Resolver = struct {
         line.demand.relies = relied;
         return line;
     }
+
+    /// A supplied leaf `t` judged as a write the callback may make, the
+    /// call's other arguments its operands (§2.11.3).
+    fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, pending: Ids.Range) Error!Line {
+        const w = r.e.w;
+        const start: u32 = @intCast(w.leaf_runs.items.len);
+        try w.leaf_runs.append(w.f.gpa, t);
+        const o_start: u32 = @intCast(w.value_runs.items.len);
+        for (args, 0..) |b, m| if (m != k) try w.value_runs.append(w.f.gpa, b);
+        return r.judge(.{ .point = point, .kind = .callsite, .token = 0, .base_inst = inst, .targets = .{ .start = start, .len = 1 }, .operands = .{ .start = o_start, .len = @intCast(w.value_runs.items.len - o_start) }, .pending = pending });
+    }
 };
 
 /// Judge every demand of evaluation `e`; the lines in `arena` (null when
@@ -580,13 +591,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             defer ls.deinit(f.gpa);
             try e.ev.leavesOf(a, 0, &ls);
             for (ls.items) |t| {
-                const start: u32 = @intCast(e.w.leaf_runs.items.len);
-                try e.w.leaf_runs.append(f.gpa, t);
-                // The other arguments are its operands.
-                const o_start: u32 = @intCast(e.w.value_runs.items.len);
-                for (cb.args, 0..) |b, m| if (m != k) try e.w.value_runs.append(f.gpa, b);
-                const d: Walk.Demand = .{ .point = cb.point, .kind = .callsite, .token = 0, .base_inst = cb.inst, .targets = .{ .start = start, .len = 1 }, .operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) }, .pending = cb.pending };
-                const l = try r.judge(d);
+                const l = try r.judgeSupplied(t, cb.point, cb.inst, cb.args, k, cb.pending);
                 switch (l.outcome.verdict) {
                     .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ @intCast(ci), @intCast(k), t }),
                     .accepted => conds[ci] = try Cond.conj(e.ev.arena, f.account, conds[ci], l.demand.relies),
@@ -594,5 +599,31 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             }
         }
     }
-    return .{ .lines = lines, .verdicts = .{ .req = req, .kept = kept.items, .supply_cond = conds } };
+    // The passed-on labels: the part of a call's argument each callee
+    // supply takes is what the callback may write, judged as a direct
+    // label's argument is (§2.11.3): `apply f { f0 = a, f1 = a }` hands the
+    // callback two names of one list.
+    var pkept: std.ArrayList([4]u32) = .empty;
+    const pconds = try arena.alloc(Cond, e.passes.items.len);
+    @memset(pconds, .{});
+    for (e.passes.items, 0..) |p, pi| {
+        const call = f.calls.items[p[1]];
+        const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
+        for (e.contracts.suppliesOf(lab.supplies)) |su| for (e.contracts.resOf(su.res)) |rs| for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+            if (a.kind != .param or a.j >= call.args.len) continue;
+            const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
+            var ls: std.ArrayList(Relation.Part) = .empty;
+            defer ls.deinit(f.gpa);
+            try e.ev.partsOf(v, f.slots.relWords(rs.slot), &ls);
+            for (ls.items) |part| {
+                const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
+                const l = try r.judgeSupplied(part.leaf, call.point, call.inst, call.args, a.j, pending);
+                switch (l.outcome.verdict) {
+                    .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ @intCast(pi), su.k, part.leaf, part.at }),
+                    .accepted => pconds[pi] = try Cond.conj(e.ev.arena, f.account, pconds[pi], l.demand.relies),
+                }
+            }
+        };
+    }
+    return .{ .lines = lines, .verdicts = .{ .req = req, .kept = kept.items, .supply_cond = conds, .pass_kept = pkept.items, .pass_cond = pconds } };
 }
