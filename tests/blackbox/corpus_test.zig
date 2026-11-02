@@ -3872,6 +3872,8 @@ const Case = struct {
         // one rule for the whole corpus, so that a shape golden can be about
         // a `Debug`-using program the day one is wanted.
         if (c.fixture.release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
+        const source_map = c.goldenExists("map");
+        if (source_map) try args.append(c.arena, "--source-maps");
         // A prerendering build runs the suite's `node` (`prerender.md` §5.1):
         // its `main` says `Browser.prerender` (§5.2).
         try args.appendSlice(c.arena, sources.items);
@@ -3904,6 +3906,7 @@ const Case = struct {
             return err;
         };
         try c.expectGolden("js", js);
+        if (source_map) try c.expectGolden("map", try c.w.read(try std.fmt.allocPrint(c.arena, "{s}.map", .{emitted_path})));
         if (c.goldenExists("files")) {
             const files = try c.w.listFiles("out");
             try c.expectGolden("files", try std.fmt.allocPrint(c.arena, "{s}\n", .{try std.mem.join(c.arena, "\n", files)}));
