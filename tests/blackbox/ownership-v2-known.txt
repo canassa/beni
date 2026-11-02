@@ -154,6 +154,8 @@ tests/corpus/ownership/PatternWideCall.beni [node] PatternWideCall 1187:13 #0 ::
 tests/corpus/ownership/PatternWideCall.beni [node] PatternWideCall 1202:20 #0 :: PatternWideCall.headPush <call>[*] :: rejected :: accepted  `headPush` relies on nothing: its `rows` is dead after the push, and the shared argument a temporary; v1 records `excl π1`
 tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:29 #0 :: EvidenceDagBuildDepth32.w6 <expression> :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
 tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:37 #0 :: EvidenceDagBuildDepth32.w6 <expression> :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write; v2 knows it writes nothing (#1252)
+tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:8 #0 :: EvidenceDagBuildDepth32.w5 <call> :: rejected :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write the argument of its outer call; v2 knows `w5` writes nothing (#1714)
+tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:12 #0 :: EvidenceDagBuildDepth32.w5 x :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write `x`; v2 knows `w5` writes nothing (#1714)
 # v2 refuses where v1 accepted (S3b): a canonical path folds the recursive children.
 
 # v2 reads a comparison through its components (ownership-v2.md §2.13.13); v1 has no row for a
