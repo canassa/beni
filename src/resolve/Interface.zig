@@ -216,6 +216,8 @@ pub const EffectBlock = struct {
     /// reads it — so that the declaration has a second, suspendable body.
     pub const Class = struct { rung: u32, realms: u8 = 0, sync: bool, sensitive: bool = false, deps: []const u32 };
 
+    /// A dependency with this bit carries realm availability only.
+    pub const realm_only: u32 = 1 << 31;
     pub const sync_bit: u32 = 1 << 8;
     pub const sensitive_bit: u32 = 1 << 9;
 
@@ -321,7 +323,7 @@ pub const EffectBlock = struct {
             if (!validWord(words[@intCast(at)])) return null;
             const deps = words[@intCast(at + 1)];
             if (at + 2 + deps > words.len) return null;
-            for (words[@intCast(at + 2)..][0..deps]) |d| if (d >= classes) return null;
+            for (words[@intCast(at + 2)..][0..deps]) |d| if (d & ~realm_only >= classes) return null;
             at += 2 + deps;
         }
         if (at + 1 > words.len) return null;

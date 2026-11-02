@@ -24,12 +24,7 @@ pub fn validate(c: anytype) bool {
         for (c.members) |m| {
             if (m.owner != declaration) continue;
             const text = m.source_span.text(c.files[m.file].source);
-            var at: usize = 0;
-            while (std.mem.findPos(u8, text, at, row.member)) |pos| {
-                const end = pos + row.member.len;
-                if ((pos == 0 or !std.ascii.isAlphanumeric(text[pos - 1])) and (end == text.len or !std.ascii.isAlphanumeric(text[end]))) found = true;
-                at = end;
-            }
+            if (hasMember(text, row.member)) found = true;
         }
         if (!found) return false;
         // Mixin exposure belongs to the implementing native receiver.
@@ -119,7 +114,7 @@ pub fn bindings(arena: Allocator, c: anytype) Allocator.Error![]const Binding {
             for (c.members, 0..) |member, mi| {
                 if (member.owner != di) continue;
                 const text = member.source_span.text(c.files[member.file].source);
-                if (std.mem.find(u8, text, row.member) == null) continue;
+                if (!hasMember(text, row.member)) continue;
                 binding.member = @intCast(mi);
                 binding.file = member.file;
                 binding.start = member.source_span.start;
@@ -130,4 +125,18 @@ pub fn bindings(arena: Allocator, c: anytype) Allocator.Error![]const Binding {
         std.debug.assert(binding.file != null);
     }
     return out;
+}
+
+fn hasMember(text: []const u8, member: []const u8) bool {
+    var at: usize = 0;
+    while (std.mem.findPos(u8, text, at, member)) |pos| {
+        const end = pos + member.len;
+        if ((pos == 0 or !identifierByte(text[pos - 1])) and (end == text.len or !identifierByte(text[end]))) return true;
+        at = end;
+    }
+    return false;
+}
+
+fn identifierByte(byte: u8) bool {
+    return std.ascii.isAlphanumeric(byte) or byte == '_' or byte == '-';
 }

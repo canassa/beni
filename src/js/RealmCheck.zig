@@ -36,7 +36,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
         for (b.decls, 0..) |d, di| {
             if (!e.live.decl(m, di)) continue;
             const op = Operations.lookup(e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(d.name))) orelse continue;
-            if (op.allowed & forbidden == 0) break;
+            if (op.allowed & forbidden != forbidden) break;
         } else continue;
         break true;
     } else false;
@@ -57,7 +57,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
             const b = e.bir(node.module);
             const name = e.session.interner.slice(b.symbol(b.decls[node.index].name));
             if (Operations.lookup(e.session.interner.slice(e.graph().moduleName(node.module)), name)) |operation| {
-                if (operation.allowed & forbidden == 0) {
+                if (operation.allowed & forbidden != forbidden) {
                     var path: std.ArrayList(u32) = .empty;
                     var at = cursor;
                     while (at != none) : (at = queue.items[at].parent) try path.append(e.scratch, at);
@@ -76,6 +76,10 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
                             if (allowed.items.len != 0) try allowed.appendSlice(e.scratch, ", ");
                             try allowed.appendSlice(e.scratch, field_name);
                         }
+                    }
+                    if (realm == .unknown) {
+                        try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "Native operation `{s}.{s}` requires a known entry realm. This platform chain does not declare `entryHost`. Allowed realms: {s}.\n\nShortest inferred call or evidence chain: {s}.", .{ operation.owner, operation.member, allowed.items, chain.items });
+                        return;
                     }
                     try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "Native operation `{s}.{s}` is unavailable in entry realm `{s}`. Allowed realms: {s}.\n\nShortest inferred call or evidence chain: {s}.", .{ operation.owner, operation.member, @tagName(realm), allowed.items, chain.items });
                     return;

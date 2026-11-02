@@ -9,7 +9,7 @@ const Types = @import("../check/Types.zig");
 const InternPool = @import("../InternPool.zig");
 const Plan = @This();
 
-pub const Realm = enum(u8) { window, dedicatedWorker, sharedWorker, serviceWorker, node };
+pub const Realm = enum(u8) { window, dedicatedWorker, sharedWorker, serviceWorker, node, unknown };
 pub const Protocol = enum(u8) { handlers, machine };
 pub const RoleKind = enum(u8) { wire, local };
 pub const KindIndex = enum(u32) { none = std.math.maxInt(u32), _ };

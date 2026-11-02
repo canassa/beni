@@ -9,7 +9,7 @@ selector returns `SyntaxError`. Other unexpected host failures stop the program.
 `Node.textContent` returns `Maybe String`. `Node.setTextContent` writes a String.
 `Window.document` supplies the page document.
 
-`TextEncoder.create` and `TextEncoder.encode` run in a page or a browser worker.
+`TextEncoder.create` and `TextEncoder.encode` run in a page, a browser worker or Node.
 `Uint8Array.byteLength` reads the size of the encoded data. `Timers.setTimeout`
 takes a synchronous callback and a delay. `WorkerGlobalScope.self` runs only in
 browser workers.
@@ -20,7 +20,8 @@ names the operation, entry realm, allowed realms and call chain. An unreachable
 declaration does not restrict an entry. An evaluated initializer does.
 
 A platform declares the top entry realm with `entryHost`. Each `entryKinds`
-row declares its own realm. The old `host: page` key reports
+row declares its own realm. Without `entryHost`, an entry has an unknown realm
+and accepts only operations available in all known realms. The old `host: page` key reports
 `obsolete_host_promise`. Worker launch support remains gated while the other
 worker checks are under construction.
 

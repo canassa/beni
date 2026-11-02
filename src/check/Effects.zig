@@ -53,6 +53,7 @@ pub const deferred_callee: Var = @fromBackingInt(std.math.maxInt(u32));
 
 pub const Pair = struct { a: Var, b: Var };
 pub const Seed = struct { v: Var, rung: Rung };
+pub const realm_origin: u32 = std.math.maxInt(u32) - 1;
 pub const RealmSeed = struct { v: Var, forbidden: u8 };
 
 /// A copy of an own top-level declaration's scheme (§14.3 rule 3), or of a
@@ -125,7 +126,9 @@ interner: *const InternPool.Global,
 edges: std.ArrayList(Pair) = .empty,
 seeds: std.ArrayList(Seed) = .empty,
 realm_seeds: std.ArrayList(RealmSeed) = .empty,
-native_callback: ?Var = null,
+realm_edges: std.ArrayList(Pair) = .empty,
+erasures: std.ArrayList(Var) = .empty,
+has_realm_edges: bool = false,
 joins: std.ArrayList(Pair) = .empty,
 zips: std.ArrayList(Pair) = .empty,
 records: std.ArrayList(Record) = .empty,
@@ -222,6 +225,8 @@ pub fn deinit(e: *Effects) void {
     e.edges.deinit(gpa);
     e.seeds.deinit(gpa);
     e.realm_seeds.deinit(gpa);
+    e.realm_edges.deinit(gpa);
+    e.erasures.deinit(gpa);
     e.joins.deinit(gpa);
     e.zips.deinit(gpa);
     e.records.deinit(gpa);
@@ -244,10 +249,6 @@ pub fn deinit(e: *Effects) void {
     e.block_next.deinit(gpa);
     e.* = undefined;
 }
-
-// ---------------------------------------------------------------------------
-// Recording (generation, solving, instantiation)
-// ---------------------------------------------------------------------------
 
 /// §14.3 rule 1: a call of `callee` from a body whose class is `ambient`,
 /// written at `site` (§15.4). Only appends; never dereferences the callee,
@@ -402,8 +403,10 @@ pub fn applyImported(e: *Effects, iface: *const Interface, scheme: Interface.Sch
         // Where a `sync` chain ends (§15.4): this use suspends by itself.
         if (rung == .suspends) try e.terminals.append(e.gpa, .{ .v = rep, .site = site_inst });
         for (class.deps) |d| {
-            const from = reps[d].unwrap() orelse continue;
-            try e.uncalled(from, rep);
+            const from = reps[d & ~Interface.EffectBlock.realm_only].unwrap() orelse continue;
+            if (d & Interface.EffectBlock.realm_only != 0) {
+                try e.realm_edges.append(e.gpa, .{ .a = from, .b = rep });
+            } else try e.uncalled(from, rep);
         }
         // §15.3: the use's copy of a `sync` class must not suspend.
         if (class.sync) try e.demand(e.importedDemand(iface, scheme, e.firstSite(@intCast(c)), rep, site_inst));
@@ -558,9 +561,11 @@ pub fn applyPlain(e: *Effects, iface: *const Interface, scheme: Interface.Scheme
     const class = e.block_classes.items[c];
     const rung: Rung = @fromBackingInt(@intCast(@min(class.rung, 2)));
     try e.seed(method_type, rung);
+    if (class.realms != 0) try e.realm_seeds.append(e.gpa, .{ .v = method_type, .forbidden = class.realms });
     if (rung == .suspends) try e.terminals.append(e.gpa, .{ .v = method_type, .site = site_inst });
     for (class.deps) |d| {
-        var at = if (d < e.block_first.items.len) e.block_first.items[d] else none;
+        const dependency = d & ~Interface.EffectBlock.realm_only;
+        var at = if (dependency < e.block_first.items.len) e.block_first.items[dependency] else none;
         while (at != none) : (at = e.block_next.items[at]) {
             const site = e.block_sites.items[at];
             if (site.root == 0 or site.steps.len != 0) continue;
@@ -568,7 +573,9 @@ pub fn applyPlain(e: *Effects, iface: *const Interface, scheme: Interface.Scheme
             const q = whereQuantifier(iface, scheme, site.root - 1) orelse continue;
             if (q >= subs.len) continue;
             const sub = subs[q].unwrap() orelse continue;
-            try e.uncalled(sub, method_type);
+            if (d & Interface.EffectBlock.realm_only != 0) {
+                try e.realm_edges.append(e.gpa, .{ .a = sub, .b = method_type });
+            } else try e.uncalled(sub, method_type);
         }
     }
 }
@@ -582,10 +589,6 @@ fn whereQuantifier(iface: *const Interface, scheme: Interface.Scheme, k: u32) ?u
     }
     return null;
 }
-
-// ---------------------------------------------------------------------------
-// Solving (§14.4)
-// ---------------------------------------------------------------------------
 
 /// A declaration's summary: `classes[start..][0..len]`.
 pub const Summary = struct { start: u32 = 0, len: u32 = 0 };
@@ -813,6 +816,7 @@ pub fn run(e: *Effects, in: Input) Error!void {
         try e.addEdge(p.a, p.b, @intCast(i));
     };
     for (in.wanted_edges) |p| try e.addEdge(p.a, p.b, none);
+    try @import("Realms.zig").connect(e, scratch);
     var work: std.ArrayList(u32) = .empty;
     defer work.deinit(scratch);
     for (e.seeds.items) |sd| try e.raise(try e.nodeFor(sd.v), sd.rung, &work, scratch);
@@ -887,7 +891,7 @@ fn addSource(e: *Effects, src: Source) Error!void {
 pub const none = std.math.maxInt(u32);
 
 /// `v`'s node, through aliases and the effect joins, made the first time.
-fn nodeFor(e: *Effects, v: Var) Error!u32 {
+pub fn nodeFor(e: *Effects, v: Var) Error!u32 {
     // Most variables are no alias: the root without `resolved`'s walk.
     var r = e.store.find(v);
     if (e.store.content(r) == .alias) r, _ = e.store.resolved(r);
@@ -949,8 +953,9 @@ fn addEdge(e: *Effects, a: Var, b: Var, origin: u32) Error!void {
 }
 
 /// `origin` is the edge's index in `sites`, or `none`.
-fn edgeNodes(e: *Effects, x: u32, y: u32, origin: u32) Error!void {
+pub fn edgeNodes(e: *Effects, x: u32, y: u32, origin: u32) Error!void {
     const s = &e.solved;
+    if (origin == realm_origin) e.has_realm_edges = true;
     try s.origin.append(e.gpa, origin);
     try s.to.append(e.gpa, y);
     try s.next.append(e.gpa, s.head.items[x]);
@@ -971,7 +976,7 @@ fn propagate(e: *Effects, work: *std.ArrayList(u32), scratch: Allocator) Error!v
         var at = s.head.items[x];
         while (at != none) : (at = s.next.items[at]) {
             const y = s.find(s.to.items[at]);
-            try e.raise(y, s.level.items[x], work, scratch);
+            if (s.origin.items[at] != realm_origin) try e.raise(y, s.level.items[x], work, scratch);
             if (s.realms.items.len != 0) try e.raiseRealm(y, e.realmOf(x), work, scratch);
         }
     }
@@ -1140,10 +1145,11 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
         try e.raise(rep, c.rung, work, scratch);
         try e.raiseRealm(rep, c.realms, work, scratch);
         for (s.depsOf(c)) |d| {
-            const from = reps[d];
+            const from = reps[d & ~Interface.EffectBlock.realm_only];
             if (from == none) continue;
-            try e.edgeNodes(from, rep, none);
-            try e.raise(rep, s.level.items[from], work, scratch);
+            const realm_only = d & Interface.EffectBlock.realm_only != 0;
+            try e.edgeNodes(from, rep, if (realm_only) realm_origin else none);
+            if (!realm_only) try e.raise(rep, s.level.items[from], work, scratch);
             try e.raiseRealm(rep, e.realmOf(from), work, scratch);
         }
         // §15.3: the use's copy of a `sync` class must not suspend. Where
@@ -1217,7 +1223,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
         const reach = try scratch.alloc(bool, nodes.items.len);
         defer scratch.free(reach);
         @memset(reach, false);
-        const deps = try e.dependencies(nodes.items, scratch, if (demands) reach else null);
+        const deps = try @import("Realms.zig").dependencies(e, nodes.items, scratch, if (demands) reach else null);
         defer {
             for (deps) |list| scratch.free(list);
             scratch.free(deps);
@@ -1257,6 +1263,7 @@ fn reachesDemand(e: *Effects, nd: u32, scratch: Allocator) Error!bool {
         if (s.demanded.items[x]) return true;
         var at = s.head.items[x];
         while (at != none) : (at = s.next.items[at]) {
+            if (s.origin.items[at] == realm_origin) continue;
             const y = s.find(s.to.items[at]);
             if (s.maskOf(y) != 0) continue;
             s.orMask(y, 1);
@@ -1269,7 +1276,7 @@ fn reachesDemand(e: *Effects, nd: u32, scratch: Allocator) Error!bool {
 /// For each of `nodes`, the indices of the others that reach it, ascending;
 /// and, into `reach` when given, whether each reaches a demand (§15.3) —
 /// the same pass, since a node's bits are the nodes that reach it.
-fn dependencies(e: *Effects, nodes: []const u32, scratch: Allocator, reach: ?[]bool) Error![][]u32 {
+pub fn dependencies(e: *Effects, nodes: []const u32, scratch: Allocator, reach: ?[]bool, realms: bool) Error![][]u32 {
     const s = &e.solved;
     const out = try scratch.alloc([]u32, nodes.len);
     for (out) |*o| o.* = &.{};
@@ -1299,6 +1306,7 @@ fn dependencies(e: *Effects, nodes: []const u32, scratch: Allocator, reach: ?[]b
             const bits = s.maskOf(x);
             var at = s.head.items[x];
             while (at != none) : (at = s.next.items[at]) {
+                if (!realms and s.origin.items[at] == realm_origin) continue;
                 const y = s.find(s.to.items[at]);
                 if (s.maskOf(y) | bits == s.maskOf(y)) continue;
                 s.orMask(y, bits);
@@ -1428,8 +1436,13 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
     for (nodes.items, positive.items, evidence.items, sync.items) |nd, pos, _, is_sync| {
         const deps_start: u32 = @intCast(s.deps.items.len);
         if (nd == own) {
-            for (nodes.items, evidence.items, 0..) |other, ev, j| {
-                if ((ev or (e.native_callback != null and store.find(e.native_callback.?) == store.find(scheme))) and other != own) try s.deps.append(e.gpa, @intCast(j));
+            for (nodes.items, evidence.items, positive.items, 0..) |other, ev, other_positive, j| {
+                if (other == own) continue;
+                if (ev) {
+                    try s.deps.append(e.gpa, @intCast(j));
+                } else if (!other_positive) {
+                    try s.deps.append(e.gpa, @as(u32, @intCast(j)) | Interface.EffectBlock.realm_only);
+                }
             }
         }
         const class_rung: Rung = if (pos and !isEvidence(nodes.items, evidence.items, nd)) rung else .pure;
@@ -1454,10 +1467,6 @@ fn isEvidence(nodes: []const u32, evidence: []const bool, nd: u32) bool {
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// Publication (§14.6)
-// ---------------------------------------------------------------------------
-
 /// What the writer needs of one declaration to write its block.
 pub const Publication = struct {
     effects: *Effects,
@@ -1474,26 +1483,8 @@ pub fn publishes(e: *const Effects, decl: u32) bool {
 /// `EffectsBlock.zig`.
 pub const writeBlock = @import("EffectsBlock.zig").write;
 
-// ---------------------------------------------------------------------------
-// What the dumps print (§14.7): `EffectsView.zig`
-// ---------------------------------------------------------------------------
-
 pub const View = @import("EffectsView.zig").View;
 
-/// Forbidden native realms. Allocate only after the first nonportable seed.
-pub fn realmOf(e: *const Effects, node: u32) u8 {
-    return if (node < e.solved.realms.items.len) e.solved.realms.items[node] else 0;
-}
-fn raiseRealm(e: *Effects, node: u32, bits: u8, work: *std.ArrayList(u32), scratch: Allocator) Error!void {
-    if (bits == 0 or e.realmOf(node) | bits == e.realmOf(node)) return;
-    const old_len = e.solved.realms.items.len;
-    try e.solved.realms.resize(e.gpa, e.solved.nodes());
-    @memset(e.solved.realms.items[old_len..], 0);
-    e.solved.realms.items[node] |= bits;
-    try work.append(scratch, node);
-}
-pub fn evalRealms(e: *Effects, decl: u32) u8 {
-    if (decl >= e.eval.len) return 0;
-    const v = e.eval[decl].unwrap() orelse return 0;
-    return if (e.nodeOf(v)) |node| e.realmOf(node) else 0;
-}
+pub const realmOf = @import("Realms.zig").realmOf;
+pub const evalRealms = @import("Realms.zig").evalRealms;
+const raiseRealm = @import("Realms.zig").raiseRealm;

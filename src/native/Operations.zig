@@ -7,6 +7,7 @@ pub const browser: u8 = 0x0f;
 pub const window: u8 = 1;
 pub const workers: u8 = 0x0e;
 pub fn bit(realm: anytype) u8 {
+    if (realm == .unknown) return all;
     return @as(u8, 1) << @intCast(@backingInt(realm));
 }
 pub const Recipe = enum { document, query_selector, text_content, set_text_content, identity, text_encoder, encode, byte_length, timeout, worker_self };

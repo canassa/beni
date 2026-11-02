@@ -162,13 +162,20 @@ DOMException named SyntaxError, and rethrows everything else.
 Realm bits travel on the existing typed effect classes, copies and dependency
 edges. Shared pure classes must be published when distinct scheme sites refer
 to them; otherwise an imported opaque holder loses its stored callback's
-summary. Interfaces carry availability and deferred generic dependencies.
-Interface format 19 adds realm class words, initializer availability and the
+summary. Interfaces carry availability and deferred generic dependencies, even when the
+defining build has no native operation; imported and cached summaries must not
+depend on unrelated modules in that build.
+Interface format 20 distinguishes realm-only callback dependencies from effect
+dependencies; format 19 added realm class words, initializer availability and the
 dormant HostFree quantifier bit; dispatch format 16 carries entry/initializer
 availability. EntryHost checks each emitted projection before output.
 
 HostFree is implemented behind an internal Session option, off by default
-until typed Task storage and the dependent callback queues are ready. It walks
+until typed Task storage (#1615) and the dependent callback queues are ready.
+Meanwhile, realm inference treats callable values erased by Js.from as called
+in the enclosing declaration, covering Task.start work. Every callback in a
+foreign parameter contributes availability to that foreign's own class. These
+realm dependencies do not change purity or suspension inference. It walks
 representations, including opaque constructors, and retains generic requirements
 in interfaces and through the quantified-use/copy worklist. No CLI flag exposes
 this rollout option. Browser Http/WebSocket UTF-8 length helpers use the new

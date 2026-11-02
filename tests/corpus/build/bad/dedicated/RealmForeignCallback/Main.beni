@@ -1,0 +1,33 @@
+-- A callback passed to a foreign runs in that foreign call's realm.
+import Page
+import Worker
+
+
+go _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle Page.text
+        Err _ →
+            ⊤
+
+
+worker : Worker.Program
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                go ⊤
+                "done"
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

@@ -157,6 +157,7 @@ const Sync = struct {
         for (0..s.nodes()) |x| {
             var at = s.head.items[x];
             while (at != none) : (at = s.next.items[at]) {
+                if (s.origin.items[at] == Effects.realm_origin) continue;
                 const to = s.find(s.to.items[at]);
                 try y.rev_from.append(a, @intCast(x));
                 try y.rev_edge.append(a, at);

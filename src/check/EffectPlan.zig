@@ -338,6 +338,7 @@ fn reach(p: *Plan, start: u32, tag: u32) Error!bool {
         if (p.relevant[x] == tag and level(p, x) != .suspends) met = true;
         var at = s.head.items[x];
         while (at != none) : (at = s.next.items[at]) {
+            if (s.origin.items[at] == Effects.realm_origin) continue;
             const y = s.find(s.to.items[at]);
             if (p.seen[y] == w) continue;
             p.seen[y] = w;
@@ -508,6 +509,7 @@ fn taint(p: *Plan, d: u32) Error!void {
         while (p.stack.pop()) |x| {
             var at = s.head.items[x];
             while (at != none) : (at = s.next.items[at]) {
+                if (s.origin.items[at] == Effects.realm_origin) continue;
                 const y = s.find(s.to.items[at]);
                 if (p.tainted[y] == tag) continue;
                 p.tainted[y] = tag;
