@@ -32,13 +32,17 @@ pub const none: u32 = Ids.none_int;
 pub const empty: u32 = none;
 
 /// A leaf (`mask == 0`: `prefix` is the key, `left` its routes, `right`
-/// its `many` bit) or a branch (`mask` the branching bit, `prefix` the bits
+/// its `many` bit), a **wrap** (`mask == wrap`: every element of set
+/// `right` with tags `left` merged in, opened one level where a join looks
+/// inside, so tagging a set is one node) or a branch (`mask` the branching bit, `prefix` the bits
 /// above it, the keys with the bit clear in `left`, set in `right`).
 pub const Node = struct { prefix: u32, mask: u32, left: u32, right: u32 };
 
-/// One element of a set: its key, its routes (`routesOf`) and whether
-/// coexisting routes reach it twice.
-pub const Elem = struct { key: u32, routes: u32, many: bool };
+/// One element of a set: its key, its routes (`routesOf`), the tags of
+/// the wraps above it, and whether coexisting routes reach it twice.
+pub const Elem = struct { key: u32, routes: u32, tags: u32, many: bool };
+
+const wrap: u32 = std.math.maxInt(u32);
 
 /// A node's bits: a key below it is one a pass must read (`refs`), every
 /// element below it is `many`.
@@ -201,22 +205,26 @@ pub const Table = struct {
     /// The routes `xs` (any order) interned: two that differ only in one
     /// choice's arms are one, and none that another implies is kept;
     /// none when `xs` is empty.
-    fn internRoutes(t: *Table, gpa: Allocator, account: *Ids.Account, xs0: []u32) Error!u32 {
+    fn internRoutes(t: *Table, gpa: Allocator, account: *Ids.Account, xs0: []u32, settled: usize) Error!u32 {
         if (xs0.len == 0) return none;
         var xs: std.ArrayList(u32) = .empty;
         defer xs.deinit(gpa);
         try xs.appendSlice(gpa, xs0);
-        try account.reserve(.inspection, @intCast(xs.items.len * xs.items.len));
-        var changed = true;
-        while (changed) {
-            changed = false;
-            outer: for (xs.items, 0..) |x, i| for (xs.items[i + 1 ..], i + 1..) |y, j| {
+        // The first `settled` are normalised already: only a pair with a later
+        // route can join or cover. A joined route goes to the end, new.
+        var done = @min(settled, xs.items.len);
+        scan: while (done < xs.items.len) {
+            const y = xs.items[done];
+            for (xs.items[0..done], 0..) |x, i| {
+                try account.reserve(.inspection, 1);
                 const w = (try t.combine(gpa, account, x, y)) orelse if (t.within(x, y)) x else if (t.within(y, x)) y else continue;
-                xs.items[i] = w;
-                _ = xs.swapRemove(j);
-                changed = true;
-                break :outer;
-            };
+                _ = xs.orderedRemove(done);
+                _ = xs.orderedRemove(i);
+                done -= 1;
+                try xs.append(gpa, w);
+                continue :scan;
+            }
+            done += 1;
         }
         std.mem.sort(u32, xs.items, {}, std.sort.asc(u32));
         if (xs.items.len == 1 and xs.items[0] == 0) return 0;
@@ -285,30 +293,46 @@ pub const Table = struct {
     /// The one-element set.
     pub fn one(t: *Table, gpa: Allocator, account: *Ids.Account, key: u32, tags: u32, refs: bool) Error!u32 {
         var r = [1]u32{tags};
-        return t.leafNode(gpa, account, key, try t.internRoutes(gpa, account, &r), false, refs);
+        return t.leafNode(gpa, account, key, try t.internRoutes(gpa, account, &r, 0), false, refs);
     }
 
     /// Set `s` with tags `x` merged into every element; an element they
     /// conflict with is dropped.
     pub fn withTags(t: *Table, gpa: Allocator, account: *Ids.Account, s: u32, x: u32) Error!u32 {
         if (x == 0 or s == none) return s;
-        try account.reserve(.inspection, 1);
         const n = t.node(s);
-        if (n.mask == 0) {
-            var got: std.ArrayList(u32) = .empty;
-            defer got.deinit(gpa);
-            for (t.routesOf(n.left)) |v| if (try t.merge(gpa, account, v, x)) |m| try got.append(gpa, m);
-            return t.leafNode(gpa, account, n.prefix, try t.internRoutes(gpa, account, got.items), n.right != 0, t.isRefs(s));
+        var tags = x;
+        var child = s;
+        if (n.mask == wrap) {
+            tags = (try t.merge(gpa, account, n.left, x)) orelse return none;
+            child = n.right;
         }
-        const l = try t.withTags(gpa, account, n.left, x);
-        const r = try t.withTags(gpa, account, n.right, x);
-        if (l == n.left and r == n.right) return s;
-        return t.branch(gpa, account, n.prefix, n.mask, l, r);
+        return t.make(gpa, account, .{ .prefix = t.node(child).prefix, .mask = wrap, .left = tags, .right = child }, t.bits.items[child]);
+    }
+
+    /// Set `s` with no wrap at its top: a wrap's tags pushed one level down.
+    fn open(t: *Table, gpa: Allocator, account: *Ids.Account, s0: u32) Error!u32 {
+        var s = s0;
+        while (s != none and t.node(s).mask == wrap) {
+            try account.reserve(.inspection, 1);
+            const n = t.node(s);
+            const c = t.node(n.right);
+            if (c.mask == 0) {
+                var got: std.ArrayList(u32) = .empty;
+                defer got.deinit(gpa);
+                for (t.routesOf(c.left)) |v| if (try t.merge(gpa, account, v, n.left)) |m| try got.append(gpa, m);
+                return t.leafNode(gpa, account, c.prefix, try t.internRoutes(gpa, account, got.items, 0), c.right != 0, t.isRefs(n.right));
+            }
+            s = try t.branch(gpa, account, c.prefix, c.mask, try t.withTags(gpa, account, c.left, n.left), try t.withTags(gpa, account, c.right, n.left));
+        }
+        return s;
     }
 
     /// Set `s` with every element `many`.
-    fn allMany(t: *Table, gpa: Allocator, account: *Ids.Account, s: u32) Error!u32 {
-        if (s == none or t.bits.items[s] & many_bit != 0) return s;
+    fn allMany(t: *Table, gpa: Allocator, account: *Ids.Account, s0: u32) Error!u32 {
+        if (s0 == none or t.bits.items[s0] & many_bit != 0) return s0;
+        const s = try t.open(gpa, account, s0);
+        if (s == none) return none;
         try account.reserve(.inspection, 1);
         const n = t.node(s);
         if (n.mask == 0) return t.leafNode(gpa, account, n.prefix, n.left, true, t.isRefs(s));
@@ -371,6 +395,7 @@ pub const Table = struct {
         var at = s;
         while (at != none) {
             const n = t.node(at);
+            if (n.mask == wrap) return none;
             if (n.mask == 0) return if (n.prefix == key) at else none;
             if (!matches(key, n.prefix, n.mask)) return none;
             at = if (zeroBit(key, n.mask)) n.left else n.right;
@@ -379,8 +404,11 @@ pub const Table = struct {
     }
 
     /// The elements both sets have exactly alike.
-    fn alike(t: *Table, gpa: Allocator, account: *Ids.Account, a: u32, b: u32) Error!u32 {
-        if (a == b or a == none or b == none) return if (a == b) a else none;
+    fn alike(t: *Table, gpa: Allocator, account: *Ids.Account, a0: u32, b0: u32) Error!u32 {
+        if (a0 == b0 or a0 == none or b0 == none) return if (a0 == b0) a0 else none;
+        const a = try t.open(gpa, account, a0);
+        const b = try t.open(gpa, account, b0);
+        if (a == none or b == none) return none;
         try account.reserve(.inspection, 1);
         const na = t.node(a);
         const nb = t.node(b);
@@ -393,9 +421,12 @@ pub const Table = struct {
     }
 
     /// `a` without the elements `c` has exactly alike.
-    fn minus(t: *Table, gpa: Allocator, account: *Ids.Account, a: u32, c: u32) Error!u32 {
-        if (a == c or a == none) return none;
-        if (c == none) return a;
+    fn minus(t: *Table, gpa: Allocator, account: *Ids.Account, a0: u32, c0: u32) Error!u32 {
+        if (a0 == c0 or a0 == none) return none;
+        if (c0 == none) return a0;
+        const a = try t.open(gpa, account, a0);
+        const c = try t.open(gpa, account, c0);
+        if (a == none or c == none) return a;
         try account.reserve(.inspection, 1);
         const na = t.node(a);
         const nc = t.node(c);
@@ -409,11 +440,14 @@ pub const Table = struct {
         return a;
     }
 
-    fn join2(t: *Table, gpa: Allocator, account: *Ids.Account, a: u32, ta: u32, b: u32, tb: u32, co: bool) Error!u32 {
-        if (a == none) return t.withTags(gpa, account, b, tb);
-        if (b == none) return t.withTags(gpa, account, a, ta);
-        if (a == b and co) return t.allMany(gpa, account, a);
-        if (a == b and ta == 0 and tb == 0) return a;
+    fn join2(t: *Table, gpa: Allocator, account: *Ids.Account, a0: u32, ta: u32, b0: u32, tb: u32, co: bool) Error!u32 {
+        if (a0 == none) return t.withTags(gpa, account, b0, tb);
+        if (b0 == none) return t.withTags(gpa, account, a0, ta);
+        if (a0 == b0 and co) return t.allMany(gpa, account, a0);
+        if (a0 == b0 and ta == 0 and tb == 0) return a0;
+        const a = try t.open(gpa, account, a0);
+        const b = try t.open(gpa, account, b0);
+        if (a == none or b == none) return t.join2(gpa, account, a, ta, b, tb, co);
         try account.reserve(.inspection, 1);
         const na = t.node(a);
         const nb = t.node(b);
@@ -421,6 +455,7 @@ pub const Table = struct {
             var many = (na.right | nb.right) != 0;
             var all: std.ArrayList(u32) = .empty;
             defer all.deinit(gpa);
+            const settled = if (co or ta == 0) t.routesOf(na.left).len else 0;
             for (t.routesOf(na.left)) |x| {
                 if (co) for (t.routesOf(nb.left)) |y| {
                     if (!t.conflict(x, y)) many = true;
@@ -428,7 +463,7 @@ pub const Table = struct {
                 if (if (co) x else try t.merge(gpa, account, x, ta)) |m| try all.append(gpa, m);
             }
             for (t.routesOf(nb.left)) |y| if (if (co) y else try t.merge(gpa, account, y, tb)) |m| try all.append(gpa, m);
-            return t.leafNode(gpa, account, na.prefix, try t.internRoutes(gpa, account, all.items), many, t.isRefs(a));
+            return t.leafNode(gpa, account, na.prefix, try t.internRoutes(gpa, account, all.items, if (all.items.len >= settled) settled else 0), many, t.isRefs(a));
         }
         if (na.mask != 0 and na.mask == nb.mask and na.prefix == nb.prefix) {
             const l = try t.join2(gpa, account, na.left, ta, nb.left, tb, co);
@@ -466,18 +501,25 @@ pub const Table = struct {
     pub const Iterator = struct {
         t: *Table,
         pass: u32 = 0,
-        stack: [34]u32 = undefined,
+        /// `(node, tags of the wraps above it)`.
+        stack: [70][2]u32 = undefined,
         depth: usize = 0,
 
-        pub fn next(it: *Iterator) ?Elem {
+        pub fn next(it: *Iterator, gpa: Allocator, account: *Ids.Account) Error!?Elem {
             while (it.depth > 0) {
                 it.depth -= 1;
-                const id = it.stack[it.depth];
-                if (it.pass != 0 and (!it.t.hasRefs(id) or !it.t.enter(id, it.pass))) continue;
+                const id, const tags = it.stack[it.depth];
+                // A node is met once a pass only where no wrap tags it.
+                if (it.pass != 0 and (!it.t.hasRefs(id) or (tags == 0 and !it.t.enter(id, it.pass)))) continue;
                 const n = it.t.node(id);
-                if (n.mask == 0) return .{ .key = n.prefix, .routes = n.left, .many = n.right != 0 };
-                it.stack[it.depth] = n.right;
-                it.stack[it.depth + 1] = n.left;
+                if (n.mask == wrap) {
+                    it.stack[it.depth] = .{ n.right, (try it.t.merge(gpa, account, tags, n.left)) orelse continue };
+                    it.depth += 1;
+                    continue;
+                }
+                if (n.mask == 0) return .{ .key = n.prefix, .routes = n.left, .tags = tags, .many = n.right != 0 };
+                it.stack[it.depth] = .{ n.right, tags };
+                it.stack[it.depth + 1] = .{ n.left, tags };
                 it.depth += 2;
             }
             return null;
@@ -487,7 +529,7 @@ pub const Table = struct {
     pub fn iterate(t: *Table, s: u32, pass: u32) Iterator {
         var it: Iterator = .{ .t = t, .pass = pass };
         if (s != none) {
-            it.stack[0] = s;
+            it.stack[0] = .{ s, 0 };
             it.depth = 1;
         }
         return it;
@@ -556,16 +598,16 @@ test "a set built over another shares its nodes, and a key reached twice is many
     const twice = try t.coexist(g, &account, s2, s2);
     var it = t.iterate(twice, 0);
     var n: u32 = 0;
-    while (it.next()) |e| : (n += 1) try testing.expect(e.many);
+    while (try it.next(g, &account)) |e| : (n += 1) try testing.expect(e.many);
     try testing.expectEqual(@as(u32, 65), n);
     // A pass reads each node once, and only nodes with a key it reads.
     const p = t.newPass();
     var a = t.iterate(s2, p);
     var refs: u32 = 0;
-    while (a.next()) |_| refs += 1;
+    while (try a.next(g, &account)) |_| refs += 1;
     try testing.expectEqual(@as(u32, 32), refs);
     var b = t.iterate(s2, p);
-    try testing.expect(b.next() == null);
+    try testing.expect((try b.next(g, &account)) == null);
 }
 
 test "two arms keep the tags common to them, and an arm's own key gains its arm" {
@@ -582,10 +624,10 @@ test "two arms keep the tags common to them, and an arm's own key gains its arm"
     const t1 = try t.internTags(g, &account, &.{.{ 9, a1 }});
     const alt = try t.arms(g, &account, &.{ own, shared }, &.{ t0, t1 }, .{ 9, try t.armsJoin(g, &account, a0, a1, false) });
     var it = t.iterate(alt, 0);
-    const e1 = it.next().?;
+    const e1 = (try it.next(g, &account)).?;
     try testing.expectEqual(@as(u32, 1), e1.key);
     try testing.expectEqual(@as(u32, 0), e1.routes);
-    const e2 = it.next().?;
+    const e2 = (try it.next(g, &account)).?;
     try testing.expectEqual(@as(u32, 2), e2.key);
     try testing.expectEqualSlices(u32, &.{t0}, t.routesOf(e2.routes));
     try testing.expect(!e2.many);
@@ -593,5 +635,5 @@ test "two arms keep the tags common to them, and an arm's own key gains its arm"
     const x0 = try t.one(g, &account, 5, t0, false);
     const x1 = try t.one(g, &account, 5, t1, false);
     var c = t.iterate(try t.coexist(g, &account, x0, x1), 0);
-    try testing.expect(!c.next().?.many);
+    try testing.expect(!(try c.next(g, &account)).?.many);
 }
