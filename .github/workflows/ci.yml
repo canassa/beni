@@ -8,6 +8,15 @@ on:
   pull_request:
   push:
     branches: [master]
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      browser_corpus:
+        description: Chrome corpus to run
+        type: choice
+        options: [full, managed]
+        default: full
 
 permissions: {}
 
@@ -345,9 +354,142 @@ jobs:
             exit 1
           fi
 
+  # A job-local path filter: unrelated PRs keep the existing checks and
+  # avoid installing Chromium. Pushes/nightlies run the whole corpus.
+  browser-plan:
+    name: choose Chrome corpus
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      corpus: ${{ steps.plan.outputs.corpus }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: choose the corpus and check changed paths
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          CORPUS: ${{ inputs.browser_corpus }}
+        run: |
+          corpus=full
+          if [ "$EVENT" = pull_request ] || [ "$CORPUS" = managed ]; then
+            corpus=managed
+          fi
+          echo "corpus=$corpus" >> "$GITHUB_OUTPUT"
+          if [ "$corpus" = managed ] && [ ! -d tests/corpus/browser/managed ]; then
+            echo "::notice::Managed Chrome fixtures are not on this ref yet; skip Chrome until browser/managed lands."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT" = pull_request ]; then
+            git rev-parse --verify --quiet HEAD^2 > /dev/null || { echo "HEAD is not a merge commit"; exit 1; }
+            # Task's explicit imports and their dependencies, including
+            # the prelude. Keep this list with Task's imports.
+            changed=$(git diff --name-only HEAD^1 HEAD -- platforms/browser src/js \
+              core/{Task,Duration,Schedule,Js,List,Basics,Maybe,Result,String,Char,Int,Float,Debug}.{beni,js})
+            if [ -z "$changed" ]; then
+              echo "::notice::No browser runtime, Task dependency or JavaScript backend changed; skip Chrome."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "$changed"
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+  browser:
+    name: Chrome (${{ needs.browser-plan.outputs.corpus }})
+    needs: browser-plan
+    if: ${{ needs.browser-plan.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: short Chrome socket directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/b"
+          echo "TMPDIR=$RUNNER_TEMP/b" >> "$GITHUB_ENV"
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+      # Chromium enlarges the closure, so its cache has its own key and
+      # profile root; fall back to the store that the tests job saves.
+      - name: restore the Nix store
+        id: nix-cache
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-browser-${{ runner.os }}-${{ runner.arch }}-
+            nix-${{ runner.os }}-${{ runner.arch }}-
+      - name: browser dev shell
+        id: dev-shell
+        run: nix develop .#browser --profile "$RUNNER_TEMP/browser-shell" --command true
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop .#browser --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+      - name: restore the Zig caches
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: |
+            zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+            zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+      - name: bound the Zig caches
+        if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+        run: |
+          du -sh .zig-cache ~/.cache/zig 2>/dev/null || true
+          if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
+            echo "Zig caches over 3 GiB: removed"
+            rm -rf .zig-cache ~/.cache/zig
+          fi
+      - name: build and test Chrome fixtures
+        env:
+          CORPUS: ${{ needs.browser-plan.outputs.corpus }}
+        run: |
+          args=()
+          if [ "$CORPUS" = managed ]; then
+            args=(-Dcorpus=browser/managed)
+          fi
+          nix develop .#browser --command zig build test-browser "${args[@]}" --summary all
+      - name: save the Nix store
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          gc-max-store-size-linux: 4G
+      - name: save the Zig caches
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.zig-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes
-  # only when every job in `needs:` succeeded. No other job in any
+  # only when every job in `needs:` succeeded, except that Chrome may be
+  # skipped by its path or missing-corpus filter. No other job in any
   # workflow may be named `check`.
   #
   # `if: always()`: a skipped job counts as a passed required check, and
@@ -364,7 +506,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests, playground, lean]
+    needs: [tests, playground, lean, browser-plan, browser]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -375,4 +517,4 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS"
-          echo "$RESULTS" | jq --exit-status 'all(.[].result; . == "success")' > /dev/null
+          echo "$RESULTS" | jq --exit-status 'all(to_entries[]; .value.result == "success" or (.key == "browser" and .value.result == "skipped"))' > /dev/null
