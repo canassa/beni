@@ -480,8 +480,8 @@ const Resolver = struct {
             };
         }
         // A kept supply written by a known code.
-        if (d.kept) {
-            refuse(o, .call);
+        if (d.kept or d.many) {
+            refuse(o, if (d.many) .once else .call);
             return line;
         }
         // Dead: the pending operands, then the live locals.

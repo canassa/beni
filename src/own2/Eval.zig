@@ -30,7 +30,7 @@ const none: u32 = Ids.none_int;
 const Walk = W.Walk;
 const Context = W.Context;
 const Demand = W.Demand;
-const Escape = W.Escape;
+pub const Escape = W.Escape;
 const CallSite = W.CallSite;
 const fixed_bit = W.fixed_bit;
 
@@ -475,7 +475,7 @@ fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
 }
 
 /// The walk's call a virtual call applies a label of: `(call, label)`.
-fn virtualOuter(e: *Evaluation, q: u32) ?[2]u32 {
+pub fn virtualOuter(e: *Evaluation, q: u32) ?[2]u32 {
     var it = e.w.virt.keys.items;
     var i: usize = 0;
     while (i + 1 < it.len) : (i += 2) {
