@@ -7637,7 +7637,7 @@ const Emitter = struct {
         std.mem.sortUnstable(Spec.FieldKey, field_keys.items, {}, Spec.FieldKey.lessThan);
         var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
-            .fold_object_types = e.worker_runtime != null,
+            .fold_worker_metadata = e.worker_runtime != null,
             .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
             .modules = modules.items,
             .globals = ids.count(),
