@@ -3209,9 +3209,11 @@ builds `{ t, c, v }` with `Js.object` — the identity, the type's `compare` as 
 identities with `Js.lt` (§4.2), under `Js.pure` as the sibling was `foreign pure`; two keys of one
 type go through the stored `compare` with `Js.apply`, read back at `Order`.
 
-A function the platform hands a body — every `Send` — is `impure` because the `foreign` that hands
-it is (P2 §14.3 rule 6), so a release build never drops a send. `retap` trusts that every tap it is
-given sends what the relay's first did; §9.8.3 says what keeps that true and what does not.
+A function the platform hands a body — every `Send` — is `impure`, so a release build never
+drops a send. When `Hosted` is written in beni, a typed adapter calls the supplied send through
+`Js.apply` before erasing the body to `Js.Value`: that call gives the callback its impure rung.
+The earlier `foreign` constructors supplied that rung through P2 §14.3 rule 6.
+`retap` trusts that every tap it is given sends what the relay's first did; §9.8.3 says what keeps that true and what does not.
 **A sibling may not import another file**, so `Browser.js` reaches the render loop by value: every
 mount a `Browser` constructor makes carries a function of that file, and `run` hands it the loop
 before mounting anything; `flush` and `onRendered` call it. The platform's runtime file gains no

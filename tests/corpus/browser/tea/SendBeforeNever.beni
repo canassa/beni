@@ -1,0 +1,39 @@
+-- A send before a never-returning scope tail survives release (#1694).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Ready
+    | Ping
+
+
+init : ⊤ → String × Cmd Msg
+init ⊤ =
+    ( "waiting"
+    , Cmd.keyed "owner" Cmd.Restart λsend →
+        Task.scope λ_ →
+            send Ready
+            Task.never ⊤
+    )
+
+
+update : Msg, String → String × Cmd Msg
+update msg model =
+    case msg of
+        Ready →
+            ( "ready", Cmd.none )
+        Ping →
+            ( model ++ "!", Cmd.none )
+
+
+view : String → Html Msg
+view model =
+    <main><output id="status">{model}</output><button id="ping" onClick={Ping}>ping</button></main>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
