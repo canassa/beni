@@ -1,4 +1,4 @@
-//! L14: the lowering channel (`docs/design/ownership-v2.md` §3.7, R-1.12),
+//! L11: the lowering channel (`docs/design/ownership-v2.md` §3.7, R-1.12),
 //! its list half: per module a *clean* bit and, per accepted list write, its
 //! instruction and kind. Rows hold only BIR identities (instruction indices
 //! of the module), never a session id, so the table means the same to any
