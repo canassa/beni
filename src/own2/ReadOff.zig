@@ -19,6 +19,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
+const Held = @import("Held.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -294,11 +295,12 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
     };
     e.ev.cur_sub = saved;
     if ((try s.described.getOrPut(e.gpa(), try describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
+    const held = try Held.atoms(f, try resList(s, out), q);
     var i: usize = 0;
     while (i < e.ev.keyItems(ki)[0].len) : (i += 1) {
         const items = e.ev.keyItems(ki);
         const y = (try f.withTags(items[0][i], tags)) orelse continue;
-        try describeItem(s, y, items[1][i], prefix, q, out);
+        try describeItem(s, y, items[1][i], prefix, q, held, out);
     }
 }
 
@@ -556,12 +558,13 @@ fn fail(s: *Sink, key: [6]u32, above: bool) Error!?Contract.Node {
 
 /// An item of a key below `prefix` (leaf `li` at slot `at`), described at
 /// the result slot the steps from the prefix take `q` to.
-fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, out: ResList) Error!void {
+fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, held: Held.Atoms, out: ResList) Error!void {
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
     const slot: PathId = .from(at & ~Relation.open_bit);
     const open = at & Relation.open_bit != 0;
+    if (Held.has(held, f.leafAt(li))) return;
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(gpa);
     if (slot == prefix) try ps.append(gpa, q.int()) else {
@@ -980,7 +983,7 @@ pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
     const y = (try f.withTags(x, sub.tags)) orelse return;
     switch (sub.kind) {
         .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c }),
-        .describe_below => try describeItem(&e.sink, y, at, .from(sub.d), .from(sub.b), .{ .label = sub.a, .k = sub.c }),
+        .describe_below => try describeItem(&e.sink, y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try resList(&e.sink, .{ .label = sub.a, .k = sub.c }), .from(sub.b)), .{ .label = sub.a, .k = sub.c }),
         .forward_below => unreachable,
         .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
         .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b }),

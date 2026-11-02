@@ -1012,6 +1012,19 @@ than `claim`'s, and `got` does not return where `claim` does not.
   `p·r` in its set, the arrival `π_j·(p·r)` at `q·r`; an atom gives `fresh` or `shared d`; a `cb` leaf gives
   `cb L`; a call's leaf gives the callee's arrivals at its slots, projected onto the call's arguments and then
   described again (a recursive group's calls are delivered instead, §2.12). An `alt` describes each arm.
+  *Amended 2026-11-02 (#1716, #1740):* an **open** arrival (one that holds by structure at every slot below its own,
+  `Relation.open_bit`) whose leaves are another call's or a supply's result stands for that result's whole subtree:
+  it is widened to every slot below its own (`Relation.widen`) and described through the call's own key below each
+  of its slots (`describeCallWide`), never as its top slot alone. A fold's open answer is such an arrival:
+  `Dict.partition`'s `foldlTree` answers `step`'s tuple of `Dict.insert` results, and with the top slot alone the
+  partition's result said its values were `shared` and nothing more, so an edit in place of a list the argument held
+  was accepted while a half of the partition still held it (`run/SanitiserPartitionHolds`); a fold with a known
+  lambda whose answer is a constructor holds no object at its top slot, and `Dict.filter`'s result said nothing of
+  the argument's lists (`run/SanitiserFoldAnswerWide`). An atom (fresh, `⊤`, a shared value) that a wide entry
+  at or above the result slot already holds is said there for every slot below it, so it is not described again
+  (`Held.zig`; one lookup in the draft, one record, as an arrival's; a committed tree joined in is not read). Without
+  that, `Schema.shapeOf` describes the same fresh objects at every slot of its recursive result and passes its
+  allowance.
 - `res_cond`: the distinct check of §2.9.3 over the result's leaves.
 - `reads`, `writes`, `escapes`: the frame's uses of its parameters' positions, its demands' targets that are
   parameter leaves (whatever their verdicts), and its escapes, each as `(j, slot)`. A call contributes its
@@ -3361,6 +3374,7 @@ L0  Ids  Counters  Scratch
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
+| `Held.zig` | 6 | the atoms a draft's result holds open at or above a slot, which the read-off of a call's subtree below it need not describe again (§2.10 *Read-off*, #1716) | Ids, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
