@@ -157,6 +157,8 @@ pub const Eval = struct {
     /// `(root path, rel)` → the one caller slot a callee's entry is at.
     slot_memo: Ids.FixedDict(2) = .{},
     inst_depth: u32 = 0,
+    /// A read-off pass (§2.3.4 *Reading*): 0 when none.
+    pass: u32 = 0,
 
     pub fn deinit(e: *Eval) void {
         const g = e.f.gpa;
@@ -204,38 +206,32 @@ pub const Eval = struct {
 
     // ---- leaves of a value ---------------------------------------------------
 
-    /// The deep leaves of value `v` (every object it reaches), appended.
+    /// The deep leaves of value `v` (every object it reaches), appended:
+    /// its leaf set (§2.3.4), `tags` merged into each element, a `many`
+    /// element twice. In a pass (`pass`, with no outer tags) a set node
+    /// met before adds nothing.
     pub fn leavesOf(e: *Eval, v: u32, tags: u32, out: *std.ArrayList(u32)) Error!void {
-        var stack: std.ArrayList([2]u32) = .empty;
-        defer stack.deinit(e.gpa());
-        try stack.append(e.gpa(), .{ v, tags });
-        while (stack.pop()) |it| {
+        try e.readSet(e.f.deep.items[v], tags, if (tags == 0) e.pass else 0, out);
+    }
+
+    fn readSet(e: *Eval, s: u32, tags: u32, pass: u32, out: *std.ArrayList(u32)) Error!void {
+        var it = e.f.sets.iterate(s, pass);
+        while (it.next()) |el| for (e.f.sets.routesOf(el.routes)) |vt| {
             try e.charge(.inspection, 1);
-            const x = e.f.val(it[0]);
-            switch (x.kind) {
-                .scalar, .bot => {},
-                .built => {
-                    if (x.site != none) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it[1] }));
-                    if (x.form == .list and x.head != 0) try e.storageOf(x.head - 1, it[1], out);
-                    for (e.f.kidsOf(x)) |k| try stack.append(e.gpa(), .{ k, it[1] });
-                },
-                .ref => {
-                    const set = try e.f.refSlots(x);
-                    if (set == Slots.empty) continue;
-                    try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it[1] }));
-                },
-                .alt => {
-                    const ks = e.f.kidsOf(x);
-                    var i: usize = 0;
-                    while (i < ks.len) : (i += 2) {
-                        const t = (try e.f.mergeTags(it[1], try e.f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
-                        try stack.append(e.gpa(), .{ ks[i + 1], t });
-                    }
-                },
-                .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = it[1] })),
-                .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it[1] })),
+            const t = (try e.f.mergeTags(vt, tags)) orelse continue;
+            var l = e.f.leafAt(el.key);
+            if (l.kind == .recons) {
+                // A prepend's own storage: its base's on a re-cons (§2.13.6).
+                const x = e.f.val(l.atom);
+                if (try e.mayRecons(x)) try e.readSet(e.f.shallow.items[x.head - 1], t, pass, out);
+                continue;
             }
-        }
+            if (l.kind == .ref and l.extra != 0) l = (try e.f.resolveRef(l)) orelse continue;
+            l.tags = t;
+            const id = try e.f.leaf(l);
+            try out.append(e.gpa(), id);
+            if (el.many) try out.append(e.gpa(), id);
+        };
     }
 
     /// A leaf of a value and the slot it sits at: `leavesOf`'s leaves, each
@@ -277,7 +273,7 @@ pub const Eval = struct {
                     const ks = f.kidsOf(x);
                     var i: usize = 0;
                     while (i < ks.len) : (i += 2) {
-                        const t = (try f.mergeTags(it.tags, try f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                        const t = (try f.mergeTags(it.tags, try f.internTags(&.{.{ x.head, try f.armOf(ks[i]) }}))) orelse continue;
                         try stack.append(g, .{ .v = ks[i + 1], .tags = t, .at = it.at });
                     }
                 },
@@ -330,31 +326,7 @@ pub const Eval = struct {
     /// The objects at value `v`'s own storage (a shallow write's target):
     /// a built list's or record's site, a reference's position itself.
     pub fn storageOf(e: *Eval, v: u32, tags: u32, out: *std.ArrayList(u32)) Error!void {
-        const x = e.f.val(v);
-        switch (x.kind) {
-            .scalar, .bot => {},
-            .built => {
-                if (x.site != none) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = tags }));
-                // A list built over a base may be that base's storage; a
-                // prepend only by a re-cons (§2.13.6, `prepended`).
-                if (x.form == .list and x.head != 0 and (x.site == none or try e.mayRecons(x))) try e.storageOf(x.head - 1, tags, out);
-            },
-            .ref => {
-                const set = if (x.family != Slots.empty) try e.objects(x.family) else try e.f.slots.canon(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot);
-                if (set == Slots.empty) return;
-                try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = tags, .at_pos = x.family == Slots.empty }));
-            },
-            .alt => {
-                const ks = e.f.kidsOf(x);
-                var i: usize = 0;
-                while (i < ks.len) : (i += 2) {
-                    const t = (try e.f.mergeTags(tags, try e.f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
-                    try e.storageOf(ks[i + 1], t, out);
-                }
-            },
-            .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = tags })),
-            .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = tags })),
-        }
+        try e.readSet(e.f.shallow.items[v], tags, 0, out);
     }
 
     /// Whether prepend `x` may answer its base's own array: a re-cons, when
@@ -362,6 +334,9 @@ pub const Eval = struct {
     /// the base's view. An object made after the base (a literal, a call's
     /// fresh objects) is none of the base's, so it cannot be (`PrependFresh`).
     fn mayRecons(e: *Eval, x: Value.Val) Error!bool {
+        const saved = e.pass;
+        e.pass = 0;
+        defer e.pass = saved;
         const ks = e.f.kidsOf(x);
         if (ks.len < 2) return true;
         const birth = e.bornAt(x.head - 1);
@@ -443,7 +418,7 @@ pub const Eval = struct {
                     const ks = e.f.kidsOf(x);
                     var i: usize = 0;
                     while (i < ks.len) : (i += 2) {
-                        const t = (try e.f.mergeTags(it.tags, try e.f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                        const t = (try e.f.mergeTags(it.tags, try e.f.internTags(&.{.{ x.head, try e.f.armOf(ks[i]) }}))) orelse continue;
                         try stack.append(e.gpa(), .{ .v = ks[i + 1], .at = it.at, .tags = t, .route = it.route });
                     }
                 },
@@ -679,6 +654,10 @@ pub const Eval = struct {
     /// (a path under the call's result root), or, with `which` a supply
     /// `(label << 16) | k`, at the supply's slot. Built once per key.
     pub fn instAt(e: *Eval, call: u32, slot: PathId, which: u32) Error![]const u32 {
+        // What these fill is kept: never read under a pass (§2.3.4).
+        const saved_pass = e.pass;
+        e.pass = 0;
+        defer e.pass = saved_pass;
         if (e.live) |lv| return e.instAtLive(lv, call, slot, which);
         try e.charge(.memo, 1);
         const key: [3]u32 = .{ call, slot.int(), which };
@@ -792,6 +771,10 @@ pub const Eval = struct {
     /// the prefix, open (§2.10 *Read-off*). Items are `(leaf, at)` pairs of
     /// the key's `leaves` and `at`.
     pub fn instBelow(e: *Eval, call: u32, prefix: PathId, which: u32) Error!u32 {
+        // What these fill is kept: never read under a pass (§2.3.4).
+        const saved_pass = e.pass;
+        e.pass = 0;
+        defer e.pass = saved_pass;
         try e.charge(.memo, 1);
         const sub = e.cur_sub;
         const keyv: [3]u32 = .{ call, prefix.int(), which };
@@ -1137,6 +1120,10 @@ pub const Eval = struct {
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
     pub fn arrivalLeaves(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
+        // What these fill is kept: never read under a pass (§2.3.4).
+        const saved_pass = e.pass;
+        e.pass = 0;
+        defer e.pass = saved_pass;
         try e.charge(.edge, 1);
         const cl = e.f.calls.items[call];
         switch (a.kind) {
@@ -1222,6 +1209,10 @@ pub const Eval = struct {
     /// A call, supply or known label's leaf as the leaves it comes from,
     /// with its tags; a leaf met again while it is expanded adds nothing.
     pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
+        // What these fill is kept: never read under a pass (§2.3.4).
+        const saved_pass = e.pass;
+        e.pass = 0;
+        defer e.pass = saved_pass;
         const l = e.f.leafAt(li);
         const r = e.f.roots.items[l.root];
         // A whole subtree is read through one key below its position, never

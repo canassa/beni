@@ -130,6 +130,7 @@ const Resolver = struct {
                 .fresh => try out.append(r.gpa(), .{ 2, l.atom, 0 }),
                 .shared => try out.append(r.gpa(), .{ 3, l.atom, l.extra }),
                 .answer, .top => unknown.* = true,
+                .recons => unreachable,
             }
         }
     }
@@ -213,7 +214,7 @@ const Resolver = struct {
                     const ks = fr.kidsOf(x);
                     var i: usize = 0;
                     while (i < ks.len) : (i += 2) {
-                        const t = (try fr.mergeTags(it.tags, try fr.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                        const t = (try fr.mergeTags(it.tags, try fr.internTags(&.{.{ x.head, try fr.armOf(ks[i]) }}))) orelse continue;
                         try stack.append(g, .{ .v = ks[i + 1], .q = it.q, .tags = t });
                     }
                 },
