@@ -92,6 +92,14 @@ and ends them before the unmapped finally and replay. A worker with an external
 static dependency retains the dynamic-import bootstrap so that dependency cannot
 initialize ahead of the defect listeners.
 
+For the built-in dedicated runtime, an entry whose reachable connections all
+have clone-stable roles omits the Wire interpreter and runtime plan data. Its
+normalization calls lower to their payloads before reachability. An entry with
+a List, open row or type-variable path retains selective normalization. Stable
+descriptors in a mixed entry omit their own plans. Shared field and tag naming
+still uses the complete build-wide Wire artifacts. Custom platform runtimes
+retain their existing plan contract.
+
 Lower each projection with its own roots, runtime, EntryHost proof and private
 state, plus the immutable build wire table. Existing optimizer and field naming
 algorithms can be reused behind this boundary. Sharing an emitted chunk requires

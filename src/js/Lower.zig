@@ -250,6 +250,7 @@ pub const Input = struct {
     worker_host_client: bool = false,
     worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
     worker_wire: ?*const @import("../check/Wire.zig").Artifact = null,
+    worker_wire_direct_calls: []const Bir.Inst.Index = &.{},
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
     token_starts: []const u32,
@@ -3620,8 +3621,11 @@ pub const Lowerer = struct {
                     const global = try l.add(.global_this, p, 0, 0);
                     const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
                     const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
-                    const metadata = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(l.in.worker_wire, l.in.module, index, p), p)}, p);
-                    value = try l.call(assign, &.{ value, metadata }, p);
+                    const plan = try l.wirePlan(l.in.worker_wire, l.in.module, index, p);
+                    if (l.b.tagOf(plan) != .null_lit) {
+                        const metadata = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p)}, p);
+                        value = try l.call(assign, &.{ value, metadata }, p);
+                    }
                 }
 
                 // A constant whose lowering needed statements cannot be a
@@ -6509,11 +6513,15 @@ pub const Lowerer = struct {
             if (root.decl == decl) break root;
         } else return l.nullNode(p);
         const needs = try @import("../check/Wire.zig").normalization(l.scratch, wire);
+        const descriptor = for (l.in.worker_descriptors) |descriptor| {
+            if (descriptor.module == module and descriptor.decl == decl) break descriptor;
+        } else return l.nullNode(p);
+        if (descriptor.elide_stable_wire and for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+            if (needs[role.node]) break false;
+        } else true) return l.nullNode(p);
         var roles: std.ArrayList(Node.Index) = .empty;
         // A descriptor may name a Program declared outside the opening module.
-        const parameters = for (l.in.worker_descriptors) |descriptor| {
-            if (descriptor.module == module and descriptor.decl == decl) break l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
-        } else return l.nullNode(p);
+        const parameters = l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
         for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
             const parameter = parameters[role.index];
             var path: std.ArrayList(Node.Index) = .empty;
@@ -6555,12 +6563,16 @@ pub const Lowerer = struct {
         };
         const base = try l.add(.import_meta_url, p, 0, 0);
         const url = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{ path, base }))));
-        return l.object(&.{
-            try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(descriptor.wire, descriptor.module, descriptor.decl, p), p),
+        var properties: std.ArrayList(Node.Index) = .empty;
+        const plan = try l.wirePlan(descriptor.wire, descriptor.module, descriptor.decl, p);
+        if (l.b.tagOf(plan) != .null_lit)
+            try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
+        try properties.appendSlice(l.scratch, &.{
             try l.property(try l.interner.getOrPut(l.gpa, "id"), try l.stringNode(descriptor.id, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "fingerprint"), try l.stringNode(descriptor.fingerprint, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
-        }, p);
+        });
+        return l.object(properties.items, p);
     }
 
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
@@ -10621,6 +10633,9 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        // These built-in calls only read compiler plan metadata before the payload.
+        if (std.mem.indexOfScalar(Inst.Index, l.in.worker_wire_direct_calls, inst) != null)
+            return l.expr(out, arg_insts[3]);
 
         // The build's markup state, which steers whether this call is a
         // program constructor's, the placements beside it, and every

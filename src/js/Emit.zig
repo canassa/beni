@@ -760,6 +760,7 @@ pub fn run(
     };
     try e.workerDiscoveryReach(entry);
     try e.planWorkers(entry);
+    try e.directWorkerWire(entry);
     if (e.workerHostModule() != null) {
         e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
         try e.walk();
@@ -1444,6 +1445,8 @@ const Emitter = struct {
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
     wire_names: ?*const Fields.Table = null,
+    worker_wire_direct_module: ?Graph.Index = null,
+    worker_wire_direct_calls: []const Bir.Inst.Index = &.{},
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
@@ -1639,6 +1642,54 @@ const Emitter = struct {
         return false;
     }
 
+    fn builtinWorkerWire(e: *Emitter) ?Graph.Index {
+        const worker = e.graph().find(.platform, e.session.interner.find("Browser.Worker") orelse return null) orelse return null;
+        const normalizer = e.graph().find(.platform, e.session.interner.find("Browser.WorkerWire") orelse return null) orelse return null;
+        // A user-supplied platform with these module names is still user code.
+        if (!e.session.store.isEmbedded(e.graph().moduleFile(worker)) or !e.session.store.isEmbedded(e.graph().moduleFile(normalizer))) return null;
+        return worker;
+    }
+
+    // A runtime shared by several connections needs the interpreter if any
+    // connection in this entry can cross a representation that needs a walk.
+    // Keep shared wire naming independent of this entry-local omission.
+    fn directWorkerWire(e: *Emitter, entry: ?Entry) !void {
+        if (e.worker_candidates.len == 0) return;
+        var found = false;
+        for (e.worker_candidates) |descriptor| {
+            if (!e.live.decl(descriptor.module, descriptor.decl) and !e.live.twin(descriptor.module, descriptor.decl)) continue;
+            const wire = descriptor.wire orelse return;
+            const root = for (wire.roots) |root| {
+                if (root.decl == descriptor.decl) break root;
+            } else return;
+            const needs = try @import("../check/Wire.zig").normalization(e.scratch, wire);
+            for (wire.roles[root.roles.start..][0..root.roles.len]) |role| if (needs[role.node]) return;
+            found = true;
+        }
+        if (!found) return;
+        const worker = e.builtinWorkerWire() orelse return;
+        const normalizer = e.graph().find(.platform, e.session.interner.find("Browser.WorkerWire") orelse return) orelse return;
+        const normalize = for (e.bir(normalizer).decls, 0..) |d, i| {
+            if (std.mem.eql(u8, e.session.interner.slice(e.bir(normalizer).symbol(d.name)), "normalize")) break i;
+        } else return;
+        const b = e.bir(worker);
+        var calls: std.ArrayList(Bir.Inst.Index) = .empty;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        try cuts.appendSlice(e.scratch, e.cuts);
+        for (b.insts.items(.tag), b.insts.items(.data), 0..) |tag, d, i| {
+            if (tag != .call) continue;
+            const callee = e.resolvedValue(worker, @fromBackingInt(d.lhs)) orelse continue;
+            if (callee.module != normalizer or callee.index != normalize) continue;
+            try calls.append(e.scratch, @fromBackingInt(@intCast(i)));
+            try cuts.append(e.scratch, .{ .module = worker, .lo = d.lhs, .hi = d.lhs });
+        }
+        if (calls.items.len == 0) return;
+        e.worker_wire_direct_module = worker;
+        e.worker_wire_direct_calls = calls.items;
+        e.cuts = cuts.items;
+        try e.eliminate(entry);
+    }
+
     fn workerCandidates(e: *Emitter) !void {
         if (e.session.entry_plan.launches.len == 0) return;
         var fingerprint = std.hash.Wyhash.init(1);
@@ -1669,7 +1720,7 @@ const Emitter = struct {
                 });
                 // Input-derived identity, independent of discovery order and jobs.
                 const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
-                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire, .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{s}", .{ e.worker_fingerprint, id }) });
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire, .elide_stable_wire = std.mem.eql(u8, e.options.platform.entry_kinds[@backingInt(kind)].definition.programType, "Browser.Worker.Program") and e.builtinWorkerWire() != null, .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{s}", .{ e.worker_fingerprint, id }) });
             }
         }
         std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {
@@ -1980,6 +2031,7 @@ const Emitter = struct {
             const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
             projection.extra_roots = try projection.coarseRuntimeRoots();
             try projection.eliminate(root);
+            try projection.directWorkerWire(root);
             try projection.shareValidators();
             try projection.refuseMarkupWithoutLowering();
             if (e.options.release and !e.options.allow_debug) try projection.refuseDebug();
@@ -7150,7 +7202,7 @@ const Emitter = struct {
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (read_rows and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7166,6 +7218,7 @@ const Emitter = struct {
                 .worker_host_client = (e.workerHostClient()) == m,
                 .worker_kinds = e.options.platform.entry_kinds,
                 .worker_wire = &e.session.checked.type_keys[m.int()].wire,
+                .worker_wire_direct_calls = if (e.worker_wire_direct_module == m) e.worker_wire_direct_calls else &.{},
                 .worker_descriptors = slot.worker_descriptors,
                 .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,
                 .birs = e.reach.birs,

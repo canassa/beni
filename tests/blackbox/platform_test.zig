@@ -2107,3 +2107,34 @@ test "release worker init runs when specialisation removes its unused state" {
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     try w.expectProgram("probe.mjs", .{ .stdout = "worker init ran\n" });
 }
+
+test "stable worker entries omit the Wire interpreter and plans while Lists retain them" {
+    for ([_][]const u8{ "DirectWire", "ListWire" }) |fixture| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.copyTree(try std.fmt.allocPrint(w.arena.allocator(), "tests/corpus/browser/managed/{s}", .{fixture}), "_expected.");
+        const needs = std.mem.eql(u8, fixture, "ListWire");
+        for ([_]bool{ false, true }) |release| {
+            const built = try w.run(if (release)
+                &.{ "build", "--platform=browser", "--allow-unchecked-workers", "--release", "--source-maps", "--out=out", "Main.beni" }
+            else
+                &.{ "build", "--platform=browser", "--allow-unchecked-workers", "--source-maps", "--out=out", "Main.beni" });
+            try testing.expectEqual(@as(u8, 0), built.exit_code);
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+            var page_interpreter = false;
+            var worker_interpreter = false;
+            var metadata = false;
+            for (try w.listFiles("out")) |path| {
+                const bytes = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{path}));
+                if (std.mem.endsWith(u8, path, ".map") and std.mem.indexOf(u8, bytes, "WorkerWire.beni") != null) {
+                    if (std.mem.startsWith(u8, path, "_workers/")) worker_interpreter = true else page_interpreter = true;
+                }
+                if (std.mem.endsWith(u8, path, ".mjs") and std.mem.indexOf(u8, bytes, "$wire:") != null) metadata = true;
+            }
+            try testing.expectEqual(needs, page_interpreter);
+            try testing.expectEqual(needs, worker_interpreter);
+            try testing.expectEqual(needs, metadata);
+            try w.tmp.dir.deleteTree(w.io, "out");
+        }
+    }
+}
