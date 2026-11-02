@@ -285,6 +285,12 @@ pub const Table = struct {
     level_memo: Ids.IdColumn(PathId) = .{},
     fold_runs: std.ArrayList([2]u32) = .empty,
     fold_paths: std.ArrayList(PathId) = .empty,
+    /// Each memo's fill costs (§4.1, *A module table's entries*): `extend`'s
+    /// by its memo's entry number, the others by path.
+    extend_cost: Ids.Costs = .{},
+    hit_cost: Ids.Costs = .{},
+    up_cost: Ids.Costs = .{},
+    level_cost: Ids.Costs = .{},
     limits: Limits = .{},
     /// Instrumentation: places visited by the holds fixpoint.
     holds_visits: u32 = 0,
@@ -303,6 +309,7 @@ pub const Table = struct {
         t.level_memo.deinit(gpa);
         t.fold_runs.deinit(gpa);
         t.fold_paths.deinit(gpa);
+        inline for (.{ &t.extend_cost, &t.hit_cost, &t.up_cost, &t.level_cost }) |c| c.deinit(gpa);
     }
 
     /// Start a block's place namespace: `ofBlock`'s numbers from here on
@@ -707,12 +714,28 @@ pub const Table = struct {
         // One record per request, a memo hit included (§4.1: a cache hit is
         // reached only through a charged edge, and charged).
         try charge.reserve(gpa, .path, 1);
-        if (t.extend_memo.get(.{ path.int(), step.word() })) |hit| return if (hit == Ids.none_int) null else PathId.from(hit);
-        const here = t.pathPlace(path);
-        const target = t.child(here, step) orelse {
-            (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = Ids.none_int;
-            return null;
+        const a = charge.account;
+        if (t.extend_memo.indexOf(.{ path.int(), step.word() })) |i| {
+            try a.readEntry(gpa, .extend, i, t.extend_cost.get(i));
+            const hit = t.extend_memo.values.items[i];
+            return if (hit == Ids.none_int) null else PathId.from(hit);
+        }
+        const fill = a.beginFill();
+        const got = t.extendFill(gpa, charge, path, step) catch |err| {
+            _ = a.endFill(fill);
+            return err;
         };
+        const cost = a.endFill(fill);
+        const e = try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() });
+        e.value_ptr.* = if (got) |g| g.int() else Ids.none_int;
+        try t.extend_cost.put(gpa, e.index, cost);
+        try a.readEntry(gpa, .extend, e.index, cost);
+        return got;
+    }
+
+    fn extendFill(t: *Table, gpa: Allocator, charge: Charge, path: PathId, step: Step) Error!?PathId {
+        const here = t.pathPlace(path);
+        const target = t.child(here, step) orelse return null;
         // Re-entry: is `target` on the path? Only if it shares a cycle with
         // `here` (a place above on the path that `here` steps back to closes
         // one), and then among the path's last places on that cycle: they are
@@ -763,7 +786,6 @@ pub const Table = struct {
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
         // A first return: a plain step back onto a place of the path.
         if (out == null and deepest != .none) t.paths.col.ret[result.int()] = true;
-        (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = result.int();
         return result;
     }
 
@@ -852,7 +874,23 @@ pub const Table = struct {
     /// path; a run of `fold_paths`, read by `foldPath`.
     pub fn foldsUp(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        if (t.up_memo.get(p)) |i| return rangeOf(t.fold_runs.items[i]);
+        const a = charge.account;
+        if (t.up_memo.get(p)) |i| {
+            try a.readEntry(gpa, .folds_up, p.int(), t.up_cost.get(p.int()));
+            return rangeOf(t.fold_runs.items[i]);
+        }
+        const fill = a.beginFill();
+        const r = t.foldsUpFill(gpa, charge, p) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        const cost = a.endFill(fill);
+        try t.up_cost.put(gpa, p.int(), cost);
+        try a.readEntry(gpa, .folds_up, p.int(), cost);
+        return r;
+    }
+
+    fn foldsUpFill(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         var acc: std.ArrayList(PathId) = .empty;
         defer acc.deinit(gpa);
         if (t.cyclic(t.pathPlace(p))) {
@@ -872,7 +910,23 @@ pub const Table = struct {
     /// once; memoised per path; empty when the place is on no cycle.
     pub fn levelsOf(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        if (t.level_memo.get(p)) |i| return rangeOf(t.fold_runs.items[i]);
+        const a = charge.account;
+        if (t.level_memo.get(p)) |i| {
+            try a.readEntry(gpa, .levels, p.int(), t.level_cost.get(p.int()));
+            return rangeOf(t.fold_runs.items[i]);
+        }
+        const fill = a.beginFill();
+        const r = t.levelsFill(gpa, charge, p) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        const cost = a.endFill(fill);
+        try t.level_cost.put(gpa, p.int(), cost);
+        try a.readEntry(gpa, .levels, p.int(), cost);
+        return r;
+    }
+
+    fn levelsFill(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         const target = t.pathPlace(p);
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
@@ -951,23 +1005,68 @@ pub const Table = struct {
     /// path of a cycle is visited once, on an explicit stack (#1138).
     fn hits(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error![2]u32 {
         try charge.reserve(gpa, .memo, 1);
-        if (t.hit_memo.get(x0)) |i| return t.fold_runs.items[i];
-        if (try t.sealed(charge, gpa, x0)) {
-            const r = try t.memoRun(gpa, &t.hit_memo, x0, &.{});
-            return .{ r.start, r.len };
+        const a = charge.account;
+        if (t.hit_memo.get(x0) == null) {
+            const fill = a.beginFill();
+            t.hitsFill(gpa, charge, x0) catch |err| {
+                _ = a.endFill(fill);
+                return err;
+            };
+            // Each entry's cost is stored with it; nothing is left over.
+            _ = a.endFill(fill);
         }
-        const Fr = struct { path: PathId, expanded: bool };
+        try a.readEntry(gpa, .hits, x0.int(), t.hit_cost.get(x0.int()));
+        return t.fold_runs.items[t.hit_memo.get(x0).?];
+    }
+
+    /// `hits`' entry for a sealed first return `y`: empty, its cost the
+    /// test that it is sealed, counted apart from the fill around it.
+    fn hitsSealed(t: *Table, gpa: Allocator, charge: Charge, y: PathId) Error!bool {
+        const a = charge.account;
+        const fill = a.beginFill();
+        const is = t.sealed(charge, gpa, y) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        if (!is) {
+            try t.hit_cost.put(gpa, y.int(), a.endFill(fill));
+            return false;
+        }
+        _ = t.memoRun(gpa, &t.hit_memo, y, &.{}) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        try t.hit_cost.put(gpa, y.int(), a.endFill(fill));
+        return true;
+    }
+
+    /// Fill `hits(x0)` and the plain subtree's entries it is made from,
+    /// each with its own cost: its own steps' records plus its plain
+    /// children's costs, whichever of them were filled before (§4.1).
+    fn hitsFill(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error!void {
+        const a = charge.account;
+        if (try t.hitsSealed(gpa, charge, x0)) return;
+        // The sealed test's cost (none of x0's entry if not sealed: it is
+        // the test every route to x0 makes, counted again below).
+        const sealed_cost = t.hit_cost.get(x0.int());
+        const Fr = struct { path: PathId, expanded: bool, cost: u64 = 0 };
         var stack: std.ArrayList(Fr) = .empty;
         defer stack.deinit(gpa);
         var acc: std.ArrayList(PathId) = .empty;
         defer acc.deinit(gpa);
-        try stack.append(gpa, .{ .path = x0, .expanded = false });
+        try stack.append(gpa, .{ .path = x0, .expanded = false, .cost = sealed_cost });
         while (stack.pop()) |f| {
             const x = f.path;
             if (t.hit_memo.get(x) != null) continue;
             const here = t.pathPlace(x);
-            if (!f.expanded) try stack.append(gpa, .{ .path = x, .expanded = true });
+            const me = stack.items.len;
+            if (!f.expanded) try stack.append(gpa, .{ .path = x, .expanded = true, .cost = f.cost });
             acc.clearRetainingCapacity();
+            const pass = a.beginFill();
+            var pass_open = true;
+            defer if (pass_open) {
+                _ = a.endFill(pass);
+            };
             const n = t.steps(here).steps.len;
             var j: usize = 0;
             while (j < n) : (j += 1) {
@@ -981,11 +1080,12 @@ pub const Table = struct {
                 if (!f.expanded) {
                     if (plain and t.hit_memo.get(y) == null) {
                         // A sealed first return folds nothing outside itself (#1253).
-                        if (try t.sealed(charge, gpa, y)) _ = try t.memoRun(gpa, &t.hit_memo, y, &.{}) else try stack.append(gpa, .{ .path = y, .expanded = false });
+                        if (!try t.hitsSealed(gpa, charge, y)) try stack.append(gpa, .{ .path = y, .expanded = false, .cost = t.hit_cost.get(y.int()) });
                     }
                     continue;
                 }
                 if (plain) {
+                    try a.readEntry(gpa, .hits, y.int(), t.hit_cost.get(y.int()));
                     const r = t.fold_runs.items[t.hit_memo.get(y).?];
                     var k: u32 = 0;
                     while (k < r[1]) : (k += 1) {
@@ -994,10 +1094,15 @@ pub const Table = struct {
                     }
                 } else try addOutside(&acc, gpa, charge, x, y, t);
             }
-            if (!f.expanded) continue;
+            pass_open = false;
+            const spent = a.endFill(pass);
+            if (!f.expanded) {
+                stack.items[me].cost += spent;
+                continue;
+            }
             _ = try t.memoRun(gpa, &t.hit_memo, x, acc.items);
+            try t.hit_cost.put(gpa, x.int(), f.cost + spent);
         }
-        return t.fold_runs.items[t.hit_memo.get(x0).?];
     }
 
     fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, charge: Charge, x: PathId, e: PathId, t: *const Table) Error!void {

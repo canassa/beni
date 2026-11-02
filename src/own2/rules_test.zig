@@ -35,14 +35,15 @@ const Entry = struct { file: []const u8, layer: u8, max_lines: u32 };
 const layers = [_]Entry{
     // The slot domain (#1685) replaced the shape files; the targets are
     // the files' production lines with headroom, set with the replacement.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
+    // An account's first reads of the module tables (§4.1, #1714).
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1260 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1340 },
     .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
     // The tags and routes of a leaf set (#1714), split from `Leaves`.
     .{ .file = "Routes.zig", .layer = 1, .max_lines = 680 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
-    .{ .file = "Slots.zig", .layer = 2, .max_lines = 400 },
+    .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
@@ -51,7 +52,7 @@ const layers = [_]Entry{
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
-    .{ .file = "Subtree.zig", .layer = 4, .max_lines = 320 },
+    .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 5, .max_lines = 320 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 530 },
@@ -69,6 +70,8 @@ const layers = [_]Entry{
     .{ .file = "Distinct.zig", .layer = 8, .max_lines = 730 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     .{ .file = "Eval.zig", .layer = 9, .max_lines = 600 },
+    // What resolution reads of the leaves: base keys, the escape index (#1714).
+    .{ .file = "Holders.zig", .layer = 9, .max_lines = 400 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
@@ -372,7 +375,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 34), layers.len);
+    try testing.expectEqual(@as(usize, 35), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

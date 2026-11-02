@@ -666,6 +666,8 @@ pub const Module = struct {
     evidence_code: Ids.FixedDict(2) = .{},
     /// Per imported module read: its contracts by declaration.
     imported: stamped.Column(u32, ?[]u32) = .{},
+    /// Each read's cost, by module (§4.1, *A module table's entries*).
+    import_cost: Ids.Costs = .{},
     imported_owned: std.ArrayList([]u32) = .empty,
     comparison: []bool = &.{},
     cmp_decl: []u32 = &.{},
@@ -699,6 +701,7 @@ pub const Module = struct {
         for (mod.imported_owned.items) |cs| gpa.free(cs);
         mod.imported_owned.deinit(gpa);
         mod.imported.deinit(gpa);
+        mod.import_cost.deinit(gpa);
         gpa.free(mod.cmp_decl);
         mod.reads.deinit(gpa);
         mod.pessimistic_of.deinit(gpa);
@@ -713,7 +716,13 @@ pub const Module = struct {
     fn importedContract(mod: *Module, m: u32, di: u32) Error!?u32 {
         const imports = mod.in.imports orelse return null;
         if (!mod.imported.contains(m)) {
-            const cs = try imports.read(imports.ctx, mod, m);
+            const a = mod.account;
+            const fill = a.beginFill();
+            const cs = imports.read(imports.ctx, mod, m) catch |err| {
+                _ = a.endFill(fill);
+                return err;
+            };
+            try mod.import_cost.put(mod.gpa, m, a.endFill(fill));
             if (cs) |c| mod.imported_owned.append(mod.gpa, c) catch |err| {
                 mod.gpa.free(c);
                 return err;
@@ -721,6 +730,7 @@ pub const Module = struct {
             try mod.imported.put(mod.gpa, m, cs);
             mod.imports_read += 1;
         }
+        try mod.account.readEntry(mod.gpa, .import, m, mod.import_cost.get(m));
         const cs = mod.imported.get(m).? orelse return null;
         return if (di < cs.len and cs[di] != none) cs[di] else null;
     }
@@ -1205,6 +1215,7 @@ pub fn checkModule(in: *const Input, mod: *Module) Allocator.Error!void {
             acc.source = in.bir.decls[di].inst_end.int() - in.bir.decls[di].inst_start.int();
             try mod.results.append(in.gpa, .{ .decl = di, .account = acc });
         }
+        defer for (mod.results.items[first..]) |*r| r.account.dropFirsts(in.gpa);
         solveGroup(mod, mod.results.items[first..]) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.OwnershipLimit, error.AccountingInvariant, error.ProbeLength => {
