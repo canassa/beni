@@ -1,0 +1,897 @@
+//! L6: the one relation, the distinct check and a call's instantiation
+//! (`docs/design/ownership-v2.md` §2.9, §2.11.2). An `Eval` is one
+//! evaluation of a walk's frame under the contracts its calls read: the
+//! instantiation of each call (built once per call and caller slot), each
+//! call's separation, and the relation of each pair of leaves met, all
+//! kept for the evaluation and dropped with it (§2.12: an evaluation per
+//! candidate generation; the walk itself is never redone).
+//!
+//! **Expansion.** A leaf of a call's root names the objects the callee's
+//! contract says arrive at its slots: each arrival projected onto the
+//! call's arguments (§2.11.2). A supply root's leaf is a callee's supply,
+//! expanded the same way; a label's answer is its virtual call's result
+//! when the label's code is known (§2.11.3). An unknown label's answer is
+//! compared as `may` with everything: the caller's closure may answer
+//! anything it was handed.
+//!
+//! Obligations kept here: O1 (unknown provenance is `⊤`, never empty: an
+//! unknown callee is the pessimistic contract), the relation's half of O3
+//! (two positions of one root are apart only under the root's separation).
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Ids = @import("Ids.zig");
+const Place = @import("Place.zig");
+const Slots = @import("Slots.zig");
+const Contract = @import("Contract.zig");
+const Value = @import("Value.zig");
+
+pub const Error = Ids.ChargeError;
+pub const Cond = Contract.Cond;
+const Frame = Value.Frame;
+const Leaf = Value.Leaf;
+const Step = Place.Step;
+const PathId = Ids.PathId;
+const PlaceId = Ids.PlaceId;
+const none: u32 = Ids.none_int;
+
+/// The relation of two leaves (§2.9.2).
+pub const Ov = struct {
+    kind: enum(u8) { no, under, may } = .no,
+    cond: Cond = .{},
+
+    pub const no: Ov = .{};
+    pub const may: Ov = .{ .kind = .may };
+
+    pub fn join(arena: Allocator, account: *Ids.Account, a: Ov, b: Ov) Error!Ov {
+        if (a.kind == .may or b.kind == .may) return may;
+        if (a.kind == .no) return b;
+        if (b.kind == .no) return a;
+        const c = try Cond.conj(arena, account, a.cond, b.cond);
+        return if (c.no) may else .{ .kind = .under, .cond = c };
+    }
+};
+
+/// One projected object: its leaf and the literal route that reached it.
+pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
+
+pub const Eval = struct {
+    f: *Frame,
+    contracts: *const Contract.Table,
+    arena: Allocator,
+    /// `(call, caller slot, which)` → a run of `inst_leaves`; `which` is
+    /// `none` for the result, else the supply `label << 16 | k`.
+    inst_memo: Ids.FixedDict(3) = .{},
+    inst_runs: std.ArrayList([2]u32) = .empty,
+    inst_leaves: std.ArrayList(u32) = .empty,
+    /// Per call: 0 unset, 1 in progress, 2 done (`cond_of`).
+    cond_state: std.ArrayList(u8) = .empty,
+    cond_of: std.ArrayList(Cond) = .empty,
+    /// `(leaf, leaf, target)` → `ovs` index; `none` while in progress.
+    ov_memo: Ids.FixedDict(3) = .{},
+    ovs: std.ArrayList(Ov) = .empty,
+    /// Per `(call, callee label)`: the frame label it maps to (`cbs`), when
+    /// the label passes on; set by `Eval.zig` before any relation is asked.
+    label_map: Ids.FixedDict(2) = .{},
+    /// Per `(call, callee label)`: the virtual call that applies a known code.
+    known: Ids.FixedDict(2) = .{},
+    /// `instAt`'s keys in progress, by depth; a key met again adds nothing
+    /// (its own value), and a result computed under a cut deeper than its
+    /// own key is not kept.
+    inst_stack: std.ArrayList([3]u32) = .empty,
+    min_cut: usize = std.math.maxInt(usize),
+    routes: Ids.FixedDict(2) = .{},
+    route_count: u32 = 0,
+    /// Expansions in progress (a fold's answer feeds itself): a leaf met
+    /// again while it is expanded adds nothing.
+    expanding: Ids.FixedDict(1) = .{},
+    scratch: std.ArrayList(u32) = .empty,
+
+    pub fn deinit(e: *Eval) void {
+        const g = e.f.gpa;
+        e.inst_memo.deinit(g);
+        e.inst_runs.deinit(g);
+        e.inst_leaves.deinit(g);
+        e.cond_state.deinit(g);
+        e.cond_of.deinit(g);
+        e.ov_memo.deinit(g);
+        e.ovs.deinit(g);
+        e.label_map.deinit(g);
+        e.known.deinit(g);
+        e.inst_stack.deinit(g);
+        e.routes.deinit(g);
+        e.expanding.deinit(g);
+        e.scratch.deinit(g);
+    }
+
+    fn charge(e: *Eval, cat: Ids.Category, n: u32) Error!void {
+        try e.f.account.reserve(cat, n);
+    }
+
+    fn places(e: *Eval) *Place.Table {
+        return e.f.places;
+    }
+
+    fn gpa(e: *Eval) Allocator {
+        return e.f.gpa;
+    }
+
+    fn account(e: *Eval) *Ids.Account {
+        return e.f.account;
+    }
+
+    // ---- leaves of a value ---------------------------------------------------
+
+    /// The deep leaves of value `v` (every object it reaches), appended.
+    pub fn leavesOf(e: *Eval, v: u32, tags: u32, out: *std.ArrayList(u32)) Error!void {
+        var stack: std.ArrayList([2]u32) = .empty;
+        defer stack.deinit(e.gpa());
+        try stack.append(e.gpa(), .{ v, tags });
+        while (stack.pop()) |it| {
+            try e.charge(.inspection, 1);
+            const x = e.f.val(it[0]);
+            switch (x.kind) {
+                .scalar, .bot => {},
+                .built => {
+                    if (x.site != none) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it[1] }));
+                    if (x.form == .list and x.head != 0) try e.storageOf(x.head - 1, it[1], out);
+                    for (e.f.kidsOf(x)) |k| try stack.append(e.gpa(), .{ k, it[1] });
+                },
+                .ref => {
+                    const set = try e.f.refSlots(x);
+                    if (set == Slots.empty) continue;
+                    try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it[1] }));
+                },
+                .alt => {
+                    const ks = e.f.kidsOf(x);
+                    var i: usize = 0;
+                    while (i < ks.len) : (i += 2) {
+                        const t = (try e.f.mergeTags(it[1], try e.f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                        try stack.append(e.gpa(), .{ ks[i + 1], t });
+                    }
+                },
+                .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = it[1] })),
+                .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it[1] })),
+            }
+        }
+    }
+
+    /// The objects at value `v`'s own storage (a shallow write's target):
+    /// a built list's or record's site, a reference's position itself.
+    pub fn storageOf(e: *Eval, v: u32, tags: u32, out: *std.ArrayList(u32)) Error!void {
+        const x = e.f.val(v);
+        switch (x.kind) {
+            .scalar, .bot => {},
+            .built => if (x.site != none) {
+                try out.append(e.gpa(), try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = tags }));
+            } else if (x.form == .list and x.head != 0) try e.storageOf(x.head - 1, tags, out),
+            .ref => {
+                const set = if (x.family != Slots.empty) try e.objects(x.family) else try e.f.slots.canon(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot);
+                if (set == Slots.empty) return;
+                try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = tags, .at_pos = x.family == Slots.empty }));
+            },
+            .alt => {
+                const ks = e.f.kidsOf(x);
+                var i: usize = 0;
+                while (i < ks.len) : (i += 2) {
+                    const t = (try e.f.mergeTags(tags, try e.f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                    try e.storageOf(ks[i + 1], t, out);
+                }
+            },
+            .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = tags })),
+            .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = tags })),
+        }
+    }
+
+    /// The object slots of a slot set (its canonical names).
+    fn objects(e: *Eval, s: Slots.SetId) Error!Slots.SetId {
+        return e.f.slots.setOf(e.gpa(), e.account(), e.places(), e.f.slots.items(s));
+    }
+
+    // ---- projection of an arrival onto a value -------------------------------
+
+    fn routeStep(e: *Eval, route: u32, kid: u32) Error!u32 {
+        try e.charge(.path, 1);
+        const g = try e.routes.getOrPut(e.gpa(), .{ route, kid });
+        if (!g.found_existing) {
+            e.route_count += 1;
+            g.value_ptr.* = e.route_count;
+        }
+        return g.value_ptr.*;
+    }
+
+    /// The objects of value `v` at relative steps `words`: what an arrival
+    /// at those steps names in this frame. `deep`: every object below too.
+    pub fn project(e: *Eval, v: u32, words: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+        const Item = struct { v: u32, at: u32, tags: u32, route: u32 };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(e.gpa());
+        try stack.append(e.gpa(), .{ .v = v, .at = 0, .tags = tags, .route = route });
+        while (stack.pop()) |it| {
+            try e.charge(.inspection, 1);
+            const x = e.f.val(it.v);
+            const rest = words[it.at..];
+            switch (x.kind) {
+                .scalar, .bot => {},
+                .top => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route }),
+                .shared => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it.tags }), .route = it.route }),
+                .alt => {
+                    const ks = e.f.kidsOf(x);
+                    var i: usize = 0;
+                    while (i < ks.len) : (i += 2) {
+                        const t = (try e.f.mergeTags(it.tags, try e.f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                        try stack.append(e.gpa(), .{ .v = ks[i + 1], .at = it.at, .tags = t, .route = it.route });
+                    }
+                },
+                .ref => {
+                    var all: std.ArrayList(u32) = .empty;
+                    defer all.deinit(e.gpa());
+                    const tops: []const u32 = if (x.family != Slots.empty) e.f.slots.items(x.family) else &.{e.f.pos.items[x.pos].slot.int()};
+                    for (tops) |t| try Slots.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
+                    var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);
+                    if (deep) set = try e.f.slots.belowSet(e.gpa(), e.account(), e.places(), try e.f.slots.sorted(e.gpa(), e.account(), all.items));
+                    if (set == Slots.empty) continue;
+                    try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it.tags }), .route = it.route });
+                },
+                .built => {
+                    if (rest.len == 0) {
+                        if (deep) {
+                            var ls: std.ArrayList(u32) = .empty;
+                            defer ls.deinit(e.gpa());
+                            try e.leavesOf(it.v, it.tags, &ls);
+                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
+                        } else {
+                            var ls: std.ArrayList(u32) = .empty;
+                            defer ls.deinit(e.gpa());
+                            try e.storageOf(it.v, it.tags, &ls);
+                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
+                        }
+                        continue;
+                    }
+                    const st = Step.fromWord(rest[0]);
+                    const ks = e.f.kidsOf(x);
+                    switch (st.kind) {
+                        .ctor_arg => if (x.form == .ctor) {
+                            const ca = e.places().ctorArgOf(st);
+                            if (ca[0] == x.head and ca[1] < ks.len) try stack.append(e.gpa(), .{ .v = ks[ca[1]], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, ca[1]) });
+                        },
+                        .index => if (x.form == .tuple and st.payload < ks.len) {
+                            try stack.append(e.gpa(), .{ .v = ks[st.payload], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, st.payload) });
+                        },
+                        .elem => if (x.form == .list) {
+                            for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
+                        },
+                        .field => if (x.form == .record) {
+                            for (e.f.wordsOf(x.extra), 0..) |r, k| if (r == st.payload) try stack.append(e.gpa(), .{ .v = ks[k], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(k)) });
+                        },
+                        .env => if (x.form == .closure) {
+                            // A closure's environment: its captures, whole.
+                            for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = @intCast(words.len), .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
+                        },
+                        .level => try e.projectLevels(it.v, words[it.at + 1 ..], deep, it.tags, it.route, out),
+                        else => {
+                            // A step the literal cannot follow: every object of it.
+                            var ls: std.ArrayList(u32) = .empty;
+                            defer ls.deinit(e.gpa());
+                            try e.leavesOf(it.v, it.tags, &ls);
+                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = try e.routeStep(it.route, none) });
+                        },
+                    }
+                },
+            }
+        }
+    }
+
+    /// `⟲` into a built value: the values one or more levels below, at the
+    /// same place, through the parts that stay on its cycle; then `rest`
+    /// from each (the experiment's fourth requirement). A part not built
+    /// here gives its levels by its own slots, never its own storage.
+    fn projectLevels(e: *Eval, v: u32, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+        const place = e.f.val(v).place;
+        if (place == .none) {
+            var ls: std.ArrayList(u32) = .empty;
+            defer ls.deinit(e.gpa());
+            try e.leavesOf(v, tags, &ls);
+            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = route });
+            return;
+        }
+        const pl = e.places();
+        const Item = struct { v: u32, place: PlaceId, route: u32, below: bool };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(e.gpa());
+        try stack.append(e.gpa(), .{ .v = v, .place = place, .route = route, .below = false });
+        while (stack.pop()) |it| {
+            try e.charge(.inspection, 1);
+            const x = e.f.val(it.v);
+            switch (x.kind) {
+                .built => {
+                    if (it.below and it.place == place) try e.project(it.v, rest, deep, tags, it.route, out);
+                    for (e.f.kidsOf(x), 0..) |k, n| {
+                        const kst: Step = switch (x.form) {
+                            .list => Step.elem,
+                            .record => try Step.field(e.account(), e.f.wordsOf(x.extra)[n]),
+                            .tuple => try Step.index(e.account(), @intCast(n)),
+                            .ctor => try pl.ctorStep(e.gpa(), e.account(), x.head, @intCast(n)),
+                            .closure, .opaque_ => continue,
+                        };
+                        const kp = pl.child(it.place, kst) orelse continue;
+                        if (kp != place and !pl.sameCycle(kp, place)) continue;
+                        try stack.append(e.gpa(), .{ .v = k, .place = kp, .route = try e.routeStep(it.route, @intCast(n)), .below = true });
+                    }
+                },
+                .scalar, .bot => {},
+                .ref => if (it.below) {
+                    if (it.place == place) try e.project(it.v, rest, deep, tags, it.route, out);
+                    // Its own levels below, by its slots (never its own storage).
+                    var lv: std.ArrayList(u32) = .empty;
+                    defer lv.deinit(e.gpa());
+                    try lv.append(e.gpa(), Step.level.word());
+                    try lv.appendSlice(e.gpa(), rest);
+                    try e.project(it.v, lv.items, deep, tags, it.route, out);
+                },
+                .alt => {
+                    const ks = e.f.kidsOf(x);
+                    var i: usize = 0;
+                    while (i < ks.len) : (i += 2) try stack.append(e.gpa(), .{ .v = ks[i + 1], .place = it.place, .route = it.route, .below = it.below });
+                },
+                else => if (it.below) try e.project(it.v, rest, deep, tags, it.route, out),
+            }
+        }
+    }
+
+    // ---- instantiation (§2.11.2) ---------------------------------------------
+
+    fn contractOf(e: *Eval, call: u32) ?Contract.Id {
+        const c = e.f.calls.items[call].contract;
+        return if (c == none) null else c;
+    }
+
+    /// The leaves the callee of `call` says arrive at caller slot `slot`
+    /// (a path under the call's result root), or, with `which` a supply
+    /// `(label << 16) | k`, at the supply's slot. Built once per key.
+    pub fn instAt(e: *Eval, call: u32, slot: PathId, which: u32) Error![]const u32 {
+        try e.charge(.memo, 1);
+        const key: [3]u32 = .{ call, slot.int(), which };
+        if (e.inst_memo.get(key)) |r| {
+            const run = e.inst_runs.items[r];
+            return e.inst_leaves.items[run[0]..][0..run[1]];
+        }
+        for (e.inst_stack.items, 0..) |x, d| if (std.mem.eql(u32, &x, &key)) {
+            e.min_cut = @min(e.min_cut, d);
+            return &.{};
+        };
+        const depth = e.inst_stack.items.len;
+        try e.inst_stack.append(e.gpa(), key);
+        defer _ = e.inst_stack.pop();
+        var acc: std.ArrayList(u32) = .empty;
+        defer acc.deinit(e.gpa());
+        if (e.contractOf(call)) |c| {
+            const h = e.contracts.head(c);
+            const res: Ids.Range = if (which == none) h.res else blk: {
+                const l = e.contracts.labelsOf(h.labels)[which >> 16];
+                for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) break :blk s.res;
+                break :blk .{};
+            };
+            const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), slot));
+            for (e.contracts.resOf(res)) |rs| {
+                const rw = e.f.slots.relWords(rs.slot);
+                const exact = std.mem.eql(u32, rw, words);
+                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
+                if (!exact and !opened) continue;
+                const suffix = words[rw.len..];
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.arrivalLeaves(call, c, a, suffix, &acc);
+            }
+        } else {
+            // The pessimistic contract: whatever arrives is unknown.
+            try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+        }
+        const start: u32 = @intCast(e.inst_leaves.items.len);
+        try e.inst_leaves.appendSlice(e.gpa(), acc.items);
+        const keep = e.min_cut >= depth;
+        if (e.min_cut == depth) e.min_cut = std.math.maxInt(usize);
+        if (keep) try e.inst_memo.put(e.gpa(), key, @intCast(e.inst_runs.items.len));
+        try e.inst_runs.append(e.gpa(), .{ start, @intCast(acc.items.len) });
+        return e.inst_leaves.items[start..][0..acc.items.len];
+    }
+
+    /// An arrival of call `call`'s contract `c`, as leaves of this frame.
+    pub fn arrivalLeaves(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
+        try e.charge(.edge, 1);
+        const cl = e.f.calls.items[call];
+        switch (a.kind) {
+            .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = call })),
+            .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top })),
+            .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot })),
+            .param => {
+                if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+                const arg = cl.args[a.j];
+                var words: std.ArrayList(u32) = .empty;
+                defer words.deinit(e.gpa());
+                try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
+                try words.appendSlice(e.gpa(), suffix);
+                var ps: std.ArrayList(Proj) = .empty;
+                defer ps.deinit(e.gpa());
+                try e.project(arg, words.items, a.deep, 0, 0, &ps);
+                for (ps.items) |p| try out.append(e.gpa(), p.leaf);
+            },
+            .cb => {
+                var words: std.ArrayList(u32) = .empty;
+                defer words.deinit(e.gpa());
+                try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
+                try words.appendSlice(e.gpa(), suffix);
+                if (e.known.get(.{ call, a.j })) |vc| {
+                    // The known code's answer at that slot: its virtual call's.
+                    const r = e.f.roots.items[e.f.calls.items[vc].root];
+                    var all: std.ArrayList(u32) = .empty;
+                    defer all.deinit(e.gpa());
+                    try Slots.replay(e.gpa(), e.account(), e.places(), r.path, words.items, &all);
+                    if (all.items.len == 0) {
+                        // A slot the answer's place cannot name: all of it.
+                        var ls: std.ArrayList(u32) = .empty;
+                        defer ls.deinit(e.gpa());
+                        const whole = try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = try e.f.slots.below(e.gpa(), e.account(), e.places(), r.path) });
+                        try e.expand(whole, &ls);
+                        try out.appendSlice(e.gpa(), ls.items);
+                        return;
+                    }
+                    for (all.items) |s| try out.appendSlice(e.gpa(), try e.instAt(vc, .from(s), none));
+                    return;
+                }
+                const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+                try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
+            },
+        }
+        _ = c;
+    }
+
+    /// Whether a leaf's root is expanded into the leaves it comes from.
+    fn expandable(e: *Eval, l: Leaf) bool {
+        if (l.kind != .ref) return false;
+        const r = e.f.roots.items[l.root];
+        return switch (r.kind) {
+            .param, .cb => false,
+            .call, .supply => true,
+        };
+    }
+
+    /// A call, supply or known label's leaf as the leaves it comes from,
+    /// with its tags; a leaf met again while it is expanded adds nothing.
+    pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
+        const l = e.f.leafAt(li);
+        const r = e.f.roots.items[l.root];
+        const got = try e.expanding.getOrPut(e.gpa(), .{li});
+        if (got.found_existing and got.value_ptr.* == 1) return;
+        got.value_ptr.* = 1;
+        defer {
+            if (e.expanding.get(.{li}) != null) (e.expanding.getOrPut(e.gpa(), .{li}) catch unreachable).value_ptr.* = 0;
+        }
+        const call: u32, const which: u32 = switch (r.kind) {
+            .call => .{ r.a, none },
+            .supply => blk: {
+                const s = e.f.supplies.items[r.a];
+                break :blk .{ s.call, (s.label << 16) | s.k };
+            },
+            .cb, .param => unreachable,
+        };
+        for (e.f.slots.items(l.slots)) |s| {
+            for (try e.instAt(call, .from(s), which)) |x| if (try e.f.withTags(x, l.tags)) |y| try out.append(e.gpa(), y);
+        }
+    }
+
+    // ---- separation ---------------------------------------------------------
+
+    /// The selection of parameter `j` at the slots of `set` (paths under its root).
+    pub fn sel(e: *Eval, j: u32, set: Slots.SetId) Error!Cond {
+        const items = e.f.slots.items(set);
+        try e.charge(.cond, @intCast(1 + items.len));
+        const out = try e.arena.alloc(u64, items.len);
+        for (items, out) |s, *o| o.* = Contract.occ(j, try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(s)));
+        return Cond.of(e.account(), out);
+    }
+
+    /// Whether a leaf names a family: one of its slots is below a `[*]` or a
+    /// `⟲`, where many objects sit (§2.3.1); elsewhere a position's slot
+    /// holds one object.
+    fn isFamily(e: *Eval, l: Leaf) bool {
+        for (e.f.slots.items(l.slots)) |s| if (e.f.places.isSummary(.from(s))) return true;
+        return false;
+    }
+
+    /// `Sep` of a leaf's own objects (a family's): a parameter's selection,
+    /// a call's instantiated condition, an expansion's distinct check.
+    fn sepLeaf(e: *Eval, li: u32) Error!Cond {
+        const l = e.f.leafAt(li);
+        const r = e.f.roots.items[l.root];
+        return switch (r.kind) {
+            .param => e.sel(r.a, l.slots),
+            .call => e.instCond(r.a),
+            .supply, .cb => blk: {
+                if (!e.expandable(l)) break :blk Cond.unprovable;
+                var ls: std.ArrayList(u32) = .empty;
+                defer ls.deinit(e.gpa());
+                try e.expand(li, &ls);
+                var ps: std.ArrayList(Proj) = .empty;
+                defer ps.deinit(e.gpa());
+                for (ls.items, 0..) |x, k| try ps.append(e.gpa(), .{ .leaf = x, .route = @intCast(k + 1) });
+                break :blk e.distinct(ps.items, false);
+            },
+        };
+    }
+
+    /// The callee's `res_cond` on call `call`'s arguments, once per call; a
+    /// cycle through it reads `no`.
+    pub fn instCond(e: *Eval, call: u32) Error!Cond {
+        while (e.cond_state.items.len < e.f.calls.items.len) {
+            try e.cond_state.append(e.gpa(), 0);
+            try e.cond_of.append(e.gpa(), .{});
+        }
+        switch (e.cond_state.items[call]) {
+            2 => return e.cond_of.items[call],
+            1 => return Cond.unprovable,
+            else => {},
+        }
+        e.cond_state.items[call] = 1;
+        const c = e.contractOf(call) orelse {
+            e.cond_state.items[call] = 2;
+            e.cond_of.items[call] = Cond.unprovable;
+            return Cond.unprovable;
+        };
+        const got = try e.instSel(try e.contracts.cond(e.arena, e.contracts.head(c).res_cond), call);
+        e.cond_state.items[call] = 2;
+        e.cond_of.items[call] = got;
+        return got;
+    }
+
+    /// A callee's condition (a selection over its parameters) on call
+    /// `call`'s arguments (§2.9.3's routed rule): every object at a selected
+    /// occurrence, projected, distinct from every other.
+    pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
+        if (c.no) return Cond.unprovable;
+        if (c.sel.len == 0) return Cond.yes;
+        const cl = e.f.calls.items[call];
+        var ps: std.ArrayList(Proj) = .empty;
+        defer ps.deinit(e.gpa());
+        for (c.sel) |o| {
+            const j = Contract.occParam(o);
+            if (j >= cl.args.len) return Cond.unprovable;
+            const arg = cl.args[j];
+            var got: std.ArrayList(Proj) = .empty;
+            defer got.deinit(e.gpa());
+            // Routes are per parameter: two parameters handed one value are
+            // that value twice (the experiment's third requirement).
+            try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), false, 0, try e.routeStep(0, 0x8000_0000 | j), &got);
+            for (got.items) |p| try ps.append(e.gpa(), .{ .leaf = p.leaf, .route = p.route, .occ = o });
+        }
+        return e.distinct(ps.items, true);
+    }
+
+    /// `Sep(v)`: v's components each separated, all apart.
+    pub fn sepOf(e: *Eval, v: u32) Error!Cond {
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(e.gpa());
+        try e.leavesOf(v, 0, &ls);
+        var ps: std.ArrayList(Proj) = .empty;
+        defer ps.deinit(e.gpa());
+        // Each component its own route: one value placed twice is two
+        // entries (the experiment's fifth requirement).
+        for (ls.items, 0..) |l, k| try ps.append(e.gpa(), .{ .leaf = l, .route = @intCast(k + 1) });
+        return e.distinct(ps.items, false);
+    }
+
+    const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32 };
+
+    /// §2.9.3: every object the entries name is distinct from every other's,
+    /// by the factored check (never a table of pairs).
+    pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
+        const g = e.gpa();
+        var ents: std.ArrayList(Ent) = .empty;
+        defer ents.deinit(g);
+        for (ps) |p| try ents.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none });
+        var acc: Cond = .{};
+        // A family asks its own root's separation; ⊤ and shared objects are
+        // never known to be once.
+        for (ents.items) |en| {
+            const l = e.f.leafAt(en.leaf);
+            switch (l.kind) {
+                .ref => if (!l.at_pos and e.isFamily(l)) {
+                    if (e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
+                    acc = try Cond.conj(e.arena, e.account(), acc, try e.sepLeaf(en.leaf));
+                    if (acc.no) return acc;
+                },
+                .top, .shared => return Cond.unprovable,
+                else => {},
+            }
+        }
+        var next: std.ArrayList(Ent) = .empty;
+        defer next.deinit(g);
+        var rounds: u32 = 0;
+        while (true) : (rounds += 1) {
+            try e.charge(.cond, @intCast(1 + ents.items.len));
+            // Group by root; atoms by identity.
+            var groups: Ids.FixedDict(1) = .{};
+            defer groups.deinit(g);
+            var members: std.ArrayList(std.ArrayList(u32)) = .empty;
+            defer {
+                for (members.items) |*m| m.deinit(g);
+                members.deinit(g);
+            }
+            var group_root: std.ArrayList(u32) = .empty;
+            defer group_root.deinit(g);
+            var atoms: Ids.FixedDict(3) = .{};
+            defer atoms.deinit(g);
+            var atom_members: std.ArrayList(std.ArrayList(u32)) = .empty;
+            defer {
+                for (atom_members.items) |*m| m.deinit(g);
+                atom_members.deinit(g);
+            }
+            var latest: u32 = none;
+            for (ents.items, 0..) |en, i| {
+                const l = e.f.leafAt(en.leaf);
+                switch (l.kind) {
+                    .ref => {
+                        const got = try groups.getOrPut(g, .{l.root});
+                        if (!got.found_existing) {
+                            got.value_ptr.* = @intCast(members.items.len);
+                            try members.append(g, .empty);
+                            try group_root.append(g, l.root);
+                        }
+                        try members.items[got.value_ptr.*].append(g, @intCast(i));
+                        if (e.expandable(l) and (latest == none or l.root > latest)) latest = l.root;
+                    },
+                    .site, .fresh => {
+                        const got = try atoms.getOrPut(g, .{ @backingInt(l.kind), l.atom, 0 });
+                        if (!got.found_existing) {
+                            got.value_ptr.* = @intCast(atom_members.items.len);
+                            try atom_members.append(g, .empty);
+                        }
+                        for (atom_members.items[got.value_ptr.*].items) |fi| {
+                            const o = ents.items[fi];
+                            if (o.block != none and o.block == en.block) continue;
+                            if ((try e.f.mergeTags(l.tags, e.f.leafAt(o.leaf).tags)) != null) return Cond.unprovable;
+                        }
+                        try atom_members.items[got.value_ptr.*].append(g, @intCast(i));
+                    },
+                    else => {},
+                }
+            }
+            var params: u32 = 0;
+            for (group_root.items) |root| if (e.f.roots.items[root].kind == .param) {
+                params += 1;
+            };
+            // A supply or a label meeting itself is decided by expansion.
+            var must: u32 = none;
+            for (members.items, group_root.items) |idx, root| {
+                if (try e.mayWithin(ents.items, idx.items, routed)) return Cond.unprovable;
+                const r = e.f.roots.items[root];
+                switch (r.kind) {
+                    .param => if (idx.items.len >= 2 or params >= 2) {
+                        var set: Slots.SetId = Slots.empty;
+                        for (idx.items) |i| set = try e.f.slots.unionOf(g, e.account(), set, e.f.leafAt(ents.items[i].leaf).slots);
+                        acc = try Cond.conj(e.arena, e.account(), acc, try e.sel(r.a, set));
+                        if (acc.no) return acc;
+                    },
+                    .call => if (idx.items.len >= 2) {
+                        acc = try Cond.conj(e.arena, e.account(), acc, try e.instCond(r.a));
+                        if (acc.no) return acc;
+                    },
+                    .supply, .cb => if (idx.items.len >= 2) {
+                        if (!e.expandable(e.f.leafAt(ents.items[idx.items[0]].leaf))) return Cond.unprovable;
+                        if (must == none or root > must) must = root;
+                    },
+                }
+            }
+            if (must != none) latest = must else if (latest == none or groups.count() + atoms.count() < 2) break;
+            if (rounds > 4096) return Cond.unprovable;
+            // The latest expandable root meets another: its entries become
+            // what they come from (one level), a block it vouched for.
+            next.clearRetainingCapacity();
+            for (ents.items) |en| {
+                const l = e.f.leafAt(en.leaf);
+                if (l.kind != .ref or l.root != latest) {
+                    try next.append(g, en);
+                    continue;
+                }
+                var list: std.ArrayList(u32) = .empty;
+                defer list.deinit(g);
+                try e.expand(en.leaf, &list);
+                for (list.items) |x| {
+                    const xl = e.f.leafAt(x);
+                    if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;
+                    try e.charge(.edge, 1);
+                    e.route_count += 1;
+                    const blk = if (e.f.roots.items[latest].kind == .call) latest else none;
+                    try next.append(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = 0, .block = blk });
+                }
+            }
+            std.mem.swap(std.ArrayList(Ent), &ents, &next);
+            // Families of the expansion ask their own separation.
+            for (ents.items) |en| {
+                if (en.block == none) continue;
+                const l = e.f.leafAt(en.leaf);
+                if (l.kind == .ref and !l.at_pos and e.isFamily(l) and !e.expandable(l)) {
+                    if (e.f.roots.items[l.root].kind == .cb) return Cond.unprovable;
+                    acc = try Cond.conj(e.arena, e.account(), acc, try e.sepLeaf(en.leaf));
+                    if (acc.no) return acc;
+                }
+            }
+        }
+        return acc;
+    }
+
+    /// Whether two entries of one root may name one object: at related
+    /// positions whose slots meet, found through each entry's ancestors (or
+    /// pairwise in a group with list steps or of at most eight).
+    fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!bool {
+        if (idx.len < 2) return false;
+        const g = e.gpa();
+        var listy = idx.len <= 8;
+        if (!listy) for (idx) |i| {
+            var p = e.f.leafAt(ents[i].leaf).pos;
+            while (p != none and e.f.pos.items[p].parent != none) : (p = e.f.pos.items[p].parent) {
+                if (e.f.pos.items[p].kind != .plain) listy = true;
+            }
+        };
+        if (listy) {
+            for (idx, 0..) |i, k| for (idx[k + 1 ..]) |j| {
+                if (try e.pairMay(ents[i], ents[j], routed)) return true;
+            };
+            return false;
+        }
+        var at: Ids.FixedDict(2) = .{};
+        defer at.deinit(g);
+        var lists: std.ArrayList(std.ArrayList(u32)) = .empty;
+        defer {
+            for (lists.items) |*l| l.deinit(g);
+            lists.deinit(g);
+        }
+        for (idx) |i| {
+            const l = e.f.leafAt(ents[i].leaf);
+            for (e.f.slots.items(l.slots)) |s| {
+                try e.charge(.inspection, 1);
+                const got = try at.getOrPut(g, .{ l.pos, s });
+                if (!got.found_existing) {
+                    got.value_ptr.* = @intCast(lists.items.len);
+                    try lists.append(g, .empty);
+                }
+                try lists.items[got.value_ptr.*].append(g, i);
+            }
+        }
+        for (idx) |i| {
+            const l = e.f.leafAt(ents[i].leaf);
+            var p = l.pos;
+            while (p != none) : (p = e.f.pos.items[p].parent) {
+                for (e.f.slots.items(l.slots)) |s| {
+                    try e.charge(.inspection, 1);
+                    const here = at.get(.{ p, s }) orelse continue;
+                    for (lists.items[here].items) |j| {
+                        if (j == i) continue;
+                        if (p == l.pos and j > i) continue;
+                        if (try e.pairMay(ents[i], ents[j], routed)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    fn pairMay(e: *Eval, a: Ent, b: Ent, routed: bool) Error!bool {
+        try e.charge(.cond, 1);
+        if (a.block != none and a.block == b.block) return false;
+        if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ) return false;
+        const la = e.f.leafAt(a.leaf);
+        const lb = e.f.leafAt(b.leaf);
+        if ((try e.f.mergeTags(la.tags, lb.tags)) == null) return false;
+        // Two distinct occurrences of a callee at one value by one route are
+        // two distinct positions of it (§2.9.3's routed rule).
+        if (routed and a.route == b.route and a.occ != b.occ and la.pos == lb.pos) return false;
+        if (la.at_pos and lb.at_pos and la.pos != lb.pos) return false;
+        const r = try e.f.related(la.pos, lb.pos);
+        return r.rel == .related and try e.f.slots.meet(e.account(), la.slots, lb.slots);
+    }
+
+    // ---- the one relation (§2.9.2) -------------------------------------------
+
+    /// The relation of holder leaf `x` (deep) and target leaf `t`;
+    /// `target`: `t` is a shallow write target.
+    pub fn overlap(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
+        try e.charge(.cond, 1);
+        const key: [3]u32 = .{ x, t, @intFromBool(target) };
+        const got = try e.ov_memo.getOrPut(e.gpa(), key);
+        if (got.found_existing) {
+            return if (got.value_ptr.* == none) Ov.no else e.ovs.items[got.value_ptr.*];
+        }
+        got.value_ptr.* = none;
+        const r = try e.overlapRaw(x, t, target);
+        const at: u32 = @intCast(e.ovs.items.len);
+        try e.ovs.append(e.gpa(), r);
+        (try e.ov_memo.getOrPut(e.gpa(), key)).value_ptr.* = at;
+        return r;
+    }
+
+    fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+        const x = e.f.leafAt(xi);
+        const t = e.f.leafAt(ti);
+        if ((try e.f.mergeTags(x.tags, t.tags)) == null) return .no;
+        if (x.kind == .top or t.kind == .top) return .may;
+        const xr = x.kind == .ref;
+        const tr = t.kind == .ref;
+        // An unknown label's answer may be anything its closure was handed.
+        if (x.kind == .answer or t.kind == .answer) return .may;
+        if ((xr and e.f.roots.items[x.root].kind == .cb) or (tr and e.f.roots.items[t.root].kind == .cb)) return .may;
+        if (xr and tr and x.root == t.root) return e.positional(xi, ti, target);
+        if (xr or tr) {
+            const ex = xr and e.expandable(x);
+            const et = tr and e.expandable(t);
+            if (ex or et) {
+                const expand_x = if (ex and et) x.root > t.root else ex;
+                var list: std.ArrayList(u32) = .empty;
+                defer list.deinit(e.gpa());
+                try e.expand(if (expand_x) xi else ti, &list);
+                var acc: Ov = .no;
+                for (list.items) |l| {
+                    const o = if (expand_x) try e.overlap(l, ti, target) else try e.overlap(xi, l, target);
+                    acc = try Ov.join(e.arena, e.account(), acc, o);
+                    if (acc.kind == .may) return acc;
+                }
+                return acc;
+            }
+            if (xr and tr) {
+                // Two parameters: apart under both selections.
+                const c = try Cond.conj(e.arena, e.account(), try e.sel(e.f.roots.items[x.root].a, x.slots), try e.sel(e.f.roots.items[t.root].a, t.slots));
+                return .{ .kind = .under, .cond = c };
+            }
+            // A parameter's leaf and an atom.
+            return .no;
+        }
+        // Two atoms.
+        if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
+        return .no;
+    }
+
+    fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+        const x = e.f.leafAt(xi);
+        const t = e.f.leafAt(ti);
+        if (x.slots == Slots.empty or t.slots == Slots.empty) return .no;
+        const r = try e.f.related(x.pos, t.pos);
+        if (r.rel == .related) {
+            // A write of a position's own storage never meets what lies
+            // inside it: no value holds itself.
+            if (target and t.at_pos and r.second_prefix and x.pos != t.pos) {
+                if (!(try e.f.slots.meet(e.account(), x.slots, t.slots))) return e.apart(xi, ti, target);
+                // The holder below the written position holds the slot only
+                // where a level folds back onto it.
+            }
+            if (try e.f.slots.meet(e.account(), x.slots, t.slots)) return .may;
+        }
+        return e.apart(xi, ti, target);
+    }
+
+    /// Two leaves of one root at distinct places: apart under the root's
+    /// separation.
+    fn apart(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+        const x = e.f.leafAt(xi);
+        const t = e.f.leafAt(ti);
+        const r0 = e.f.roots.items[x.root];
+        switch (r0.kind) {
+            .param => return .{ .kind = .under, .cond = try e.sel(r0.a, try e.f.slots.unionOf(e.gpa(), e.account(), x.slots, t.slots)) },
+            .call => {
+                const sep = try e.instCond(r0.a);
+                if (!sep.no) return .{ .kind = .under, .cond = sep };
+            },
+            .supply, .cb => {},
+        }
+        if (!e.expandable(x)) return .may;
+        var lx: std.ArrayList(u32) = .empty;
+        defer lx.deinit(e.gpa());
+        var lt: std.ArrayList(u32) = .empty;
+        defer lt.deinit(e.gpa());
+        try e.expand(xi, &lx);
+        try e.expand(ti, &lt);
+        var acc: Ov = .no;
+        for (lx.items) |a| for (lt.items) |b| {
+            acc = try Ov.join(e.arena, e.account(), acc, try e.overlap(a, b, target));
+            if (acc.kind == .may) return acc;
+        };
+        return acc;
+    }
+};

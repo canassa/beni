@@ -23,7 +23,7 @@ const Ownership = @import("Ownership.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
 const Hoists = @import("Hoists.zig");
-const BlockRead = @import("BlockRead.zig");
+const Block = @import("Block.zig");
 const Interface = @import("../resolve/Interface.zig");
 
 /// What every module's check reads from the session, built once before
@@ -169,9 +169,6 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .ranks = ins.ranks,
         .core = ins.core,
         .interner = &session.interner,
-        .order_check = session.options.ownership_order_check,
-        .rewalk_check = session.options.ownership_rewalk_check,
-        .propagate_dump = session.options.ownership_propagate,
     };
 }
 
@@ -194,7 +191,7 @@ const ImportReader = struct {
         return .{ .ctx = r, .read = read };
     }
 
-    fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]Groups.ClassId {
+    fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]u32 {
         const r: *ImportReader = @ptrCast(@alignCast(ctx));
         if (m >= r.interfaces.len) return null;
         const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else r.interfaces[m].ownership;
@@ -205,23 +202,22 @@ const ImportReader = struct {
         @memcpy(std.mem.sliceAsBytes(words), bytes);
         var e: Envelope = .{ .r = r, .mod = mod, .m = m };
         defer e.texts.deinit(gpa);
-        defer e.own_memo.deinit(gpa);
         const body = (try e.parse(gpa, words)) orelse return null;
-        var classes: std.ArrayList(Groups.ClassId) = .empty;
-        defer classes.deinit(gpa);
-        const remap: BlockRead.Remap = .{ .place = .{ .ctx = &e, .head = Envelope.head, .field = Envelope.field }, .ctx = &e, .decl = Envelope.decl, .inst = Envelope.inst, .own = Envelope.own };
-        // A split that meets one of the importer's with another condition is
-        // no block it can read: an unknown summary (R-5.7.4), never a guess.
-        const got = BlockRead.read(mod.env(), &mod.sums, body, remap, &classes) catch |err| switch (err) {
-            error.BlockConflict => null,
+        var contracts: std.ArrayList(u32) = .empty;
+        defer contracts.deinit(gpa);
+        const remap: Block.Remap = .{ .ctx = &e, .field = Envelope.field, .decl = Envelope.declOfString };
+        // A block that does not decode, or does not encode again to its own
+        // words, is unknown (R-5.7.4): never a guess.
+        Block.read(gpa, body, &mod.contracts, &mod.slots, &mod.places, mod.account, remap, &contracts) catch |err| switch (err) {
+            error.BadBlock => return null,
             else => |x| return x,
         };
         if (e.oom) return error.OutOfMemory;
-        if (got == null or e.failed or classes.items.len * 2 != e.dir.len) return null;
+        if (e.failed or contracts.items.len * 2 != e.dir.len) return null;
         const bir = r.ins.birs[m];
-        const out = try gpa.alloc(Groups.ClassId, bir.decls.len);
-        @memset(out, .none);
-        for (classes.items, 0..) |c, k| {
+        const out = try gpa.alloc(u32, bir.decls.len);
+        @memset(out, @import("Ids.zig").none_int);
+        for (contracts.items, 0..) |c, k| {
             if (e.dir[2 * k + 1] != 1) continue;
             const di = e.declOf(m, e.dir[2 * k]) orelse {
                 gpa.free(out);
@@ -242,8 +238,6 @@ const ImportReader = struct {
         dir: []const u32 = &.{},
         failed: bool = false,
         oom: bool = false,
-        /// `Remap.own`'s memo for this block (`Groups.Adapter.ownPlace`).
-        own_memo: Groups.Adapter.OwnMemo = .{},
 
         /// The block's words after the string table and the directory, or
         /// null when the envelope is malformed.
@@ -276,35 +270,17 @@ const ImportReader = struct {
             };
         }
 
-        /// `package·module·type` → the type's head (`Types.find`'s search,
-        /// with no read noted: the block, not this module's check, names it).
-        fn head(ctx: *anyopaque, s: u32) u32 {
+        fn field(ctx: *anyopaque, s: u32) ?u32 {
             const e: *Envelope = @ptrCast(@alignCast(ctx));
-            const t = e.text(s) orelse return 0;
-            if (t.len == 0) return @import("Ids.zig").none_int;
-            var it = std.mem.splitSequence(u8, t, "·");
-            const package = std.meta.stringToEnum(Graph.Package, it.next().?);
-            const module = e.symbol(it.next() orelse "");
-            const name = e.symbol(it.next() orelse "");
-            const types = e.r.types;
-            if (package != null and module != null and name != null) if (e.r.session.graph.find(package.?, module.?)) |g| if (g.int() + 1 < types.entry_offsets.len) {
-                for (types.by_name[types.entry_offsets[g.int()]..types.entry_offsets[g.int() + 1]]) |id| if (types.entries[id.int()].name == name.?) return id.int();
-            };
-            e.failed = true;
-            return 0;
-        }
-
-        fn field(ctx: *anyopaque, s: u32) u32 {
-            const e: *Envelope = @ptrCast(@alignCast(ctx));
-            const sym = e.symbol(e.text(s) orelse return 0) orelse return 0;
+            const sym = e.symbol(e.text(s) orelse return null) orelse return null;
             if (@backingInt(sym) < e.r.ins.ranks.len) return e.r.ins.ranks[@backingInt(sym)];
             e.failed = true;
-            return 0;
+            return null;
         }
 
-        /// `Module.name` (the writer's `Strings.decl`) → the importer's
-        /// `shared` index; a module name two modules share is unknown.
-        fn decl(ctx: *anyopaque, s: u32, ordinal: u32) ?u32 {
+        /// `Module.name` (the writer's `Strings.decl`) → `(module, declaration)`;
+        /// a module name two modules share is unknown.
+        fn declOfString(ctx: *anyopaque, s: u32) ?[2]u32 {
             const e: *Envelope = @ptrCast(@alignCast(ctx));
             const t = e.text(s) orelse return null;
             const dot = std.mem.lastIndexOfScalar(u8, t, '.') orelse return null;
@@ -314,23 +290,7 @@ const ImportReader = struct {
                 module = @intCast(i);
             };
             const di = e.declOf(module orelse return null, (e.symbol(t[dot + 1 ..]) orelse return null)) orelse return null;
-            if (ordinal != 0) return null;
-            return e.mod.sharedOf(.{ module.?, di }) catch {
-                e.oom = true;
-                return null;
-            };
-        }
-
-        fn own(ctx: *anyopaque, p: Groups.PlaceId) Groups.Error!?Groups.PlaceId {
-            const e: *Envelope = @ptrCast(@alignCast(ctx));
-            return e.mod.adapter.ownPlace(&e.own_memo, p);
-        }
-        fn inst(ctx: *anyopaque, i: u32) u32 {
-            const e: *Envelope = @ptrCast(@alignCast(ctx));
-            return e.mod.importInst(e.m, i) catch {
-                e.oom = true;
-                return 0;
-            };
+            return .{ module.?, di };
         }
 
         /// The value declaration of module `m` a directory or `shared` name
