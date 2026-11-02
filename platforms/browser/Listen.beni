@@ -8,37 +8,40 @@
 --! what it carried is not read late. `browser-tea` does not re-export it,
 --! as it does not `Hosted`.
 --!
---! Written over `Js`: a fiber's listener is an array, `[ queue, waiting,
---! remove ]` — the values sent and not yet taken, the fiber waiting for
---! one (or null), and what removes the host's listener.
+--! Fiber listeners keep a typed queue, a waiting continuation and their
+--! remover. Values and callbacks retain their original types.
 
+import Browser.Host.Document as HostDocument
+import Browser.Host.Event as HostEvent
+import Browser.Host.Window as HostWindow
 import Js
+import Js.Chain as Chain
 import Task
 
 
 --| Add a listener for every event named `name` on `target` (`"window"` or
 --| `"document"`) that calls `send (read event)` while the event is
 --| dispatched, and return what removes it.
-pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
+pub on : String, String, sync (HostEvent.Event → a), sync (a → ⊤) → (⊤ → ⊤)
 on target name read send =
-    host = Js.global target
-    handler = Js.from λevent → send (read event)
-    _ = Js.call host "addEventListener" [ Js.from name, handler ]
-    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
+    listen target name λevent → send (read event)
+
+
+listen : String, String, sync (HostEvent.Event → ⊤) → (⊤ → ⊤)
+listen target name handler =
+    if target == "window" then HostWindow.listen name handler else HostDocument.listen name handler
 
 
 --| The same over the events of two names on one target: one listener, so
 --| an event of one name never overtakes an earlier one of the other.
-pub on2 : String, String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
+pub on2 : String, String, String, sync (HostEvent.Event → a), sync (a → ⊤) → (⊤ → ⊤)
 on2 target name other read send =
-    host = Js.global target
-    handler = Js.from λevent → send (read event)
-    _ = Js.call host "addEventListener" [ Js.from name, handler ]
-    _ = Js.call host "addEventListener" [ Js.from other, handler ]
-
+    handler = λevent → send (read event)
+    remove = listen target name handler
+    removeOther = listen target other handler
     λ⊤ →
-        _ = Js.call host "removeEventListener" [ Js.from name, handler ]
-        Js.to (Js.call host "removeEventListener" [ Js.from other, handler ])
+        remove ⊤
+        removeOther ⊤
 
 
 --| Call `f` with each value `listener` sends, in order, for as long as the
@@ -50,43 +53,48 @@ pub each : sync ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤
 each listener f = Task.bracket (λ⊤ → open listener) (λl _ → close l) λl → pump l f
 
 
-open : sync ((a → ⊤) → (⊤ → ⊤)) → Js.Value
+type alias Inbox a =
+    queue : Chain.Chain a
+    waiting : Js.Ref (Maybe (Task.Resume a))
+    remove : ⊤ → ⊤
+
+
+open : sync ((a → ⊤) → (⊤ → ⊤)) → Inbox a
 open listener =
-    l = Js.array [ Js.array [], Js.null, Js.null ]
-
-    handler =
-        λv →
-            waiting = Js.at l 1
-            if Js.isNull waiting then
-                Js.to (Js.call (Js.at l 0) "push" [ Js.from v ])
-            else
-                Js.setAt l 1 Js.null
-                Js.to (Js.apply waiting [ Js.from v ])
-    Js.setAt l 2 (Js.from (listener handler))
-    l
-
-
-close : Js.Value → ⊤
-close l = Js.to (Js.apply (Js.at l 2) [ Js.null ])
+    queue = Chain.make ⊤
+    waiting = Js.ref Nothing
+    handler = λvalue →
+        case Js.read waiting of
+            Nothing →
+                _ = Chain.append queue value
+                ⊤
+            Just resume →
+                Js.write waiting Nothing
+                Task.resume resume value
+    { queue = queue, waiting = waiting, remove = listener handler }
 
 
-pump : Js.Value, (a → ⊤) → ⊤
-pump l f =
-    f (next l)
-    pump l f
+close : Inbox a → ⊤
+close inbox = inbox.remove ⊤
+
+
+pump : Inbox a, (a → ⊤) → ⊤
+pump inbox f =
+    f (next inbox)
+    pump inbox f
 
 
 -- The oldest value not yet taken, waiting for one when there is none.
-next : Js.Value → a
-next l = Task.callback λresume → take l resume
+next : Inbox a → a
+next inbox = Task.callback λresume → take inbox resume
 
 
-take : Js.Value, Task.Resume a → (⊤ → ⊤)
-take l resume =
-    queue = Js.at l 0
-    if Js.to (Js.get queue "length") > 0 then
-        _ = Js.apply (Js.from resume) [ Js.call queue "shift" [] ]
-        Js.to Js.null
-    else
-        Js.setAt l 1 (Js.from resume)
-        λ⊤ → Js.setAt l 1 Js.null
+take : Inbox a, Task.Resume a → (⊤ → ⊤)
+take inbox resume =
+    case Chain.shift inbox.queue of
+        Just value →
+            Task.resume resume value
+            λ⊤ → ⊤
+        Nothing →
+            Js.write inbox.waiting (Just resume)
+            λ⊤ → Js.write inbox.waiting Nothing

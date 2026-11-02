@@ -6,8 +6,12 @@
 --! beni over core's `Js`, and the platform's runtime module (`boundary.md`
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
+import Browser.Host.Event as HostEvent
+import Browser.Host.Events as HostEvents
+import Browser.Host.EventTarget as EventTarget
 import Cmd exposing (Cmd)
 import Js
+import Js.Dispatch as Dispatch
 import Schema exposing (Field, Index, Issue, PathSegment, Schema)
 import Url exposing (Url)
 
@@ -18,90 +22,15 @@ type alias V =
 
 -- ---- The dispatch guard -------------------------------------------------
 
--- A throw escaped program code, or the page called `stop`: nothing of the
--- program runs again.
-dead : Js.Ref Bool
-dead = Js.ref False
-
-
--- A dispatch is running: a send made now waits for it.
-running : Js.Ref Bool
-running = Js.ref False
-
-
--- The sends made while a dispatch ran, as function, argument pairs in the
--- order they were made; null until the first.
-queue : Js.Ref V
-queue = Js.ref Js.null
-
-
---| `(f, x, read)`: one entry into program code — a listener with its
---| event, a command's body, `run`'s mount. `f` is applied to `x`, or, when
---| `read` is given, to what `read` reads of the event `x`: an event's `via`
---| extractor, which is called first, while the event is dispatched
---| (`boundary.md` §9.8.20 (d), #559), even when the send waits. A send made
---| while another runs is queued and applied, in order, before that
---| dispatch ends, never re-entrantly (`boundary.md` §9.8.4, as amended
---| 2026-10-17); once the page has stopped it does nothing. There is no
---| `catch`: a throw passes through to the host, and stops the page — a
---| throw of `read` when the send waits too, which the host, not the code
---| that dispatched the event, would otherwise hear.
+-- Every entry uses the typed dispatch queue. The renderer's legacy raw
+-- callbacks are adapted here while their native interfaces are migrated.
 pub send : V, V, V → ⊤
-send f x read =
-    if not (Js.read dead) then
-        nested = Js.read running
-        Js.write running True
-        ok = Js.ref False
-        Js.finally
-            (λ⊤ →
-                v = if Js.isUndefined read then x else Js.apply read [ x ]
-                if nested then
-                    if Js.isNull (Js.read queue) then
-                        Js.write queue (Js.array [])
-                    _ = Js.call (Js.read queue) "push" [ f, v ]
-                    ⊤
-                else
-                    _ = Js.apply f [ v ]
-                    drain ⊤
-                Js.write ok True
-            )
-            λ⊤ →
-                Js.write running nested
-                if Js.read ok then ⊤ else defect ⊤
-
-
--- Apply every queued send, in the order they were made; one applied may
--- send more, which apply after them, in this dispatch.
-drain : ⊤ → ⊤
-drain ⊤ =
-    if Js.isNull (Js.read queue) then
-        ⊤
-    else
-        q = Js.read queue
-        Js.write queue Js.null
-        applyFrom q 0
-        drain ⊤
-
-
-applyFrom : V, Int → ⊤
-applyFrom q i =
-    -- A send applied may stop the page (`stop`, a defect): nothing queued
-    -- behind it runs.
-    if i < Js.to (Js.get q "length") && not (Js.read dead) then
-        _ = Js.apply (Js.at q i) [ Js.at q (i + 1) ]
-        applyFrom q (i + 2)
-
-
--- A throw ended a dispatch: the page stops, `dead` first, and drops what
--- was queued. A development build shows the crash screen; a release build
--- has no code for one, and the host reports the throw.
-defect : ⊤ → ⊤
-defect ⊤ =
-    wasDead = Js.read dead
-    Js.write dead True
-    Js.write queue Js.null
-    if Js.development ⊤ && not wasDead then
-        crashScreen ⊤
+send callback value project =
+    Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
+    Dispatch.read
+        (λread → Js.to (Js.apply callback [ read ]))
+        value
+        (λraw → if Js.isUndefined project then raw else Js.apply project [ raw ])
 
 
 -- An overlay above the page, which it leaves in place to inspect: the
@@ -385,8 +314,8 @@ pathText path =
 
 -- What undoes the mount: the function the lowering wrote, which removes
 -- the program's root, its listeners and its timers, last added first.
-undo : Js.Ref V
-undo = Js.ref (Js.from nothing)
+undo : Js.Ref (⊤ → ⊤)
+undo = Js.ref nothing
 
 
 --| Whether a dispatch is running now: an event a listener hears then fires
@@ -394,36 +323,32 @@ undo = Js.ref (Js.from nothing)
 --| a page that has not stopped, and says nothing of one that has — a caller
 --| asks `stopped` first, as `Listen.on` does.
 pub busy : ⊤ → Bool
-busy ⊤ = Js.read running
+busy ⊤ = Dispatch.busy ⊤
 
 
 --| Whether the page has stopped.
 pub stopped : ⊤ → Bool
-stopped ⊤ = Js.read dead
+stopped ⊤ = Dispatch.stopped ⊤
 
 
 --| `(f)`: one piece the mount added registers what removes it; `stop`
 --| runs them once, the last registered first.
-pub own : V → ⊤
+pub own : sync (⊤ → ⊤) → ⊤
 own f =
     before = Js.read undo
-    Js.write
-        undo
-        (Js.from λ⊤ →
-            _ = Js.apply f []
-            Js.to (Js.apply before [])
-        )
+    Js.write undo λ⊤ →
+        f ⊤
+        before ⊤
 
 
 --| The page's unmount: nothing of the program runs after it, and what the
 --| mount added to the page is taken out of it, once.
 pub stop : ⊤ → ⊤
 stop ⊤ =
-    Js.write dead True
-    Js.write queue Js.null
+    Dispatch.stop ⊤
     f = Js.read undo
-    Js.write undo (Js.from nothing)
-    Js.to (Js.apply f [])
+    Js.write undo nothing
+    f ⊤
 
 
 nothing : ⊤ → ⊤
@@ -511,13 +436,9 @@ part node = Js.call node "querySelectorAll" [ Js.from "*" ]
 --| `(node, f, kind, read)`: a listener of event `kind`, `click` when not
 --| given, whose event enters the dispatch guard with `f` — through `read`,
 --| the event's `via` extractor, when it has one (`send`).
-pub on : V, V, V, V → ⊤
-on node f kind read =
-    _ =
-        Js.call node "addEventListener"
-            [ if Js.isUndefined kind then Js.from "click" else kind
-            , Js.from λevent → send f event read
-            ]
+pub on : EventTarget.EventTarget, sync (a → ⊤), String, sync (HostEvent.Event → a) → ⊤
+on node callback kind project =
+    _ = HostEvents.listen node kind λevent → Dispatch.read callback event project
     ⊤
 
 
@@ -529,11 +450,9 @@ on node f kind read =
 --| The outermost is asked first: an arm inside a hidden arm may never have
 --| been written. It is apart from `on` so that a page with no handler in an
 --| arm ships neither it nor the arm walk (#874).
-pub onArm : V, V, V, V, V → ⊤
-onArm node f kind arms read =
-    _ =
-        Js.call node "addEventListener"
-            [ kind, Js.from λevent → if armsShown arms then send f event read ]
+pub onArm : EventTarget.EventTarget, sync (a → ⊤), String, V, sync (HostEvent.Event → a) → ⊤
+onArm node callback kind arms project =
+    _ = HostEvents.listen node kind λevent → if armsShown arms then Dispatch.read callback event project
     ⊤
 
 
@@ -637,7 +556,7 @@ take at html arms tags =
             adopted
 
     top = Js.at table 0
-    own (Js.from λ⊤ → Js.to (Js.call top "remove" []))
+    own λ⊤ → Js.to (Js.call top "remove" [])
     table
 
 

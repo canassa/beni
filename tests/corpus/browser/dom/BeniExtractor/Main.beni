@@ -1,0 +1,12 @@
+import Browser
+import Extract
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → "waiting"
+        , update = λpayload _ → Extract.render payload
+        , view = λshown →
+            <main><button id="go" onClick={λpayload → payload}>go</button><p>{shown}</p></main>
+        }

@@ -1,0 +1,44 @@
+-- The matching existential cast preserves a stored callback's realm.
+import Envelope
+import Page
+import Worker
+
+
+pageCallback : ⊤ → ⊤
+pageCallback ⊤ = Page.text "window callback"
+
+
+stored = Envelope.store { callback = pageCallback }
+
+
+go : ⊤ → ⊤
+go ⊤ =
+    found : Maybe { callback : ⊤ → ⊤ }
+    found = Envelope.restore stored
+    case found of
+        Just value →
+            value.callback ⊤
+        Nothing →
+            ⊤
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                go ⊤
+                "unreachable"
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

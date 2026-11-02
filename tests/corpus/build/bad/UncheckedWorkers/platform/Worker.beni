@@ -31,7 +31,7 @@ program callbacks = Program callbacks
 
 
 pub open : Program → Result OpenError Handle
-open definition = nativeOpen (Js.from definition)
+open definition = nativeOpen definition
 
 
 foreign impure nativeOpen : Js.Value → Result OpenError Handle

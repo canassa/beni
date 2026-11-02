@@ -1,0 +1,5 @@
+# The first pulse, tagged "a" and by the child.
+advance 100
+# A new label: a new tagger, and no restart.
+click #rename
+advance 100

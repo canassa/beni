@@ -8,7 +8,7 @@ const normalize = (plan, role, value) => {
     if (node === 0) return value;
     const [kind, edges] = node;
     if (kind === 1) {
-      const array = Array.isArray(value) ? value : value.$plain();
+      const array = Array.isArray(value) ? value : value.b.slice(value.o);
       return nodes[edges[0][1]] === 0 ? array : array.map(item => visit(edges[0][1], item));
     }
     if (kind === 4) {

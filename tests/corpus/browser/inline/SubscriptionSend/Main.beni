@@ -1,0 +1,60 @@
+import Browser
+import Cmd
+import Sub
+import Tea
+
+
+type Key
+    = Immediate
+
+
+type Msg
+    = Subscription String
+    | Command String
+    | Again
+
+
+type alias Model =
+    subscription : String
+    command : String
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update message model =
+    case message of
+        Subscription value →
+            ( { model | subscription = value }, Cmd.none )
+        Command value →
+            ( { model | command = value }, Cmd.none )
+        Again →
+            ( model
+            , Cmd.perform λsend →
+                send (Command "clicked")
+                ⊤
+            )
+
+
+main : Browser.Program
+main =
+    Tea.element
+        { init = λ⊤ →
+            ( { subscription = "waiting", command = "waiting" }
+            , Cmd.perform λsend →
+                send (Command "initial")
+                ⊤
+            )
+        , update = update
+        , subscriptions = λ_ →
+            Sub.on Immediate
+                (λsend →
+                    send "delivered"
+                    λ⊤ → ⊤
+                )
+                Subscription
+        , view = λmodel →
+            <main>
+                <p id="subscription">{model.subscription}</p>
+                <p id="command">{model.command}</p>
+                <button id="again" onClick={Again}>again</button>
+            </main>
+        }

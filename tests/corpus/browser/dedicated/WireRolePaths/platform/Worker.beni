@@ -31,10 +31,10 @@ program callbacks = Program callbacks
 
 
 pub open : Program request reply state → Result OpenError (Handle request reply)
-open definition = nativeOpen (Js.from definition)
+open definition = nativeOpen definition
 
 
-foreign impure nativeOpen : Js.Value → Result OpenError (Handle request reply)
+foreign impure nativeOpen : Program request reply state → Result OpenError (Handle request reply)
 
 
 pub foreign impure send : Handle request reply, request → ⊤
@@ -47,7 +47,7 @@ pub run : Program request reply state → ⊤
 run definition =
     case definition of
         Program callbacks →
-            configure (Js.from definition)
+            configure definition
             Task.start
                 (λ⊤ →
                     state = callbacks.init ⊤ ⊤
@@ -58,7 +58,7 @@ run definition =
                 λ_ → ⊤
 
 
-foreign impure configure : Js.Value → ⊤
+foreign impure configure : Program request reply state → ⊤
 
 
 foreign impure listen : sync (request → ⊤) → ⊤

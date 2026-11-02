@@ -1,0 +1,7 @@
+-- load
+console.log: payload: 7
+console.log: waiter: 9
+console.log: failure: 11
+<body>
+  <p>"7:9:11"</p>
+</body>

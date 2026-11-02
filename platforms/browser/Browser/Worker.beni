@@ -642,18 +642,14 @@ open owner definition config opts =
                         Err { reason = reason, cleanup = Confirmed }
                     Ok native →
                         peer = newPeer native (host definition) opts
-                        Js.set
-                            (Js.get peer "events")
-                            "taken"
-                            (host λitem →
-                                _ =
-                                    sendFrame
-                                        peer
-                                        "EventAck"
-                                        0
-                                        (host (wireBytes item opts.queuedBytes))
-                                ⊤
-                            )
+                        Browser.WorkerStream.onTake (guest (Js.get peer "events")) λitem →
+                            _ =
+                                sendFrame
+                                    peer
+                                    "EventAck"
+                                    0
+                                    (host (wireBytes item opts.queuedBytes))
+                            ⊤
                         _ = Js.call peers "set" [ Js.get peer "generation", peer ]
                         listen peer "message" (received peer _)
                         listen peer "messageerror" λ_ →

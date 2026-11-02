@@ -1,3 +1,5 @@
-PointerInput update: lines 43-77 (not built: record_update)
+PointerInput describe: lines 80-85 (not built: call)
+PointerInput update: lines 43-77 (not built: call)
+PointerInput down: lines 88-94 (not built: call)
 PointerInput view: lines 97-122 (not built: top)
 PointerInput main: lines 126-127 (not built: lambda)

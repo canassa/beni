@@ -1,0 +1,7 @@
+{
+  "platform": true,
+  "name": "beni-extractor",
+  "platforms": ["browser"],
+  "reexports": ["Html", "Browser"],
+  "markup": { "vocabulary": "Extract", "type": "Html.Html" }
+}

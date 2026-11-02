@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <p id="subscription">"delivered"</p>
+    <p id="command">"initial"</p>
+    <button id="again">"again"</button>
+  </main>
+</body>
+-- click #again
+<body>
+  <main>
+    <p id="subscription">"delivered"</p>
+    <p id="command">"clicked"</p>
+    <button id="again">"again"</button>
+  </main>
+</body>

@@ -1,0 +1,75 @@
+-- Stream queues preserve callback payloads and callback-bearing errors. They
+-- do not call either while storing; only the consumer invokes a taken value.
+import Browser.WorkerStream as Stream
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+
+
+type Token
+    = Token (⊤ → Int)
+
+
+type Msg
+    = Done String
+
+
+readToken : Token → Int
+readToken (Token callback) = callback ⊤
+
+
+run : ⊤ → String
+run ⊤ =
+    stream = Stream.make 1
+    accepted = Stream.offer stream (Token λ⊤ → Debug.log "payload" 7)
+    full = not (Stream.offer stream (Token λ⊤ → Debug.log "unused" 100))
+    first =
+        case Stream.next stream of
+            Ok (Stream.Item chunk) →
+                readToken (Stream.take chunk)
+            _ →
+                0
+    waiting = Task.spawn λ⊤ →
+        case Stream.next stream of
+            Ok (Stream.Item chunk) →
+                readToken (Stream.value chunk)
+            _ →
+                0
+    Task.yieldNow ⊤
+    _ = Stream.offer stream (Token λ⊤ → Debug.log "waiter" 9)
+    second = Task.join waiting
+    Stream.fail stream (Token λ⊤ → Debug.log "failure" 11)
+    failed =
+        case Stream.next stream of
+            Err (Stream.Failed token) →
+                readToken token
+            _ →
+                0
+    ended = Stream.make 1
+    Stream.end ended
+    atEnd =
+        case Stream.next ended of
+            Ok Stream.End →
+                True
+            _ →
+                False
+    if accepted && full && atEnd then
+        "${first}:${second}:${failed}"
+    else
+        "incorrect stream state"
+
+
+view : String → Html Msg
+view text = <p>{text}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "waiting", Cmd.perform λsend → send (Done (run ⊤)) )
+        , update = λ(Done text) _ → ( text, Cmd.none )
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -6,7 +6,7 @@
 --! (`docs/design/browser-inline.md` §4). The `inline` lowering reads a
 --! command where it is made, so `none` costs a page nothing.
 
-import Js
+import Js.Dispatch as Dispatch
 
 
 --| How a body sends a message: it is applied once the body returns, in the
@@ -36,7 +36,7 @@ batch cmds = Batch cmds
 --| dispatch: each message it sends is applied after it returns. A body that
 --| may suspend needs the task kernel, which this platform does not have yet.
 pub perform : (Send msg → ⊤) → Cmd msg
-perform body = Perform body
+perform body = Perform λsend → body λmessage → Dispatch.send send message
 
 
 --| Every body of a command, in order: what the runtime runs.

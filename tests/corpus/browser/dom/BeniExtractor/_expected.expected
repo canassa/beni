@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"waiting"</p>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"42:beni"</p>
+  </main>
+</body>

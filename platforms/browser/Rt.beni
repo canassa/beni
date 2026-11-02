@@ -748,7 +748,7 @@ elements list =
     if Js.to (Js.call (Js.global "Array") "isArray" [ list ]) then
         list
     else
-        Js.call list "$plain" []
+        Js.call (Js.get list "b") "slice" [ Js.get list "o" ]
 
 
 -- `(slot, list)`: a `List Html` hole, its blocks matched by position.

@@ -1,350 +1,330 @@
---! What an architecture layered on `browser` builds its commands and
---! subscriptions from (`docs/design/boundary.md` §9.8): the pieces of a
---! running program a `Browser.hosted` program is handed, and the typed
---! pieces of work `Cmd` and `Sub` carry. `browser-tea` is written over
---! this module in beni and does not re-export it; a program never needs it.
---!
---! Every function here that sends is `impure`, and so is every function a
---! body is handed to send with, so a release build never drops a send.
-
--- Written over `Js`, as `core/Task` is: each piece is a JavaScript array or
--- object read and written by position or name, every function it holds is
--- a `Js.Value` called with `Js.apply`, and a value or a message crosses
--- into one at a type variable, so it pins no field name and no tag.
+--! Typed commands, subscriptions and outlets for the browser architecture.
+--! Keys use checked Any; a live subscription retains its source while its
+--! current taggers change. No message or callback passes through Js.Value.
 
 import Browser exposing (Host)
+import Browser.Host.Document as HostDocument
 import Js
+import Js.Any as Any
+import Js.Chain as Chain
+import Js.Host as TypedHost
+import Js.Key as TypedKey
+import Js.Protocol as Protocol
 import Listen
 import Task
 
 
-type alias V =
-    Js.Value
+pub type alias Key =
+    TypedKey.Key
 
 
--- A beni value seen as a JavaScript one, and back, at a type variable.
-host : a → V
-host x = Js.from x
-
-
-guest : V → a
-guest v = Js.to v
-
-
--- A message to a program, through its host's `send`.
-send : V, V → ⊤
-send h msg = Js.to (Js.call h "send" [ msg ])
-
-
---| A command's or subscription's key, whatever its type: its type's
---| identity, its type's `compare`, and the value (`boundary.md` §9.8.3).
---| Two keys are the same when they are of one type and that type's
---| `compare` calls them equal — however each was built or stored. A key's
---| type must have `compare`, which is what keeps functions out of keys.
-pub foreign type Key
-
-
---| Any value as a key. Its type's identity is the compiler's, handed on by
---| every function generic over the key with nothing written.
 pub key : k → Key
     where k.compare : k, k → Order
-key k =
-    -- `{ t, c, v }`: the identity of the key's type
-    -- (`static-dispatch-spike.md` §8.6), the type's own `compare`, and the
-    -- value (`boundary.md` §9.8.3). The three keys are plain properties no
-    -- beni record spells, so they pin no field name (`backend.md` §9).
-    Js.to
-        (Js.object
-            [ ( "t", Js.fingerprint k EQ ), ( "c", Js.from (comparer k) ), ( "v", Js.from k ) ]
-        )
+key value = TypedKey.key value
 
 
--- The type's `compare` as a value, for the key to carry. The parameter is
--- read for its type alone: a method is named through a call of it.
-comparer : k → (k, k → Order)
-    where k.compare : k, k → Order
-comparer _ = λa b → a.compare b
-
-
---| The order of two keys: by their types' identities, then, for two keys
---| of one type, by that type's `compare`. Two keys of one identity are of
---| one type, so either's `compare` orders both. Keys of two types are
---| ordered by their identities' text with JavaScript's `<` (`Js.lt`): the
---| identities are ASCII, where it agrees with `String.compare`, which a
---| page that compares no other string then never ships. Reading the
---| key's fields and calling its `compare` run no effect, so the body is
---| `Js.pure`, as the sibling was `foreign pure`.
 pub compare : Key, Key → Order
-compare a b = Js.pure λ⊤ →
-    if Js.same a b then
-        EQ
-    else
-        ta = Js.get (Js.from a) "t"
-        tb = Js.get (Js.from b) "t"
-        if Js.same ta tb then
-            Js.to
-                (Js.apply (Js.get (Js.from a) "c")
-                    [ Js.get (Js.from a) "v", Js.get (Js.from b) "v" ]
-                )
-        else if Js.lt ta tb then
-            LT
-        else
-            GT
+compare left right = TypedKey.compare left right
 
 
---| Whether two keys are the same value.
 pub eq : Key, Key → Bool
-eq a b = compare a b == EQ
+eq left right = compare left right == EQ
 
 
---| Where a running body's messages go: its program, until it is closed.
-pub foreign type Outlet msg
+-- Generic carriers keep callback roles and the stored payload summaries apart.
+type OutletStorage state
+    = OutletStorage state
 
 
---| A new open outlet into the program: `[ h, open ]`.
+pub type alias Outlet msg =
+    OutletStorage { host : Host msg, open : Js.Ref Bool }
+
+
 pub outlet : Host msg → Outlet msg
-outlet h = guest (Js.array [ host h, Js.from True ])
+outlet host = OutletStorage { host = host, open = Js.ref True }
 
 
---| Send a message through an outlet: its program's `update` runs, now or,
---| during another message's `update`, right after it. Once the outlet is
---| closed, nothing happens.
 pub emit : Outlet msg, msg → ⊤
-emit o msg =
-    v = host o
-    if Js.to (Js.at v 1) then send (Js.at v 0) (host msg)
+emit (OutletStorage state) message = if Js.read state.open then TypedHost.send state.host message
 
 
---| Close an outlet: from now on what is sent through it is dropped.
 pub close : Outlet msg → ⊤
-close o = Js.setAt (host o) 1 (Js.from False)
+close (OutletStorage state) = Js.write state.open False
 
 
---| A command's body, as `Cmd` carries it (`boundary.md` §9.8.11). Held
---| in a `foreign type`, so what the body may do is its own: a function in
---| a constructor's field would share one class with every command it is
---| batched or returned with (`transparent-effects-proposal.md` §14.5), and
---| one body that waits would make every body of the program run in a
---| fiber.
-pub foreign type Job msg
+type JobStorage msg packet
+    = JobStorage packet
 
 
---| A body as a job: the body itself, a function of its `send`, which runs
---| with the log context of the place where the job is made
---| (`Task.keepLogContext`; `boundary.md` §9.8.16 (b), amended 2026-10-22).
+pub type alias Job msg =
+    JobStorage msg Any.Any
+
+
 pub job : (Browser.Send msg → ⊤) → Job msg
-job body = guest (host (Task.keepLogContext body))
+job body = JobStorage (Any.pack (Task.keepLogContext body))
 
 
---| The same job, its messages passed through `tag`.
 pub mapJob : Job a, sync (a → b) → Job b
-mapJob j tag =
-    guest
-        (Js.from λs →
-            Js.suspending λ⊤ →
-                Js.to (Js.apply (host j) [ Js.from λm → Js.apply s [ host (tag (guest m)) ] ])
-        )
+mapJob original tag = JobStorage (Any.pack λsend → runJob original λmessage → send (tag message))
 
 
---| Run a job in the calling fiber, handed `send`, until it returns: the
---| body's own value, or the fiber runtime's sentinel when it parked, which
---| this call's caller receives either way.
+jobBody : Job msg → (Browser.Send msg → ⊤)
+jobBody (JobStorage packet) =
+    case Any.unpack packet of
+        Just body →
+            body
+        Nothing →
+            defect "invalid typed command body"
+
+
+-- A waiting body uses the normal beni continuation. A Now body is the
+-- synchronous protocol selected by Cmd.perform's Js.maySuspend test.
 pub runJob : Job msg, Browser.Send msg → ⊤
-runJob j s = Js.suspending λ⊤ → Js.to (Js.apply (host j) [ host s ])
+runJob work send = (jobBody work) send
 
 
---| Run a job that cannot suspend, handed `send`: what `Cmd` made of a body
---| whose every use says it never waits.
 pub callJob : Job msg, Browser.Send msg → ⊤
-callJob j s = Js.to (Js.apply (host j) [ host s ])
+callJob work send = Protocol.call (jobBody work) send
 
 
---| Work to run after a render, and the function its messages go through.
-pub foreign type Later msg
+type LaterStorage msg packet
+    = LaterStorage packet
 
 
---| After-render work: `body` runs synchronously in the after-render phase
---| of the flush that follows, handed a function that sends to the program,
---| with the log context of the place where the work is made, as a job's.
---| `[ f, t ]`: the body, and the tagger its messages go through or null.
+pub type alias Later msg =
+    LaterStorage msg Any.Any
+
+
 pub later : sync (Browser.Send msg → ⊤) → Later msg
-later body = guest (Js.array [ host (Task.keepLogContext body), Js.null ])
+later body = LaterStorage (Any.pack (Task.keepLogContext body))
 
 
---| The same work, its messages passed through `tag`.
+laterBody : Later msg → (Browser.Send msg → ⊤)
+laterBody (LaterStorage packet) =
+    case Any.unpack packet of
+        Just body →
+            body
+        Nothing →
+            defect "invalid typed after-render body"
+
+
 pub mapLater : Later a, sync (a → b) → Later b
-mapLater l tag =
-    v = host l
-    inner = Js.at v 1
-
-    outer =
-        if Js.isNull inner then
-            host tag
-        else
-            Js.from λm → Js.apply (host tag) [ Js.apply inner [ m ] ]
-    guest (Js.array [ Js.at v 0, outer ])
+mapLater original tag =
+    LaterStorage (Any.pack λsend → Protocol.call (laterBody original) λmessage → send (tag message))
 
 
---| Queue after-render work into the program's next flush.
 pub afterRender : Host msg, Later msg → ⊤
-afterRender h l =
-    v = host l
-    tag = Js.at v 1
-    p = host h
-
-    Js.to
-        (Js.call p "after"
-            [ Js.from λ⊤ →
-                Js.apply (Js.at v 0)
-                    [ Js.from λm → send p (if Js.isNull tag then m else Js.apply tag [ m ]) ]
-            ]
-        )
+afterRender host work = TypedHost.after host λ⊤ →
+    Protocol.call (laterBody work) λmessage → TypedHost.send host message
 
 
---| A subscription's body or listener, and the function each value it
---| sends is turned into a message with.
-pub foreign type Tap msg
-
-
---| The body a subscription runs in a fiber, and its tagger. The body is
---| handed a function that sends values of type `a`. `[ b, t ]`: the body
---| or the listener, and the tagger of what it sends.
---|
---| The ownership checker trusts what this and `hook` do (`ownership-checker.md`
---| §23.3, §23.9): a value the body sends goes through the tagger of every
---| current subscription of its key (`through`), so a tagger is handed it
---| borrowed. A runtime that handed each tagger a value of its own would
---| change that row.
-pub tap : (Browser.Send a → ⊤), sync (a → msg) → Tap msg
-tap body tag = guest (Js.array [ host body, host tag ])
-
-
---| A listener a subscription adds with no fiber, and its tagger
---| (`boundary.md` §9.8.5): handed a function that sends values of type
---| `a`, `start` adds the host's listener and returns what removes it.
-pub hook : sync ((a → ⊤) → (⊤ → ⊤)), sync (a → msg) → Tap msg
-hook start tag = guest (Js.array [ host start, host tag ])
-
-
---| The same subscription, its messages passed through `tag`.
-pub mapTap : Tap a, sync (a → b) → Tap b
-mapTap tp f =
-    v = host tp
-    inner = Js.at v 1
-    guest (Js.array [ Js.at v 0, Js.from λx → Js.apply (host f) [ Js.apply inner [ x ] ] ])
-
-
---| How a subscription's tap runs while its key is in the set: a body in a
---| fiber (`tap`'s), or a listener with none (`hook`'s). The first
---| declaration of a key decides which. Only `Sub.listen` makes a `Waits`,
---| so a program whose subscriptions all listen reaches no fiber through
---| them.
 pub type Kind
     = Waits
     | Hears
 
 
---| A live subscription: the body or listener of the tap it started with,
---| and the taggers every value it sends goes through, which `retap`
---| replaces.
-pub foreign type Relay msg
+-- Independent packet parameters retain the source, listener and tagger's
+-- summaries independently, including through an exported Tap alias.
+type TapStorage msg body listener tagger
+    = TapStorage body listener tagger
 
 
---| A relay into the program for `tap`'s body or listener, with `tap`'s
---| tagger. `{ b, h, open, q, t, x }`: the tap's body or listener, the
---| program, whether it is open, the values a listener with no fiber sent
---| and that are not yet delivered (null while no delivery is queued), the
---| current taps, whose taggers each value goes through, and what removes
---| that listener once it is added.
-pub relay : Host msg, Tap msg → Relay msg
-relay h tp =
-    guest
-        (Js.from
-            { b = Js.at (host tp) 0
-            , h = host h
-            , open = True
-            , q = Js.null
-            , t = host [ tp ]
-            , x = Js.null
-            }
+pub type alias Tap msg =
+    TapStorage msg Any.Any Any.Any Any.Any
+
+
+pub tap : (Browser.Send a → ⊤), sync (a → msg) → Tap msg
+tap body tag =
+    TapStorage
+        (Any.pack λsend → body λvalue → send (Any.pack value))
+        (Any.pack emptyListener)
+        (Any.pack λpacket → Maybe.map (Any.unpack packet) tag)
+
+
+pub hook : sync ((a → ⊤) → (⊤ → ⊤)), sync (a → msg) → Tap msg
+hook start tag =
+    TapStorage
+        (Any.pack emptyBody)
+        (Any.pack λsend → start λvalue → send (Any.pack value))
+        (Any.pack λpacket → Maybe.map (Any.unpack packet) tag)
+
+
+type alias PacketSend =
+    Any.Any → ⊤
+
+
+type alias PacketBody =
+    PacketSend → ⊤
+
+
+type alias PacketListener =
+    PacketSend → (⊤ → ⊤)
+
+
+emptyBody : PacketBody
+emptyBody _ = ⊤
+
+
+emptyListener : PacketListener
+emptyListener _ = λ⊤ → ⊤
+
+
+tapBody : Tap msg → PacketBody
+tapBody (TapStorage packet _ _) =
+    case Any.unpack packet of
+        Just body →
+            body
+        Nothing →
+            defect "invalid typed subscription body"
+
+
+tapListener : Tap msg → PacketListener
+tapListener (TapStorage _ packet _) =
+    case Any.unpack packet of
+        Just listener →
+            listener
+        Nothing →
+            defect "invalid typed subscription listener"
+
+
+tapTagger : Tap msg → (Any.Any → Maybe msg)
+tapTagger (TapStorage _ _ packet) =
+    case Any.unpack packet of
+        Just tag →
+            tag
+        Nothing →
+            defect "invalid typed subscription tagger"
+
+
+pub mapTap : Tap a, sync (a → b) → Tap b
+mapTap original tag =
+    TapStorage
+        (case original of
+            TapStorage body _ _ →
+                body
         )
+        (case original of
+            TapStorage _ listener _ →
+                listener
+        )
+        (Any.pack λpacket → Maybe.map ((tapTagger original) packet) tag)
 
 
--- One value, through the tagger of every current tap of an open relay.
-tagged : V, V → ⊤
-tagged r value = if Js.to (Js.get r "open") then through (Js.get r "h") (guest (Js.get r "t")) value
+type RelayStorage state
+    = RelayStorage state
 
 
-through : V, List V, V → ⊤
-through h taps value =
+type alias RelayData msg =
+    source : Tap msg
+    host : Host msg
+    open : Js.Ref Bool
+    queue : Chain.Chain Any.Any
+    scheduled : Js.Ref Bool
+    taps : Js.Ref (List (Tap msg))
+    remove : Js.Ref (Maybe (⊤ → ⊤))
+    heard : Js.Ref (Maybe (Chain.Link (⊤ → ⊤)))
+
+
+pub type alias Relay msg =
+    RelayStorage (RelayData msg)
+
+
+pub relay : Host msg, Tap msg → Relay msg
+relay host source =
+    RelayStorage
+        { source = source
+        , host = host
+        , open = Js.ref True
+        , queue = Chain.make ⊤
+        , scheduled = Js.ref False
+        , taps = Js.ref [ source ]
+        , remove = Js.ref Nothing
+        , heard = Js.ref Nothing
+        }
+
+
+tagged : Relay msg, Any.Any → ⊤
+tagged (RelayStorage state) packet =
+    if Js.read state.open then
+        through state.host (Js.read state.taps) packet
+
+
+through : Host msg, List (Tap msg), Any.Any → ⊤
+through host taps packet =
     case taps of
         [] →
             ⊤
+        [ currentTap, …rest ] →
+            case Protocol.call (tapTagger currentTap) packet of
+                Just message →
+                    TypedHost.send host message
+                Nothing →
+                    ⊤
+            through host rest packet
 
-        [ tp, …rest ] →
-            send h (Js.apply (Js.at tp 1) [ value ])
-            through h rest value
 
-
---| Run the relay's body, in the current fiber, until it returns: the
---| body's own value, or the fiber runtime's sentinel when it parked.
 pub run : Relay msg → ⊤
-run rl =
-    r = host rl
-    Js.suspending λ⊤ → Js.to (Js.apply (Js.get r "b") [ Js.from λvalue → tagged r value ])
+run live =
+    case live of
+        RelayStorage state →
+            (tapBody state.source) λpacket → tagged live packet
 
 
--- The relays whose listener is added, which the program's stop removes,
--- and whether that removal is registered.
-heard : V
-heard = Js.construct (Js.global "Set") []
+heard : Js.Ref (Chain.Chain (⊤ → ⊤))
+heard = Js.ref (Chain.make ⊤)
 
 
 released : Js.Ref Bool
 released = Js.ref False
 
 
---| Run a relay's listener with no fiber (`boundary.md` §9.8.5): added by
---| work queued where a fiber spawned now would first run, each value it
---| sends delivered by work queued where that fiber's resumption would
---| land, and removed by `unhear` or when the program stops. The first
---| value sent queues one delivery; values sent before it runs, or while it
---| sends, join it, and it sends them all in order.
+releaseAll : ⊤ → ⊤
+releaseAll ⊤ =
+    case Chain.shift (Js.read heard) of
+        Just remove →
+            Protocol.call remove ⊤
+            releaseAll ⊤
+        Nothing →
+            ⊤
+
+
 pub hear : Relay msg → ⊤
-hear rl =
-    r = host rl
-
-    queue λ⊤ →
-        if Js.to (Js.get r "open") then
-            if Js.read released then
-                ⊤
-            else
-                Js.write released True
-                Task.onShutdown λ⊤ →
-                    Js.each heard λx → Js.to (Js.apply (Js.get x "x") [ Js.null ])
-                    Js.to (Js.call heard "clear" [])
-            _ = Js.call heard "add" [ r ]
-            Js.set r "x" (Js.apply (Js.get r "b") [ Js.from λvalue → arrive r value ])
-
-
-arrive : V, V → ⊤
-arrive r value =
-    q = Js.get r "q"
-    if Js.isNull q then
-        Js.set r "q" (Js.array [ value ])
-        queue λ⊤ → deliverQueued r 0
-    else
-        Js.to (Js.call q "push" [ value ])
+hear live =
+    case live of
+        RelayStorage state →
+            queue λ⊤ →
+                if Js.read state.open then
+                    if not (Js.read released) then
+                        Js.write released True
+                        Task.onShutdown releaseAll
+                    Js.write state.heard (Just (Chain.append (Js.read heard) λ⊤ → unhear live))
+                    Js.write
+                        state.remove
+                        (Just
+                            (Protocol.call (tapListener state.source) λpacket → arrive live packet)
+                        )
 
 
-deliverQueued : V, Int → ⊤
-deliverQueued r i =
-    q = Js.get r "q"
-    if i < Js.to (Js.get q "length") then
-        tagged r (Js.at q i)
-        deliverQueued r (i + 1)
-    else
-        Js.set r "q" Js.null
+arrive : Relay msg, Any.Any → ⊤
+arrive live packet =
+    case live of
+        RelayStorage state →
+            _ = Chain.append state.queue packet
+            if not (Js.read state.scheduled) then
+                Js.write state.scheduled True
+                queue λ⊤ → deliverQueued live
+
+
+deliverQueued : Relay msg → ⊤
+deliverQueued live =
+    case live of
+        RelayStorage state →
+            case Chain.shift state.queue of
+                Just packet →
+                    tagged live packet
+                    deliverQueued live
+                Nothing →
+                    Js.write state.scheduled False
 
 
 queue : sync (⊤ → ⊤) → ⊤
@@ -353,62 +333,46 @@ queue work =
     ⊤
 
 
---| Run a relay's listener in the current fiber, as `Listen.each` runs one,
---| until the fiber is cancelled: how every listener subscription ran
---| before `Sub.on` ran with none, kept for the test hook `fibered`.
 pub runHeard : Relay msg → ⊤
-runHeard rl =
-    r = host rl
-    Listen.each (Js.to (Js.get r "b")) λvalue → tagged r value
+runHeard live =
+    case live of
+        RelayStorage state →
+            Listen.each (tapListener state.source) λpacket → tagged live packet
 
 
---| The development build's test hook (`boundary.md` §9.8.5): whether the
---| page asked, before the program loaded, for every listener subscription
---| to run in a fiber through `runHeard`. Read only under
---| `Js.development`, so no release build carries it.
 pub fibered : ⊤ → Bool
 fibered ⊤ = Js.same (Js.global "__beniFiberSubscriptions") (Js.from True)
 
 
---| Replace the relay's taggers with those of `taps`, in order: each value
---| the body sends becomes one message per tap. Every tap must be one that
---| sends what the relay's first did — which is what equal keys promise.
 pub retap : Relay msg, List (Tap msg) → ⊤
-retap r taps = Js.set (host r) "t" (host taps)
+retap (RelayStorage state) taps = Js.write state.taps taps
 
 
---| Close a relay: what its body sends from now on is dropped.
 pub closeRelay : Relay msg → ⊤
-closeRelay r = Js.set (host r) "open" (Js.from False)
+closeRelay (RelayStorage state) = Js.write state.open False
 
 
---| Close a relay `hear` runs, and remove its listener now.
 pub unhear : Relay msg → ⊤
-unhear rl =
-    r = host rl
-    Js.set r "open" (Js.from False)
-    x = Js.get r "x"
-    if Js.isNull x then
-        ⊤
-    else
-        Js.set r "x" Js.null
-        _ = Js.call heard "delete" [ r ]
-        Js.to (Js.apply x [ Js.null ])
+unhear (RelayStorage state) =
+    Js.write state.open False
+    case Js.read state.heard of
+        Just link →
+            Js.write state.heard Nothing
+            _ = Chain.remove (Js.read heard) link
+            ⊤
+        Nothing →
+            ⊤
+    case Js.read state.remove of
+        Just remove →
+            Js.write state.remove Nothing
+            Protocol.call remove ⊤
+        Nothing →
+            ⊤
 
 
---| Write the page's title when it differs from `title`: what a document
---| program's render does, so the title and the body never disagree.
 pub title : String → ⊤
-title text =
-    document = Js.global "document"
-    if Js.same (Js.get document "title") (Js.from text) then
-        ⊤
-    else
-        Js.set document "title" (Js.from text)
+title text = if HostDocument.title ⊤ ≠ text then HostDocument.setTitle text
 
 
---| Stop the program with a defect (`boundary.md` §9.8.10 (c)): an `Error`
---| with the message is thrown, which the page reports as any defect —
---| the development crash screen, logged and stopped in release.
 pub defect : String → a
-defect message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
+defect message = Protocol.defect message

@@ -1,0 +1,23 @@
+-- Only Debug can name Raw, and even Debug cannot send it over Wire.
+import Js.Inspect exposing (Raw)
+import Page
+import Worker
+
+
+worker : Worker.Program (List Raw) Int ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → 0
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

@@ -11,6 +11,7 @@
 
 import Html exposing (Html)
 import Js
+import Js.Host as TypedHost
 import Task
 import Url exposing (Url)
 
@@ -96,7 +97,7 @@ programs list =
         if Js.to (Js.call (Js.global "Array") "isArray" [ Js.from list ]) then
             Js.from list
         else
-            Js.call (Js.from list) "$plain" []
+            Js.call (Js.get (Js.from list) "b") "slice" [ Js.get (Js.from list) "o" ]
 
     Js.each items λp → Js.each p λm → Js.to (Js.call mounts "push" [ m ])
     Js.to mounts
@@ -113,7 +114,8 @@ pub type alias Send msg =
 --| `settle` are handed it: where its messages go, and its after-render
 --| queue. What an architecture layered on `browser` is built from, with
 --| the `Hosted` module; a program never meets one.
-pub foreign type Host msg
+pub type alias Host msg =
+    TypedHost.Host (Send msg) ((⊤ → ⊤) → ⊤)
 
 
 --| A program that is handed its `Host`: `init` makes the first model once
@@ -311,17 +313,9 @@ host p root flushing phase stop =
     started = Js.ref False
     dirty = Js.ref False
     shown = Js.ref (Js.to Js.null)
-    self : Host msg
-    self =
-        Js.to
-            (Js.from
-                { after =
-                    λf →
-                        _ = Js.call (Js.read later) "push" [ f ]
-                        send skip
-                , send = send
-                }
-            )
+    self = TypedHost.make (λmessage → Js.to (Js.call root "$$root" [ message ])) λwork →
+        _ = Js.call (Js.read later) "push" [ Js.from work ]
+        send skip
 
     apply =
         λmsg →

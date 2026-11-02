@@ -21,7 +21,8 @@
 --! platform, never through a `view`, so nothing a view holds can become
 --! one (`docs/design/language.md` §11.14).
 
-import Js
+import Browser.Host.DOMRect as DOMRect
+import Browser.Host.Event as HostEvent
 
 
 --| Markup whose handlers produce messages of type `msg`. Its representation
@@ -31,7 +32,8 @@ pub foreign type Html msg
 
 
 --| The event object a handler is handed when its event names no `via`.
-pub crossing foreign type Event
+pub type alias Event =
+    HostEvent.Event
 
 
 --| The text, as a text hole shows it: `Html.text s` and `<>{s}</>` render
@@ -45,11 +47,13 @@ pub markup map : Html a, (a → b) → Html b
 
 
 --| The value of the form control an event came from.
-pub foreign impure targetValue : Event → String
+pub targetValue : Event → String
+targetValue event = HostEvent.targetValue event
 
 
 --| Whether the checkbox an event came from is checked.
-pub foreign impure targetChecked : Event → Bool
+pub targetChecked : Event → Bool
+targetChecked event = HostEvent.targetChecked event
 
 
 -- What a handler reads of the event it is handed (`boundary.md` §9.8.10).
@@ -64,34 +68,34 @@ pub foreign impure targetChecked : Event → Bool
 --|
 --|     onKeyDown={λevent → if Html.key event == "Enter" then Add else Ignored}
 pub key : Event → String
-key event = stringProp event "key"
+key event = HostEvent.key event
 
 
 --| The physical key of a keyboard event, whatever the layout types with
 --| it: `"KeyA"`, `"Enter"`, `"Digit1"`. `""` for any other event.
 pub code : Event → String
-code event = stringProp event "code"
+code event = HostEvent.code event
 
 
 --| Whether Control was held during a keyboard or mouse event.
 pub ctrlKey : Event → Bool
-ctrlKey event = boolProp event "ctrlKey"
+ctrlKey event = HostEvent.ctrlKey event
 
 
 --| Whether Shift was held during a keyboard or mouse event.
 pub shiftKey : Event → Bool
-shiftKey event = boolProp event "shiftKey"
+shiftKey event = HostEvent.shiftKey event
 
 
 --| Whether Alt (Option on a Mac) was held during a keyboard or mouse event.
 pub altKey : Event → Bool
-altKey event = boolProp event "altKey"
+altKey event = HostEvent.altKey event
 
 
 --| Whether Meta (Command on a Mac, the Windows key elsewhere) was held
 --| during a keyboard or mouse event.
 pub metaKey : Event → Bool
-metaKey event = boolProp event "metaKey"
+metaKey event = HostEvent.metaKey event
 
 
 --| Stop the browser doing what the event would do by default — a key
@@ -106,7 +110,7 @@ metaKey event = boolProp event "metaKey"
 --|         else
 --|             Ignored}
 pub preventDefault : Event → ⊤
-preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
+preventDefault event = HostEvent.preventDefault event
 
 
 -- What a pointer handler reads (`boundary.md` §9.8.20). A pointer event
@@ -116,13 +120,15 @@ preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 
 --| A pointer event — a mouse, a pen or a touch — as a pointer handler is
 --| handed it.
-pub crossing foreign type Pointer
+pub opaque type Pointer
+    = Pointer Event Float Float
 
 
 -- What a pointer event's listener hands its extractor: the event, while
 -- its `currentTarget` is the element that has the handler. Not `pub`, and
 -- no event hands a handler one.
-foreign type Dispatched
+type alias Dispatched =
+    Event
 
 
 -- The extractor of every pointer event: the event, and its position in
@@ -131,38 +137,41 @@ foreign type Dispatched
 -- Called on another event, that element could be the document, which has
 -- no box, so it is not `pub` and no program can call it. A `via` can name
 -- a value that is not `pub` (`boundary.md` §9.3).
-foreign impure pointer : Dispatched → Pointer
+pointer : Dispatched → Pointer
+pointer event =
+    box = HostEvent.currentBox event
+    Pointer event (HostEvent.clientX event - DOMRect.left box) (HostEvent.clientY event - DOMRect.top box)
 
 
 --| The pointer's identity: the same number from its first event to its
 --| `onPointerUp` or `onPointerCancel`, and a different one for each finger
 --| on a touch screen.
 pub pointerId : Pointer → Int
-pointerId p = Js.to (Js.get (Js.from (pointerEvent p)) "pointerId")
+pointerId p = HostEvent.pointerId (pointerEvent p)
 
 
 --| What the pointer is: `"mouse"`, `"pen"` or `"touch"`, or `""` when the
 --| browser cannot say.
 pub pointerType : Pointer → String
-pointerType p = stringProp (pointerEvent p) "pointerType"
+pointerType p = HostEvent.pointerType (pointerEvent p)
 
 
 --| Whether the pointer is the primary one of its type: the mouse, or the
 --| first finger of a touch.
 pub isPrimary : Pointer → Bool
-isPrimary p = boolProp (pointerEvent p) "isPrimary"
+isPrimary p = HostEvent.isPrimary (pointerEvent p)
 
 
 --| The pointer's position from the left edge of the viewport, in CSS
 --| pixels.
 pub clientX : Pointer → Float
-clientX p = Js.to (Js.get (Js.from (pointerEvent p)) "clientX")
+clientX p = HostEvent.clientX (pointerEvent p)
 
 
 --| The pointer's position from the top edge of the viewport, in CSS
 --| pixels.
 pub clientY : Pointer → Float
-clientY p = Js.to (Js.get (Js.from (pointerEvent p)) "clientY")
+clientY p = HostEvent.clientY (pointerEvent p)
 
 
 --| The pointer's position from the left edge of the border box of the
@@ -172,28 +181,19 @@ clientY p = Js.to (Js.get (Js.from (pointerEvent p)) "clientY")
 --|
 --|     <div style="touch-action: none" onPointerMove={λp → Aim (Html.localX p) (Html.localY p)}>
 pub localX : Pointer → Float
-localX p = Js.to (Js.get (Js.from p) "x")
+localX (Pointer _ x _) = x
 
 
 --| The pointer's position from the top edge of that box, in CSS pixels.
 pub localY : Pointer → Float
-localY p = Js.to (Js.get (Js.from p) "y")
+localY (Pointer _ _ y) = y
 
 
 --| The pointer event as an `Event`, for the readers of an `Event`: the
 --| modifier keys and `preventDefault`.
 pub pointerEvent : Pointer → Event
-pointerEvent p = Js.to (Js.get (Js.from p) "ev")
+pointerEvent (Pointer event _ _) = event
 
-
-stringProp : Event, String → String
-stringProp event name =
-    v = Js.get (Js.from event) name
-    if Js.isNullish v then "" else Js.to v
-
-
-boolProp : Event, String → Bool
-boolProp event name = Js.same (Js.get (Js.from event) name) (Js.from True)
 
 
 -- Elements. A `void` element takes no children.

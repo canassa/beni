@@ -7,8 +7,13 @@
 --! key arrives and removes it when the key leaves, with no fiber. Every
 --! event is delivered, in order, read as it is dispatched.
 
+import Browser.Host.Date as HostDate
+import Browser.Host.Document as HostDocument
+import Browser.Host.Event as HostEvent
+import Browser.Host.Window as HostWindow
 import Html
 import Js
+import Js.Chain as Chain
 import Listen
 import Sub exposing (Sub)
 import Task
@@ -44,12 +49,12 @@ type FrameKey
 
 --| The window's inner size, now.
 pub size : ⊤ → Size
-size ⊤ = { width = Js.to (Js.global "innerWidth"), height = Js.to (Js.global "innerHeight") }
+size ⊤ = { width = HostWindow.innerWidth ⊤, height = HostWindow.innerHeight ⊤ }
 
 
 -- `document.visibilityState === "hidden"`.
 hidden : ⊤ → Bool
-hidden ⊤ = Js.same (Js.get (Js.global "document") "visibilityState") (Js.from "hidden")
+hidden ⊤ = HostDocument.visibilityState ⊤ == "hidden"
 
 
 --| Whether the page can be seen, now.
@@ -146,8 +151,8 @@ pub onKeyPress : (Html.Event → msg) → Sub msg
 onKeyPress tag = Sub.on KeyPress (keys "keypress" _) tag
 
 
-event : Js.Value → Html.Event
-event v = Js.to v
+event : HostEvent.Event → Html.Event
+event v = v
 
 
 -- ---- Animation frames (`boundary.md` §9.8.18) -----------------------------
@@ -193,61 +198,52 @@ delta : Int, Int → Float
 delta now last = toFloat (now - last)
 
 
--- The page's frame clock, `[ listeners, asked, last ]`: the frame
--- listeners added, each a function of a frame's time and the time before
--- it, in the order they were added; the id of the frame asked for, null
--- while none is; and the time of the last frame, or, before the first, of
--- the first listener's arrival.
-frameClock : Js.Value
-frameClock = Js.array [ Js.construct (Js.global "Set") [], Js.null, Js.from 0 ]
+-- A single native frame request serves the typed listeners in arrival order.
+frameListeners : Js.Ref (Chain.Chain (Int, Int → ⊤))
+frameListeners = Js.ref (Chain.make ⊤)
+
+
+frameAsked : Js.Ref (Maybe HostWindow.Frame)
+frameAsked = Js.ref Nothing
+
+
+frameLast : Js.Ref Int
+frameLast = Js.ref 0
 
 
 wall : ⊤ → Int
-wall ⊤ = Js.to (Js.call (Js.global "Date") "now" [])
+wall ⊤ = HostDate.now ⊤
 
 
--- Ask the host for the next frame. Nothing is caught: a host with no
--- `requestAnimationFrame` throws, a defect (`CLAUDE.md` rule 9).
 ask : ⊤ → ⊤
-ask ⊤ =
-    Js.setAt
-        frameClock
-        1
-        (Js.apply (Js.global "requestAnimationFrame") [ Js.from λ_ → tick ⊤ ])
+ask ⊤ = Js.write frameAsked (Just (HostWindow.requestFrame λ⊤ → tick ⊤))
 
 
--- A frame: the next is asked for, then each listener added before the
--- frame began is handed the time — a copy of the set is walked, so one
--- added while the frame runs waits for the next — under `Task.fromHost`,
--- so the messages they send are applied and rendered before the callback
--- returns: before the frame is drawn.
 tick : ⊤ → ⊤
 tick ⊤ = Task.fromHost λ⊤ →
-    now = Js.from (wall ⊤)
-    last = Js.at frameClock 2
+    now = wall ⊤
+    last = Js.read frameLast
     ask ⊤
-    Js.setAt frameClock 2 now
-    Js.each (Js.call (Js.global "Array") "from" [ Js.at frameClock 0 ]) λf →
-        Js.to (Js.apply f [ now, last ])
+    Js.write frameLast now
+    _ = List.foldl (Chain.toList (Js.read frameListeners)) ⊤ λlistener _ → listener now last
+    ⊤
 
 
--- The listener of every frame subscription and direct form: `read` makes
--- the value sent from a frame's time and the time before it. The first
--- listener added while no frame is asked for starts the clock: it asks
--- for a frame and sets the last time to the wall clock's, which is what
--- the first delta counts from. The last one removed cancels the frame
--- asked for, so an idle page asks for none.
 frames : sync (Int, Int → a), sync (a → ⊤) → (⊤ → ⊤)
 frames read send =
-    listeners = Js.at frameClock 0
-    if Js.isNull (Js.at frameClock 1) then
-        Js.setAt frameClock 2 (Js.from (wall ⊤))
-        ask ⊤
-    f = Js.from λnow last → send (read (Js.to now) (Js.to last))
-    _ = Js.call listeners "add" [ f ]
-
+    case Js.read frameAsked of
+        Nothing →
+            Js.write frameLast (wall ⊤)
+            ask ⊤
+        Just _ →
+            ⊤
+    link = Chain.append (Js.read frameListeners) λnow last → send (read now last)
     λ⊤ →
-        _ = Js.call listeners "delete" [ f ]
-        if Js.to (Js.get listeners "size") == 0 then
-            _ = Js.apply (Js.global "cancelAnimationFrame") [ Js.at frameClock 1 ]
-            Js.setAt frameClock 1 Js.null
+        _ = Chain.remove (Js.read frameListeners) link
+        if Chain.size (Js.read frameListeners) == 0 then
+            case Js.read frameAsked of
+                Just frame →
+                    HostWindow.cancelFrame frame
+                    Js.write frameAsked Nothing
+                Nothing →
+                    ⊤

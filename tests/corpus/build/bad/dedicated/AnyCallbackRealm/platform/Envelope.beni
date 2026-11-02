@@ -1,0 +1,9 @@
+import Js.Any as Any
+
+
+pub store : a → Any.Any
+store value = Any.pack value
+
+
+pub restore : Any.Any → Maybe a
+restore value = Any.unpack value

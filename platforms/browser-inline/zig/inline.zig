@@ -2179,6 +2179,17 @@ const Page = struct {
     fn onCall(pg: *Page, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32, read: ?m.Expr) m.Error!m.Expr {
         const js = pg.cx.js;
         const arms = try pg.armElements(ctx);
+        if (!pg.taking) {
+            const reader = read orelse identity_reader: {
+                const event = try pg.cx.fresh("event");
+                const body = try js.block();
+                try js.@"return"(body, try js.name(event));
+                break :identity_reader try js.arrow(&.{event}, body);
+            };
+            if (arms.len == 0) return js.call(try js.name(try pg.cx.runtime("on")), &.{ node, f, try js.string(kind orelse "click"), reader });
+            const which = if (arms.len == 1) arms[0] else try js.array(arms);
+            return js.call(try js.name(try pg.cx.runtime("onArm")), &.{ node, f, try js.string(kind orelse "click"), which, reader });
+        }
         if (arms.len == 0) {
             const on = try js.name(try pg.cx.runtime(if (pg.taking) "onTaken" else "on"));
             if (read) |rd| return js.call(on, &.{ node, f, if (kind) |k| try js.string(k) else try js.literal(.undefined), rd });

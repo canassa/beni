@@ -1,0 +1,34 @@
+import Html exposing (Html)
+
+
+foreign type Incoming
+
+
+pub opaque type Payload
+    = Payload Int String
+
+
+pub render : Payload → String
+render (Payload number label) = "${String.fromInt number}:${label}"
+
+
+-- Its result is read by the renderer, with no ordinary BIR reference.
+extract : Incoming → Payload
+extract _ =
+    number = 40 + 2
+    Payload number "beni"
+
+
+pub markup text : String → Html msg
+
+
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClick" delegated via extract : Payload

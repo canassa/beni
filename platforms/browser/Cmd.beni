@@ -47,8 +47,12 @@ pub type Policy
 
 
 --| The work an `update` asks for.
-pub type Cmd msg
-    = Cmd (List (Item msg))
+pub type alias Cmd msg =
+    Storage (Item msg)
+
+
+pub type Storage item
+    = Cmd (List item)
 
 
 --| One piece of a command, as the architecture running it reads it: an
@@ -62,14 +66,18 @@ pub type Cmd msg
 --|
 --| A key path is held outermost segment first, as the architecture reads
 --| it: `map` puts the segment of the component it wraps in front.
-pub type Item msg
-    = Perform (Job msg)
-    | Now (Job msg)
-    | Keyed (List Key) Policy (Job msg)
-    | KeyedNow (List Key) Policy (Job msg)
-    | Cancel (List Key)
-    | CancelAll (List Key)
-    | After (Later msg)
+pub type alias Item msg =
+    ItemStorage (Job msg) Key (Later msg)
+
+
+pub type ItemStorage job key later
+    = Perform job
+    | Now job
+    | Keyed (List key) Policy job
+    | KeyedNow (List key) Policy job
+    | Cancel (List key)
+    | CancelAll (List key)
+    | After later
 
 
 --| No work.

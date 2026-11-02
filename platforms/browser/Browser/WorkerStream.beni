@@ -1,15 +1,33 @@
 -- Bounded, single-consumer event streams owned by the worker connection.
 import Js
+import Js.Chain as Chain
+import Js.Protocol as Protocol
 import Task
 
 
-pub foreign type Stream error a
+pub type alias Stream error a =
+    Storage error a
 
 
-pub foreign type Sink error a
+-- The generic carrier keeps payload and wake-up callback types intact.
+pub opaque type Storage error a
+    = Storage
+        { queue : Chain.Chain a
+        , waiter : Js.Ref (Maybe (Task.Resume (Result (ReadError error) (Step a))))
+        , failure : Js.Ref (Maybe error)
+        , ended : Js.Ref Bool
+        , limit : Int
+        , busy : Js.Ref Bool
+        , taken : Js.Ref (Maybe (a → ⊤))
+        }
 
 
-pub foreign type Chunk a
+pub opaque type Sink error a
+    = Sink (a → Result error ⊤)
+
+
+pub opaque type Chunk a
+    = Chunk a
 
 
 pub type ReadError error
@@ -23,95 +41,87 @@ pub type Step a
     | End
 
 
-type alias V =
-    Js.Value
-
-
 pub make : Int → Stream error a
 make limit =
-    Js.to
-        (Js.from
-            { queue = Js.array []
-            , waiter = Js.null
-            , failure = Js.null
-            , ended = False
-            , limit = limit
-            , busy = False
-            , taken = Js.null
-            }
-        )
+    Storage
+        { queue = Chain.make ⊤
+        , waiter = Js.ref Nothing
+        , failure = Js.ref Nothing
+        , ended = Js.ref False
+        , limit = limit
+        , busy = Js.ref False
+        , taken = Js.ref Nothing
+        }
 
 
 pub offer : Stream error a, a → Bool
-offer stream item =
-    queue = Js.from stream
-    if Js.to (Js.get queue "ended") then
-        False
-    else if not (Js.isNull (Js.get queue "waiter")) then
-        wake = Js.get queue "waiter"
-        Js.set queue "waiter" Js.null
-        Task.resume (Js.to wake) (Ok (Item (Js.to (Js.from item))))
-        acknowledge queue (Js.from item)
-        True
-    else if Js.to (Js.get (Js.get queue "queue") "length") ≥ Js.to (Js.get queue "limit") then
+offer ((Storage state) as stream) item =
+    if Js.read state.ended then
         False
     else
-        _ = Js.call (Js.get queue "queue") "push" [ Js.from item ]
-        True
+        case Js.read state.waiter of
+            Just wake →
+                Js.write state.waiter Nothing
+                Task.resume wake (Ok (Item (Chunk item)))
+                acknowledge stream item
+                True
+            Nothing →
+                if Chain.size state.queue ≥ state.limit then
+                    False
+                else
+                    _ = Chain.append state.queue item
+                    True
 
 
 pub end : Stream error a → ⊤
-end stream =
-    queue = Js.from stream
-    Js.set queue "ended" (Js.from True)
-    if Js.isNull (Js.get queue "waiter") then
-        ⊤
-    else
-        wake = Js.get queue "waiter"
-        Js.set queue "waiter" Js.null
-        Task.resume (Js.to wake) (Ok End)
+end (Storage state) =
+    Js.write state.ended True
+    case Js.read state.waiter of
+        Nothing →
+            ⊤
+        Just wake →
+            Js.write state.waiter Nothing
+            Task.resume wake (Ok End)
 
 
 pub fail : Stream error a, error → ⊤
-fail stream error =
-    queue = Js.from stream
-    Js.set queue "failure" (Js.from error)
-    Js.set queue "queue" (Js.array [])
-    Js.set queue "ended" (Js.from True)
-    if Js.isNull (Js.get queue "waiter") then
-        ⊤
-    else
-        wake = Js.get queue "waiter"
-        Js.set queue "waiter" Js.null
-        Task.resume (Js.to wake) (Err (Failed error))
+fail (Storage state) error =
+    Js.write state.failure (Just error)
+    Chain.clear state.queue
+    Js.write state.ended True
+    case Js.read state.waiter of
+        Nothing →
+            ⊤
+        Just wake →
+            Js.write state.waiter Nothing
+            Task.resume wake (Err (Failed error))
 
 
 pub next : Stream error a → Result (ReadError error) (Step a)
-next stream =
-    queue = Js.from stream
-    if Js.to (Js.get queue "busy") then
+next ((Storage state) as stream) =
+    if Js.read state.busy then
         Err StreamClosed
     else
-        Task.bracket
-            (λ⊤ → Js.set queue "busy" (Js.from True))
-            (λ_ _ → Js.set queue "busy" (Js.from False))
-            λ_ →
-                if not (Js.isNull (Js.get queue "failure")) then
-                    Err (Failed (Js.to (Js.get queue "failure")))
-                else if Js.to (Js.get (Js.get queue "queue") "length") > 0 then
-                    item = Js.call (Js.get queue "queue") "shift" []
-                    acknowledge queue (Js.from item)
-                    Ok (Item (Js.to item))
-                else if Js.to (Js.get queue "ended") then
-                    Ok End
-                else
-                    Task.callback λresume →
-                        Js.set queue "waiter" (Js.from resume)
-                        λ⊤ → Js.set queue "waiter" Js.null
+        Task.bracket (λ⊤ → Js.write state.busy True) (λ_ _ → Js.write state.busy False) λ_ →
+            case Js.read state.failure of
+                Just error →
+                    Err (Failed error)
+                Nothing →
+                    case Chain.shift state.queue of
+                        Just item →
+                            acknowledge stream item
+                            Ok (Item (Chunk item))
+                        Nothing →
+                            if Js.read state.ended then
+                                Ok End
+                            else
+                                Task.callback λresume →
+                                    Js.write state.waiter (Just resume)
+                                    λ⊤ → Js.write state.waiter Nothing
 
 
 pub value : Chunk a → a
-value chunk = Js.to (Js.from chunk)
+value (Chunk item) = item
 
 
 pub release : Chunk a → ⊤
@@ -122,9 +132,15 @@ pub take : Chunk a → a
 take chunk = value chunk
 
 
-acknowledge : V, V → ⊤
-acknowledge queue item =
-    if Js.isNull (Js.get queue "taken") then
-        ⊤
-    else
-        Js.to (Js.apply (Js.get queue "taken") [ item ])
+-- Transport acknowledgement is synchronous and retains the payload type.
+pub onTake : Stream error a, sync (a → ⊤) → ⊤
+onTake (Storage state) callback = Js.write state.taken (Just callback)
+
+
+acknowledge : Stream error a, a → ⊤
+acknowledge (Storage state) item =
+    case Js.read state.taken of
+        Nothing →
+            ⊤
+        Just callback →
+            Protocol.call callback item

@@ -43,7 +43,7 @@ visit nodes index value =
                 if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
                     value
                 else
-                    Js.call value "$plain" []
+                    Js.call (Js.get value "b") "slice" [ Js.get value "o" ]
             child : Int
             child = Js.to (Js.at (Js.at edges 0) 1)
             if Js.same (Js.at nodes child) (Js.from 0) then

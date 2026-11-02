@@ -6,12 +6,19 @@
 --! the model, and nothing here runs on the page: these values only say what
 --! a program declared.
 
-import Js
+import Js.Any as Any
+import Js.Dispatch as Dispatch
+import Js.Key as Key
+import Js.Protocol as Protocol
 
 
 --| The subscriptions a model needs: its `on` declarations, in order.
-pub type Sub msg
-    = Sub (List (Js.Value × Js.Value × (Js.Value → msg)))
+pub type alias Sub msg =
+    Storage (Key.Key × Any.Any × (Any.Any → msg))
+
+
+pub type Storage entry
+    = Sub (List entry)
 
 
 --| None.
@@ -37,11 +44,22 @@ map sub tag = Sub (List.map (declarations sub) λ( k, start, t ) → ( k, start,
 --| through both taggers, in order.
 --|
 --|     onKeyDown tag =
---|         Sub.on KeyDown (Listen.on "document" "keydown" Js.to _) tag
+--|         Sub.on KeyDown (Listen.on "document" "keydown" identity _) tag
 pub on : k, sync ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg
     where k.compare : k, k → Order
-on k start tag = Sub [ ( Js.from k, Js.from start, λv → tag (Js.to v) ) ]
+on k start tag =
+    Sub
+        [ ( Key.key k
+          , Any.pack λsend → start λvalue → Dispatch.send send (Any.pack value)
+          , λpacket →
+                case Any.unpack packet of
+                    Just value →
+                        tag value
+                    Nothing →
+                        Protocol.defect "invalid typed inline subscription value"
+          )
+        ]
 
 
-declarations : Sub msg → List (Js.Value × Js.Value × (Js.Value → msg))
+declarations : Sub msg → List (Key.Key × Any.Any × (Any.Any → msg))
 declarations (Sub list) = list

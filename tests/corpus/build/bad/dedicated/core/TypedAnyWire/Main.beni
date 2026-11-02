@@ -1,0 +1,23 @@
+-- Any cannot cross an entry boundary, including inside a List.
+import Js.Any exposing (Any)
+import Page
+import Worker
+
+
+worker : Worker.Program (List Any) Int ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → 0
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

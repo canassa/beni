@@ -23,9 +23,14 @@ import Hosted exposing (Key, Kind, Tap)
 --| that calls neither has no `Listen`, and the architecture's code for one
 --| is eliminated with it (`docs/design/backend.md` §9, *A `case` arm on a
 --| constructor nothing builds*). A program never needs either.
-pub type Sub msg
+pub type alias Sub msg =
+    Storage (Key × Kind × Tap msg)
+
+
+-- The parameter retains each stored packet summary without merging roles.
+pub type Storage entry
     = None
-    | Listen (List (Key × Kind × Tap msg))
+    | Listen (List entry)
 
 
 --| None.
