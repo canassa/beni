@@ -216,9 +216,10 @@ pub const Eval = struct {
 
     fn readSet(e: *Eval, s: u32, tags: u32, pass: u32, out: *std.ArrayList(u32)) Error!void {
         var it = e.f.sets.iterate(s, pass);
-        while (it.next()) |el| for (e.f.sets.routesOf(el.routes)) |vt| {
+        while (try it.next(e.gpa(), e.account())) |el| for (e.f.sets.routesOf(el.routes)) |vt| {
             try e.charge(.inspection, 1);
-            const t = (try e.f.mergeTags(vt, tags)) orelse continue;
+            const vw = (try e.f.mergeTags(vt, el.tags)) orelse continue;
+            const t = (try e.f.mergeTags(vw, tags)) orelse continue;
             var l = e.f.leafAt(el.key);
             if (l.kind == .recons) {
                 // A prepend's own storage: its base's on a re-cons (§2.13.6).
@@ -415,6 +416,14 @@ pub const Eval = struct {
                 .top => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route }),
                 .shared => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it.tags }), .route = it.route }),
                 .alt => {
+                    // Read deep whole: its leaf set, the leaves its arms give.
+                    if (rest.len == 0 and deep) {
+                        var ls: std.ArrayList(u32) = .empty;
+                        defer ls.deinit(e.gpa());
+                        try e.leavesOf(it.v, it.tags, &ls);
+                        for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
+                        continue;
+                    }
                     const ks = e.f.kidsOf(x);
                     var i: usize = 0;
                     while (i < ks.len) : (i += 2) {

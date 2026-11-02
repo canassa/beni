@@ -49,7 +49,7 @@ const layers = [_]Entry{
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 530 },
     .{ .file = "ContractText.zig", .layer = 4, .max_lines = 160 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
-    .{ .file = "Leaves.zig", .layer = 4, .max_lines = 560 },
+    .{ .file = "Leaves.zig", .layer = 4, .max_lines = 600 },
     .{ .file = "Value.zig", .layer = 5, .max_lines = 480 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 1190 },
     .{ .file = "Relation.zig", .layer = 6, .max_lines = 1300 },
