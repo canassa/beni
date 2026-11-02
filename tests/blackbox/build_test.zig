@@ -12467,13 +12467,13 @@ test "the checker v2 charges a declaration near its limit the same in either ord
     // #1104: a table both declarations share once charged its first miss to
     // whichever declaration met it first, so a declaration near its limit
     // passed after another and failed before it. Three modules in one run:
-    // `h` first and `g` first under one allowance above `h`'s growth (76 351
-    // with result trees, #1714, from `recordProduct`), and `g` first under
+    // `h` first and `g` first under one allowance above `h`'s growth (76 344
+    // with result trees and per-account table fills, #1714, from `recordProduct`), and `g` first under
     // one below it. The run
     // checks that both lie within 5 % of the growth it reports, so a change
     // of cost that moves them out fails here and names the growth.
-    const above: u64 = 82_000;
-    const below: u64 = 77_000;
+    const above: u64 = 80_000;
+    const below: u64 = 75_000;
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();

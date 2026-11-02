@@ -45,6 +45,8 @@ const layers = [_]Entry{
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     // Holds read by their tags (#1714).
     .{ .file = "TagTree.zig", .layer = 2, .max_lines = 250 },
+    // What a place graph says below a path, split from `Subtree` (#1714).
+    .{ .file = "PlaceBelow.zig", .layer = 2, .max_lines = 70 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
@@ -388,7 +390,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 41), layers.len);
+    try testing.expectEqual(@as(usize, 42), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

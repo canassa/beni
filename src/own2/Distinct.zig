@@ -14,6 +14,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
+const PlaceBelow = @import("PlaceBelow.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
@@ -71,7 +72,7 @@ fn isFamily(e: *Eval, l: Leaf) Error!bool {
     for (e.f.slots.elems(l.slots)) |s| {
         if (Slots.isNot(s)) continue;
         if (Slots.isSub(s)) {
-            if (try Subtree.familyBelow(e.gpa(), e.account(), e.places(), Slots.pathOf(s))) return true;
+            if (try PlaceBelow.familyBelow(e.gpa(), e.account(), e.places(), Slots.pathOf(s))) return true;
         } else if (e.f.places.isSummary(.from(s))) return true;
     }
     return false;
