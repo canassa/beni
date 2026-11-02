@@ -244,11 +244,15 @@ const Resolver = struct {
                         // The path of the hold: below `q` by the steps from the
                         // leaf's position to the slots that meet the target's.
                         const lf = fr.leafAt(l);
-                        const tf = fr.leafAt(target);
-                        if (lf.kind == .ref and tf.kind == .ref and lf.root == tf.root and x.family == Slots.empty) {
+                        // The target as leaves of the holder's root: itself,
+                        // or what a call's leaf comes from (its arrivals).
+                        var tls: std.ArrayList(u32) = .empty;
+                        defer tls.deinit(g);
+                        try r.sameRoot(lf, target, &tls);
+                        if (lf.kind == .ref and tls.items.len != 0 and x.family == Slots.empty) {
                             const pslot = fr.pos.items[lf.pos].slot;
                             var any = false;
-                            for (fr.slots.items(tf.slots)) |ts| {
+                            for (tls.items) |tli| for (fr.slots.items(fr.leafAt(tli).slots)) |ts| {
                                 if (!fr.slots.has(lf.slots, ts)) continue;
                                 const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
                                 var ps: std.ArrayList(u32) = .empty;
@@ -258,13 +262,42 @@ const Resolver = struct {
                                     try out.append(g, .{ .from(p), o });
                                     any = true;
                                 }
-                            }
+                            };
                             if (any) continue;
                         }
                         try out.append(g, .{ it.q, o });
                     }
                 },
             }
+        }
+    }
+
+    /// The leaves of target `t` at the holder leaf `lf`'s root: `t`
+    /// itself when it is of that root, else, while it is a call's or a
+    /// supply's, what it comes from (§2.9.2 step 4), a few levels deep.
+    fn sameRoot(r: *Resolver, lf: Value.Leaf, t: u32, out: *std.ArrayList(u32)) Error!void {
+        const fr = r.f();
+        const g = r.gpa();
+        if (lf.kind != .ref) return;
+        var cur: std.ArrayList(u32) = .empty;
+        defer cur.deinit(g);
+        try cur.append(g, t);
+        var depth: u32 = 0;
+        while (cur.items.len != 0 and depth < 4) : (depth += 1) {
+            var next: std.ArrayList(u32) = .empty;
+            defer next.deinit(g);
+            for (cur.items) |x| {
+                try fr.charge(.inspection, 1);
+                const xl = fr.leafAt(x);
+                if (xl.kind != .ref) continue;
+                if (xl.root == lf.root) {
+                    try out.append(g, x);
+                    continue;
+                }
+                const k = fr.roots.items[xl.root].kind;
+                if (k == .call or k == .supply) try r.ev().expand(x, &next);
+            }
+            std.mem.swap(std.ArrayList(u32), &cur, &next);
         }
     }
 
@@ -339,9 +372,12 @@ const Resolver = struct {
     }
 
     /// Whether an escape before `point` reaches a target.
-    fn escaped(r: *Resolver, t: u32, point: u32, relied: *Cond) Error!bool {
+    fn escaped(r: *Resolver, t: u32, point: u32, call: u32, relied: *Cond) Error!bool {
         for (r.e.escapes.items) |x| {
             if (x.point > point) continue;
+            // What a callee keeps of the value its own write takes (`Ref.set`
+            // storing what it consumes) is that write's own business.
+            if (call != none and x.call == call) continue;
             if (x.point != point and !r.regions.compatible(x.point, point)) continue;
             const o = try r.ev().overlap(x.leaf, t, false);
             switch (o.kind) {
@@ -394,7 +430,7 @@ const Resolver = struct {
         var relied: Cond = d.relies;
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
-        for (targets) |t| if (try r.escaped(t, d.point, &relied)) {
+        for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied)) {
             refuse(o, .escaped);
             return line;
         };

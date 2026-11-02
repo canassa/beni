@@ -89,7 +89,11 @@ pub const Env = struct {
             var at: std.ArrayList(u32) = .empty;
             defer at.deinit(env.gpa);
             try Slots.replay(env.gpa, env.account, env.places, prefix, env.slots.relWords(below), &at);
-            const arrival: Contract.Arrival = .{ .kind = .param, .j = j, .slot = try env.rel(.from(s)), .deep = env.isVar(.from(s)) };
+            // An opaque or a type variable's slot holds anything (a cast's
+            // inner, §2.13.9): every object of it, at every result slot
+            // below where it lands.
+            const wild = env.isVar(.from(s)) or env.places.kind(env.places.pathPlace(.from(s))) == .@"opaque";
+            const arrival: Contract.Arrival = .{ .kind = .param, .j = j, .slot = try env.rel(.from(s)), .deep = wild };
             if (at.items.len == 0) {
                 // A slot the result cannot name: it arrives at the prefix.
                 const pr = try env.rel(prefix);
@@ -101,6 +105,20 @@ pub const Env = struct {
                 const qr = try env.rel(.from(q));
                 if (env.isVar(.from(q))) try Draft.markOpen(&d.res, env.arena, qr);
                 _ = try Draft.addArrival(&d.res, env.arena, qr, arrival);
+                // Below where it lands, each result slot is that slot's
+                // steps taken inside the parameter's: a cast read back is
+                // the part it was built from (§2.13.9).
+                if (wild) for (env.slots.items(try env.slots.below(env.gpa, env.account, env.places, .from(q)))) |b| {
+                    if (b == q) continue;
+                    const w = (try env.slots.relBelow(env.gpa, env.account, env.places, .from(q), .from(b))) orelse continue;
+                    var words: std.ArrayList(u32) = .empty;
+                    defer words.deinit(env.gpa);
+                    try words.appendSlice(env.gpa, env.slots.relWords(arrival.slot));
+                    try words.appendSlice(env.gpa, env.slots.relWords(w));
+                    const br = try env.rel(.from(b));
+                    if (env.isVar(.from(b))) try Draft.markOpen(&d.res, env.arena, br);
+                    _ = try Draft.addArrival(&d.res, env.arena, br, .{ .kind = .param, .j = j, .slot = try env.slots.relOfWords(env.gpa, env.account, env.places, words.items), .deep = true });
+                };
             }
         }
     }
@@ -200,7 +218,12 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
         if (Env.has(ws, .written)) _ = try Draft.addEffect(&d.writes, env.arena, .{ .j = j, .slot = Slots.root, .deep = false });
         // A cell's write replaces what its slot holds: the cell object itself
         // is written, never the object behind the barrier.
-        if (Env.has(ws, .cellwrite) or Env.has(ws, .cellcomplete)) _ = try Draft.addEffect(&d.writes, env.arena, .{ .j = j, .slot = Slots.root, .deep = false });
+        // It writes the cell's `◆` (§2.13.7): behind the barrier, so no
+        // holder of the handle holds what it replaces.
+        if (Env.has(ws, .cellwrite) or Env.has(ws, .cellcomplete)) {
+            const cs = if (try env.places.extend(env.gpa, .growth(env.account), from, Place.Step.contents)) |c| try env.rel(c) else Slots.root;
+            _ = try Draft.addEffect(&d.writes, env.arena, .{ .j = j, .slot = cs, .deep = false });
+        }
         if (Env.has(ws, .cellstored)) _ = try Draft.addEffect(&d.escapes, env.arena, .{ .j = j, .slot = Slots.root, .deep = true });
         if (d.flags.cross) continue;
         if (Env.has(ws, .returned)) {

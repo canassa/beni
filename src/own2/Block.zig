@@ -72,7 +72,7 @@ const Writer = struct {
         const run = w.t.occsOf(c);
         try w.word(@intCast(run.len));
         for (run) |o| {
-            try w.word(Contract.occParam(o));
+            try w.word(Contract.occParam(o) | (if (Contract.isApart(o)) @as(u32, 1 << 31) else 0));
             try w.rel(Contract.occRel(o));
         }
     }
@@ -209,7 +209,7 @@ const Reader = struct {
         const run = try r.arena.alloc(u64, n);
         for (run) |*o| {
             const j = try r.next();
-            o.* = Contract.occ(j, try r.rel());
+            o.* = Contract.occ(j & 0x7fff_ffff, try r.rel()) | (if (j >> 31 != 0) Contract.apart_bit else 0);
         }
         if (no) return .unprovable;
         return Contract.Cond.of(r.account, run);
