@@ -22,6 +22,8 @@ import Browser.Host.Uint8Array as Uint8Array
 import Cmd exposing (Cmd)
 import Dict exposing (Dict)
 import Js
+import Js.Chain as Chain
+import Js.Protocol as Protocol
 import Schema exposing (Schema)
 import Sub exposing (Sub)
 import Task exposing (Resume)
@@ -379,57 +381,74 @@ type Key
     = Track String
 
 
--- The page's `track` listeners (§9.8.19 (b)): null until the first is
--- added, then a `Map` from each tracker name to the `Set` of the
--- listeners of its live subscriptions, in the order added. A name with
--- none is not in it. Made by the first listener, so a page that never
--- tracks makes none.
-trackers : Js.Ref Js.Value
-trackers = Js.ref Js.null
+-- Live tracker listeners keep their real Progress callback type. The table
+-- is allocated with its first listener, and an empty group leaves it.
+type alias TrackerListener =
+    id : Int
+    emit : Progress → ⊤
 
 
--- A `track` subscription's listener: added to its name's set, and what
--- removes it. A set left empty leaves the table, unless a later listener
--- of the name already holds a new one. Generic, as `publish` is, so that
--- what it is handed crosses into JavaScript at a type variable and pins
--- no tag of `Progress` (§4, *What JavaScript may read of a beni value*).
-listening : String, (a → ⊤) → (⊤ → ⊤)
+type alias TrackerGroup =
+    listeners : Chain.Chain TrackerListener
+    next : Js.Ref Int
+
+
+trackers : Js.Ref (Dict String TrackerGroup)
+trackers = Js.ref Dict.empty
+
+
+listening : String, (Progress → ⊤) → (⊤ → ⊤)
 listening name emit =
-    if Js.isNull (Js.read trackers) then
-        Js.write trackers (Js.construct (Js.global "Map") [])
-    table = Js.read trackers
-    key = Js.from name
-    found = Js.call table "get" [ key ]
-
-    set =
-        if Js.isUndefined found then
-            fresh = Js.construct (Js.global "Set") []
-            _ = Js.call table "set" [ key, fresh ]
-            fresh
-        else
-            found
-    listener = Js.from emit
-    _ = Js.call set "add" [ listener ]
-
+    group =
+        case Dict.get (Js.read trackers) name of
+            Just found →
+                found
+            Nothing →
+                made = { listeners = Chain.make ⊤, next = Js.ref 0 }
+                Js.write trackers (Dict.insert (Js.read trackers) name made)
+                made
+    id = Js.read group.next
+    Js.write group.next (id + 1)
+    link = Chain.append group.listeners { id = id, emit = emit }
     λ⊤ →
-        _ = Js.call set "delete" [ listener ]
-        if Js.to (Js.get set "size") == 0 && Js.same (Js.call table "get" [ key ]) set then
-            _ = Js.call table "delete" [ key ]
-            ⊤
-        else
-            ⊤
+        _ = Chain.remove group.listeners link
+        if Chain.size group.listeners == 0 then
+            case Dict.get (Js.read trackers) name of
+                Just current →
+                    if Js.same current.listeners group.listeners then
+                        Js.write trackers (Dict.remove (Js.read trackers) name)
+                Nothing →
+                    ⊤
 
 
--- Hand a value to every listener of `name`, in the order they were added:
--- a tracked command's tracker.
-publish : String, a → ⊤
+publish : String, Progress → ⊤
 publish name value =
-    table = Js.read trackers
-    listeners = if Js.isNull table then Js.undefined else Js.call table "get" [ Js.from name ]
-    if Js.isUndefined listeners then
-        ⊤
-    else
-        Js.each listeners λlistener → Js.to (Js.apply listener [ Js.from value ])
+    case Dict.get (Js.read trackers) name of
+        Nothing →
+            ⊤
+        Just group →
+            publishFrom group (-1) value
+
+
+-- Re-read live links after each callback: removal skips a listener, and a
+-- listener appended during publication is visited in registration order.
+publishFrom : TrackerGroup, Int, Progress → ⊤
+publishFrom group previous value =
+    case nextTracker (Chain.toList group.listeners) previous of
+        Nothing →
+            ⊤
+        Just listener →
+            Protocol.call listener.emit value
+            publishFrom group listener.id value
+
+
+nextTracker : List TrackerListener, Int → Maybe TrackerListener
+nextTracker listeners previous =
+    case listeners of
+        [] →
+            Nothing
+        [ listener, …rest ] →
+            if listener.id > previous then Just listener else nextTracker rest previous
 
 
 -- What a command sends: `request`'s record with a tracker name.
