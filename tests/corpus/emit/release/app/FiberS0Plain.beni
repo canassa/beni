@@ -1,0 +1,5 @@
+import Node exposing (Program)
+
+
+main : Program
+main = Node.print "hi"

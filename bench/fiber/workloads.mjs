@@ -27,9 +27,9 @@ async function measure(label, ops, run, expect, { warm = 3, runs = 9 } = {}) {
 
 // A workload that must run in a fiber: started by the beni runtime's
 // `start`, answered through the exit it reports.
-const inFiber = (beni, work) =>
+const inFiber = (beni, name, args) =>
   new Promise((resolve, reject) =>
-    beni.Bench$start(work, (exit) => (exit.$ === "Done" ? resolve(exit.a) : reject(new Error("cancelled")))),
+    beni["Bench$run" + name[0].toUpperCase() + name.slice(1)](...args, (exit) => (exit.$ === "Done" ? resolve(exit.a) : reject(new Error("cancelled")))),
   );
 
 // What a long yielding loop does to the rest of the page (research/16
@@ -89,9 +89,9 @@ export async function all(beni, effect, sizes = {}, progress = () => {}) {
   progress(out[out.length - 1].label);
   out.push(await measure("beni: suspension point on its fast path, in sequence", seq * 4, () => beni.Bench$loopSequenced(seq, 0), seq));
   progress(out[out.length - 1].label);
-  out.push(await measure("beni: yieldNow (really parks)", y, () => inFiber(beni, () => beni.Bench$loopYielding(y, 0)), y));
+  out.push(await measure("beni: yieldNow (really parks)", y, () => inFiber(beni, "loopYielding", [y, 0]), y));
   progress(out[out.length - 1].label);
-  out.push(await measure(`beni: ${f} fibers spawned, each yields once, joined`, f, () => inFiber(beni, () => beni.Bench$fanOut(f)), (f * (f + 1)) / 2));
+  out.push(await measure(`beni: ${f} fibers spawned, each yields once, joined`, f, () => inFiber(beni, "fanOut", [f]), (f * (f + 1)) / 2));
   progress(out[out.length - 1].label);
   out.push(await measure("Effect v4: sync op chained by flatMap", fy, () => effect.loopFlatMap(fy), fy));
   progress(out[out.length - 1].label);
@@ -110,8 +110,8 @@ export async function time(beni, effect, sizes = {}, progress = () => {}) {
   const z = sizes.zeroSleeps ?? 200_000;
   const t = sizes.tenHours ?? 2_000;
   const pairs = [
-    [`${z} zero-length sleeps`, z, () => inFiber(beni, () => beni.Bench$sleepZero(z, 0)), () => effect.sleepZero(z), z],
-    [`ten hours of exponential retry on a virtual clock (report 23 case 5.5), ${t} times`, t, async () => { let s = 0; for (let i = 0; i < t; i++) s += await inFiber(beni, () => beni.Bench$tenHours()); return s; }, async () => { let s = 0; for (let i = 0; i < t; i++) s += await effect.tenHours(); return s; }, 4 * t],
+    [`${z} zero-length sleeps`, z, () => inFiber(beni, "sleepZero", [z, 0]), () => effect.sleepZero(z), z],
+    [`ten hours of exponential retry on a virtual clock (report 23 case 5.5), ${t} times`, t, async () => { let s = 0; for (let i = 0; i < t; i++) s += await inFiber(beni, "tenHours", []); return s; }, async () => { let s = 0; for (let i = 0; i < t; i++) s += await effect.tenHours(); return s; }, 4 * t],
   ];
   const out = [];
   for (const [label, ops, b, e, expect] of pairs) {
@@ -131,10 +131,10 @@ export async function combinators(beni, effect, sizes = {}, progress = () => {})
   const r = sizes.races ?? 20_000;
   const t = sizes.timeouts ?? 20_000;
   const pairs = [
-    [`forEach over ${f} items, bound 16`, f, () => inFiber(beni, () => beni.Bench$forEachSixteen(f)), () => effect.forEachSixteen(f), (f * (f + 1)) / 2],
-    [`${p} par of two thunks that answer at once`, p, () => inFiber(beni, () => beni.Bench$parFast(p, 0)), () => effect.parFast(p), p],
-    [`${r} races of two branches that each yield once`, r, () => inFiber(beni, () => beni.Bench$raceParked(r, 0)), () => effect.raceParked(r), r],
-    [`${t} timeouts around a body that answers at once`, t, () => inFiber(beni, () => beni.Bench$timeoutFast(t, 0)), () => effect.timeoutFast(t), t],
+    [`forEach over ${f} items, bound 16`, f, () => inFiber(beni, "forEachSixteen", [f]), () => effect.forEachSixteen(f), (f * (f + 1)) / 2],
+    [`${p} par of two thunks that answer at once`, p, () => inFiber(beni, "parFast", [p, 0]), () => effect.parFast(p), p],
+    [`${r} races of two branches that each yield once`, r, () => inFiber(beni, "raceParked", [r, 0]), () => effect.raceParked(r), r],
+    [`${t} timeouts around a body that answers at once`, t, () => inFiber(beni, "timeoutFast", [t, 0]), () => effect.timeoutFast(t), t],
   ];
   const out = [];
   for (const [label, ops, b, e, expect] of pairs) {
@@ -155,10 +155,10 @@ export async function coordination(beni, effect, sizes = {}, progress = () => {}
   const u = sizes.updates ?? 1_000_000;
   const d = sizes.detached ?? 20_000;
   const pairs = [
-    [`${h} Deferred hand-offs (spawn, wait, complete, join)`, h, () => inFiber(beni, () => beni.Bench$deferredHandoff(h, 0)), () => effect.deferredHandoff(h), h],
-    [`${r} Deferreds completed, then waited for`, r, () => inFiber(beni, () => beni.Bench$deferredReady(r, 0)), () => effect.deferredReady(r), r],
-    [`${u} Ref.update`, u, () => inFiber(beni, () => beni.Bench$refUpdates(u)), () => effect.refUpdates(u), u],
-    [`${d} detached fibers, each joined`, d, () => inFiber(beni, () => beni.Bench$detachJoin(d, 0)), () => effect.detachJoin(d), d],
+    [`${h} Deferred hand-offs (spawn, wait, complete, join)`, h, () => inFiber(beni, "deferredHandoff", [h, 0]), () => effect.deferredHandoff(h), h],
+    [`${r} Deferreds completed, then waited for`, r, () => inFiber(beni, "deferredReady", [r, 0]), () => effect.deferredReady(r), r],
+    [`${u} Ref.update`, u, () => inFiber(beni, "refUpdates", [u]), () => effect.refUpdates(u), u],
+    [`${d} detached fibers, each joined`, d, () => inFiber(beni, "detachJoin", [d, 0]), () => effect.detachJoin(d), d],
   ];
   const out = [];
   for (const [label, ops, b, e, expect] of pairs) {
@@ -176,8 +176,8 @@ export async function coordination(beni, effect, sizes = {}, progress = () => {}
 export async function sweep(budgets, effect, yields = 200_000, effectYields = yields) {
   const out = [];
   for (const [label, beni] of budgets) {
-    await inFiber(beni, () => beni.Bench$loopYielding(1000, 0));
-    out.push(await latency(`beni, budget ${label}: ${yields} yieldNow`, () => inFiber(beni, () => beni.Bench$loopYielding(yields, 0))));
+    await inFiber(beni, "loopYielding", [1000, 0]);
+    out.push(await latency(`beni, budget ${label}: ${yields} yieldNow`, () => inFiber(beni, "loopYielding", [yields, 0])));
   }
   await effect.loopYielding(1000);
   out.push(await latency(`Effect v4 (default scheduler): ${effectYields} yieldNow`, () => effect.loopYielding(effectYields)));
@@ -190,9 +190,9 @@ export async function log(beni, effect, sizes = {}, progress = () => {}) {
   const b = sizes.below ?? 1_000_000;
   const w = sizes.written ?? 200_000;
   const pairs = [
-    [`${b} lines below the minimum`, b, () => inFiber(beni, () => beni.Bench$logBelow(b, 0)), () => effect.logBelow(b), b],
-    [`${w} lines written to a counting sink`, w, () => inFiber(beni, () => beni.Bench$logWritten(w)), () => effect.logWritten(w), w],
-    [`${w} lines written inside an annotation and a span`, w, () => inFiber(beni, () => beni.Bench$logInContext(w)), () => effect.logInContext(w), w],
+    [`${b} lines below the minimum`, b, () => inFiber(beni, "logBelow", [b, 0]), () => effect.logBelow(b), b],
+    [`${w} lines written to a counting sink`, w, () => inFiber(beni, "logWritten", [w]), () => effect.logWritten(w), w],
+    [`${w} lines written inside an annotation and a span`, w, () => inFiber(beni, "logInContext", [w]), () => effect.logInContext(w), w],
   ];
   const out = [];
   for (const [label, ops, run, e, expect] of pairs) {
@@ -234,8 +234,8 @@ export async function semaphore(beni, effect, sizes = {}, progress = () => {}) {
   const r = sizes.rounds ?? 10;
   const c = sizes.cancelled ?? 100_000;
   const pairs = [
-    [`${u} uncontended withPermit`, u, () => inFiber(beni, () => beni.Bench$permitUncontended(u)), () => effect.permitUncontended(u), u],
-    [`${f} fibers contending for 4 permits, ${r} withPermit each`, f * r, () => inFiber(beni, () => beni.Bench$permitContended(f, r)), () => effect.permitContended(f, r), f * r],
+    [`${u} uncontended withPermit`, u, () => inFiber(beni, "permitUncontended", [u]), () => effect.permitUncontended(u), u],
+    [`${f} fibers contending for 4 permits, ${r} withPermit each`, f * r, () => inFiber(beni, "permitContended", [f, r]), () => effect.permitContended(f, r), f * r],
   ];
   const out = [];
   for (const [label, ops, b, e, expect] of pairs) {
@@ -246,7 +246,7 @@ export async function semaphore(beni, effect, sizes = {}, progress = () => {}) {
   }
   const kept = [];
   out.push(
-    await retained(`beni: heap retained after ${c} cancelled waits`, c, (n) => inFiber(beni, () => beni.Bench$cancelledWaits(n)), (s) => {
+    await retained(`beni: heap retained after ${c} cancelled waits`, c, (n) => inFiber(beni, "cancelledWaits", [n]), (s) => {
       if (beni.Bench$availablePermits(s) !== 0) throw new Error("a cancelled wait took a permit");
       kept.push(s);
     }),

@@ -166,6 +166,7 @@ const fuzz_sweep_seeds = blk: {
 /// records them and `coverage` measures them.
 const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/blackbox_test.zig", 6 },
+    .{ "tests/blackbox/fiber_cost_test.zig", 1 },
     .{ "tests/blackbox/session_api_test.zig", 1 },
     .{ "tests/blackbox/abuse_test.zig", 3 },
     .{ "tests/blackbox/abuse_wide_test.zig", 3 },

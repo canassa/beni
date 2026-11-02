@@ -1,0 +1,61 @@
+{
+  "node": "v24.19.0",
+  "method": "jitless, predictable, forced GC, fixed 512 MiB semi-space; integer two-count deltas",
+  "retained": {
+    "parked": {
+      "counts": [
+        2048,
+        4096
+      ],
+      "deltaBytes": 5668864
+    },
+    "parked-deferred": {
+      "counts": [
+        2048,
+        4096
+      ],
+      "deltaBytes": 6922240
+    },
+    "completed": {
+      "counts": [
+        2048,
+        4096
+      ],
+      "deltaBytes": 3157104
+    }
+  },
+  "allocated": {
+    "spawn-join": {
+      "counts": [
+        2048,
+        4096
+      ],
+      "deltaBytes": 20274648
+    },
+    "fast-path": {
+      "counts": [
+        500000,
+        1000000
+      ],
+      "deltaBytes": 104019056
+    },
+    "yield": {
+      "counts": [
+        2048,
+        4096
+      ],
+      "deltaBytes": 5188784
+    }
+  },
+  "brotli": {
+    "S0Plain": 122,
+    "S1Start": 4073,
+    "S2SpawnJoin": 4281,
+    "S3ScopeFinalizer": 4460,
+    "S4Cancel": 4317,
+    "S5Queue": 5006
+  },
+  "targets": {
+    "fast-path": 0
+  }
+}

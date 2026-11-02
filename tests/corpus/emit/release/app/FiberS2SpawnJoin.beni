@@ -1,0 +1,9 @@
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    f = Task.spawn λ⊤ → 21
+    Node.print (String.fromInt (Task.join f * 2))

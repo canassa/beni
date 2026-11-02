@@ -1,0 +1,27 @@
+import Io
+import Node exposing (Program)
+import Probe
+import Task
+
+
+point : Int → Int
+point n =
+    if n < 0 then
+        Task.yieldNow ⊤
+    n + 1
+
+
+loop : Int, Int → Int
+loop n acc =
+    if n == 0 then
+        acc
+    else
+        loop (n - 1) (point acc)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Probe.begin ⊤
+    total = loop Probe.count 0
+    Probe.mark "fast-path"
+    Node.print (String.fromInt total)

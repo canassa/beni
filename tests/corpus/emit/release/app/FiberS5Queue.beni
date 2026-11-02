@@ -1,0 +1,17 @@
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    q : Queue Int
+    q = Queue.bounded 1
+    consumer = Task.spawn λ⊤ →
+        a = Maybe.withDefault (Queue.take q) 0
+        b = Maybe.withDefault (Queue.take q) 0
+        a + b
+    _ = Queue.offer q 20
+    _ = Queue.offer q 22
+    Node.print (String.fromInt (Task.join consumer))

@@ -1,0 +1,7 @@
+-- an empty Task.start: Io.run's root fiber and nothing else
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ → Node.print "hi"

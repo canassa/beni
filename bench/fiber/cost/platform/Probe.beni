@@ -1,0 +1,8 @@
+-- Host-only measurement markers, outside the production runtime.
+pub foreign pure count : Int
+
+
+pub foreign impure begin : ⊤ → ⊤
+
+
+pub foreign impure mark : String → ⊤

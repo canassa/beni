@@ -1,0 +1,25 @@
+import Io
+import Node exposing (Program)
+import Probe
+import Task
+
+
+park : ⊤ → Int
+park ⊤ = Task.never ⊤
+
+
+spawnMany : Task.Scope, Int → ⊤
+spawnMany scope n =
+    if n > 0 then
+        _ = Task.spawnIn scope park
+        spawnMany scope (n - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Task.scope λscope →
+        Probe.begin ⊤
+        spawnMany scope Probe.count
+        Task.yieldNow ⊤
+        Probe.mark "parked"
+    Node.print "done"

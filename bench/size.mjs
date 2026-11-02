@@ -108,6 +108,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import process from "node:process";
+import {sizePrograms} from "./fiber/cost.mjs";
+const fiberBudgets = JSON.parse(readFileSync(new URL("./fiber/budgets.json", import.meta.url), "utf8"));
 
 const usage = `usage: node bench/size.mjs [options]
 
@@ -116,6 +118,7 @@ const usage = `usage: node bench/size.mjs [options]
                       (default: tests/corpus/run and bench/corpus)
   --dev-only          skip the --release column (halves the run)
   --pages-only        only the page, fibers and app lines: no floor, no corpus, no total
+  --fibers-only       only fiber lines, including the S0-S5 release budgets
   --keep              leave the temporary build trees on disk
   --help              print this
 
@@ -159,6 +162,9 @@ function parseArgs(argv) {
         break;
       case "--dev-only":
         options.release = false;
+        break;
+      case "--fibers-only":
+        options.fibersOnly = true;
         break;
       case "--pages-only":
         options.pagesOnly = true;
@@ -607,6 +613,7 @@ function measurePage(options, beni, work, page) {
 /// `every` pages above are the browser's two smallest uses. Each is one
 /// whole program, so the line is its whole tree, dev and release.
 const fiberPrograms = [
+  ...sizePrograms.map(name => ({name, file: `tests/corpus/emit/release/app/Fiber${name}.beni`, budget: fiberBudgets.brotli[name]})),
   { name: "node sleep", source: "import Io\nimport Node exposing (Program)\n\n\nmain : Program\nmain = Io.run λ⊤ →\n    _ = Io.sleep 10\n    Node.print \"later\"\n" },
   {
     name: "node bracket",
@@ -633,13 +640,21 @@ function measureFiberProgram(options, beni, work, spec) {
     process.stderr.write(`bench/size.mjs: the ${spec.name} program did not build\n${run.stdout ?? ""}${run.stderr ?? ""}\n`);
     return null;
   }
-  return {
+  const line = {
     fibers: true,
     platform,
     name: spec.name,
     ...measureTree(join(projectDir, "out")),
     ...(measureRelease(options, beni, work, projectDir, [file], false, platform) ?? {}),
   };
+  if (options.release && spec.budget !== undefined) {
+    if (line.release_brotli_bytes > spec.budget) {
+      process.stderr.write(`bench/size.mjs: ${spec.name} is ${line.release_brotli_bytes} brotli bytes, budget ${spec.budget}\n`);
+      return null;
+    }
+    line.release_brotli_budget = spec.budget;
+  }
+  return line;
 }
 
 /// The `app` lines: every application under `examples/` (a directory with a
@@ -691,6 +706,16 @@ function main() {
   const work = mkdtempSync(join(tmpdir(), "beni-size-"));
   const lines = [];
   let failed = false;
+
+  if (options.fibersOnly) {
+    for (const spec of fiberPrograms) {
+      const line = measureFiberProgram(options, beni, work, spec);
+      if (line === null) failed = true;
+      else console.log(JSON.stringify(line));
+    }
+    if (!options.keep) rmSync(work, {recursive: true, force: true});
+    process.exit(failed ? 1 : 0);
+  }
 
   // The page lines alone, for a change that weighs a browser module: seconds,
   // where the whole run builds every corpus program twice.
