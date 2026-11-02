@@ -144,6 +144,8 @@ pub const Demand = struct {
     callback: bool = false,
     /// A label's kept slot is written: refused `call`.
     kept: bool = false,
+    /// A `once` code's capture written where it may run again: refused `once`.
+    many: bool = false,
 };
 
 /// A local's binding.
