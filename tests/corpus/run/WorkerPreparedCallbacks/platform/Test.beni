@@ -1,0 +1,23 @@
+import Js
+
+
+pub opaque type Program
+    = Program (⊤ → String) String
+
+
+pub program : String, sync (⊤ → String) → Program
+program name probe = Program probe name
+
+
+calls : Js.Ref Int
+calls = Js.ref 0
+
+
+pub bump : Int → Int
+bump value =
+    Js.write calls (Js.read calls + 1)
+    value + 7
+
+
+pub count : ⊤ → Int
+count ⊤ = Js.read calls

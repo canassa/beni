@@ -1,0 +1,22 @@
+-- Preparing and discarding a callback payload neither erases nor invokes it.
+import Browser.Worker as Worker
+import Test
+
+
+type Token
+    = Token (Int → Int)
+
+
+probe : ⊤ → String
+probe ⊤ =
+    case Worker.prepare (Token Test.bump) of
+        Err _ →
+            "unexpected refusal"
+        Ok prepared →
+            Worker.discard prepared
+            Worker.discard prepared
+            String.fromInt (Test.count ⊤)
+
+
+main : Test.Program
+main = Test.program "prepared callback" probe

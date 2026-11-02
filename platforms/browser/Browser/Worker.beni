@@ -3,6 +3,7 @@ import Browser.WorkerStream exposing (Sink, Stream)
 import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
 import Js
+import Js.Protocol as Protocol
 import Schema exposing (Issue)
 import Task exposing (Scope)
 
@@ -293,7 +294,8 @@ frame kind payload = Js.from { worker = 1, kind = kind, payload = payload }
 pub foreign type Ticket error reply
 
 
-pub foreign type Prepared a
+pub opaque type Prepared a
+    = Prepared { payload : a, live : Js.Ref Bool }
 
 
 instances : Js.Ref Int
@@ -737,30 +739,29 @@ open owner definition config opts =
 
 
 pub prepare : a → Result PrepareError (Prepared a)
-prepare value = Ok (guest (Js.from { payload = value, live = True }))
+prepare value = Ok (Prepared { payload = value, live = Js.ref True })
 
 
 pub discard : Prepared a → ⊤
-discard prepared = Js.set (host prepared) "live" (Js.from False)
+discard (Prepared prepared) = Js.write prepared.live False
 
 
 pub send :
       Handle (Protocol call reply streamRequest error event chunk)
     , Prepared call
     → Result SendError (Ticket error reply)
-send handle prepared =
+send handle (Prepared reservation) =
     peer = host handle
-    reservation = host prepared
-    if not (Js.to (Js.get reservation "live")) then
+    if not (Js.read reservation.live) then
         Err ChannelClosed
     else
-        Js.set reservation "live" (Js.from False)
+        Js.write reservation.live False
         if not (Js.same (Js.get peer "phase") (Js.from "Ready")) then
             Err ChannelClosed
         else
             opts : Options
             opts = guest (Js.get peer "options")
-            bytes = wireBytes (Js.get reservation "payload") opts.queuedBytes
+            bytes = wireBytes (host reservation.payload) opts.queuedBytes
             if
                 bytes + Js.to (Js.get peer "queuedBytes") > opts.queuedBytes
                     || Js.to (Js.get (Js.get peer "requests") "size") ≥ opts.queuedRequests
@@ -780,7 +781,7 @@ send handle prepared =
                         }
                 _ = Js.call (Js.get peer "requests") "set" [ host requestId, slot ]
                 Js.set peer "queuedBytes" (host (Js.to (Js.get peer "queuedBytes") + bytes))
-                case sendFrame peer "Request" requestId (Js.get reservation "payload") of
+                case sendFrame peer "Request" requestId (host reservation.payload) of
                     Ok _ →
                         Ok (guest slot)
                     Err problem →
@@ -1169,19 +1170,19 @@ sizeLoop pending size limit =
             sizeLoop pending (size + 8) limit
 
 
-hostStop : Js.Ref V
-hostStop = Js.ref Js.null
+hostStop : Js.Ref (Maybe (⊤ → ⊤))
+hostStop = Js.ref Nothing
 
 
-hostStopped : Js.Ref V
-hostStopped = Js.ref Js.null
+hostStopped : Js.Ref (Maybe (Int → ⊤))
+hostStopped = Js.ref Nothing
 
 
 -- Installed by this entry, kept private to this module instance.
-installHostStop : V, V → ⊤
+installHostStop : sync (⊤ → ⊤), sync (Int → ⊤) → ⊤
 installHostStop stop stopped =
-    Js.write hostStop stop
-    Js.write hostStopped stopped
+    Js.write hostStop (Just stop)
+    Js.write hostStopped (Just stopped)
 
 
 stopRealm : ⊤ → ⊤
@@ -1190,11 +1191,17 @@ stopRealm ⊤ =
     if Js.isUndefined (Js.global "window") then
         Task.shutdown 1000 λ_ → (Js.read childAbandon) ⊤
     else
-        if Js.typeIs (Js.read hostStop) "function" then
-            Js.to (Js.apply (Js.read hostStop) [ host ⊤ ])
+        case Js.read hostStop of
+            Nothing →
+                ⊤
+            Just stop →
+                Protocol.call stop ⊤
         Task.shutdown 1000 λcut →
-            if Js.typeIs (Js.read hostStopped) "function" then
-                Js.to (Js.apply (Js.read hostStopped) [ host cut ])
+            case Js.read hostStopped of
+                Nothing →
+                    ⊤
+                Just stopped →
+                    Protocol.call stopped cut
 
 
 terminalReply : V, Int, String, V → ⊤
