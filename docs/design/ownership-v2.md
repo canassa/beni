@@ -987,6 +987,13 @@ counted as `inference defects` on the account line, and validated again. A group
 another member's draft was a plain evaluation already and is not validated again. Measured (Debug, one job):
 `rotate` with 2, 4, 8, 15, 30 and 60 lists costs 451, 647, 1 050, 1 761, 3 294 and 6 324 records in three
 rounds; generic `removeMin` 23 633, core's `Dict.removeMin` 23 715, `Dict.descend` 30 659, all with growth 0.
+A call's whole subtree of more than 16 slots is read through **one key below its position**
+(`Relation.instBelow`): the callee's entries at and below it, each at its own caller slot, and its open
+entries above it. An atom, or a call's result, that an open entry gives holds once for the subtree below its
+slot; any other open arrival is its projection at the slot, read once, and each slot below through that
+slot's own key; a plain entry's atom is itself at its slot. Measured after it (2026-11-02): generic
+`removeMin` 23 539, `Dict.removeMin` 23 621, `Dict.descend` 24 422, `Schema.madeNode` 21 625,
+`Schema.shapeOf` 290 571 (its source continuation is 310 272) and `Schema.shapesOf` 20 418, all with growth 0.
 
 **Termination.** The vocabulary is finite: the slots are fixed by the types, the arrivals by the parameters'
 slots and the labels by the instructions. Every delivered fact is added once; every condition moves at most

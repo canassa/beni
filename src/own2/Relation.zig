@@ -818,8 +818,10 @@ pub const Eval = struct {
     /// caller slot `base` at or below it; `open`: and at every caller slot
     /// below `base`. An atom is the same at every slot (one open item); a
     /// projection that gives only `⊤` or shared objects at `base` gives them
-    /// below it too. Anything else is read at each slot through that slot's
-    /// own key (`instAt`), which every reader of the slot shares.
+    /// below it too. Anything else open is its projection at `base`, read
+    /// once, and at each slot below through that slot's own key (`instAt`),
+    /// which every reader of the slot shares. A plain entry's atom is itself
+    /// at `base`; any other plain arrival is read through `base`'s key.
     fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a: Contract.Arrival) Error!void {
         const k = e.keys.items[ki];
         const saved = e.cur_sub;
@@ -858,6 +860,16 @@ pub const Eval = struct {
             for (e.f.slots.items(try e.f.slots.below(e.gpa(), e.account(), e.places(), base))) |sl| {
                 if (sl != base.int()) try e.slotItems(ki, .from(sl));
             }
+            // At `base` itself, what the arrival gives there: read once.
+            for (acc.items) |x| try e.addBelow(ki, x, base.int());
+            return;
+        } else if (a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+            // An atom at one slot: itself, never through the slot's key.
+            var acc: std.ArrayList(u32) = .empty;
+            defer acc.deinit(e.gpa());
+            try e.arrivalLeaves(k.call, none, a, &.{}, &acc);
+            for (acc.items) |x| try e.addBelow(ki, x, base.int());
+            return;
         }
         try e.slotItems(ki, base);
     }
