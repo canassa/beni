@@ -827,7 +827,7 @@ no holder at all: `a(i-1)` was last used by the push being judged. The holder in
 built only for a frame that has something to judge (a demand or a label's supplied part): a tower of literals
 with no write pays for neither (`Rose [ r ]` at n = 160: 59 279 records, 7 115 without them).
 
-**Holder entries judged by base leaves** (#1714, *specified 2026-11-03, not built*). The sweep still visits every
+**Holder entries judged by base leaves** (#1714, specified and built 2026-11-03). The sweep still visits every
 live candidate once per demand: k holders `oᵢ = Js.array [ Js.from (List.push zs i) ]` are candidates of each of
 k pushes on `xs` (a parameter's object may be held through another parameter), `[ p1 … pn ]` bound from one list
 and each pushed meets the n − i later `p`s, and `pᵢ = List.push r.fᵢ` meets every earlier `p`. Each pair costs a
@@ -853,10 +853,35 @@ and each pushed meets the n − i later `p`s, and `pᵢ = List.push r.fᵢ` meet
 4. *Ties.* The witness of a refusal is found among the visited entries only, by the order of *Verdicts*; no
    aggregated entry can be one.
 
-What this leaves: a demand's `relies` line (`Resolve.Line.extra`) no longer lists the aggregated `H(l)`; nothing
-reads it but `req`. A same-root holder whose position is unrelated to the target is still one visit a demand
-unless its root's position index answers it apart; `[ p1 … pn ]` needs that index (`ownership-v2.md` §2.9.3's
-`(position, slot)` index over the live entries of one root, joined and left by the sweep).
+*As built* (`Sweep.zig`, 2026-11-03). A holder's **holds** are listed once, when it is keyed: one walk of its
+value (a node met again at the same path and tags is walked once), each hold a leaf, its path and whether the
+path is refined by the target's slots; per demand a hold is judged against a target by the relation and the
+refinement only (`Sweep.holdsAt`). A parameter's base key carries its base leaf's **position** (the escape index
+folds it back to the parameter), and each parameter key's bucket is registered at its position and, below each
+ancestor, under the kind of the step that leads to it (a record a step, once a bucket). A parameter's untagged
+target (not a `◆`) at position `P` visits the unknown bucket and the buckets at positions related to `P`
+(§2.3.2): at `P` or below it, at an ancestor, or below a list step of an ancestor that may name what `P`'s
+step does. Every other live holder is an **aggregated** one for that target: each of its holds whose keys are
+parameters' only answers `no` or `under` `H(l) ∪ T(t)`. The aggregated holders are on two lists, *pending*
+and *done*. At a demand that is accepted, each pending holder not visited for the target has its pending holds
+judged with liveness; a hold all of whose `under` paths are used after the point is done, and a holder all of
+whose holds are done moves to the done list. When no pending hold was used after the point, the first done
+holder that is adds its condition (`T(t)` with its own `H(l)`, which `req` holds already). So `req` is the
+same union of selections as one judgement of every live pair, and an aggregated holder costs its pending visits
+and, once done, nothing a demand that a pending one answers. A label's supplied part (§2.11.3) is judged with
+no aggregation: its condition is its label's, not `req`.
+
+*Use order* (2026-11-03). Step 4's witness is the hold used first (*Verdicts*), so a demand that is refused needs
+only the holders that can be used before its witness. Each bucket is a heap of its live holders keyed by their
+**next use** (a bound below every hold's use after the point: a holder's uses' points, sorted once, with a cursor
+the sweep moves). A demand reads its buckets' heaps without changing them, by a frontier of heap slots in key
+order: a slot's children enter when it leaves; a slot whose stored key is at or before the point enters again at
+its holder's next use. Holders come in order of next use, each once, and the visit stops when the next one's key
+is past the witness found so far: in `a_i = [ …v, ys ]`, `v`'s next spread is the witness and the earlier
+`a_j`, used only at the end, are never visited. A sift is charged one record and one a swap, the frontier the
+same. An accepted demand visits every holder of its buckets, as before. Measured (Debug, demands' records,
+n = 25 → 100): `sites` 9 624 → 143 772 before, 1 871 → 7 968 now; `fields` 16 338 → 234 113, now 4 150 → 16 725;
+`opaque` (`--core`) 78 097 → 1 228 389, now 6 121 → 25 787 (with the worded table of §4.1).
 
 **The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
 every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
@@ -2780,7 +2805,9 @@ every growth reservation of §4.4 does. Per walk:
 *A module table's entries, charged per account* (#1714, amended 2026-11-02). The module's tables — `Place`'s
 `extend`, `levelsOf`, `foldsUp`, `hits` and expanded levels, `Slots`' `canon`, `relOf` and `relBelow`'s
 walks, `Subtree`'s `below`, `anchors` and `belowAll` — are filled once and read by every declaration of the
-module. Until this amendment an entry's fill was charged to whichever declaration asked first, and a hit cost
+module. So is `Worded`'s: a worded callee's contract over a use's places, by the run `(module, declaration,
+result, params…)` (2026-11-03): each call built its own before, so no two calls of `List.push` shared a footprint
+and a liveness query of `xs` judged one group per call (§2.7). Until this amendment an entry's fill was charged to whichever declaration asked first, and a hit cost
 one record, so swapping two declarations moved records between their accounts (`g` 336 against 328), against
 §4.4's guarantee that an account does not depend on declaration order. Each entry now stores its **fill cost**:
 the records its fill reserved, in which a read of another entry during the fill counts that entry's hit record
@@ -3427,11 +3454,11 @@ L12 Ownership
 L11 Block  Message  Report  Hoists
 L10 Groups
 L9  Resolve  Deliver  Closures
-L8  Eval  Holders
+L8  Eval  Holders  Sweep
 L7  Walk  Distinct
 L6  Relation
 L5  Value  Liveness
-L4  Rows  Regions  ContractText  Leaves
+L4  Rows  Regions  ContractText  Leaves  Worded
 L3  Contract  Subtree  Prepass
 L2  Slots  Facts  Trees
 L1  Place  Runs  Routes
@@ -3456,6 +3483,7 @@ L0  Ids  Counters  Scratch
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
+| `Worded.zig` | 4 | a module's worded contracts by declaration and places, one footprint a callee (§4.1, #1714) | Ids, Runs, Contract |
 | `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, its pass reader (§2.3.4, §2.3.5, #1714) | Ids, Routes |
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
@@ -3463,11 +3491,12 @@ L0  Ids  Counters  Scratch
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
-| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index (§2.8) | Ids, Value, Relation, Distinct, Contract, Walk, Regions |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders |
+| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index (§2.8) | Ids, Relation, Distinct, Contract, Slots, Walk, Regions |
+| `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder, buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Subtree, Value, Relation, Distinct |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
-| `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
+| `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups |
 | `Report.zig` | 11 | dump lines and totals | Facts |

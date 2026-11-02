@@ -42,6 +42,7 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Rows = @import("Rows.zig");
+const Worded = @import("Worded.zig");
 const Prepass = @import("Prepass.zig");
 const Regions = @import("Regions.zig");
 const Value = @import("Value.zig");
@@ -675,6 +676,8 @@ pub const Module = struct {
     reads: std.ArrayList([2]u32) = .empty,
     /// The pessimistic contract by arity.
     pessimistic_of: std.ArrayList(u32) = .empty,
+    /// Worded contracts by declaration and places (§4.1, #1714).
+    worded: Worded.Worded = .{},
     /// The imports' blocks read and those that did not round-trip.
     imports_read: u32 = 0,
 
@@ -705,6 +708,7 @@ pub const Module = struct {
         gpa.free(mod.cmp_decl);
         mod.reads.deinit(gpa);
         mod.pessimistic_of.deinit(gpa);
+        mod.worded.deinit(gpa);
     }
 
     pub fn rowsEnv(mod: *Module, arena: Allocator) Rows.Env {
@@ -890,7 +894,19 @@ pub const Module = struct {
     }
 
     /// A worded declaration's contract over the given places.
-    fn wordedContract(mod: *Module, owner: u32, decl: Bir.Decl, params: []const PlaceId, result: PlaceId) Error!u32 {
+    fn wordedContract(mod: *Module, owner: u32, di: u32, params: []const PlaceId, result: PlaceId) Error!u32 {
+        const k = try mod.worded.find(mod.gpa, mod.account, .{ owner, di, @backingInt(result) }, params);
+        if (k.contract) |c| return c;
+        const fill = mod.account.beginFill();
+        const c = mod.wordedFill(owner, mod.in.birs[owner].decls[di], params, result) catch |err| {
+            _ = mod.account.endFill(fill);
+            return err;
+        };
+        try mod.worded.put(mod.gpa, mod.account, k.run, c, mod.account.endFill(fill));
+        return c;
+    }
+
+    fn wordedFill(mod: *Module, owner: u32, decl: Bir.Decl, params: []const PlaceId, result: PlaceId) Error!u32 {
         var arena: std.heap.ArenaAllocator = .init(mod.gpa);
         defer arena.deinit();
         const words = mod.in.birs[owner].ownSlotsV2(decl);
@@ -915,7 +931,7 @@ pub const Module = struct {
     fn declContract(mod: *Module, t: [2]u32, params: []const PlaceId, result: PlaceId) Error!?u32 {
         const owner = mod.in.birs[t[0]];
         const decl = owner.decls[t[1]];
-        if (owner.ownSlotsV2(decl).len != 0) return try mod.wordedContract(t[0], decl, params, result);
+        if (owner.ownSlotsV2(decl).len != 0) return try mod.wordedContract(t[0], t[1], params, result);
         if (t[0] == mod.in.module) {
             if (t[1] < mod.body_code.len and mod.body_code[t[1]] != none) return null;
             if (decl.kind == .foreign_value) return try mod.pessimisticOf(@intCast(params.len));
@@ -1605,7 +1621,7 @@ pub fn declaredContract(mod: *Module, di: u32) Error!?u32 {
     var ps: std.ArrayList(PlaceId) = .empty;
     defer ps.deinit(mod.gpa);
     const result = (try mod.fnPlaces(scheme, &ps)) orelse try mod.adapter.placeOfVar(scheme);
-    if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedContract(mod.in.module, d, ps.items, result);
+    if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedFill(mod.in.module, d, ps.items, result);
     if (d.kind == .foreign_value) return try mod.pessimisticOf(@intCast(ps.items.len));
     return null;
 }
