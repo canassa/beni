@@ -26,13 +26,13 @@ pub foreign impure close : borrowed WebSocket, Int, String → ⊤
 pub foreign impure closeWithoutCode : borrowed WebSocket → ⊤
 
 
-pub foreign impure onOpen : borrowed WebSocket, sync (⊤ → ⊤) → ⊤
+pub foreign impure onOpen : borrowed WebSocket, escaped sync (⊤ → ⊤) → ⊤
 
 
-pub foreign impure onError : borrowed WebSocket, sync (⊤ → ⊤) → ⊤
+pub foreign impure onError : borrowed WebSocket, escaped sync (⊤ → ⊤) → ⊤
 
 
-pub foreign impure onText : borrowed WebSocket, sync (Maybe String → ⊤) → ⊤
+pub foreign impure onText : borrowed WebSocket, escaped sync (Maybe String → ⊤) → ⊤
 
 
-pub foreign impure onClose : borrowed WebSocket, sync (Int, String → ⊤) → ⊤
+pub foreign impure onClose : borrowed WebSocket, escaped sync (Int, String → ⊤) → ⊤
