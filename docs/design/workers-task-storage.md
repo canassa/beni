@@ -244,3 +244,9 @@ it invokes them through the private synchronous protocol operation.
 traversal functions typed. Searches and copy-on-change traversal are beni;
 plain-data key enumeration and Object.is use generated typed operations.
 List copies use core List operations. No discovered `$plain` method runs.
+
+**As built, 2026-11-03:** the worker byte-budget walk uses a typed Chain of
+plain Wire values. Strings use generated native TextEncoder/Uint8Array
+operations; object traversal uses typed data keys. Wire's native refusal makes
+the former ArrayBuffer branch unreachable. UTF-8 limits and reservation release
+are exercised by the managed ByteLimits fixture in Chromium.
