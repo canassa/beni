@@ -692,6 +692,16 @@ order: by parameter, then by the slot's relative steps, never by intern order.
 A frame's parameters are its **assumptions**: a selection on them is what the frame asks of its callers. A
 call's separation is the callee's `res_cond` instantiated on its arguments (§2.11.2).
 
+**Apart occurrences** [#1685, as built]. An occurrence may be marked *apart*, printed `s~`: its objects must
+be apart from the objects of every other occurrence of the selection, but may repeat among themselves. A
+holder beside a write needs no more: the written object is none of the holder's, whatever the holder repeats
+inside it. So the relation (§2.9.2 steps 3 and 5) asks the holder's slots apart and the target's plain. The
+distinct check never compares two entries of one apart occurrence, and a family entry of one does not ask its
+own root's separation. A plain occurrence asks more than the apart one of the same slot, so a selection that
+has both keeps the plain one only. Without the mark, a write beside a list of records asked every record's
+field to be distinct from every other's, and `List.unzipHelp`'s builder writes and `collect rest []` over a
+list that repeats an element were refused `disjoint` where nothing aliases the written list.
+
 #### 2.9.2 The one relation
 
 `overlap(x, t)` of a holder's leaf `x` (deep) and a target leaf `t` answers **no**, **under** a condition, or
@@ -734,6 +744,13 @@ reached it, so one value placed twice is two entries):
   other root's.
 - When a call's group meets another root's, the latest call is expanded into its arguments' entries (one
   level), which form one **block** the call has vouched for, and the check runs again.
+- A call's group of two entries or more whose instantiated `res_cond` is `no` is expanded the same way, but
+  as no block: the call has vouched for nothing, so its parts are compared through what they come from, each
+  on its own (as §2.9.2 step 3 does for one pair). Refusing there refused a write of one field of a record a
+  callee answers whole beside another field (`AnsweredHolder`), where the parts come from distinct
+  parameters.
+- The conditions met are gathered as occurrences, each once, and made one selection at the end: a merge per
+  entry or per group costs their product (the *Fields* family went 1.94×, 2.15×, 2.37× per doubling before).
 - **The routed rule.** When a callee's condition is instantiated (§2.11.2), two distinct occurrences of the
   callee that land in one value of this frame by one literal route and position are two distinct positions of
   it: they ask that value's own separation, never a refusal. Two parameters handed one value are that value
@@ -805,7 +822,8 @@ than `claim`'s, and `got` does not return where `claim` does not.
 - `res_cond`: the distinct check of §2.9.3 over the result's leaves.
 - `reads`, `writes`, `escapes`: the frame's uses of its parameters' positions, its demands' targets that are
   parameter leaves (whatever their verdicts), and its escapes, each as `(j, slot)`. A call contributes its
-  callee's footprint projected onto the arguments.
+  callee's footprint projected onto the arguments: a call use reads what the callee's `reads` name below the
+  argument, not all of it (`CallFieldStep`'s `rxa2` reads `π1.x.a`).
 - `req`: the conjunction of what the frame's accepted `param` demands rely on (§2.9.4).
 - `labels`: each callback call of the frame (§2.11.3) and each label of a callee whose function slot is one
   of the frame's parameters.
@@ -953,6 +971,21 @@ A non-recursive code is walked once: its callees' contracts are known, and its c
 An empty recursive result is ⊥ until a returning alternative gives it a value: a `case` arm whose value is
 `bot` is dropped, a construction or call with a `bot` operand is `bot`. ⊥ applies to the result only; reads,
 writes and escapes executed before a recursive call are the walk's, whatever the call returns.
+
+**As built** [#1685]. Step 2 runs every member's evaluation open at once (`Deliver.zig`). A call of a
+member reads the member's growing draft: its instantiation (§2.11.2) is a **key**, `(call, caller slot)`, whose
+leaves only grow, and each consumer of a key (a description of the result, a parameter effect, a supply, an
+escape, another key) **subscribes** to it and gets every leaf once, the ones there when it subscribed and each
+one added later. A member's new arrival is delivered to the keys that read its slot (an open slot's to every
+key below it), a new write or escape to the calls of it. Conditions (`res_cond`, `req`, a supply's) and
+labels are read from the candidates of the round before, so a round is the facts delivered to a fixed point
+plus one evaluation of the conditions; rounds repeat while a candidate read moved. The validation round
+(step 3) evaluates each code plainly under the candidates; a code within its candidate publishes the contract
+that round read off (no reliance an earlier round made and a later one dropped), one outside it is joined,
+counted as `inference defects` on the account line, and validated again. A group in which no evaluation read
+another member's draft was a plain evaluation already and is not validated again. Measured (Debug, one job):
+`rotate` with 2, 4, 8, 15, 30 and 60 lists costs 451, 647, 1 050, 1 761, 3 294 and 6 324 records in three
+rounds; generic `removeMin` 23 633, core's `Dict.removeMin` 23 715, `Dict.descend` 30 659, all with growth 0.
 
 **Termination.** The vocabulary is finite: the slots are fixed by the types, the arrivals by the parameters'
 slots and the labels by the instructions. Every delivered fact is added once; every condition moves at most
@@ -1218,7 +1251,13 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    refused (same shared object across calls); `List.map xs (λ_ → [1])` retains exclusive fresh elements; and
    `λl → List.push l 1` needs the input's κ. No Builder row asserts the final contents always exclusive.
 
-7. **`Ref` loans** (R-5.12.3, #981): `Ref a` is a `ref` place; **`◆` is a barrier**: a holder of a `Ref` is not a
+7. *On slots* [#1685]: a `cellwrite` or `cellcomplete` word writes the parameter's `◆` slot. The demand's target is
+   the contents position of each cell the argument names, whatever the contents' type, and the relation never
+   meets it (a write replaces what the cell holds and changes no object anyone holds), so `Ref.set` is
+   accepted beside every holder of the handle (`RefSetThenWrite`). What a callee keeps of the value its own
+   write consumes (`Ref.set` storing `v`) is that write's own business: an escape made by the call itself does
+   not refuse that call's demands.
+   **`Ref` loans** (R-5.12.3, #981): `Ref a` is a `ref` place; **`◆` is a barrier**: a holder of a `Ref` is not a
    holder of its contents, `reach` and Esc stop at `◆` (a `Ref` captured by a handler, a spawned fiber or JavaScript
    does not escape its contents, since only the worded operations reach them: rule 6), and the only outside
    holders of the contents are loans. `Ref.make v`: fresh `site` with `◆ ↦ v`, `consumed` on `v`. `Ref.get`
@@ -1290,7 +1329,15 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    (a)` on an `update` write reaching them); a `For` row callback's parameter supplied borrowed (`read-only`,
    R-5.8.6, `p/RecordForItem`); a handler capturing a scalar key holds nothing. The construction's result is
    `fresh` (`assumed`, R-6.3).
-9. **Casts** (R-4.11): a `returned Value → a` call whose argument place differs structurally from its result's
+9. *On slots* [#1685]: a `returned` word whose parameter slot is opaque or a type variable's arrives deep at
+   the result slot it lands on and, below it, each result slot's steps taken inside the parameter. A
+   projection that an opaque or a type variable's place cannot follow, of a call's result, is read through
+   the call's arrivals there: the rest taken from each argument both inside the arrival's slot and from the
+   argument's root (a whole value cast is read back by its own structure), and, when neither names
+   anything, all of the arrival (some object inside it). Elsewhere such a projection is every object below
+   the position, approximate. Types never tell two objects apart, since a cast may read one object as
+   another type (`CastCallHolds`' `deeper`).
+   **Casts** (R-4.11): a `returned Value → a` call whose argument place differs structurally from its result's
    makes `recast(place(a), inner)`; a later read **of the recast node itself** (no step taken since) at a place
    structurally identical to `inner`'s restores `inner` exactly; a projection of a recast is a recast,
    approximate, never restored, so a child of a recast recursive value is not taken for its root
