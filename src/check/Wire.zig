@@ -1,4 +1,4 @@
-//! Wire evidence for concrete entry roles (workers.md §5). Created while the
+//! Wire evidence for entry roles (workers.md §5). Created while the
 //! solved store is alive; only flat representation nodes survive in the cache.
 const std = @import("std");
 const Types = @import("Types.zig");
@@ -14,7 +14,7 @@ const Var = Store.Var;
 
 pub const Range = struct { start: u32 = 0, len: u32 = 0 };
 pub const Node = struct { kind: Kind, edges: Range = .{} };
-pub const Kind = enum(u32) { stable, list, record, tuple, tagged };
+pub const Kind = enum(u32) { stable, list, record, tuple, tagged, variable, open_record };
 pub const Edge = struct { label: Symbol.Optional = .none, child: u32 };
 pub const Root = struct { decl: u32, roles: Range };
 pub const Role = struct { index: u32, node: u32 };
@@ -72,11 +72,6 @@ pub fn build(in: @import("TypeKeys.zig").Input, imported: []const Use, kinds: []
                         valid = false;
                         break;
                     };
-                }
-                if (try w.unresolved(value)) |variable| {
-                    const name = @import("Render.zig").preferredName(cx.interner, cx.store.flagsOf(variable)) orelse "a";
-                    try items.append(cx.gpa, .{ .code = .worker_message_not_concrete, .module = cx.module, .region = decl.annotation.unwrap() orelse decl.inst_start, .severity = .@"error", .message = try std.fmt.allocPrint(cx.gpa, "Wire role `{s}` of this Program contains the type variable `{s}`.\n\nGive the Program a concrete message type at its declaration.", .{ path, name }) });
-                    continue;
                 }
                 w.failure = null;
                 if (!valid and w.defer_all) continue;
@@ -247,27 +242,6 @@ const Builder = struct {
         };
     }
 
-    // A declaration has one normalization plan, shared by every launch. An
-    // unresolved position cannot be treated as clone-stable in that plan.
-    fn unresolved(w: *Builder, value: Var) Allocator.Error!?Var {
-        const store = w.cx.store;
-        const epoch = store.nextMark();
-        var stack: std.ArrayList(Var) = .empty;
-        try stack.append(w.cx.scratch, value);
-        while (stack.pop()) |v| {
-            const root = store.find(v);
-            if (store.mark(root) == epoch) continue;
-            store.setMark(root, epoch);
-            switch (store.content(root)) {
-                .flex, .rigid => return root,
-                else => {},
-            }
-            var i: u32 = 0;
-            while (Walk.child(store, root, i, .payload)) |child| : (i += 1) try stack.append(w.cx.scratch, child);
-        }
-        return null;
-    }
-
     // Pair an annotated body's rigid variables with its scheme by their
     // positions in the same type. A name shared by unrelated binders is not
     // evidence that either variable owns the other's Wire obligation.
@@ -342,8 +316,8 @@ const Builder = struct {
         const a = cx.scratch;
         switch (cx.store.resolved(original)[1]) {
             .flex, .rigid => |flags| {
-                if (w.defer_all) return w.add(.stable, &.{});
                 if (flags.kind == .number or flags.kind == .int_key or flags.kind == .string_key or flags.kind == .dict_key) return w.add(.stable, &.{});
+                if (w.defer_all) return w.add(.variable, &.{});
                 if (try w.require(original, &.{})) return w.add(.stable, &.{});
                 return w.bad(path, "an unresolved type variable");
             },
@@ -361,6 +335,7 @@ const Builder = struct {
                 .record => |r| {
                     var edges: std.ArrayList(Edge) = .empty;
                     var row = r;
+                    var open = false;
                     while (true) {
                         const fields = try a.dupe(Store.Field, Walk.recordFields(cx.store, row));
                         std.mem.sort(Store.Field, fields, cx.interner, struct {
@@ -374,12 +349,16 @@ const Builder = struct {
                         const tail = cx.store.resolved(ext)[1];
                         if (tail == .structure and tail.structure == .empty_record) break;
                         if (tail != .structure or tail.structure != .record) {
-                            if (w.defer_all or try w.require(ext, &.{})) break;
+                            if (w.defer_all) {
+                                open = true;
+                                break;
+                            }
+                            if (try w.require(ext, &.{})) break;
                             return w.bad(path, "an open record row");
                         }
                         row = tail.structure.record;
                     }
-                    return w.add(.record, edges.items);
+                    return w.add(if (open) .open_record else .record, edges.items);
                 },
                 .app => |app| {
                     const entry = cx.types.entry(app.type);
@@ -441,7 +420,7 @@ pub fn normalization(a: Allocator, plan: *const Artifact) Allocator.Error![]bool
     };
     var queue: std.ArrayList(u32) = .empty;
     defer queue.deinit(a);
-    for (plan.nodes, 0..) |n, i| if (n.kind == .list) {
+    for (plan.nodes, 0..) |n, i| if (n.kind == .list or n.kind == .variable or n.kind == .open_record) {
         needs[i] = true;
         try queue.append(a, @intCast(i));
     };

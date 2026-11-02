@@ -1673,9 +1673,11 @@ test "worker launch URLs stay relative to their module under release specializat
 }
 
 test "worker Wire rejects function fields and native values" {
-    const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20 }{
+    const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20, generic: bool = false }{
         .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function" },
         .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`" },
+        .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function", .generic = true },
+        .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`", .generic = true },
         .{ .message = "{ outer : { inner : { callback : (⊤ → ⊤) } } }", .path = "message.outer.inner.callback", .reason = "a function" },
     };
     for (cases) |scenario| {
@@ -1686,7 +1688,11 @@ test "worker Wire rejects function fields and native values" {
         // Expose the native alias from the same platform as the transport.
         const worker = try w.read("platform/Worker.beni");
         try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n", .{worker}));
-        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\nmain : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open worker\n    ⊤)\n", .{scenario.message}));
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\n{s}main : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open {s}\n    ⊤)\n", .{
+            if (scenario.generic) "a" else scenario.message,
+            if (scenario.generic) try std.fmt.allocPrint(w.arena.allocator(), "specific : Worker.Program {s} String ⊤\nspecific = worker\n", .{scenario.message}) else "",
+            if (scenario.generic) "specific" else "worker",
+        }));
         for ([_][]const []const u8{
             &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
             &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
@@ -1700,7 +1706,7 @@ test "worker Wire rejects function fields and native values" {
             try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
                 .code = .worker_message_not_serializable,
                 .severity = .@"error",
-                .span = .{ .file = "Main.beni", .start = .{ .line = scenario.line, .col = scenario.col }, .end = .{ .line = scenario.line, .col = scenario.end_col } },
+                .span = .{ .file = "Main.beni", .start = .{ .line = scenario.line + @as(u32, if (scenario.generic) 2 else 0), .col = scenario.col }, .end = .{ .line = scenario.line + @as(u32, if (scenario.generic) 2 else 0), .col = scenario.end_col } },
                 .title = "WORKER MESSAGE NOT SERIALIZABLE",
                 .message = message,
             }}), result.diagnostics);
@@ -1720,11 +1726,11 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
         );
         try w.write("Forward.beni",
             \\import Worker
-            \\worker : a → Worker.Program a String ⊤
-            \\worker _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+            \\worker : Worker.Program a String ⊤
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
             \\pub forward : a → ⊤
             \\forward value =
-            \\    case Worker.open (worker value) of
+            \\    case Worker.open worker of
             \\        Ok handle → Worker.send handle value
             \\        Err _ → ⊤
             \\
