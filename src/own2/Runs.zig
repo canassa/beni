@@ -37,6 +37,15 @@ pub const Runs = struct {
         return r.runs.items[id];
     }
 
+    /// The run of `items` when it is interned already.
+    pub fn find(r: *const Runs, items: []const u32) ?u32 {
+        if (items.len == 0) return 0;
+        const h = std.hash.Wyhash.hash(0x51075, std.mem.sliceAsBytes(items));
+        var at = r.heads.get(.{ @truncate(h), @truncate(h >> 32) }) orelse return null;
+        while (at != none) : (at = r.next.items[at]) if (std.mem.eql(u32, r.get(at), items)) return at;
+        return null;
+    }
+
     pub fn intern(r: *Runs, gpa: Allocator, items: []const u32) Ids.IndexError!u32 {
         try r.ensureEmpty(gpa);
         if (items.len == 0) return 0;

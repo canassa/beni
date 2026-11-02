@@ -25,6 +25,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Contract = @import("Contract.zig");
+const Forest = @import("Forest.zig");
 const Eval = @import("Eval.zig");
 const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
@@ -645,21 +646,26 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     for (e.passes.items, 0..) |p, pi| {
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
-        for (e.contracts.suppliesOf(lab.supplies)) |su| for (e.contracts.resOf(su.res)) |rs| for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
-            if (a.kind != .param or a.j >= call.args.len) continue;
-            const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
-            var ls: std.ArrayList(Relation.Part) = .empty;
-            defer ls.deinit(f.gpa);
-            try e.ev.partsOf(v, f.slots.relWords(rs.slot), &ls);
-            for (ls.items) |part| {
-                const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
-                const l = try r.judgeSupplied(part.leaf, call.point, call.inst, call.args, a.j, lab.j, pending);
-                switch (l.outcome.verdict) {
-                    .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ @intCast(pi), su.k, part.leaf, part.at }),
-                    .accepted => pconds[pi] = try Cond.conj(e.ev.arena, f.account, pconds[pi], l.demand.relies),
+        for (e.contracts.suppliesOf(lab.supplies)) |su| {
+            var es: Forest.Entries = .{};
+            defer es.deinit(f.gpa);
+            try es.of(&e.contracts.trees, f.gpa, f.places, su.res_root, &.{});
+            for (es.items.items) |rs| for (rs.arrivals) |a| {
+                if (a.kind != .param or a.j >= call.args.len) continue;
+                const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
+                var ls: std.ArrayList(Relation.Part) = .empty;
+                defer ls.deinit(f.gpa);
+                try e.ev.partsOf(v, es.wordsOf(rs), &ls);
+                for (ls.items) |part| {
+                    const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
+                    const l = try r.judgeSupplied(part.leaf, call.point, call.inst, call.args, a.j, lab.j, pending);
+                    switch (l.outcome.verdict) {
+                        .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ @intCast(pi), su.k, part.leaf, part.at }),
+                        .accepted => pconds[pi] = try Cond.conj(e.ev.arena, f.account, pconds[pi], l.demand.relies),
+                    }
                 }
-            }
-        };
+            };
+        }
     }
     return .{ .lines = lines, .verdicts = .{ .req = req, .kept = kept.items, .supply_cond = conds, .pass_kept = pkept.items, .pass_cond = pconds } };
 }

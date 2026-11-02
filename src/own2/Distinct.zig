@@ -149,29 +149,28 @@ fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error
     for (full.sel, 0..) |o, k| {
         out[k] = o;
         if (Contract.isApart(o)) continue;
-        if (!try arrivesAtPlain(e, h.res, o, plain.items)) out[k] = o | Contract.apart_bit;
+        if (!try arrivesAtPlain(e, h.res_root, o, plain.items)) out[k] = o | Contract.apart_bit;
     }
     return instSel(e, try Cond.of(e.account(), out), call);
 }
 
 /// Whether occurrence `o` of a callee may arrive at one of the result
-/// slots `plain` (words from the result's root) by `res`. A slot `res`
-/// does not name may hold anything.
-fn arrivesAtPlain(e: *Eval, res: Ids.Range, o: u64, plain: []const []const u32) Error!bool {
+/// slots `plain` (words from the result's root) by its result tree `res`.
+/// A slot `res` does not name may hold anything.
+fn arrivesAtPlain(e: *Eval, res: Contract.Node, o: u64, plain: []const []const u32) Error!bool {
     // A deep occurrence also reaches every slot below its own.
     const deep = Contract.isDeep(o);
     const ow = e.f.slots.relWords(Contract.occRel(o));
+    var hits: std.ArrayList(Contract.Hit) = .empty;
+    defer hits.deinit(e.gpa());
     for (plain) |words| {
-        var named = false;
-        for (e.contracts.resOf(res)) |rs| {
-            try e.charge(.cond, 1);
-            const rw = e.f.slots.relWords(rs.slot);
-            const exact = std.mem.eql(u32, rw, words);
-            const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
-            if (!exact and !opened) continue;
-            named = true;
-            const suffix = words[rw.len..];
-            for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+        try e.charge(.cond, e.contracts.trees.count(res));
+        hits.clearRetainingCapacity();
+        try e.hitsAt(res, words, &hits);
+        if (hits.items.len == 0) return true;
+        for (hits.items) |hit| {
+            const suffix = words[hit.depth..];
+            for (hit.arrivals) |a| {
                 if (a.kind != .param or a.j != Contract.occParam(o)) continue;
                 // The arrival's slot is its own steps, then what the
                 // plain slot takes on below an open one; a deep arrival
@@ -181,7 +180,6 @@ fn arrivesAtPlain(e: *Eval, res: Ids.Range, o: u64, plain: []const []const u32) 
                 if (deep and aw.len > ow.len and std.mem.eql(u32, ow, aw[0..ow.len])) return true;
             }
         }
-        if (!named) return true;
     }
     return false;
 }

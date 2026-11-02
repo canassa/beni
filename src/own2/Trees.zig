@@ -9,7 +9,9 @@
 //! has equal words; a reader that writes words out sorts the kids by their
 //! canonical keys, §2.10 *Determinism*). An arrival names a parameter's slot
 //! from the parameter's root, which does not depend on where the node sits,
-//! so sharing is exact. Node 0 is the empty node.
+//! so sharing is exact. Node 0 is the empty node. Each node keeps the number
+//! of entries (a slot's plain or open run) at and below it, which a reader
+//! that used to scan the entries is charged.
 //!
 //! Obligations kept here: none of §2.14's directly (tables only).
 
@@ -40,7 +42,7 @@ pub const Arrival = struct {
 /// A node of `Table.nodes`; 0 is the empty node.
 pub const Node = u32;
 
-/// One entry a slot reader meets (`Table.atSlot`): `depth` steps from the
+/// One entry a slot reader meets (`Forest.atSlot`): `depth` steps from the
 /// root, open or plain.
 pub const Hit = struct { depth: u32, open: bool, arrivals: []const Arrival };
 
@@ -48,6 +50,8 @@ pub const Table = struct {
     /// A node's words: its plain arrivals' run and its open arrivals' run
     /// (ids of `arr_runs`), then its kids as `(step word, node)` pairs.
     nodes: Runs = .{},
+    /// Per node: its entries at and below it (saturating).
+    counts: std.ArrayList(u32) = .empty,
     /// Arrival runs by content (three words an arrival), each with its
     /// range of `arrivals`; run 0 is the empty run.
     arr_runs: Runs = .{},
@@ -56,6 +60,7 @@ pub const Table = struct {
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.nodes.deinit(gpa);
+        t.counts.deinit(gpa);
         t.arr_runs.deinit(gpa);
         t.arr_range.deinit(gpa);
         t.arrivals.deinit(gpa);
@@ -75,7 +80,14 @@ pub const Table = struct {
         defer words.deinit(gpa);
         try words.appendSlice(gpa, &.{ h, o });
         for (ks) |k| try words.appendSlice(gpa, &k);
-        return t.nodes.intern(gpa, words.items);
+        const id = try t.nodes.intern(gpa, words.items);
+        if (t.counts.items.len == 0) try t.counts.append(gpa, 0);
+        if (id == t.counts.items.len) {
+            var n: u64 = @intFromBool(h != 0) + @as(u64, @intFromBool(o != 0));
+            for (ks) |k| n += t.counts.items[k[1]];
+            try t.counts.append(gpa, @intCast(@min(n, std.math.maxInt(u32))));
+        }
+        return id;
     }
 
     fn arrRun(t: *Table, gpa: Allocator, run: []const Arrival) Ids.IndexError!u32 {
@@ -114,6 +126,10 @@ pub const Table = struct {
         const w = t.nodes.get(n)[2..];
         return @as([*]const [2]u32, @ptrCast(w.ptr))[0 .. w.len / 2];
     }
+    /// The entries at and below `n`.
+    pub fn count(t: *const Table, n: Node) u32 {
+        return if (n == 0) 0 else t.counts.items[n];
+    }
 
     /// The kid of `n` at step `st`, or null.
     pub fn kidAt(t: *const Table, n: Node, st: u32) ?Node {
@@ -126,38 +142,11 @@ pub const Table = struct {
         }
         return if (lo < ks.len and ks[lo][0] == st) ks[lo][1] else null;
     }
-
-    /// What arrives at the slot `words` of tree `root`, as a reader that
-    /// asks one slot walks it from the root: each open node on the way (at
-    /// its depth), then the slot's own node's plain and open arrivals, in
-    /// the committed entries' order (an ancestor sorts first, a plain entry
-    /// before an open one). Returns the nodes visited.
-    pub fn atSlot(t: *const Table, gpa: Allocator, root: Node, words: []const u32, out: *std.ArrayList(Hit)) Allocator.Error!u32 {
-        var n = root;
-        var d: usize = 0;
-        while (true) : (d += 1) {
-            if (d == words.len) {
-                if (t.here(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = false, .arrivals = t.here(n) });
-                if (t.open(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(n) });
-                return @intCast(d + 1);
-            }
-            if (t.open(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(n) });
-            n = t.kidAt(n, words[d]) orelse return @intCast(d + 1);
-        }
-    }
-
-    /// The node at slot `words` of tree `root`; null when nothing is at or
-    /// below it.
-    pub fn at(t: *const Table, root: Node, words: []const u32) ?Node {
-        var n = root;
-        for (words) |w| n = t.kidAt(n, w) orelse return null;
-        return if (n == 0) null else n;
-    }
 };
 
 const testing = std.testing;
 
-test "equal subtrees are one node, and a slot reader walks only its steps" {
+test "equal subtrees are one node, and a node counts its entries" {
     const gpa = testing.allocator;
     var t: Table = .{};
     defer t.deinit(gpa);
@@ -165,15 +154,9 @@ test "equal subtrees are one node, and a slot reader walks only its steps" {
     const leaf = try t.node(gpa, &.{}, &.{p}, &.{});
     var k1 = [_][2]u32{ .{ 2, leaf }, .{ 1, leaf } };
     const pair = try t.node(gpa, &.{}, &.{}, &k1);
-    var k2 = [_][2]u32{ .{ 1, pair }, .{ 2, pair } };
-    const top = try t.node(gpa, &.{.{ .kind = .fresh }}, &.{}, &k2);
     var k3 = [_][2]u32{ .{ 1, leaf }, .{ 2, leaf } };
     try testing.expectEqual(pair, try t.node(gpa, &.{}, &.{}, &k3));
-    var hits: std.ArrayList(Hit) = .empty;
-    defer hits.deinit(gpa);
-    try testing.expectEqual(@as(u32, 3), try t.atSlot(gpa, top, &.{ 2, 1 }, &hits));
-    try testing.expectEqual(@as(usize, 1), hits.items.len);
-    try testing.expect(hits.items[0].open and hits.items[0].depth == 2 and hits.items[0].arrivals[0].eql(p));
-    try testing.expect(t.at(top, &.{ 1, 3 }) == null);
+    try testing.expectEqual(@as(u32, 2), t.count(pair));
+    try testing.expectEqual(leaf, t.kidAt(pair, 2).?);
     try testing.expectEqual(@as(u32, 0), try t.node(gpa, &.{}, &.{}, &.{}));
 }

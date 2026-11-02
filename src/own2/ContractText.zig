@@ -9,6 +9,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
+const Forest = @import("Forest.zig");
 
 const Rel = Contract.Rel;
 const Range = Contract.Range;
@@ -28,7 +29,10 @@ pub const Names = struct {
 
 /// `rel`'s text: `.f`, `.0`, `#c.i`, `[*]`, `⟲`, `◆`, `◇`, `⟨n⟩`; `ε` for none.
 pub fn relText(slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, r: Rel) std.Io.Writer.Error!void {
-    const words = slots.relWords(r);
+    return wordsText(places, names, w, slots.relWords(r));
+}
+
+fn wordsText(places: *const Place.Table, names: Names, w: *std.Io.Writer, words: []const u32) std.Io.Writer.Error!void {
     if (words.len == 0) return w.writeAll("ε");
     for (words) |word| {
         const s = Place.Step.fromWord(word);
@@ -75,14 +79,15 @@ fn effectsText(t: *const Table, slots: *const Slots.Table, places: *const Place.
     }
 }
 
-fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, r: Range) std.Io.Writer.Error!void {
-    var first = true;
-    for (t.resOf(r)) |s| {
-        try w.writeAll(if (first) " " else ", ");
-        first = false;
-        try relText(slots, places, names, w, s.slot);
+fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node) std.Io.Writer.Error!void {
+    var es: Forest.Entries = .{};
+    defer es.deinit(std.heap.smp_allocator);
+    es.of(&t.trees, std.heap.smp_allocator, places, root, &.{}) catch return error.WriteFailed;
+    for (es.items.items, 0..) |s, i| {
+        try w.writeAll(if (i == 0) " " else ", ");
+        try wordsText(places, names, w, es.wordsOf(s));
         if (s.open) try w.writeAll("…");
-        for (t.arrivalsOf(s.arrivals)) |a| switch (a.kind) {
+        for (s.arrivals) |a| switch (a.kind) {
             .param => {
                 try w.print(" π{d}", .{a.j + 1});
                 try relText(slots, places, names, w, a.slot);
@@ -107,7 +112,7 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
     if (h.flags.pessimistic) try w.writeAll("pessimistic; ");
     if (h.flags.cross) try w.writeAll("res crossing") else if (!h.flags.returns) try w.writeAll("res ⊥") else {
         try w.writeAll("res");
-        try arrivalsText(t, c, slots, places, names, w, h.res);
+        try arrivalsText(t, c, slots, places, names, w, h.res_root);
     }
     try w.writeAll("; nondup ");
     try condText(t, slots, places, names, w, h.res_cond);
@@ -131,7 +136,7 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
         try w.print("@{d} {t}", .{ l.origin[2], l.calls });
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}:", .{s.k + 1});
-            try arrivalsText(t, c, slots, places, names, w, s.res);
+            try arrivalsText(t, c, slots, places, names, w, s.res_root);
             if (s.kept.len != 0) {
                 try w.writeAll(" kept");
                 try effectsText(t, slots, places, names, w, s.kept);
