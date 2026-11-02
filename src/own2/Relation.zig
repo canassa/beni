@@ -520,20 +520,16 @@ pub const Eval = struct {
         const call = e.f.calls.items[r.a];
         if (call.contract == none) return false;
         if (e.live) |lv| if (call.code != none and lv.draftRes(lv.ctx, call.code) != null) return false;
-        const h = e.contracts.head(call.contract);
         const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), t));
         var arrs: std.ArrayList(struct { a: Contract.Arrival, n: usize }) = .empty;
         defer arrs.deinit(e.gpa());
-        for (e.contracts.resOf(h.res)) |rs| {
-            const rw = e.f.slots.relWords(rs.slot);
-            const exact = std.mem.eql(u32, rw, words);
-            const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
-            if (!exact and !opened) continue;
-            for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
-                if (a.kind != .param or a.j >= call.args.len) return false;
-                try arrs.append(e.gpa(), .{ .a = a, .n = rw.len });
-            }
-        }
+        var hits: std.ArrayList(Contract.Hit) = .empty;
+        defer hits.deinit(e.gpa());
+        try e.hitsAt(e.contracts.head(call.contract).res_root, words, &hits);
+        for (hits.items) |hit| for (hit.arrivals) |a| {
+            if (a.kind != .param or a.j >= call.args.len) return false;
+            try arrs.append(e.gpa(), .{ .a = a, .n = hit.depth });
+        };
         if (arrs.items.len == 0) return false;
         for (arrs.items) |x| {
             var w: std.ArrayList(u32) = .empty;
@@ -656,6 +652,23 @@ pub const Eval = struct {
 
     // ---- instantiation (§2.11.2) ---------------------------------------------
 
+    /// The result tree of contract `c` (`which` none) or of its supply
+    /// `(label << 16) | k`.
+    pub fn resRoot(e: *Eval, c: Contract.Id, which: u32) Contract.Node {
+        const h = e.contracts.head(c);
+        if (which == none) return h.res_root;
+        const l = e.contracts.labelsOf(h.labels)[which >> 16];
+        for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) return s.res_root;
+        return 0;
+    }
+
+    /// What arrives at slot `words` of tree `root` (`Contract.Table.atSlot`),
+    /// one inspection a node visited.
+    pub fn hitsAt(e: *Eval, root: Contract.Node, words: []const u32, out: *std.ArrayList(Contract.Hit)) Error!void {
+        const n = try e.contracts.trees.atSlot(e.gpa(), root, words, out);
+        try e.charge(.inspection, n);
+    }
+
     pub fn contractOf(e: *Eval, call: u32) ?Contract.Id {
         const c = e.f.calls.items[call].contract;
         return if (c == none) null else c;
@@ -686,21 +699,11 @@ pub const Eval = struct {
         var acc: std.ArrayList(u32) = .empty;
         defer acc.deinit(e.gpa());
         if (e.contractOf(call)) |c| {
-            const h = e.contracts.head(c);
-            const res: Ids.Range = if (which == none) h.res else blk: {
-                const l = e.contracts.labelsOf(h.labels)[which >> 16];
-                for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) break :blk s.res;
-                break :blk .{};
-            };
             const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), slot));
-            for (e.contracts.resOf(res)) |rs| {
-                const rw = e.f.slots.relWords(rs.slot);
-                const exact = std.mem.eql(u32, rw, words);
-                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
-                if (!exact and !opened) continue;
-                const suffix = words[rw.len..];
-                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.arrivalLeaves(call, c, a, suffix, &acc);
-            }
+            var hits: std.ArrayList(Contract.Hit) = .empty;
+            defer hits.deinit(e.gpa());
+            try e.hitsAt(e.resRoot(c, which), words, &hits);
+            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, a, words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
             try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -752,19 +755,10 @@ pub const Eval = struct {
                 while (ai < list.items[si].arrivals.items.len) : (ai += 1) try e.feedDraft(ki, list.items[si].arrivals.items[ai], @intCast(rw.len));
             }
         } else if (e.contractOf(call)) |c| {
-            const h = e.contracts.head(c);
-            const res: Ids.Range = if (which == none) h.res else blk: {
-                const l = e.contracts.labelsOf(h.labels)[which >> 16];
-                for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) break :blk s.res;
-                break :blk .{};
-            };
-            for (e.contracts.resOf(res)) |rs| {
-                const rw = e.f.slots.relWords(rs.slot);
-                const exact = std.mem.eql(u32, rw, words);
-                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
-                if (!exact and !opened) continue;
-                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.feed(ki, a, @intCast(rw.len));
-            }
+            var hits: std.ArrayList(Contract.Hit) = .empty;
+            defer hits.deinit(e.gpa());
+            try e.hitsAt(e.resRoot(c, which), words, &hits);
+            for (hits.items) |hit| for (hit.arrivals) |a| try e.feed(ki, a, hit.depth);
         } else try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
         e.cur_sub = sub;
         e.inst_depth -= 1;
@@ -975,21 +969,16 @@ pub const Eval = struct {
         if (cl.contract == none) return false;
         if (e.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
         const xw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sls[0])));
-        const h = e.contracts.head(cl.contract);
+        const root = e.contracts.head(cl.contract).res_root;
+        // Nothing may be said below the slot, nor plainly at it.
+        if (e.contracts.trees.at(root, xw)) |n| if (e.contracts.trees.kids(n).len != 0 or e.contracts.trees.here(n).len != 0) return false;
+        var hits: std.ArrayList(Contract.Hit) = .empty;
+        defer hits.deinit(e.gpa());
+        try e.hitsAt(root, xw, &hits);
         var any = false;
-        for (e.contracts.resOf(h.res)) |rs| {
-            try e.charge(.inspection, 1);
-            const rw = e.f.slots.relWords(rs.slot);
-            if (rw.len > xw.len) {
-                if (std.mem.eql(u32, xw, rw[0..xw.len])) return false;
-                continue;
-            }
-            if (!std.mem.eql(u32, rw, xw[0..rw.len])) continue;
-            if (!rs.open) {
-                if (rw.len == xw.len) return false;
-                continue;
-            }
-            for (e.contracts.arrivalsOf(rs.arrivals)) |a| switch (a.kind) {
+        for (hits.items) |hit| {
+            if (!hit.open) continue;
+            for (hit.arrivals) |a| switch (a.kind) {
                 .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = l.tags })),
                 .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot, .tags = l.tags })),
                 .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = r.a, .tags = l.tags })),
@@ -1172,14 +1161,10 @@ pub const Eval = struct {
                         // answer, which is another object than its part.
                         const start = out.items.len;
                         if (e.contractOf(vc)) |vcc| {
-                            const h = e.contracts.head(vcc);
-                            for (e.contracts.resOf(h.res)) |rs| {
-                                const rw = e.f.slots.relWords(rs.slot);
-                                const exact = std.mem.eql(u32, rw, words.items);
-                                const opened = rs.open and rw.len < words.items.len and std.mem.eql(u32, rw, words.items[0..rw.len]);
-                                if (!exact and !opened) continue;
-                                for (e.contracts.arrivalsOf(rs.arrivals)) |va| try e.arrivalLeaves(vc, vcc, va, words.items[rw.len..], out);
-                            }
+                            var hits: std.ArrayList(Contract.Hit) = .empty;
+                            defer hits.deinit(e.gpa());
+                            try e.hitsAt(e.contracts.head(vcc).res_root, words.items, &hits);
+                            for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, va, words.items[hit.depth..], out);
                         }
                         if (out.items.len == start) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                         return;
