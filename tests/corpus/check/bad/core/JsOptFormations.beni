@@ -1,0 +1,6 @@
+-- D2: the payload domain is checked even without a constructor call.
+import Js
+
+
+pub bad : Js.Opt (Js.Opt Int) → Int
+bad _ = 0

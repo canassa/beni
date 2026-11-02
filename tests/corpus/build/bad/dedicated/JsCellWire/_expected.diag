@@ -1,0 +1,1 @@
+[{"code":"worker_message_not_serializable","severity":"error","span":{"file":"Main.beni","start":{"line":15,"col":9},"end":{"line":15,"col":20}},"title":"WORKER MESSAGE NOT SERIALIZABLE","message":"Message field `message` cannot cross a worker boundary:\n\nIt contains the native type `Js.Cell`.\n\nConvert it to a concrete Wire value before sending it."}]

@@ -1913,3 +1913,24 @@ test "pattern and type tag ranges" {
     try testing.expect(Inst.Tag.type_record_ext.isType());
     try testing.expect(!Inst.Tag.int.isType());
 }
+
+/// Recognise a literal single-field selector (`.field` or `λr → r.field`).
+// ownership pin begin: cellRead
+// ownership pin begin: cellWrite
+pub fn fieldSelector(bir: *const Bir, selector: Inst.Index) ?Symbol {
+    if (bir.instTag(selector) != .lambda) return null;
+    const d = bir.instData(selector);
+    const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
+    if (params.len != 1) return null;
+    const param = params[0];
+    if (bir.instTag(param) != .pat_var) return null;
+    const body: Inst.Index = @fromBackingInt(@intCast(d.rhs));
+    if (bir.instTag(body) != .field_access) return null;
+    const field = bir.instData(body);
+    const receiver: Inst.Index = @fromBackingInt(@intCast(field.lhs));
+    if (bir.instTag(receiver) != .local or bir.instData(receiver).lhs != bir.instData(param).lhs) return null;
+    return bir.symbols[field.rhs];
+}
+
+// ownership pin end: cellRead
+// ownership pin end: cellWrite

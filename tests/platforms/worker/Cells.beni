@@ -1,0 +1,18 @@
+-- Typed runtime storage used by worker boundary fixtures.
+import Js
+
+
+pub type alias Slot a =
+    Js.Cell { value : a, revision : Int }
+
+
+pub make : a → Slot a
+make value = Js.cell { value = value, revision = 0 }
+
+
+pub set : Slot a, a → ⊤
+set cell value = Js.cellWrite cell value .value
+
+
+pub get : Slot a → a
+get cell = Js.cellRead cell .value

@@ -3471,6 +3471,12 @@ pub const Lowerer = struct {
         }
     }
 
+    fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
+        if (l.in.graph.modulePackage(l.in.module) != .core or !std.mem.eql(u8, l.text(l.module_name), "Js")) return null;
+        const which = std.meta.stringToEnum(JsIntrinsic.Which, l.text(l.bir.symbol(decl.name))) orelse return null;
+        return if (JsIntrinsic.compilerOnly(which)) which else null;
+    }
+
     fn declaration(l: *Lowerer, out: *StmtList, index: u32, twin_at: *?u32, records: *Part.Records) !void {
         // A derived codec (`schema.md` §12.10): a virtual declaration.
         if (index >= l.bir.decls.len) {
@@ -3498,7 +3504,17 @@ pub const Lowerer = struct {
             // markup lowering, and has no value of its own to emit.
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
             // Bound by the sibling import, not by a declaration here.
-            .foreign_value => return,
+            .foreign_value => {
+                const which = l.typedIntrinsicDecl(d) orelse return;
+                if (!l.liveDecl(index)) return;
+                if (which == .cellRead or which == .cellWrite) return;
+                records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+                l.restartNames();
+                try l.constDecl(out, try l.topName(index), try l.jsTypedValue(which, l.pos(d.inst_start)), l.pos(d.inst_start));
+                try l.recEnd(records.direct, index);
+                return;
+            },
+
             // The parser already reported it and there is no body.
             .annotation_only => return,
         }
@@ -3822,6 +3838,7 @@ pub const Lowerer = struct {
             }
             if (!d.kind.isValue()) continue;
             if (d.kind == .annotation_only) continue;
+            if (l.typedIntrinsicDecl(d)) |which| if (which == .cellRead or which == .cellWrite) continue;
             // A markup primitive is the markup runtime's, not this module's.
             if (d.kind == .vocab_markup) continue;
             if (d.kind == .value and d.body == .none) continue;
@@ -3931,7 +3948,7 @@ pub const Lowerer = struct {
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
-            if (d.kind != .foreign_value) continue;
+            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null) continue;
             // §5: the one import leg that is not use-driven. Every other
             // `import` shrinks for free with the declaration that wanted
             // it; this loop walks `bir.decls` and would otherwise import
@@ -11442,6 +11459,43 @@ pub const Lowerer = struct {
         return false;
     }
 
+    // ownership pin begin: cell
+    // ownership pin begin: cellRead
+    // ownership pin begin: cellWrite
+    // ownership pin begin: none
+    // ownership pin begin: some
+    // ownership pin begin: optMatch
+    // ownership pin begin: optWithDefault
+    /// A first-class typed intrinsic, with no sibling export or import.
+    fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
+        const arity: usize = switch (which) {
+            .optMatch => 3,
+            .optWithDefault => 2,
+            else => 1,
+        };
+        var names: [3]JsIr.NameIndex = undefined;
+        var values: [3]Node.Index = undefined;
+        for (0..arity) |i| {
+            names[i] = try l.fresh(l.well.temp);
+            values[i] = try l.ident(names[i], p);
+        }
+        const result = switch (which) {
+            .cell => try l.object(&.{try l.add(.spread_property, p, values[0].int(), Node.Data.unused)}, p),
+            .some => values[0],
+            .none => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            .optMatch, .optWithDefault => blk: {
+                const test_ = try l.binary(.strict_ne, values[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const yes = if (which == .optMatch) try l.call(values[2], &.{values[0]}, p) else values[0];
+                const no = if (which == .optMatch) try l.call(values[1], &.{try l.nullNode(p)}, p) else values[1];
+                const conditional = try l.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
+                break :blk try l.add(.cond, p, test_.int(), @backingInt(conditional));
+            },
+            else => unreachable,
+        };
+        if (which == .cell) l.b.markCell(result);
+        return l.arrowOf(names[0..arity], &.{try l.add(.return_stmt, p, result.int(), Node.Data.unused)}, p);
+    }
+
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
@@ -11460,6 +11514,20 @@ pub const Lowerer = struct {
             // `findRefs` said a `let`, and the name is not one.
             try l.report(.internal, args[0], "a `Js.Ref` written as a `let` was lowered as something other than its name.", .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        if (which == .cell and args.len == 1 and l.bir.instTag(args[0]) == .record) {
+            const object_ = try l.expr(out, args[0]);
+            l.b.markCell(object_);
+            return object_;
+        }
+        if (which == .cellRead or which == .cellWrite) {
+            const write = which == .cellWrite;
+            const field = l.bir.fieldSelector(args[if (write) @as(usize, 2) else 1]) orelse unreachable;
+            const values = try l.orderedExprs(out, args[0..if (write) @as(usize, 2) else 1], false);
+            const target = try l.fieldMember(values[0], field, p);
+            if (!write) return target;
+            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+            return l.nullNode(p);
         }
         if (which == .each and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
@@ -11590,6 +11658,24 @@ pub const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             // A `Js.Ref` that escapes is a cell, `{ v }` (§4).
+            W.cell => blk: {
+                const object_ = try l.object(&.{try l.add(.spread_property, p, v[0].int(), Node.Data.unused)}, p);
+                l.b.markCell(object_);
+                break :blk object_;
+            },
+            W.cellRead, W.cellWrite => unreachable,
+            W.none => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.some => v[0],
+            W.optMatch, W.optWithDefault => blk: {
+                const slot = try l.bindSubject(out, v[0], p);
+                const missing = try l.bindSubject(out, v[1], p);
+                const present = if (which == .optMatch) try l.bindSubject(out, v[2], p) else slot;
+                const test_ = try l.binary(.strict_ne, slot, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const yes = if (which == .optMatch) try l.call(present, &.{slot}, p) else slot;
+                const no = if (which == .optMatch) try l.call(missing, &.{try l.nullNode(p)}, p) else missing;
+                const conditional = try l.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
+                break :blk l.add(.cond, p, test_.int(), @backingInt(conditional));
+            },
             W.ref => l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "v"), v[0], p)}, p),
             W.read => l.member(v[0], try l.interner.getOrPut(l.gpa, "v"), p),
             W.write => blk: {
@@ -11619,6 +11705,14 @@ pub const Lowerer = struct {
             },
         };
     }
+
+    // ownership pin end: cell
+    // ownership pin end: cellRead
+    // ownership pin end: cellWrite
+    // ownership pin end: none
+    // ownership pin end: some
+    // ownership pin end: optMatch
+    // ownership pin end: optWithDefault
 
     /// The core function `inst` names that is written as an operator, or null
     /// (`Operator`).

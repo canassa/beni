@@ -804,6 +804,7 @@ const Pass = struct {
             const caller_worker = @import("CorePrivate.zig").workerCaller(p.graph.modulePackage(m) == .platform, p.interner.slice(p.graph.moduleName(m)));
             const access = @import("CorePrivate.zig").access(owner, text, namespace == .value);
             if (if (access) |required| switch (required) {
+                .runtime => p.graph.modulePackage(target) == .core and !caller_core and p.graph.modulePackage(m) != .platform,
                 .core => p.graph.modulePackage(target) == .core and !caller_core,
                 .task => p.graph.modulePackage(target) == .core and !caller_task,
                 .worker => p.graph.modulePackage(target) == .platform and !caller_worker,

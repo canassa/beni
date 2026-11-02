@@ -551,6 +551,15 @@ obligation at synchronous host boundaries. Schemas neither grant user packages
 
 ### 4.2 `Js`, JavaScript written from beni
 
+*Owner, 2026-11-02 (D1, D2):* the core-private typed primitives
+`Js.Cell`, `cell`, `cellRead`, `cellWrite`, `Js.Opt`, `none`, `some`,
+`optMatch` and `optWithDefault` are also available to platform runtimes.
+Applications cannot name them. Cell selectors retain the field type; Opt
+extraction branches before handing a typed payload to its callback. The exact
+signatures and defined-kind rule are in `workers-task-storage.md`. These
+compiler-owned operations have no sibling export; their first-class forms
+are emitted by the compiler. All other foreigns retain exact sibling coverage.
+
 *Added 2026-10-02, when the owner ordered the browser runtime rewritten in beni (`plans/browser-
 decisions.md`, R47-1 and R47-2).* Core's `Js` module is research 47 §2's draft, adopted as it
 stands there and with the three declarations of `Js.Ref` below: `foreign` declarations whose saturated calls the backend writes as the

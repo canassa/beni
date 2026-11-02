@@ -37,7 +37,7 @@ pub fn run(e: *Effects, schemes: []const Var.Optional, scratch: Allocator) Error
                         const entry = e.types.entry(a.type);
                         if (entry.package == .core and
                             std.mem.eql(u8, e.interner.slice(entry.module_name), "Js") and
-                            std.mem.eql(u8, e.interner.slice(entry.name), "Ref")) stored = true;
+                            (std.mem.eql(u8, e.interner.slice(entry.name), "Ref") or std.mem.eql(u8, e.interner.slice(entry.name), "Cell"))) stored = true;
                     },
                     else => {},
                 },

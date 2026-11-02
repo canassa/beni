@@ -1,0 +1,5 @@
+-- D1: Cell's type parameter is a record row, including inferred calls.
+import Js
+
+
+pub bad = Js.cell 3

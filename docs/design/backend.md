@@ -2855,6 +2855,19 @@ the edge a written-in-place use would add, as for every intrinsic. Fixtures: `ru
 on two numbers and on two strings, in place and as a value, both builds) and
 `emit/release/core/JsCompare` (the four shapes under the release optimiser).
 
+**Typed cells and optional slots (owner D1/D2, 2026-11-02).**
+
+`workers-task-storage.md` owns the D1/D2 API. `Js.cell { … }` emits one
+object literal, with no helper or Ref boxes; an existing record argument is
+copied into a new object. `cellRead` emits a member read and `cellWrite`
+a member store. Development retains field names; release uses the same field
+renaming as immutable records. Cell identity is preserved through aliases.
+Opt's `some` is the identity and `none` is undefined. `optMatch` branches on
+`!== undefined` before calling the present callback; `optWithDefault` uses the
+same test. No per-slot object is made. An Opt payload cannot acquire an
+undefined representation through release wrapper unboxing. Programs using
+neither primitive retain byte-identical output.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

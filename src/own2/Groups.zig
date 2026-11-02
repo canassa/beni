@@ -1146,7 +1146,16 @@ pub const Module = struct {
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
         };
-        return Rows.fromWords(mod.env(), &mod.sums, .{ .params = params.items, .result = try placeOfInst(mod, inst), .result_words = result_words });
+        var cell_field: ?Step = null;
+        if (mod.in.types.js_opt != .none and mod.in.types.entry(mod.in.types.js_opt).module.int() == owner) {
+            const name = mod.in.interner.?.slice(mod.in.birs[owner].symbol(decl.name));
+            const selector: ?usize = if (std.mem.eql(u8, name, "cellRead")) 1 else if (std.mem.eql(u8, name, "cellWrite")) 2 else null;
+            if (selector) |k| if (args.len > k) {
+                if (mod.in.bir.fieldSelector(@fromBackingInt(args[k]))) |field|
+                    cell_field = try Step.field(mod.account, mod.adapter.rank(field));
+            };
+        }
+        return Rows.fromWords(mod.env(), &mod.sums, .{ .params = params.items, .result = try placeOfInst(mod, inst), .result_words = result_words, .cell_field = cell_field });
     }
 
     pub fn context(mod: *Module) Transfer.Context {

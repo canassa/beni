@@ -1,0 +1,112 @@
+-- D1/D2: two fields share one identity; Opt retains generic payload types.
+import Generic
+import Js
+
+
+pub exercise : ⊤ → String
+exercise ⊤ =
+    c = Js.cell { state = 1, label = "first", next = Js.none ⊤ }
+    other = c
+    Js.cellWrite other 7 .state
+    Js.cellWrite c "second" .label
+    Js.cellWrite other (Js.some 11) .next
+    state = Js.cellRead c .state
+    label = Js.cellRead other .label
+    next = Js.optWithDefault (Js.cellRead c .next) 0
+    "${state}:${label}:${next}"
+
+
+pub optional : ⊤ → String
+optional ⊤ =
+    r = { first = wrap 3, empty = Js.none ⊤ }
+    values = [ r.first, r.empty, wrap 9 ]
+    values
+        ▷ List.map λslot → Js.optMatch slot (λ⊤ → "none") String.fromInt
+        ▷ String.join ","
+
+
+wrap : a → Js.Opt a
+wrap value = Js.some value
+
+
+pub copied : ⊤ → String
+copied ⊤ =
+    original = { state = 5 }
+    cell = Js.cell original
+    Js.cellWrite cell 8 .state
+    "${original.state}:${Js.cellRead cell .state}"
+
+
+pub type Wrapped a
+    = Wrapped a
+
+
+pub wrapped : ⊤ → String
+wrapped ⊤ =
+    value = Generic.wrap (Wrapped (Js.none ⊤))
+    Js.optMatch value (λ⊤ → "missing") λ(Wrapped slot) → Js.optWithDefault slot "present wrapper"
+
+
+make : Int → Js.Cell { state : Int, next : Js.Opt Int, spare : Js.Opt Int }
+make n = Js.cell { state = n, next = Js.none ⊤, spare = Js.none ⊤ }
+
+
+pub many : ⊤ → String
+many ⊤ =
+    cells = List.map [ 1, 2, 3 ] make
+    cells
+        ▷ List.map λcell →
+            other = cell
+            Js.cellWrite cell (Js.cellRead cell .state + 10) .state
+            Js.cellWrite cell (Js.some (Js.cellRead cell .state)) .next
+            if Js.same cell other then
+                String.fromInt (Js.optWithDefault (Js.cellRead other .next) 0)
+            else
+                "lost identity"
+        ▷ String.join ","
+
+
+pub distinct : ⊤ → String
+distinct ⊤ =
+    a = make 1
+    b = make 1
+    if Js.same a b then "same" else "distinct"
+
+
+pub ordered : ⊤ → String
+ordered ⊤ =
+    cell = Js.cell { state = 1 }
+    before = Js.cellRead cell .state
+    Js.cellWrite cell 2 .state
+    after = Js.cellRead cell .state
+    "${before}:${after}"
+
+
+pub nested : ⊤ → String
+nested ⊤ =
+    slot = Js.some { payload = [ Js.none ⊤, Js.some 7 ] }
+    Js.optMatch slot (λ⊤ → "missing") λr →
+        String.fromInt (List.sum (List.map r.payload (Js.optWithDefault _ 0)))
+
+
+pub firstClass : ⊤ → String
+firstClass ⊤ =
+    values = List.map [ 4, 5 ] Js.some
+    values ▷ List.map (Js.optWithDefault _ 0) ▷ List.map String.fromInt ▷ String.join ","
+
+
+pub constructorIdentity : ⊤ → String
+constructorIdentity ⊤ =
+    local = Js.some
+    if Js.same local Js.some && Js.same local Generic.constructor then
+        "same constructor"
+    else
+        "changed constructor"
+
+
+pub falsy : ⊤ → String
+falsy ⊤ =
+    zero = Js.optWithDefault (Js.some 0) 9
+    empty = Js.optWithDefault (Js.some "") "fallback"
+    unit = Js.optMatch (Js.some ⊤) (λ⊤ → "missing") λ⊤ → "unit"
+    if Js.optWithDefault (Js.some False) True then "bad boolean" else "${zero}:${empty}:${unit}"

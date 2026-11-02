@@ -124,6 +124,8 @@ pub const Signature = struct {
     /// unary payload of its Maybe-like carrier, which the adapter resolved
     /// and validated (one nullary and one unary constructor). Null: none.
     optional_payload: ?Step = null,
+    // A typed Cell field below the shared contents barrier.
+    cell_field: ?Step = null,
 };
 
 fn has(words: u32, word: Word) bool {
@@ -358,7 +360,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         if (words & (Word.cellread.bit() | Word.cellwrite.bit() | Word.cellcomplete.bit()) != 0) {
             refs = try env.cells.sets.insert(gpa, env.charge, refs, (try paramCell(env, i, prm.place)).int(), 0);
             if (!has(words, .cellread)) {
-                use = try Summary.Table.markUse(env, use, prm.place, &.{Step.contents}, .{ .w = true }, &.{});
+                use = try Summary.Table.markUse(env, use, prm.place, if (sig.cell_field) |field| &.{ Step.contents, field } else &.{Step.contents}, .{ .w = true }, &.{});
                 writes = true;
             }
         }
@@ -426,7 +428,7 @@ pub fn fromWords(env: Env, sums: *Summary.Table, sig: Signature) Error!ClassId {
         kappas = built.kappas;
     } else if (has(rw, .lent) and first_place != null and isCell(env, first_place.?)) {
         returned = true;
-        res = try addRes(env, res, try loanLeaf(env, first_place.?, sig.result));
+        res = try addRes(env, res, try loanField(env, first_place.?, sig.result, sig.cell_field));
     } else if (has(rw, .lentoptional) and first_place != null and isCell(env, first_place.?) and sig.optional_payload != null and env.places.child(sig.result, sig.optional_payload.?) != null) {
         // The empty alternative, or a loan at the unary payload's path.
         returned = true;
@@ -607,7 +609,16 @@ fn contentsCell(env: Env, cell: PlaceId) Error!CellId {
 
 /// A loan of parameter 1's `◆` (§2.13.7) at `at`: `loan(π₁·◆·ρ)`.
 fn loanLeaf(env: Env, cell: PlaceId, at: PlaceId) Error!NodeId {
-    const contents = try contentsCell(env, cell);
+    return loanField(env, cell, at, null);
+}
+
+fn loanField(env: Env, cell: PlaceId, at: PlaceId, field: ?Step) Error!NodeId {
+    const contents = if (field) |step| blk: {
+        const root = try env.places.rootPath(env.gpa, cell);
+        const payload = (try env.places.extend(env.gpa, env.charge, root, Step.contents)).?;
+        const path = (try env.places.extend(env.gpa, env.charge, payload, step)).?;
+        break :blk try env.cells.symbolic(env.gpa, env.account(), env.places, .param, 0, path, 0);
+    } else try contentsCell(env, cell);
     const loan = try env.cells.refine(env.gpa, env.account(), .loan, contents, .none, 0, at, Cell.Kind.ofPlace(env.places.kind(at)));
     return env.shapes.leaf(env.gpa, env.account(), at, try env.cells.sets.insert(env.gpa, env.charge, .none, loan.int(), 0));
 }

@@ -1,0 +1,1 @@
+[{"code":"invalid_cell_selector","severity":"error","span":{"file":"tests/corpus/check/bad/core/JsCellSelector.beni","start":{"line":8,"col":22},"end":{"line":8,"col":23}},"title":"INVALID CELL FIELD","message":"A cell field needs a literal single-field accessor, such as `.state` or\n`λr → r.state`. The selector is checked and compiled as a property name;\nit is never called."}]

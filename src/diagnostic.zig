@@ -376,6 +376,7 @@ pub const Code = enum {
     /// key a string literal that is a JavaScript identifier other than
     /// `__proto__`, no key twice. The checker's, at the call.
     invalid_js_object,
+    invalid_cell_selector,
     /// Appended on 2026-10-02 with type identities
     /// (`static-dispatch-spike.md` §8.6, checker-v2.md §33): a site that
     /// must pass a type's identity — a key's, to `Hosted.key` through
@@ -697,6 +698,7 @@ pub fn title(code: Code) []const u8 {
         .tuple_type_removed => "REMOVED TUPLE TYPE",
         .core_contract_violation => "CORE CONTRACT VIOLATION",
         .invalid_js_object => "INVALID OBJECT FIELDS",
+        .invalid_cell_selector => "INVALID CELL FIELD",
         .type_identity_unknown => "UNKNOWN TYPE IDENTITY",
         .unit_spelling_removed => "REMOVED UNIT SPELLING",
         .never_spelling_removed => "REMOVED NEVER SPELLING",

@@ -326,3 +326,47 @@ pub foreign pure fingerprint : unused k, unused order → fresh name
 --| where it is not in tail position (`backend.md` §4, *`Js.suspending` is
 --| its body*).
 pub foreign suspends suspending : once returned sync (⊤ → a) → a
+
+
+--| A typed mutable record. Core and platform runtimes only.
+pub cell foreign type Cell record
+
+
+--| A fresh cell with the record's fields. A literal is written in place.
+pub foreign pure cell : aliased record → fresh Cell record
+
+
+--| Read one field, selected with a literal accessor such as `.state`.
+pub foreign impure cellRead : cellread Cell record, unused sync (record → a) → lent a
+
+
+--| Store a value in one field. The literal selector is not invoked.
+pub foreign impure cellWrite :
+      cellwrite Cell record
+    , consumed cellstored a
+    , unused sync (record → a)
+    → ⊤
+
+
+--| An optional value represented by undefined or its defined payload.
+pub foreign type Opt defined
+
+
+--| The empty slot. No object is allocated.
+pub foreign pure none : unused ⊤ → fresh Opt defined
+
+
+--| A present slot. The payload cannot be Value or another Opt.
+pub foreign pure some : returned defined → Opt defined
+
+
+--| Call exactly one sync branch. The present branch receives a safe payload.
+pub foreign impure optMatch :
+      escaped Opt defined
+    , once returned sync (⊤ → b)
+    , once returned sync (defined → b)
+    → b
+
+
+--| Read the slot, or use its typed default when empty.
+pub foreign pure optWithDefault : returned Opt defined, returned defined → defined

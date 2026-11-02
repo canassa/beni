@@ -475,3 +475,8 @@ fn nativeUpcast(r: *Report, expected: Var, actual: Var) bool {
     if (e.package != .core or a.package != .core) return false;
     return std.mem.eql(u8, r.env.interner.slice(e.module), "Browser.Host.Node") and std.mem.eql(u8, r.env.interner.slice(a.module), "Browser.Host.Element");
 }
+
+pub fn runtimeKind(r: *Report, region: Bir.Inst.Index, kind: TypeStore.Kind, actual: Var) Error!void {
+    try r.texts.runtimeKind(region, kind, actual);
+    try r.flush();
+}

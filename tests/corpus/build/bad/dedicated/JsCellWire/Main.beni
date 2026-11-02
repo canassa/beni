@@ -1,0 +1,16 @@
+-- A Cell's identity never crosses a worker Wire boundary.
+import Cells
+import Page
+import Worker
+
+
+worker : Worker.Program (Cells.Slot Int) String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    _ = Worker.open worker
+    ⊤

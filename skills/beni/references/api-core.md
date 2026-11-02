@@ -195,6 +195,8 @@ module Int32
   value xor : Int32, Int32 → Int32
   value zero : Int32
 module Js
+  type Cell a
+  type Opt a
   type Ref a
   type Value
   value apply : Value, args → Value  -- impure

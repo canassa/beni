@@ -1,0 +1,19 @@
+import Cells
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Cells.exercise ⊤
+        , Cells.optional ⊤
+        , Cells.copied ⊤
+        , Cells.wrapped ⊤
+        , Cells.many ⊤
+        , Cells.distinct ⊤
+        , Cells.ordered ⊤
+        , Cells.nested ⊤
+        , Cells.firstClass ⊤
+        , Cells.constructorIdentity ⊤
+        , Cells.falsy ⊤
+        ]

@@ -42,6 +42,13 @@ pub fn unknownMethod(
     const w = &out.writer;
     const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
     const method_text = r.env.interner.slice(method);
+    if (r.env.graph.modulePackage(module) == .core and std.mem.eql(u8, module_text, "Js") and
+        std.mem.eql(u8, r.env.interner.slice(type_name), "Cell") and
+        (std.mem.eql(u8, method_text, "eq") or std.mem.eql(u8, method_text, "compare")))
+    {
+        w.writeAll("A Js.Cell has identity, so structural equality and ordering do not apply.\n\nCompare cell identity with Js.same in runtime code, or read and compare\nthe particular field values.\n") catch return error.OutOfMemory;
+        return r.emit(.unknown_method, origin, &out);
+    }
     // `n.modBy 2`: a value `Basics` had and lost (language.md §12.4), and
     // what replaced it is a function of another module, not a method
     // (checker-v2.md §29.2).
@@ -191,6 +198,8 @@ pub fn undeterminedMethodReceiver(
             .dict_key => "`key` — either Int or String",
             .int_key => "an Int key",
             .string_key => "a String key",
+            .defined => "a type whose value cannot be undefined",
+            .record => "a record row",
             .any => "a type variable no use of this value determines",
         },
         method_text,

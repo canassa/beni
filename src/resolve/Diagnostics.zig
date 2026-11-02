@@ -153,6 +153,8 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
         , .{ cx.module, cx.name, cx.module }),
         .private_name => if (@import("CorePrivate.zig").access(cx.module, cx.name, true) == .worker)
             try w.writeAll("This name is private to the platform’s worker entry machinery.")
+        else if (@import("CorePrivate.zig").access(cx.module, cx.name, true) == .runtime)
+            try w.writeAll("This name is private to core and platform runtimes.")
         else if (std.mem.eql(u8, cx.module, "Js") and @import("CorePrivate.zig").access(cx.module, cx.name, true) != null)
             try w.writeAll("This primitive is private to core's typed fiber protocol. Platforms use `Task.callback` and `Task.resume`.")
         else if (@import("CorePrivate.zig").access(cx.module, cx.name, true) != null)

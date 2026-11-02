@@ -1,0 +1,1 @@
+[{"code":"kind_mismatch","severity":"error","span":{"file":"tests/corpus/check/bad/core/JsCellPayload.beni","start":{"line":5,"col":19},"end":{"line":5,"col":20}},"title":"TYPE MISMATCH","message":"This value has to be `record` and `number` at the same time, and nothing is\nboth.\n\n`number` is `Int` or `Float`; `appendable` is `String` or `List a`.\n"}]

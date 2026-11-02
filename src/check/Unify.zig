@@ -641,7 +641,7 @@ fn kindFailure(u: *Unify, kind: TypeStore.Kind, actual: Var) Error!bool {
 
 /// The flat membership test for `number` and `appendable`.
 fn kindAccepts(u: *Unify, kind: TypeStore.Kind, v: Var) bool {
-    if (kind.isKey()) return KeyKinds.allows(u.store, u.types, kind, v);
+    if (kind.isParameter()) return KeyKinds.allows(u.store, u.types, kind, v);
     const wk = u.types.well_known;
     const app = switch (u.store.resolvedContent(v)) {
         .structure => |s| switch (s) {
@@ -654,7 +654,7 @@ fn kindAccepts(u: *Unify, kind: TypeStore.Kind, v: Var) bool {
     return switch (kind) {
         .any => true,
         .number => app.args.len == 0 and (app.type == wk.int or app.type == wk.float),
-        .dict_key, .int_key, .string_key => unreachable,
+        .dict_key, .int_key, .string_key, .defined, .record => unreachable,
         .appendable => (app.args.len == 0 and app.type == wk.string) or
             (app.args.len == 1 and app.type == wk.list),
     };
