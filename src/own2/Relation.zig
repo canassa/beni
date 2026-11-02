@@ -282,9 +282,27 @@ pub const Eval = struct {
                     var all: std.ArrayList(u32) = .empty;
                     defer all.deinit(e.gpa());
                     const tops: []const u32 = if (x.family != Slots.empty) e.f.slots.items(x.family) else &.{e.f.pos.items[x.pos].slot.int()};
-                    for (tops) |t| try Slots.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
+                    // A step an opaque or a type variable's place cannot follow
+                    // (a cast's inner, §2.13.9) is some object inside it: all
+                    // of what it reaches, read approximately.
+                    var inside: std.ArrayList(u32) = .empty;
+                    defer inside.deinit(e.gpa());
+                    for (tops) |t| {
+                        const before = all.items.len;
+                        try Slots.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
+                        if (all.items.len == before and rest.len != 0) {
+                            const k = e.places().kind(e.places().pathPlace(.from(t)));
+                            if (k == .@"opaque" or k == .@"var") {
+                                // A call's result read on past its place:
+                                // through what arrives there.
+                                if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, it.tags, it.route, out)) continue;
+                                try inside.append(e.gpa(), t);
+                            }
+                        }
+                    }
                     var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);
                     if (deep) set = try e.f.slots.belowSet(e.gpa(), e.account(), e.places(), try e.f.slots.sorted(e.gpa(), e.account(), all.items));
+                    for (inside.items) |t| set = try e.f.slots.unionOf(e.gpa(), e.account(), set, try e.f.slots.below(e.gpa(), e.account(), e.places(), .from(t)));
                     if (set == Slots.empty) continue;
                     try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it.tags }), .route = it.route });
                 },
@@ -335,6 +353,51 @@ pub const Eval = struct {
                 },
             }
         }
+    }
+
+    /// Project a call's result at slot `t` on by `rest`, steps `t`'s place
+    /// cannot follow (an opaque value read back): through each arrival at
+    /// `t`, the rest taken from the argument it names. Whether it could
+    /// (a fixed contract with no arrival but parameters').
+    fn throughCall(e: *Eval, root: u32, t: PathId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!bool {
+        const r = e.f.roots.items[root];
+        if (r.kind != .call) return false;
+        const call = e.f.calls.items[r.a];
+        if (call.contract == none) return false;
+        if (e.live) |lv| if (call.code != none and lv.draftRes(lv.ctx, call.code) != null) return false;
+        const h = e.contracts.head(call.contract);
+        const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), t));
+        var arrs: std.ArrayList(struct { a: Contract.Arrival, n: usize }) = .empty;
+        defer arrs.deinit(e.gpa());
+        for (e.contracts.resOf(h.res)) |rs| {
+            const rw = e.f.slots.relWords(rs.slot);
+            const exact = std.mem.eql(u32, rw, words);
+            const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
+            if (!exact and !opened) continue;
+            for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+                if (a.kind != .param or a.j >= call.args.len) return false;
+                try arrs.append(e.gpa(), .{ .a = a, .n = rw.len });
+            }
+        }
+        if (arrs.items.len == 0) return false;
+        for (arrs.items) |x| {
+            var w: std.ArrayList(u32) = .empty;
+            defer w.deinit(e.gpa());
+            try w.appendSlice(e.gpa(), e.f.slots.relWords(x.a.slot));
+            try w.appendSlice(e.gpa(), words[x.n..]);
+            try w.appendSlice(e.gpa(), rest);
+            try e.charge(.edge, 1);
+            const before = out.items.len;
+            try e.project(call.args[x.a.j], w.items, deep or x.a.deep, tags, route, out);
+            // A whole value cast is read back by its own structure: the
+            // rest from the argument's root too; and when neither reading
+            // names anything, it is some object inside it (§2.13.9).
+            if (x.a.deep) {
+                try e.project(call.args[x.a.j], rest, deep, tags, route, out);
+                if (out.items.len == before) try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
+            }
+        }
+        return true;
     }
 
     /// `⟲` into a built value: the values one or more levels below, at the
@@ -435,7 +498,7 @@ pub const Eval = struct {
                 const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
                 if (!exact and !opened) continue;
                 const suffix = words[rw.len..];
-                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.arrivalLeaves(call, c, a, suffix, &acc);
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.arrivalLeavesAt(call, c, a, suffix, slot, &acc);
             }
         } else {
             // The pessimistic contract: whatever arrives is unknown.
@@ -523,7 +586,7 @@ pub const Eval = struct {
         const saved = e.cur_sub;
         e.cur_sub = .{ .kind = .forward, .a = ki };
         defer e.cur_sub = saved;
-        try e.arrivalLeaves(k.call, none, a, suffix, &acc);
+        try e.arrivalLeavesAt(k.call, none, a, suffix, k.slot, &acc);
         for (acc.items) |x| try e.addLeaf(ki, x);
     }
 
@@ -592,6 +655,34 @@ pub const Eval = struct {
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
+    /// `arrivalLeaves` at caller slot `at`: a deep arrival (every object of
+    /// a parameter, a cast's) brings only the objects of `at`'s type, since
+    /// an object has one type.
+    fn arrivalLeavesAt(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, at: PathId, out: *std.ArrayList(u32)) Error!void {
+        // A cast may read one object as another type (§2.13.9), so types
+        // never tell two objects apart: no filter.
+        if (true or !(a.kind == .param and a.deep) or at == .none or !Slots.isObject(e.places(), at)) return e.arrivalLeaves(call, c, a, suffix, out);
+        var tmp: std.ArrayList(u32) = .empty;
+        defer tmp.deinit(e.gpa());
+        try e.arrivalLeaves(call, c, a, suffix, &tmp);
+        const want = try e.f.slots.canon(e.gpa(), e.account(), e.places(), at);
+        for (tmp.items) |li| {
+            var l = e.f.leafAt(li);
+            if (l.kind != .ref) {
+                try out.append(e.gpa(), li);
+                continue;
+            }
+            const kept = try e.typed(l.slots, want);
+            if (kept == Slots.empty) continue;
+            if (kept == l.slots) {
+                try out.append(e.gpa(), li);
+                continue;
+            }
+            l.slots = kept;
+            try out.append(e.gpa(), try e.f.leaf(l));
+        }
+    }
+
     pub fn arrivalLeaves(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
         try e.charge(.edge, 1);
         const cl = e.f.calls.items[call];
@@ -698,10 +789,19 @@ pub const Eval = struct {
 
     /// The selection of parameter `j` at the slots of `set` (paths under its root).
     pub fn sel(e: *Eval, j: u32, set: Slots.SetId) Error!Cond {
+        return e.selOf(j, set, false);
+    }
+
+    /// The selection of parameter `j` at `set`, its occurrences apart
+    /// only (§2.9.1) when `apart`.
+    pub fn selOf(e: *Eval, j: u32, set: Slots.SetId, only_apart: bool) Error!Cond {
         const items = e.f.slots.items(set);
         try e.charge(.cond, @intCast(1 + items.len));
         const out = try e.arena.alloc(u64, items.len);
-        for (items, out) |s, *o| o.* = Contract.occ(j, try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(s)));
+        for (items, out) |s, *o| {
+            const r = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(s));
+            o.* = if (only_apart) Contract.occApart(j, r) else Contract.occ(j, r);
+        }
         return Cond.of(e.account(), out);
     }
 
@@ -813,7 +913,7 @@ pub const Eval = struct {
         for (ents.items) |en| {
             const l = e.f.leafAt(en.leaf);
             switch (l.kind) {
-                .ref => if (!l.at_pos and e.isFamily(l)) {
+                .ref => if (!l.at_pos and e.isFamily(l) and !Contract.isApart(en.occ)) {
                     if (e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
                     if (try e.gather(&occs, try e.sepLeaf(en.leaf))) return Cond.unprovable;
                 },
@@ -879,25 +979,43 @@ pub const Eval = struct {
             };
             // A supply or a label meeting itself is decided by expansion.
             var must: u32 = none;
+            var unvouched = false;
             for (members.items, group_root.items) |idx, root| {
                 if (try e.mayWithin(ents.items, idx.items, routed)) return Cond.unprovable;
                 const r = e.f.roots.items[root];
                 switch (r.kind) {
                     .param => if (idx.items.len >= 2 or params >= 2) {
                         // One sort of the group's slots, never a union per entry.
-                        var all: std.ArrayList(u32) = .empty;
-                        defer all.deinit(g);
-                        for (idx.items) |i| try all.appendSlice(g, e.f.slots.items(e.f.leafAt(ents.items[i].leaf).slots));
-                        const set = try e.f.slots.sorted(g, e.account(), all.items);
-                        try e.charge(.cond, @intCast(1 + e.f.slots.items(set).len));
-                        for (e.f.slots.items(set)) |x| try occs.add(g, Contract.occ(r.a, try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
+                        // Each entry's slots; an entry of an apart occurrence
+                        // asks to be apart only.
+                        for (idx.items) |i| {
+                            const ap = Contract.isApart(ents.items[i].occ);
+                            const lslots = e.f.slots.items(e.f.leafAt(ents.items[i].leaf).slots);
+                            try e.charge(.cond, @intCast(1 + lslots.len));
+                            for (lslots) |x| {
+                                const rl = try e.f.slots.relOf(g, e.account(), e.places(), .from(x));
+                                try occs.add(g, if (ap) Contract.occApart(r.a, rl) else Contract.occ(r.a, rl));
+                            }
+                        }
                     },
                     .call => if (idx.items.len >= 2) {
-                        if (try e.gather(&occs, try e.instCond(r.a))) return Cond.unprovable;
+                        // A call that does not vouch for its parts is read
+                        // through what they come from (§2.9.2 step 3),
+                        // each part on its own.
+                        const c = try e.instCond(r.a);
+                        if (c.no) {
+                            if (must == none or root > must) {
+                                must = root;
+                                unvouched = true;
+                            }
+                        } else if (try e.gather(&occs, c)) return Cond.unprovable;
                     },
                     .supply, .cb => if (idx.items.len >= 2) {
                         if (!e.expandable(e.f.leafAt(ents.items[idx.items[0]].leaf))) return Cond.unprovable;
-                        if (must == none or root > must) must = root;
+                        if (must == none or root > must) {
+                            must = root;
+                            unvouched = false;
+                        }
                     },
                 }
             }
@@ -924,9 +1042,9 @@ pub const Eval = struct {
                     if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;
                     try e.charge(.edge, 1);
                     e.route_count += 1;
-                    const blk = if (e.f.roots.items[latest].kind == .call) latest else none;
+                    const blk = if (e.f.roots.items[latest].kind == .call and !unvouched) latest else none;
                     if (blk != none and (try seen.getOrPut(g, .{x})).found_existing) continue;
-                    try next.append(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = 0, .block = blk });
+                    try next.append(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk });
                 }
             }
             std.mem.swap(std.ArrayList(Ent), &ents, &next);
@@ -934,7 +1052,7 @@ pub const Eval = struct {
             for (ents.items) |en| {
                 if (en.block == none) continue;
                 const l = e.f.leafAt(en.leaf);
-                if (l.kind == .ref and !l.at_pos and e.isFamily(l) and !e.expandable(l)) {
+                if (l.kind == .ref and !l.at_pos and e.isFamily(l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
                     if (e.f.roots.items[l.root].kind == .cb) return Cond.unprovable;
                     if (try e.gather(&occs, try e.sepLeaf(en.leaf))) return Cond.unprovable;
                 }
@@ -1031,6 +1149,8 @@ pub const Eval = struct {
         try e.charge(.cond, 1);
         if (a.block != none and a.block == b.block) return false;
         if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ) return false;
+        // One apart occurrence's objects may repeat among themselves.
+        if (a.occ == b.occ and Contract.isApart(a.occ)) return false;
         const la = e.f.leafAt(a.leaf);
         const lb = e.f.leafAt(b.leaf);
         if ((try e.f.mergeTags(la.tags, lb.tags)) == null) return false;
@@ -1065,6 +1185,12 @@ pub const Eval = struct {
         const x = e.f.leafAt(xi);
         const t = e.f.leafAt(ti);
         if ((try e.f.mergeTags(x.tags, t.tags)) == null) return .no;
+        // A cell's `◆` is behind its barrier (§2.13.7): a write replaces
+        // what the cell holds and changes no object anyone holds.
+        if (t.kind == .ref and t.at_pos) {
+            const tp = e.f.pos.items[t.pos];
+            if (tp.kind == .plain and Step.fromWord(tp.a).kind == .contents) return .no;
+        }
         if (x.kind == .top or t.kind == .top) return .may;
         const xr = x.kind == .ref;
         const tr = t.kind == .ref;
@@ -1089,8 +1215,13 @@ pub const Eval = struct {
                 return acc;
             }
             if (xr and tr) {
-                // Two parameters: apart under both selections.
-                const c = try Cond.conj(e.arena, e.account(), try e.sel(e.f.roots.items[x.root].a, x.slots), try e.sel(e.f.roots.items[t.root].a, t.slots));
+                // Two parameters: apart under both selections, of the slots
+                // that may hold one object (one object has one type).
+                const xs = try e.typed(x.slots, t.slots);
+                const ts = try e.typed(t.slots, x.slots);
+                if (xs == Slots.empty or ts == Slots.empty) return .no;
+                // The holder's objects need only be apart from the target's.
+                const c = try Cond.conj(e.arena, e.account(), try e.selOf(e.f.roots.items[x.root].a, xs, true), try e.sel(e.f.roots.items[t.root].a, ts));
                 return .{ .kind = .under, .cond = c };
             }
             // A parameter's leaf and an atom.
@@ -1099,6 +1230,35 @@ pub const Eval = struct {
         // Two atoms.
         if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
         return .no;
+    }
+
+    /// The slots of `a` whose objects may be one of `b`'s: an object has
+    /// one type, so two slots meet only at one place, unless either holds
+    /// anything (a type variable's or an opaque type's place).
+    fn typed(e: *Eval, a: Slots.SetId, b: Slots.SetId) Error!Slots.SetId {
+        if (true) return a;
+        const pl = e.places();
+        var bs: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        defer bs.deinit(e.gpa());
+        for (e.f.slots.items(b)) |y| {
+            try e.charge(.inspection, 1);
+            const p = pl.pathPlace(.from(y));
+            switch (pl.kind(p)) {
+                .@"var", .@"opaque" => return a,
+                else => try bs.put(e.gpa(), @backingInt(p), {}),
+            }
+        }
+        var keep: std.ArrayList(u32) = .empty;
+        defer keep.deinit(e.gpa());
+        var all = true;
+        for (e.f.slots.items(a)) |y| {
+            try e.charge(.inspection, 1);
+            const p = pl.pathPlace(.from(y));
+            const k = pl.kind(p);
+            if (k == .@"var" or k == .@"opaque" or bs.contains(@backingInt(p))) try keep.append(e.gpa(), y) else all = false;
+        }
+        if (all) return a;
+        return e.f.slots.internSorted(e.gpa(), e.account(), keep.items);
     }
 
     fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
@@ -1126,7 +1286,12 @@ pub const Eval = struct {
         const t = e.f.leafAt(ti);
         const r0 = e.f.roots.items[x.root];
         switch (r0.kind) {
-            .param => return .{ .kind = .under, .cond = try e.sel(r0.a, try e.f.slots.unionOf(e.gpa(), e.account(), x.slots, t.slots)) },
+            .param => {
+                const xs = try e.typed(x.slots, t.slots);
+                const ts = try e.typed(t.slots, x.slots);
+                if (xs == Slots.empty or ts == Slots.empty) return .no;
+                return .{ .kind = .under, .cond = try Cond.conj(e.arena, e.account(), try e.selOf(r0.a, xs, true), try e.sel(r0.a, ts)) };
+            },
             .call => {
                 const sep = try e.instCond(r0.a);
                 if (!sep.no) return .{ .kind = .under, .cond = sep };
