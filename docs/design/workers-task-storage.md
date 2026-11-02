@@ -234,3 +234,8 @@ code/reason directly into typed callbacks; no event or socket enters Js.Value.
 **As built, 2026-11-02:** Dom keeps node and geometry handles native. Its
 fullscreen wait uses `Promise ⊤` and a typed `Rejection` in the failure arm;
 no native handle or completion callback is stored as plain dynamic data.
+
+**As built, 2026-11-02:** a browser worker's Prepared carrier keeps its payload
+type and mutable live bit directly. Preparing or discarding a callable payload
+never invokes it. The page-stop bridge retains typed stop and completion jobs;
+it invokes them through the private synchronous protocol operation.
