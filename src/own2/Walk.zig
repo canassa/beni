@@ -785,15 +785,17 @@ const Walker = struct {
             const b = if (l < k.w.bindings.len) k.w.bindings[l] else Binding{};
             try ks.append(k.gpa, if (b.value == none) try k.f().top() else b.value);
             // A capture is read at the closure's creation.
-            if (b.value != none) {
-                const at = try k.placeOfLocal(l);
-                k.atom.* += 1;
-                try k.w.uses.append(k.gpa, .{ .local = l, .path = try k.f().places.rootPath(k.gpa, at), .point = i, .kind = .whole, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
-            }
+            if (b.value != none) try k.captureUse(l, i);
         }
         const v = try k.built(i, .closure, code, if (code & fixed_bit == 0) i else none, ks.items, &.{});
         if (code & fixed_bit == 0) try k.w.closures.append(k.gpa, .{ .code = code, .value = v, .point = i, .inst = i });
         return v;
+    }
+
+    fn captureUse(k: *Walker, l: u32, i: u32) Error!void {
+        const at = try k.placeOfLocal(l);
+        k.atom.* += 1;
+        try k.w.uses.append(k.gpa, .{ .local = l, .path = try k.f().places.rootPath(k.gpa, at), .point = i, .kind = .whole, .region = k.w.regions.regionOf(i), .use_node = .none, .atom = k.atom.* });
     }
 
     fn escapeValue(k: *Walker, v: u32, point: u32) Error!void {
@@ -818,6 +820,11 @@ const Walker = struct {
         switch (callee) {
             .harmless => {
                 for (arg_insts) |a| try k.consume(a, i);
+                // A function value called reads what its closure holds.
+                if (head != none) {
+                    try k.use(head, i, .whole, .{ none, none });
+                    k.pop(head);
+                }
                 return fr.scalar();
             },
             .ctor => |c| {
@@ -830,6 +837,8 @@ const Walker = struct {
                 for (k.ctx.capturesOf(k.ctx.ctx, c)) |l| {
                     const b = if (l < k.w.bindings.len) k.w.bindings[l] else Binding{};
                     try caps.append(k.gpa, if (b.value == none) try fr.top() else b.value);
+                    // The call reads the captures it runs with (§2.11.4).
+                    if (b.value != none) try k.captureUse(l, i);
                 }
                 return k.codeCall(i, c, null, arg_insts, vals.items, caps.items);
             },
