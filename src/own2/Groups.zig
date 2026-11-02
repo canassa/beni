@@ -949,7 +949,9 @@ pub const Module = struct {
                 .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| {
                     target = .{ u.module.int(), d.int() };
                 },
-                .param, .codec => {},
+                // A record field of function type: its value, unknown here
+                // (the pessimistic contract), never a comparison.
+                .param, .codec, .field => {},
                 else => composed = true,
             }
         };
@@ -1017,12 +1019,10 @@ pub const Module = struct {
                 for (ps.items) |p| try rp.append(mod.gpa, .{ .place = p });
                 contract = try Rows.ctor(mod.rowsEnv(arena.allocator()), .{ .params = rp.items, .result = result }, c[0]);
             },
-            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => {
-                var rp: std.ArrayList(Rows.Param) = .empty;
-                defer rp.deinit(mod.gpa);
-                for (ps.items) |p| try rp.append(mod.gpa, .{ .place = p });
-                contract = try Rows.schema(mod.rowsEnv(arena.allocator()), .{ .params = rp.items, .result = result });
-            },
+            // A member answers what its `via` conversions answer (a top-level
+            // list, say), and a constructor holds its arguments: neither is
+            // fresh, so neither has a row here (§2.13.10).
+            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => contract = try mod.pessimisticOf(@intCast(ps.items.len)),
             .top, .ext_value => {
                 const t = mod.aliasTarget(mod.declOf(inst) orelse return null);
                 if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none and (ps.items.len == 0 or mod.in.bir.decls[t[1]].params != 0)) {
