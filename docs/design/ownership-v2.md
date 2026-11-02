@@ -1311,10 +1311,14 @@ slot domain's base went with the trees: a result kept the draft's label numbers 
 sorted, so a `cb` arrival could name another callback's answer, and a write onto it was accepted that the
 sanitiser catches (#1737, `run/SanitiserCallbackLabels`); the result is put with the sorted numbers, as the
 supplies were. **Not built:** `writes`, `escapes` and `kept` are still flat lists and the covering fold is
-not applied to them; a call's instantiation is not yet per callee node through a choice chain's tag routes
-(the else-if chain's call costs 1 960 / 3 704 / 7 152 records at D = 8 / 16 / 32, nearly all of it
-under `Eval.finishDemands` and three quarters of it the callee's selection instantiated over the chain's
-arms, `Distinct.instSel`). Measured (Debug): `w₃ / w₅ / w₈ /
+not applied to them; a call's instantiation is not yet per callee node. *Amended 2026-11-03 (#1714):* a call's
+paths into one argument are projected by **one walk** of it (`Paths.zig`): the occurrences of the callee's
+`req` on one parameter, and the writes of one argument whose targets are a projection of it. An arm or a step
+two paths share is read once, its tags made once; a path alone, at its end, or at a value read by its kind
+is projected on by `project` from there, so each path's projections and their order are unchanged. Before,
+each path walked the argument again, and an `else if` chain of D arms made each arm's tags once a path:
+`chainCallCold` (`Lib.incAll v`, three writes and three occurrences, the call's records less the plain
+chain's and its demands) cost 626 / 1 042 / 1 833 at D = 8 / 16 / 32, now 246 / 278 / 301. Measured (Debug): `w₃ / w₅ / w₈ /
 w₁₀` 1 081 / 287 / 1 575 / 5 991, linear in the result's depth; `EvidenceDagBuildDepth32` has no limit line;
 `Schema.shapeOf` 256 826 (256 618 before); ledger: no verdict moves, 11 limit lines fewer, none new.
 
@@ -3691,6 +3695,10 @@ order, each node once, union, graft, label maps, the effect trees' fold; imports
 values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Held, Ids, Place, Relation, Slots, Subtree, Value).*
 *Amended 2026-11-03 (#1714): `Later` (a holder's later uses, L9 with `Holders` and `Sweep`) was split out of
 `Resolve` on the layer below it; `PlaceBelow` (L2) out of `Subtree`, read by `Distinct` and `Descent` (`Subtree` reads `Place.objectsBelow` instead, §2.3.1); `Descent` (L10, the best-hold descent) below `Resolve`, which moved to L11 with every layer above it (`Groups` L12; `Block`, `Message`, `Report`, `Hoists` L13; `Ownership` L14; `Enforce` L15).*
+*Amended 2026-11-03 (#1714): `Paths` (L8, one walk of a value along several paths, §2.10 *As built*) is below
+`Distinct` and `Eval`, and every layer from `Walk` and `Distinct` up moved one place (`Walk`, `Distinct` L9;
+`Eval`, `Holders`, `Later`, `Sweep`, `Stack` L10; `ReadOff`, `Descent`, `Deliver`, `Closures` L11; `Resolve`
+L12; `Groups` L13; `Block`, `Message`, `Report`, `Hoists` L14; `Ownership` L15; `Enforce` L16).*
 
 ```
 L13 Enforce
