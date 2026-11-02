@@ -603,6 +603,10 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
     if (xr and tr and x.root == t.root) return positional(e, xi, ti, target);
     if (xr or tr) {
+        // An object made after a call is none of the call's result (§2.9.2
+        // step 4): no expansion, so a chain of calls is never walked again
+        // per atom met at its end.
+        if (madeAfter(e, x, t) or madeAfter(e, t, x)) return .no;
         const ex = xr and e.expandable(x);
         const et = tr and e.expandable(t);
         if (ex or et) {
@@ -630,6 +634,18 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     // Two atoms.
     if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
     return .no;
+}
+
+/// Whether atom `a` (a literal's or a call's fresh objects) was made
+/// after the call whose result `l` is: then the result holds none of it.
+fn madeAfter(e: *Eval, a: Leaf, l: Leaf) bool {
+    if (l.kind != .ref or e.f.roots.items[l.root].kind != .call) return false;
+    const at = switch (a.kind) {
+        .site => a.atom,
+        .fresh => e.f.calls.items[a.atom].point,
+        else => return false,
+    };
+    return e.f.calls.items[e.f.roots.items[l.root].a].point < at;
 }
 
 /// What the answer `x` of a label's direct call may hold of `t` (§2.9.2
