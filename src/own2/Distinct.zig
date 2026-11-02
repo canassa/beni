@@ -17,6 +17,7 @@ const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
+const Entries = @import("Entries.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -220,15 +221,19 @@ pub fn sepOf(e: *Eval, v: u32) Error!Cond {
     return distinct(e, ps.items, false);
 }
 
-const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32 };
+const Ent = Entries.Ent;
+const Occs = Entries.Occs;
 
 /// §2.9.3: every object the entries name is distinct from every other's,
-/// by the factored check (never a table of pairs).
+/// by the factored check (never a table of pairs). The groups are kept
+/// across rounds (`Entries.Rounds`): a round checks only the groups its
+/// expansion changed, each for its new entries.
 pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     const g = e.gpa();
-    var ents: std.ArrayList(Ent) = .empty;
-    defer ents.deinit(g);
-    for (ps) |p| try ents.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none });
+    const f = e.f;
+    var st: Entries.Rounds = .{};
+    defer st.deinit(g);
+    for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none }, .{ none, @intCast(k), 0 });
     const acc: Cond = .{};
     // The conditions met, gathered and made one at the end: a merge per
     // entry or group would cost their product (§2.9.3's linear bound).
@@ -236,11 +241,11 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     defer occs.deinit(g);
     // A family asks its own root's separation; ⊤ and shared objects are
     // never known to be once.
-    for (ents.items) |en| {
-        const l = e.f.leafAt(en.leaf);
+    for (st.ents.items) |en| {
+        const l = f.leafAt(en.leaf);
         switch (l.kind) {
             .ref => if (!l.at_pos and try isFamily(e, l) and !Contract.isApart(en.occ)) {
-                if (e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
+                if (f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
                 if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             },
             .top, .shared => return Cond.unprovable,
@@ -249,148 +254,136 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         // A callback answer may be what the label was supplied (unknown code
         // may answer its argument): never apart from another entry that
         // reaches a supply (`pickSecond`: `( f b, b )`).
-        if (l.kind == .ref and e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) {
+        if (l.kind == .ref and f.roots.items[l.root].kind == .cb and !e.expandable(l)) {
             var sl: std.ArrayList(u32) = .empty;
             defer sl.deinit(g);
-            for (e.f.cbs.items[e.f.roots.items[l.root].a].args) |sv| try e.leavesOf(sv, 0, &sl);
-            for (ents.items) |o| if (o.leaf != en.leaf) for (sl.items) |x| {
+            for (f.cbs.items[f.roots.items[l.root].a].args) |sv| try e.leavesOf(sv, 0, &sl);
+            for (st.ents.items) |o| if (o.leaf != en.leaf) for (sl.items) |x| {
                 if ((try overlap(e, o.leaf, x, false)).kind != .no) return Cond.unprovable;
             };
         }
     }
-    var next: std.ArrayList(Ent) = .empty;
-    defer next.deinit(g);
+    var taken: std.ArrayList(u32) = .empty;
+    defer taken.deinit(g);
+    var dirty: std.ArrayList(u32) = .empty;
+    defer dirty.deinit(g);
+    var fresh: usize = 0;
     var rounds: u32 = 0;
     while (true) : (rounds += 1) {
-        try e.charge(.cond, @intCast(1 + ents.items.len));
-        if (try answerMeets(e, ents.items)) return Cond.unprovable;
-        // Group by root; atoms by identity.
-        var groups: Ids.FixedDict(1) = .{};
-        defer groups.deinit(g);
-        var members: std.ArrayList(std.ArrayList(u32)) = .empty;
-        defer {
-            for (members.items) |*m| m.deinit(g);
-            members.deinit(g);
-        }
-        var group_root: std.ArrayList(u32) = .empty;
-        defer group_root.deinit(g);
-        var atoms: Ids.FixedDict(3) = .{};
-        defer atoms.deinit(g);
-        var atom_members: std.ArrayList(std.ArrayList(u32)) = .empty;
-        defer {
-            for (atom_members.items) |*m| m.deinit(g);
-            atom_members.deinit(g);
-        }
-        var latest: u32 = none;
-        for (ents.items, 0..) |en, i| {
-            const l = e.f.leafAt(en.leaf);
-            switch (l.kind) {
-                .ref => {
-                    const got = try groups.getOrPut(g, .{l.root});
-                    if (!got.found_existing) {
-                        got.value_ptr.* = @intCast(members.items.len);
-                        try members.append(g, .empty);
-                        try group_root.append(g, l.root);
-                    }
-                    try members.items[got.value_ptr.*].append(g, @intCast(i));
-                    if (e.expandable(l) and (latest == none or l.root > latest)) latest = l.root;
-                },
-                .site, .fresh => {
-                    const got = try atoms.getOrPut(g, .{ @backingInt(l.kind), l.atom, 0 });
-                    if (!got.found_existing) {
-                        got.value_ptr.* = @intCast(atom_members.items.len);
-                        try atom_members.append(g, .empty);
-                    }
-                    try atom_members.items[got.value_ptr.*].append(g, @intCast(i));
-                },
-                else => {},
-            }
-        }
-        for (atom_members.items) |m| if (try atomTwice(e, ents.items, m.items)) return Cond.unprovable;
-        var params: u32 = 0;
-        for (group_root.items) |root| if (e.f.roots.items[root].kind == .param) {
-            params += 1;
+        const ents = st.ents.items;
+        try e.charge(.cond, @intCast(1 + ents.len - fresh));
+        if (try Entries.answerMeets(f, ents, st.alive.items, fresh)) return Cond.unprovable;
+        // The new entries into their groups; a second parameter's group
+        // makes every parameter group ask its occurrences.
+        const params = st.params;
+        for (fresh..ents.len) |i| try st.place(f, @intCast(i));
+        fresh = ents.len;
+        if (params < 2 and st.params >= 2) for (st.groups.items) |*gr| {
+            if (gr.root != none and f.roots.items[gr.root].kind == .param) gr.dirty = true;
         };
-        // A supply or a label meeting itself is decided by expansion.
-        var must: u32 = none;
-        var unvouched = false;
-        for (members.items, group_root.items) |idx, root| {
-            if (try mayWithin(e, ents.items, idx.items, routed)) return Cond.unprovable;
-            const r = e.f.roots.items[root];
+        dirty.clearRetainingCapacity();
+        for (st.groups.items, 0..) |*gr, gi| if (gr.dirty) {
+            gr.dirty = false;
+            try dirty.append(g, @intCast(gi));
+        };
+        try e.charge(.cond, @intCast(dirty.items.len));
+        for (dirty.items) |gi| {
+            const gr = &st.groups.items[gi];
+            const idx = gr.members.items;
+            if (idx.len == 0) continue;
+            if (gr.root == none) {
+                if (try Entries.atomTwice(f, ents, idx)) return Cond.unprovable;
+                continue;
+            }
+            if (try gr.within.add(f, ents, idx, routed)) return Cond.unprovable;
+            const r = f.roots.items[gr.root];
             switch (r.kind) {
                 // One entry that names several objects (a tuple a parameter
                 // or a call answers whole) asks as two entries do (#1711).
-                .param => if (idx.items.len >= 2 or params >= 2 or manyObjects(e, ents.items, idx.items)) {
+                .param => if (idx.len >= 2 or st.params >= 2 or Entries.manyObjects(f, ents, idx)) {
                     // One sort of the group's slots, never a union per entry.
                     // Each entry's slots; an entry of an apart occurrence
-                    // asks to be apart only.
-                    for (idx.items) |i| {
-                        const ap = Contract.isApart(ents.items[i].occ);
-                        const lslots = e.f.slots.elems(e.f.leafAt(ents.items[i].leaf).slots);
+                    // asks to be apart only. A member's are asked once.
+                    for (idx[gr.occ_done..]) |i| {
+                        const ap = Contract.isApart(ents[i].occ);
+                        const lslots = f.slots.elems(f.leafAt(ents[i].leaf).slots);
                         try e.charge(.cond, @intCast(1 + lslots.len));
                         for (lslots) |x| if (try occOf(e, r.a, x, ap)) |o| try occs.add(g, o);
                     }
+                    gr.occ_done = @intCast(idx.len);
                 },
-                .call => if ((idx.items.len >= 2 or manyObjects(e, ents.items, idx.items)) and !allApart(ents.items, idx.items)) {
-                    // A call that does not vouch for its parts is read
-                    // through what they come from (§2.9.2 step 3),
-                    // each part on its own.
-                    const c = if (anyApart(ents.items, idx.items)) try instCondMixed(e, r.a, ents.items, idx.items) else try instCond(e, r.a);
-                    if (c.no) {
-                        // At a slot no step below can name, the arrivals
-                        // are one set: `xs` twice inside a cast is one leaf
-                        // there, so expansion cannot count it (#1710).
-                        if (idx.items.len == 1 and wildEntry(e, ents.items[idx.items[0]])) return Cond.unprovable;
-                        if (must == none or root > must) {
-                            must = root;
-                            unvouched = true;
-                        }
-                    } else if (try gather(e, &occs, c)) return Cond.unprovable;
+                .call => {
+                    gr.must = 0;
+                    if ((idx.len >= 2 or Entries.manyObjects(f, ents, idx)) and !Entries.allApart(ents, idx)) {
+                        // A call that does not vouch for its parts is read
+                        // through what they come from (§2.9.2 step 3),
+                        // each part on its own.
+                        const c = if (Entries.anyApart(ents, idx)) try instCondMixed(e, r.a, ents, idx) else try instCond(e, r.a);
+                        if (c.no) {
+                            // At a slot no step below can name, the arrivals
+                            // are one set: `xs` twice inside a cast is one leaf
+                            // there, so expansion cannot count it (#1710).
+                            if (idx.len == 1 and Entries.wildEntry(f, ents[idx[0]])) return Cond.unprovable;
+                            gr.must = 1;
+                        } else if (try gather(e, &occs, c)) return Cond.unprovable;
+                    }
                 },
-                .supply, .cb => if (idx.items.len >= 2 or manyObjects(e, ents.items, idx.items)) {
-                    if (!e.expandable(e.f.leafAt(ents.items[idx.items[0]].leaf))) return Cond.unprovable;
-                    if (must == none or root > must) {
-                        must = root;
-                        unvouched = false;
+                .supply, .cb => {
+                    gr.must = 0;
+                    if (idx.len >= 2 or Entries.manyObjects(f, ents, idx)) {
+                        if (!e.expandable(f.leafAt(ents[idx[0]].leaf))) return Cond.unprovable;
+                        gr.must = 2;
                     }
                 },
             }
+            if (gr.must != 0) try Entries.Rounds.push(g, &st.musts, gr.root);
         }
-        if (must != none) latest = must else if (latest == none or groups.count() + atoms.count() < 2) break;
+        // A supply or a label meeting itself is decided by expansion.
+        const must = st.top(&st.musts, struct {
+            fn ok(gr: *const Entries.Group) bool {
+                return gr.must != 0 and gr.members.items.len != 0;
+            }
+        }.ok);
+        const latest = must orelse st.top(&st.expandable, struct {
+            fn ok(gr: *const Entries.Group) bool {
+                return gr.members.items.len != 0;
+            }
+        }.ok) orelse break;
+        if (must == null and st.nonempty < 2) break;
         if (rounds > 4096) return Cond.unprovable;
+        const unvouched = must != null and st.groups.items[st.of_root.items[latest]].must == 1;
         // The latest expandable root meets another: its entries become
-        // what they come from (one level), a block it vouched for.
-        next.clearRetainingCapacity();
+        // what they come from (one level), a block it vouched for, in the
+        // order the entries are read (a leaf met twice keeps its first).
+        taken.clearRetainingCapacity();
+        try st.take(g, latest, &taken);
+        const blk = if (f.roots.items[latest].kind == .call and !unvouched) latest else none;
+        if (blk != none and taken.items.len >= 2) try sortInline(e, &st, taken.items);
         // An expansion of a call is one block of alternatives: one entry
         // per leaf (pairs inside a block are never compared).
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(g);
-        for (ents.items) |en| {
-            const l = e.f.leafAt(en.leaf);
-            if (l.kind != .ref or l.root != latest) {
-                try next.append(g, en);
-                continue;
-            }
+        const start = st.ents.items.len;
+        for (taken.items) |ti| {
+            const en = st.ents.items[ti];
             var list: std.ArrayList(u32) = .empty;
             defer list.deinit(g);
             try e.expand(en.leaf, &list);
-            for (list.items) |x| {
-                const xl = e.f.leafAt(x);
+            for (list.items, 0..) |x, nth| {
+                const xl = f.leafAt(x);
                 if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;
                 try e.charge(.edge, 1);
                 e.route_count += 1;
-                const blk = if (e.f.roots.items[latest].kind == .call and !unvouched) latest else none;
                 if (blk != none and (try seen.getOrPut(g, .{x})).found_existing) continue;
-                try next.append(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk });
+                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
-        std.mem.swap(std.ArrayList(Ent), &ents, &next);
         // Families of the expansion ask their own separation.
-        for (ents.items) |en| {
+        for (st.ents.items[start..]) |en| {
             if (en.block == none) continue;
-            const l = e.f.leafAt(en.leaf);
+            const l = f.leafAt(en.leaf);
             if (l.kind == .ref and !l.at_pos and try isFamily(e, l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
-                if (e.f.roots.items[l.root].kind == .cb) return Cond.unprovable;
+                if (f.roots.items[l.root].kind == .cb) return Cond.unprovable;
                 if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             }
         }
@@ -399,67 +392,15 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
 }
 
-/// A callback's answer is the unknown code's (§2.9.3, #1711): any object
-/// its caller reaches, what the label was supplied, the code's captures,
-/// the caller's other arguments, or another answer of the same code
-/// (`( f ⊤, f ⊤ )` with `f = λ⊤ → xs`). So it is apart from no other
-/// entry but an alternative to it or one its own block vouches for.
-fn answerMeets(e: *Eval, ents: []const Ent) Error!bool {
-    for (ents, 0..) |en, i| {
-        const l = e.f.leafAt(en.leaf);
-        if (!(l.kind == .answer or (l.kind == .ref and e.f.roots.items[l.root].kind == .cb))) continue;
-        for (ents, 0..) |o, k| {
-            if (k == i or (o.block != none and o.block == en.block)) continue;
-            if ((try e.f.mergeTags(l.tags, e.f.leafAt(o.leaf).tags)) != null) return true;
-        }
+/// `xs` in the inline order of the check's entries (an insertion sort by
+/// `Entries.Rounds.before`, its comparisons charged).
+fn sortInline(e: *Eval, st: *const Entries.Rounds, xs: []u32) Error!void {
+    var i: usize = 1;
+    while (i < xs.len) : (i += 1) {
+        var k = i;
+        while (k > 0 and try st.before(e.f, xs[k], xs[k - 1])) : (k -= 1) std.mem.swap(u32, &xs[k], &xs[k - 1]);
     }
-    return false;
 }
-
-/// Whether a group's one entry names more than one object: two slots, a
-/// subtree held whole (`↓p`, §2.3.1), or one that no step below can name.
-fn manyObjects(e: *Eval, ents: []const Ent, idx: []const u32) bool {
-    if (idx.len != 1) return false;
-    return e.f.slots.elems(e.f.leafAt(ents[idx[0]].leaf).slots).len >= 2 or wildEntry(e, ents[idx[0]]);
-}
-
-/// Whether an entry has a slot of a type variable's or an opaque place. A
-/// subtree held whole is read as one: its slots are not listed.
-fn wildEntry(e: *Eval, en: Ent) bool {
-    for (e.f.slots.elems(e.f.leafAt(en.leaf).slots)) |x| {
-        if (Slots.isNot(x)) continue;
-        if (Slots.isSub(x)) return true;
-        switch (e.places().kind(e.places().pathPlace(Slots.pathOf(x)))) {
-            .@"var", .@"opaque" => return true,
-            else => {},
-        }
-    }
-    return false;
-}
-
-fn anyApart(ents: []const Ent, idx: []const u32) bool {
-    for (idx) |i| if (Contract.isApart(ents[i].occ)) return true;
-    return false;
-}
-
-fn allApart(ents: []const Ent, idx: []const u32) bool {
-    for (idx) |i| if (!Contract.isApart(ents[i].occ)) return false;
-    return true;
-}
-
-/// The occurrences a check gathers, each once.
-const Occs = struct {
-    run: std.ArrayList(u64) = .empty,
-    seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
-    fn deinit(o: *Occs, g: Allocator) void {
-        o.run.deinit(g);
-        o.seen.deinit(g);
-    }
-    fn add(o: *Occs, g: Allocator, x: u64) Allocator.Error!void {
-        if ((try o.seen.getOrPut(g, x)).found_existing) return;
-        try o.run.append(g, x);
-    }
-};
 
 /// Add condition `c`'s occurrences to `occs`; whether it is `no`.
 /// A condition gathered again (one interned run) is not read again.
@@ -472,105 +413,6 @@ fn gather(e: *Eval, occs: *Occs, c: Cond) Error!bool {
     try e.charge(.cond, @intCast(c.sel.len));
     for (c.sel) |x| try occs.add(e.gpa(), x);
     return false;
-}
-
-/// Whether two entries of one root may name one object (§2.3.2): by index
-/// `(position, 4, slot)` and `(ancestor, list step kind, slot)`, checked at
-/// ancestors and the list steps that may meet (pairwise up to eight).
-fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!bool {
-    if (idx.len < 2) return false;
-    const g = e.gpa();
-    if (idx.len <= 8) {
-        for (idx, 0..) |i, k| for (idx[k + 1 ..]) |j| {
-            if (try pairMay(e, ents[i], ents[j], routed)) return true;
-        };
-        return false;
-    }
-    var at: Ids.FixedDict(3) = .{};
-    defer at.deinit(g);
-    var lists: std.ArrayList(std.ArrayList(u32)) = .empty;
-    defer {
-        for (lists.items) |*l| l.deinit(g);
-        lists.deinit(g);
-    }
-    // A whole subtree (`↓p`, §2.3.1) meets slots by prefix, not by name:
-    // an entry that holds one is compared with every other entry.
-    for (idx, 0..) |i, k| {
-        if (!Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) continue;
-        for (idx, 0..) |j, m| {
-            if (j == i or (m < k and Subtree.symbolic(e.f.slots, e.f.leafAt(ents[j].leaf).slots))) continue;
-            if (try pairMay(e, ents[i], ents[j], routed)) return true;
-        }
-    }
-    const pos = e.f.pos.items;
-    for (idx) |i| for (Subtree.explicit(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) |s| {
-        var c = e.f.leafAt(ents[i].leaf).pos;
-        var key: [3]u32 = .{ c, 4, s };
-        while (true) {
-            try e.charge(.inspection, 1);
-            const got = try at.getOrPut(g, key);
-            if (!got.found_existing) {
-                got.value_ptr.* = @intCast(lists.items.len);
-                try lists.append(g, .empty);
-            }
-            try lists.items[got.value_ptr.*].append(g, i);
-            while (pos[c].parent != none and pos[c].kind == .plain) c = pos[c].parent;
-            if (pos[c].parent == none) break;
-            key = .{ pos[c].parent, @backingInt(pos[c].kind), s };
-            c = pos[c].parent;
-        }
-    };
-    for (idx) |i| {
-        const l = e.f.leafAt(ents[i].leaf);
-        for (Subtree.explicit(e.f.slots, l.slots)) |s| {
-            var p = l.pos;
-            while (p != none) : (p = pos[p].parent) {
-                try e.charge(.inspection, 1);
-                if (at.get(.{ p, 4, s })) |here| for (lists.items[here].items) |j| {
-                    if (j == i or (p == l.pos and j > i)) continue;
-                    if (try pairMay(e, ents[i], ents[j], routed)) return true;
-                };
-                if (pos[p].parent == none) continue;
-                const kinds: []const u32 = switch (pos[p].kind) {
-                    .plain => &.{},
-                    .front => &.{ 2, 3 },
-                    .back => &.{ 1, 3 },
-                    .slice => &.{ 1, 2, 3 },
-                };
-                for (kinds) |k| {
-                    try e.charge(.inspection, 1);
-                    const here = at.get(.{ pos[p].parent, k, s }) orelse continue;
-                    for (lists.items[here].items) |j| if (j != i and try pairMay(e, ents[i], ents[j], routed)) return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-/// Whether two entries `idx` of one atom may hold together (`Routes.Table.anyPair`).
-fn atomTwice(e: *Eval, ents: []const Ent, idx: []const u32) Error!bool {
-    var es: std.ArrayList(@TypeOf(e.f.sets.tags).Entry) = .empty;
-    defer es.deinit(e.gpa());
-    for (idx) |i| try es.append(e.gpa(), .{ .tags = e.f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ) });
-    return e.f.sets.tags.anyPair(e.gpa(), e.account(), es.items);
-}
-
-fn pairMay(e: *Eval, a: Ent, b: Ent, routed: bool) Error!bool {
-    try e.charge(.cond, 1);
-    if (a.block != none and a.block == b.block) return false;
-    if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ) return false;
-    // Apart occurrences need only be apart from the plain ones.
-    if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
-    const la = e.f.leafAt(a.leaf);
-    const lb = e.f.leafAt(b.leaf);
-    if ((try e.f.mergeTags(la.tags, lb.tags)) == null) return false;
-    // Two distinct occurrences of a callee at one value by one route are
-    // two distinct positions of it (§2.9.3's routed rule).
-    if (routed and a.route == b.route and a.occ != b.occ and la.pos == lb.pos) return false;
-    if (la.at_pos and lb.at_pos and la.pos != lb.pos) return false;
-    const r = try e.f.related(la.pos, lb.pos);
-    return r.rel == .related and try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), la.slots, lb.slots);
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------
