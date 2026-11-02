@@ -645,6 +645,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
         .shared => try arrive(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         .top => try arrive(s, q, .{ .kind = .top }, out),
         .answer => try arrive(s, q, .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra }, out),
+        .recons => unreachable,
         .ref => {
             const r = f.roots.items[l.root];
             const pslot = f.pos.items[l.pos].slot;
@@ -801,6 +802,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: ResList) Error!void {
         .shared => try arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         .top => try arriveWide(s, q, .{ .kind = .top }, out),
         .answer => try arriveWide(s, q, .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra }, out),
+        .recons => unreachable,
         .ref => {
             const r = f.roots.items[l.root];
             // The leaf is a subtree of its root read at `q` by structure: its
@@ -1035,6 +1037,9 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     d.flags.cross = !Slots.holdsAny(f.places, rpath);
     if (d.flags.returns and !d.flags.cross) try describe(s, w.result, rpath, .{});
     // Reads: every use of a local whose value is a parameter's, at its path.
+    // One pass (§2.3.4 *Reading*): a leaf set node read deep before adds no
+    // read, so a tower of uses costs its distinct nodes.
+    const pass = f.sets.newPass();
     for (w.uses.items) |u| {
         const b = w.bindings[u.local];
         if (b.value == none) continue;
@@ -1058,11 +1063,15 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 try words.appendSlice(gpa, f.slots.relWords(x.slot));
                 var qs: std.ArrayList(Relation.Proj) = .empty;
                 defer qs.deinit(gpa);
+                e.ev.pass = if (x.deep) pass else 0;
+                defer e.ev.pass = 0;
                 try e.ev.project(b.value, words.items, x.deep, 0, 0, &qs);
                 for (qs.items) |p| try paramEffects(s, p.leaf, x.deep, .reads);
             }
             continue;
         }
+        e.ev.pass = pass;
+        defer e.ev.pass = 0;
         try e.ev.project(b.value, f.slots.relWords(rel), true, 0, 0, &ps);
         for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
     }
@@ -1212,6 +1221,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: ResList) Error!void {
             .shared => .{ .kind = .shared, .j = l.atom, .slot = l.extra },
             .top => .{ .kind = .top },
             .answer => .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra },
+            .recons => unreachable,
             .ref => {
                 const r = f.roots.items[l.root];
                 switch (r.kind) {
