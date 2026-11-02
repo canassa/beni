@@ -10944,7 +10944,10 @@ test "the checker v2's summaries read each position of a value on its own (#1073
     // the parameter's level reads that level's `excl` (§2.9). In the slot
     // domain (#1685) the child's own list `#0.0[*]#0.0` is written exactly
     // and the levels below it are `⟲`, each slot with its own arrivals.
-    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: res .0 π1#0.0[*]#0.0 fresh, .0[*]#0.0 fresh, .0[*]#0.0⟲ π1#0.0[*]⟲#0.0, .1 π1#0.0, .1[*]#0.0 π1#0.0[*]#0.0, .1[*]#0.0⟲ π1#0.0[*]⟲#0.0; nondup no; reads π1#0.0*; writes π1#0.0[*]#0.0; req yes\n") != null);
+    // `Rose` is on a cycle, so `below(π1)` is the symbol `↓π1` (§2.3.1)
+    // and the deep read is one at the root, `π1ε*`: the constructor at `ε`
+    // holds no object, so it reads the same slots as `π1#0.0*`.
+    try testing.expect(std.mem.indexOf(u8, rose.stdout, "  summary writeBelow: res .0 π1#0.0[*]#0.0 fresh, .0[*]#0.0 fresh, .0[*]#0.0⟲ π1#0.0[*]⟲#0.0, .1 π1#0.0, .1[*]#0.0 π1#0.0[*]#0.0, .1[*]#0.0⟲ π1#0.0[*]⟲#0.0; nondup no; reads π1ε*; writes π1#0.0[*]#0.0; req yes\n") != null);
 }
 
 test "the checker v2's widen keeps a non-recursive function's choice at a tree's root exact (#1360)" {
@@ -10974,7 +10977,11 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     // own arrivals; the levels below `#1.0` are `#1.0⟲`. With result trees
     // (#1714) a read subtree equal to an earlier sibling's prints as
     // `π1#1.2 = π1#1.0`: the reads below `#1.2` are `#1.0`'s, each exact.
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1#1.0#1.1* π1#1.0⟲#1.1* π1#1.1* π1#1.2 = π1#1.0 π2#1.0#1.1* π2#1.0⟲#1.1* π2#1.1* π2#1.2 = π2#1.0\n") != null);
+    // `Tree` is on a cycle, so a subtree read or selected whole is the
+    // symbol (§2.3.1): `π2{ε*}` and `π1ε* π2ε*` name the object slots the
+    // written-out lists named, and `#1.0⟲*` is `#1.0⟲#1.1`. The result,
+    // the point of this test, is unchanged.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲*,#1.1} π2{ε*}; reads π1ε* π2ε*\n") != null);
 }
 
 test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {

@@ -326,9 +326,15 @@ unchanged; a slot set may now hold `below(p)` **symbolically**:
 - **The symbol `↓p`.** A slot set is a sorted run of explicit object slots, then **exclusions** `¬q`, then
   **symbols** `↓p`. `↓p` is every object slot of `below(p)`. `¬q` takes the explicit slot `q` out of the
   set's symbols; it is kept only beside a symbol. `below(p)` is written out while it has at most
-  `below_min` (16) object slots, and is `{↓p}` past that: the walk that fills it counts a path's slots when
-  it finds the path and stops at the seventeenth, so its cost is `below_min` slots' discovery, never the size
-  of the closure. It is filled once per path. A reader that reads a whole subtree through one key or one
+  `below_min` (16) object slots, and is `{↓p}` past that. *Amended 2026-11-03 (#1714, the manager's
+  decision):* whether it is past that is a column of the place graph, `Place.objectsBelow`: each place's
+  count of the object places at and below it, saturating at `below_min + 1`, which it also is when a place
+  on a cycle below it holds an object (a cycle unfolds into paths without end). It is set when the
+  strongly connected components are settled: a component pops after every one below it, so a place on no
+  cycle adds its children's counts, and a cycle that holds an object saturates. `below(p)` is `{↓p}` when
+  the count at `p`'s place is past `below_min`, with no walk; else the walk fills it, counts a path's slots
+  when it finds the path and still stops at the seventeenth (a `⟲` above `p` that stands for several level
+  paths names each slot below once per level). It is filled once per path. A reader that reads a whole subtree through one key or one
   effect at its top (`below_min`, §2.10 *Read-off*) does so exactly when the set is `{↓p}`.
 - **Anchors.** The anchors of `p` are `p` and `Up(p)` (§2.7: the `⟲` paths above `p` that its levels fold
   into, closed over theirs), each with its canonical names (`Place.expandLevels`). Every slot of `below(p)`
@@ -355,7 +361,9 @@ unchanged; a slot set may now hold `below(p)` **symbolically**:
   cost `Schema.shapeOf` 540 000 records where the slots written out cost 215 000 (measured 2026-11-02).
   Nothing on a deep read's path writes a symbol out: `MutualCycles` `f` and `g` check in 1 898 and
   1 805 records, and a group of n such types costs 359, 841, 914, 781, 918, 1 062, 1 215 records for
-  n = 2…8 (1 906 at 12, 2 726 at 16).
+  n = 2…8 (1 906 at 12, 2 726 at 16). With the count in the place graph (2026-11-03), a K-wide recursive
+  type costs `f` 456 / 568 / 792 records at K = 8 / 16 / 32, and 512 / 680 / 1 016 through a `Maybe`
+  (900 / 1 411 / 2 371 and 1 620 / 1 812 / 3 156 with the walk).
 
 #### 2.3.2 Roots and positions
 
@@ -3543,7 +3551,7 @@ order, each node once, union, graft, label maps, the effect trees' fold; imports
 `Conds.zig` (L3: conditions and occurrences; Ids, Slots), `ReadOff.zig` (L10: a frame's contract read off its
 values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Ids, Place, Relation, Slots, Subtree, Value).*
 *Amended 2026-11-03 (#1714): `Later` (a holder's later uses, L9 with `Holders` and `Sweep`) was split out of
-`Resolve` on the layer below it; `PlaceBelow` (L2) out of `Subtree`, read by `Subtree` and `Distinct`; `Descent` (L10, the best-hold descent) below `Resolve`, which moved to L11 with every layer above it (`Groups` L12; `Block`, `Message`, `Report`, `Hoists` L13; `Ownership` L14; `Enforce` L15).*
+`Resolve` on the layer below it; `PlaceBelow` (L2) out of `Subtree`, read by `Distinct` and `Descent` (`Subtree` reads `Place.objectsBelow` instead, §2.3.1); `Descent` (L10, the best-hold descent) below `Resolve`, which moved to L11 with every layer above it (`Groups` L12; `Block`, `Message`, `Report`, `Hoists` L13; `Ownership` L14; `Enforce` L15).*
 
 ```
 L13 Enforce

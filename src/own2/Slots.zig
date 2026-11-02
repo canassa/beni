@@ -40,7 +40,7 @@ pub const not_bit: u32 = 1 << 30;
 /// smaller one is written out, which costs less to read slot by slot. A
 /// reader that reads a whole subtree through one key or one effect at its
 /// top does so exactly when the set is `↓p` (§2.10 *Read-off*).
-pub const below_min: usize = 16;
+pub const below_min: usize = Place.below_min;
 
 pub fn isSub(x: u32) bool {
     return x & sub_bit != 0;
