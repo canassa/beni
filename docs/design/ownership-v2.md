@@ -3527,7 +3527,7 @@ order, each node once, union, graft, label maps, the effect trees' fold; imports
 `Conds.zig` (L3: conditions and occurrences; Ids, Slots), `ReadOff.zig` (L10: a frame's contract read off its
 values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Ids, Place, Relation, Slots, Subtree, Value).*
 *Amended 2026-11-03 (#1714): `Later` (a holder's later uses, L9 with `Holders` and `Sweep`) was split out of
-`Resolve` on the layer below it.*
+`Resolve` on the layer below it; `PlaceBelow` (L2) out of `Subtree`, read by `Subtree` and `Distinct`.*
 
 ```
 L13 Enforce
@@ -3557,6 +3557,7 @@ L0  Ids  Counters  Scratch
 | `Routes.zig` | 1 | tag lists with shared tails and jump pointers, route sets, the atom pairs a parting rules out (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
+| `PlaceBelow.zig` | 2 | what a place graph says below a path: object slots counted, a family read off (§2.3.1, #1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
