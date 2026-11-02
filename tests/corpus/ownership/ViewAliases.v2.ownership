@@ -1,0 +1,10 @@
+module ViewAliases
+  20:18 List.push xs: rejected alias: rest holds it and is read at 21:13
+  32:18 List.set rest: rejected alias: xs holds it and is read at 33:13
+  44:21 List.push xs: rejected held-operand: the value at 44:15, evaluated before it, holds it until its consumer runs
+  54:15 List.set rest: rejected alias: xs holds it and is read at 54:13
+  65:13 List.push rest: accepted fresh
+  demands 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause held-operand 1
+cause alias 3
