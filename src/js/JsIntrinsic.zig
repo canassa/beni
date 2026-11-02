@@ -53,6 +53,10 @@ pub const Which = enum {
     set,
     call,
     apply,
+    /// Typed synchronous protocol invocation; the callback may park.
+    invoke,
+    /// Core Task.callback's compiler-supplied result destination.
+    completion,
     construct,
     each,
     array,

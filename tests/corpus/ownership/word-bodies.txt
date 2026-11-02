@@ -188,3 +188,4 @@ src/js/Lower.zig                Lower.listConsTail   7c488b8a7cc81baeba74afa8d08
 src/js/Lower.zig                Lower.listIsCons     b627b7ce8a482e9629ccca3be970825edd07c92c2ca0e7d10fe30b021ea3279c
 src/js/Lower.zig                Lower.listConsStep   584c9d920d77481b7bb184d6a433e5272f45bf2d175ce927676f35b44125de2e
 src/js/Lower.zig                Lower.listConsScalar b83eed7b4a45546226966250fcd19936a10e23b1d8a75a6ddbeb50c5e4142a9f
+core/Js.js                      Js.invoke           deed135f854650a35e005310f5e1c414898bd0615855db4baa04366b14f9ca1e

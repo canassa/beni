@@ -2101,6 +2101,7 @@ fn resolveModules(session: *Session) RunError!void {
     // one for the whole step: the per-module rows are what the
     // incrementality tests read.
     session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile, .{
+        .core_app = session.options.core,
         .io = session.io,
         .jobs = session.options.jobs,
         .size_by_work = session.options.size_by_work,

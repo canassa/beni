@@ -141,6 +141,7 @@ pub fn run(
         .io = parallel.io,
         .graph = graph,
         .template = .{
+            .core_app = parallel.core_app,
             .gpa = gpa,
             .scratch = scratch,
             .graph = graph,
@@ -183,6 +184,7 @@ pub fn run(
 
 /// How `run` may spread the modules over threads.
 pub const Parallel = struct {
+    core_app: bool = false,
     io: Io,
     /// At most this many threads, the calling one included. 1 resolves
     /// every module on the calling thread.
@@ -495,6 +497,7 @@ const SchemaSource = union(enum) {
 };
 
 const Pass = struct {
+    core_app: bool = false,
     gpa: Allocator,
     scratch: Allocator,
     graph: *const Graph,
@@ -789,6 +792,24 @@ const Pass = struct {
     }
 
     fn resolveImported(p: *Pass, m: Graph.Index, target: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
+        // Typed raw invocation belongs to core's fiber protocol. In
+        // particular, a platform cannot turn a suspension into ordinary data.
+        if (namespace == .value and p.graph.modulePackage(target) == .core and
+            std.mem.eql(u8, p.interner.slice(p.graph.moduleName(target)), "Js"))
+        {
+            const text = p.interner.slice(name);
+            const caller_core = p.graph.modulePackage(m) == .core or
+                (p.graph.modulePackage(m) == .app and p.core_app);
+            const invocation = std.mem.eql(u8, text, "invoke");
+            const completion = std.mem.eql(u8, text, "completion");
+            if ((invocation and !caller_core) or
+                (completion and (!caller_core or
+                    !std.mem.eql(u8, p.interner.slice(p.graph.moduleName(m)), "Task"))))
+            {
+                try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
+                return .poison(.private_name);
+            }
+        }
         const iface = &p.interfaces[target.int()];
         switch (namespace) {
             .value => if (iface.findValue(p.interner, name)) |v| {

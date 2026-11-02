@@ -4256,6 +4256,7 @@ names the fixture that pins each (§24.6).
 | `Js.each` | `escaped Value, many (Value → ⊤) → ⊤` | `for (const x of xs) f(x)`: the iteration protocol is the host's, so the iterable is taken to escape; `f` is called during the call, any number of times, and not kept |
 | `Js.throw` | `escaped Value → fresh a` | `throw v`: JavaScript keeps what is thrown; the call never returns, so what it returns is the call's own |
 | `Js.ref`, `Js.read`, `Js.write` | `escaped a → fresh Ref a`; `borrowed Ref a → unknown a`; `borrowed Ref a, escaped a → ⊤` | `{ v }`, `r.v`, `r.v = v`: what a cell holds can be read by anyone holding it, at any time later, so what goes in escapes and what comes out is unknown |
+| `Js.invoke` (owner, 2026-11-01) | `once` callback, `aliased` argument, `unknown` result | `work(value, done)`: one typed protocol step; the synchronous completion may be retained for a parked callback; the callback may retain the argument or return an alias, and its result is never assumed fresh |
 | `Js.pure`, `Js.suspending` | `once returned sync (⊤ → a) → a` | `body()`, compiled to the lambda's body |
 | `Js.finally` | `once returned sync (⊤ → a), once sync (⊤ → ⊤) → a` | `try { return body() } finally { cleanup() }` |
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |

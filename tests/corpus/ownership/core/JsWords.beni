@@ -148,3 +148,20 @@ keeps xs ys =
     held = Js.read r
     last = [ …held, 1 ]
     List.length zs + List.length more + List.length last
+
+
+-- The callback may retain its argument, and its answer may alias anything.
+invoked : List Int → Int
+invoked xs =
+    ys : List Int
+    ys = Js.invoke (λitems → items) xs λ_ → ⊤
+    more = [ …xs, 1 ]
+    List.length ys + List.length more
+
+
+invokeResult : List Int → Int
+invokeResult xs =
+    ys : List Int
+    ys = Js.invoke (λitems → items) xs λ_ → ⊤
+    more = [ …ys, 1 ]
+    List.length more

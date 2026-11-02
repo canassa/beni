@@ -32,14 +32,17 @@
 -- it picks by feature is the macrotask it escapes to.
 --
 -- Three rules make it work (research 49 §0). The runtime's records are
--- `Js.Value`s, one literal each, read and written by name. Every beni
--- function the runtime runs — a fiber's work, a continuation, a finaliser,
--- an observer — is held as a `Js.Value` and called with `Js.apply`, so the
+-- `Js.Value`s, one literal each, read and written by name. Most beni
+-- functions the runtime runs — a fiber's work, a continuation, a finaliser,
+-- an observer — are held as a `Js.Value` and called with `Js.apply`, so the
 -- checker joins none of them into a function here and none gets a second
 -- body. And `Exit` crosses into the records at a type variable (`host`,
 -- `guest`), so it pins no tag. A function here is compiled as the plain code
 -- it is, handling the sentinel as data, except where it calls one of this
 -- module's functions that suspends: there the compiler writes the protocol.
+-- The program queue, scheduler-turn hook and shutdown jobs now preserve
+-- their callback types; the remaining storage migrates in the same order
+-- as `workers-task-storage.md`.
 --
 -- The protocol (§16.1). A call that parks returns the sentinel, and leaves
 -- one pending suspension here: the wait it registered and an empty list of
@@ -78,7 +81,8 @@ pub foreign type Scope
 
 --| How a platform's primitive resumes the fiber that waits on it, once: a
 --| JavaScript function the platform calls with the value.
-pub foreign type Resume a
+pub opaque type Resume a
+    = Resume (a → ⊤)
 
 
 --| Work queued to run once, in no fiber, where a fiber started now would
@@ -122,6 +126,40 @@ andThen value next =
         Js.to sentinel
     else
         next value
+
+
+-- The compiler-only typed completion protocol. The closures capture their
+-- actual input and result types; each continuation is run by the loop.
+chain : ((a → ⊤) → a), (a → b), sync (b → ⊤) → b
+chain work next done =
+    value = Js.invoke work (λincoming → continueWith next incoming done) λ_ → ⊤
+    if isWaiting value then Js.to sentinel else Js.invoke next value done
+
+
+continueWith : (a → b), a, sync (b → ⊤) → ⊤
+continueWith next value done =
+    _ =
+        Js.call (Js.get (Js.read current) "stack") "push"
+            [ Js.from λ_ →
+                result = Js.invoke next value done
+                if isWaiting result then
+                    sentinel
+                else
+                    done result
+                    Js.null
+            ]
+    ⊤
+
+
+-- A temporary adapter while control records migrate: the old trampoline
+-- consumes a result from a closed job, never from a recursively called sink.
+legacyResult : V → ⊤
+legacyResult value =
+    fiber = Js.read current
+    if not (Js.isNull (Js.get fiber "outcome")) then
+        ⊤
+    else
+        Js.to (Js.call (Js.get fiber "stack") "push" [ Js.from λ_ → value ])
 
 
 --| Used by the code the compiler emits, and by nothing else: always `False`
@@ -223,19 +261,45 @@ none set = Js.isNull set || Js.to (Js.get set "size") == 0
 
 -- ---- The scheduler (§7.5) --------------------------------------------------
 
--- Ready work, FIFO, as quadruples: the step that runs it and its three
--- arguments. A fiber's is `resumeFiber` with the fiber, the value it resumes
--- with, and the wait that value answers (null for a start or an interrupt);
--- `soon`'s is `runSoon` with its record. A step answers whether it ran: a
--- fiber's whose wait is no longer what the fiber is parked on is stale and
--- does not count. The drain names no step, so a build whose only work is
--- `soon`'s keeps no fiber (`boundary.md` §9.8.11).
-queue : V
-queue = Js.array []
+-- Closed scheduler jobs preserve their callee and captured arguments.
+-- The first migration changes the program queue; custom scheduler
+-- records and the continuation protocol are still the existing runtime.
+-- The linked FIFO uses existing typed refs, with no new foreign primitive.
+type Jobs
+    = JobEnd
+    | JobNext (⊤ → Bool) (Js.Ref Jobs)
 
 
-head : Js.Ref Int
-head = Js.ref 0
+type alias JobQueue =
+    first : Js.Ref (Js.Ref Jobs)
+    last : Js.Ref (Js.Ref Jobs)
+
+
+newJobs : ⊤ → JobQueue
+newJobs ⊤ =
+    end = Js.ref JobEnd
+    { first = Js.ref end, last = Js.ref end }
+
+
+queue : JobQueue
+queue = newJobs ⊤
+
+
+pushJob : JobQueue, sync (⊤ → Bool) → ⊤
+pushJob q job =
+    end = Js.ref JobEnd
+    Js.write (Js.read q.last) (JobNext job end)
+    Js.write q.last end
+
+
+jobsEmpty : JobQueue → Bool
+jobsEmpty q =
+    case Js.read (Js.read q.first) of
+        JobEnd →
+            True
+
+        JobNext _ _ →
+            False
 
 
 scheduled : Js.Ref Bool
@@ -250,15 +314,15 @@ port : Js.Ref V
 port = Js.ref Js.null
 
 
-portTasks : V
-portTasks = Js.array []
+portTasks : JobQueue
+portTasks = newJobs ⊤
 
 
-macrotask : V → ⊤
+macrotask : sync (⊤ → ⊤) → ⊤
 macrotask task =
     immediate = Js.global "setImmediate"
     if Js.typeIs immediate "function" then
-        Js.to (Js.apply immediate [ task ])
+        Js.to (Js.apply immediate [ Js.from task ])
     else
         if Js.isNull (Js.read port) then
             channel = Js.construct (Js.global "MessageChannel") []
@@ -266,15 +330,29 @@ macrotask task =
             Js.set
                 (Js.get channel "port1")
                 "onmessage"
-                (Js.from λ_ → Js.to (Js.apply (Js.call portTasks "shift" []) []))
+                (Js.from λ_ → runPortTask ⊤)
             Js.write port (Js.get channel "port2")
-        _ = Js.call portTasks "push" [ task ]
+        pushJob portTasks λ⊤ →
+            task ⊤
+            True
         Js.to (Js.call (Js.read port) "postMessage" [ Js.null ])
 
 
-schedule : V, V, V, V → ⊤
-schedule task a b c =
-    _ = Js.call queue "push" [ task, a, b, c ]
+runPortTask : ⊤ → ⊤
+runPortTask ⊤ =
+    case Js.read (Js.read portTasks.first) of
+        JobEnd →
+            ⊤
+
+        JobNext task next →
+            Js.write portTasks.first next
+            _ = Js.invoke task ⊤ λ_ → ⊤
+            ⊤
+
+
+schedule : sync (⊤ → Bool) → ⊤
+schedule task =
+    pushJob queue task
     if Js.read scheduled then
         ⊤
     else
@@ -321,9 +399,9 @@ fromHost f =
         if Js.read scheduled then drain ⊤
 
 
--- The platform's turn (`onTurn`), or null.
-turn : Js.Ref V
-turn = Js.ref Js.null
+-- The platform's typed scheduler-turn hook, when installed.
+turn : Js.Ref (Maybe ((⊤ → ⊤) → ⊤))
+turn = Js.ref Nothing
 
 
 --| How the platform runs each drain of the scheduler: `f` is handed the
@@ -332,7 +410,7 @@ turn = Js.ref Js.null
 --| (`backend.md` §15.11), not on a microtask after it. The last one given
 --| is the one used.
 pub onTurn : sync ((⊤ → ⊤) → ⊤) → ⊤
-onTurn f = Js.write turn (Js.from f)
+onTurn f = Js.write turn (Just f)
 
 
 resumeFiber : V, V, V → Bool
@@ -354,7 +432,7 @@ enqueue fiber value w =
         if hasEnded s then Js.set fiber "interrupted" (Js.from True)
         scheduleOn s (Js.from resumeFiber) fiber value w
     else
-        schedule (Js.from resumeFiber) fiber value w
+        schedule λ⊤ → resumeFiber fiber value w
 
 
 -- A fiber that throws is a defect (`boundary.md` §9.8.10 (c)): the
@@ -448,17 +526,20 @@ releasing : Js.Ref Bool
 releasing = Js.ref False
 
 
-releases : V
-releases = Js.array []
+releases : JobQueue
+releases = newJobs ⊤
 
 
 releaseAll : ⊤ → ⊤
 releaseAll ⊤ =
-    if Js.to (Js.get releases "length") == 0 then
-        ⊤
-    else
-        _ = Js.apply (Js.call releases "shift" []) [ Js.null ]
-        releaseAll ⊤
+    case Js.read (Js.read releases.first) of
+        JobEnd →
+            ⊤
+
+        JobNext cleanup next →
+            Js.write releases.first next
+            _ = Js.invoke cleanup ⊤ λ_ → ⊤
+            releaseAll ⊤
 
 
 --| Call `f` once, when the runtime stops (`shutdown`): in a microtask
@@ -470,7 +551,9 @@ releaseAll ⊤ =
 pub onShutdown : sync (⊤ → ⊤) → ⊤
 onShutdown f =
     Js.write releasing True
-    Js.to (Js.call releases "push" [ Js.from f ])
+    pushJob releases λ⊤ →
+        f ⊤
+        True
 
 
 -- Queued work is dropped from now on (`runSoon`).
@@ -480,10 +563,12 @@ stopQueue ⊤ = if Js.read phase == 0 then Js.write phase 1
 
 drain : ⊤ → ⊤
 drain ⊤ =
-    if Js.isNull (Js.read turn) then
-        drainNow ⊤
-    else
-        Js.to (Js.apply (Js.read turn) [ Js.from drainNow ])
+    case Js.read turn of
+        Nothing →
+            drainNow ⊤
+
+        Just around →
+            around drainNow
 
 
 drainNow : ⊤ → ⊤
@@ -502,8 +587,6 @@ drainNow ⊤ =
                 )
                 λ⊤ → if Js.read ok then ⊤ else guard ⊤
         if emptied then
-            Js.set queue "length" (Js.from 0)
-            Js.write head 0
             Js.write scheduled False
 
 
@@ -524,23 +607,17 @@ guard ⊤ =
 -- fire (research/16 §5.5).
 drainFrom : Int → Bool
 drainFrom count =
-    h = Js.read head
-    if h ≥ Js.to (Js.get queue "length") then
-        True
-    else if count == 64 || Js.read phase == 1 then
-        macrotask (Js.from drain)
-        False
-    else
-        task = Js.at queue h
-        a = Js.at queue (h + 1)
-        b = Js.at queue (h + 2)
-        c = Js.at queue (h + 3)
-        Js.setAt queue h Js.null
-        Js.setAt queue (h + 1) Js.null
-        Js.setAt queue (h + 2) Js.null
-        Js.setAt queue (h + 3) Js.null
-        Js.write head (h + 4)
-        drainFrom (if Js.to (Js.apply task [ a, b, c ]) then count + 1 else count)
+    case Js.read (Js.read queue.first) of
+        JobEnd →
+            True
+
+        JobNext task next →
+            if count == 64 || Js.read phase == 1 then
+                macrotask drain
+                False
+            else
+                Js.write queue.first next
+                drainFrom (if task ⊤ then count + 1 else count)
 
 
 --| Stop every fiber: close every root scope, cancel every fiber and run its
@@ -594,7 +671,7 @@ failed ⊤ =
         if not (Js.isNull fiber) && Js.isNull (Js.get fiber "outcome") then
             recover fiber
             enqueue fiber Js.null Js.null
-        macrotask (Js.from drain)
+        macrotask drain
 
 
 -- ---- The run loop ----------------------------------------------------------
@@ -617,7 +694,7 @@ loop fiber first =
         else
             first
     next = Js.call (Js.get fiber "stack") "pop" []
-    result = Js.apply next [ value ]
+    result = Js.apply next [ value, Js.from legacyResult ]
     if not (Js.isNull (Js.get fiber "outcome")) then
         ⊤
     else if Js.same result sentinel then
@@ -655,31 +732,9 @@ pushBack stack ks i =
 -- once when it is called before `register` returns: `done` then. `register` returns a
 -- canceller, or null.
 suspend : sync (V → V) → a
-suspend register =
-    fiber = Js.read current
-    if deliverable fiber then
-        park Js.null True
-    else
-        w = Js.from { cancel = Js.null, done = False, ready = False, sync = True, value = Js.null }
-
-        wake =
-            λvalue →
-                if Js.to (Js.get w "done") then
-                    ⊤
-                else
-                    Js.set w "done" (Js.from True)
-                    if Js.to (Js.get w "sync") then
-                        Js.set w "ready" (Js.from True)
-                        Js.set w "value" value
-                    else
-                        enqueue fiber value w
-        canceller = register (Js.from wake)
-        Js.set w "sync" (Js.from False)
-        if Js.to (Js.get w "ready") then
-            Js.to (Js.get w "value")
-        else
-            Js.set w "cancel" canceller
-            park w False
+suspend register = callback λr →
+    cancelWait = register (Js.from λvalue → resume r (Js.to value))
+    λ⊤ → if Js.isNull cancelWait then ⊤ else Js.to (Js.apply cancelWait [ Js.null ])
 
 
 -- The current fiber cancels itself: there is no value to return.
@@ -836,7 +891,7 @@ cleanups fiber =
                     [ Js.from boundary
                     , Js.from λ_ →
                         _ = Js.call (cleaningSet ⊤) "add" [ Js.read current ]
-                        Js.apply fin [ Js.null ]
+                        Js.suspending λ⊤ → Js.to (Js.apply fin [ Js.null ])
                     ]
                 )
 
@@ -972,9 +1027,47 @@ fork parent work sc from =
 --|     sleep ms =
 --|         Task.callback λresume → startTimer ms resume
 pub callback : sync (Resume a → (⊤ → ⊤)) → a
-callback register = suspend λwake →
-    canceller = Js.from (register (Js.to wake))
-    if Js.typeIs canceller "function" then canceller else Js.null
+callback register = Js.suspending λ⊤ → callbackWith register (Js.completion ⊤) False
+
+
+callbackWith : sync (Resume a → (⊤ → ⊤)), sync (a → ⊤), Bool → a
+callbackWith register done later =
+    fiber = Js.read current
+    if deliverable fiber then
+        Js.write pending (Js.from { interrupt = True, ks = Js.array [], wait = Js.null })
+        Js.to sentinel
+    else
+        w =
+            Js.from
+                { cancel = Js.null, done = False, ready = False, sync = not later, value = Js.null }
+        ready = Js.ref Nothing
+
+        wake =
+            λvalue →
+                if Js.to (Js.get w "done") then
+                    ⊤
+                else
+                    Js.set w "done" (Js.from True)
+                    if Js.to (Js.get w "sync") then
+                        Js.write ready (Just value)
+                    else
+                        _ =
+                            Js.call (Js.get fiber "stack") "push"
+                                [ Js.from λ_ →
+                                    done value
+                                    Js.null
+                                ]
+                        enqueue fiber Js.null w
+        cancelWait = register (Resume wake)
+        Js.set w "sync" (Js.from False)
+        case Js.read ready of
+            Just value →
+                value
+
+            Nothing →
+                Js.set w "cancel" (Js.from cancelWait)
+                Js.write pending (Js.from { interrupt = False, ks = Js.array [], wait = w })
+                Js.to sentinel
 
 
 -- Work outside any fiber, `{ end, kids, w }`, while it runs.
@@ -1065,23 +1158,7 @@ outcomeOf fiber = suspend λwake →
 --| Wait for a fiber's value. If it was cancelled, the fiber that joins it is
 --| cancelled too.
 pub join : Fiber a → a
-join fiber =
-    f = Js.from fiber
-    if Js.isNull (Js.get f "outcome") then
-        -- The protocol by hand, as `Task.js` wrote it: the wait is called
-        -- as data, and when it parks `joined` itself goes on the stack, so
-        -- a join that waits makes no continuation of its own — the
-        -- lowering's would be a closure per join (`joined` may suspend, so
-        -- it cannot go to `andThen`, whose argument is `sync`).
-        r = Js.apply (Js.from outcomeOf) [ f ]
-        Js.suspending λ⊤ →
-            if Js.same r sentinel then
-                _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from joined ]
-                Js.to sentinel
-            else
-                Js.to (Js.apply (Js.from joined) [ r ])
-    else
-        joined (guest (Js.get f "outcome"))
+join fiber = joined (wait fiber)
 
 
 --| Wait for a fiber to end, and say how.
@@ -1110,14 +1187,14 @@ cancel fiber =
 
 --| Let every other fiber that is ready run first.
 pub yieldNow : ⊤ → ⊤
-yieldNow ⊤ =
-    fiber = Js.read current
-    if deliverable fiber then
-        selfCancel ⊤
-    else
-        w = Js.from { cancel = Js.null, done = False, ready = False, sync = False, value = Js.null }
-        enqueue fiber Js.null w
-        park w False
+yieldNow ⊤ = Js.suspending λ⊤ →
+    callbackWith
+        (λr →
+            resume r ⊤
+            λ⊤ → ⊤
+        )
+        (Js.completion ⊤)
+        True
 
 
 --| Answer the wait `resume` belongs to with `value`: the fiber that waits
@@ -1139,7 +1216,7 @@ yieldNow ⊤ =
 --|         Just r → Task.resume r "open"
 --|         Nothing → ⊤
 pub resume : Resume a, a → ⊤
-resume r value = Js.to (Js.apply (Js.from r) [ Js.from value ])
+resume (Resume wake) value = Js.invoke wake value λ_ → ⊤
 
 
 --| Wait forever. Only cancelling the fiber ends the wait. Effect's `never`.
@@ -1330,14 +1407,8 @@ deferral = Js.ref Js.null
 -- `deferral`'s `run`, with the protocol by hand, as `join` writes it.
 afterDeferred : V, V, a → a
 afterDeferred s exit value =
-    r = Js.apply (Js.get (Js.read deferral) "run") [ s, exit ]
-
-    Js.suspending λ⊤ →
-        if Js.same r sentinel then
-            _ = Js.call (Js.get (Js.read pending) "ks") "push" [ Js.from λ_ → Js.from value ]
-            Js.to sentinel
-        else
-            value
+    runDeferred s exit
+    value
 
 
 -- A scope's finaliser on its fiber's list: run when that fiber is cancelled
@@ -1372,20 +1443,18 @@ runDeferred s exit =
 -- before the next starts. The protocol by hand, as `join` writes it: a
 -- function that parks has the rest of the list pushed after it.
 runEach : V, V → ⊤
-runEach fins exit =
+runEach fins exit = Js.suspending λ⊤ → runEachWith fins exit (Js.completion ⊤)
+
+
+runEachWith : V, V, sync (⊤ → ⊤) → ⊤
+runEachWith fins exit done =
     if Js.to (Js.get fins "length") == 0 then
         ⊤
     else
-        r = Js.apply (Js.call fins "pop" []) [ exit ]
-
-        Js.suspending λ⊤ →
-            if Js.same r sentinel then
-                _ =
-                    Js.call (Js.get (Js.read pending) "ks") "push"
-                        [ Js.from λ_ → Js.apply (Js.from runEach) [ fins, exit ] ]
-                Js.to sentinel
-            else
-                Js.to (Js.apply (Js.from runEach) [ fins, exit ])
+        fin : V → ⊤
+        fin = Js.to (Js.call fins "pop" [])
+        result = Js.invoke fin exit λ⊤ → continueWith (λ⊤ → runEach fins exit) ⊤ done
+        if isWaiting result then Js.to sentinel else runEachWith fins exit done
 
 
 -- A fiber of its own for finalisers that belong to no running fiber: it
@@ -1507,7 +1576,7 @@ soon work =
         Js.set s "s" sched
         scheduleOn sched (Js.from runSoon) s Js.null Js.null
     else
-        schedule (Js.from runSoon) s Js.null Js.null
+        schedule λ⊤ → runSoon s
     Js.to s
 
 
@@ -1618,7 +1687,7 @@ stopping ⊤ =
         ⊤
     else
         Js.write torn True
-        macrotask (Js.from teardown)
+        macrotask teardown
 
 
 -- `shutdown`'s part here: the first call's deadline and `done`; a second
@@ -1667,7 +1736,7 @@ teardown ⊤ =
             sweep ⊤
             Js.write ok True
         )
-        λ⊤ → if Js.read ok then ⊤ else macrotask (Js.from teardown)
+        λ⊤ → if Js.read ok then ⊤ else macrotask teardown
     c = Js.read culprit
 
     if Js.isNull c then
@@ -1711,7 +1780,7 @@ withSlotsOf holder fiber =
                         Js.call (Js.global "Object") "assign" [ Js.from {}, Js.get holder "slots" ]
                     Js.set next "scheduler" Js.undefined
                     Js.set fiber "slots" next
-                    Js.apply fin [ x ]
+                    Js.suspending λ⊤ → Js.to (Js.apply fin [ x ])
             ]
         )
 
@@ -1788,7 +1857,7 @@ expire ⊤ =
                         abandon fiber w
                 Js.write ok True
             )
-            λ⊤ → if Js.read ok then ⊤ else macrotask (Js.from expire)
+            λ⊤ → if Js.read ok then ⊤ else macrotask expire
 
 
 abandon : V, V → ⊤
@@ -2534,7 +2603,7 @@ countCut fiber =
 scheduleOn : V, V, V, V, V → ⊤
 scheduleOn s task a b c =
     if Js.isNull s || hasEnded s then
-        schedule task a b c
+        schedule λ⊤ → Js.to (Js.apply task [ a, b, c ])
     else
         _ = Js.call (Js.get s "queue") "push" [ task, a, b, c ]
         if Js.to (Js.get s "scheduled") then
@@ -2737,7 +2806,7 @@ expireS s =
                         abandon fiber w
                 Js.write ok True
             )
-            λ⊤ → if Js.read ok then ⊤ else macrotask (Js.from λ⊤ → expireS s)
+            λ⊤ → if Js.read ok then ⊤ else macrotask λ⊤ → expireS s
 
 
 -- `allEnded`, for a scheduler: stopped for good, it leaves the list, so
@@ -2835,7 +2904,7 @@ wakeDue sleepers at =
 -- the scheduler's queue holds nothing but what the caller left there.
 settle : ⊤ → ⊤
 settle ⊤ =
-    if Js.to (Js.get queue "length") > Js.read head then
+    if not (jobsEmpty queue) then
         yieldNow ⊤
         settle ⊤
 
@@ -3417,7 +3486,7 @@ begin h work arg =
         Js.set h "probe" Js.null
         _ =
             Js.call (Js.get fiber "stack") "push"
-                [ Js.from finish, Js.from λ_ → Js.apply work [ arg ] ]
+                [ Js.from finish, Js.from λ_ → Js.suspending λ⊤ → Js.to (Js.apply work [ arg ]) ]
         enlist h fiber
         Js.set fiber "interrupted" (Js.from True)
         enqueue fiber Js.null Js.null
@@ -3433,7 +3502,7 @@ begin h work arg =
             p = Js.read pending
             Js.write pending Js.null
             stack = Js.get fiber "stack"
-            _ = Js.call stack "push" [ Js.from finish ]
+            _ = Js.call stack "unshift" [ Js.from finish ]
             ks = Js.get p "ks"
             takeOn stack ks (Js.to (Js.get ks "length") - 1)
 
@@ -3527,7 +3596,7 @@ callAs fiber h work arg =
     r =
         Js.finally
             (λ⊤ →
-                v = Js.apply work [ arg ]
+                v = Js.apply work [ arg, Js.from legacyResult ]
                 Js.write ok True
                 v
             )
