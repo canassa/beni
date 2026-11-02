@@ -1,0 +1,4 @@
+import Ref
+
+
+pub replace r x = Ref.update r λ_ → x

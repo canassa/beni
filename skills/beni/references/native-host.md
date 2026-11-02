@@ -23,9 +23,11 @@ Stored callbacks restrict the writer's realm. This includes Ref, Js.Ref, Deferre
 and Queue writes. A foreign function that returns a callback receiver keeps
 the callback dependency on that returned function.
 
-Generic erasure through an unknown type variable has a known gap. Core and
-platform code must keep concrete callback types until generic realm
-obligations are implemented.
+A generic storage or erasure helper keeps realm obligations on its type
+variables. The compiler checks them when each caller supplies a type.
+This also applies to dot calls, function aliases and imported helpers.
+A page can use a helper with a DOM callback while a worker uses the same
+helper with a portable callback.
 
 A platform declares the top entry realm with `entryHost`. Each `entryKinds`
 row declares its own realm. Without `entryHost`, an entry has an unknown realm

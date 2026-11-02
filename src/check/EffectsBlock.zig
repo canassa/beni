@@ -116,7 +116,7 @@ pub fn write(
 /// §14.6's walk: from each root in turn, depth first, parameters before
 /// the result, arguments and elements in order, a record's fields by name
 /// text then its extension, an alias's expansion; each variable once. Every
-/// function type and function-holding application is a site, with the path
+/// function type, function-holding application and unknown realm source is a site, with the path
 /// that reached it first.
 fn walkSites(
     e: *Effects,
@@ -143,7 +143,7 @@ fn walkSites(
             const r = store.find(f.v);
             if (store.mark(r) == mark) continue;
             store.setMark(r, mark);
-            if (e.carries(r)) {
+            if (e.realmCarrier(r)) {
                 // A variable the graph never met is in no class a summary has.
                 if (e.solved.nodeIfAny(r)) |id| {
                     const steps_start: u32 = @intCast(steps.items.len);

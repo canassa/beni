@@ -1846,3 +1846,44 @@ test "native callable loading validates the trusted core signature" {
     try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
 }
+
+test "worker realm obligations survive generic imported writers and warm interfaces" {
+    // PREPARE: the updater is inferred in a different module. The page and
+    // worker use separate cells, so a portable instantiation remains valid.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.copyTree("tests/corpus/browser/dedicated/RealmGenericPageWorkerSafe", "_expected.");
+    try w.write("Storage.beni", "import Ref\n\n\npub store : Ref.Ref a, a → ⊤\nstore r x = Ref.set r x\n");
+    const original = try w.read("Main.beni");
+    const imported = try std.mem.replaceOwned(u8, w.arena.allocator(), original, "import Ref", "import Ref\nimport Storage");
+    const source = try std.mem.replaceOwned(u8, w.arena.allocator(), imported, "store r x = Ref.set r x", "store r x = Storage.store r x");
+    try w.write("Main.beni", source);
+    // EXECUTE AND VERIFY: warm compilation must read the published generic
+    // obligation while keeping the page's DOM instantiation independent.
+    for (0..2) |_| {
+        const good = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "--self-profile=warm.json", "Main.beni", "Storage.beni" });
+        try testing.expectEqual(@as(u8, 0), good.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), good.diagnostics);
+    }
+    const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+    const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });
+    var warm = false;
+    for (trace.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+        try testing.expectEqual(@as(u64, 0), count);
+        warm = true;
+    };
+    try testing.expect(warm);
+
+    // Changing only the caller must discharge the same cached obligation at
+    // its new callback type, and must leave no partially written output.
+    try w.copyTree("tests/corpus/build/bad/dedicated/RealmGenericImported", "_expected.");
+    const expected_bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/build/bad/dedicated/RealmGenericImported/_expected.diag", w.arena.allocator(), .limited(world.max_stream_bytes));
+    const expected = try std.json.parseFromSlice([]const diagnostic.Diagnostic, w.arena.allocator(), expected_bytes, .{});
+    for (0..2) |_| {
+        const bad = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni", "Storage.beni" });
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expectEqualDeep(expected.value, bad.diagnostics);
+        try testing.expect(!w.exists("refused"));
+    }
+}
