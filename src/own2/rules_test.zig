@@ -42,6 +42,8 @@ const layers = [_]Entry{
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 400 },
     .{ .file = "Contract.zig", .layer = 3, .max_lines = 800 },
+    // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
+    .{ .file = "Subtree.zig", .layer = 3, .max_lines = 320 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 4, .max_lines = 320 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 530 },
