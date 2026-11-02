@@ -68,7 +68,7 @@ pub type Exit a
 
 
 --| A fiber that is running, or has ended. `join` waits for its value.
-pub foreign type Fiber a
+pub cell foreign type Fiber a
 
 
 --| The fibers a `scope` started. It is cancelled, and waited for, when the
@@ -999,7 +999,7 @@ endSoon s = Js.each (Js.get s "kids") λf → halt f
 
 --| Start `work` in a new fiber, a child of the current one, and return at
 --| once. The child is cancelled when the current fiber ends.
-pub spawn : (⊤ → a) → Fiber a
+pub spawn : escaped (⊤ → a) → cellempty Fiber a
 spawn work =
     Js.write spawning True
     parent = Js.read current
@@ -1032,7 +1032,7 @@ spawn work =
 
 
 --| Start `work` in a new fiber that belongs to `scope`.
-pub spawnIn : Scope, (⊤ → a) → Fiber a
+pub spawnIn : escaped Scope, escaped (⊤ → a) → cellempty Fiber a
 spawnIn sc work = Js.to (fork (Js.read current) (Js.from work) (Js.from sc) (Js.read current))
 
 
@@ -1071,7 +1071,7 @@ outcomeOf fiber = suspend λwake →
 
 --| Wait for a fiber's value. If it was cancelled, the fiber that joins it is
 --| cancelled too.
-pub join : Fiber a → a
+pub join : cellread Fiber a → lent a
 join fiber =
     f = Js.from fiber
     if Js.isNull (Js.get f "outcome") then
@@ -1240,7 +1240,7 @@ cancelAll fibers = cancelEvery (fiberArray fibers)
 --| Node the end of `Io.run`'s fiber, cancels it and runs its cleanup with
 --| every other fiber's. It sees what the fiber that started it sees — its
 --| clock, its log context. Effect's `forkDetach`.
-pub spawnDetached : (⊤ → a) → Fiber a
+pub spawnDetached : escaped (⊤ → a) → cellempty Fiber a
 spawnDetached work = Js.to (fork Js.null (Js.from work) Js.null (Js.read current))
 
 
