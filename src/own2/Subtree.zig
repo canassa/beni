@@ -57,7 +57,23 @@ pub fn wholeOf(t: *const Table, s: SetId) ?PathId {
 /// `↓p`, so its cost does not depend on how many paths a cycle has.
 pub fn below(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     try account.reserve(.memo, 1);
-    if (t.below_of.get(p)) |hit| return hit;
+    if (t.below_of.get(p)) |hit| {
+        try account.readEntry(gpa, .below, p.int(), t.below_cost.get(p.int()));
+        return hit;
+    }
+    const fill = account.beginFill();
+    const s = belowFill(t, gpa, account, places, p) catch |err| {
+        _ = account.endFill(fill);
+        return err;
+    };
+    const cost = account.endFill(fill);
+    try t.below_of.put(gpa, p, s);
+    try t.below_cost.put(gpa, p.int(), cost);
+    try account.readEntry(gpa, .below, p.int(), cost);
+    return s;
+}
+
+fn belowFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     std.debug.assert(p.int() < Slots.not_bit);
     var queue: std.ArrayList(PathId) = .empty;
     defer queue.deinit(gpa);
@@ -93,9 +109,7 @@ pub fn below(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Ta
             }
         }
     }
-    const s = if (whole) try t.internSorted(gpa, account, &.{p.int() | Slots.sub_bit}) else try t.sorted(gpa, account, acc.items);
-    try t.below_of.put(gpa, p, s);
-    return s;
+    return if (whole) try t.internSorted(gpa, account, &.{p.int() | Slots.sub_bit}) else try t.sorted(gpa, account, acc.items);
 }
 
 /// The object slots at and below place `p`, at most `Slots.below_min + 1`;
@@ -237,7 +251,23 @@ fn subsMeet(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Tab
 /// one. Memoised per path, a run of `sets`.
 pub fn anchors(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     try account.reserve(.memo, 1);
-    if (t.anchor_of.get(p)) |hit| return hit;
+    if (t.anchor_of.get(p)) |hit| {
+        try account.readEntry(gpa, .anchors, p.int(), t.anchor_cost.get(p.int()));
+        return hit;
+    }
+    const fill = account.beginFill();
+    const s = anchorsFill(t, gpa, account, places, p) catch |err| {
+        _ = account.endFill(fill);
+        return err;
+    };
+    const cost = account.endFill(fill);
+    try t.anchor_of.put(gpa, p, s);
+    try t.anchor_cost.put(gpa, p.int(), cost);
+    try account.readEntry(gpa, .anchors, p.int(), cost);
+    return s;
+}
+
+fn anchorsFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     var out: std.ArrayList(PathId) = .empty;
     defer out.deinit(gpa);
     try out.append(gpa, p);
@@ -254,9 +284,7 @@ pub fn anchors(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.
         try places.expandLevels(gpa, .growth(account), x, &ex);
         for (ex.items) |y| try acc.append(gpa, y.int());
     }
-    const s = try t.sorted(gpa, account, acc.items);
-    try t.anchor_of.put(gpa, p, s);
-    return s;
+    return t.sorted(gpa, account, acc.items);
 }
 
 /// `below(p)` written out, whatever its size: for a reader that must name
@@ -266,7 +294,23 @@ pub fn anchors(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.
 pub fn belowAll(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     const s = try below(t, gpa, account, places, p);
     if (!symbolic(t, s)) return s;
-    if (t.all_of.get(p)) |hit| return hit;
+    if (t.all_of.get(p)) |hit| {
+        try account.readEntry(gpa, .below_all, p.int(), t.all_cost.get(p.int()));
+        return hit;
+    }
+    const fill = account.beginFill();
+    const all = belowAllFill(t, gpa, account, places, p) catch |err| {
+        _ = account.endFill(fill);
+        return err;
+    };
+    const cost = account.endFill(fill);
+    try t.all_of.put(gpa, p, all);
+    try t.all_cost.put(gpa, p.int(), cost);
+    try account.readEntry(gpa, .below_all, p.int(), cost);
+    return all;
+}
+
+fn belowAllFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     var queue: std.ArrayList(PathId) = .empty;
     defer queue.deinit(gpa);
     var seen: Ids.FixedDict(1) = .{};
@@ -286,9 +330,7 @@ pub fn belowAll(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place
             try queue.append(gpa, nx);
         }
     }
-    const all = try t.sorted(gpa, account, acc.items);
-    try t.all_of.put(gpa, p, all);
-    return all;
+    return t.sorted(gpa, account, acc.items);
 }
 
 /// Whether `below(p)` holds a slot below a `[*]` or a `⟲` (a family,
