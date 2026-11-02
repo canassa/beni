@@ -5569,6 +5569,11 @@ const Emitter = struct {
         var wire_fields: std.StringArrayHashMapUnmanaged(void) = .empty;
         for (e.worker_entries) |descriptor| {
             const plan = descriptor.wire orelse continue;
+            const kind = e.options.platform.entry_kinds[@backingInt(descriptor.kind)].definition;
+            for (kind.parameters) |parameter| {
+                if (!std.mem.eql(u8, parameter.role, "wire")) continue;
+                for (parameter.path) |field| try wire_fields.put(e.scratch, field, {});
+            }
             for (plan.nodes) |node| {
                 if (node.kind != .record) continue;
                 for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
@@ -5948,7 +5953,15 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
+        // Entry roles are bidirectional boundary types: their constructors
+        // may arrive from a peer even when this projection never builds one.
+        var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
+        for (e.worker_candidates) |descriptor| {
+            const wire = descriptor.wire orelse continue;
+            try wire_types.appendSlice(e.scratch, wire.types);
+        }
         var in: Reach.Input = .{
+            .wire_types = wire_types.items,
             .graph = e.graph(),
             .store = &e.session.store,
             .birs = birs,
@@ -6955,6 +6968,7 @@ const Emitter = struct {
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .worker_kinds = e.options.platform.entry_kinds,
                 .worker_wire = &e.session.checked.type_keys[m.int()].wire,
                 .worker_descriptors = slot.worker_descriptors,
                 .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,

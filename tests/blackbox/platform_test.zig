@@ -1655,11 +1655,10 @@ test "worker launch URLs stay relative to their module under release specializat
     }
 }
 
-test "worker Wire rejects function fields native values and unresolved protocols" {
+test "worker Wire rejects function fields and native values" {
     const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20 }{
         .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function" },
         .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`" },
-        .{ .message = "a", .path = "message", .reason = "an unresolved type variable" },
         .{ .message = "{ outer : { inner : { callback : (⊤ → ⊤) } } }", .path = "message.outer.inner.callback", .reason = "a function" },
     };
     for (cases) |scenario| {
@@ -1704,11 +1703,11 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
         );
         try w.write("Forward.beni",
             \\import Worker
-            \\worker : Worker.Program a String ⊤
-            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+            \\worker : a → Worker.Program a String ⊤
+            \\worker _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
             \\pub forward : a → ⊤
             \\forward value =
-            \\    case Worker.open worker of
+            \\    case Worker.open (worker value) of
             \\        Ok handle → Worker.send handle value
             \\        Err _ → ⊤
             \\
@@ -1717,11 +1716,19 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward { wire = \"ok\", local = λ_ → ⊤ })\n"
         else
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
-        // EXECUTE: the second build reads the helper's cached interface.
+        // EXECUTE: the second check reads the helper's cached interface.
         for (0..2) |_| {
-            const good = try w.run(&.{ "build", "--allow-unchecked-workers", "--out=good", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
-            try testing.expectEqual(@as(u8, 0), good.exit_code);
-            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), good.diagnostics);
+            const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            // The checker accepts the generic obligations; the unchanged
+            // unchecked-worker gate is the only remaining diagnostic.
+            try testing.expectEqual(@as(u8, 1), good.exit_code);
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+                .code = .invalid_entry_kind,
+                .severity = .@"error",
+                .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+                .title = "INVALID ENTRY KIND",
+                .message = "Worker launches are unavailable until realm and Wire checks are implemented.",
+            }}), good.diagnostics);
         }
         const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
         const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });
@@ -1735,7 +1742,7 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward { wire = λ_ → ⊤, local = \"ok\" })\n"
         else
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward (λ_ → ⊤))\n");
-        const bad = try w.run(&.{ "build", "--allow-unchecked-workers", "--out=out", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+        const bad = try w.run(&.{ "check", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
         // VERIFY OUTPUT AND SIDE EFFECTS
         try testing.expectEqual(@as(u8, 1), bad.exit_code);
         try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{

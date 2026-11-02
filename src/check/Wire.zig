@@ -73,6 +73,11 @@ pub fn build(in: @import("TypeKeys.zig").Input, imported: []const Use, kinds: []
                         break;
                     };
                 }
+                if (try w.unresolved(value)) |variable| {
+                    const name = @import("Render.zig").preferredName(cx.interner, cx.store.flagsOf(variable)) orelse "a";
+                    try items.append(cx.gpa, .{ .code = .worker_message_not_concrete, .module = cx.module, .region = decl.annotation.unwrap() orelse decl.inst_start, .severity = .@"error", .message = try std.fmt.allocPrint(cx.gpa, "Wire role `{s}` of this Program contains the type variable `{s}`.\n\nGive the Program a concrete message type at its declaration.", .{ path, name }) });
+                    continue;
+                }
                 w.failure = null;
                 if (!valid and w.defer_all) continue;
                 const node = if (valid) try w.node(value, path, 0) else blk: {
@@ -116,6 +121,10 @@ pub fn build(in: @import("TypeKeys.zig").Input, imported: []const Use, kinds: []
         const check = seeds.items[at];
         const decl = check.decl orelse continue;
         w.owners = all_owners[decl] orelse &.{};
+        w.bindings.clearRetainingCapacity();
+        if (cx.wire_readings) |readings| for (readings.items) |reading| {
+            if (reading.decl == decl) try w.bindOwners(reading.scheme, reading.body);
+        };
         w.failure = null;
         w.memo.clearRetainingCapacity();
         var value = check.v;
@@ -171,6 +180,7 @@ const Builder = struct {
     memo: std.ArrayList(struct { type: Types.TypeId, args: []const Var, node: u32 }) = .empty,
     defer_all: bool = false,
     owners: []const Var = &.{},
+    bindings: std.ArrayList(struct { variable: Var, owner: Var }) = .empty,
     marked: []bool = &.{},
     requirements: std.ArrayList(Requirement) = .empty,
     failure: ?struct { path: []const u8, reason: []const u8 } = null,
@@ -237,14 +247,71 @@ const Builder = struct {
         };
     }
 
+    // A declaration has one normalization plan, shared by every launch. An
+    // unresolved position cannot be treated as clone-stable in that plan.
+    fn unresolved(w: *Builder, value: Var) Allocator.Error!?Var {
+        const store = w.cx.store;
+        const epoch = store.nextMark();
+        var stack: std.ArrayList(Var) = .empty;
+        try stack.append(w.cx.scratch, value);
+        while (stack.pop()) |v| {
+            const root = store.find(v);
+            if (store.mark(root) == epoch) continue;
+            store.setMark(root, epoch);
+            switch (store.content(root)) {
+                .flex, .rigid => return root,
+                else => {},
+            }
+            var i: u32 = 0;
+            while (Walk.child(store, root, i, .payload)) |child| : (i += 1) try stack.append(w.cx.scratch, child);
+        }
+        return null;
+    }
+
+    // Pair an annotated body's rigid variables with its scheme by their
+    // positions in the same type. A name shared by unrelated binders is not
+    // evidence that either variable owns the other's Wire obligation.
+    fn bindOwners(w: *Builder, scheme: Var, body: Var) Allocator.Error!void {
+        const Pair = struct { scheme: Var, body: Var };
+        var todo: std.ArrayList(Pair) = .empty;
+        const epoch = w.cx.store.nextMark();
+        try todo.append(w.cx.scratch, .{ .scheme = scheme, .body = body });
+        const store = w.cx.store;
+        while (todo.pop()) |pair| {
+            var a = store.find(pair.scheme);
+            var b = store.find(pair.body);
+            while (store.content(a) == .alias) a = store.find(Walk.follow(store, a, .expansion, 0).?);
+            while (store.content(b) == .alias) b = store.find(Walk.follow(store, b, .expansion, 0).?);
+            if (store.mark(a) == epoch) continue;
+            store.setMark(a, epoch);
+            switch (store.content(a)) {
+                .flex, .rigid => {
+                    if (std.mem.indexOfScalar(Var, w.owners, a) != null) try w.bindings.append(w.cx.scratch, .{ .variable = b, .owner = a });
+                },
+                else => {
+                    var i: u32 = 0;
+                    while (Walk.child(store, a, i, .payload)) |child| : (i += 1) {
+                        const other = Walk.child(store, b, i, .payload) orelse break;
+                        try todo.append(w.cx.scratch, .{ .scheme = child, .body = other });
+                    }
+                },
+            }
+        }
+    }
+
     fn require(w: *Builder, original: Var, path: []const Symbol) Allocator.Error!bool {
         const cx = w.cx;
-        const variable = cx.store.find(original);
-        const flags = cx.store.flagsOf(variable);
+        var variable = cx.store.find(original);
+        for (w.bindings.items) |binding| {
+            if (binding.variable == variable) {
+                variable = binding.owner;
+                break;
+            }
+        }
         var found = false;
         for (w.owners) |owner| {
             const root = cx.store.find(owner);
-            if (root != variable and (flags.name == .none or flags.name != cx.store.flagsOf(root).name)) continue;
+            if (root != variable) continue;
             found = true;
             const exists = for (w.requirements.items) |requirement| {
                 if (requirement.variable == root and std.mem.eql(Symbol, requirement.path, path)) break true;

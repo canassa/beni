@@ -513,6 +513,7 @@ pub const Code = enum {
     /// Generic entry contracts (workers-entry-implementation.md). Appended after
     /// upstream diagnostics. Cached ordinals are compiler-build-key scoped.
     invalid_entry_kind,
+    worker_message_not_concrete,
     worker_message_not_serializable,
     entry_runtime_suspends,
     worker_entry_not_static,
@@ -619,6 +620,7 @@ pub fn title(code: Code) []const u8 {
         .duplicate_main => "TWO MAINS",
         .main_not_program => "MAIN IS NOT A PROGRAM",
         .invalid_entry_kind => "INVALID ENTRY KIND",
+        .worker_message_not_concrete => "WORKER MESSAGE NOT CONCRETE",
         .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
         .worker_entry_not_static => "WORKER ENTRY NOT STATIC",
         .entry_runtime_suspends => "ENTRY RUNTIME SUSPENDS",

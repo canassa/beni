@@ -1,0 +1,9 @@
+-- load
+<body>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "sum:7private"
+<body>
+  <button>"launch"</button>
+  <output>"sum:7private"</output>
+</body>

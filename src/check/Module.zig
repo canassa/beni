@@ -178,7 +178,9 @@ pub fn check(in: Input) Error!Check.Counters {
     schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
     defer too_deep.deinit(scratch);
+    var wire_readings: std.ArrayList(Context.WireReading) = .empty;
     var cx: Context = .{
+        .wire_readings = if (in.entry_kinds.len != 0) &wire_readings else null,
         .gpa = gpa,
         .scratch = scratch,
         .store = store,
