@@ -11,6 +11,12 @@ pub foreign type Frame
 pub foreign type Window
 
 
+pub foreign impure scrollX : ⊤ → Float
+
+
+pub foreign impure scrollY : ⊤ → Float
+
+
 pub foreign impure requestFrame : escaped sync (⊤ → ⊤) → Frame
 
 

@@ -2,6 +2,9 @@
 pub foreign type Rejection
 
 
+pub foreign impure typeErrorMessage : borrowed Rejection → Maybe String
+
+
 pub foreign impure isTypeError : borrowed Rejection → Bool
 
 

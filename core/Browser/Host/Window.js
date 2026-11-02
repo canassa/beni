@@ -1,3 +1,5 @@
+export const scrollX = (_) => { return globalThis.scrollX; };
+export const scrollY = (_) => { return globalThis.scrollY; };
 export const requestFrame = (work) => { return globalThis.requestAnimationFrame(() => work(null)); };
 export const cancelFrame = (frame) => { globalThis.cancelAnimationFrame(frame); return null; };
 export const innerWidth = (_) => { return globalThis.innerWidth; };

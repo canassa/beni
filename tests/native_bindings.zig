@@ -107,7 +107,7 @@ test "shipped native modules are exactly the pinned generator output" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope", "MessageChannel", "MessagePort", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "AbortController", "AbortSignal", "Event", "DOMRect", "EventTarget", "HTMLAnchorElement", "Storage", "DOMException", "FormData", "Headers", "ReadableStreamDefaultReader", "Response", "TextDecoder", "URL", "WebSocket", "Console" }) |name| {
+    for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope", "MessageChannel", "MessagePort", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "AbortController", "AbortSignal", "Event", "DOMRect", "EventTarget", "HTMLAnchorElement", "Storage", "DOMException", "FormData", "Headers", "ReadableStreamDefaultReader", "Response", "TextDecoder", "URL", "WebSocket", "Console", "Navigator" }) |name| {
         const module = try std.fmt.allocPrint(a, "Browser.Host.{s}", .{name});
         const path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.beni", .{name});
         const actual = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024));

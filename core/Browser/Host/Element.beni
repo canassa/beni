@@ -2,7 +2,32 @@
 import Browser.Host.Node as Node
 
 
+import Browser.Host.DOMRect as DOMRect
+import Browser.Host.Promise as Promise
+
+
 pub foreign type Element
+
+
+pub foreign impure focus : borrowed Element → ⊤
+
+
+pub foreign impure blur : borrowed Element → ⊤
+
+
+pub foreign impure box : borrowed Element → DOMRect.DOMRect
+
+
+pub foreign impure scrollTo : borrowed Element, Float, Float → ⊤
+
+
+pub foreign impure scrollIntoView : borrowed Element → ⊤
+
+
+pub foreign impure fullscreenSupported : borrowed Element → Bool
+
+
+pub foreign impure requestFullscreen : borrowed Element → Promise.Promise ⊤
 
 
 pub foreign pure toNode : Element → Node.Node

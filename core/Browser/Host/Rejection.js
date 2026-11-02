@@ -1,3 +1,4 @@
+export const typeErrorMessage = (error) => { return error instanceof globalThis.TypeError ? { $: "Just", a: error.message } : { $: "Nothing", a: null }; };
 export const isTypeError = (reason) => { return reason instanceof globalThis.TypeError; };
 export const isError = (reason) => { return reason instanceof globalThis.Error; };
 export const name = (reason) => { return reason instanceof globalThis.Error ? reason.name : ""; };

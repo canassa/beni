@@ -34,7 +34,7 @@ pub fn validate(c: anytype) bool {
             return false;
         }
         // Mixin exposure belongs to the implementing native receiver.
-        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
+        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "HTMLOrSVGOrMathMLElement")) "HTMLElement" else if (std.mem.eql(u8, row.owner, "DocumentOrShadowRoot") or std.mem.eql(u8, row.owner, "NonElementParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
         var exposure: u8 = 0;
         for (c.native_types) |t| {
             if (!std.mem.eql(u8, t.idl_name, receiver)) continue;
@@ -67,7 +67,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window") or std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Event as Event\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("import Browser.Host.Document as Document\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.TextEncoder")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.MessageChannel")) try w.writeAll("import Browser.Host.MessagePort as MessagePort\n\n\n");
@@ -88,6 +88,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Fetch")) try w.writeAll("pub foreign type Body\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.RegExp")) try w.writeAll("pub type CreateError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Storage")) try w.writeAll("pub type SetError\n    = QuotaExceeded\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\nimport Browser.Host.Promise as Promise\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -102,6 +103,25 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .document_by_id => "(documentId) => { const element = globalThis.document.getElementById(documentId); return element === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: element }; }",
+            .element_focus => "(element) => { element.focus(); return null; }",
+            .element_blur => "(element) => { element.blur(); return null; }",
+            .element_box => "(element) => { return element.getBoundingClientRect(); }",
+            .element_scroll => "(element, x, y) => { element.scrollTo(x, y); return null; }",
+            .element_into_view => "(element) => { element.scrollIntoView(); return null; }",
+            .rect_x => "(rect) => { return rect.x; }",
+            .rect_y => "(rect) => { return rect.y; }",
+            .rect_width => "(rect) => { return rect.width; }",
+            .rect_height => "(rect) => { return rect.height; }",
+            .window_scroll_x => "(_) => { return globalThis.scrollX; }",
+            .window_scroll_y => "(_) => { return globalThis.scrollY; }",
+            .element_fullscreen_supported => "(element) => { return typeof element.requestFullscreen === \"function\"; }",
+            .element_fullscreen => "(element) => { return element.requestFullscreen(); }",
+            .document_fullscreen_enabled => "(_) => { return globalThis.document.fullscreenEnabled === true; }",
+            .document_fullscreen_id => "(_) => { const element = globalThis.document.fullscreenElement; return element == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: element.id }; }",
+            .document_fullscreen_exit => "(_) => { return globalThis.document.exitFullscreen(); }",
+            .navigator_activated => "(_) => { const state = globalThis.navigator.userActivation; return state == null || state.isActive === true; }",
+            .rejection_type_error_message => "(error) => { return error instanceof globalThis.TypeError ? { $: \"Just\", a: error.message } : { $: \"Nothing\", a: null }; }",
             .url_protocol => "(url) => { return url.protocol; }",
             .url_set_protocol => "(url, protocol) => { url.protocol = protocol; return null; }",
             .ws_create => "(url, protocols) => { try { return { $: \"Just\", a: new globalThis.WebSocket(url, Array.isArray(protocols) ? protocols : protocols.b.slice(protocols.o)) }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"SecurityError\") throw error; return { $: \"Nothing\", a: null }; } }",

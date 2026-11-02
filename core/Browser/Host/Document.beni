@@ -3,6 +3,7 @@ import Browser.Host.Event as Event
 
 
 import Browser.Host.Element as Element
+import Browser.Host.Promise as Promise
 
 
 pub type QueryError
@@ -10,6 +11,18 @@ pub type QueryError
 
 
 pub foreign type Document
+
+
+pub foreign impure byId : String → Maybe Element.Element
+
+
+pub foreign impure fullscreenEnabled : ⊤ → Bool
+
+
+pub foreign impure fullscreenElementId : ⊤ → Maybe String
+
+
+pub foreign impure exitFullscreen : ⊤ → Promise.Promise ⊤
 
 
 pub foreign impure baseURI : ⊤ → String

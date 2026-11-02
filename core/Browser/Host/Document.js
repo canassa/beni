@@ -1,3 +1,7 @@
+export const byId = (documentId) => { const element = globalThis.document.getElementById(documentId); return element === null ? { $: "Nothing", a: null } : { $: "Just", a: element }; };
+export const fullscreenEnabled = (_) => { return globalThis.document.fullscreenEnabled === true; };
+export const fullscreenElementId = (_) => { const element = globalThis.document.fullscreenElement; return element == null ? { $: "Nothing", a: null } : { $: "Just", a: element.id }; };
+export const exitFullscreen = (_) => { return globalThis.document.exitFullscreen(); };
 export const baseURI = (_) => { return globalThis.document.baseURI; };
 export const title = (_) => { return globalThis.document.title; };
 export const visibilityState = (_) => { return globalThis.document.visibilityState; };

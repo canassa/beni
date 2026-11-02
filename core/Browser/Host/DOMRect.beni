@@ -2,6 +2,18 @@
 pub foreign type DOMRect
 
 
+pub foreign impure x : borrowed DOMRect → Float
+
+
+pub foreign impure y : borrowed DOMRect → Float
+
+
+pub foreign impure width : borrowed DOMRect → Float
+
+
+pub foreign impure height : borrowed DOMRect → Float
+
+
 pub foreign impure left : borrowed DOMRect → Float
 
 
