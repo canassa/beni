@@ -35,6 +35,7 @@ const Sweep = @import("Sweep.zig");
 const Stack = @import("Stack.zig");
 const TagTree = @import("TagTree.zig");
 const Later = @import("Later.zig");
+const Descent = @import("Descent.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -86,6 +87,9 @@ const HoldTags = struct {
     }
 };
 
+/// A refusal's witness so far: the holder, its use and the path.
+const Witness = struct { h: u32, use: Liveness.UseId, q: PathId };
+
 const Resolver = struct {
     e: *Eval.Evaluation,
     arena: Allocator,
@@ -104,6 +108,11 @@ const Resolver = struct {
     tags: TagTree.Forest = .{},
     /// The holders' later uses, a judgement's answers kept (§2.8).
     uses: Later.Uses,
+    /// Working lists of a judgement's hold readers.
+    met: std.ArrayList(u32) = .empty,
+    agg: std.ArrayList(Agg) = .empty,
+    agg_any: bool = false,
+    hs: std.ArrayList(Descent.Held) = .empty,
     /// Whether a judgement's aggregated holders add to the frame's `req`:
     /// a demand's do, a label's supplied part's are judged one by one.
     aggregate: bool = false,
@@ -130,6 +139,9 @@ const Resolver = struct {
         r.stack.deinit(r.gpa());
         r.tags.deinit(r.gpa());
         r.uses.deinit();
+        r.met.deinit(r.gpa());
+        r.agg.deinit(r.gpa());
+        r.hs.deinit(r.gpa());
     }
 
     /// The holder index (§2.8): every bound local that is used after its
@@ -157,6 +169,8 @@ const Resolver = struct {
         defer keys.deinit(g);
         var hds: std.ArrayList(Sweep.Hold) = .empty;
         defer hds.deinit(g);
+        var dag: Sweep.Dag = .{};
+        defer dag.deinit(g);
         var points: std.ArrayList(u32) = .empty;
         defer points.deinit(g);
         while (r.live.takeUnkeyed()) |hi| {
@@ -164,8 +178,10 @@ const Resolver = struct {
             hds.clearRetainingCapacity();
             keys.clearRetainingCapacity();
             points.clearRetainingCapacity();
+            dag.nodes.clearRetainingCapacity();
+            dag.edges.clearRetainingCapacity();
             const root = try fr.places.rootPath(g, try r.e.ctx.placeOfLocal(r.e.ctx.ctx, local));
-            try Sweep.holdsOfValue(r.ev(), w.bindings[local].value, root, &hds);
+            const is_dag = try Sweep.holdsOfValue(r.ev(), w.bindings[local].value, root, &hds, &dag);
             var unknown = false;
             for (hds.items) |*hd| {
                 const ks = try r.keys.of(r.ev(), hd.leaf);
@@ -178,7 +194,7 @@ const Resolver = struct {
             const run = if (local < w.index.by_local.len) w.index.by_local[local] else Ids.Range{};
             var i: u32 = 0;
             while (i < run.len) : (i += 1) try points.append(g, w.index.get(.from(run.start + i)).point);
-            try r.live.key(r.ev(), hi, hds.items, try sortedKeys(&keys), unknown, points.items);
+            try r.live.key(r.ev(), hi, hds.items, if (is_dag) &dag else null, try sortedKeys(&keys), unknown, points.items);
         }
     }
 
@@ -243,12 +259,12 @@ const Resolver = struct {
             const h = r.live.holders.items[hi];
             if (!try r.uses.usedAfter(h.local, point)) continue;
             var all = true;
-            for (r.live.holdsOf(hi), 0..) |hd, k| {
-                if (!hd.agg or hd.done) continue;
-                const got = try r.aggHold(h.local, hd, t, point, relied);
-                found = found or got[0];
-                if (got[1]) try done_holds.append(g, h.h_start + @as(u32, @intCast(k))) else all = false;
-            }
+            for (try r.aggHolds(hi, false, t, point, relied), 0..) |got, k| switch (got) {
+                .skip => {},
+                .some, .empty => all = false,
+                .all => try done_holds.append(g, h.h_start + @as(u32, @intCast(k))),
+            };
+            found = found or r.agg_any;
             if (all) try dones.append(g, hi);
         }
         if (found) return;
@@ -258,30 +274,64 @@ const Resolver = struct {
             if (r.live.visited(hi)) continue;
             const local = r.live.holders.items[hi].local;
             if (!try r.uses.usedAfter(local, point)) continue;
-            for (r.live.holdsOf(hi)) |hd| if (hd.agg and (try r.aggHold(local, hd, t, point, relied))[0]) return;
+            _ = try r.aggHolds(hi, true, t, point, relied);
+            if (r.agg_any) return;
         }
     }
 
-    /// Hold `hd` of local `h` against `t`: whether some path of it is used
-    /// after `point`, each such `under` gathered; and whether every path
-    /// that answers `under` is.
-    fn aggHold(r: *Resolver, h: u32, hd: Sweep.Hold, t: u32, point: u32, relied: *Holders.Gather) Error![2]bool {
+    /// A hold's aggregated answer: not asked, no path, every `under` path
+    /// used after the point, or some not.
+    const Agg = enum(u8) { skip, empty, all, some };
+
+    /// Holder `hi`'s aggregated holds (every one when `done_too`, else
+    /// those not done) against `t`: each `under` path used after `point`
+    /// gathered (`agg_any` when one is); per hold, whether some or all of
+    /// the paths that answer `under` are.
+    fn aggHolds(r: *Resolver, hi: u32, done_too: bool, t: u32, point: u32, relied: *Holders.Gather) Error![]const Agg {
         const g = r.gpa();
-        var hs: std.ArrayList(Sweep.Held) = .empty;
-        defer hs.deinit(g);
-        try Sweep.holdsAt(r.ev(), hd, t, &hs);
-        var any = false;
-        var all = hs.items.len != 0;
-        for (hs.items) |x| {
-            if (x[1].kind != .under) continue;
-            if ((try r.uses.liveOnce(h, x[0], point)) == null) {
-                all = false;
-                continue;
+        const hds = r.live.holdsOf(hi);
+        r.met.clearRetainingCapacity();
+        r.agg.clearRetainingCapacity();
+        try r.agg.appendNTimes(g, .skip, hds.len);
+        r.agg_any = false;
+        for (hds, 0..) |hd, k| if (hd.agg and (done_too or !hd.done)) {
+            try r.met.append(g, @intCast(k));
+            r.agg.items[k] = .empty;
+        };
+        const Ctx = struct { r: *Resolver, relied: *Holders.Gather };
+        var c: Ctx = .{ .r = r, .relied = relied };
+        try r.heldAt(hi, r.met.items, t, point, .{ .ctx = &c, .dead = true, .each = struct {
+            fn each(ctx: *anyopaque, k: u32, _: PathId, ov: Relation.Ov, u: ?Liveness.UseId) Error!void {
+                const x: *Ctx = @ptrCast(@alignCast(ctx));
+                const a = &x.r.agg.items[k];
+                if (a.* == .empty) a.* = .all;
+                if (ov.kind != .under) return;
+                if (u == null) {
+                    a.* = .some;
+                    return;
+                }
+                try x.relied.add(x.r.gpa(), x.r.account(), ov.cond);
+                x.r.agg_any = true;
             }
-            try relied.add(g, r.account(), x[1].cond);
-            any = true;
+        }.each });
+        return r.agg.items;
+    }
+
+    /// Holder `hi`'s holds `met` against target `t`: each path at which one
+    /// holds it, with the holder's first use after `point` there; a holder
+    /// whose value is a DAG by the best-hold descent (`Descent`).
+    fn heldAt(r: *Resolver, hi: u32, met: []const u32, t: u32, point: u32, visit: Descent.Visit) Error!void {
+        const h = r.live.holders.items[hi];
+        if (h.d_root != none) return Descent.descend(&r.uses, &r.live, hi, met, t, point, visit);
+        const hds = r.live.holdsOf(hi);
+        for (met) |k| {
+            r.hs.clearRetainingCapacity();
+            try Descent.holdsAt(r.ev(), hds[k], t, &r.hs);
+            for (r.hs.items) |x| {
+                const u = try r.uses.liveOnce(h.local, x[0], point);
+                if (u != null or visit.dead) try visit.each(visit.ctx, k, x[0], x[1], u);
+            }
         }
-        return .{ any, all };
     }
 
     /// Whether an escape before `point` reaches a target (§2.8, *The
@@ -385,38 +435,48 @@ const Resolver = struct {
         // a hold is found, no holder used later can be the witness.
         try r.keyLive();
         const base_local: u32 = if (w.bir.instTag(@fromBackingInt(d.base_inst)) == .local) w.bir.instData(@fromBackingInt(d.base_inst)).lhs else none;
-        var best: ?struct { h: u32, use: Liveness.UseId, q: PathId, exact: bool } = null;
+        var best: ?Witness = null;
         var done_holds: std.ArrayList(u32) = .empty;
         defer done_holds.deinit(g);
         var dones: std.ArrayList(u32) = .empty;
         defer dones.deinit(g);
         var bs: std.ArrayList(u32) = .empty;
         defer bs.deinit(g);
-        var hs: std.ArrayList(Sweep.Held) = .empty;
-        defer hs.deinit(g);
+        const Ctx = struct { r: *Resolver, h: u32, best: *?Witness, relied: *Holders.Gather };
+        var c: Ctx = .{ .r = r, .h = none, .best = &best, .relied = &relied };
+        const visit: Descent.Visit = .{
+            .ctx = &c,
+            .each = struct {
+                fn each(ctx: *anyopaque, _: u32, q: PathId, ov: Relation.Ov, use: ?Liveness.UseId) Error!void {
+                    const x: *Ctx = @ptrCast(@alignCast(ctx));
+                    const u = use.?;
+                    const idx = &x.r.e.w.index;
+                    switch (ov.kind) {
+                        .no => {},
+                        .under => try x.relied.add(x.r.gpa(), x.r.account(), ov.cond),
+                        .may => if (x.best.*) |bh| {
+                            const up = idx.get(u).point;
+                            const bp = idx.get(bh.use).point;
+                            // At one use of one holder, an exact hold before one at
+                            // or below a `[*]` or a `⟲` (*Verdicts*), else the first.
+                            const pl = x.r.f().places;
+                            const exact = up == bp and x.h == bh.h and pl.isSummary(bh.q) and !pl.isSummary(q);
+                            if (up < bp or (up == bp and x.h < bh.h) or exact) x.best.* = .{ .h = x.h, .use = u, .q = q };
+                        } else {
+                            x.best.* = .{ .h = x.h, .use = u, .q = q };
+                        },
+                    }
+                }
+            }.each,
+        };
         if (r.live.any()) for (targets) |t| {
             bs.clearRetainingCapacity();
             const aggregating = try r.bucketsOf(t, &bs);
             try r.live.begin(r.ev(), bs.items);
             while (try r.live.next(r.ev(), if (best) |bh| w.index.get(bh.use).point else std.math.maxInt(u32))) |hi| {
-                const h = r.live.holders.items[hi].local;
+                c.h = r.live.holders.items[hi].local;
                 const hds = r.live.holdsOf(hi);
-                for (try r.tags.meeting(g, r.account(), &fr.sets.tags, hi, hds.len, HoldTags{ .f = fr, .hs = hds }, fr.leafAt(t).tags)) |k| {
-                    const hd = hds[k];
-                    hs.clearRetainingCapacity();
-                    try Sweep.holdsAt(r.ev(), hd, t, &hs);
-                    for (hs.items) |x| {
-                        const u = (try r.uses.liveOnce(h, x[0], d.point)) orelse continue;
-                        switch (x[1].kind) {
-                            .no => {},
-                            .under => try relied.add(g, r.account(), x[1].cond),
-                            .may => {
-                                const up = w.index.get(u).point;
-                                if (best == null or up < w.index.get(best.?.use).point or (up == w.index.get(best.?.use).point and h < best.?.h)) best = .{ .h = h, .use = u, .q = x[0], .exact = true };
-                            },
-                        }
-                    }
-                }
+                try r.heldAt(hi, try r.tags.meeting(g, r.account(), &fr.sets.tags, hi, hds.len, HoldTags{ .f = fr, .hs = hds }, fr.leafAt(t).tags), t, d.point, visit);
             }
             if (aggregating and best == null) try r.aggregated(t, d.point, &relied, &done_holds, &dones);
         };
