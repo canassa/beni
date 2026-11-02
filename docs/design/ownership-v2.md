@@ -1032,7 +1032,10 @@ edit is a write of the captured cell's contents (deep at its `◆`, `writes π�
 the closure `once` as a captured list's write does. A run of the closure may leave a loan of the contents live
 when the next run edits them: the `Ref.get r` it answers to `List.map`, or a loan that another fiber holds across
 a suspension, which v2 does not check yet. Before #1729 the edit was refused at the callback (`unknown`), so the
-closure's contract did not have it.
+closure's contract did not have it. *Amended 2026-11-02 (#1734):* this `once` is one of the two rules that keep
+v2 sound across fibers when it has no suspension rule (§2.13.7, *loans across a suspension*). A closure that a fiber
+starter (`Task.par`, `race`, `spawn`, …) is given is escaped, so its edit in place is refused there. If the edit is
+exempt from `once`, `run/SanitiserFiberBranch` reads a list that another branch changed while it slept.
 
 A function value returned by a callee is unknown code at the caller (§2.11.3): its answer is `⊤`. *Amended
 2026-11-02 (#1709):* so a closure that a callee **hands back** — an arrival of the callee's `res` (itself,
@@ -1454,6 +1457,35 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      followed by an edit in place would change `ys`, which v2 cannot see, as it keeps no slot state yet.
    Fixtures: `run/SanitiserCellLoan` (each loan refused; the sanitised run of an acceptance shows the stale read) and
    `run/SanitiserCellEdit` (the same edits with no loan live, accepted, the sanitised run prints the same).
+   *Amended 2026-11-02 (#1734), loans across a suspension, as v2 builds it:* v2 does not build the rule above that
+   refuses a loan whose holder is live across an instruction that may suspend. No program v2 accepts needs it, because
+   each fiber's code is checked on its own and every way to start a fiber (`Task.spawn`, `spawnIn`, `start`, `par`,
+   `par3`, `parOk`, `race`, `raceAll`, `raceOk`, `timeout`, a platform's handlers and frame callbacks) gives its work
+   to JavaScript or to a label called many times. Two rules then keep a loan that one fiber holds across a suspension
+   away from an in-place edit that another fiber makes:
+   - **An escape reaches through `◆`.** In v2, Esc does not stop at a cell's barrier. What escapes with a closure (its
+     captures, or `escapes π1ε*` of a helper that spawns it) includes the contents of each cell it reaches. So the
+     frame that starts the fiber, and each caller of a function whose contract escapes the cell, cannot edit those
+     contents in place afterwards: refused `escaped` (`run/SanitiserFiberReader`: a helper spawns a fiber that holds
+     `Ref.get r` across a sleep, and the caller's `Ref.update r λxs → List.push xs 1` is refused). The barrier above
+     ("reach and Esc stop at ◆") holds for holders (`Cells.behindCell`) and for cell operations, not for the reach of
+     an escape. A cell operation beside such an escape is accepted (`Ref.set`, or an update whose answer is fresh):
+     it changes no list that a loan names (`run/SanitiserFiberReplace`).
+   - **An in-place edit of a captured cell's contents makes the closure `once`** (§2.11.4), refused where it escapes
+     or where a label may call it many times. So the work of a fiber never edits contents that another fiber can hold
+     a loan of (`run/SanitiserFiberBranch`: one branch of `Task.par` holds a loan across a sleep, and the other branch
+     edits the contents in its body or through a callee. The edit is refused at `par`).
+   Each rule alone refuses its fixture. If the escape stops at the contents that a cell callback is supplied,
+   `SanitiserFiberReader` is accepted and its sanitised run reads the edited list. If the edit is exempt from `once`,
+   as a cell operation is, `SanitiserFiberBranch` is accepted and reads the edited list, and so do #1734's probes of
+   `par`, `parOk`, `race`, `raceOk`, `timeout` and `spawnIn`. So relax neither rule alone. Before an escape stops
+   at `◆` (as the barrier text says), or before an in-place edit is exempt from `once`, build the suspension rule in
+   this form: a loan live across a suspension point is a holder that each in-place edit of those contents by another
+   fiber meets, and the writes of a closure given to a fiber starter are effects at the start, which the starter's
+   holders see until the fiber is joined. Until then v2 is coarser than that rule. After a spawn, the frame does not
+   edit in place what the spawned work reaches, joined or not. And because `Task.spawn`'s result is `⊤` in core's
+   inferred contract, `Task.join` escapes `⊤`, so after a join the frame edits nothing in place at all, not even a
+   list made after the join (#1734's probe `C13MakeAfterJoin`).
    **Slot state and loans.** A versioned frame relation `contents(handle-origin, ◆)` supplies current stored
    origins/κ. `cellnew`/`cellempty` initialise it; set/update/modify write-back changes it after the callback,
    and complete joins the already-complete/no-op and empty/store alternatives. Strong update is allowed only
