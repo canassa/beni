@@ -1,0 +1,21 @@
+-- The inner a owns the Wire obligation. The unrelated outer a accepts a function.
+-- Checking must reach the existing factory-launch refusal, not reject that function.
+import Worker
+
+
+make : a → Worker.Program a String ⊤
+make _ =
+    Worker.program
+        { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+
+
+pub forward : a → ⊤
+forward _ =
+    inner : a → ⊤
+    inner value =
+        case Worker.open (make value) of
+            Ok handle →
+                Worker.send handle value
+            Err _ →
+                ⊤
+    inner "ok"

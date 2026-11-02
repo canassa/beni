@@ -1,0 +1,40 @@
+import List
+import Page
+import Worker
+
+
+worker :
+    Worker.Program
+        { longFieldName : String, values : List Int }
+        { longFieldName : String, values : List Int }
+        ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            values =
+                case [ 0, 1, 2 ] of
+                    [ _, …tail ] →
+                        tail
+                    _ →
+                        []
+            Worker.receive handle λreply → Page.text reply.longFieldName
+            Worker.send handle { longFieldName = "ok", values = values }
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch
+
+
+-- A concrete Program message lets both realms normalize the nested List view.

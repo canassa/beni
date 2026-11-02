@@ -301,6 +301,8 @@ pub const Input = struct {
     /// hand-written runtime or the entry file reads, or that a lowering
     /// imports (`backend.md` §15.1, *The runtime module*).
     extra_roots: []const Node = &.{},
+    // Wire values arrive from another entry, outside this entry's builders.
+    wire_types: []const Types.TypeId = &.{},
     // Deferred Program bodies belong only to their selected entry.
     deferred: []const Node = &.{},
     /// The schema plans, one per module: what a schema member's edges are
@@ -622,6 +624,10 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     const seen = try scratch.alloc(std.DynamicBitSetUnmanaged, count);
     for (seen, 0..) |*s, i| s.* = try .initEmpty(scratch, in.birOf(@fromBackingInt(@intCast(@as(u32, @intCast(i))))).decls.len);
     var work: std.ArrayList(TypeDecl) = .empty;
+    for (in.wire_types) |id| {
+        const entry = in.types.entry(id);
+        try work.append(scratch, .{ .module = entry.module, .decl = entry.decl.int() });
+    }
     for (0..count) |i| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {

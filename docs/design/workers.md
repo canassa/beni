@@ -382,6 +382,13 @@ owning module's native serialization/transfer contract; generic type variables
 retain obligations until instantiated. Worker-local state is excluded from
 this judgment because it never crosses.
 
+Until type-variable positions have selective runtime normalization, each
+wire role must be concrete at the Program declaration after alias expansion.
+An unresolved variable, including one nested in a List or tagged type, is
+`worker_message_not_concrete` at that declaration; give it a concrete message
+type. Generic helpers may still carry Wire obligations. The temporary
+restriction is tracked in #1652.
+
 Shared names determine how Wire evidence lowers without weakening this guarantee.
 Under the decided shared-name design, clone-stable records/unions/tuples/
 arrays go straight to native structured clone. A recursive shape containing a

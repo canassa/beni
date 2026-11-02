@@ -14,4 +14,8 @@ handles and `Js.Value` cannot cross. The compiler reports
 concrete value before sending it. Worker-local state can contain functions and
 native handles. Generic functions retain the obligation until they are applied.
 
+Give each Program declaration a concrete wire message type.
+`worker_message_not_concrete` names a wire role and its unresolved type variable.
+This also applies to a variable inside a List or a tagged type.
+
 Sources: `docs/design/workers.md` §3, §5; `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5.

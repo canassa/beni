@@ -246,6 +246,7 @@ const Convention = @import("../check/Convention.zig");
 pub const Input = struct {
     worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
     worker_definition: ?u32 = null,
+    worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
     worker_wire: ?*const @import("../check/Wire.zig").Artifact = null,
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
@@ -6449,7 +6450,15 @@ pub const Lowerer = struct {
         } else return l.nullNode(p);
         const needs = try @import("../check/Wire.zig").normalization(l.scratch, wire);
         var roles: std.ArrayList(Node.Index) = .empty;
-        for (wire.roles[root.roles.start..][0..root.roles.len]) |role| try roles.append(l.scratch, try l.arrayNode(&.{ try l.intNode(role.index, p), try l.intNode(role.node, p) }, p));
+        const parameters = for (l.in.worker_descriptors) |descriptor| {
+            if (descriptor.module == l.in.module and descriptor.decl == decl) break l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
+        } else return l.nullNode(p);
+        for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+            const parameter = parameters[role.index];
+            var path: std.ArrayList(Node.Index) = .empty;
+            for (parameter.path) |field| try path.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, field), p));
+            try roles.append(l.scratch, try l.arrayNode(&.{ try l.intNode(parameter.index, p), try l.intNode(role.node, p), try l.arrayNode(path.items, p) }, p));
+        }
         var nodes: std.ArrayList(Node.Index) = .empty;
         for (wire.nodes, 0..) |node, ni| {
             if (!needs[ni]) {

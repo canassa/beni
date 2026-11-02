@@ -3,8 +3,6 @@
 const normalize = (plan, role, value) => {
   if (plan === null) return value;
   const [roles, nodes] = plan;
-  const root = roles.find(entry => entry[0] === role);
-  if (root === undefined) return value;
   const visit = (index, value) => {
     const node = nodes[index];
     if (node === 0) return value;
@@ -27,7 +25,16 @@ const normalize = (plan, role, value) => {
     }
     return result;
   };
-  return visit(root[1], value);
+  const atPath = (value, path, node, offset = 0) => {
+    if (offset === path.length) return visit(node, value);
+    const field = path[offset];
+    const next = atPath(value[field], path, node, offset + 1);
+    return next === value[field] ? value : {...value, [field]: next};
+  };
+  for (const [index, node, path] of roles) {
+    if (index === role) value = atPath(value, path, node);
+  }
+  return value;
 };
 let workerPlan = null;
 let listener = null;

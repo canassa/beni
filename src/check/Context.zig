@@ -47,6 +47,8 @@ key_errors: ?*std.ArrayList(KeyKinds.Issue) = null,
 /// annotated declaration gets a reading of its annotation that nothing
 /// unifies, which the dump prints (`constrain/Decl.zig`'s `Member.display`).
 keep_display: bool = false,
+// Annotation readings retained only when entry-role Wire checking is active.
+wire_readings: ?*std.ArrayList(WireReading) = null,
 /// The vocabulary this module's markup is typed against (checker-v2.md
 /// §25.2), when it writes markup and the build has one. Set after the
 /// vocabulary declarations are checked and before any value group.
@@ -66,6 +68,9 @@ inst_type: []Var.Optional = &.{},
 /// pattern is `_` — and the variable of its value, for `unit_discarded`
 /// (checker-v2.md §34); null when that warning is off.
 discards: ?*std.ArrayList(Discard) = null,
+
+/// One annotation and the rigid reading used to check its body.
+pub const WireReading = struct { scheme: Var, body: Var, decl: u32 };
 
 /// One `_ = e`: the `let_pattern` and the variable its value was checked
 /// against.

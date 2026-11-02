@@ -1,0 +1,22 @@
+pub type Program
+    = Program ((⊤ → ⊤))
+
+
+pub program : (⊤ → ⊤) → Program
+program init = Program init
+
+
+pub run : Program → ⊤
+run definition =
+    case definition of
+        Program init →
+            init ⊤
+
+
+pub foreign impure text : String → ⊤
+
+
+pub foreign impure initializer : String → String
+
+
+pub foreign impure button : sync (⊤ → ⊤) → ⊤
