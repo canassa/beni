@@ -11895,7 +11895,9 @@ test "the checker v2's summary prints a cell at every path it is reached at" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary pair: res .0 π1ε, .1.0 π1ε, .1.1 π2ε; nondup no; reads π1ε* π2ε*\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary twice: res .0.0 π1ε, .0.1 π2ε, .1.0 π1ε, .1.1 π2ε; nondup no; reads π1ε* π2ε*\n") != null);
+    // A kid equal to an earlier sibling is that sibling's subtree, one
+    // node, printed as `.1 = .0` (§2.10 *Text*, #1714).
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary twice: res .0.0 π1ε, .0.1 π2ε, .1 = .0; nondup no; reads π1ε* π2ε*\n") != null);
     // A union's two sides holding one leaf print it once at a route,
     // however the leaf was first met (#1151's review); a built node below
     // `[*]` is no reference to one above it.
