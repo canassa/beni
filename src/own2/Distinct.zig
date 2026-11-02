@@ -158,8 +158,8 @@ fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error
 /// slots `plain` (words from the result's root) by `res`. A slot `res`
 /// does not name may hold anything.
 fn arrivesAtPlain(e: *Eval, res: Ids.Range, o: u64, plain: []const []const u32) Error!bool {
-    // A deep occurrence reaches every slot below its own.
-    if (Contract.isDeep(o)) return true;
+    // A deep occurrence also reaches every slot below its own.
+    const deep = Contract.isDeep(o);
     const ow = e.f.slots.relWords(Contract.occRel(o));
     for (plain) |words| {
         var named = false;
@@ -176,11 +176,9 @@ fn arrivesAtPlain(e: *Eval, res: Ids.Range, o: u64, plain: []const []const u32) 
                 // The arrival's slot is its own steps, then what the
                 // plain slot takes on below an open one; a deep arrival
                 // reaches every slot below that.
-                const aw = e.f.slots.relWords(a.slot);
-                if (aw.len + suffix.len > ow.len) continue;
-                if (!std.mem.eql(u32, aw, ow[0..aw.len])) continue;
-                if (!std.mem.eql(u32, suffix, ow[aw.len..][0..suffix.len])) continue;
-                if (a.deep or aw.len + suffix.len == ow.len) return true;
+                const aw = try std.mem.concat(e.arena, u32, &.{ e.f.slots.relWords(a.slot), suffix });
+                if (aw.len <= ow.len and std.mem.eql(u32, aw, ow[0..aw.len]) and (a.deep or aw.len == ow.len)) return true;
+                if (deep and aw.len > ow.len and std.mem.eql(u32, ow, aw[0..ow.len])) return true;
             }
         }
         if (!named) return true;
