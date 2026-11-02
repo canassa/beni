@@ -118,6 +118,9 @@ pub const Demand = struct {
     /// The path below the base the write is at, for the text.
     write_path: PathId = .none,
     callee_inst: u32 = none,
+    /// A `once` demand's written capture: the base is this local, not
+    /// `base_inst` (`none` otherwise).
+    base_local: u32 = none,
     /// The written objects: a run of `Walk.leaf_runs`.
     targets: Ids.Range = .{},
     deep: bool = false,
@@ -330,6 +333,22 @@ const Walker = struct {
             const v = k.res[k.rel(i)].v;
             if (v == none) continue;
             if (!k.w.regions.compatible(i, point)) continue;
+            // A record update's base waits for a consumer that touches it
+            // at every field but the updated ones (§2.6's `record_update`
+            // row, §2.8 *Dead*): it holds only those fields' values.
+            const c = k.consumer[k.rel(i)];
+            if (c != none and k.bir.instTag(@fromBackingInt(c)) == .record_update and k.bir.instData(@fromBackingInt(c)).lhs == i) {
+                const fields = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.bir.instData(@fromBackingInt(c)).rhs)), Bir.Field);
+                for (k.f().places.steps(try k.placeOf(c)).steps) |st| {
+                    if (st.kind != .field) continue;
+                    const updated = for (fields) |fl| {
+                        if (k.ctx.fieldRank(k.ctx.ctx, fl.name) == st.payload) break true;
+                    } else false;
+                    if (updated) continue;
+                    try k.w.pending_runs.append(k.gpa, .{ .value = try k.project(v, .plain, st.word(), 0), .inst = i });
+                }
+                continue;
+            }
             try k.w.pending_runs.append(k.gpa, .{ .value = v, .inst = i });
         }
         return .{ .start = start, .len = @intCast(k.w.pending_runs.items.len - start) };

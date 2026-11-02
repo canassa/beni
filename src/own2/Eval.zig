@@ -356,16 +356,12 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     // A write of nothing (a crossing value consumed) is no demand.
     if (e.w.leaf_runs.items.len == t_start) return;
     const base = argBase(e, q, x.j);
-    var write_path: PathId = .none;
-    if (words.len != 0 and base != call.inst and q < e.w.walk_calls) {
-        const at = try e.ctx.placeOfInst(e.ctx.ctx, base);
-        var ps: std.ArrayList(u32) = .empty;
-        defer ps.deinit(gpa);
-        try Slots.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, at), words, &ps);
-        if (ps.items.len != 0) write_path = .from(ps.items[0]);
-    }
+    const write_path: PathId = if (base != call.inst and q < e.w.walk_calls) try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, base), words) else .none;
+    // A capture a known code writes is named by its local.
+    const caps: []const u32 = if (!call.virtual and call.code != none and x.j >= call.arg_insts.len) e.ctx.capturesOf(e.ctx.ctx, call.code) else &.{};
     var d: Demand = .{
         .point = call.point,
+        .base_local = if (caps.len != 0 and x.j - call.arg_insts.len < caps.len) caps[x.j - call.arg_insts.len] else none,
         .kind = if (x.deep) .consumed else .writer,
         .token = e.w.code.decl.inst_start.int(),
         .base_inst = base,
@@ -401,7 +397,10 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
                     d.kept = true;
                 };
             };
-            d.base_inst = oc.inst;
+            d.callee_inst = oc.head;
+            const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
+            d.base_inst = sa.inst;
+            d.write_path = sa.path;
         }
     }
     try addDemand(e, d);
@@ -443,6 +442,38 @@ fn addEscapeAt(e: *Evaluation, leaf: u32, point: u32, call: u32) Error!void {
     if (e.facts_on) try paramEffects(&e.sink, leaf, true, .escapes);
 }
 
+/// A virtual call's base as v1 names it: `List.foldl acc`.
+const Named = struct { inst: u32, path: PathId };
+/// Call `q`'s argument supplying `lab`'s parameter `k` written at `words`.
+fn supplyingArg(e: *Evaluation, q: u32, lab: Contract.Label, k: u32, words: []const u32) Error!?Named {
+    const f = e.fr();
+    const call = f.calls.items[q];
+    for (e.contracts.suppliesOf(lab.supplies)) |su| {
+        if (su.k != k) continue;
+        for (e.contracts.resOf(su.res)) |rs| {
+            const at = f.slots.relWords(rs.slot);
+            if (!std.mem.startsWith(u32, words, at)) continue;
+            for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+                if (a.kind != .param or a.j >= call.arg_insts.len or call.arg_insts[a.j] == none) continue;
+                const inst = call.arg_insts[a.j];
+                const ws = try std.mem.concat(e.ev.arena, u32, &.{ f.slots.relWords(a.slot), words[at.len..] });
+                return .{ .inst = inst, .path = if (q < e.w.walk_calls) try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, inst), ws) else .none };
+            }
+        }
+    }
+    return null;
+}
+
+/// The path `words` replays to below place `at`, for a demand's text.
+fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
+    if (words.len == 0) return .none;
+    const f = e.fr();
+    var ps: std.ArrayList(u32) = .empty;
+    defer ps.deinit(e.gpa());
+    try Slots.replay(e.gpa(), f.account, f.places, try f.places.rootPath(e.gpa(), at), words, &ps);
+    return if (ps.items.len != 0) .from(ps.items[0]) else .none;
+}
+
 /// The walk's call a virtual call applies a label of: `(call, label)`.
 fn virtualOuter(e: *Evaluation, q: u32) ?[2]u32 {
     var it = e.w.virt.keys.items;
@@ -477,11 +508,15 @@ fn onceDemands(e: *Evaluation) Error!void {
             defer ps.deinit(gpa);
             try e.ev.project(caps[wr.j - sig.own], f.slots.relWords(wr.slot), wr.deep, 0, 0, &ps);
             for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
+            const cap_local = e.ctx.capturesOf(e.ctx.ctx, cl.code)[wr.j - sig.own];
+            const write_path: PathId = if (cap_local != none) try pathAt(e, try e.ctx.placeOfLocal(e.ctx.ctx, cap_local), f.slots.relWords(wr.slot)) else .none;
             try e.demands.append(gpa, .{
                 .point = cl.point,
                 .kind = .once,
                 .token = tokenOf(e, cl.inst),
                 .base_inst = cl.inst,
+                .base_local = cap_local,
+                .write_path = write_path,
                 .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
                 .deep = wr.deep,
             });

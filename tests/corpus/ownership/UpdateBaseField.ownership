@@ -1,0 +1,15 @@
+module UpdateBaseField
+  15:5 update m: accepted param
+  15:19 List.push m.items: accepted param
+  20:5 update m: accepted param
+  20:19 List.push m.items: rejected later-use: m.items is read again at 20:5
+  25:5 update m: accepted param
+  25:19 List.push m.kept: rejected later-use: m.kept is read again at 25:5
+  summary grow: π1 W{count, items}, π1.count R, π1.items RAW[storage], π1.items[*] A, π1.kept RA; res .items condition(fresh1) π1.items, .items[*] ~condition(fresh2) ~π1.items[*], .kept ~condition(fresh3) π1.kept, π1◦
+  summary keepOld: π1 W{items, kept}, π1.items RAW[storage], π1.items[*] A; res .items condition(fresh1) π1.items, .items[*] ~condition(fresh2) ~π1.items[*], .kept ~condition(fresh3) π1.items, π1◦
+  summary other: π1 W{items}, π1.kept RAW[storage], π1.kept[*] A; res .items condition(fresh1) π1.kept, .items[*] ~condition(fresh2) ~π1.kept[*], .kept ~condition(fresh3) π1.kept, π1◦
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+cause later-use 2
