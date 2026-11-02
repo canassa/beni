@@ -5,10 +5,8 @@
 -- the fresh list `List.range` answers may be pushed in place. Read as
 -- pessimistic, the first made no demand and the second was refused.
 
-
 changedThenRead : List Int → Int × List Int
-changedThenRead xs =
-    ( List.length (List.update xs 0 λx → x + 1), xs )
+changedThenRead xs = ( List.length (List.update xs 0 λx → x + 1), xs )
 
 
 pushedFresh : Int → Int
