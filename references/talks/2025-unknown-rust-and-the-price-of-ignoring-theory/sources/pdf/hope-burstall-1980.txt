@@ -1,0 +1,635 @@
+                                  HOPE: AN EXPERIMENTAL APPLICATIVE LANGUAGE
+
+
+                                                 R.M° Burstall
+                                                D.B° MaeQueenl
+                                                D.T. Sannella
+
+                                          Department of Computer Science
+                                              University of Edinburgh
+                                               Edinburgh, Scotland
+
+                                                               2. DESIRABLE PROGRAMMING LANGUAGE FEATURES
+   ABSTRACT:    An applicative language called HOPE
+                                                                  The   following   points  seem    important    in   a
+is described and discussed.    The underlying goal of
+                                                               language for writing correct and flexible programs.
+the design and implementation effort was to produce
+                                                               They   are  listed   rather  briefly    but  they    are
+a very simple programming language which encourages
+                                                               illustrated   in   the  description    of HOPE    which
+the construction of clear and manipulable programs.
+                                                               follows.
+HOPE does not include an assignment statement; this
+is felt to be an important simplification.         The
+user may freely define his own data types, without             No assignment: referential transnarencv
+the need to devise a complicated encoding in terms
+                                                                  Applicative languages which work in terms of
+of low-level types.    The language is very strongly
+                                                               expressions   and  their   values,   using    recursion
+typed,   and  as   implemented    it  incorporates   a
+                                                               instead of loops,     seem much clearer      and less
+typechecker which handles polymorphic types and
+                                                               error-prone.    The expressions are transparent in
+overloaded operators.     Functions are defined by a
+                                                               the sense that their value depends only on their
+set of recursion equations; the left-hand side of
+                                                               textual   context   and   not  on   some    notion   of
+each equation includes a pattern used to determine
+                                                               computational history.     Each variable is given a
+which equation to use for a given argument.        The
+                                                               value just once where it is declared.      Assignments
+availability of arbitrary higher-order types allows
+                                                               which alter data structures are particularly prone
+functions to be defined which 'package' recursion.
+                                                               to cause bugs; disallowing them greatly simplifies
+Lazily-evaluated lists are provided, allowing the
+                                                               the language although it does slow down execution.
+use of infinite lists which could be used to
+                                                               Backus [2] makes this case strongly.
+provide interactive input/output and concurrency.
+HOPE also includes a simple modularisation facility
+which may be used to protect the implementation of             Maximum use of user-defined tYPeS
+an abstract data type.                                            The user should define his own types whenever
+                                                               possible;   thus  type   'age'  rather   than  type
+                                                               'integer'.    The machine must check these types.
+                                                               The language should allow polymorphic types so that
+I. INTRODUCTION                                                code can be as general as possible; for example,
+   As   hardware   gets   cheaper,    people   become          'list of alphas' rather than specifically 'list of
+increasingly aware of the high cost of software and            numbers', where alpha is a type variable which can
+particularly of those components of the cost which             be instantiated to any type.     We suspect that a
+are due to bugs in programs and to inflexible                  great many errors are caused by the complications
+programs.     A  simple  yet   powerful   programming          introduced when encoding data in terms of the
+language in which one has a good chance of avoiding            commonly-supplied low-level types; the provision of
+mistakes and in which programs are transparent                 a simple and powerful facility for defining types
+enough to be easily altered would be an effective              should greatly simplify the programmer's task.
+means of countering this trend.      We believe this
+goal is worth working towards even if it requires              Overloaded oDeratoFs
+radical changes in our programming habits.
+                                                                  It is convenient to use common operation symbols
+   In this paper we will first list some aspects of            such as + or eval with a variety of meanings,
+programming languages which contribute to accuracy             according   to the type of the arguments.       The
+and flexibility.   We illustrate them by describing            implementation should be able to disambiguate such
+an applicative language, called HOPE, which we have            'overloaded' operators (this requires some subtlety
+developed and implemented.   This is followed by an            for polymorphic types).
+example of a complete HOPE program.     Finally, we
+discuss the strengths and weaknesses of HOPE.                  Exhaustive case analysis
+
+                                                                  Each data type will have a set of disjoint
+                                                               subtypes,   each  with  a   different  constructor
+                                                               function; e.g., lists are made with cons or nil
+                                                               It should be easy to do case analysis with respect
+  ICurrent   address:   USC   Information     Sciences         to these constructors and easy for a compiler to
+Institute, Marina del Rey, California                          check whether the analysis is exhaustive.     This
+
+
+                                                         136
+avoids mistakes like   forgetting   to   include   a test         the user; his code relies solely on                             the     specified
+for the empty list.                                               properties of the abstract type.
+
+                                                                      Conventional block structure scope rules make it
+Avoidin~ unnecessary names
+                                                                  difficult to maintain the desired separation of use
+   It should not be necessary to introduce a large                and    implementation,  so   these  languages  adopt
+number   of  different   names  for   functions   to              different rules for identifier scopes.
+construct data structures (e.g. cons ), to test
+which subtype it is (e.g. the predicate null ), or
+                                                                  3. THE HOPE PROGRAMMING L A N G U A G E
+to select components (e.g. car and edr ).     We can
+use just the constructor name and by using pattern                   A   programming  language  called   HOPE  which
+matching syntax let it denote testing and selecting               illustrates the features mentioned above has been
+as the context dictates.                                          designed and implemented at Edinburgh University.
+                                                                  A brief informal description of HOPE follows; full
+                                                                  details can be found in [9]. A precursor, NPL, was
+Abolishin~ exDlicit reeursion as far as possible                  described in [5].
+   Given that we want an assignment-free language,
+                                                                     The aim throughout was to design a programming
+we will use recursion instead of loops.     However,              language   which was very simple and encouraged
+undisciplined  use of recursion     is not at all                 clarity and manipulability of programs.       Major
+desirable.    It is much better to use standard                   influences in the design of HOPE have been LISP and
+constructions related to the data structures; for                 Landin's ISWIM [24].     We were not trying to be
+example, { x2 I x • S } as in mathematics (and SETL               original; we sought a judicious selection of well-
+[12]) instead of recursion over the elements of
+                                                                  understood ideas.    HOPE seeks some blend of LISP
+S. In   a   language   which   allows   higher-order
+                                                                  power with the discipline of strong typing and
+functions (that is, procedures taking procedures as
+                                                                  modularity.   It bears some resemblance to a number
+parameters), we can easily define useful higher-
+                                                                  of other languages, including PROLOG [30], ML [17],
+order functions which 'package' recursion to save
+                                                                  SASL [28], OBJ [15], SCRATCHPAD [22], and languages
+writing it explicitly.     An example is mapcar in
+                                                                  by Burge [4] and Backus [2].
+LISP.
+                                                                     HOPE (in its present form) is an experiment in
+Making secuences into data objects                                language design and a means of testing certain
+                                                                  ideas in programming methodology rather than the
+   In   traditional  imperative-style  programming,
+                                                                  ultimate in programming languages.    It is still
+sequences are sometimes represented as successive
+values of a variable; thus a sequence of integers                 somewhat incomplete and lacks such conveniences as
+                                                                  sensible input/output facilities (but see section
+is represented as values of an integer variable.
+It is also possible to represent them by an array                 3.5).
+or list, but this has the disadvantage that all the                  Part of the HOPE implementation was carried out
+elements of the sequence must be in memory at the                 by Michael Levy and we express our appreciation of
+same time.   An idea aptly called 'lazy evaluation'               his efforts.
+by Henderson and Morris [18] (due originally to
+Wadsworth   [29]) enables us to deal with such
+sequences as lists but have them evaluated one                    3.1. D A T A D E C L A R A T I O N S
+element at a time as needed.  Amongst other things,                  Conceptually, all data in HOPE is represented as
+this enables one to achieve the same effect as                    terms consisting of a data constructor applied to a
+coroutines in an imperative language but in a more                number    of   subterms,  each   of   which   in  turn
+perspicacious way, by passing a lazy list as the                  represents another data item.       The tips of this
+result of a function.      It also enables one to                 tree are nullary data constructors or functional
+handle interactive input/output and concurrency in                objects.    An example is succ(suce(0)) in which suec
+an applicative language.                                          is a unary constructor and 0 is a nullary one
+                                                                  (i.e.,   a constant).     Constructor   functions are
+                                                                  uninterpreted; they just construct.
+Modularity and data abstraction
+                                                                     A d~tB declaration is used to introduce a new
+   The   main   trick  in  writing  large   bug-free
+                                                                  data type along with the data constructors which
+programs is to construct them in smallish pieces,
+                                                                  create elements of that type.      For example, the
+each as self-contained as possible, with the pieces
+                                                                  data declaration for natural numbers would be:
+communicating with each other in a disciplined,
+explicit   manner.    An  important   technique  for                             h u m == 0 ++ succ(num)
+achieving this is data abstraction (see for example
+Hoare in chapter 2 of [10]).         This has been                defining   a     data type called  num   with  data
+explored as an aid to good programming style in                   constructors 0 and suco .   So the elements of n u m
+such recent languages as ALPHARD [31], CLU [25] and               are 0 , suco(O) , succ(succ(O)) . . . . ; that is,
+ADA [20], which may be thought of as developing one               O, 1, 2, . . . .
+aspect of the SIMULA class concept [11].
+                                                                      To define a type 'tree-of-numbers'                          we could say
+   An abstract data type, such as 'set' or 'queue',                     ~numtree               == empty ++ tlp(num)
+is defined by a collection of procedures which
+                                                                                                        ++ n o d e ( n u m t r e e # n u m t r e e )
+create elements of the type and operate on them.
+The implementations of these procedures and the                   (the sign # gives the cartesian product of types).
+representation of the type itself are hidden from                 One of the elements of numtree is:
+
+
+
+                                                            137
+       node(tip(succ(O)),                                                abbreviated   [el,e2, ...] ,   ['a','b',  .]                    is
+            node(tlp(succ(succ(O))),tip(O)))                             "ab..." and sets are written {el,e2, ..~} .                   Note
+                                                                         that we write cons as infix :: .
+   But we would like to have trees of lists and
+trees of trees as well, without having to define                            There are       two     equivalent     forms   of   conditional
+them all separately. So we declare a tYPe variable                       expression:
+
+                                                                               e I ~c     else e 2
+      ~y.P2XgEalpha
+                                                                         and
+which when used in a type expression denotes any
+type (including second- and higher-order types). A                             c then e I else e 2
+general definition of tree as a parametric type is                       (in many languages w r i t t e n ~ c         then e I else e 2 ).
+now possible:
+                                                                            Lambda-expressions   (denoting   functions)                    are
+      ~gJ~tree(alpha)      == empty ++ tip(alpha)                        formed as described in section 3.3.
+                        ++ node(tree(alpha)#tree(alpha))
+                                                                            Local variables may be introduced and associated
+Now tree is not a type but a unary ~vne constructor                      with values using either of the equivalent forms
+-- the type numtree can be dispensed with in favour
+of tree(hum) .                                                                 e t   where p == e 2
+      Another example of a data declaration         is                   or
+
+      ~g~graph      == mkg(set vertex                                          i~]~P == e 2 ~ l e     I
+                               # (vertex#vertex->truval))                where p is an expression formed by application of
+This says that a graph is (the data constructor mkg                      data constructors to a number of distinct variables
+applied to) a set of vertices together with a                            (this is called a pattern).  For example:
+binary relation which tells if there is an edge                                a+b where a::(b::l)          == f(t)
+between any two vertices.
+                                                                         Upon evaluation, f(t) is expected to yield a value
+   HOPE currently        comes      equipped with the       data         which   'matches'   the  pattern a::(b::l) .     The
+types hum , truval      , char     , list , and set .                    corresponding   subterms in the value of f(t) are
+                                                                         then bound to a , b , and 1 while evaluating a+b .
+3.2. EXPRESSIONS
+   The simplest expressions of HOPE are constants                        3.3. DEFINING FUNCTIONS
+(i.e.,   data   constructors   and  functions  -- the                       Before      a function is defined,           its type   must    be
+'usual' concept of a constant is just the class of                       declared.       For example:
+nullary    functions   and   data  constructors)  and
+variables.                                                                     dee reverse     : list(alpha)      -> list(alpha)
+
+   An   ~ / i         may    be          formed     by   simply          HOPE is a very strongly-typed    language, and the
+Juxtaposing two expressions:                                             HOPE system includes a polymorphic typechecker (a
+                                                                         modification of the algorithm in [27]) which is
+      factorial 6                                                        able to detect all type errors at compile time.
+                                                                         Function symbols may be overloaded.    When this is
+   For   functions  of  several   arguments  we use                      done, the typechecker is able to determine which
+tuoles, formed with commas; thus 3,4 is a 2-tuple.                       function definition belongs to each instance of the
+Parentheses are used for grouping, for example:                          function symbol.
+
+      g   (3,4)                                                             Functions are defined by a sequence of one or
+                                                                         more eeuations, where each equation specifies the
+      In the expression                                                  function over some subset of the possible argument
+       ( f x) y                                                          values.   This subset is described by a pattern (see
+                                                                         section 3.2) on the left-hand side of the equation.
+the subexpression   f x would have             to   produce    a         For example:
+function; thus the types would be
+                                                                               --- reverse(nil) <= nil                                     (I)
+       f : T I -> T 2 -> T 3                                                   --- reverse(a::l) <= reverse(l)             <> [a]          (2)
+
+with x : T I and y : T 2 .                                               (the symbol <> is infix append ). This defines the
+                                                                         (top-level) reverse of a list; for example:
+   It is possible to use function symbols as infix
+or postfix operators if they are declared and given                            reverse(1::(2::nil)) = reverse(2::nil) <> [I]
+a precedence; for example:                                                                       = (reverse(nil) <> [2]) <> [I]
+                                                                                                          : (nil <> [2]) <> [I]
+       infix +, - : 8
+                                                                         So reverse [I,2] = [2,1] (by two applications of
+A similar form is used           to assign a precedence     to a         equation 2 followed by a single application       of
+prefix symbol.                                                           equation  I).    The left-hand-side   patterns  will
+                                                                         normally  be   disjoint  and   be  related   to  the
+      Some convenient notations have been implemented
+                                                                         structure of the type definition:
+for     built-in types; thus e1::(e2:: ... ::nil) is
+
+
+                                                                   138
+                                                                              together with some primitive       operations)     may   be
+   ~          list alpha == nil ++ alpha :: list alpha                        referenced within any module.
+   The set of equations defining a function should                               This is an effective tool for the encapsulation
+exhaust  the  possibilities   given  in the     data-                         of data abstractions; if the primitive constructors
+statement introducing the argument types.         For                         and low-level operations on the data representation
+example, a definition of the Fibonacci numbers:                               are not declared public, then the implementation of
+       dec    fib : hum -> mum                                                the abstraction is hidden from the rest of the
+       ---    fib(O) <= I                                                     program.
+       ---    fib(succ(O)) <: 1
+       ---    fib(succ(suec(n)))   <= fib(succ(n)) ÷ fib(n)                   3.5. LAZY EVALUATION AND INPUT/OUTPUT
+                                                                                 Lazy evaluation was mentioned briefly in section
+In this case the three patterns 0 , succ(O) , and
+succ(succ(n)) exhaust the set of values belonging                             2; there we described it as a desirable language
+                                                                              feature.    In HOPE, lazy evaluation has thus far
+to n u m . The pattern ; may be used as shorthand
+                                                                              only been    implemented   for lists,  which  makes
+for succ(O) .
+                                                                              available most of the power of the mechanism.  Lazy
+   Nullary        'functions'   may   also   be   defined;     for            lists are created using the special constructor
+example:                                                                      icons in place of the usual :: . This constructs a
+                                                                              list which is identical to a normal list         (in
+       dec pi : rational                                                      particular,    the    pattern   a::l   will   match
+       --- pi <= mkrational(22,7)                                             icons(c,d) ) except that the arguments to icons
+                                                                              remain unevaluated until their values are required
+which assumes         that   the   type   rational     has    been
+                                                                              during subsequent use of the list.
+defined.
+   Lambda-expressions are defined similarly.    For                              Consider   the   function which   produces  the
+                                                                              (potentially) infinite list consisting of a number
+example, a function to compute the conjunction of
+two truth values (already available as the function                           and all its successors:
+and ):                                                                            dec allsuccs : n u m -> list num
+                                                                                  --- allsuccs(n) <= icons(n,allsuccs(n÷1))
+       ~g~j~true,p   => p
+              I false,p => false                                              Now if we define a 'lazy mapcar'     function
+   Another example of a lambda-expression              occurs in                  /.Ep.~y~lalpha, beta
+the definition of functional composition:                                         dec <e> : (alpha->beta)#list alpha -> list beta
+                                                                                  l~/J~<*> : 6
+       ~XE~x~lalpha,beta,tau
+       ~ . q c o m p o s e : (alpha->beta)#(beta->tau)
+                                                                                  --- f <*> nil <= nil
+                                          -> (alpha->tau)
+                                                                                  ___ f <,> (a::al) <= lcons(f(a),(f <*> al))
+       --- compose(f,g) <=.l.~ll,~tx => f(g(x))
+                                                                               then the infinite     list   of   the   squares   of    all
+                                                                               numbers is just
+ 3.4. MODULES
+    Any sequence of statements may be made                   into   a              square <,> allsuccs(0)
+ module by surrounding it with the statements
+
+       ~.~J~name                                                                 We can use lazy lists to provide interactive
+                                                                              input/output in HOPE.   The first step would be for
+ and                                                                          the system to provide two new functions, input and
+                                                                              output   (not yet   available).    Input  takes  an
+        end                                                                   argument of type device specifying an input device,
+    Data types defined in a module may               be referred              where
+ to outside only if a statement                                                    data device == tty ++ file(list(char)) ++ ...
+        oubtvne tname                                                          and produces a lazy list where new items are read
+                                                                               from the device when needed.    A special character
+ is included in the module.    Similarly, constants
+                                                                               (control/Z) signals end of input, and consequently
+ (including data constructors)   may be referenced
+                                                                               the end of the lazy list.   Output is a function of
+ only if a statement
+                                                                               type device->(list(alpha)->vold) .   Given a list,
+        nubeonst cname                                                         output(dev) evaluates each element and produces it
+                                                                               as output on the indicated device.
+ is included.
+                                                                                  As a simple example, here is a program to read a
+    Nothing   defined outside             a   module     may   be              number from the terminal, output its square, and
+ referenced within it, unless             the module     includes              then repeat (until control/Z is typed):
+ the statement
+                                                                                   output("tty")   (square <*> input("tty"))
+        uses mname
+                                                                               Since  input("tty") in this expression is of type
+ In this case,       all of the types and constants                            list(num)  , the teletype will accept as input only
+ declared as public to the indicated module are                                expressions of type hum .
+ available.    In addition, certain global types and
+ constants ( n u m , truval , char , list , and set ,                             This is a special example of the general problem
+
+
+                                                                        139
+of   communication    between   concurre,   processes.             ~.~MJ~orderecl_trees
+Lazy   lists    provide   a   means   of  implementing               nubtvDe otree
+communication channels, but at present the notation                  nubnonst empty,    insert,    flatten
+of HOPE is not adequate to specify an arbitrary
+network of communicating processes.       We have not                ~t~otree   == empty ++ tip(num)
+yet given much thought to this problem; however,                                         ++ node(otree#num#otree)
+notations   exists which are sufficient and which
+could be adapted for our purposes (see for example                   dec insert : num#otree -> otree
+[26]).                                                               ~.q flatten : otree -> list num
+
+                                                                     --- insert(n,empty)   <= tip(n)
+3.6. IMPLEMENTATION NOTES                                            --- insert(n,tip(m))
+   The HOPE system consists of a compiler (from                                    <= n<m then node(tip(n),m,empty)
+HOPE   programs   to  code  for   an abstract      stack                                  else node(empty,m,tip(n))
+machine)   and   an  implementation  of      the  target             --- insert(n,node(tl,m,t2))
+machine.     The system is written in POP-2,         and                           <= n<m then node(insert(n,tl),m,t2)
+currently runs in approximately 55K words (plus a                                         else node(tl,m,insert(n,t2))
+15K shareable    segment)  on a DEC      KI-IO.      The
+compiled code should be quite portable,          as the              --- flatten(empty)   <= nil
+abstract machine simulator could e a s i l y b e written             --- flatten(tip(n)) <= [n]
+for a new machine.      The compiler itself is less                  --- flatten(node(tl,n,t2))
+portable since it requires availability of POP-2.                                    <= flatten(tl)       <> (n::flatten(t2))
+
+    Our preliminary tests indicate that a program                  end
+written in HOPE runs approximately 9 times slower
+than the same algorithm coded in LISP running under
+the Rutgers/UCI interpreter (and 23 times slower                   ~.~Alglist_iterators
+than compiled LISP).   A large program run recently
+ran    more  slowly,  presumably  because  of  page
+thrashing.    A machine code implementation of the                   /d.pfj_~ialpha,    beta
+interpreter should run a lot faster.
+                                                                     ~.q•   : (alpha->beta)#1ist alpha -> list beta
+4. EXAMPLES                                                          ~**     : (alpha#beta->beta)#(list alpha#beta)
+   An example of a complete HOPE program is given                                                                        -> beta
+in figure I. This illustrates how we can use HOPE
+to implement a data type (ordered trees), and then                   j~j~   |, ** : 6
+how that type can be used       in a program   for
+treesort.                                                            --- f • nil     <= nil
+                                                                     --- f • (a::al) <= (f a)::(f * al)
+Ordered trees                                                         --- g ** (nil,b)         <= b
+    The first module contains an implementation of                    --- g ** (a::al,b)       <= g ** (al,g(a,b))
+the   abstract  type ordered-tree-of-numbers   (data
+type otree in the program).   An otree is defined to                end
+be either empty , a tip (containing a number), or a
+node containing two otrees and a number.         The
+special property of otree is that for any term                     ~j~igtree_sort
+node(tl,n,t2) , all numbers contained     in tl are                  ~_gg~_~sort
+less than n , which is in turn less than or equal                     uses ordered_trees, list iterators
+to all numbers contained in t2 .     We define three
+public constants:                                                     ~j~sort   : list num -> list num
+
+    empty       the empty otree                                       --- sort(l)   <= flatten(insert        ,, (l,empty))
+     insert     adds a number to an o t r e e , preserving
+                                                                    end
+                the 'orderedness' of the otree
+
+     flatten    inorder traversal   of an otree
+                                                                                    Figure     I: A HOPE Program
+Ordinarily an abstract data type would have a few
+more operations; we have only included those which
+are used in the remainder of the program.
+
+   Note that the data constructor        node  is not
+public.   Consequently, the only functions available                   This module defines two second-order functions
+to   the   'outside   world'   for  constructing   and              which apply a given function to every element of a
+modifying otrees are empty and insert .        Both of              list and collect the results.   These two functions
+these preserve the properties of otrees,        so the              are representatives of a group of functions which
+integrity    of   the   implementation    is  assured.              are widely used in HOPE programs in an attempt to
+However,   insert is not a data constructor,       and              eliminate explicit recursion as far as possible.
+hence may not be used in patterns.
+
+
+                                                             140
+   The first function, * , is identical to m a p e a r              5.   DISCUSSION
+in LISP.  It produces a list containing the results                     Some    desirable    features    for     programming
+of applying the function supplied to each element                   languages were discussed in section 2.        Since HOPE
+of the given list.   This operation is not actually                 was    designed    with   these   in   mind,     it  not
+used in the example.   (A version of this function,                 surprisingly displays them all, although some are
+producing a lazy list, was given in section 3.5.)                   exhibited better than others (an exception is set
+                                                                    expressions [12], still to be implemented).          But
+   The function    .e is slightly more complicated.
+                                                                    more    important   is the question of whether       the
+When   supplied    with  a    function  g   of    type
+                                                                    resulting language provides a better interface with
+alpha#beta  -> beta , a    list  of alphas,   and   an
+                                                                    the computer than the one presented by existing
+ 'initial' beta-object, it applies g to each element                languages.
+of the list, beginning with the given beta-object
+as a second argument and subsequently recycling the                     Probably the most pleasing result of our efforts
+result of the previous application.    This operation               has    been  the    observation    that    it  really    is
+is analogous to the 'reduction' operator of APL                     significantly easier to construct programs in HOPE
+[21]; an example of its use would be to compute the                 than in any other programming language we know.          In
+union of a list of sets:                                            particular, we have found that it is rather easy to
+                                                                    write programs which are absolutely correct the
+       union   ** (setlist,emptyset)
+                                                                    first time they are run.      It seems quite difficult
+   In this case, the module facility is used as a                   to commit an error which remains undiscovered for
+means of packaging a number of related functions                    long    --  the   simple   errors    are   caught    during
+rather than as a device for protecting a delicate                   compilation    by the typechecker,       while the more
+abstraction.   However, if one of the operations                    fundamental     errors   (stemming     usually    from   an
+requires an auxiliary function which has no utility                 insufficient understanding of the problem) display
+of its own, then it might be desirable to keep this                 themselves glaringly during even a casual test.
+function local to the module.                                       Since testing and debugging account for more than
+                                                                    half the cost of many software projects, this could
+                                                                    yield enormous savings.
+Tree sort
+   A function for sorting a list of numbers is now                     An important aim of language design is to make
+defined   using   the primitives    developed    in the             it easier to verify that a program meets a given
+preceding    modules.     The    **    operation    from            specification.       In    this   respect  applicative
+llst_iterators is used to successively insert the                   languages such as HOPE seem to offer considerable
+llst elements into an initially empty otree . The                   advantages;   the absence of assignment statements
+result is then flattened      to produce     the final              and the consequent      replacement   of iteration  by
+answer.                                                             recursion   gives programs      a simple and easy to
+                                                                    analyse form.     Powerful verification systems for
+                                                                    applicative languages have been written by Boyer
+                                                                    and Moore [3] and by Aubin [I].
+
+                                                                        Another advantage of an applicative language is
+   A number of nontrivial HOPE programs (most of                    the fact that programs lend themselves very well to
+them much larger than this example)     have been                   the    technique   of   program    transformation    [7],
+produced.  These include the following:                             whereby     a  simple   but    inefficient   program   is
+                                                                    transformed    into an acceptably efficient       one by
+   - Compiler for a simple language       (translation   of         steps which maintain        its correctness.      A very
+     a program in [13])                                             simple example of program transformation would be
+                                                                    the production of the following linear-time program
+   -    Graph isomorphism                                           for     generating    Fibonacci     numbers   from    the
+                                                                    equivalent program in section 3.3 which requires
+   -    Implementation of the denotational    semantics             exponential time.
+        of a simple language (TINY from [~6])
+                                                                          dec g :num    -> num#nnm
+   -    Several abstract data types (bags, maps,    ... )                 - - - g(O) <= 1,1
+                                                                          --- g(succ(n)) <= (a + b),a      where a,b == g(n)
+   - Colimits of finite diagrams in a cocomplete
+     category,  and in a kind of comma oategory                           dec   fib' : hum -> num
+     (discussed in [6])                                                   ---   fib'(O) <= I
+                                                                          ---   fib'(1) <= I
+   - Telegram problem       (in [13]; problem from [19])                  ---   fib'(succ(succ(n)))
+                                                                                        <= a + b    where a,b == g(n)
+   - Text formatter       (in [13]; problem from [23])
+                                                                    Feather [13] has produced a system for transforming
+                                                                    large programs, which is connected to an earlier
+                                                                    version of the HOPE system.
+The last two of these are written in an earlier
+(and syntactically    incompatible) version of HOPE                     A very high-level language such as HOPE pays
+called   NPL;   translation   would be   tedious but                penalties of inefficiency because it is remote from
+straightforward.                                                    the machine level.    It could be thought of as a
+                                                                    specification language in which the specifications
+                                                                    are   'walkable'  (if not   'runnable'),  or  as  a
+
+
+                                                              141
+language for making a first try at a programming             Rather than generalising to otree(alpha) we could
+project.   But the program transformation approach           generalise to otree(alpha[<]) , requiring an order
+discussed above gives us some hope that we can               relation to exist on the parameter type.    This is
+produce tolerably efficient programs with less               the approach taken in CLU       [25]   and  in the
+effort than in a conventional language.                      specification language CLEAR [8].    We really want
+                                                             HOPE modules to have ~r.~_~r_~., a collection of
+   In   addition,   there   is   another  (as   yet          types and operators, just as CLU clusters have
+unmentioned)  advantage of applicative languages             parameters.
+which may come to our rescue: applicative languages
+are not so tightly bound to the notion of a                     As a further example, refer again to figure I
+sequential machine as are imperative languages.              and note that the module tree_sort does not depend
+The value of the function application                        on the fact that otrees are trees, but just on
+                                                             certain properties of insert and flatten . We may
+    e0(e I. . . .   ,en)                                     substitute      a    module     ordered_lists    for
+is independent of the order of evaluation of the             ordered_trees , where empty becomes nil , insert
+expressions eo, ... ,en (if parameters are passed            becomes the obvious order-preserving insertion in
+'by value'); ~his is guaranteed by the absence of            an ordered list, and flatten is the identity
+an assignment statement.   If a parallel machine is          function.   Essentially, tree_sort is a parametrised
+available,     Co, ... ,en    may   be    evaluated          module which may be       'applied'  to any module
+simultaneously.   Not onIy that, but if Co, ... ,en          satisfying certain (nontrivial) properties.
+are themselves function applications, then their
+                                                                The CLU cluster parameter, however,    is just an
+arguments may all be evaluated simultaneously.
+                                                             explicit list of types and operators,
+With the rapidly falling cost of hardware, this is
+feasible, although we would have to build the                    T with < : T#T -> truval
+machine ourselves.
+                                                             In CLEAR such an entity (called a theory and
+   HOPE has faults, too; one is illustrated in               provided   with   axioms)   can   be   named,    thus
+figure I .   The sorting program will only sort a            'Ordered-Set'; what is more various operations for
+list of numbers, because otree is 'ordered-tree-of-          building such theories are provided. We would llke
+numbers'.  We want a more general sorting program,           to extend HOPE to have parameterised modules where
+and this depends on a more general definition of             the parameters and the interfaces between modules
+ordered trees; we would like to define 'ordered-             are nameable and manipulable as in CLEAR.     Further
+tree-of-alphas'.   The data declaration is easy to           work in this direction is being carried out in
+generalise. But to generalise insert to type                 collaboration with J.A. Goguen [14].     We hope it
+                                                             will contribute to a better understanding of the
+    alpha#otree(alpha)->otree(alpha)                         structure of large programs and their development.
+we must have a more general order relation than < ,
+which is defined only for numbers.
+
+   One solution to this problem would be to require
+otree   users  to  supply   the  appropriate  order          Acknowledgements
+relation explicitly when dealing with an o t r e e .
+It could be added as an extra argument to insert ,              We would like to thank the Science Research
+or alternatively it could be built into the otrees           Council and Edinburgh University for supporting
+themselves (supplied as an argument to empty , and           this   work.    Michael  Levy  did   part  of  the
+propagated to new tips and nodes by insert ).                implementation.   Robin Milner and Michael Gordon
+Unfortunately, a 'bad' order relation (for example,          showed us how to handle polymorphic types.    John
+one which is not transitive) would violate the               Darlington helped develop NPL, the precursor of
+integrity of the data type, causing unpredictable            HOPE. Peter Landin's influence was pervasive.
+results.
+
+   Another possibility would be to define a general
+order relation as a new HOPE primitive.     This was                              REFERENCES
+our solution to the analogous problem involving the
+                                                             1.  Aubin, R. Strategies for Mechanizing Structural
+equality relation = . Two data values are equal if           Induction. Proc. 5th Int. Joint Conf. on
+they have the same representation as terms of                Artificial Intelligence, Cambridge, Massachusetts,
+constructors, except that for a newly-defined data           August, 1977, pp. 363-369.
+type the user may provide a nonstandard equality
+                                                             2. Backus, J. Can Programming Be Liberated from
+which   is  automatically   incorporated   into  the
+                                                             the von Neumann Style? A Functional Style and Its
+standard system equality.    For example, we might           Algebra of Programs. ~_Q~. ACM~_i, 8 (August
+want   to  define  equality   for otrees    so that          1978), 613-641.
+tip(n) = node(empty,n,empty) .    Allowing an order
+                                                             3. Boyer, R.S. and Moore, J.S. ~ Computational
+to be associated with each type would be a                   Logic. Academic Press, 1980.
+satisfactory solution to our present difficulties.
+But how many more such operations should be                  4. Burge, W.H. Recursi7~ Pro~rammin~ Technicue~.
+associated with a type?                                      Addison-Wesley, 1975.
+                                                             5. Burstall, R.M. Design Considerations for a
+   The best solution is of course to associate a             Functional Programming Language. Infotech State of
+collection of operations with each data type (so             the Art Conference: The Software Revolution,
+types become al~ebras instead of simply sets).               Copenhagen, October, 1977.
+
+
+                                                       142
+6. Burstall, R.M. Electronic Category Theory.                   28. Turner, D.A. SASL Language Manual.
+Proc. 9th Int. Symp. on Mathematical Foundations of             University of St. Andrews, 1979.
+Computer Science, Rydzyna, Poland, September, 1980.             29. Wadsworth, C.P. ~            and~r_gg~jLiQ.~h~
+7. Burstall, R.M. and Darlington, J. A                          the L~_~.~iD_~i/L%.    Ph.D. Th., Programming
+Transformation System for Developing Recursive                  Research Unit, Oxford University, 1971.
+Programs. ~. A C M ~ ,     I (January 1977), 44-67.             30. Warren, D.H.D, Pereira, L.M. and Pereira,
+8. Burstall, R.M. and Goguen, J.A. Putting                      F.C.N. PROLOG -- The Language and Its
+Theories Together to Make Specifications. Proc.                 Implementation Compared With LISP. Proc. ACM Symp.
+5th Int. Joint Conf. on Artificial Intelligence,                on Artificial Intelligence and Programming
+Cambridge, Massachusetts, August, 1977, pp.                     Languages, Rochester, New York, August, 1977.
+1045-1058.                                                      31. Wulf, W.A., London, R.L. and Shaw, M. An
+9. Burstall, R.M. and Sannella, D.T. HOPE User's                Introduction to the Construction and Verification
+Manual. In preparation.                                         of Alphard Programs. IEEE Trans. 9JiSoftware Eng.
+10. Dahl, O-J., Dijkstra, E.W. and Hoare C.A.R.                 ~]i-~, 4 (December 1976), 253-265.
+Structured Programming. Academic Press, 1972.
+11. Dahl, O-J., Myhrhaug, B. and Nygaard, K. The
+SIMULA 67 Common Base Language. Publication $22,
+Norwegian Computing Centre, Oslo, 1970.
+12. Dewar, R.B.K., Grand, A., Liu, S-C. and
+Schwartz, J.T. Programming by Refinement, as
+Exemplified by the SETL Representation Sublanguage.
+ACM Trans. Er_QgEg~iDgLan~ua~es and Systems !, I
+(July 1979), 27-49.
+ 13. Feather, M.S. A System for Dev@loDin~
+~_r_qgr~./~tI2gD~/.~D~.           Ph.D. Th., University
+of Edinburgh, 1979.
+ 14. Goguen, J.A. and Burstall, R.M. CAT, a System
+for the Structured Elaboration of Correct Programs
+from Structured Specifications. In preparation.
+ 15. Goguen, J.A. and Tardo, J.J. An Introduction
+to OBJ: A Language for Writing and Testing Formal
+Algebraic Program Specifications. Specifications
+of Reliable Software Conf. Proc., Cambridge,
+Massachusetts, April, 1979.
+ 16. Gordon, M.J.C. /]ig Denotational DescriDion 9_~
+~_r_qgr_~_gLan~ua~es. Sprlnger-Verlag, 1979.
+ 17. Gordon, M.J.C., Milner, A.J.R.G., Morris, L.,
+ Newey, M. and Wadsworth, C. A Metalanguage for
+ Interactive Proof in LCF. Proe. 5th ACM Symp. on
+ Principles of Progrsmming Languages, Tucson,
+ Arizona, 1978.
+ 18. Henderson, P. and Morris, J. A Lazy Evaluator.
+ Proc. 3rd ACM Symp: on Principles of Programming
+ Languages, Atlanta, Georgia, 1976, pp. 95-103.
+  19. Henderson, P. and Snowdon, R. An Experiment in
+ Structured Programming. BIT /2~, I (1972), 38-53.
+ 20. Ichbiah, J.D. et al. Preliminary ADA
+ Reference Manual. SIGPLAN Notices/_4, 6A (June
+  1979).
+ 21. Iverson, K. A Programming Lanzua~e. John Wiley
+ and Sons, 1962.
+ 22. Jenks, R.D. The SCRATCHPAD Language. Proc.
+ Symp. on Very High Level Languages, April, 1974.
+ 23. Kernighan, B.W. and Plauger, P.J. Software
+  Tools. Addison-Wesley, 1976.
+  24. Landin, P.J. The Next 700 Programming
+ Languages. Comm. ACM ~, 3 (March 1966), 157-166.
+  25. Liskov, B., Snyder, A., Atkinson, R. and
+  Schaffert, C. Abstraction Mechanisms in CLU. Comm.
+  ACM2dl, 8 (August 1977), 564-576.
+  26. Milne, G. and Milner, R. Concurrent Processes
+  and Their Syntax. ~. ~ _ ~ ,      2 (April 1979),
+  302-321.
+  27. Milner, R. A Theory of Type Polymorphism in
+  Programming. Journal 9j~f~gJK~L~9/I and System
+ ~.qJ~Jlg_g~..1Y., 3 (December 1978), 348-375.
+
+
+
+                                                          143
+

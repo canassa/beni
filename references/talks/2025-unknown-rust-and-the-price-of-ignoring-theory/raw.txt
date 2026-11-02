@@ -1,0 +1,1033 @@
+https://www.youtube.com/watch?v=1iPWt1gvT_w
+Rust and the price of ignoring theory
+
+
+Rust's pragmatism has focused valuable attention on memory management and introduced the masses to many things
+0:06
+taken for granted in functional languages for decades. For example, what Russ calls enums or
+0:12
+algebraic data types first appeared in the language hope in the 70s and has been an absurd omission from mainstream
+0:18
+languages ever since. As for memory, mathematicians have
+0:23
+neglected this sort of operational detail since from their perspective it is irrelevant.
+0:29
+And yet, as Rust afficionados never tire of pointing out, memory bugs make up a considerable proportion of correctness
+0:35
+issues in software. Both Microsoft and Chromium, working
+0:40
+largely in C++, found 70% of their security bugs are memory related.
+0:46
+We must credit Russ with one major achievement. The ownership experiment has lit a proverbial fire on the
+What rust does
+0:52
+researchers to take memory seriously. It has been tricky to nail down exactly what Rust does since it evolved
+0:59
+orthogonally to theory and does whatever it wants, which apparently was borrowing in a separate pass that generates and
+1:06
+source constraints. Sadly, blindness to theory creates weirdness, unsoundness, and causes it to
+1:13
+miss the more useful half of the ownership linearity adjunction. As we shall see,
+1:19
+constraint-based approaches are considered a copout. And if constraint solving really is necessary in a type
+1:24
+system, then in my opinion, you've got the wrong idea. Type directed solutions
+1:29
+are simpler, faster, and make better error messages. A recent successful typeed formalization of Rust called
+1:36
+Oxide uses region-based aliasing. Lifetime subtyping sounded more
+1:41
+intuitive and indeed was tried first in rust belt but in being extended to non-
+1:47
+lexical lifetimes. Rust belt's model used continuation passing style and lost the ability to reason with the source
+1:53
+level language. Our best model is regions. They separate data lifetimes from function lifetimes. Both form a
+2:00
+tree but decoupling them allows for example to construct and return memory up the call stack.
+2:06
+regions are an extension of stack memory freed from the rigid structure of function calls.
+2:13
+Incidentally, intermingling function return addresses with data is a historic mistake in the AI. The call and data
+2:19
+stack should have been separate both for performance and security. That way, data can be stacked uninterrupted across
+2:25
+function calls and the processor will never interpret data as return address instead having an easier time predicting
+2:31
+the next instructions. The ancient whiff style functions including alakica deserve attention.
+2:37
+They take a function of a temporary resource which is allocated and deallocated by the same wrapping function that is so easy that it is
+2:45
+worth optimizing by pushing down the freeing operation so it happens as soon as possible and make it completely safe
+2:51
+by preventing any local memory from being returned with an ownership aware type system. This is region memory in an
+2:57
+equational setting. Optimal memory management, however, is devilishly tricky and defies direct classification
+Memory management principles
+3:04
+by regions alone. Memory is the sort of barely relevant low-level detail that defies automation
+3:10
+and obfiscates algorithms for no profit. At the same time, considerable performance can be won or lost, and
+3:16
+horrific bugs are at risk. performance usually calls for arena allocation and
+3:21
+linked or circular lists over which regions don't really address although they can hide these operations behind a
+3:28
+malocree interface. Regions do however almost perfectly handled fractional ownership.
+3:35
+Allow me a brief aside into memory management principles more generally. First ease off pointers and also memory.
+3:42
+We'd rather not deal with any of that. And writing non-recursive non-memory functions is very often possible. When
+3:49
+writing to memory is necessary, you can often do it in small driver functions that isolate the dangerously unclean
+3:55
+operations. Second, return strr by value more often.
+4:01
+By value or by copy usually means in registers, so is much faster than being read and written indirectly for an extra
+4:07
+pointer on the stack. Sadly, the x86 ABI when passing a strct
+4:13
+larger than 16 bytes in and out of a function will force it to be written to memory and generally uses much less
+4:18
+registers than it could. This is still the best thing to do as long as you know when the disgusting AI
+4:25
+will force a copy of a prohibitively large strruct. Functions should be static by default
+4:31
+and inlining always eliminates call overhead. Naturally, we'd like a better ABI and also subtyping on strrus. But
+4:38
+regrettably, Russ made no attempt to improve this state of affairs and largely repeats the mistakes of C via
+4:44
+LVM. Anyway, small memory objects should not be explicitly memory managed. They are
+4:50
+errorprone, easy enough for compilers to manage properly, and generally not worth our time. If they fit in 128 bits, they
+4:57
+are passed in registers. failing that. Note that copying a few hundred bytes for a pair of SIMD
+5:02
+registers is extremely fast, so relocating things can be cheaper than messing around with pointers and also
+5:09
+leave fewer random holes in stack memory. Compilers rarely generate perfect code
+5:14
+anyway, so there's little use in obsessing over these imperfections. And finally, the key insight is memory
+5:22
+management is a distinct concern from data transformation. It can and should be separated.
+5:29
+As for our tools, automatic memory is available via the stack. By default, 8 megabytes of local function data and
+Stack memory
+5:36
+return addresses pushed each time a function is called and freed when it returns.
+5:42
+The structure of this data stack is tightly coupled to the function call structure. And although there may be
+5:47
+chances for memory to be partially freed and reused, in practice, stack memory is leaked until the caller returns, which
+5:54
+can take a very long time. We are discouraged from allocating large
+5:59
+data on the stack. Stack space is limited and exceeding it will cause the famous stack overflow as the colonel
+6:05
+notices you try to read or write past the virtual memory pages allocated for stack space.
+6:11
+An interesting suggestion is that the kernel should page in more stack space as required and make us immune to
+6:17
+overflow relatively for free. So the question of how much work we can squeeze out of stack memory becomes interesting.
+6:25
+Of course, the mathematicians have us covered here. And the canonical construction is the hyomorphism that
+6:31
+works over an arbitrary functor as the equivalent of an anamorphism fused with a catamorphism and makes perfect use of
+6:37
+all the memory being stacked possibly in parallel. Quicksort is a great example. The
+6:43
+function is a binary tree that we unfold and then flatten using the input list as a seed. Hyo is a standard function that
+6:50
+I copied here. See how the hyo recurses by unfolding an entire tree in memory using our split function, then
+6:56
+retraverses it with merge in the reverse order, unwinding the stack and concatenating the result list. This is
+7:03
+all mediated by the binary tree function and is a crystal clear way of encoding our algorithm, drawing on the elegance
+7:09
+and perfection of category theory. Etherers are occasionally useful, but
+7:14
+anamorphisms are more common since most programs end up unfolding a bite string to print or write to a file as binary
+7:21
+data. Even if you are reducing to a value eventually, it's usually possible as a fused left fold rather than a right
+7:27
+fold. Noting that fold R is the list catamorphism.
+7:33
+Now, yes, depending how this is compiled, it probably can still overflow the stack and probably still
+7:39
+intermingles local data with return addresses. Even though the AI is irrelevant in the
+7:44
+middle of this construction. Furthermore, on x86, we would like to use the fast push and pop instructions,
+7:50
+but they only work on RSP, the stack pointer. Compilers could easily do a much better job here, and frankly, they
+7:57
+should have a built-in understanding of recursion schemes like the hymorphism. So much for the stack.
+Heap memory
+8:04
+If we want maximum flexibility and must write intermediate data to memory, we reach for heap memory. That need usually
+8:11
+arises when we need long-term random access to some carefully crafted structure.
+8:17
+Stack memory grows downwards and in the past grew towards the heap, which started at the end of the program's data
+8:23
+segment. The SPRK sys call would increase the program break and gain more heap memory.
+8:29
+This rigmarole is nowadays deprecated thanks to virtual memory which we instead allocate from the kernel via
+8:35
+MAPAP. MAP is for allocating large pieces of memory, say at least a dozen pages, each 4 kilob. But since memory is
+8:43
+virtually allocated page-wise by the kernel, you can even allocate unused terabytes of addressable memory that
+8:48
+won't all map to physical memory because they are paged in dynamically.
+8:54
+System calls are slow. They must interrupt back into the kernel and MAP also does some internal bookkeeping for
+9:00
+pages. Page faults occur on unprepared pages and are basically a hidden system call. So we turn to Maloc to handle
+Arenas
+9:08
+quickly suballocating from mmapped arenas for us. In a sense, all memory is
+9:13
+arena allocated. Maloc lets you pretend this isn't so, but unfortunately it has
+9:19
+no clue what you're planning. You give it a size T and tell it to get on with it. The allocator must be ready for
+9:25
+everything. It represents both a thankless task and a fascinating academic problem. Implementations have
+9:31
+ample scope to be clever and deploy different strategies for different sizes. The better malocs like J Maloc
+9:38
+will pack allocations of the same size together and use a bit set to mark holes in there, making the very reasonable
+9:44
+assumption that most allocation sequences will use data of similar sizes.
+9:49
+Free usually does the absolute minimum by appending the chunk to a free list in the hopes will be reused instantly. Then
+9:55
+the expensive operations only happen during allocation. This is all rather opaque and only
+10:01
+loosely connected. Maloc is incapable of doing garbage collector-l like reorganizations of memory and inevitably
+10:07
+fragments over time. Accessing local memory can be orders of magnitudes faster than accessing random
+10:14
+memory all over the place. So locality is always a major concern.
+10:20
+Since only you know exactly what you're planning with the memory, only you can optimally manage it and any use of maloc
+10:26
+is necessarily suboptimal. If for no other reason than you could inline a small fast path and frequently avoid the
+10:32
+function call overhead. Anyway, the important memory objects to
+10:37
+get right are the recursive ones, the arrays, the trees, the link lists. Most
+10:42
+of the time that goes through standard libraries. The remaining portion of the time either a recursion scheme or a bump
+10:47
+allocator will be ideal. Small short-lived objects should be passed by value, not by pointer or const pointer.
+10:55
+Even if the idea is to be forwards compatible with future larger strrus, a better way of doing it is making a new
+11:01
+function that aliases into the first. Backing up to the beginning, new
+Maths vs Silicon
+11:06
+programming languages are instantly faced with a choice of gargantuan importance. Should they follow
+11:12
+mathematics or follow the silicon? Is it not crystal clear which path has a
+11:17
+future and which is doomed to be a historical hack? A solid theory can easily degenerate
+11:24
+into practical hacks. But blind hackery digs the sort of hole that you can never climb out of, especially once you have
+11:31
+users with pressure to remain backwards compatible and quickly respond to bugs in a halfbaked amalgamation of
+11:37
+overlapping ideas. We must place special emphasis on fusion
+11:42
+since it bypasses memory by avoiding intermediate data and is a massive optimization but neglected by
+11:48
+siliconoriented languages. Fusion is only consistently possible in pure functional languages leveraging an
+11:54
+equational theory. Programming should and will be about equations, not manually fiddling with mutable registers
+12:00
+and memory addresses. In this regard, category theory is the most valuable programming tool we have.
+12:08
+It is the study of composition and code reuse. Pretending it doesn't exist only causes one to make avoidable mistakes or
+12:14
+to miss obvious connections. Most of us initially learned programming through trial and error. That was maybe
+12:21
+necessary that leaves us with dangerous ideas about how to get things done. Not reading documentation and repeating
+12:28
+avoidable mistakes is basically standard. You may have noticed, however, that forcibly wading through problems
+12:35
+experimentally at some point hits a war. Mastery is about predicting problems and
+12:41
+adjusting before wasting time and dead ends. Writing programs is easier than
+12:47
+modifying them, but first attempts in unfamiliar territory are fraught with peril.
+12:52
+In the beginning, I wish for results quickly. In the end, all I care about is correctness and control. A
+12:59
+mathematically justified approach is the only future proof strategy.
+Garbage collectors
+13:04
+Regrettably, functional languages have invariably managed memory using garbage collectors. There either they do
+13:11
+reference counting which is fine for sufficiently large objects or tracing collection which frees infrequently but
+13:18
+when it does has to scan all live objects in the region from some roots.
+13:23
+Needless to say, that is painfully sub-optimal and comes with a fat runtime.
+13:29
+But none of that is necessary. It's essentially a skill issue. Perhaps the most important ignored open problem in
+13:37
+computing at the moment is attaining both principled correctness and optimal performance.
+13:43
+In the meantime, it's hardly surprising that pragmatism and aggressive marketing has managed to capture the public's
+13:49
+attention. You can hardly be expected to understand how much potential lies just barely out of reach.
+Example of Rust borrowing and lifetime subtyping
+13:56
+Rustet is the ownership model of memory. This type here means a reference to a
+14:03
+type T which is valid for a lifetime A. Lifetimes are ordered by a subtyping
+14:08
+relation pronounced A outlives B. So B is a subtype of A and can be converted
+14:15
+to it automatically. References to references are valid as long as B outlives A. There is also a
+14:22
+longest lifetime static such that all other lifetimes are subtypes of static.
+14:29
+Now, Rust wanted generalized algebraic data types where a type constructor is valid for all A but only inhabited for
+14:35
+certain A. Gats are well understood in type theory, but Rust had to settle for TA being a
+14:42
+constrained type. It is a valid type only for certain A. Now there are two
+14:48
+ways to interpret for all A T of A to U32. For all A means this type is
+14:53
+invalid since TA doesn't work for all A or it means for all A where T of A is
+15:00
+valid. Now this weirdness is not necessarily fatal.
+15:05
+Here's an example with lots of borrowing. We begin for fun with a double reference
+15:10
+to the unit value at the longest lifetime. Actually, it's to expediently obtain some lifetime subtyping.
+15:17
+Then fu takes two parameters. A reference to a reference of units type with lifetimes A and B and a reference
+15:25
+to some type T with lifetime B. It produces a reference to T with lifetime
+15:30
+A by returning V unchanged. So, we're just playing with types here. Then, bar
+15:36
+takes a reference X with lifetime C and returns a static reference to T. Now, if you're paying attention, that
+15:43
+should be impossible. Lifetime subtype in the other direction. This is in fact
+15:49
+a very famous example, one that has been reported to rust and unfixed since 2015.
+15:54
+Can you spot the problem? A trouble is FU's type requires A to
+16:00
+outlive B. But that constraint does not appear in the type of F. You see, Rust
+16:06
+sort of has subtyping, but not in any principled fashion. With subtyping, function input types are
+16:12
+upper bounds and output types are lower bounds. Because the direction of subtyping flips when going for a
+16:18
+function, so-called contravariance, and the type of fu is wrong, we're able to cast a local lifetime to static.
+16:27
+Naturally, a hack was implemented to fix this one reported example, but the problem persists despite being a
+16:34
+priority for over a decade. Rust's subtyping uses coercion sites
+16:39
+rather than true subsumption, struggles with trait objects and contradictions with OP features, attempts to infer
+16:45
+variance amidst attempts at invariance, and is basically completely broken at higher ranks, which is troubling since
+16:52
+higher rank functions are so strong and so useful as to appear everywhere in languages that support them cleanly. The
+16:59
+point of this demonstration is to motivate a more theoretical treatment of region-based memory where we can judge
+17:04
+the value of the new ideas unpoisoned by any irrelevant brokenness. First though, safe inbounds array checks
+Safe in bounds access via dependent type.
+17:12
+deserve immediate attention. So-called safety by runtime panic is a funny marketing ploy. But consider the real
+17:19
+solution using dependent types. Vector is a type family indexed by a natural number. The length is statically known
+17:26
+as a function of some arithmetic. Indexing this vector is done with a finite natural. In this way, inbounds
+17:33
+access is always guaranteed. Correct by construction.
+17:38
+Notice FIN and NAT are viewed constructively, although they will of course be compiled to machine integers.
+17:44
+Making programs correct by construction is the default approach where dependent types are standard like in proof
+17:51
+systems. They can encode arbitrary constraints and complicated types may be interpreted as propositions considered
+17:58
+proved if you manage to construct an inhabitant of that type. Unifying values with types and so making
+18:05
+types first class citizens allows perfectly handling generics and macros in the same type uniform way as values.
+18:13
+Dependent types have so far been perfected for use in theorem improvers, but languages like Idris are bringing
+18:19
+them to general purpose programming. And there is no doubt they will become standard in all programming.
+18:24
+Now, Rust is extremely unlikely to gain dependent types. That requires a principled type system and respect for
+18:31
+theory and anyway isn't the sort of thing you can easily tack on later.
+Theory
+18:37
+So to make sense of memory, we better turn away from underspecified collections of features. A great tool in
+18:44
+category theory is that one can always flip the arrows and study the opposite category. that yields an interesting
+18:50
+dual construction and additional insights. So it is with borrowing. The flip side
+18:55
+of that coin is linearity. And in fact, they form an adjunction. I'll spare you the deep theory here
+19:02
+because although it is extremely valuable and exposes deep connections. If it's your first time, it may be
+19:08
+counterproductive. Linearity is actually the more studied older half of the adjunction, especially
+19:15
+with regards to dependent types where quantifying over resource usage is necessary to ensure type level values
+19:20
+exist only to specify behavior and are not present at runtime.
+19:26
+This has been extensively practiced as quantitative type theory in Idris where quantities oversee consumption of
+19:32
+resources through type level protocols like unique file handles, channels, network connections, session types,
+19:39
+database access, and unique ownership of mutable arrays.
+19:44
+Historically, Haskell has had immense success in forcing resource uniqueness with a monad, but modeling resources
+Granule: Linearity
+19:51
+with quantities is more powerful and lighter. It will be most instructive to examine
+19:56
+quantities in the practical context of the research language granule which implements graded modal types and allows
+20:03
+fine grain control of both usages and ownership. A linear value must be used exactly
+20:10
+once. Both duplication and discarding is forbidden.
+20:15
+We can be perfectly precise about resource usage using graded modalities. Here, dupes type promises to use X at
+20:22
+type A exactly twice. The square brackets introduce graded modal types
+20:27
+and corresponding values. You can also specify intervals. Here the
+20:33
+first parameter is used between 0 and one times. There are plenty more examples in
+20:39
+granules repository showing how reasoning about resources at the type level allows us to accurately describe
+20:44
+cross thread aliasing, file handles, session types, network protocols, and even effects.
+20:51
+Mutable arrays, for example, can be made safe for in place updates using linearity via a function.
+20:59
+Here the only way to get an array is inside the array A at grade one to an unrestricted B function which returns a
+21:06
+guaranteed unrestricted value and the only exposed functions accepting an array are linear. So there is now no way
+21:14
+to duplicate an array. Types encoding function behavior in this way is natural and can do the majority
+Linearity limitations
+21:20
+of what we want. But this signature is not ideal.
+21:26
+There is one major irritation that has plagued both linear Haskell and Idris. The scheme falls short when you want
+21:33
+multiple arrays simultaneously. The higher order function controls the lifetime of a single array but kills all
+21:40
+linearity. Linear Haskell has struggled horrifically with this and come up with
+21:46
+a few hacks there. They additionally suffer from only quantifying on the arrow and lacking granules fine grain
+21:52
+control. Notable attempts involve phantom type parameters to encode a region since the
+21:58
+type system complains if a type variable escapes its scope, but that is ugly and
+22:03
+anyway more fragile in a dependently typed setting. Also notable are the alloc besides
+22:09
+functions that try to reuse an existing array as a uniqueness proof. Basically with array forces a type
+22:16
+bottleneck that is too limiting. Maybe there is a solution. A way to enforce a grade on the new array without
+22:22
+interfering with anything else. As we shall see, the ownership model requires existentially quantifying on identifiers
+22:29
+to track provenence. So perhaps that could work here. Although we are very reluctant to add
+22:35
+anything unless absolutely certain it's necessary to discuss Rust intelligently, we must wait deeper into the swamp.
+Ownership
+22:44
+Instead of types restricting functions, the flip side is a function restricting its callers. By making usage demands on
+22:51
+the inputs, we can encode Rust style memory regions. To start, we can require values to be
+22:57
+unique. The asterisk in granule indicates a unique resource. So to
+23:03
+invoke this example move function, we must give it a provably unique color.
+23:08
+We're allowed to move ownership to X, but we are not allowed to duplicate the input in any way.
+23:15
+Next, we need a way to swap in and out of uniqueness. For example, using share and clone parameters.
+23:23
+The exclamation point is the of course modality, allowing I to be copied at will. Since it is graded, the parameter
+23:30
+must appear within square brackets. This could be made more ergonomic, but that's a small thing. Granule wants to explore
+23:37
+how far linearity by default can take us. Float array is unique throughout the
+23:43
+start of the program as enforced by new float array returning a unique float array is the type as used by granle
+23:50
+internally. Share gives up on uniqueness guarantees returning to normal value management.
+23:56
+Clone makes a deep copy. That's a straightforward way to guarantee uniqueness of a new object.
+24:03
+We may prefer to avoid that by escaping uniqueness in more controlled ways.
+24:08
+Fractional borrows are the graded form of non-uniqueness.
+24:14
+The with borrow primitive allows temporarily converting unique values to borrowed ones. Then split can create two
+24:20
+borrows out of one. Later join must return everything. So split and join
+24:25
+form an isomorphism. Mutable borrows have full access to the value. So may writes to it. Immutable
+24:32
+borrows have only fractional ownership. So armed we can implement a safe and
+24:37
+general interface for mutable arrays. Here's a complete example from the granular project that splits a unique
+24:43
+mutable array into two and concurrently sums the result. We can even check it ourselves.
+24:51
+The contents is hopefully self-explanatory. It's working on a unique float array and a unique pointer
+24:56
+to a result float. That is all well and safe, but of course we may wish for more. For example, the
+25:04
+push and pull operations could automatically move grades across products. Also, here identifiers for each mutable
+25:11
+reference are existentially quantified. So, the types can distinguish different borrows at the different types.
+25:18
+There may be alternative approaches. This one is a little odd, but not objectionable so long as it stays out of
+25:24
+the way. A final point of interest is there are no references to references in granle.
+Dark side of theory and of pragmatism
+25:31
+graded modalities are more powerful. And haven't we all felt that pointers to pointers are an aberration?
+25:39
+The the fury at this time came with a fairly complete practical implementation for experimentation.
+25:44
+It does a great job of being safe and carefully motivating each complication. It is not entirely convincing, however,
+25:51
+and didn't have the time to attempt an automatic operational interpretation of linearity or ownership. I have no doubt,
+25:58
+however, that most of the time under these descriptive equations, memory could be perfectly handled
+26:04
+automatically. We have seen the dark side of theory, namely incompleteness and having to wait
+26:10
+for ideal solutions to be figured out. There are too few researchers. But mark
+26:15
+my words, going your own way and implementing whatever seems convenient is committal and dangerous. Compiler
+26:21
+developers take on immense responsibility. Everyone seems to think they can take shortcuts and then fix
+26:26
+things later, but every time reality asserts otherwise. You can invest some
+26:32
+time to do it right the first time, or spend much longer wishing you could crawl out of the hole you keep digging.
+26:40
+It is trivial to add things, harder to understand what you're doing, and nearly impossible to remove features and do
+26:46
+things properly later. It is time to cautiously set one foot
+26:52
+outside the ivory tower and survey our messy reality. Starting with dynamic linking because
+Dynamic linking
+26:58
+the trade-off of static linking is one of the most misunderstood things online. Rust circles are sold on inlining,
+27:05
+aggressive monomorphization, and rejecting dynamic linking. They say faster executables means more
+27:12
+specialized code means it's faster. That is the case inside hot loops, but
+27:17
+only so long as the code still fits in the cache. Otherwise, and in general, it's wasting space and rather
+27:24
+insiduously evicting data either from itself or other programs on the system in a way that does real harm, but won't
+27:31
+be measured when benchmarking only the Rust program. Anyway, gratuitously wasting disk space and live memory is
+27:37
+not brilliant. Behind this deceit is neglect of dynamic linking, AI stability, and modular
+27:44
+design. principles. Imagine if print f wasn't shared between every C program on your system or if
+27:50
+massive libraries like GTK or QT or LLVM were partially duplicated for multiple
+27:56
+apps. It doesn't just waste memory. It trashes the cache and cost real performance.
+28:03
+Executable footprint is always important, especially on the web and especially for a systems programming
+28:09
+language. Swift deserves a shout out for taking this problem seriously. Swift is Apple's
+28:15
+language designed to run on mobile devices where wasting time accessing memory all over the place also wastes
+28:21
+battery life. So, it's doubly unacceptable. They want all programs to link with
+28:26
+system libraries and maximize code sharing. It's not that hard. The language must provide a stable AI and
+28:33
+forward compatibility. That is vital for maintenance anyway and must be solved early. Otherwise, this sort of thing
+28:39
+never gets fixed. Swift has similar features to Rust, but uses a resilient layout that must be
+28:46
+queried through witness tables that allows generic functions to handle substitutions.
+28:52
+The effects are to massively reduce code size, speed up compile times, allow generic code to be dynamically linked,
+28:58
+and everything easily updated while remaining compatible with future changes.
+29:04
+It also solves most of the object safety problems that plague Rust. And you could conceivably do better. Sometimes
+29:11
+avoiding witness tables by specializing functions to have multiple entry points, for example.
+29:16
+So inlining within hot loops can bring serious performance gains, especially if it enables fusion. Unrolling loops can
+29:24
+hide some latency if there was a dependency chain stalling the CPU, but is often overdone.
+29:30
+Outside of loops, the difference is negligible. I have criticisms for the way ELF files
+29:36
+are linked, especially with the flat hashed namespace, but generally it's well enough designed and has protocols
+29:42
+in play for forward compatibility. You have the option to spend time at startup doing text relocations. So at
+29:49
+runtime there is zero overhead for using dynamic libraries worth doing inside loops and maybe theoretically possible
+29:56
+in parallel with other startup operations. Anyway, lazy relocations via the PLT aren't that expensive. And the
+30:02
+real work isn't going to be jumping between functions across dynamic libraries, but hopefully instead
+30:08
+optimized for SIMD on the local architecture. The lost performance due to disinterest
+Security nightmare
+30:13
+in dynamic linking is the least of our worries compared to the gaping security hole this creates. You see, bundling is
+30:20
+a well-known taboo for package managers where bundling is any of statically linking against a system library,
+30:26
+shipping your own copy of a library, or including snippets of code copied from a
+30:32
+library. Obviously, bundling is extremely tempting for inexperienced or lazy
+30:38
+developers since it hides dependencies, obviousates the needs for package management, and allows localized hacks.
+30:46
+Suppose a security flaw is found in the library D and a fix is released immediately. Package sets that take
+30:53
+security seriously can upgrade their packages within the day. Now for programs dynamic linking with D, the
+30:59
+update is free and instantaneous. For static linkers, you have to rebuild
+31:05
+the entire program. If you're on Gen 2 and keep object files around, that is of minimal inconvenience. But for everyone
+31:12
+else, and especially users of the notoriously unrushed Rust compiler, in
+31:17
+practice, patches are delayed, often for months. Worst case is a bundled copy of
+31:23
+D where the dependency is invisible and potentially modified. Then users don't even know they are running vulnerable
+31:29
+software. Static linked programs receive performance updates more slowly and
+31:35
+waste space on disk and at runtime. You aren't even absolved of version control even if you are willing to copy
+31:42
+the same library multiple times for different transitive dependencies since there are increased risks of symbol name
+31:48
+collisions. Basically, when you see a bundle dependency as a serious package
+31:53
+maintainer, you have to rip it out. But first, you have to figure out what version it is, whether it was modified
+32:00
+or forked, what to diff against, and then it must be patched and tested. And all of that represents a harrowing waste
+32:07
+of time. The fact most Rust programs do this gleeully is obscene.
+32:13
+Many vulnerabilities that get exploited were known and patched, but the patch wasn't applied. Vong recently reported
+32:21
+32% of exploited vulnerabilities were zero day. Scary, but as you see, it's
+32:27
+much more likely and much dumber to be caught with unpatched software. Attackers have way too easy a time
+32:34
+learning well-documented vulnerabilities and can sometimes even directly copy an exploit and check if it still works.
+32:40
+Even if you aren't the target of malicious attacks, unpatched software is slower and buggier than necessary.
+32:48
+One often sees praise for cargo rust's build tool. I suppose this happens by
+32:54
+comparison with C's non-existent package manager or perhaps Python or NodeJS
+32:59
+stuff. Compare it to Nyx however or even Haskell's cabal both of which predate it
+33:04
+and you realize it's rather weak. Nyx in particular provides truly a hermetic reproducible bills and Nyx doesn't
+33:12
+deserve praise. Cargo uses a flat name space and absolutely does create the
+33:17
+dependency hell it claims to avoid. There are astounding amounts of bloat,
+33:22
+halffinish, deprecated packages that duplicate work and associated supply
+33:27
+chain weaknesses. Here is a clownish repository doing satirical commentary on
+33:32
+a hello world game setup in Rust. It is tuned to highlight Rust's worst qualities, and there's an undercurrent
+33:39
+of terminally online culture war that I don't pretend to understand. But it isn't wrong.
+33:47
+The build system can have runtime errors and run arbitrary build scripts. This is
+33:52
+another security hole. And worse, just loading proc macros into an editor can execute arbitrary code. You get all the
+33:59
+trouble of a centralized repository like typo squatting and hijacking of existing crates. The only defense is trusting the
+34:06
+maintainers. The CV or common vulnerabilities and
+34:11
+exposures are unfit for language ecosystems. CPE wasn't designed to identify
+34:17
+packages. The process can't be automated due to lack of consistent mappings and blindness to transitive dependencies.
+34:25
+Tons of work is generated and it's only correct about 20% of the time. It's reviewed by non-speists and sometimes
+34:32
+weaponized to make developers fix bugs. The common vulnerability scoring system
+34:37
+is also basically meaningless for libraries. This paper examining security risks in
+34:43
+Rust specifically provides some choice quotes. In terms of vulnerability density, we observe a continuous upward
+34:50
+trend at the package level over time, but a decreasing trend at the code level. I interpret that as the memory
+34:57
+safety working, but the hopeless static linking packaging system starting to weigh on people.
+35:04
+Vulnerable code contains statistically significantly more unsafe functions.
+35:10
+So perhaps shoehorning memory management into a region-based model isn't always that easy or that great of an idea. Even
+35:18
+buffer reuse over a loop isn't allowed. The majority of the vulnerabilities in
+35:23
+the Rust ecosystem relates to memory safety and concurrency issues.
+35:28
+Well, how unfortunate. At least there are fewer than in C++.
+35:33
+Rust has little to say about program behavior and an unound type system to boot. So I hope nobody believes it can
+35:39
+solve security. Not even proof of assistance would make that claim. And there you work with arbitrarily precise
+35:45
+types. When researching Rust, the amount of overpromising, underdelivering, and
+Rust Miscellaneous advantages
+35:52
+misleading information has been exhausting. I've collected purported advantages.
+35:57
+These lists certainly look impressive on the surface. So let's take a look.
+36:02
+Generics then. There is heavy syntax, no higher kind of types. They form a secondass hacky language. Compares very
+36:10
+unfavorably to dependent types. Traits. There are no higher rank trait bounds.
+36:16
+There are embarrassing object safety limitations and da subtyping interactions. Generally, they are worse
+36:22
+than type classes which are themselves suspicious. Algebraic types. While they're below FP
+36:30
+standard, there are no gats, weak deriving and noisy syntax. The result it's not actually a monad.
+36:37
+It's very unorggonomic compared to Haskell's maybe or either cargo. We have seen this is one of the
+36:44
+weakest aspects of Rust due to lack of modularity. The static linking and the flat name spacing. There are too many
+36:51
+overlapping packages half-made abandoned bloated insecure often pulling in
+36:56
+forests of transitive dependencies. Tooling is good. Well, not compared to
+37:02
+functional languages and their principal type systems. External checkers like MIRI shouldn't be necessary to detect
+37:08
+undefined behavior. Memory safe, except when one doesn't feel like it or regions don't model our
+37:15
+desires. Sound systems don't need escape hatches. Type safe. It's not even close to the
+37:23
+standard of a random typed functional language. Runtime safe. Memory leaks still abound.
+37:30
+You have to use external tools to detect undefined behavior. Some safe things are actually runtime panics.
+37:36
+Zerocost abstraction. It is a runtime and binary size exaggeration. Most of
+37:42
+these generate massive LLVM and hope it simplifies. For example, a common first instinct in Rust is to create wrapper
+37:49
+objects implementing drop and automatically calling the cleanup function. That is a lot of annoying boiler plate that doesn't always
+37:55
+disappear. Minimal runtime. Absolutely not. Binaries are extremely fat and many
+38:01
+packages are duplicated. There's not even support for custom allocators.
+38:06
+Security really bad track record due to static linking, bundling, and dependency
+38:11
+management. The type system is unound and incomplete. Incremental builds. It's not very
+38:18
+incremental. Macros. There are two systems and a deriving mechanism. Both are broken.
+38:24
+Both are separate language slapped on top. Unclean, unchecked, unergonomic with poor error messages. One of them
+38:31
+does regular expression like pattern matching. Documentation seems fine, but
+38:37
+Haskell's Google is still unbeaten for API discovery via types and fuzzy names.
+38:42
+Performance often loses to see, often gets in the way of optimal memory strategies. Elegant, no. Production
+38:50
+ready. Constant ecosystem churn and additions. Break changes. Fearless
+38:56
+concurrency. The meaningless statement at face value. Truer in the functional world where transactions compose.
+39:03
+Async and await. Two parallel universes of code. Every dependency brings its own
+39:09
+runtime. Simple IO operations require understanding pinning wakers futures.
+39:14
+Await points are cancellation sites. So cancel safety is now also a concern.
+39:20
+Bounds checked safe. It degenerates to runtime panics plus a runtime cost.
+39:27
+Good error messages. Not really, but whatever. Pattern matching incomplete
+39:34
+versus the functional world. Can't match values. And it sort of does nested matching. Guards and all patterns, but
+39:40
+with heavy syntax system programming. Yes, with lots of
+39:45
+unsafe. The main point is many of these features have been mastered for decades in
+39:50
+functional languages like Okamel and Haskell. I understand the allure of Rust. Rare is the language that attempts
+39:58
+to give both low-level control and safety. That is so cruy lacking nowadays
+40:03
+that any promise in that direction will gain attention. Attention is further seized by success
+Rust Rewrites: Discord (from Go), ripgrep (from C), rust (from Ocaml)
+40:09
+stories about rust rewrites. Discord in 2020 identified go garbage collector
+40:16
+cycles were killing performance. They report the initial rewrite to rust
+40:21
+had the same performance and then by further swapping from hashmap to bree mapap swapping out their metrics library
+40:28
+and generally reducing the number of memory copies they were able to improve performance beyond that.
+40:36
+RIP GP swapped to Rust and gained tons of performance. This is the gold standard for rewrites
+40:42
+apparently. Although everyone seems to miss that the performance gains are thanks to using a completely different SIMD algorithm inspired by hyperscan the
+40:49
+likes I've discussed before. SIMD is obviously much faster than scaler and rip actually leaves many SIMD
+40:56
+techniques unused. Rust itself was originally written in
+Ocaml modules
+41:01
+Okamel which interestingly and very famously has the only correct implementation of a module system of any
+41:07
+language family. Modules and interfaces must have a statically checked many to
+41:12
+many relationship. Okamel modules may be functors so you can parameterize them to
+41:17
+generate specializations. Formally M and N are modules. A and B
+41:23
+are interfaces or headers. N is a new model implementing B using an unspecified implementation of A. The
+41:30
+point is the source code M implementing A is denied to N and in a sense
+41:35
+irrelevant. We have complete control over exposed APIs. Internals of M may
+41:41
+freely change and you can freely swap M out for X. In a sentence, transitive composition
+41:48
+allows structurally equivalent modules to substitute for each other. Incidentally, this is the semantic
+41:54
+foundation for a type system. Implementing modularity properly is not inherently difficult, but astonishingly
+42:01
+few languages do it properly. It seems Rust wanted to follow in Okamel's footsteps, but something went
+42:07
+wrong. If I had to guess, the non-typed directed ownership experiments made pretending to have a solid theory
+42:13
+intractable. Failing composable interfaces goes handinand glove with failing dynamic
+42:20
+linking. Unmentioned until now is Rust's development experience. The compiler is
+Compilation speed
+42:26
+legendarily slow, right down there with the likes of C++. And not only is that incredibly annoying during development
+42:32
+where it breaks your flow, but in my opinion, things that are noticeably slow can't be trusted. It takes ridiculous
+42:40
+amounts of messing around to bog down modern hardware. More importantly, ideal open- source
+42:46
+package management is source distributed for security, customization, crossplatform compatibility, dependency
+42:53
+control, and especially local optimizations leveraging local SIMD architectures. It is depressing how much
+42:59
+potential is lost in binary distributions which basically cater to the lowest common denominator.
+43:05
+The major obstacle for source distributions is compile times and obtuse build processes. C compilers are
+43:13
+several orders of magnitude faster than Rust, but still not fast enough to comfortably distribute source only.
+43:20
+We can do much better and neglecting compilation speeds and duplicating code is an unwelcome barbarism.
+43:27
+programs getting slower seems to be a real problem nowadays. I think we'd all appreciate it if that stopped being
+43:33
+normalized. As for the runtime performance, claims that Rust is as fast as C by virtue of
+Runtime speed
+43:40
+offloading compilation to LVM are overblown. Notably, FFmpeg, the cornerstone of
+43:46
+multimedia, benchmarked a port and registered an unacceptable performance decline.
+43:52
+I quote, "Fmpeg is proudly written in the C programming language for the highest performance. Other fashionable
+43:59
+languages like C++, C, Rust, Go, etc. do not meet the needs of FFmpeg."
+44:06
+It turns out that if a compiler generates an unholy amount of LVM and then hopes it is magically simplified,
+44:12
+things don't work so well. Rust rewrites also rather consistently drop GPL licenses in exchange for looser MIT
+44:20
+ones. probably they're just inheriting Rust's license without thinking. But in
+44:25
+this way, free software ideals are corroded. Businesses benefit, but the people lose since closed ecosystems can
+44:32
+use free software and give nothing back. In other news, Rust has forced its way
+Linux kernel
+44:37
+into the Linux kernel. But that appeal to authority is not the win some think it is when you realize Linus doesn't
+44:43
+care much about Rust and hasn't bothered to learn it. He has stepped out of that issue and barely acknowledges problems.
+44:50
+Admittedly, this has yielded some mad interactions in the colonel's mailing list, if you find that sort of thing
+44:56
+funny. Fascinatingly, he seems to believe the process is productive. To
+45:01
+quote him on Rust for Linux, if it were to become a failure, which I don't think it will, that's how you learn.
+45:09
+Smashing endorsement there from the dictator of Linux who doesn't use Rust.
+45:14
+It reminds me of a hilarious result from the 2020 Stack Overflow survey. Rust was
+45:20
+the most beloved language, but most survey takers aren't familiar with the language.
+GPU programming
+45:25
+Low-level graphics programming requires GPUide memory management that operates
+45:31
+outside Rust's abilities since it can't model protocols and state transitions, nor can it deal with cross device
+45:36
+ownership or temporal constraints. Granle's graded modal types would work
+45:42
+better. Anyway, the problems of resource management are concentrated on the linearity side of the adjunction.
+45:48
+Synchronization, for example, would be perfectly handled by session types.
+Personal practice
+45:53
+to evaluate Rust more personally when programming in C. There are so many things I miss from the functional world,
+46:01
+especially first class functions, the mathematically motivated clean syntax facilitating function composition and
+46:08
+thus code reuse, the extreme emphasis on purity, the safe concurrency, the
+46:14
+rockolid principled type system. From Rust, I miss nothing.
+46:20
+The type system is a shadow of the o camel it's born spawned from. Memory safety doesn't materialize when the
+46:26
+incomplete model can't accommodate optimal programs and steers you towards unmaintainable architectures.
+46:32
+Weirdness abounds. Security is killed by static linking. Performance doesn't quite match C and binaries are
+46:39
+unpleasantly fat and slow to compile. The fact is programming is about
+46:46
+functions. There has to be movement, real computation. Otherwise, you're just shuffling things around. So, focusing on
+46:53
+memory is antithetical. It should be the last thing on your mind. Most code I
+46:58
+write, even in C, is categorically motivated and designed for fusion. If it must save intermediate data to memory,
+47:06
+then there is a morphism that drives the recussion and the memory operations from above. The logic is concentrated in
+47:12
+non-recursive pure stepper functions in the style of recursion schemes that are easy to reason with more optimal and
+47:19
+whose potential to go wrong is minimized when memory must be touched in a significant way. It's almost always
+47:26
+arena based and precise memory layouts are the last thing to work out once the problem is understood.
+47:32
+For example, hashmaps are a single large array. Strings are extracted from an
+47:38
+input file and may be interned sequentially. Most other constructions can be bump allocated. Abstract syntax
+47:45
+trees for even complete programming languages can be flattened in memory without wasting time or space dealing
+47:50
+with pointers. There is always at least one branch that can be implicitly laid out next in line or run length encoded.
+47:58
+Obviously, the actual algorithm comes first and memory layout remains flexible as long as possible.
+48:05
+Pointers are only mandatory when interacting with the operating system. Otherwise, you'd rather have indices.
+48:12
+The smaller the better since having their size doubles SMD throughput and strructive array is well known to be a
+48:18
+better layout than array of strcts. They're better aligned, more composable, and more vectorizable.
+48:24
+Industry has caught on, although they call it an entity component system.
+48:29
+Finally, resource management requires linearity or quantitative reasoning. The
+48:34
+reason monads have been so successful and so abused in Haskell is to enforce linear sequencing.
+48:41
+IO is guaranteed unique because it can only be interacted with as a monad and so the order of operations is well
+48:47
+defined albeit coarsely. Particularly regrettable is the missed
+48:52
+opportunity to improve the AI to use more registers and allow multiple entry functions and especially to generate
+48:58
+those automatically for case split specializations. Skipping branches in this way would make
+49:03
+specializing on argument shapes often completely free. I also wish for more control over binary
+49:10
+layouts for better locality and to maximize multiple entry style fall through for tail called functions.
+Conclusion
+49:18
+In the end, I identified what makes Rust so uniquely irritating.
+49:23
+In serious academics, research papers discuss existing literature. They motivate the new ideas with honest
+49:29
+comparisons and conclude with limitations and directions for the future. Peer review forces dish this
+49:36
+honesty and it's jarringly missing from most Rust material. It feels dishonest
+49:41
+and incompetent and I'm sure it means well, but the result is barbaric.
+49:47
+Rust is easily accessible, has massive corporate sponsors, strong marketing, works for many practical purposes, but
+49:54
+is shallow, fundamentally broken, and proudly ignorant of a century of research.
+50:00
+Is Rust better than C++? Sure, not even close. Is it better than C? That is less clear. It inherited all
+50:08
+the mistakes of C via LVM and gives you some halfbaked functional features and a model of safe memory via regions in
+50:15
+exchange for slow compiler times, fatter binaries, some bad OOP features, and a false sense of superiority.
+50:22
+C++ is the favorite victim of Rust's aggression, probably because it can easily win. The most impressive figures
+50:29
+are sourced from this comparison. But what is the prize exactly when the opponent's mascot is allegedly a
+50:35
+diseased rat? control of the sewer. If you want to argue about safety, then
+50:42
+rust is crushed by any typed functional language. Haskell okamel, far, pure
+50:47
+script, reason, ml, scala, elm, and especially by dependently typed ones like Idris, lean, or isabel.
+50:55
+If you want to argue performance and SIMD and tight loops is better in C. Bespoke data structures cannot be
+51:01
+modeled with regions and neither can low-level link lists or arenas. In industry, there are plenty of truly
+51:08
+memory safe languages at varying performance costs. But the majority of the time, garbage collection is not a
+51:14
+bottleneck and can be avoided with explicit memory or CFI.
+51:20
+So much was explored properly decades ago that repeating historical mistakes and especially doing it in O'Camel is
+51:27
+basically a giant insult. Sure, Okamel has a garbage collector and is unsuitable for obsessing over
+51:33
+performance, but you could have been fixing that. My conclusion is not that rush should be
+51:39
+abandoned, but that it is a stop gap shot full of holes that can only exist
+51:44
+temporarily with zealous backing and a misunderstanding of security and safety in the current void of ideal
+51:50
+alternatives. As of right now, you can have real safety and performance by using, for
+Future
+51:57
+example, Haskell and a CFI, similar to what Python has been subsisting on for years already. But Haskell is much safer
+52:04
+and can be very close to C performance if you avoid laziness and garbage collected objects.
+52:10
+Meanwhile, we expectantly await a functional language to finally prioritize performance.
+52:16
+Just barely distinguishable over the horizon is a typed directed equal system leveraged for fusion and automatically
+52:23
+optimal memory management. Functional languages have all the information and all the potential. It is high time they
+52:30
+started using it.
