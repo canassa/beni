@@ -1,18 +1,17 @@
-## 2026-11-02 00:48 CET — Report standalone ownership DAG limit
+## 2026-11-02 00:48 CET — Honor standalone ownership enforcement
 
 **What I did**
 
 Honored explicit ownership enforcement without requiring a platform chain and
-added a complete standalone list-sharing diagnostic regression. The default
-check remains accepted; explicit enforcement now refuses it. The regression
-fails with the fix set aside and passes after restoration.
+added a standalone list-sharing diagnostic regression. The default check stays
+accepted; explicit enforcement now refuses it. With enforcement on, the tuple
+DAG fixture `OwnershipAnnotationDag` exceeds v1's summary limit
+(1,276,786 entries against 262,144; v1's #856), while v2 passes. Per the
+decision on #1640 the v1 expectation is the pending scenario CK-316 and the
+gated test runs v2. The cap is unchanged. The branch lands as a pull request
+(#1509, #1640) and the gates pass.
 
 **What I learned**
 
-The unchanged must-pass tuple DAG fails under the default selected checker:
-1,276,786 summary entries against the 262,144 cap. Five declarations reproduce
-it. Explicit ownership v2 passes. Per the delivery brief, the narrow branch is
-pushed without a PR and the owner-decision finding is reported in
-https://github.com/canassa/beni/issues/1640.
-The original fixture, its assertion and the cap are unchanged; no full-gate
-success is claimed for this intentionally unlanded branch.
+The old must-pass test passed only because the flag was ignored without a
+chain.
