@@ -869,7 +869,7 @@ pub attribute "type" on "button" "embed" "input" "link" "object" "ol" "source" "
 pub attribute "value" property stateful on "input" "select" "textarea" : String
 
 
-pub attribute "value" on "button" "data" "option" "output" : String
+pub attribute "value" on "button" "data" "meter" "option" "output" "progress" : String
 
 
 pub attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int

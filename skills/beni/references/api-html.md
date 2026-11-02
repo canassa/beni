@@ -402,7 +402,7 @@ module Html
   attribute "type" on "animateTransform" "feColorMatrix" "feFuncA" "feFuncB" "feFuncG" "feFuncR" "feTurbulence" : String
   attribute "type" on "button" "embed" "input" "link" "object" "ol" "source" "style" : String
   attribute "unicode-bidi" : String
-  attribute "value" on "button" "data" "option" "output" : String
+  attribute "value" on "button" "data" "meter" "option" "output" "progress" : String
   attribute "value" on "input" "select" "textarea" property stateful : String
   attribute "values" on "animate" "animateMotion" "animateTransform" "feColorMatrix" : String
   attribute "vector-effect" : String
