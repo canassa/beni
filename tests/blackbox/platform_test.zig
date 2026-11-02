@@ -1905,8 +1905,6 @@ test "worker entry machinery is fenced from applications and spoofed module name
         .{ .module = "Browser.Worker", .name = "run" },
         .{ .module = "Browser.WorkerRuntime", .name = "run" },
         .{ .module = "Browser.Worker", .name = "installHostStop" },
-        .{ .module = "Rt", .name = "workerStop" },
-        .{ .module = "Rt", .name = "workerDefect" },
     }) |hidden| {
         try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import {s} as Hidden\n\nvalue = Hidden.{s}\n", .{ hidden.module, hidden.name }));
         const result = try w.run(&.{ "check", "--platform=browser", "--no-cache", "Main.beni" });

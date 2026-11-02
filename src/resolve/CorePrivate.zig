@@ -13,8 +13,6 @@ const entries = [_]Entry{
     .{ .module = "Browser.Worker", .name = "run", .access = .worker },
     .{ .module = "Browser.Worker", .name = "installHostStop", .access = .worker },
     .{ .module = "Browser.WorkerRuntime", .name = "run", .access = .worker },
-    .{ .module = "Rt", .name = "workerStop", .access = .worker },
-    .{ .module = "Rt", .name = "workerDefect", .access = .worker },
     .{ .module = "Js", .name = "invoke", .value_only = true },
     .{ .module = "Js", .name = "completion", .access = .task, .value_only = true },
     .{ .module = "Js.Runtime", .name = "parked", .access = .task },

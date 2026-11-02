@@ -2863,3 +2863,21 @@ pushStep : Chain a, a → ⊤
 pushStep deque value =
     _ = appendLink deque value
     ⊤
+
+
+--| Add a synchronous defect hook before the current hook, preserving that
+--| hook. A later `onDefect` replaces the composed hook as usual. Platforms
+--| use this when another runtime layer also needs to stop on a fiber defect.
+pub chainDefect : sync (⊤ → ⊤) → ⊤
+chainDefect hook =
+    (Scheduler s) = program
+    previous = Js.read s.hook
+    Js.write s.hook
+        (Just λ⊤ →
+            hook ⊤
+            case previous of
+                Nothing →
+                    ⊤
+                Just before →
+                    before ⊤
+        )

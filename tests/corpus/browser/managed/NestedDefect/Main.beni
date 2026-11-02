@@ -1,0 +1,79 @@
+-- A defect in a worker that owns a nested worker runs that realm's shutdown:
+-- the child receives Close and completes its root finalizer.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+child : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ String ⊥ ⊥)
+child =
+    Worker.program
+        { init =
+            λcontext _ →
+                Task.defer (Worker.scope context) λ_ → Probe.cleaned ⊤
+                Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ request → Ok request
+        , stream = Worker.noStream
+        }
+
+
+parent : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ String ⊥ ⊥)
+parent =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λcontext _ _ →
+                Probe.observeChild ⊤
+                case Worker.open (Worker.scope context) child ⊤ Worker.options of
+                    Ok _ →
+                        -- Keep ordinary scope cleanup parked: Close must come from
+                        -- the realm shutdown hook before user finalizers finish.
+                        Task.defer (Worker.scope context) λ_ → Task.never ⊤
+                        Probe.defect ⊤
+                    Err _ →
+                        Err "nested open failed"
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        Probe.watch ⊤
+                        outlet = Hosted.outlet owner
+                        Task.start
+                            (λ⊤ →
+                                Task.scope λscope →
+                                    case Worker.open scope parent ⊤ Worker.options of
+                                        Ok handle →
+                                            _ = Worker.call handle "defect"
+                                            Hosted.emit outlet (Finished "unreachable")
+                                        Err _ →
+                                            Hosted.emit outlet (Finished "open failed")
+                            )
+                            λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel →
+                <main>
+                    <button onClick={Launch}>launch</button><output>{model}</output><aside id="observed">waiting</aside>
+                </main>
+        }

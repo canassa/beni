@@ -650,6 +650,7 @@ module Task
   value callback : ((Resume a) → (⊤ → ⊤)) → a  -- suspends
   value cancel : (Fiber a) → ⊤  -- suspends
   value cancelAll : List (Fiber a) → ⊤  -- suspends
+  value chainDefect : (⊤ → ⊤) → ⊤  -- impure
   value cleansUp : ⊤ → Bool  -- impure
   value closeRoot : (Scope) → ⊤  -- impure
   value defer : (Scope), (Exit ⊤ → ⊤) → ⊤  -- impure
