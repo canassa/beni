@@ -1,0 +1,5 @@
+-- Keep a live worker unreachable until the page has observed its deadlines.
+pub foreign impure install : ⊤ → ⊤
+
+
+pub foreign impure release : ⊤ → ⊤

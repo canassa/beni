@@ -1,0 +1,76 @@
+-- Executes the compiler's concrete Wire normalization plan. Stable subgraphs
+-- pass directly to structured clone; only List descendants are materialized.
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+pub normalize : V, Int, String, V → V
+normalize plan parameter member value =
+    if Js.isNullish plan then
+        value
+    else
+        roles = Js.at plan 0
+        nodes = Js.at plan 1
+        found = Js.ref value
+        Js.each roles λrole →
+            path = Js.at role 3
+            if
+                Js.to (Js.at role 0) == parameter
+                    && (if member == "" then
+                           Js.to (Js.get path "length") == 0
+                        else
+                           Js.same (Js.at path 0) (Js.from member)
+                       )
+            then
+                Js.write found (visit nodes (Js.to (Js.at role 1)) value)
+        Js.read found
+
+
+visit : V, Int, V → V
+visit nodes index value =
+    node = Js.at nodes index
+    if Js.same node (Js.from 0) then
+        value
+    else
+        kind : Int
+        kind = Js.to (Js.at node 0)
+        edges = Js.at node 1
+        if kind == 1 then
+            array =
+                if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+                    value
+                else
+                    Js.call value "$plain" []
+            child : Int
+            child = Js.to (Js.at (Js.at edges 0) 1)
+            if Js.same (Js.at nodes child) (Js.from 0) then
+                array
+            else
+                Js.call array "map" [ Js.from λitem → visit nodes child item ]
+        else if kind == 4 then
+            variant =
+                Js.call edges "find" [ Js.from λedge → Js.same (Js.at edge 0) (Js.get value "$") ]
+            visit nodes (Js.to (Js.at variant 1)) value
+        else
+            result = Js.ref value
+            Js.each edges λedge →
+                field = Js.at edge 0
+                child : Int
+                child = Js.to (Js.at edge 1)
+                if Js.same (Js.at nodes child) (Js.from 0) then
+                    ⊤
+                else
+                    previous = Js.get value field
+                    next = visit nodes child previous
+                    if Js.same previous next then
+                        ⊤
+                    else
+                        if Js.same (Js.read result) value then
+                            Js.write
+                                result
+                                (Js.call (Js.global "Object") "assign" [ Js.object [], value ])
+                        Js.set (Js.read result) field next
+            Js.read result

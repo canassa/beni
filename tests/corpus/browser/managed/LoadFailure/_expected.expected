@@ -1,0 +1,24 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <p id="stage">"waiting"</p>
+  </main>
+</body>
+-- click-wait button #stage "load failed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"opening"</output>
+    <p id="stage">"load failed"</p>
+  </main>
+</body>
+-- advance 20
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"load failure unconfirmed"</output>
+    <p id="stage">"load failed"</p>
+  </main>
+</body>

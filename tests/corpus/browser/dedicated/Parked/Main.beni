@@ -1,0 +1,40 @@
+-- A parked init installs the listener later. A parked handler must forward
+-- its resumed result exactly once rather than send the suspension sentinel.
+import Duration
+import Page
+import Ref
+import Task
+import Worker
+
+
+worker : Worker.Program (List Int) Int ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → Task.sleep (Duration.millis 1)
+        , start = λ_ _ → ⊤
+        , handle =
+            λnumbers _ _ →
+                Task.sleep (Duration.millis 1)
+                List.sum numbers
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ =
+    count = Ref.make 0
+    Page.text "idle"
+    Page.button λ⊤ →
+        case Worker.open worker of
+            Ok handle →
+                Worker.receive handle λvalue →
+                    next = Ref.get count + 1
+                    Ref.set count next
+                    Page.text (String.fromInt value ++ ":" ++ String.fromInt next)
+                Worker.send handle [ 2, 3, 4 ]
+            Err _ →
+                Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program start
