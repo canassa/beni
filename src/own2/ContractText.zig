@@ -122,23 +122,23 @@ const Res = struct {
     }
 };
 
-fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node, eff: ?u32) std.Io.Writer.Error!void {
+fn arrivalsText(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node, eff: ?u32) std.Io.Writer.Error!void {
     var r: Res = .{ .t = t, .c = c, .slots = slots, .places = places, .names = names, .w = w, .eff = eff };
-    try Forest.text(&t.trees, places, root, &r, Res.entry);
+    try Forest.text(&t.trees, gpa, places, root, &r, Res.entry);
 }
 
 /// The contract's text, the dump's `summary` line after its name.
-pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer) std.Io.Writer.Error!void {
+pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer) std.Io.Writer.Error!void {
     const h = t.heads.items[c];
     if (h.flags.pessimistic) try w.writeAll("pessimistic; ");
     if (h.flags.cross) try w.writeAll("res crossing") else if (!h.flags.returns) try w.writeAll("res ⊥") else {
         try w.writeAll("res");
-        try arrivalsText(t, c, slots, places, names, w, h.res_root, null);
+        try arrivalsText(t, gpa, c, slots, places, names, w, h.res_root, null);
     }
     try w.writeAll("; nondup ");
     try condText(t, slots, places, names, w, h.res_cond);
     if (h.reads.len != 0) try w.writeAll("; reads");
-    for (t.readsOf(h.reads)) |x| try arrivalsText(t, c, slots, places, names, w, x[1], x[0]);
+    for (t.readsOf(h.reads)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0]);
     try effectsText(t, slots, places, names, w, "; writes", h.writes);
     if (h.writes.len != 0) try w.writeAll("; req ");
     if (h.writes.len != 0) try condText(t, slots, places, names, w, h.req);
@@ -149,7 +149,7 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
         try w.print("@{d} {t}", .{ l.origin[2], l.calls });
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}:", .{s.k + 1});
-            try arrivalsText(t, c, slots, places, names, w, s.res_root, null);
+            try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null);
             try effectsText(t, slots, places, names, w, " kept", s.kept);
             try w.writeAll(" sep ");
             try condText(t, slots, places, names, w, s.cond);
