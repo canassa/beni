@@ -100,6 +100,7 @@ module Browser.Host.Data
   value isInteger : Value → Bool  -- impure
   value isSafeInteger : Value → Bool  -- impure
   value keys : Value → List String  -- impure
+  value same : Value, Value → Bool
 module Browser.Host.Date
   value now : ⊤ → Int  -- impure
 module Browser.Host.Document

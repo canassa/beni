@@ -239,3 +239,8 @@ no native handle or completion callback is stored as plain dynamic data.
 type and mutable live bit directly. Preparing or discarding a callable payload
 never invokes it. The page-stop bridge retains typed stop and completion jobs;
 it invokes them through the private synchronous protocol operation.
+
+**As built, 2026-11-03:** the worker Wire-plan walker keeps its search and
+traversal functions typed. Searches and copy-on-change traversal are beni;
+plain-data key enumeration and Object.is use generated typed operations.
+List copies use core List operations. No discovered `$plain` method runs.
