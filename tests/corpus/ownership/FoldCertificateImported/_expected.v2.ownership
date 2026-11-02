@@ -1,0 +1,91 @@
+module Lib
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  20:19 Main.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  20:19 Main.incAll l#Node.2#Node.1: accepted param
+  20:19 Main.incAll l#Node.1: accepted param
+  20:19 Main.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  20:19 Main.incAll l#Node.0#Node.1: accepted param
+  20:30 List.push xs: accepted param
+  20:47 Main.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  20:47 Main.incAll r#Node.2#Node.1: accepted param
+  20:47 Main.incAll r#Node.1: accepted param
+  20:47 Main.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  20:47 Main.incAll r#Node.0#Node.1: accepted param
+  30:21 List.push xs: accepted param
+  40:16 Main.incAll a#Node.2⟨Tree⟩#Node.1: accepted param
+  40:16 Main.incAll a#Node.2#Node.1: accepted param
+  40:16 Main.incAll a#Node.1: accepted param
+  40:16 Main.incAll a#Node.0⟨Tree⟩#Node.1: accepted param
+  40:16 Main.incAll a#Node.0#Node.1: accepted param
+  40:27 Main.incAll b#Node.2⟨Tree⟩#Node.1: accepted param
+  40:27 Main.incAll b#Node.2#Node.1: accepted param
+  40:27 Main.incAll b#Node.1: accepted param
+  40:27 Main.incAll b#Node.0⟨Tree⟩#Node.1: accepted param
+  44:14 Main.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.1#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.1#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.0#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.0#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.0#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  44:14 Main.incP <P …>#P.0#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  48:17 Main.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: accepted param
+  48:17 Main.incP <P …>#P.1#Node.2#Node.1: accepted param
+  48:17 Main.incP <P …>#P.1#Node.1: accepted param
+  48:17 Main.incP <P …>#P.1#Node.0⟨Tree⟩#Node.1: accepted param
+  48:17 Main.incP <P …>#P.1#Node.0#Node.1: accepted param
+  48:17 Main.incP <P …>#P.0#Node.2⟨Tree⟩#Node.1: accepted param
+  48:17 Main.incP <P …>#P.0#Node.2#Node.1: accepted param
+  48:17 Main.incP <P …>#P.0#Node.1: accepted param
+  48:17 Main.incP <P …>#P.0#Node.0⟨Tree⟩#Node.1: accepted param
+  48:17 Main.incP <P …>#P.0#Node.0#Node.1: accepted param
+  52:13 Main.incAll <call Lib.same>#Node.2⟨Tree⟩#Node.1: accepted param
+  52:13 Main.incAll <call Lib.same>#Node.2#Node.1: accepted param
+  52:13 Main.incAll <call Lib.same>#Node.1: accepted param
+  52:13 Main.incAll <call Lib.same>#Node.0⟨Tree⟩#Node.1: accepted param
+  52:13 Main.incAll <call Lib.same>#Node.0#Node.1: accepted param
+  56:16 Main.incRoot <call Lib.same>#Node.1: accepted param
+  60:18 Main.incRoot <call Lib.unroll>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  64:14 Main.incAll <call Lib.unroll>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  64:14 Main.incAll <call Lib.unroll>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  64:14 Main.incAll <call Lib.unroll>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  64:14 Main.incAll <call Lib.unroll>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  64:14 Main.incAll <call Lib.unroll>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  70:5 Main.incP <P …>#P.1#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  70:5 Main.incP <P …>#P.1#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  70:5 Main.incP <P …>#P.1#Node.1: rejected disjoint: another path of the same argument reaches it
+  70:5 Main.incP <P …>#P.1#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  70:5 Main.incP <P …>#P.1#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  74:10 Main.incAll <call Lib.swap>#Node.2⟨Tree⟩#Node.1: accepted param
+  74:10 Main.incAll <call Lib.swap>#Node.2#Node.1: accepted param
+  74:10 Main.incAll <call Lib.swap>#Node.1: accepted param
+  74:10 Main.incAll <call Lib.swap>#Node.0⟨Tree⟩#Node.1: accepted param
+  74:10 Main.incAll <call Lib.swap>#Node.0#Node.1: accepted param
+  78:10 Main.incAll <call Lib.dupL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  78:10 Main.incAll <call Lib.dupL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  78:10 Main.incAll <call Lib.dupL>#Node.1: accepted param
+  82:10 Main.incAll <call Lib.shareL>#Node.2⟨Tree⟩#Node.1: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  82:10 Main.incAll <call Lib.shareL>#Node.2#Node.1: accepted param
+  82:10 Main.incAll <call Lib.shareL>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  82:10 Main.incAll <call Lib.shareL>#Node.0⟨Tree⟩#Node.1: accepted param
+  82:10 Main.incAll <call Lib.shareL>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  86:10 Main.incAll <call Lib.deeper>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  86:10 Main.incAll <call Lib.deeper>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  86:10 Main.incAll <call Lib.deeper>#Node.1: accepted param
+  90:13 Main.incAll <Node …>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  90:13 Main.incAll <Node …>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it
+  90:13 Main.incAll <Node …>#Node.1: accepted param
+  90:13 Main.incAll <Node …>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it
+  90:13 Main.incAll <Node …>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it
+  94:16 Main.incAll <Node …>#Node.2⟨Tree⟩#Node.1: accepted param
+  94:16 Main.incAll <Node …>#Node.2#Node.1: accepted param
+  94:16 Main.incAll <Node …>#Node.1: accepted param
+  94:16 Main.incAll <Node …>#Node.0⟨Tree⟩#Node.1: accepted param
+  94:16 Main.incAll <Node …>#Node.0#Node.1: accepted param
+  demands 84: accepted 52 (fresh 0, call 0, param 52, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 32
+total 84: accepted 52 (fresh 0, call 0, param 52, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 32
+cause disjoint 31
+cause exclusive 1

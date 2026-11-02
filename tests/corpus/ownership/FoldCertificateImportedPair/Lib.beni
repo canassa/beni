@@ -1,0 +1,26 @@
+-- ownership (project): see Main.beni. Two producers whose subtree
+-- classes are one plain leaf of cells: `unroll`'s certificate fails, and
+-- `same`'s holds.
+pub type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+pub unroll : Tree → Tree
+unroll t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (Node (unroll l) xs Leaf) xs (unroll r)
+
+
+pub same : Tree → Tree
+same t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (same l) xs (same r)

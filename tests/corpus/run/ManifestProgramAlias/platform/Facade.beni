@@ -1,0 +1,9 @@
+import Base
+
+
+pub type alias Program =
+    Base.Program
+
+
+pub make : String → Program
+make = Base.make

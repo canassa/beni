@@ -1349,11 +1349,19 @@ pub const Builder = struct {
 
     /// Hand the finished module over. The builder is empty afterwards.
     pub fn toOwned(b: *Builder, body: SubRange) Allocator.Error!JsIr {
+        // Each detached column needs an owner until every transfer succeeds.
+        var nodes = b.nodes.toOwnedSlice();
+        errdefer nodes.deinit(b.gpa);
+        const extra = try b.extra.toOwnedSlice(b.gpa);
+        errdefer b.gpa.free(extra);
+        const string_bytes = try b.string_bytes.toOwnedSlice(b.gpa);
+        errdefer b.gpa.free(string_bytes);
+        const names = try b.names.toOwnedSlice(b.gpa);
         const ir: JsIr = .{
-            .nodes = b.nodes.toOwnedSlice(),
-            .extra = try b.extra.toOwnedSlice(b.gpa),
-            .string_bytes = try b.string_bytes.toOwnedSlice(b.gpa),
-            .names = try b.names.toOwnedSlice(b.gpa),
+            .nodes = nodes,
+            .extra = extra,
+            .string_bytes = string_bytes,
+            .names = names,
             .body = body,
         };
         b.name_index.clearRetainingCapacity();
@@ -1981,4 +1989,23 @@ test "measure: `a && b && c` built to the left is flat, `a && (b && c)` is not" 
     // chain so far, which prints without parentheses and nests nothing.
     try testing.expectEqual(nesting.operand, (try b.measure(gpa, &.{left})).whole);
     try testing.expectEqual(10 * nesting.operand, (try b.measure(gpa, &.{right})).whole);
+}
+
+test "Builder.toOwned frees detached columns on every allocation failure" {
+    // Force fresh allocations when columns shrink so every transfer is tested.
+    var no_resize: testing.FailingAllocator = .init(testing.allocator, .{ .resize_fail_index = 0 });
+    try testing.checkAllAllocationFailures(no_resize.allocator(), struct {
+        fn run(gpa: Allocator) !void {
+            var b: Builder = .init(gpa);
+            defer b.deinit();
+            const binding = try b.intern(.local(@fromBackingInt(0)));
+            const offset, const len = try b.addString("value");
+            const value = try b.addParts(.string, Node.no_pos, offset, len);
+            const decl = try b.addParts(.const_decl, Node.no_pos, @backingInt(binding), value.int());
+            const body = try b.addRange(&.{decl});
+            var ir = try b.toOwned(body);
+            defer ir.deinit(gpa);
+            try ir.verify();
+        }
+    }.run, .{});
 }

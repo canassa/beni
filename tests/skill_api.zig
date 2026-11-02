@@ -165,12 +165,27 @@ fn allDigits(s: []const u8) bool {
 fn tailClass(s: []const u8) ?[]const u8 {
     const t = std.mem.trimEnd(u8, s, " ");
     if (t.len == 0) return null;
+    // A result can be a nominal value holding callbacks: `(Cmd msg !impure)`.
+    // Only a suffix outside that result describes this value's own execution.
+    var depth: usize = 0;
+    var outer_bang: ?usize = null;
+    for (t, 0..) |c, i| {
+        if (c == ' ' and i + 1 < t.len and t[i + 1] == '!' and depth == 0) outer_bang = i;
+        switch (c) {
+            '(', '{', '[' => depth += 1,
+            ')', '}', ']' => depth -|= 1,
+            else => {},
+        }
+    }
+    const bang_at = outer_bang orelse return null;
+
     if (t[t.len - 1] == ')') {
-        const open = std.mem.lastIndexOf(u8, t, " !(") orelse return null;
+        const open = bang_at;
+        if (!std.mem.startsWith(u8, t[open..], " !(")) return null;
         if (std.mem.indexOfScalar(u8, t[open + 3 ..], ')') != t.len - open - 4) return null;
         return t[open + 2 ..];
     }
-    const bang = std.mem.lastIndexOf(u8, t, " !") orelse return null;
+    const bang = bang_at;
     const class = t[bang + 2 ..];
     if (class.len == 0) return null;
     for (class) |c| if (!std.ascii.isAlphanumeric(c)) return null;
@@ -224,6 +239,9 @@ test "a dump line becomes beni's notation" {
     const arena = arena_state.allocator();
     const cases = [_][2][]const u8{
         .{ "  value map : List a, (a → b !e1) → List b !e1", "  value map : List a, (a → b) → List b" },
+        .{ "  value back : Key, Int, (Error → msg !(e1 | sync)) → (Cmd msg !(impure | e1))", "  value back : Key, Int, (Error → msg) → (Cmd msg)" },
+        .{ "  value reload : ⊤ → (Cmd msg !impure)", "  value reload : ⊤ → (Cmd msg)" },
+        .{ "  value makeAndLog : ⊤ → (Cmd msg !impure) !impure", "  value makeAndLog : ⊤ → (Cmd msg)  -- impure" },
         .{ "  value sleep : Duration → ⊤ !suspends", "  value sleep : Duration → ⊤  -- suspends" },
         .{ "  value get : Ref a → a !impure", "  value get : Ref a → a  -- impure" },
         .{ "  value compare : List a, List a → Order !e1 where a.compare : a, a → Order !(e1 | sync)", "  value compare : List a, List a → Order where a.compare : a, a → Order" },

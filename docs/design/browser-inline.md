@@ -89,6 +89,9 @@ declaration, in declaration order.
 
 ## 4. Commands
 
+A polymorphic command body is checked with the actual synchronous sender and
+its captured values. A known suspension or an unresolved call remains refused.
+
 The pass evaluates each key's arm — and `init` — to its `model × Cmd msg` result and reads the
 command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
 
@@ -160,6 +163,23 @@ by its type — hides nothing: it is written exactly, and accepted.
 4. **A limit of the compiler** — a fact the analysis did not give, or code the compiler cannot
    write where the lowering needs it. The message says *"a limit of the compiler"*, so it is never
    read as a rule of the language, and names what would lift it.
+
+*Implementation specified 2026-10-30: scalar String class attributes.* The checker already
+records whether an attribute is its declared String form or a class list
+(`language.md` §11.19; `Item.class`). A vocabulary row carrying `classes` does
+not by itself make every use a list. Inline accepts its `.string` form:
+constants use existing HTML attribute escaping, and changing values use
+`setAttribute` on the existing DOM node only when `getAttribute` differs from
+the desired String, preserving §8.2's binding compare. Target and desired value
+are each evaluated once. An empty String retains an empty
+attribute; no value is discarded or reinterpreted as a class list. Native
+attribute operations avoid assuming `className` is a String property. This
+implementation accepts currently supported HTML shapes; the existing SVG/MathML
+element refusal remains unchanged, and no Inline SVG support is claimed.
+The existing read-set/write guards, initialization and source evaluation order
+remain in force. `raw`, style attributes carrying `styles`, and actual
+`.class_list` values remain their separate existing compiler limits. This adds
+no grammar, vocabulary, runtime escape or alternative class semantics.
 
 ## 6. The release ledger (`plans/direct-rewrite.md` §8, as the owner decided for S0)
 
@@ -246,6 +266,8 @@ first, in one module; §8.4–§8.6 after.*
 | what each tail of a key's arm writes | the write-set pass's per-path sets (`write-sets.md`, amended 2026-10-17) | `programArmTails`, `programCallsAt` (1.15) |
 
 ### 8.2 The page
+
+Scalar String `class` bindings use the attribute rules in §5 in this page lowering.
 
 **One HTML string per unit** — the program's `view`, or a piece's root (§8.4) — written into the
 mount once, with `insertAdjacentHTML`. It holds every element of the unit, the elements of an eager

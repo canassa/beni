@@ -1,0 +1,14 @@
+-- ownership (project): see Main.beni. The certified producer.
+pub type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+pub same : Tree → Tree
+same t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (same l) xs (same r)

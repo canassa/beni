@@ -1,0 +1,83 @@
+-- ownership: rule 4 across the classes of one certificate (ownership-v2.md
+-- §2.9 rule 4, *Across the classes of one certificate*; §8 slice 4,
+-- near-miss rows 20–22; #1559). The atom rule splits a knot's class, so
+-- one call can put several classes of one certificate into one class of
+-- the caller. Each producer here puts one list at two positions through
+-- that merge, and each is refused: one key in two classes (`twin`), one
+-- object at two occurrences (`pairUp`), and an overlapping pair split over
+-- two classes (`split`).
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+same : Tree → Tree
+same t =
+    case t of
+        Leaf →
+            Leaf
+
+        Node l xs r →
+            Node (same l) xs (same r)
+
+
+twin : Tree → Tree
+twin t =
+    case t of
+        Node l xs _ →
+            Node (twin l) xs (Node Leaf xs Leaf)
+
+        Leaf →
+            Leaf
+
+
+pairUp : Tree → Tree
+pairUp t =
+    case t of
+        Node l xs r →
+            case l of
+                Node a ys _ →
+                    Node (same (Node a ys a)) xs (pairUp r)
+
+                Leaf →
+                    Node Leaf xs (pairUp r)
+
+        Leaf →
+            Leaf
+
+
+split : Tree → Tree
+split t =
+    case t of
+        Node l _ _ →
+            case l of
+                Node _ ys _ →
+                    Node (same (Node t [] Leaf)) ys (split l)
+
+                Leaf →
+                    Leaf
+
+        Leaf →
+            Leaf
+
+
+pub row20 : Tree → Tree
+row20 t = incAll (twin t)
+
+
+pub row21 : Tree → Tree
+row21 t = incAll (pairUp t)
+
+
+pub row22 : Tree → Tree
+row22 t = incAll (split t)

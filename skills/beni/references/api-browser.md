@@ -193,7 +193,7 @@ module Http
     GoodStatus_
   value emptyBody : Body
   value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure
-  value expectSchema : Schema e a → Expect Error a  -- impure
+  value expectSchema : Schema e a → (Expect Error a)
   value expectString : Expect Error String
   value expectStringResponse : (Response String → Result x a) → Expect x a
   value expectWhatever : Expect Error ⊤
@@ -218,21 +218,21 @@ module Listen
 module Random
   alias Generator a
   alias Seed
-  value andThen : (Generator a), (a → Generator b) → Generator b
+  value andThen : (Generator a), (a → (Generator b)) → (Generator b)
   value constant : a → Generator a
   value float : Float, Float → Generator Float
   value generate : Generator a, (a → msg) → Cmd msg  -- impure
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
-  value lazy : (⊤ → Generator a) → Generator a
-  value list : (Generator a), Int → Generator (List a)
-  value map : (Generator a), (a → b) → Generator b
-  value map2 : (Generator a), (Generator b), (a, b → c) → Generator c
-  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → Generator d
+  value lazy : (⊤ → (Generator a)) → (Generator a)
+  value list : (Generator a), Int → (Generator (List a))
+  value map : (Generator a), (a → b) → (Generator b)
+  value map2 : (Generator a), (Generator b), (a, b → c) → (Generator c)
+  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → (Generator d)
   value maxInt : Int
   value minInt : Int
-  value pair : (Generator a), (Generator b) → Generator (a × b)
+  value pair : (Generator a), (Generator b) → (Generator (a × b))
   value step : (Generator a), Seed → a × Seed
   value uniform : a, List a → Generator a
   value value : (Generator a) → a  -- impure

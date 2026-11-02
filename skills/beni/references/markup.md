@@ -182,6 +182,11 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
+## String classes on `browser-inline`
+
+Scalar String `class` values may be constant or change with the model. Empty strings retain
+an empty attribute. Class-list syntax and style lists remain compiler limits on this platform.
+
 ## Helpers on `browser-inline`
 
 On `browser-inline`, a view can call a function of its own module that returns markup. The
@@ -197,4 +202,4 @@ effect and that only an event reads is evaluated when its binding is refreshed, 
 not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
 the markup-value diagnostic, and it never drops the export silently.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.

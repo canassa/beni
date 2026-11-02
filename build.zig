@@ -166,6 +166,7 @@ const fuzz_sweep_seeds = blk: {
 /// records them and `coverage` measures them.
 const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/blackbox_test.zig", 6 },
+    .{ "tests/blackbox/session_api_test.zig", 1 },
     .{ "tests/blackbox/abuse_test.zig", 3 },
     .{ "tests/blackbox/abuse_wide_test.zig", 3 },
     .{ "tests/blackbox/build_test.zig", 3 },
@@ -237,8 +238,14 @@ pub fn build(b: *std.Build) void {
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     // The v2 checker broken one way on purpose, to show that a `runtime_safety`
     // check fires (ownership-v2.md §2.9 rule 3). Hidden; never given to the gates.
-    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, propagate-full-read, propagate-no-fold-first, propagate-no-resumed-pass2, propagate-no-merge-reopen); `gates` refuses it") orelse "none";
+    const own2_mutation = b.option([]const u8, "ownership-v2-mutation", "Test-only: break the v2 checker one way (rule3-route, rule3-one-position, propagate-full-read, propagate-no-fold-first, propagate-no-resumed-pass2, propagate-no-merge-reopen, cert-rule4-sum, cert-view-cells, cert-untagged, cert-stop-early, cert-unmarked, cert-keys-only, cert-keys-only-reader1, cert-keys-only-reader2, cert-drop-key, cert-drop-any, cert-saturate-side, cert-rule4-per-class, cert-rule4-no-key-sum, cert-rule4-trie-per-class); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "v2_mutation", own2_mutation);
+    // The v2 checker's order reversed on purpose, to show that a verdict does
+    // not depend on it (ownership-v2.md §2.9 rule 4 (a′), §2.11 item 3 (d)):
+    // `otherPaths-spine-first`, `cert-params-reversed`, comma-separated.
+    // Hidden; never given to the gates.
+    const own2_switch = b.option([]const u8, "ownership-v2-switch", "Test-only: reverse an order of the v2 checker (otherPaths-spine-first, cert-params-reversed; comma-separated); `gates` refuses it") orelse "none";
+    own_opts.addOption([]const u8, "v2_switch", own2_switch);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the
     // narrower runtime roots leaves every answer its lowering read as it
@@ -248,6 +255,12 @@ pub fn build(b: *std.Build) void {
     const emit_opts = b.addOptions();
     emit_opts.addOption(bool, "lower_reuse_cross_check", lower_reuse_check);
     emit_options = emit_opts.createModule();
+    // The owner, 2026-11-01: the safety allocator is off unless a memory
+    // problem is being debugged. It costs 15-20% of CPU (#1586).
+    const safe_allocator = b.option(bool, "safe-allocator", "Run every beni this build makes on the safety allocator, which catches leaks, double frees and use-after-free (default off; costs 15-20% CPU)") orelse false;
+    const alloc_opts = b.addOptions();
+    alloc_opts.addOption(bool, "safe_allocator", safe_allocator);
+    alloc_options = alloc_opts.createModule();
     // `diagnostic` is a NAMED module because two roots need the same schema:
     // the compiler renders it and the black-box suite parses it back. A field
     // added or renamed in production then fails the tests at compile time
@@ -327,6 +340,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "beni", .module = exe_beni },
                 .{ .name = "diagnostic", .module = diagnostic_mod },
+                .{ .name = "alloc_options", .module = alloc_options.? },
             },
         }),
     });
@@ -546,6 +560,20 @@ pub fn build(b: *std.Build) void {
     const safe_dir = if (llvm) safe_llvm_bin_dir else safe_bin_dir;
     const safe = compiler(b, target, .safe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources);
     const safe_install = b.addInstallArtifact(safe.exe, .{ .dest_dir = .{ .override = .{ .custom = safe_dir } } });
+    // The public resident API uses the same checked library and backend as
+    // the black-box compiler. Its heap checker remains active in ReleaseSafe.
+    const session_driver = b.addExecutable(.{
+        .name = "beni-session-driver",
+        .use_llvm = safe.exe.use_llvm,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/session_driver.zig"),
+            .target = target,
+            .optimize = .safe,
+            .strip = safe.exe.root_module.strip,
+            .imports = &.{.{ .name = "beni", .module = safe.beni }},
+        }),
+    });
+    const session_driver_install = b.addInstallArtifact(session_driver, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
     // The same compiler with `tests/platforms/toy` compiled in, exactly as
     // `-Dplatform=tests/platforms/toy` would compile it
     // (`docs/design/boundary.md` §9.5), at `zig-out/toy/bin/beni`: the
@@ -609,6 +637,7 @@ pub fn build(b: *std.Build) void {
     node_probe.addArg("node-version");
     node_probe.has_side_effects = true;
     const bb: Blackbox = .{
+        .session_driver_install = &session_driver_install.step,
         .node_version = node_probe.captureStdOut(.{}),
         .b = b,
         .target = target,
@@ -1124,6 +1153,7 @@ pub fn build(b: *std.Build) void {
                         .imports = &.{
                             .{ .name = "beni", .module = measured.beni },
                             .{ .name = "diagnostic", .module = measured.diagnostic },
+                            .{ .name = "alloc_options", .module = alloc_options.? },
                         },
                     }) },
                     .{ .name = "coverage_options", .module = runtime_options.createModule() },
@@ -1317,6 +1347,7 @@ fn gatesRefusal(b: *std.Build, filtered: bool) ?[]const u8 {
     if (filtered) return "`gates` runs every test: drop -Dtest-filter and -Dcorpus, or give them to a test step";
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` requires the intended checker: drop -Downership-record-mutation, which breaks it on purpose; use test-record-mutations";
     if (b.user_input_options.contains("ownership-v2-mutation")) return "`gates` requires the intended checker: drop -Downership-v2-mutation, which breaks it on purpose";
+    if (b.user_input_options.contains("ownership-v2-switch")) return "`gates` requires the intended checker: drop -Downership-v2-switch, which reverses one of its orders on purpose";
     return null;
 }
 
@@ -1410,6 +1441,7 @@ fn compiler(
             .imports = &.{
                 .{ .name = "beni", .module = beni },
                 .{ .name = "diagnostic", .module = diagnostic },
+                .{ .name = "alloc_options", .module = alloc_options.? },
             },
         }),
     });
@@ -2021,6 +2053,10 @@ var ownership_options: ?*std.Build.Module = null;
 /// build of the compiler imports (`src/js/Emit.zig`).
 var emit_options: ?*std.Build.Module = null;
 
+/// `-Dsafe-allocator`, as the module `alloc_options` every `src/main.zig`
+/// root imports.
+var alloc_options: ?*std.Build.Module = null;
+
 /// One platform package compiled into beni (`docs/design/boundary.md`
 /// §9.5): a directory under `platforms/`, or one `-Dplatform=<dir>` adds.
 const PlatformSource = struct {
@@ -2397,6 +2433,7 @@ const HarnessEnvironment = struct {
 /// The black-box test roots, compiled against the build's target and
 /// optimize mode and run from the repo root.
 const Blackbox = struct {
+    session_driver_install: *std.Build.Step,
     b: *std.Build,
     /// What `node --version` printed, asked once per build; every process
     /// gets it as `--node-version=` (`tests/test_runner.zig`).
@@ -2469,6 +2506,10 @@ const Blackbox = struct {
     /// BENI_CORPUS_MODE=pending` would silently change what a gate means.
     fn run(bb: Blackbox, t: *std.Build.Step.Compile, env: HarnessEnvironment) *std.Build.Step.Run {
         const r = runTests(bb.b, t);
+        if (std.mem.eql(u8, t.name, "session_api_test")) {
+            r.step.dependOn(bb.session_driver_install);
+            r.setEnvironmentVariable("BENI_SESSION_DRIVER", installPath(bb.b, "tools/beni-session-driver"));
+        }
         r.addPrefixedFileContentArg("--node-version=", bb.node_version);
         r.step.dependOn(switch (env.exe) {
             .safe => bb.safe_install,

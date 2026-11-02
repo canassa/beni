@@ -1415,7 +1415,9 @@ site_count × { class, root, step_count, step_count × step }
 - A **rung** is `0` pure, `1` impure, `2` suspends. A class's **deps** are classes of the same
   block, ascending.
 - A **site** is one function type or nominal application of the scheme that belongs to a class
-  worth writing — one with a rung, a dependency or a dependant. Every store variable of such a
+  worth writing — one with a rung, a dependency, a dependant, or multiple scheme
+  variables joined to the same class. Pure shared classes retain their joins across
+  module boundaries. Every store variable of such a
   class gets a site, so a class split across two variables (§14.3 rule 4, §14.5) arrives joined.
 - A site is found by a **path**: `root` is `0` for the scheme's body and `k + 1` for its `k`th
   `where`-clause type (quantifiers in scheme order, each quantifier's constraints in the order the
@@ -1444,7 +1446,11 @@ diagnostics never do, so no message's text moves:
   and a pure class nothing depends on prints nothing;
 - names are `e1`, `e2`, … in order of first print, one namer per declaration shared by its locals;
   a function-typed result is parenthesised when its own arrow prints a class, so
-  `Int -> (Int -> Int !e1) !impure` cannot be misread;
+  `Int -> (Int -> Int !e1) !impure` cannot be misread. An effect-bearing named
+  result is always parenthesised: `Int → (Cmd msg !impure)` constructs data
+  purely; `Int → (Cmd msg !impure) !impure` also performs impure work while
+  constructing it;
+
 - `dump --stage=types` prints a top-level value's evaluation class, when it is not pure, as
   `  -- evaluates: impure` after its scheme.
 - A class the printed type does not show — a function field inside a record alias, which prints

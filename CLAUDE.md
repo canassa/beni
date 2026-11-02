@@ -403,6 +403,16 @@ three LLVM ReleaseSafe compiles, which run in parallel and each hold an LLVM
 compile's memory, so check `free -g` first. `test-perf` and `bench` always
 time a ReleaseFast LLVM beni.
 
+**The safety allocator is off by default** (the owner, 2026-11-01: "I don't see a
+reason to turn on the safety allocator unless we are running into memory
+issues"). Every beni, the tests' ReleaseSafe one included, runs on
+`std.heap.smp_allocator` (`c_allocator` with libc, `wasm_allocator` on wasm),
+chosen in `src/main.zig`, not by the build mode as `std/start.zig` would. The
+safety allocator cost 15-20% of CPU (#1586). `-Dsafe-allocator=true` turns it
+on in every beni the build makes, to debug memory issues: it catches leaks,
+double frees and use-after-free. Run `zig build gates -Dsafe-allocator=true`
+for that.
+
 **Zig's two caches.** Each worktree keeps its own LOCAL cache, `.zig-cache`.
 Never share one between git worktrees: a worktree was handed a stale binary
 built from another worktree's sources (commit `bfc234325`). Zig's GLOBAL cache

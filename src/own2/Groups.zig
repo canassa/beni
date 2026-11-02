@@ -1417,6 +1417,7 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     mod.conds.order_check = in.order_check;
     mod.conds.propagate_dump = in.propagate_dump;
     mod.conds.resolver = mod.views.resolver();
+    mod.conds.hyp = mod.views.hyp();
     mod.shapes.trackRelevance();
     mod.result_of = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.result_of, none);
@@ -1679,6 +1680,13 @@ const Group = struct {
         return false;
     }
 
+    /// Whether `class` is a member's port, as the walk under way reads it.
+    fn isPort(ctx: *anyopaque, class: ClassId) bool {
+        const g: *Group = @ptrCast(@alignCast(ctx));
+        for (g.ports.items) |p| if (p.class == class) return true;
+        return false;
+    }
+
     fn enqueue(g: *Group, k: u32) Allocator.Error!void {
         if (g.queued[k]) return;
         g.queued[k] = true;
@@ -1717,11 +1725,14 @@ fn solveGroup(mod: *Module, members: []const u32, prepass: *const Facts.Prepass,
     var g: Group = .{ .gpa = gpa, .members = members };
     defer g.deinit(gpa);
     mod.group = &g;
+    // A view of a member's port is a hypothesis node (#1485).
+    mod.views.group = .{ .ctx = &g, .isPort = Group.isPort };
     // Widen opens a join on a cycle place in a group's rounds (#1363).
     mod.shapes.widen_rounds = true;
     defer {
         mod.shapes.widen_rounds = false;
         mod.group = null;
+        mod.views.group = null;
         charging(mod, &mod.base_account);
     }
     const settled = runGroup(mod, &g, prepass, rs) catch |err| switch (err) {
@@ -1800,6 +1811,9 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
     var inference = true;
     while (true) {
         if (!try pass(mod, g, prepass, rs, which, inference)) return false;
+        // A test-only mutation: stop after the first pass, before the
+        // fixpoint, so the induction's check must fire (C5).
+        if (mutated("cert-stop-early")) break;
         // The wake rule: a callee's new `res.shape` wakes an inference walk.
         var any = false;
         for (which, 0..) |*w, k| {
@@ -1816,11 +1830,22 @@ fn runGroup(mod: *Module, g: *Group, prepass: *const Facts.Prepass, rs: []DeclRe
         }
         if (!any) break;
     }
-    if (mod.in.rewalk_check) try assertRewalks(mod, g, prepass);
+    // Re-walks leave table state that later callers read, so they run only
+    // under the test-only flag and the cross-check build, never in a
+    // counted run (#1582, #1525).
+    if (mod.in.rewalk_check or (std.debug.runtime_safety and full_cross_check)) {
+        try assertRewalks(mod, g, prepass);
+        try checkInduction(mod, g, prepass);
+    }
     for (rs, 0..) |*r, k| {
         charging(mod, &r.account);
         // Its stable labels: `map` would drop a κ keyed below a choice (#1399).
         r.class = g.ports.items[k].class;
+        // The joint fixpoint proves the certificates: every member's last
+        // walk read the ports as they stand, its hypothesis nodes their
+        // certificates, and its read-off is below its port, so F(A) ⊑ A,
+        // and the base is in F (§8 slice 4, *The proof is the stop rule's*).
+        try mod.sums.certify(gpa, r.class);
         r.walks = g.walks[k];
         r.inference = g.inference[k];
         r.deliveries = g.deliveries[k];
@@ -2073,6 +2098,45 @@ fn walkMember(mod: *Module, g: *Group, k: u32, prepass: *const Facts.Prepass, r:
     });
 }
 
+/// C5, the induction checked again (§8 slice 4, *The proof is the stop
+/// rule's*, #1485), under `--ownership-rewalk-check` and
+/// `-Downership-full-cross-check` only: each member walked once more on
+/// an account of its own, its walk counts and edges untouched, against the
+/// settled ports x*: its read-off is below its port (the step, F(A) ⊑ A).
+/// The base is the step's depth-1 case and is not walked apart: a walk
+/// over ports at ⊥ makes views a later walk of the module meets, which
+/// moves that walk's records (the chain's counted test).
+fn checkInduction(mod: *Module, g: *Group, prepass: *const Facts.Prepass) Error!void {
+    const gpa = mod.gpa;
+    for (g.members, 0..) |di, k| {
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        charging(mod, &scratch);
+        const d = mod.in.bir.decls[di];
+        mod.cur_locals = d.locals_start;
+        scratch.source = d.inst_end.int() - d.inst_start.int();
+        g.reads.clearRetainingCapacity();
+        const run = g.param_runs.items[k];
+        var res = try Walk.walk(.{
+            .env = mod.env(),
+            .sums = &mod.sums,
+            .ctx = mod.context(),
+            .bir = mod.in.bir,
+            .decl = d,
+            .prepass = prepass,
+            .phase = .validation,
+            .param_places = g.param_places.items[run.start..][0..run.len],
+            .result_place = g.result_places.items[k],
+            .labels = .{ .fresh = &g.fresh[k], .ctx = mod, .group_call = Module.isGroupCall },
+            .comparison = mod.comparison[di],
+        });
+        defer res.deinit(gpa);
+        if (res.unbuilt != none) std.debug.panic("ownership v2: a settled group's member is unbuilt when walked again (C5, #1485)", .{});
+        if (!try mod.sums.leq(mod.env(), res.class, g.ports.items[k].class))
+            std.debug.panic("ownership v2: the fold certificate's step fails: a member's read-off is not below its settled port (C5, #1485)", .{});
+    }
+}
+
 /// `⊤call` over `d`'s places (O10).
 fn pessimisticOf(mod: *Module, d: Bir.Decl, di: u32, places: *std.ArrayList(PlaceId)) Error!ClassId {
     const res = try declPlaces(mod, d, di, places);
@@ -2257,4 +2321,12 @@ pub fn wordKindErrors(mod: *Module, out: *std.ArrayList(WordError)) Error!void {
             for (checks) |c| if (words & c.w.bit() != 0 and !c.ok) try out.append(mod.gpa, .{ .decl = @intCast(di), .slot = s[0], .word = c.w });
         }
     }
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+const full_cross_check = @import("ownership_options").full_cross_check;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }

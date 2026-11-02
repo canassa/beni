@@ -200,8 +200,12 @@ pub const Table = struct {
     mark_r: CellId = .none,
     mark_d: CellId = .none,
     mark_a: CellId = .none,
+    /// `keysOverlap` by key set: the steps the test takes, shifted left
+    /// once, and whether the keys overlap in the low bit.
+    overlap_memo: Ids.FixedDict(1) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.overlap_memo.deinit(gpa);
         t.cells.deinit(gpa);
         t.intern.deinit(gpa);
         t.labels.deinit(gpa);
@@ -590,6 +594,104 @@ pub const Table = struct {
         return .yes;
     }
 
+    /// §2.9 rule 4 (a′) (#1485): whether two of `keys` overlap, the relation
+    /// `alias` computes on their canonical paths, decided for the whole set
+    /// at once. `keys` is a group's key set: plain symbolic cells, none `⊤`
+    /// and none a refinement. Their paths go in a trie, which is the path
+    /// table's own nodes, keyed by `(index, c, path)`. The keys overlap when
+    /// a key's node is another key's ancestor, or a trie node has a `⟲` child
+    /// and another child whose place is on that `⟲`'s cycle (`sameCycle`, as
+    /// `pathsMayAlias` reads the two children below the deepest common node).
+    ///
+    /// Memoised by the key set, which is hash-consed and immutable, so the
+    /// answer is a function of the group alone and never of the order in
+    /// which groups are tested. Each call reserves the test's O(Σ |k|) steps,
+    /// found or not, so what a call costs never depends on which call built
+    /// the entry (§4.1). Under `runtime_safety` the verdict is checked against
+    /// `alias` on every pair, which shares nothing with the trie (C6).
+    pub fn keysOverlap(t: *Table, gpa: Allocator, charge: Charge, places: *const Places, keys: SetId) Error!bool {
+        const v = t.overlap_memo.get(.{keys.int()}) orelse v: {
+            // Computed before the entry is made, so a failure leaves none.
+            const r = try t.keysOverlapTrie(gpa, places, keys);
+            const w = r.cost << 1 | @intFromBool(r.overlap);
+            (try t.overlap_memo.getOrPut(gpa, .{keys.int()})).value_ptr.* = w;
+            break :v w;
+        };
+        try charge.reserve(gpa, .inspection, v >> 1);
+        const overlap = v & 1 != 0;
+        if (std.debug.runtime_safety) {
+            var pairwise = false;
+            var it = t.sets.iterate(keys);
+            outer: while (it.next()) |x| {
+                var jt = t.sets.iterate(keys);
+                while (jt.next()) |y| if (y.key > x.key and t.alias(places, .from(x.key), .from(y.key)) != .no) {
+                    pairwise = true;
+                    break :outer;
+                };
+            }
+            if (pairwise != overlap) std.debug.panic("ownership v2: rule 4's trie says {} where alias on the pairs says {} (§2.9 (a′), C6, #1485)", .{ overlap, pairwise });
+        }
+        return overlap;
+    }
+
+    fn keysOverlapTrie(t: *const Table, gpa: Allocator, places: *const Places, keys: SetId) Allocator.Error!struct { overlap: bool, cost: u32 } {
+        // A trie node `(origin, index, c, path)`: 1 a key ends there, 0 an
+        // inner node.
+        var nodes: Ids.FixedDict(4) = .{};
+        defer nodes.deinit(gpa);
+        // The trie's edges: the parent's node, then the child's path.
+        var edges: std.ArrayList([5]u32) = .empty;
+        defer edges.deinit(gpa);
+        var cost: u32 = 0;
+        var overlap = false;
+        var it = t.sets.iterate(keys);
+        while (it.next()) |e| {
+            const x = t.get(.from(e.key));
+            std.debug.assert(x.origin.isSymbolic() and x.origin != .top);
+            const o: u32 = @backingInt(x.origin);
+            var p: PathId = .from(x.b);
+            cost +|= places.pathDepth(p) + 1;
+            if (overlap) continue;
+            const first = try nodes.getOrPut(gpa, .{ o, x.a, x.c, p.int() });
+            // Another key's path runs through this one's: a prefix.
+            if (first.found_existing) {
+                overlap = true;
+                continue;
+            }
+            first.value_ptr.* = 1;
+            while (places.pathParent(p) != .none) {
+                const q = places.pathParent(p);
+                try edges.append(gpa, .{ o, x.a, x.c, q.int(), p.int() });
+                const up = try nodes.getOrPut(gpa, .{ o, x.a, x.c, q.int() });
+                if (up.found_existing) {
+                    // The rest above is in the trie already; a key there is a prefix.
+                    if (up.value_ptr.* == 1) overlap = true;
+                    break;
+                }
+                up.value_ptr.* = 0;
+                p = q;
+            }
+        }
+        if (!overlap) {
+            // Per trie node, the place of its `⟲` child (one: `Step.level` is
+            // one step), then every other child against it.
+            var level: Ids.FixedDict(4) = .{};
+            defer level.deinit(gpa);
+            for (edges.items) |d| if (places.pathStep(.from(d[4])).kind == .level) {
+                (try level.getOrPut(gpa, d[0..4].*)).value_ptr.* = places.pathPlace(.from(d[4])).int();
+            };
+            if (level.count() > 0) for (edges.items) |d| {
+                if (places.pathStep(.from(d[4])).kind == .level) continue;
+                const lp = level.get(d[0..4].*) orelse continue;
+                if (places.sameCycle(.from(lp), places.pathPlace(.from(d[4])))) {
+                    overlap = true;
+                    break;
+                }
+            };
+        }
+        return .{ .overlap = overlap, .cost = cost };
+    }
+
     /// Of two cells over one base, the first cells below their chains'
     /// deepest common cell, found by climbing both to one depth, then
     /// together (§2.2); null when one chain is a prefix of the other.
@@ -720,24 +822,34 @@ pub const Table = struct {
         // source's patterns).
         var chain: std.ArrayList(CellId) = .empty;
         defer chain.deinit(gpa);
+        // Columns, not `get`: a whole cell gathers all ten of them, and this
+        // reads two (#1560). `symbolic` below appends, so the down walk
+        // slices again per step.
         var at = c;
-        while (t.get(at).origin.isRefinement()) : (at = t.get(at).parent) try chain.append(gpa, at);
-        const root = t.get(at);
-        var inner: CellId = if (root.origin.isSymbolic() and root.origin != .top) at else return null;
+        {
+            const s = t.cells.slice();
+            const origins = s.items(.origin);
+            const parents = s.items(.parent);
+            while (origins[at.int()].isRefinement()) : (at = parents[at.int()]) try chain.append(gpa, at);
+            if (!(origins[at.int()].isSymbolic() and origins[at.int()] != .top)) return null;
+        }
+        var inner: CellId = at;
         while (chain.pop()) |r| {
-            const x = t.get(r);
-            const y = t.get(inner);
-            const step: ?Place.Step = switch (x.origin) {
-                .elem, .others => if (t.splitsPositions(r)) null else Place.Step.elem,
-                .below => Place.Step.fromWord(x.c),
-                .part => places.pathStep(.from(x.c)),
+            const s = t.cells.slice();
+            const xo = s.items(.origin)[r.int()];
+            const xc = s.items(.c)[r.int()];
+            const step: ?Place.Step = switch (xo) {
+                .elem, .others => if (xc & positions_bit != 0) null else Place.Step.elem,
+                .below => Place.Step.fromWord(xc),
+                .part => places.pathStep(.from(xc)),
                 .level => null,
                 .loan => continue,
                 else => unreachable,
             };
-            const s = step orelse continue;
-            const path = (try places.extend(gpa, .growth(account), .from(y.b), s)) orelse return null;
-            inner = try t.symbolic(gpa, account, places, y.origin, y.a, path, y.c);
+            const st = step orelse continue;
+            const i = inner.int();
+            const path = (try places.extend(gpa, .growth(account), .from(s.items(.b)[i]), st)) orelse return null;
+            inner = try t.symbolic(gpa, account, places, s.items(.origin)[i], s.items(.a)[i], path, s.items(.c)[i]);
         }
         return inner;
     }
@@ -1629,7 +1741,8 @@ test "a split of a rest's positions is another side of the rest's split, at the 
 /// Recursive types whose cycle passes through another place: 0 `type Rose =
 /// Rose (List Rose)` (1 its `List Rose`); 2 `type T = T (Maybe T) (List
 /// Int)` (3 `Maybe T`, 4 `List Int`); 5 `type A = A B | Leaf Int`, 6 `type B
-/// = B (List A)` (7 `List A`); 8 `Int`.
+/// = B (List A)` (7 `List A`); 8 `Int`; 9 `type Tree = Node Tree (List Int)
+/// Tree | Leaf` (10 its `List Int`).
 const CycleGraph = struct {
     table: *Place.Table,
     account: *Ids.Account,
@@ -1678,6 +1791,16 @@ const CycleGraph = struct {
                 return .{ .kind = .list, .head = 200 };
             },
             8 => return .{ .kind = .cross },
+            9 => {
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 0), .@"var" = 9 });
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 1), .@"var" = 10 });
+                try out.append(g.gpa, .{ .step = step.ctor(g, 0, 2), .@"var" = 9 });
+                return .{ .kind = .ctor, .head = 900 };
+            },
+            10 => {
+                try out.append(g.gpa, .{ .step = Place.Step.elem, .@"var" = 8 });
+                return .{ .kind = .list, .head = 200 };
+            },
             else => unreachable,
         }
     }
@@ -1750,6 +1873,92 @@ test "⟲ matches a step onto its cycle: Rose, Maybe T and mutual recursion" {
     try testing.expectEqual(Alias.no, cells.alias(&places, a_leaf, b));
 }
 
+test "rule 4 (a′): the trie finds two keys that overlap, by prefix or through ⟲, as alias does" {
+    // §2.9 rule 4 (a′), near-miss rows 18 and 19 (#1485), over `type Tree =
+    // Node Tree (List Int) Tree | Leaf`. The memo is keyed by the key set,
+    // so the order in which groups are tested never changes an answer.
+    const gpa = testing.allocator;
+    var places: Place.Table = .{};
+    defer places.deinit(gpa);
+    var cells: Table = .{};
+    defer cells.deinit(gpa);
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    var g: CycleGraph = .{ .table = &places, .account = &account, .gpa = gpa };
+    const source: Place.Source = .{ .ctx = &g, .describe = CycleGraph.describe };
+    const tree = try places.of(gpa, &account, source, 9);
+    const n0 = try places.ctorStep(gpa, &account, 0, 0);
+    const n1 = try places.ctorStep(gpa, &account, 0, 1);
+    const n2 = try places.ctorStep(gpa, &account, 0, 2);
+    const lv = Place.Step.level;
+    const Ctx = struct {
+        places: *Place.Table,
+        cells: *Table,
+        account: *Ids.Account,
+        fn key(c: @This(), i: u32, root: Place.PlaceId, steps: []const Place.Step) !CellId {
+            var at = try c.places.rootPath(testing.allocator, root);
+            for (steps) |s| at = (try c.places.extend(testing.allocator, .growth(c.account), at, s)).?;
+            return c.cells.symbolic(testing.allocator, c.account, c.places, .param, i, at, 0);
+        }
+        fn set(c: @This(), ks: []const CellId) !SetId {
+            var s: SetId = .none;
+            for (ks) |k| s = try c.cells.sets.insert(testing.allocator, .growth(c.account), s, k.int(), 0);
+            return s;
+        }
+        fn overlap(c: @This(), ks: []const CellId) !bool {
+            return c.cells.keysOverlap(testing.allocator, .growth(c.account), c.places, try c.set(ks));
+        }
+    };
+    const cx: Ctx = .{ .places = &places, .cells = &cells, .account = &account };
+    // Row 18: `π1#Node.0#Node.1` lies on the cycle of the root join's `⟲`.
+    const a = try cx.key(0, tree, &.{ n0, n1 });
+    const b = try cx.key(0, tree, &.{ lv, n1 });
+    try testing.expectEqual(Alias.yes, cells.alias(&places, a, b));
+    try testing.expect(try cx.overlap(&.{ a, b }));
+    // `same`'s five keys are alias-apart.
+    const same = [_]CellId{
+        a,
+        try cx.key(0, tree, &.{ n0, n0, n1 }),
+        try cx.key(0, tree, &.{n1}),
+        try cx.key(0, tree, &.{ n2, n1 }),
+        try cx.key(0, tree, &.{ n2, n2, n1 }),
+    };
+    try testing.expectEqual(Place.StepKind.level, places.pathStep(places.pathParent(.from(cells.get(same[1]).b))).kind);
+    try testing.expect(!try cx.overlap(&same));
+    // A prefix overlaps; a `⟲` beside a step off its cycle does not.
+    try testing.expect(try cx.overlap(&.{ try cx.key(0, tree, &.{n0}), a }));
+    try testing.expect(!try cx.overlap(&.{ try cx.key(0, tree, &.{ n0, n0 }), a }));
+    try testing.expect(try cx.overlap(&.{ try cx.key(0, tree, &.{ n0, n0 }), try cx.key(0, tree, &.{ n0, n2, n1 }) }));
+    // Row 19: `π1`'s group is apart and `π2`'s overlaps, in either order,
+    // though both groups have the root as their prefix.
+    const p1 = [_]CellId{ try cx.key(0, tree, &.{n1}), a };
+    const p2 = [_]CellId{ try cx.key(1, tree, &.{ n0, n1 }), try cx.key(1, tree, &.{ lv, n1 }) };
+    for (0..2) |order| {
+        var fresh: Table = .{};
+        defer fresh.deinit(gpa);
+        const fx: Ctx = .{ .places = &places, .cells = &fresh, .account = &account };
+        const q1 = [_]CellId{ try fx.key(0, tree, &.{n1}), try fx.key(0, tree, &.{ n0, n1 }) };
+        const q2 = [_]CellId{ try fx.key(1, tree, &.{ n0, n1 }), try fx.key(1, tree, &.{ lv, n1 }) };
+        if (order == 0) {
+            try testing.expect(!try fx.overlap(&q1));
+            try testing.expect(try fx.overlap(&q2));
+        } else {
+            try testing.expect(try fx.overlap(&q2));
+            try testing.expect(!try fx.overlap(&q1));
+        }
+        // A second ask is the memo's, and charged as the first.
+        const before = account.total();
+        try testing.expect(try fx.overlap(&q2));
+        const once = account.total() - before;
+        const again = account.total();
+        try testing.expect(try fx.overlap(&q2));
+        try testing.expectEqual(once, account.total() - again);
+    }
+    try testing.expect(!try cx.overlap(&p1));
+    try testing.expect(try cx.overlap(&p2));
+    // Keys of two parameters never overlap one another.
+    try testing.expect(!try cx.overlap(&.{ p1[1], p2[0] }));
+}
 test "intersection is the common keys, approximate when either is, and skips what one side has no prefix for" {
     var r: Radix = .{};
     defer r.deinit(testing.allocator);

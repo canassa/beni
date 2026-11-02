@@ -175,6 +175,12 @@ pub const Frame = struct {
     /// The write routes that stopped at a parameter's leaf, and the calls
     /// they are of (§2.11 item 3, #1412): expanded after the walk.
     groups: std.ArrayList(Group) = .empty,
+    /// `otherPaths`' certified views while it runs (§2.11 item 3 (d), #1485):
+    /// a `TransferBeside.Cert`.
+    cert: ?*anyopaque = null,
+    /// `TransferBeside.foldedView`'s answers by template root, for the
+    /// walk: 1 a knot, 0 none. Shape nodes are immutable.
+    knots: Ids.FixedDict(1) = .{},
     group_steps: std.ArrayList(Step) = .empty,
     call_snaps: std.ArrayList(CallSnap) = .empty,
     call_args: std.ArrayList(Inst.Index) = .empty,
@@ -191,6 +197,7 @@ pub const Frame = struct {
         gpa.free(f.matches);
         gpa.free(f.binds);
         gpa.free(f.binding);
+        f.knots.deinit(gpa);
         f.uses.deinit(gpa);
         f.use_tokens.deinit(gpa);
         f.param_reads.deinit(gpa);
@@ -247,6 +254,7 @@ pub const Frame = struct {
     pub const spineOf = beside_part.spineOf;
     pub const pushOff = beside_part.pushOff;
     pub const holdsCanonical = beside_part.holdsCanonical;
+    pub const holdsCanonicalIn = beside_part.holdsCanonicalIn;
     pub const pathBelow = beside_part.pathBelow;
     pub const keepAnswered = beside_part.keepAnswered;
     pub const keepBeside = beside_part.keepBeside;
@@ -260,6 +268,20 @@ pub const Frame = struct {
     pub const positionsAt = beside_part.positionsAt;
     pub const summaryPath = beside_part.summaryPath;
     pub const along = beside_part.along;
+    pub const certStep = beside_part.certStep;
+    pub const foldedView = beside_part.foldedView;
+    pub const foldOcc = beside_part.foldOcc;
+    pub const foldTag = beside_part.foldTag;
+    pub const approxAll = beside_part.approxAll;
+    pub const certKid = beside_part.certKid;
+    pub const certKidsAll = beside_part.certKidsAll;
+    pub const certKidsOff = beside_part.certKidsOff;
+    pub const certDetect = beside_part.certDetect;
+    pub const certCells = beside_part.certCells;
+    pub const certReach = beside_part.certReach;
+    pub const certEdgeCheck = beside_part.certEdgeCheck;
+    pub const certReadNode = beside_part.certReadNode;
+    pub const assertCertifiedDrop = beside_part.assertCertifiedDrop;
     pub const BesideItem = beside_part.Item;
     pub const BesidePush = beside_part.Push;
     pub const BesideWritten = beside_part.Written;

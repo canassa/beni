@@ -14082,7 +14082,11 @@ pub const Lowerer = struct {
                 const decl = l.bir.decls[d.lhs];
                 if (decl.kind != .value or decl.params != 2 or decl.body.unwrap() == null) return false;
                 if (Convention.ofDecl(l.in.dispatch, l.bir, d.lhs).evidence != 0) return false;
-                if (l.in.dispatch.effectDecl(d.lhs).twin) return false;
+                const effect = l.in.dispatch.effectDecl(d.lhs);
+                if (l.suspendsHere(effect.own)) return false;
+                // A direct update may have a twin only for closures it returns.
+                // Inline it only while both caller and selected update are direct.
+                if (effect.twin and (l.variant != .direct or l.suspendsHere(l.in.dispatch.effectAt(f).body))) return false;
                 return l.paramsOf(d.lhs).len == 2 and (!share or l.updateArmShape(l.paramsOf(d.lhs), l.bodyOf(d.lhs)));
             },
             else => return false,

@@ -305,8 +305,15 @@ pub const Table = struct {
     nested: std.ArrayList(ClassId) = .empty,
     onces: std.ArrayList(PathId) = .empty,
     backs: std.MultiArrayList(Back) = .empty,
+    /// The classes whose fold certificates the induction proved (§8 slice
+    /// 4, *The fold certificate, specified*, #1485): a settled recursive
+    /// group's classes, each folded class of its `res` certified at its key
+    /// with its cells there as the arrival keys and its κ there as the
+    /// condition. A view of one is a hypothesis node for every reader.
+    certs: std.ArrayList(bool) = .empty,
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.certs.deinit(gpa);
         t.classes.deinit(gpa);
         t.uses.deinit(gpa);
         t.funs.deinit(gpa);
@@ -316,6 +323,15 @@ pub const Table = struct {
         t.nested.deinit(gpa);
         t.onces.deinit(gpa);
         t.backs.deinit(gpa);
+    }
+
+    pub fn certified(t: *const Table, c: ClassId) bool {
+        return c != .none and c.int() < t.certs.items.len and t.certs.items[c.int()];
+    }
+
+    pub fn certify(t: *Table, gpa: Allocator, c: ClassId) Allocator.Error!void {
+        if (t.certs.items.len <= c.int()) try t.certs.appendNTimes(gpa, false, c.int() + 1 - t.certs.items.len);
+        t.certs.items[c.int()] = true;
     }
 
     pub fn count(t: *const Table) u32 {
@@ -779,7 +795,13 @@ pub const Table = struct {
         const both = try env.conds.kappaMerge(env.gpa, env.charge, ka, kb);
         const mj = env.conds.propagate(env.gpa, env.charge, env.view(), both, j, &.{ a, b }, &.{ ka, kb }, .alternatives, false, null);
         const mj_ok = try mj;
-        const w = try env.conds.widenValue(env.gpa, env.charge, env.view(), j, mj_ok);
+        // Each side is a class's `res`, a widened knot whose folded classes
+        // owe their own fold conditions: read by their cells, once per class,
+        // never as a cycle of the join's source (§8 slice 4, #1485).
+        env.conds.hyp_knots.clear();
+        defer env.conds.hyp_knots.clear();
+        for ([_]NodeId{ a, b }) |m| try env.conds.hyp_knots.put(env.gpa, m, {});
+        const w = try env.conds.widenValueOf(env.gpa, env.charge, env.view(), j, mj_ok, &.{ a, b }, &.{ ka, kb });
         return .{ .node = w.node, .kappas = w.kappas };
     }
 
@@ -883,7 +905,9 @@ pub const Table = struct {
             var kx = ks;
             if (acc.get(.{x.int()})) |c| kx = (try env.conds.kappaSet(gpa, env.charge, kx, x, .from(c))).ctx;
             kx = try carryTo(env, kx, post.items, x);
-            if (!try resLeq(env, x, kx, o, ko)) try kept.append(gpa, x);
+            if (!mutated("cert-drop-any") and !try resLeq(env, x, kx, o, ko)) {
+                try kept.append(gpa, x);
+            } else if (std.debug.runtime_safety) try assertDropKeeps(env, x, kx, o, ko);
         }
         if (kept.items.len == arms.items.len) return whole;
         if (kept.items.len == 0) return .{ .node = .none, .kappas = .none };
@@ -896,6 +920,28 @@ pub const Table = struct {
         return .{ .node = root, .kappas = k };
     }
 
+    /// C3 (§8 slice 4, *Lemmas*, #1485), `runtime_safety` only: an arm
+    /// `x` dropped under `o` keeps every fold certificate below it, read by
+    /// a reader the cover test does not share: every exact cell `x` reaches
+    /// is one `o` reaches, and `x`'s frontier read (`deep`) is no weaker
+    /// than `o`'s. A key's multiplicity is in that read (`lost`), so an arm
+    /// `[ x, x ]` is never dropped under `[ x ]`.
+    fn assertDropKeeps(env: Env, x: NodeId, kx: Kappas, o: NodeId, ko: Kappas) Error!void {
+        const gpa = env.gpa;
+        var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+        defer scratch.deinit(gpa);
+        const ch: Ids.Charge = .growth(&scratch);
+        const sets = &env.cells.sets;
+        const rx = try env.shapes.reach(gpa, &scratch, sets, x);
+        const ro = try env.shapes.reach(gpa, &scratch, sets, o);
+        var it = sets.iterate(rx);
+        while (it.next()) |e| if (e.value == 0 and sets.get(ro, e.key) == null and env.cells.origin(.from(e.key)) != .top)
+            std.debug.panic("ownership v2: a dropped arm reaches a cell its cover does not (C3, #1485)", .{});
+        const dx = try env.conds.deep(gpa, ch, env.view(), kx, x, false);
+        const d_o = try env.conds.deep(gpa, ch, env.view(), ko, o, false);
+        if (!try env.conds.leq(gpa, ch, dx, d_o))
+            std.debug.panic("ownership v2: a dropped arm reads weaker than its cover (C3, #1485)", .{});
+    }
     /// `dropCovered`'s transport: every entry kept where it is, and a joined
     /// DAG's entry also on the kept root's projection.
     const DropCarry = struct {
@@ -962,6 +1008,9 @@ pub const Table = struct {
         // `⊤call` is the top of the order: whatever another class supplies,
         // keeps or puts back (its write-backs included), `⊤call` may do.
         if (cb.origin == .unknown) return true;
+        // A certified class reads its knots by their certificates, where an
+        // uncertified one saturates: it is the stronger (§8 slice 4, #1485).
+        if (t.certified(b) and !t.certified(a)) return false;
         for (t.paramUses(a), t.paramUses(b)) |ua, ub| if (!try leqUse(env, ua, ub)) return false;
         if (!try env.shapes.leq(gpa, env.account(), env.places, env.cells, ca.res, cb.res)) return false;
         if (!try env.conds.kappaLeq(gpa, env.charge, env.view(), ca.kappas, ca.res, cb.kappas, cb.res, false)) return false;
@@ -1473,6 +1522,9 @@ pub const Table = struct {
             }
             groups.shrinkRetainingCapacity(kept);
             if (groups.items.len > 0) try parts.append(arena, try std.fmt.allocPrint(arena, "res {s}", .{try std.mem.join(arena, ", ", groups.items)}));
+            // The fold certificate (§8 slice 4, *Publication*, #1485): each
+            // `res` line of a certified class is its entry `K {keys} κ`.
+            if (p.t.certified(p.class_id)) try parts.append(arena, "cert");
             for (0..k.funs.len) |i| {
                 const f = p.t.fun(p.class_id, @intCast(i));
                 var buf: std.Io.Writer.Allocating = .init(arena);
@@ -2541,4 +2593,11 @@ test "a port join's cover test reads an arm with the join's entries carried to i
     const at = f.conds.kappaAlong(q3.kappas, elem);
     const k = try env.conds.kappaOf(gpa, env.charge, env.view(), at, (try f.shapes.proj(gpa, &f.account, &f.places, &f.cells, q3.node, Place.Step.elem)).?, true);
     try testing.expect(Cond.Table.fails(k));
+}
+
+const v2_mutation = @import("ownership_options").v2_mutation;
+
+/// A test-only mutation (`-Downership-v2-mutation`, which `gates` refuses).
+fn mutated(comptime which: []const u8) bool {
+    return std.mem.eql(u8, v2_mutation, which);
 }

@@ -1834,10 +1834,10 @@ test "ownership entry: Page.sandbox reports its row without the enforcement flag
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
 
-test "ownership everywhere: tuple DAG keeps every path without repeated comparisons" {
+test "ownership v2 everywhere: tuple DAG keeps every path without repeated comparisons" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const checked = try w.runWith(&.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
+    const checked = try w.runWith(&.{ "check", "--ownership=v2", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
 }
@@ -2159,4 +2159,23 @@ test "ownership: only List's eight writers are pub core functions that write a p
         }
     }
     try testing.expectEqual(@as(usize, 8), found);
+}
+
+test "explicit standalone ownership enforcement checks list sharing" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const path = "tests/corpus/check/good/StandaloneOwnershipFlag.beni";
+    const ordinary = try w.runWith(&.{ "check", "--no-cache", path }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), ordinary.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), ordinary.diagnostics);
+    const enforced = try w.runWith(&.{ "check", "--no-cache", "--ownership-everywhere", path }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), enforced.exit_code);
+    try testing.expectEqualStrings("", enforced.stdout);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .list_still_used,
+        .severity = .@"error",
+        .span = .{ .file = path, .start = .{ .line = 4, .col = 15 }, .end = .{ .line = 4, .col = 33 } },
+        .title = "LIST CHANGED WHILE STILL IN USE",
+        .message = "`List.push` changes `values` in place, but `values` is read again afterwards.\n\n4|    changed = List.push values 1\n                ^^^^^^^^^^^^^^^^^^ the list is changed in place here\n5|    ( changed, values )\n                 ^^^^^^ and `values` is read here, after the change\n\nIf the list were changed in place, `values` would see the change when it is read\non line 5.\n\nTo change a copy and leave `values` as it was, copy it there:\n\n4|    changed = List.push (List.copy values) 1\n\nThis is sharing the checker can see: `values` is read on line 5, after the\nchange.",
+    }}, enforced.diagnostics);
 }

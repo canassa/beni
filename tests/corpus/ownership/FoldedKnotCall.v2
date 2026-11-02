@@ -1,0 +1,1 @@
+v2 reads a call's folded read of a certified view by its certificate (ownership-v2.md §8 slice 4, *Readers*, reader 2): one view is accepted where v1 refuses, and its verdicts are v2's own.

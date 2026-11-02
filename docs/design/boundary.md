@@ -792,6 +792,8 @@ refusing `main : Tea.Program` where `type alias Program = Browser.Program` prote
 included — `type alias Same a = a` with `main : Same Node.Program` is a program — and compares the
 nominal type it arrives at with the manifest's `program`; `main_not_program` still names the type
 as it was written. Until then the annotation was compared by name, as written.
+A same-named application type is not the platform's Program; `main_not_program`
+names the package mismatch and asks the author to rename the shadowing local module.
 
 **An absence has no token, so `missing_main` underlines nothing** (2026-09-19). It
 is reported against a FILE at `1:1` with no excerpt, the form

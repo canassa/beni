@@ -647,10 +647,12 @@ const Write = struct {
     groups: []const u32,
     what: union(enum) {
         text: []const Part,
-        /// `key` null: the control's `value`. `attribute`: its name as the
+        /// `key` null without `attribute_only`: the control's `value`.
+        /// `attribute_only` writes a scalar String class via native attributes,
+        /// including empty strings. `attribute`: its name as the
         /// markup writes it, and `boolean`, whether its value is a `Bool`:
         /// what the string form writes it as (`prerender.md` §4.1).
-        prop: struct { value: m.Value.Index, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false },
+        prop: struct { value: m.Value.Index, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false, attribute_only: bool = false },
         /// Hidden while the branch at `node` takes another arm than `shown`.
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
@@ -1242,10 +1244,12 @@ const Page = struct {
         }
         const name = tree.string(it.name);
         var stateful = false;
+        var attribute_only = false;
         var property: ?[]const u8 = null;
         if (it.attribute != .none) {
             const f = tree.attributeFacts(it.attribute);
-            if (f.raw or f.classes or f.styles) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
+            attribute_only = f.classes and it.class == .string;
+            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
             if (f.property) |prop| property = tree.string(prop);
             stateful = f.stateful;
         }
@@ -1290,13 +1294,13 @@ const Page = struct {
         };
         // A boolean attribute whose DOM property has its name, or a
         // property: written through it (§8.2).
-        const key: ?[]const u8 = if (property) |prop|
+        const key: ?[]const u8 = if (attribute_only) null else if (property) |prop|
             (if (std.mem.eql(u8, prop, "value")) null else prop)
         else if (it.class == .bool and isBoolProperty(name))
             name
         else
             return later(cx, n, "an attribute that is not a DOM property and whose value changes");
-        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = v, .key = key, .attribute = name, .boolean = it.class == .bool } }, .stateful = stateful });
+        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = v, .key = key, .attribute = name, .boolean = it.class == .bool, .attribute_only = attribute_only } }, .stateful = stateful });
         return null;
     }
 
@@ -2820,6 +2824,23 @@ const Page = struct {
         }
     };
 
+    /// A scalar String class is an HTML attribute. Keep its binding compare
+    /// and evaluate
+    /// its target and desired value exactly once, including effectful helpers.
+    fn writeStringAttribute(pg: *Page, blk: m.Block, target: m.Expr, attribute: []const u8, value: m.Expr) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const node = try cx.fresh("attributeNode");
+        const desired = try cx.fresh("attributeValue");
+        try js.constant(blk, node, target);
+        try js.constant(blk, desired, value);
+        const current = try js.call(try js.member(try js.name(node), "getAttribute"), &.{try js.string(attribute)});
+        const changed = try js.binary(.strict_ne, current, try js.name(desired));
+        const write = try js.block();
+        try js.expression(write, try js.call(try js.member(try js.name(node), "setAttribute"), &.{ try js.string(attribute), try js.name(desired) }));
+        try js.@"if"(blk, changed, write, null);
+    }
+
     fn writePrepared(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
@@ -2867,7 +2888,9 @@ const Page = struct {
                     }
                 },
                 .text => try js.expression(into, try js.call(try js.name(try cx.runtime("text")), &.{ node, ready.value })),
-                .prop => |x| if (x.key) |key| {
+                .prop => |x| if (x.attribute_only) {
+                    try pg.writeStringAttribute(into, node, x.attribute, ready.value);
+                } else if (x.key) |key| {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value, try js.string(key) }));
                 } else {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
@@ -2965,7 +2988,9 @@ const Page = struct {
                     },
                     .prop => |x| {
                         const value = try cx.value(x.value);
-                        if (x.key) |key| {
+                        if (x.attribute_only) {
+                            try pg.writeStringAttribute(blk, node, x.attribute, value);
+                        } else if (x.key) |key| {
                             try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value, try js.string(key) }));
                         } else try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value }));
                     },
@@ -3430,9 +3455,9 @@ const Render = struct {
             at = d.at;
             const x = pg.writes.items[d.write].what.prop;
             const v = try r.value(blk, c, d.write);
-            if (x.key == null and std.mem.eql(u8, n.name, "textarea")) {
+            if (!x.attribute_only and x.key == null and std.mem.eql(u8, n.name, "textarea")) {
                 content = v;
-            } else if (x.key == null and std.mem.eql(u8, n.name, "select")) {
+            } else if (!x.attribute_only and x.key == null and std.mem.eql(u8, n.name, "select")) {
                 chosen = v;
             } else if (x.boolean) {
                 // A boolean attribute: present when true.

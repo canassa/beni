@@ -80,6 +80,7 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
     .{ .name = "scenario/CK-314", .step = .fast },
+    .{ .name = "scenario/CK-316", .step = .fast },
 };
 
 const Step = enum { fast, perf };
@@ -394,6 +395,23 @@ test "scenario/CK-314: a call's own cost is flat in its argument's width" {
         .signature = "grows",
         .detail = try std.fmt.allocPrint(a, "w=25: {d} records; w=100: {d}", .{ cost[0], cost[1] }),
     });
+}
+
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ CK-316: v1's summary limit on a write-free tuple DAG (#856)             │
+// └─────────────────────────────────────────────────────────────────────────┘
+
+// `OwnershipAnnotationDag` has no list writes, yet v1 summarises its repeated
+// tuple paths as 1,276,786 entries, over the limit of 262,144, so an explicit
+// `--ownership-everywhere` refuses it with `ownership_limit` (#1509 made the
+// flag count without a platform chain). The claim: the default checker (v1)
+// checks it clean. v2 does, in 0.03 s (check_test.zig). Goes with v1.
+test "scenario/CK-316: v1 checks a write-free tuple DAG under --ownership-everywhere" {
+    var s = try Scenario.init("CK-316");
+    defer s.deinit();
+    const r = try s.w.runWith(&.{ "check", "--diagnostics=json", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 170_000 });
+    if (r.exit_code == 0) return s.finish(.{ .green = true, .signature = "", .detail = "" });
+    try s.finish(try s.failed(r));
 }
 
 /// `account <owner>: … continuation <n> of …` in a dump.

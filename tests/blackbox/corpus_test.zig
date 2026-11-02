@@ -2176,13 +2176,42 @@ const Case = struct {
     };
 
     fn ownershipRefuses(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8) !bool {
+        return (try c.ownershipRefusals(platform_arg, flags, sources)) != null;
+    }
+
+    /// The refusals of a build that only the ownership checker refuses, one
+    /// `line:col code writer` line each in the order printed (the writer is
+    /// the first word of the message); null when the build is accepted, or
+    /// fails for any other reason.
+    fn ownershipRefusals(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8) !?[]const u8 {
         var probe: std.ArrayList([]const u8) = .empty;
         try probe.appendSlice(c.arena, &.{ "build", platform_arg });
         try probe.appendSlice(c.arena, flags);
         try probe.appendSlice(c.arena, &.{ "--diagnostics=json", "--out=out-probe" });
         try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
         const tried = try c.inProject(probe.items);
-        return tried.exit_code == 1 and ownershipOnly(tried.stderr);
+        if (!(tried.exit_code == 1 and ownershipOnly(tried.stderr))) return null;
+        const diags = try std.json.parseFromSliceLeaky([]diagnostic.Diagnostic, c.arena, std.mem.trim(u8, tried.stderr, " \r\n"), .{});
+        var text: std.ArrayList(u8) = .empty;
+        for (diags) |d| {
+            const writer = d.message[0 .. std.mem.indexOfAny(u8, d.message, " \n") orelse d.message.len];
+            try text.print(c.arena, "{d}:{d} {t} {s}\n", .{ d.span.start.line, d.span.start.col, d.code, writer });
+        }
+        return text.items;
+    }
+
+    /// The lines of a `.sanitize-lists-v2-refuses` file that name a refusal
+    /// (`line:col code writer`); a line that starts with `#` is the reason.
+    fn expectedRefusals(c: Case, ext: []const u8) ![]const u8 {
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(ext), c.arena, .limited(1 << 20));
+        var out: std.ArrayList(u8) = .empty;
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |raw| {
+            const line = std.mem.trim(u8, raw, " \r");
+            if (line.len == 0 or line[0] == '#') continue;
+            try out.print(c.arena, "{s}\n", .{line});
+        }
+        return out.items;
     }
 
     /// The list sanitiser's coverage, checked against the checker that
@@ -2581,7 +2610,13 @@ const Case = struct {
                 // the pass is done; accepted, the sanitised run is the evidence,
                 // and the case fails whatever it prints.
                 const refuses = c.goldenExists(lp.refuses);
-                if (refuses and try c.ownershipRefuses(platform_arg, lp.flags, sources)) break :lists;
+                if (refuses) if (try c.ownershipRefusals(platform_arg, lp.flags, sources)) |got| {
+                    const want = try c.expectedRefusals(lp.refuses);
+                    if (std.mem.eql(u8, got, want)) break :lists;
+                    detail("{s}: {s} refuses, but not what {s} names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, lp.checker, lp.refuses, want, got });
+                    because("[{s}] {s} refuses other writes than {s} names", .{ lp.out, lp.checker, lp.refuses });
+                    return error.SanitisedRefusalDiffers;
+                };
                 if (c.cfg.in_place == lp.mode and !c.goldenExists(lp.golden)) {
                     if (try c.ownershipRefuses(platform_arg, lp.flags, sources)) break :lists;
                 }

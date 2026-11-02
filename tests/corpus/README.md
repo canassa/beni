@@ -292,6 +292,14 @@ must refuse it under the pass's flags, and when it accepts the program instead
 the sanitised build is run anyway and the case fails, its trap or its other
 output the evidence.
 
+The `-refuses` file names the refusal it expects. A line that starts with `#`
+is the reason. Every other line is one refusal, `line:col code writer`: the
+position of its diagnostic, the ownership code, and the first word of its
+message, which is the writer (`List.push`, or the function that writes). The
+build's refusals, in the order it prints them, must equal those lines exactly,
+so a refusal of another write, or of one more write, fails the case even when
+the named write is accepted.
+
 Both files hold their reason, are written by hand and never blessed, and their
 passes' run hashes are the fixture's. `BENI_IN_PLACE=all` (`zig build
 test-records-in-place`) gives every `run/` fixture and every

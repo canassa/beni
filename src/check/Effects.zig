@@ -1448,15 +1448,10 @@ pub const Publication = struct {
     decl: u32,
 };
 
-/// Whether `decl`'s summary says anything a block would carry: some class
-/// with a rung, a dependency (a dependant needs one to depend on it) or a
-/// demand (§15.5).
-/// Most schemes do not, and their block is `no_terms` at no cost.
+/// Whether a scheme has classes to inspect for publication. A pure class can
+/// still join distinct scheme variables, so its sites must be checked too.
 pub fn publishes(e: *const Effects, decl: u32) bool {
-    for (e.solved.classesOf(decl)) |c| {
-        if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive) return true;
-    }
-    return false;
+    return e.solved.classesOf(decl).len != 0;
 }
 
 /// The block of `decl`'s scheme, appended to the record's `extra`: in

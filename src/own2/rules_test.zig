@@ -46,7 +46,8 @@ const layers = [_]Entry{
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
     // 1 200 since #1253: a refinement's parts at each level path.
     // 1 240 since #1473: `listSide` and `positionsApart` (§2.9 *Two positions of one image*).
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1290 },
+    // 1 390 since #1485: `keysOverlap`, rule 4's overlap trie (§2.9 rule 4 (a′)).
+    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1390 },
     // §5 says 350 since S3a: the report's text line and its two spellings.
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     // 4e: stable images, below the shape table it is given as `anytype`.
@@ -60,7 +61,9 @@ const layers = [_]Entry{
     // reach leaves out its own cells, checked under runtime safety (§2.3).
     // 3 990 since 4e: `map`'s trail and its knot's move (§2.3, stable images).
     // 4 025 since #1483: the atom rule, `isAtom` and `settle` (§2.3).
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4025 },
+    // 4 075 since #1485 part 2: C1, the saturation check.
+    // 4 100 since #1570: `interned` and `rawCopy`, a block's class kept raw.
+    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4100 },
     // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
     // text, split out of Cond (§5).
     .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
@@ -75,7 +78,11 @@ const layers = [_]Entry{
     // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
     // 2 730 since #1473, on top of #1420: §2.9 *Two positions of one image* in `apartImage` and `sep`, and the
     // repeating split (`repeatingSplit`, `exclOf`, #1478).
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 2730 },
+    // 2 980 since #1485: the fold certificate's readers, rule 4 and (d);
+    // 3 020 for its part 2: a certificate's class κ read at a position (`ClassPos`).
+    // 3 180 since #1559: rule 4 across the classes of one certificate
+    // (`ruleFourAgg`, `certClassesAggs`) and its check, `assertClassesSum`.
+    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 3180 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
@@ -84,7 +91,9 @@ const layers = [_]Entry{
     .{ .file = "Joins.zig", .layer = 5, .max_lines = 230 },
     // #1543: `propagate` by §2.9 *Fold first* (the state graph, the cycle
     // bit, positions by their set of states) and its reference, out of Cond.
-    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1280 },
+    // 1 350 since #1485: a widened knot's union sides keyed at a fold
+    // (`keySides`, `unionSides`).
+    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1350 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
@@ -112,13 +121,15 @@ const layers = [_]Entry{
     // and its cross-check (§2.3, stable images).
     // 1 300 since #1526: `propagate`'s order check (§2.9).
     // 830 since #1543: `propagate` moved to `Propagate.zig` (§2.9 *Fold first*).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 830 },
+    // 975 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Cond.zig", .layer = 6, .max_lines = 975 },
     // §5 says 1 500 since the write-back effects: the normal-form encoder, the
     // κ-owning join, v1's print grammar and the funs' write-backs.
     // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
     // from Rows), which a group's port joins every round.
     // 1 860 since 4d: a class join drops what the other side covers.
-    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1925 },
+    // 1 980 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1980 },
     .{ .file = "Rows.zig", .layer = 8, .max_lines = 1200 },
     // §5 says 1 900 since #1214: the holder index, below Demands, which reads
     // it; with the frame types, the naive scan and the fallback hold listing.
@@ -135,7 +146,8 @@ const layers = [_]Entry{
     // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
     // route's stop at a parameter's leaf. 1 830 since #1439: the keys a
     // `Beside` spine's children are listed under (`keysOf`).
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2080 },
+    // 2 450 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2450 },
     // 260 since #1457: the frame's accessors, value helpers and uses, split
     // out of Transfer (§5).
     .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
@@ -144,7 +156,12 @@ const layers = [_]Entry{
     // walk as a graph of items and reads, its runs in `TransferArms`.
     // 1 240 since #1492: a written position's own contents below it
     // (`ownContents`, `without`).
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1240 },
+    // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
+    // 1 600 since #1485 part 2: C7, the drop and the tag checks; 1 700 with
+    // part B's `Canon` and switch beside them.
+    // 1 800 since #1485 part 3: (d3) below a leaf, and a knot's view
+    // compared by cells marked approximate (`foldedView`, `foldOcc`).
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1800 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.
@@ -174,7 +191,8 @@ const layers = [_]Entry{
     // 640 since #1457: the seven-file split (§5) leaves
     // here the frame's fields, the bindings of the six parts' methods, the
     // preliminary passes and the walk.
-    .{ .file = "Transfer.zig", .layer = 11, .max_lines = 640 },
+    // 660 since #1485: the fold certificate's readers, rule 4 and (d).
+    .{ .file = "Transfer.zig", .layer = 11, .max_lines = 660 },
     .{ .file = "Walk.zig", .layer = 12, .max_lines = 1500 },
     // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
     // calls of walked declarations; 1 330 since slice 3: imported classes,
@@ -194,9 +212,12 @@ const layers = [_]Entry{
     // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
     // wake rule. 2 205 since #1543: `--ownership-propagate`'s plumbing.
     // 2 220 since #1566: a block read's re-interning memo, read outside the
-    // call's lane. 2 260 since #1582: `--ownership-rewalk-check` walks each
-    // member again at the fixpoint and compares the read-off.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2260 },
+    // call's lane.
+    // 2 270 since #1485: the fold certificate's readers, rule 4 and (d).
+    // 2 310 since #1485 part 2: C5, the induction walked again.
+    // 2 350 since #1582: `--ownership-rewalk-check` walks each member
+    // again at the fixpoint and compares the read-off.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2350 },
     .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
     // §5 says 500 since #1065: exact ranks, the counted refinement grouped
     // by threaded lists, its labelled graph and the reserving meter.
@@ -216,7 +237,8 @@ const layers = [_]Entry{
     // a forward name only on a cycle, and the safety check of each reach.
     // 1 280 since #1399: a projection decoded with its DAG's sides the other
     // way round is the reader's projection (`sameDag`).
-    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1300 },
+    // 1 320 since #1485 part 2: the certified mark and a fold obligation.
+    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1320 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
     // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
     .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },

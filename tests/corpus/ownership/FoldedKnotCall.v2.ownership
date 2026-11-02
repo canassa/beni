@@ -1,0 +1,48 @@
+module FoldedKnotCall
+  19:19 FoldedKnotCall.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  19:19 FoldedKnotCall.incAll l#Node.2#Node.1: accepted param
+  19:19 FoldedKnotCall.incAll l#Node.1: accepted param
+  19:19 FoldedKnotCall.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  19:19 FoldedKnotCall.incAll l#Node.0#Node.1: accepted param
+  19:30 List.push xs: accepted param
+  19:47 FoldedKnotCall.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  19:47 FoldedKnotCall.incAll r#Node.2#Node.1: accepted param
+  19:47 FoldedKnotCall.incAll r#Node.1: accepted param
+  19:47 FoldedKnotCall.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  19:47 FoldedKnotCall.incAll r#Node.0#Node.1: accepted param
+  29:19 FoldedKnotCall.incAll l#Node.2⟨Tree⟩#Node.1: accepted param
+  29:19 FoldedKnotCall.incAll l#Node.2#Node.1: accepted param
+  29:19 FoldedKnotCall.incAll l#Node.1: accepted param
+  29:19 FoldedKnotCall.incAll l#Node.0⟨Tree⟩#Node.1: accepted param
+  29:19 FoldedKnotCall.incAll l#Node.0#Node.1: accepted param
+  29:33 FoldedKnotCall.incAll r#Node.2⟨Tree⟩#Node.1: accepted param
+  29:33 FoldedKnotCall.incAll r#Node.2#Node.1: accepted param
+  29:33 FoldedKnotCall.incAll r#Node.1: accepted param
+  29:33 FoldedKnotCall.incAll r#Node.0⟨Tree⟩#Node.1: accepted param
+  29:33 FoldedKnotCall.incAll r#Node.0#Node.1: accepted param
+  76:13 FoldedKnotCall.incAll <call FoldedKnotCall.same>#Node.2⟨Tree⟩#Node.1: accepted param
+  76:13 FoldedKnotCall.incAll <call FoldedKnotCall.same>#Node.2#Node.1: accepted param
+  76:13 FoldedKnotCall.incAll <call FoldedKnotCall.same>#Node.1: accepted param
+  76:13 FoldedKnotCall.incAll <call FoldedKnotCall.same>#Node.0⟨Tree⟩#Node.1: accepted param
+  76:13 FoldedKnotCall.incAll <call FoldedKnotCall.same>#Node.0#Node.1: accepted param
+  80:14 FoldedKnotCall.incAll <call FoldedKnotCall.unroll>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  80:14 FoldedKnotCall.incAll <call FoldedKnotCall.unroll>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  80:14 FoldedKnotCall.incAll <call FoldedKnotCall.unroll>#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  80:14 FoldedKnotCall.incAll <call FoldedKnotCall.unroll>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  80:14 FoldedKnotCall.incAll <call FoldedKnotCall.unroll>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  84:13 FoldedKnotCall.incAll <call FoldedKnotCall.dupL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  84:13 FoldedKnotCall.incAll <call FoldedKnotCall.dupL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  84:13 FoldedKnotCall.incAll <call FoldedKnotCall.dupL>#Node.1: accepted param
+  88:15 FoldedKnotCall.incBelow <call FoldedKnotCall.same>#Node.2⟨Tree⟩#Node.1: accepted param
+  88:15 FoldedKnotCall.incBelow <call FoldedKnotCall.same>#Node.2#Node.1: accepted param
+  88:15 FoldedKnotCall.incBelow <call FoldedKnotCall.same>#Node.0⟨Tree⟩#Node.1: accepted param
+  88:15 FoldedKnotCall.incBelow <call FoldedKnotCall.same>#Node.0#Node.1: accepted param
+  92:19 FoldedKnotCall.incBelow <call FoldedKnotCall.unroll>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  92:19 FoldedKnotCall.incBelow <call FoldedKnotCall.unroll>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  92:19 FoldedKnotCall.incBelow <call FoldedKnotCall.unroll>#Node.0⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  92:19 FoldedKnotCall.incBelow <call FoldedKnotCall.unroll>#Node.0#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  96:18 FoldedKnotCall.incBelow <call FoldedKnotCall.dupL>#Node.2⟨Tree⟩#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  96:18 FoldedKnotCall.incBelow <call FoldedKnotCall.dupL>#Node.2#Node.1: rejected disjoint: another path of the same argument reaches it (approx)
+  demands 44: accepted 31 (fresh 0, call 0, param 31, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13
+total 44: accepted 31 (fresh 0, call 0, param 31, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13
+cause disjoint 13

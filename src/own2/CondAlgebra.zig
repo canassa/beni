@@ -453,7 +453,12 @@ pub fn Of(comptime Table: type) type {
             const r = try t.canonical(gpa, charge, try rs.resolve(rs.ctx, t, gpa, charge, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0));
             if (std.debug.runtime_safety) try t.assertResolved(gpa, charge, r);
             if (std.debug.runtime_safety and full_cross_check and !t.no_memo) {
-                // Resolved again, with no memo and no crossing (*Cross-check*).
+                // Resolved again, with no memo and no crossing (*Cross-check*), on an account and caches of its own (#1545).
+                var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+                defer scratch.deinit(gpa);
+                const ch: Charge = .growth(&scratch);
+                var caches = t.checkBegin(true);
+                defer t.checkEnd(gpa, &caches);
                 const saved = .{ t.no_cross, t.no_memo };
                 t.no_cross = true;
                 t.no_memo = true;
@@ -461,17 +466,34 @@ pub fn Of(comptime Table: type) type {
                     t.no_cross = saved[0];
                     t.no_memo = saved[1];
                 }
-                try t.expectSame(gpa, charge, r, try t.canonical(gpa, charge, try rs.resolve(rs.ctx, t, gpa, charge, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0)));
+                try t.expectSame(gpa, ch, r, try t.canonical(gpa, ch, try rs.resolve(rs.ctx, t, gpa, ch, d.a, d.b & ~inst_set_bit, d.b & inst_set_bit != 0)));
             }
             (try t.memo_resolved.getOrPut(gpa, .{a.int()})).value_ptr.* = r.int();
             return r;
         }
 
         /// A `runtime_safety` check at a resolving reader: `k` holds no `inst`.
+        /// It walks `k`'s `and` tree itself, charging nothing and writing no memo:
+        /// a check never changes what the reader it checks charges (#1545).
         pub fn assertResolved(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!void {
+            _ = charge;
             if (!std.debug.runtime_safety or k == yes or fails(k)) return;
-            var it = t.atoms.iterate(try t.flat(gpa, charge, k));
-            while (it.next()) |e| if (t.get(.from(e.key)).atom == .inst) std.debug.panic("ownership v2: an unresolved inst atom reached a reader that tests it", .{});
+            var seen: Ids.FixedDict(1) = .{};
+            defer seen.deinit(gpa);
+            var stack: std.ArrayList(CondId) = .empty;
+            defer stack.deinit(gpa);
+            try stack.append(gpa, k);
+            while (stack.pop()) |x| {
+                if (x == yes or (try seen.getOrPut(gpa, .{x.int()})).found_existing) continue;
+                const d = t.get(x);
+                if (d.kind == .atom) {
+                    if (d.atom == .inst) std.debug.panic("ownership v2: an unresolved inst atom reached a reader that tests it", .{});
+                    continue;
+                }
+                std.debug.assert(d.kind == .@"and");
+                try stack.append(gpa, .from(d.a));
+                try stack.append(gpa, .from(d.b));
+            }
         }
 
         // ---- at a call, and relying ----------------------------------------------

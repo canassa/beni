@@ -96,6 +96,8 @@ gpa: Allocator,
 io: Io,
 options: Options,
 store: SourceStore = .{},
+/// Core paths are queued once; resident runs reuse their numbered store rows.
+core_enumerated: bool = false,
 /// Per-file phase outputs, sized by `run` before the workers start.
 artifacts: Artifacts = .{},
 interner: InternPool.Global,
@@ -163,7 +165,7 @@ compare_keys: []Key.Key = &.{},
 /// bytes, and hashing that string 634 times would be 634 times too many.
 build_id_bytes: [16]u8 = @splat(0),
 /// Every diagnostic of the last run, in emission order after `run`.
-/// Messages are gpa-owned; file paths point into `store`.
+/// Messages are borrowed from workers; file paths point into `store`.
 diagnostics: std.ArrayList(diagnostic.Diagnostic) = .empty,
 /// Set for the duration of ONE `renderLate` call: the files a late
 /// diagnostic points at that the store does not hold, or must not be asked
@@ -197,7 +199,8 @@ pack: CorePack.Pack = .empty,
 /// that lowered the file, so the slots need no lock and their order is the
 /// file order whatever `--jobs` was.
 pack_frontend: []?[]u8 = &.{},
-/// `Options.ownership` on a chain that edits lists in place
+/// `Options.ownership` with `--ownership-everywhere`, records in place, or a chain
+/// that edits lists in place, the chain optional
 /// (`ownership-checker.md` §28.3): this run enforces.
 enforce_ownership: bool = false,
 /// Owned. Per module, the summary block its cache entry carries
@@ -628,9 +631,10 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     if (options.ownership_v2) session.options.cache = null;
     // Enforcement controls diagnostics. Summaries are computed on every
     // module's checking worker while its solved types are still alive.
-    if (options.ownership) if (options.chain) |c| {
-        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or c.inPlace();
-    };
+    if (options.ownership) {
+        session.enforce_ownership = options.ownership_everywhere or options.records_in_place or
+            (if (options.chain) |c| c.inPlace() else false);
+    }
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
@@ -697,6 +701,9 @@ pub const RunError = error{
 pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr: *Io.Writer) RunError!Summary {
     // Even an early input failure must not leave facts from an older store.
     session.entry_plan.reset();
+    // Drop borrowed messages before releasing the previous worker wave.
+    session.diagnostics.clearRetainingCapacity();
+    for (session.workers) |*worker| worker.truncateDiagnostics(session.gpa, 0);
     const gpa = session.gpa;
 
     // 1. Enumerate — serial, sorted, numbered.
@@ -1146,7 +1153,7 @@ fn readAppManifest(session: *Session) RunError!void {
 }
 
 fn enumerateCore(session: *Session) RunError!void {
-    if (!session.options.core_package) return;
+    if (!session.options.core_package or session.core_enumerated) return;
     const gpa = session.gpa;
     if (session.options.core_root) |dir| {
         session.store.addPath(gpa, session.io, dir, dir, .core) catch |err| switch (err) {
@@ -1156,6 +1163,7 @@ fn enumerateCore(session: *Session) RunError!void {
                 return error.InputPath;
             },
         };
+        session.core_enumerated = true;
         return;
     }
     var buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -1163,6 +1171,7 @@ fn enumerateCore(session: *Session) RunError!void {
         const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ core_package.dir, f.rel }) catch return error.OutOfMemory;
         try session.store.addEmbedded(gpa, p, core_package.dir.len + 1, .core, f.source);
     }
+    session.core_enumerated = true;
 }
 
 /// Whether `file` may write `equatable` (checker.md Appendix A): it is in

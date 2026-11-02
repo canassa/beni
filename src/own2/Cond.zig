@@ -123,6 +123,14 @@ pub const Table = struct {
     prop_runs: Ids.FixedDict(3) = .{},
     /// `propagate`'s calls, numbered (`--ownership-propagate`'s lines).
     prop_calls: u32 = 0,
+    /// Set while `widenValue` propagates (#1485): a union or choice that a
+    /// fold position keys also keys each of its built sides there that no
+    /// state keys, since widen made them and no member snapshot holds them
+    /// (§2.9 *Keyed where a reader looks*).
+    widen_sides: bool = false,
+    /// How many times `assertClassesSum` ran (C6 extended, #1559), in safety
+    /// builds: a unit test asserts that its cases reach the check.
+    classes_sum_checks: u32 = 0,
     /// `withoutImpliedJoins`' answers by `(key, condition, position)`: all
     /// three immutable, so never stale.
     memo_implied: Ids.FixedDict(3) = .{},
@@ -197,6 +205,19 @@ pub const Table = struct {
     /// Lazy conditions: the resolver, the `inst` atoms in creation order and
     /// how far they are resolved, and the resolutions by condition.
     resolver: ?Resolver = null,
+    /// The fold certificate's readers (§8 slice 4, #1485): which views are
+    /// hypothesis nodes, and §2.9 rule 4's instantiation of a certificate's
+    /// arrival keys at one (`Calls.Views`).
+    hyp: ?Hyp = null,
+    /// During a read-off (`Walk.resOf`): each node of the source that is the
+    /// image of a hypothesis node → that view, and the read-off's relabelling
+    /// of a cell (stable labels), which a key's images take.
+    hyp_nodes: stamped.Column(NodeId, NodeId) = .{},
+    hyp_image: ?HypImage = null,
+    /// The `res` nodes of classes a class join widens (`Summary.joinRes`):
+    /// each is a widened knot whose folded classes owe their own fold
+    /// conditions, read by its cells once per class (#1485).
+    hyp_knots: stamped.Column(NodeId, void) = .{},
     inst_queue: std.ArrayList(CondId) = .empty,
     inst_next: u32 = 0,
     memo_resolved: Ids.FixedDict(1) = .{},
@@ -263,6 +284,8 @@ pub const Table = struct {
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
         t.fold_cond.deinit(gpa);
+        t.hyp_nodes.deinit(gpa);
+        t.hyp_knots.deinit(gpa);
         t.classes_memo.deinit(gpa);
         t.classes_done.deinit(gpa);
         t.fold_of.deinit(gpa);
@@ -293,6 +316,39 @@ pub const Table = struct {
         t.memo_agg_pair.deinit(gpa);
     }
 
+    /// The table's pure caches: what a check walks on empty copies of, so
+    /// that it neither reads them nor leaves an entry a later reader would
+    /// take (#1545). Each is a function of its key.
+    const caches = .{ "flat_memo", "of_set", "memo_deep", "memo_sep", "memo_prop", "memo_implied", "lost_memo", "memo_dag", "memo_chain", "memo_merge", "memo_inner", "memo_crossed", "memo_eq", "memo_fold_below", "memo_map_union", "memo_diff", "memo_map_keys", "memo_nodes_part", "memo_per_cell", "memo_set_agg", "memo_resolved", "memo_resolved_root", "memo_inst_latest", "memo_cell_part", "memo_agg_pair" };
+    const counters = .{ "prop_calls", "classes_sum_checks", "crossed_reads", "crossed_redos", "inst_next" };
+
+    /// What `checkBegin` set aside: the counters as they were, and the
+    /// caches when the check walks on empty ones.
+    pub const CheckSaved = struct { t: Table, caches: bool };
+
+    /// A check's walk begins: its counters noted and, with `with_caches`,
+    /// the caches set aside for empty ones. Propagate's check keeps the
+    /// caches: walked cold at every call, the K tower's counted test ran
+    /// past its 120-second guard.
+    pub fn checkBegin(t: *Table, with_caches: bool) CheckSaved {
+        var s: CheckSaved = .{ .t = .{}, .caches = with_caches };
+        if (with_caches) inline for (caches) |f| std.mem.swap(@TypeOf(@field(t, f)), &@field(t, f), &@field(s.t, f));
+        inline for (counters) |f| @field(s.t, f) = @field(t, f);
+        s.t.prop_stats = t.prop_stats;
+        return s;
+    }
+
+    /// The check's walk ends: its caches dropped, the table's and its
+    /// counters put back.
+    pub fn checkEnd(t: *Table, gpa: Allocator, s: *CheckSaved) void {
+        if (s.caches) inline for (caches) |f| {
+            @field(t, f).deinit(gpa);
+            @field(t, f) = @field(s.t, f);
+        };
+        inline for (counters) |f| @field(t, f) = @field(s.t, f);
+        t.prop_stats = s.t.prop_stats;
+    }
+
     pub const count = algebra.count;
     pub const get = algebra.get;
     pub const kind = algebra.kind;
@@ -313,6 +369,10 @@ pub const Table = struct {
     pub const expectSame = algebra.expectSame;
     pub const canonical = algebra.canonical;
     pub const Resolver = algebra.Resolver;
+    pub const Hyp = KappaRead.Hyp;
+    pub const HypKey = KappaRead.HypKey;
+    pub const HypClass = KappaRead.HypClass;
+    pub const HypImage = struct { ctx: *anyopaque, image: *const fn (ctx: *anyopaque, c: CellId) Error!CellId, cond: ?*const fn (ctx: *anyopaque, k: CondId) Error!CondId = null };
     pub const instAtom = algebra.instAtom;
     pub const instSet = algebra.instSet;
     pub const inst_set_bit = algebra.inst_set_bit;
@@ -389,7 +449,7 @@ pub const Table = struct {
     pub const kappaOf = reads.kappaOf;
     pub const readAt = reads.readAt;
     pub const readAtRaw = reads.readAtRaw;
-    pub const crossCheckRead = reads.crossCheckRead;
+    pub const crossCheck = reads.crossCheck;
     pub const crossAt = reads.crossAt;
     pub const carried = reads.carried;
     pub const machine = reads.machine;
@@ -437,6 +497,23 @@ pub const Table = struct {
     pub const foldCondWalk = reads.foldCondWalk;
     pub const foldCond = reads.foldCond;
     const arrivalAggs = reads.arrivalAggs;
+    pub const hypEnv = reads.hypEnv;
+    pub const hypAggs = reads.hypAggs;
+    pub const certClassAgg = reads.certClassAgg;
+    pub const classKeys = reads.classKeys;
+    pub const ClassKey = reads.ClassKey;
+    pub const ruleFourAgg = reads.ruleFourAgg;
+    pub const ruleFourDropped = reads.ruleFourDropped;
+    pub const ruleFourCount = reads.ruleFourCount;
+    pub const CertItem = reads.CertItem;
+    pub const certClassesAggs = reads.certClassesAggs;
+    pub const assertClassesSum = reads.assertClassesSum;
+    pub const certRead = reads.certRead;
+    pub const ClassPos = reads.ClassPos;
+    pub const classPos = reads.classPos;
+    pub const classStep = reads.classStep;
+    pub const classCond = reads.classCond;
+    pub const sourceParts = reads.sourceParts;
     pub const ownAgg = reads.ownAgg;
     pub const aggChoice = reads.aggChoice;
     pub const classMerge = reads.classMerge;
@@ -444,7 +521,6 @@ pub const Table = struct {
     pub const sameBasePairs = reads.sameBasePairs;
     pub const deep = reads.deep;
     pub const deepRaw = reads.deepRaw;
-    pub const crossCheckDeep = reads.crossCheckDeep;
     pub const deepWalk = reads.deepWalk;
     pub const crossingsAt = reads.crossingsAt;
     pub const perCell = reads.perCell;
@@ -623,7 +699,20 @@ pub const Table = struct {
     /// through the fold) and distinct arrivals owe `apart`, while one value
     /// in either arm of a choice stays one (`propagate` conjoins them at
     /// the class, `fold_cond`). The widened node and its κ.
-    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!struct { node: NodeId, kappas: Kappas } {
+    pub const Widened = struct { node: NodeId, kappas: Kappas };
+
+    pub fn widenValue(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas) Error!Widened {
+        return t.widenValueOf(gpa, charge, v, x, kx, &.{x}, &.{kx});
+    }
+
+    /// `widenValue` of `x`, a join of `members` whose snapshot is `kx`: the
+    /// widened node's κ propagated from the members, each at its own
+    /// snapshot, not from `kx` (#1485). `kx` merges the members' snapshots,
+    /// and a member's knot (an exact fold) merged with another member's
+    /// position there is a collapsed fold, where every built node reads
+    /// `lost` (§2.9); `propagate` reads a join of its members, widened or
+    /// not, in lockstep with each.
+    pub fn widenValueOf(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, kx: Kappas, members: []const NodeId, member_ctxs: []const Kappas) Error!Widened {
         var fold: Shape.Table.Fold = .{};
         defer fold.deinit(gpa);
         const lo = v.shapes.count();
@@ -645,8 +734,24 @@ pub const Table = struct {
         const w: NodeId = if (redir.get(raw.int())) |to| .from(to) else raw;
         // One member: `propagate` keeps its entries at each position it walks
         // outside a fold (§2.9 *Keyed where a reader looks*).
-        const kappas = try t.propagate(gpa, charge, v, .none, w, &.{x}, &.{kx}, .alternatives, false, null);
-        if (std.debug.runtime_safety and redir.count() > 0 and !try t.moveIsBisimulation(gpa, v, raw, w, x, kx, &redir, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source }))
+        // The join's union sides are keyed at a fold too (`widen_sides`),
+        // in the propagate and in the move's check alike.
+        const saved = t.widen_sides;
+        t.widen_sides = true;
+        defer t.widen_sides = saved;
+        const kappas = try t.propagate(gpa, charge, v, .none, w, members, member_ctxs, .alternatives, false, null);
+        // O15 on the widened knot (#1485): every member's κ at its root is
+        // under the widened value's, so keying the knot's sides and reading
+        // the members apart drops no member's constraint.
+        if (std.debug.runtime_safety) {
+            var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
+            defer scratch.deinit(gpa);
+            const ch: Charge = .growth(&scratch);
+            const at_w = try t.kappaOf(gpa, ch, v, kappas, w, false);
+            for (members, member_ctxs) |m, c| if (!try t.leq(gpa, ch, try t.kappaOf(gpa, ch, v, c, m, false), at_w))
+                std.debug.panic("ownership v2: a widened knot's κ is not above its member's (O15, #1485)", .{});
+        }
+        if (std.debug.runtime_safety and redir.count() > 0 and !try t.moveIsBisimulation(gpa, v, raw, w, members, member_ctxs, &redir, .{ .ctx = &avoid, .word = Avoid.word, .avoid = Avoid.source }))
             std.debug.panic("ownership v2: a stable image's move is not a bisimulation of its raw image (§2.3, 4e)", .{});
         return .{ .node = w, .kappas = kappas };
     }
@@ -671,8 +776,9 @@ pub const Table = struct {
     /// images read alone (no memo, an account of their own) and compared
     /// position by position, each entry keyed at a node of the value
     /// renamed by σ. An entry keyed outside the value (a member's own) is
-    /// not compared: it names the same node in both.
-    fn moveIsBisimulation(t: *Table, gpa: Allocator, v: View, raw: NodeId, w: NodeId, x: NodeId, kx: Kappas, redir: *const Stable.Redirect, extra: Stable.Extra) Error!bool {
+    /// not compared: it names the same node in both. Both images are read
+    /// from the join's members (`widenValueOf`), as the widened one is.
+    fn moveIsBisimulation(t: *Table, gpa: Allocator, v: View, raw: NodeId, w: NodeId, members_in: []const NodeId, member_ctxs: []const Kappas, redir: *const Stable.Redirect, extra: Stable.Extra) Error!bool {
         var members: std.ArrayList(u32) = .empty;
         defer members.deinit(gpa);
         for (0..redir.count()) |i| try members.append(gpa, redir.key(@intCast(i)));
@@ -682,8 +788,8 @@ pub const Table = struct {
         const was = t.no_memo;
         t.no_memo = true;
         defer t.no_memo = was;
-        const rk = try t.propagatePlain(gpa, .growth(&scratch), v, raw, &.{x}, &.{kx});
-        const mk = try t.propagatePlain(gpa, .growth(&scratch), v, w, &.{x}, &.{kx});
+        const rk = try t.propagatePlain(gpa, .growth(&scratch), v, raw, members_in, member_ctxs);
+        const mk = try t.propagatePlain(gpa, .growth(&scratch), v, w, members_in, member_ctxs);
         var inside: Stable.Redirect = .{};
         defer inside.deinit(gpa);
         try Stable.reachable(v.shapes, gpa, w, &inside);

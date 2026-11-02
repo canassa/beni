@@ -103,15 +103,17 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             const r = try rule(t, gpa, charge, &in, !t.no_memo, t.reverse_front, t.propagate_dump and !t.no_memo);
             const cross = std.debug.runtime_safety and options.full_cross_check;
             if (t.no_memo or !(cross or t.order_check)) return r;
-            // Walked again with no memo, on an account of its own so that the
-            // check moves no limit (§2.9 *The `runtime_safety` check*): the
-            // rule in both frontier orders and, under the full cross-check,
-            // the reference in both. Each interns in the module's tables, so
-            // it may move later records.
+            // Walked again with no memo, on an account of its own and its
+            // counters put back, so that the check moves no limit (§2.9
+            // *The `runtime_safety` check*, #1545): the rule in both frontier
+            // orders and, under the full cross-check, the reference in both.
+            // Each still interns in the module's tables and fills its caches.
             var scratch: Ids.Account = .{ .allowance = std.math.maxInt(u32) };
             defer scratch.deinit(gpa);
             t.no_memo = true;
             defer t.no_memo = false;
+            var caches = t.checkBegin(false);
+            defer t.checkEnd(gpa, &caches);
             for ([_]bool{ false, true }) |rev| {
                 if (!cross and !rev) continue;
                 if (r != try rule(t, gpa, .growth(&scratch), &in, false, rev, false))
@@ -1068,6 +1070,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                     try queue.append(gpa, e.to);
                 }
             }
+            if (t.widen_sides and s.in.mode == .alternatives) here = try keySides(s, queue.items, here);
             if (resumed) {
                 s.resumed += 1;
                 if (!mutated("propagate-no-resumed-pass2")) try s.classify();
@@ -1075,6 +1078,43 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             var pos = try t.makePos(gpa, charge, .{ .here = here, .links = links, .fold = Table.fold_exact });
             for (merged.items) |m| pos = try t.kappaMerge(gpa, charge, pos, m);
             return pos;
+        }
+
+        /// A fold's entries `here` with the built sides of each union or
+        /// choice a state of its closure `ms` keys (`widen_sides`, #1485):
+        /// a side that no state keys reads its union's κ, the join over
+        /// every member met there. An object at the fold through that side
+        /// is one of those members' (widen's quotient), so the join covers
+        /// it. Without it a built side reads `lost` (O13), and so does the
+        /// union, which joins its sides' reads.
+        fn keySides(s: *Sigma, ms: []const u32, here_in: u32) Error!u32 {
+            const t = s.t;
+            const gpa = s.gpa;
+            const charge = s.charge;
+            const Write = struct { path: u32, node: NodeId, k: CondId };
+            var sides: std.ArrayList(Write) = .empty;
+            defer sides.deinit(gpa);
+            for (ms) |x| {
+                const st = s.states.items[x];
+                if (st.out != none) try unionSides(gpa, charge, s.in.v, 0, st.node, .from(st.out), &sides);
+            }
+            var here = here_in;
+            if (sides.items.len == 0) return here;
+            var written: Ids.FixedDict(1) = .{};
+            defer written.deinit(gpa);
+            for (ms) |x| {
+                const st = s.states.items[x];
+                if (st.out != none) _ = try written.getOrPut(gpa, .{st.node.int()});
+            }
+            for (sides.items) |w| {
+                try charge.reserve(gpa, .inspection, 1);
+                if (written.get(.{w.node.int()}) != null) continue;
+                const old = t.mapGet(here, w.node.int());
+                const val = if (old) |o| try t.join(gpa, charge, .from(o), w.k) else w.k;
+                try t.keyed(gpa, charge, w.node);
+                here = try t.mapPut(gpa, charge, here, w.node.int(), val.int());
+            }
+            return here;
         }
 
         // ---- the reference ---------------------------------------------------
@@ -1103,6 +1143,9 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             const Write = struct { path: u32, node: NodeId, k: CondId };
             var outs: std.ArrayList(Write) = .empty;
             defer outs.deinit(gpa);
+            // A widened knot's union sides (`widen_sides`), keyed at the end.
+            var side_outs: std.ArrayList(Write) = .empty;
+            defer side_outs.deinit(gpa);
             const Linked = struct { path: u32, at: Kappas };
             var kept: std.ArrayList(Linked) = .empty;
             defer kept.deinit(gpa);
@@ -1123,7 +1166,10 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 frames += 1;
                 if (frames > reference_cap) return null;
                 const st = s.states.items[f.state];
-                if (st.out != none) try outs.append(gpa, .{ .path = f.path, .node = st.node, .k = .from(st.out) });
+                if (st.out != none) {
+                    try outs.append(gpa, .{ .path = f.path, .node = st.node, .k = .from(st.out) });
+                    if (t.widen_sides and in.mode == .alternatives) try unionSides(gpa, charge, in.v, f.path, st.node, .from(st.out), &side_outs);
+                }
                 if (st.linked) {
                     try linked.append(gpa, .{ .path = f.path, .at = st.link });
                     continue;
@@ -1203,6 +1249,22 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 try t.keyed(gpa, charge, w.node);
                 here[at] = try t.mapPut(gpa, charge, here[at], w.node.int(), val.int());
             }
+            // A fold's union side that no state keyed reads its union's κ
+            // (`keySides`).
+            if (side_outs.items.len > 0) {
+                var written: Ids.FixedDict(2) = .{};
+                defer written.deinit(gpa);
+                for (outs.items) |w| _ = try written.getOrPut(gpa, .{ owner[w.path], w.node.int() });
+                for (side_outs.items) |w| {
+                    try charge.reserve(gpa, .inspection, 1);
+                    const at = owner[w.path];
+                    if (!fold_at.items[at] or written.get(.{ at, w.node.int() }) != null) continue;
+                    const old = t.mapGet(here[at], w.node.int());
+                    const val = if (old) |o| try t.join(gpa, charge, .from(o), w.k) else w.k;
+                    try t.keyed(gpa, charge, w.node);
+                    here[at] = try t.mapPut(gpa, charge, here[at], w.node.int(), val.int());
+                }
+            }
             const link_head = try gpa.alloc(u32, n);
             defer gpa.free(link_head);
             @memset(link_head, none);
@@ -1229,6 +1291,26 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
                 if (p.parent != none and pos[i] != .none) links[p.parent] = try t.mapPut(gpa, charge, links[p.parent], p.step, pos[i].int());
             }
             return try t.kappaMerge(gpa, charge, in.out, pos[0]);
+        }
+
+        /// The built sides of union or choice `u` (through nested unions and
+        /// choices), each with `k` at `path`, into `out` (`widen_sides`).
+        fn unionSides(gpa: Allocator, charge: Charge, v: View, path: u32, u: NodeId, k: CondId, out: anytype) Error!void {
+            const shapes = v.shapes;
+            const uk = shapes.kind(u);
+            if (uk != .@"union" and uk != .choice) return;
+            var stack: std.ArrayList(NodeId) = .empty;
+            defer stack.deinit(gpa);
+            try stack.append(gpa, u);
+            while (stack.pop()) |x| {
+                try charge.reserve(gpa, .inspection, 1);
+                const d = shapes.get(x);
+                switch (d.kind) {
+                    .@"union", .choice => try stack.appendSlice(gpa, &.{ .from(d.a), .from(d.b) }),
+                    .node, .delta => try out.append(gpa, .{ .path = path, .node = x, .k = k }),
+                    else => {},
+                }
+            }
         }
 
         /// Whether `n` may key the join memo: a finite rank of at least 1, so
