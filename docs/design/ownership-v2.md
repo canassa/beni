@@ -907,6 +907,22 @@ witness is the same. A hold’s liveness does not depend on the target, so a jud
 path and point. In `( incAll v, count v )` over an `else if` chain of D arms, each of about 4D targets met about
 4D holds: D = 8 / 16 / 32 cost 5 587 / 27 275 / 169 231 demands’ records, now 1 074 / 2 034 / 3 974.
 
+*The best-hold descent* (2026-11-03, step 3 on slots). A holder whose value is a DAG (a `(value, tags)` met at two
+paths) lists its holds once a node, at the node's least path, by a second walk that visits kids in order
+(`Sweep.holdsOfValue`); every other holder is listed as before, path by path. A target meets such a holder through a
+descent from its root (`Descent.zig`): a node's met holds are judged at the descent's path, and each kid in order.
+A kid at path `c` **answers for its subtree** when no place below `c` is on a cycle, no use of the holder after the
+point is at `c` or below it, and every use at a proper prefix of `c` reads all of `c`'s subtree or none of it (a
+whole or field use all; a call use by its callee's footprint at `c`: a deep read or a write at `c` or above all,
+an effect only below `c` some, none none). Then every path below `c` has `c`'s later uses, so liveness is asked
+once at `c`: none prunes the subtree, and otherwise each hold below it is met once a use, at its least path from
+`c` (once more at an exact path after one below a `[*]`). A kid that does not answer for its subtree is descended
+path by path, as on a cycle (`hold listings`). The holds are met in path order, a node before its kids, so the
+witness at one use of one holder is the least path, an exact one before one at or below a `[*]` or a `⟲`
+(*Verdicts*). An aggregated holder reads its pending holds by the same descent. The doubling DAG
+`tₖ = ( tₖ₋₁, tₖ₋₁ )` over `xs`, `xs` pushed while `t_d` is read, cost d = 8: 40 478 demands' records and a limit
+at 10; now d = 8 / 10 / 12: 249 / 281 / 313, the witness `t_d.0.0…0`, as v1 names it.
+
 *Pending operands* (2026-11-03). The walk no longer copies its operand stack at every call: each operand on the
 stack is one entry, made once (its values, a record update's base by the fields its consumer keeps), with the
 walk's clock at its push and at its removal (the clock ticks at a removal); a call, a label's call and a demand
@@ -3527,7 +3543,7 @@ order, each node once, union, graft, label maps, the effect trees' fold; imports
 `Conds.zig` (L3: conditions and occurrences; Ids, Slots), `ReadOff.zig` (L10: a frame's contract read off its
 values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Ids, Place, Relation, Slots, Subtree, Value).*
 *Amended 2026-11-03 (#1714): `Later` (a holder's later uses, L9 with `Holders` and `Sweep`) was split out of
-`Resolve` on the layer below it; `PlaceBelow` (L2) out of `Subtree`, read by `Subtree` and `Distinct`.*
+`Resolve` on the layer below it; `PlaceBelow` (L2) out of `Subtree`, read by `Subtree` and `Distinct`; `Descent` (L10, the best-hold descent) below `Resolve`, which moved to L11 with every layer above it (`Groups` L12; `Block`, `Message`, `Report`, `Hoists` L13; `Ownership` L14; `Enforce` L15).*
 
 ```
 L13 Enforce
@@ -3576,10 +3592,11 @@ L0  Ids  Counters  Scratch
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
-| `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder, buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Subtree, Value, Relation, Distinct |
+| `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder (a DAG once a node), buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Value, Relation |
 | `Stack.zig` | 8 | the pending operands by clock and key: their leaves listed once, lists by push with trees of removal and `rank₂`, aggregated ones (§2.8) | Ids, Value, Relation, Distinct, Walk, Regions |
 | `Later.zig` | 8 | a holder's later uses that read a hold at a path, through call uses' footprints, asked once a judgement (§2.7, §2.8, #1714) | Ids, Facts, Slots, Value, Relation, Contract, Forest, Walk, Liveness, Regions |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later |
+| `Descent.zig` | 10 | the best-hold descent over a holder DAG; the paths at which a hold holds a target (§2.8, #1714) | Ids, Facts, Slots, Trees, PlaceBelow, Subtree, Value, Relation, Distinct, Liveness, Later, Sweep |
+| `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
