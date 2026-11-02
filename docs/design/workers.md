@@ -416,7 +416,8 @@ static plans, so clone-stable subgraphs are skipped; normalization preserves
 unchanged objects and arrays by identity. This selective walk neither encodes
 values into a universal format nor relies on launch-site specialization.
 Generic declarations retain their Wire obligations, discharged at concrete
-launches; functions and native values are still refused.
+launches; functions and native values are still refused. An unused role whose
+value type remains unfixed, such as an error or event role, is accepted.
 
 Shared names determine how Wire evidence lowers without weakening this guarantee.
 Under the decided shared-name design, clone-stable records/unions/tuples/
