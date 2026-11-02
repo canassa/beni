@@ -1,0 +1,45 @@
+-- A runtime catch for the controls of `SanitiserCellCapture`
+-- (`ownership-v2.md` §2.11.4, §2.13.7): a cell operation on a captured
+-- `Ref` does not make a closure `once`, but an in-place write of a list
+-- still does. `twice` calls a closure that adds to a captured counter and
+-- pushes onto the captured list `xs`, then reads `xs`; `loaned` holds a
+-- loan of a cell's list while a closure called twice takes that list out
+-- of the cell and pushes onto it in place.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+each : List Int, (Int → ⊤) → ⊤
+each xs f =
+    _ = List.map xs f
+    ⊤
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+twice : List Int → String
+twice xs =
+    count = Ref.make 0
+    last = Ref.make []
+    each [ 1, 2 ] λk →
+        Ref.update count λn → n + 1
+        Ref.set last (List.push xs k)
+    "${ints xs} ${ints (Ref.get last)} ${String.fromInt (Ref.get count)}"
+
+
+loaned : ⊤ → String
+loaned ⊤ =
+    r = Ref.make [ 0 ]
+    v = Ref.get r
+    each [ 1, 2 ] λk → Ref.update r λys → List.push ys k
+    "${ints v} ${ints (Ref.get r)}"
+
+
+main : Program
+main = Node.print "${twice [ 0 ]}; ${loaned ⊤}"
