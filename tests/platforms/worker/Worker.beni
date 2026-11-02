@@ -64,7 +64,7 @@ foreign impure configure : Js.Value → ⊤
 foreign impure listen : sync (request → ⊤) → ⊤
 
 
-foreign impure reply : reply → ⊤
+pub foreign impure reply : reply → ⊤
 
 
 pub foreign impure initializer : String → String

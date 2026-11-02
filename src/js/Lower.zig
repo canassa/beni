@@ -3614,7 +3614,7 @@ pub const Lowerer = struct {
                     const global = try l.add(.global_this, p, 0, 0);
                     const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
                     const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
-                    const metadata = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(l.in.worker_wire, index, p), p)}, p);
+                    const metadata = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(l.in.worker_wire, l.in.module, index, p), p)}, p);
                     value = try l.call(assign, &.{ value, metadata }, p);
                 }
 
@@ -6443,15 +6443,16 @@ pub const Lowerer = struct {
     /// machinery that makes `?` evaluate in written order makes this do so
     /// too. A branch of a short circuit or of a `case` has an `out` of its
     /// own, so nothing is ever evaluated that the source would not have.
-    fn wirePlan(l: *Lowerer, maybe: ?*const @import("../check/Wire.zig").Artifact, decl: u32, p: u32) Allocator.Error!Node.Index {
+    fn wirePlan(l: *Lowerer, maybe: ?*const @import("../check/Wire.zig").Artifact, module: Graph.Index, decl: u32, p: u32) Allocator.Error!Node.Index {
         const wire = maybe orelse return l.nullNode(p);
         const root = for (wire.roots) |root| {
             if (root.decl == decl) break root;
         } else return l.nullNode(p);
         const needs = try @import("../check/Wire.zig").normalization(l.scratch, wire);
         var roles: std.ArrayList(Node.Index) = .empty;
+        // A descriptor may name a Program declared outside the opening module.
         const parameters = for (l.in.worker_descriptors) |descriptor| {
-            if (descriptor.module == l.in.module and descriptor.decl == decl) break l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
+            if (descriptor.module == module and descriptor.decl == decl) break l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
         } else return l.nullNode(p);
         for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
             const parameter = parameters[role.index];
@@ -6485,7 +6486,7 @@ pub const Lowerer = struct {
         const base = try l.add(.import_meta_url, p, 0, 0);
         const url = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{ path, base }))));
         return l.object(&.{
-            try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(descriptor.wire, descriptor.decl, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(descriptor.wire, descriptor.module, descriptor.decl, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "id"), try l.stringNode(descriptor.id, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
         }, p);
