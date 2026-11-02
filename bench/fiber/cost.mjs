@@ -60,15 +60,65 @@ export function measureCosts(out) {
   return rows;
 }
 
-export function checkCosts(rows, budgets) {
+export const budgetAdvice = "Review bench/fiber/budgets.json; do not raise caps to hide a regression.\nMeasure: node bench/fiber/cost.mjs ./zig-out/bin/beni zig-out/fiber-cost\nRe-record verified hashes: zig build test-run-hashes -Dtest-filter='fiber '";
+
+function costFailures(rows, budgets) {
+  const failures = [];
   const expected = [...Object.keys(budgets.retained), ...Object.keys(budgets.allocated)].sort();
-  if (JSON.stringify(Object.keys(rows).sort()) !== JSON.stringify(expected)) throw new Error("cost cases and budget keys differ");
-  if (process.version !== budgets.node) throw new Error(`cost budgets require ${budgets.node}, got ${process.version}`);
+  if (JSON.stringify(Object.keys(rows).sort()) !== JSON.stringify(expected)) failures.push("cost cases and budget keys differ");
+  if (process.version !== budgets.node) failures.push(`cost budgets require ${budgets.node}, got ${process.version}`);
   for (const [key, row] of Object.entries(rows)) {
-    if (!Number.isSafeInteger(row.small) || !Number.isSafeInteger(row.large)) throw new Error(`${key}: invalid numeric sample`);
-    const cap = budgets[row.metric][key];
-    if (!cap || !Number.isSafeInteger(cap.deltaBytes) || cap.deltaBytes < 0 || JSON.stringify(cap.counts) !== JSON.stringify(row.counts) || row.large - row.small > cap.deltaBytes) throw new Error(`${key}: ${JSON.stringify(row)}, budget ${JSON.stringify(cap)}`);
+    if (!Number.isSafeInteger(row.small) || !Number.isSafeInteger(row.large)) {
+      failures.push(`${key}: invalid numeric sample`);
+      continue;
+    }
+    const cap = budgets[row.metric]?.[key];
+    if (!cap || !Number.isSafeInteger(cap.deltaBytes) || cap.deltaBytes < 0 || JSON.stringify(cap.counts) !== JSON.stringify(row.counts)) {
+      failures.push(`${key}: invalid or mismatched budget ${JSON.stringify(cap)}`);
+      continue;
+    }
+    const delta = row.large - row.small;
+    if (delta > cap.deltaBytes) failures.push(`${key}: delta ${delta} bytes, budget ${cap.deltaBytes} (${delta - cap.deltaBytes} over)`);
   }
+  return failures;
+}
+
+function rejectFailures(failures) {
+  if (failures.length) throw new Error(`Fiber budget failures:\n${failures.join("\n")}\n${budgetAdvice}`);
+}
+
+export function checkCosts(rows, budgets) {
+  rejectFailures(costFailures(rows, budgets));
+}
+
+export function costSlack(rows, budgets) {
+  return Object.entries(rows).map(([key, row]) => {
+    const count = row.counts[1] - row.counts[0];
+    const delta = row.large - row.small;
+    const cap = budgets[row.metric][key].deltaBytes;
+    const actual = delta / count;
+    const target = budgets.targets[key];
+    return {
+      case: key,
+      bytesPerUnit: actual,
+      slackDeltaBytes: cap - delta,
+      slackBytesPerUnit: (cap - delta) / count,
+      ...(target === undefined ? {} : { targetBytesPerUnit: target, distanceToTargetBytesPerUnit: Math.max(0, actual - target) }),
+    };
+  });
+}
+
+export function sizeSlack(rows, budgets) {
+  return rows.map(row => ({ case: row.fiber, brotliBytes: row.brotli, slackBytes: budgets.brotli[row.fiber] - row.brotli }));
+}
+
+export function formatSlack(costs, sizes, budgets) {
+  const lines = costSlack(costs, budgets).map(row =>
+    `${row.case}: slack ${row.slackDeltaBytes} bytes (${row.slackBytesPerUnit.toFixed(3)} bytes/unit)` +
+    (row.slackDeltaBytes > 0 ? "; review tightening budgets.json" : "") +
+    (row.targetBytesPerUnit === undefined ? "" : `; target ${row.targetBytesPerUnit} bytes/unit, distance ${row.distanceToTargetBytesPerUnit.toFixed(3)} bytes/unit`));
+  for (const row of sizeSlack(sizes, budgets)) lines.push(`${row.case}: slack ${row.slackBytes} brotli bytes${row.slackBytes > 0 ? "; review tightening budgets.json" : ""}`);
+  return lines.join("\n") + "\n";
 }
 
 export function measureFiberSizes(beni, out, repo = path.resolve(here, "../..")) {
@@ -92,12 +142,23 @@ export function measureBuiltSizes(out) {
   return rows;
 }
 
-export function checkSizes(rows, budgets) {
-  if (JSON.stringify(rows.map(row => row.fiber).sort()) !== JSON.stringify(Object.keys(budgets.brotli).sort())) throw new Error("size cases and budget keys differ");
+function sizeFailures(rows, budgets) {
+  const failures = [];
+  if (JSON.stringify(rows.map(row => row.fiber).sort()) !== JSON.stringify(Object.keys(budgets.brotli).sort())) failures.push("size cases and budget keys differ");
   for (const row of rows) {
     const cap = budgets.brotli[row.fiber];
-    if (!Number.isSafeInteger(row.brotli) || !Number.isFinite(cap) || row.brotli > cap) throw new Error(`${row.fiber}: ${row.brotli} brotli bytes, budget ${cap}; raw ${row.raw}`);
+    if (!Number.isSafeInteger(row.brotli) || !Number.isFinite(cap)) failures.push(`${row.fiber}: invalid size sample or budget`);
+    else if (row.brotli > cap) failures.push(`${row.fiber}: ${row.brotli} brotli bytes, budget ${cap} (${row.brotli - cap} over); raw ${row.raw}`);
   }
+  return failures;
+}
+
+export function checkSizes(rows, budgets) {
+  rejectFailures(sizeFailures(rows, budgets));
+}
+
+export function checkBudgets(costs, sizes, budgets) {
+  rejectFailures([...costFailures(costs, budgets), ...sizeFailures(sizes, budgets)]);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -107,7 +168,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   buildCosts(path.resolve(beni), path.resolve(out));
   const costs = measureCosts(path.resolve(out));
   const sizes = measureFiberSizes(path.resolve(beni), path.resolve(out, "sizes"));
-  console.log(JSON.stringify({ node: process.version, flags, costs, sizes }, null, 2));
-  checkCosts(costs, budgets);
-  checkSizes(sizes, budgets);
+  console.log(JSON.stringify({ node: process.version, flags, costs, sizes, slack: { costs: costSlack(costs, budgets), sizes: sizeSlack(sizes, budgets) } }, null, 2));
+  process.stderr.write(formatSlack(costs, sizes, budgets));
+  checkBudgets(costs, sizes, budgets);
 }

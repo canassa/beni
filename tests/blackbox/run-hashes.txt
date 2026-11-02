@@ -136,15 +136,16 @@ devloop_test.test.build --watch rebuilds after an edit, reports a failed build, 
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 78db389fdde18f3393c149cc627209203835ad7d29e5436db3ca1723cd5f2464
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
-fiber_cost_test.test.fiber benchmark forwards resumed results through beni entries #0 75193d09bd5056de0e3a2be9aad1e258a9506bfa98197a0689ce5497fff123c2
+fiber_cost_test.test.fiber benchmark forwards resumed results through beni entries #0 fa2702b5697359b182f99d95a34337ebb8b9485b030a07cbef8acba6554e0b48
+fiber_cost_test.test.fiber budget reports include every failure slack and targets #0 5c7d472585d84281ba6073b721a6891263818c6243eade9e0c2cf4279b1a9337
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #0 16ee3cc238f30e8c7f751cfab9086b00a9b7cfd9e2edcd6d0a2e7d170b4a10b0
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #1 d7e8b26e6c4751f4356fa2e45db650fb3bea63d7ae989d71cff655c24fdd45a9
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #2 f039b8010c0943a5da8714589dbca9e78c29d500c9596745d4e2b90b5a86b6b5
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #3 ed3162bd61d0335186a90318be46ff92bab6a5b6e2aa7f51526150e8350f121d
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #4 831b53aa3e6bc023112f4e49963946a3bd09e366d1a826ab2f2304247f959e25
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #5 c13bed2c0dc507242f407b9d0952eae2109ef443b18fb99ba110883c79afca3e
-fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #6 7d35b8fe0766a9df2b9c19d2478c737e695595f69534aa5af664f2443aa05d5f
-fiber_cost_test.test.fiber retained bytes and allocation deltas stay within ratchets #0 0fc3e92bd4527b8f9bcaf73dc1499333d93eddac9135b5d9e6a2ee9a0a6135d2
+fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #6 7bfa79e2838e5d193097d3c73324dcbb07ea9ad8abb8c701f6adfa9fc0920a85
+fiber_cost_test.test.fiber retained bytes and allocation deltas stay within ratchets #0 6d9b22fa0d3fe4aa06d46221d65777ca4ba321a8b0bc5421d4fb49b1670fce05
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 5c1b1bdef16ee359275c54d689abacd7fcb9d1af0df604ea0292debb6b23dcca
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 3d9305d46bb2bc4f4cc16d46497010be02749f323089c8b8d909e55caee428a3
 ordering_test.test.Json.decode inferred from use prints the same reversed #0 2666f31596e6320f6ef6c4035a338e0de1de58eeecd147052a5342ffe8b64407
