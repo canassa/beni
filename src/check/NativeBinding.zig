@@ -39,6 +39,7 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .data_same => a.len == 2 and named(cx, a[0], "Js", "Value") and named(cx, a[1], "Js", "Value") and named(cx, r, "Basics", "Bool"),
         .document_by_id => a.len == 1 and named(cx, a[0], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| native(cx, nested0, "Element") else false),
         .element_focus => a.len == 1 and native(cx, a[0], "Element") and unit(cx, r),
         .element_blur => a.len == 1 and native(cx, a[0], "Element") and unit(cx, r),

@@ -103,6 +103,7 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .data_same => "(a, b) => { return Object.is(a, b); }",
             .document_by_id => "(documentId) => { const element = globalThis.document.getElementById(documentId); return element === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: element }; }",
             .element_focus => "(element) => { element.focus(); return null; }",
             .element_blur => "(element) => { element.blur(); return null; }",

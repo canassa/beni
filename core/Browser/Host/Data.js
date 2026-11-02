@@ -1,3 +1,4 @@
+export const same = (a, b) => { return Object.is(a, b); };
 export const isArray = (value) => { return globalThis.Array.isArray(value); };
 export const isFinite = (value) => { return globalThis.Number.isFinite(value); };
 export const isInteger = (value) => { return globalThis.Number.isInteger(value); };
