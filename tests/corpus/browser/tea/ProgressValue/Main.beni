@@ -1,0 +1,27 @@
+-- Typed value attributes render and update on progress, meter and output.
+import Html exposing (Html)
+import String
+import Tea
+
+
+type Msg
+    = Increase
+
+
+view : Int → Html Msg
+view percent =
+    <main>
+        <progress max="100" value={String.fromInt percent} />
+        <meter min="0" max="100" value={String.fromInt percent} />
+        <output value={String.fromInt percent}>{percent}</output>
+        <button onClick={Increase}>increase</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → 30
+        , update = λ_ percent → percent + 20
+        , view = view
+        }

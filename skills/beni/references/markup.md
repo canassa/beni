@@ -12,6 +12,8 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
   `name={True}`. Character references in text and quoted values are decoded.
 - Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument
   in parentheses.
+- `value` on `<progress>`, `<meter>` and `<output>` takes a `String`. Use
+  `String.fromInt` to show an integer value.
 - A child is text, a hole `{expr}`, or more markup. A hole holds a `String`, `Int`, `Float`,
   `Bool` or `Char` (rendered as text), an `Html msg`, a `Maybe (Html msg)` or a `List (Html msg)`
   (matched by position). Anything else is `child_not_renderable`. `if` and `case` are expressions,
