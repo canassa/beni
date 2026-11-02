@@ -1,2 +1,0 @@
-TryTargetKeepsItsSuccessType f: lines 11-13 (not built: let_def)
-TryTargetKeepsItsSuccessType main: lines 16-17 (not built: call)

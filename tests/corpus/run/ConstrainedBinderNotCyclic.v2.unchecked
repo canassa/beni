@@ -1,3 +1,0 @@
-ConstrainedBinderNotCyclic f: lines 10-10 (not built: method_call)
-ConstrainedBinderNotCyclic g: lines 13-17 (not built: method_call)
-ConstrainedBinderNotCyclic main: lines 28-29 (not built: call)

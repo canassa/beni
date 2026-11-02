@@ -425,7 +425,7 @@ fn knownDifferences() !*const Known {
     defer known_mutex.unlock(testing.io);
     if (known_state == null) {
         const gpa = std.heap.page_allocator;
-        const text = Io.Dir.cwd().readFileAlloc(testing.io, "tests/blackbox/ownership-v2-known.txt", gpa, .limited(1 << 20)) catch "";
+        const text = Io.Dir.cwd().readFileAlloc(testing.io, "tests/blackbox/ownership-v2-known.txt", gpa, .limited(1 << 22)) catch "";
         var keys: std.ArrayList([]const u8) = .empty;
         var lines = std.mem.splitScalar(u8, text, '\n');
         while (lines.next()) |l| {

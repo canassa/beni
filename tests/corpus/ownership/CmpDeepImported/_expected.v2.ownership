@@ -1,75 +1,16 @@
 module Inner
   9:26 List.push l: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
-  account eq: source 20, baseline 277, growth 0 of 65536, total 277, continuation 188 of 20480, demands 24, direct_data lanes 2, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 3, transfer_settlement lanes 22, step lanes 1
-  crossing: reads 0, redone 0, base moves 0
-  summary eq: π1 R, π1#Inner.0 RW
-  block: 472 bytes, hash 0e56e013f18182c3
   demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 module Main
-  13:16 List.eq os[*]#Outer2.1#Inner.0: accepted param
-  13:16 List.eq <literal>[*]#Outer2.1#Inner.0: accepted fresh
-  17:19 Main.listOf os[*]#Outer2.1#Inner.0: rejected element: os[*]#Outer2.1#Inner.0 holds it and is read at 17:17 (approx)
-  22:47 call <expression>.0#Outer2.1#Inner.0: rejected alias: xs holds it and is read at 22:5
-  22:47 call <expression>.0#Outer2.1#Inner.0: accepted fresh
-  27:47 call <expression>.0#Outer2.1#Inner.0: accepted fresh
-  27:47 call <expression>.0#Outer2.1#Inner.0: rejected alias: xs holds it and is read at 27:5
-  31:28 call <expression>.0#Outer2.1#Inner.0: rejected disjoint: another operand of the same operation reaches it
-  31:28 call <expression>.0#Outer2.1#Inner.0: rejected disjoint: another operand of the same operation reaches it
-  35:53 call <expression>.0#Outer2.1#Inner.0: accepted param
-  35:53 call <expression>.0#Outer2.1#Inner.0: accepted fresh
-  39:21 Main.viaFn2 xs: rejected later-use: xs is read again at 39:19
-  43:17 List.eq os[*]#Outer3.1#Mid.1#Inner.0: accepted param
-  43:17 List.eq <literal>[*]#Outer3.1#Mid.1#Inner.0: accepted fresh
-  47:20 Main.listOf3 os[*]#Outer3.1#Mid.1#Inner.0: rejected element: os[*]#Outer3.1#Mid.1#Inner.0 holds it and is read at 47:18 (approx)
-  53:9 call <expression>.0#Outer3.1#Mid.1#Inner.0: rejected alias: xs holds it and is read at 52:5
-  53:9 call <expression>.0#Outer3.1#Mid.1#Inner.0: accepted fresh
-  account listOf: source 9, baseline 345, growth 0 of 65536, total 345, continuation 267 of 9216, demands 58, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 1, transfer_settlement lanes 10, step lanes 3
-  crossing: reads 0, redone 0, base moves 0
-  summary listOf: π1 R, π1[*] R, π1[*]#Outer2.1 R, π1[*]#Outer2.1#Inner.0 RW
-  account callerList: source 15, baseline 234, growth 0 of 65536, total 234, continuation 216 of 15360, demands 55, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16, step lanes 3
-  summary callerList: π1 RA, π1[*] R, π1[*]#Outer2.1 R, π1[*]#Outer2.1#Inner.0 RW; res .1 π1
-  account nestedLeft: source 29, baseline 448, growth 0 of 65536, total 448, continuation 316 of 29696, demands 54, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 30
-  summary nestedLeft: π1 RAW; res .1 π1
-  account nestedRight: source 29, baseline 448, growth 0 of 65536, total 448, continuation 316 of 29696, demands 54, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 30
-  summary nestedRight: π1 RAW; res .1 π1
-  account nestedParam: source 15, baseline 422, growth 0 of 65536, total 422, continuation 318 of 15360, demands 20, direct_data lanes 1, liveness_index lanes 3, direct_demand_query lanes 2, call_view lanes 1, transfer_settlement lanes 16, step lanes 4
-  summary nestedParam: π1 RA, π1#Outer2.1 R, π1#Outer2.1#Inner.0 RW; res .1 π1
-  account viaFn2: source 23, baseline 388, growth 0 of 65536, total 388, continuation 265 of 23552, demands 41, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 5, transfer_settlement lanes 24
-  summary viaFn2: π1 RW
-  account callerViaFn2: source 15, baseline 122, growth 0 of 65536, total 122, continuation 107 of 15360, demands 22, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16
-  summary callerViaFn2: π1 RAW; res .1 π1
-  account listOf3: source 9, baseline 420, growth 0 of 65536, total 420, continuation 321 of 9216, demands 67, direct_data lanes 1, liveness_index lanes 1, direct_demand_query lanes 2, call_view lanes 1, transfer_settlement lanes 10, step lanes 4
-  summary listOf3: π1 R, π1[*] R, π1[*]#Outer3.1 R, π1[*]#Outer3.1#Mid.1 R, π1[*]#Outer3.1#Mid.1#Inner.0 RW
-  account callerList3: source 15, baseline 269, growth 0 of 65536, total 269, continuation 250 of 15360, demands 64, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 16, step lanes 4
-  summary callerList3: π1 RA, π1[*] R, π1[*]#Outer3.1 R, π1[*]#Outer3.1#Mid.1 R, π1[*]#Outer3.1#Mid.1#Inner.0 RW; res .1 π1
-  account nested3: source 35, baseline 531, growth 0 of 65536, total 531, continuation 361 of 35840, demands 54, direct_data lanes 1, liveness_index lanes 2, direct_demand_query lanes 2, call_view lanes 7, transfer_settlement lanes 36
-  summary nested3: π1 RAW; res .1 π1
-  block: 2672 bytes, hash 351d348f62f78f2e
-  demands 17: accepted 9 (fresh 6, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Mid
   14:23 Inner.eq x#Inner.0: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
-  account eq: source 23, baseline 271, growth 0 of 65536, total 271, continuation 184 of 23552, demands 38, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 26, step lanes 2
-  crossing: reads 0, redone 0, base moves 0
-  summary eq: π1 R, π1#Mid.1 R, π1#Mid.1#Inner.0 RW, π2 R, π2#Mid.1 R
-  block: 716 bytes, hash 1a9715825d9ac78d
   demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 module Outer2
   14:23 Inner.eq x#Inner.0: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
-  account eq: source 23, baseline 271, growth 0 of 65536, total 271, continuation 184 of 23552, demands 38, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 26, step lanes 2
-  crossing: reads 0, redone 0, base moves 0
-  summary eq: π1 R, π1#Outer2.1 R, π1#Outer2.1#Inner.0 RW, π2 R, π2#Outer2.1 R
-  block: 720 bytes, hash 392063736d024aff
   demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 module Outer3
   14:23 Mid.eq x#Mid.1#Inner.0: rejected comparison: a type's `eq` and `compare` may only read the values they are handed
-  account eq: source 23, baseline 359, growth 0 of 65536, total 359, continuation 246 of 23552, demands 47, direct_data lanes 2, liveness_index lanes 4, direct_demand_query lanes 1, call_view lanes 1, transfer_settlement lanes 26, step lanes 3
-  crossing: reads 0, redone 0, base moves 0
-  summary eq: π1 R, π1#Outer3.1 R, π1#Outer3.1#Mid.1 R, π1#Outer3.1#Mid.1#Inner.0 RW, π2 R, π2#Outer3.1 R, π2#Outer3.1#Mid.1 R
-  block: 892 bytes, hash 72199687d1724e87
   demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-total 21: accepted 9 (fresh 6, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 12
-cause disjoint 2
-cause later-use 1
-cause alias 3
-cause element 2
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause comparison 4
