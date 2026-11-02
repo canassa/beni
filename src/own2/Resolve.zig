@@ -34,6 +34,7 @@ const Holders = @import("Holders.zig");
 const Sweep = @import("Sweep.zig");
 const Stack = @import("Stack.zig");
 const TagTree = @import("TagTree.zig");
+const Later = @import("Later.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -101,8 +102,8 @@ const Resolver = struct {
     stack: Stack.Index = .{},
     /// Per keyed holder, its holds by their tags (§2.8).
     tags: TagTree.Forest = .{},
-    /// A judgement's `liveAt` answers (+1, 0 none), each asked once a target.
-    asked: Ids.FixedDict(3) = .{},
+    /// The holders' later uses, a judgement's answers kept (§2.8).
+    uses: Later.Uses,
     /// Whether a judgement's aggregated holders add to the frame's `req`:
     /// a demand's do, a label's supplied part's are judged one by one.
     aggregate: bool = false,
@@ -128,15 +129,7 @@ const Resolver = struct {
         r.ops.deinit(r.gpa());
         r.stack.deinit(r.gpa());
         r.tags.deinit(r.gpa());
-        r.asked.deinit(r.gpa());
-    }
-
-    fn liveOnce(r: *Resolver, h: u32, q: PathId, point: u32) Error!?Liveness.UseId {
-        try r.f().charge(.inspection, 1);
-        if (r.asked.get(.{ h, q.int(), point })) |x| return if (x == 0) null else .from(x - 1);
-        const u = try r.liveAt(h, q, point);
-        try r.asked.put(r.gpa(), .{ h, q.int(), point }, if (u) |x| x.int() + 1 else 0);
-        return u;
+        r.uses.deinit();
     }
 
     /// The holder index (§2.8): every bound local that is used after its
@@ -248,7 +241,7 @@ const Resolver = struct {
             try fr.charge(.inspection, 1);
             if (r.live.visited(hi)) continue;
             const h = r.live.holders.items[hi];
-            if (!try r.usedAfter(h.local, point)) continue;
+            if (!try r.uses.usedAfter(h.local, point)) continue;
             var all = true;
             for (r.live.holdsOf(hi), 0..) |hd, k| {
                 if (!hd.agg or hd.done) continue;
@@ -264,7 +257,7 @@ const Resolver = struct {
             try fr.charge(.inspection, 1);
             if (r.live.visited(hi)) continue;
             const local = r.live.holders.items[hi].local;
-            if (!try r.usedAfter(local, point)) continue;
+            if (!try r.uses.usedAfter(local, point)) continue;
             for (r.live.holdsOf(hi)) |hd| if (hd.agg and (try r.aggHold(local, hd, t, point, relied))[0]) return;
         }
     }
@@ -281,7 +274,7 @@ const Resolver = struct {
         var all = hs.items.len != 0;
         for (hs.items) |x| {
             if (x[1].kind != .under) continue;
-            if ((try r.liveOnce(h, x[0], point)) == null) {
+            if ((try r.uses.liveOnce(h, x[0], point)) == null) {
                 all = false;
                 continue;
             }
@@ -291,79 +284,6 @@ const Resolver = struct {
         return .{ any, all };
     }
 
-    /// The first use of local `h` after `point`, compatible with it, that
-    /// reads the hold at `q` (at an ancestor, at `q`, or below it), through
-    /// call uses' footprints.
-    fn liveAt(r: *Resolver, h: u32, q: PathId, point: u32) Error!?Liveness.UseId {
-        const w = r.e.w;
-        const fr = r.f();
-        const g = r.gpa();
-        if (w.index.lastUse(h) == none or w.index.lastUse(h) <= point) return null;
-        const Ctx = struct { r: *Resolver, q: PathId };
-        var c: Ctx = .{ .r = r, .q = q };
-        const filter: Liveness.Filter = .{ .ctx = &c, .accept = struct {
-            fn accept(ctx: *anyopaque, u: Facts.Use, _: Liveness.UseId) Error!bool {
-                const k: *Ctx = @ptrCast(@alignCast(ctx));
-                return k.r.footprintReads(u, k.q);
-            }
-        }.accept, .below_all = !fr.places.onCycle(fr.places.pathPlace(q)) };
-        const charge: Ids.Charge = .growth(fr.account);
-        var best: ?Liveness.UseId = try w.index.useAfter(g, charge, fr.places, r.regions, h, q, point, filter);
-        if (try w.index.useUnder(g, charge, fr.places, r.regions, h, q, point, filter)) |u| {
-            if (best == null or w.index.get(u).point < w.index.get(best.?).point) best = u;
-        }
-        // A deep read whose levels fold above it (§2.7, a read on a cycle).
-        if (fr.places.onCycle(fr.places.pathPlace(q)) or fr.places.pathParent(q) != .none) {
-            const run = if (h < w.index.by_local.len) w.index.by_local[h] else Ids.Range{};
-            var i: u32 = 0;
-            while (i < run.len) : (i += 1) {
-                const id = run.start + i;
-                const u = w.index.get(.from(id));
-                if (u.point <= point or !r.regions.compatible(point, u.point)) continue;
-                if (u.kind == .call and u.use_node != .none) continue;
-                const ups = try fr.places.foldsUp(g, charge, u.path);
-                var k: u32 = 0;
-                while (k < ups.len) : (k += 1) {
-                    const up = fr.places.foldPath(ups.start + k);
-                    if (fr.places.isPrefix(up, q)) {
-                        if (best == null or u.point < w.index.get(best.?).point) best = .from(id);
-                        break;
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    /// Whether local `h` has a use after `point` compatible with it, at
-    /// any path: one range query, before a query per hold.
-    fn usedAfter(r: *Resolver, h: u32, point: u32) Error!bool {
-        const w = r.e.w;
-        if (h >= w.index.by_local.len) return false;
-        try r.f().charge(.region, 1);
-        return (try w.index.firstAfter(r.gpa(), .growth(r.account()), w.index.by_local[h], point, r.regions.rank2(point))) != null;
-    }
-
-    /// Whether a use reads the hold at `q` (§2.7): a whole or field use does;
-    /// a call use does where its callee's footprint reaches `q`.
-    fn footprintReads(r: *Resolver, u: Facts.Use, q: PathId) Error!bool {
-        if (u.kind != .call or u.use_node == .none) return true;
-        const fr = r.f();
-        const g = r.gpa();
-        const foot = r.e.w.foots.items[u.use_node.int()];
-        const call = fr.calls.items[foot[0]];
-        if (call.contract == none) return true;
-        const h = r.e.contracts.head(call.contract);
-        const rem = (try fr.slots.relBelow(g, fr.account, fr.places, u.path, q)) orelse return true;
-        // The reads by the callee's tree a parameter, the writes by binary
-        // search over its sorted effects (§2.7), each charged.
-        const rw = fr.slots.relWords(rem);
-        try fr.charge(.inspection, @intCast(rw.len + 1));
-        for (r.e.contracts.readsOf(h.reads)) |x| if (x[0] == foot[1] and Forest.effectReaches(&r.e.contracts.trees, x[1], rw)) return true;
-        return Holders.effectMeets(r.ev(), r.e.contracts, h.writes, foot[1], fr.slots.relKey(rem), false);
-    }
-
-    /// Whether an escape before `point` reaches a target.
     /// Whether an escape before `point` reaches a target (§2.8, *The
     /// escape index*).
     fn escaped(r: *Resolver, t: u32, point: u32, call: u32, relied: *Holders.Gather) Error!bool {
@@ -381,7 +301,7 @@ const Resolver = struct {
         const fr = r.f();
         const g = r.gpa();
         try fr.charge(.demand, 1);
-        r.asked.clearRetainingCapacity();
+        r.uses.clear();
         var line: Line = .{ .demand = d, .outcome = .{} };
         const o = &line.outcome;
         const targets = w.leavesOfRun(d.targets);
@@ -486,7 +406,7 @@ const Resolver = struct {
                     hs.clearRetainingCapacity();
                     try Sweep.holdsAt(r.ev(), hd, t, &hs);
                     for (hs.items) |x| {
-                        const u = (try r.liveOnce(h, x[0], d.point)) orelse continue;
+                        const u = (try r.uses.liveOnce(h, x[0], d.point)) orelse continue;
                         switch (x[1].kind) {
                             .no => {},
                             .under => try relied.add(g, r.account(), x[1].cond),
@@ -579,7 +499,7 @@ const Resolver = struct {
 /// Judge every demand of evaluation `e`; the lines in `arena` (null when
 /// only the verdicts are wanted, during a fixed point).
 pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocator) Error!Result {
-    var r: Resolver = .{ .e = e, .arena = arena, .regions = regions };
+    var r: Resolver = .{ .e = e, .arena = arena, .regions = regions, .uses = .{ .w = e.w, .ev = &e.ev, .contracts = e.contracts, .regions = regions } };
     defer r.deinit();
     const f = &e.w.f;
     // Every judgement, in the walk's order: the demands, the direct labels'
