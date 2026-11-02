@@ -15,7 +15,7 @@ export const install = () => {
     };
     worker.addEventListener("message", hold);
     worker.postMessage = frame => {
-      encoded = Object.hasOwn(frame, "a");
+      if (typeof frame.kind === "number") encoded = true;
       if ((frame.kind !== "Close" && frame.kind !== 4)) nativePost.call(worker, frame);
     };
     return worker;
@@ -23,5 +23,5 @@ export const install = () => {
 };
 export const release = () => {
   worker.removeEventListener("message", hold);
-  nativePost.call(worker, encoded ? {a: 1, kind: 4, c: 1} : {worker: 1, kind: "Close", generation: 1});
+  nativePost.call(worker, encoded ? {worker: 1, kind: 4, generation: 1} : {worker: 1, kind: "Close", generation: 1});
 };

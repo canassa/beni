@@ -434,6 +434,17 @@ field names and string tags in every build, and a type of one constructor with o
 its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
 `backend.md` §9, *A type of one constructor with one field is its field*).
 
+**Release-only exception: private Browser.Worker objects** *(added 2026-11-02)*.
+The compiler may prescribe short field names and control labels for the known
+embedded Browser.Worker implementation's private protocol and storage objects,
+including its internal `Js.from` records. This exception does not apply to user
+`Js.from`/`Js.to` values, public payloads or constructor tags, Options, native browser
+properties, or diagnostics. Prescribed field spellings contain no `$`. Transport
+header fields retain their source names, and Hello/Defect labels remain strings,
+so a reachable peer can reject a different build by fingerprint before consuming
+its layout-specific control or configuration. Development retains source names
+and labels. workers-emission.md owns the shared private ABI.
+
 *Amended 2026-10-14 (inert foreign reachability):* absence of tag construction
 is not permission to forget a differently typed result. A foreign can convert
 between nominal types with matching representations by returning its argument,

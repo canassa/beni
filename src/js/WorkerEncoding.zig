@@ -3,22 +3,19 @@
 const std = @import("std");
 
 // Bump when the prescribed representation changes; fingerprints include it.
-pub const version = "private-worker-encoding-1";
+pub const version = "private-worker-encoding-2";
 
 const Field = struct { source: []const u8, encoded: []const u8 };
 // Deliberately exclude public Options fields, descriptor keys, diagnostic
 // payloads and native properties. `kind` also names a public abandonment
 // diagnostic field, so its spelling is deliberately retained everywhere.
+// Transport headers and Hello/Defect labels stay stable across builds so
+// fingerprint negotiation precedes layout-specific interpretation.
 // These encoded names belong only to runtime storage.
 const fields = [_]Field{
-    .{ .source = "worker", .encoded = "a" },
-    .{ .source = "entry", .encoded = "b" },
-    .{ .source = "generation", .encoded = "c" },
-    .{ .source = "requestId", .encoded = "d" },
-    .{ .source = "payload", .encoded = "f" },
     .{ .source = "phase", .encoded = "g" },
     .{ .source = "terminal", .encoded = "h" },
-    .{ .source = "eventCount", .encoded = "$i" },
+    .{ .source = "eventCount", .encoded = "evCount" },
     .{ .source = "eventBytes", .encoded = "j" },
     .{ .source = "eventLimit", .encoded = "k" },
     .{ .source = "byteLimit", .encoded = "l" },
@@ -31,12 +28,11 @@ const fields = [_]Field{
     .{ .source = "events", .encoded = "s" },
     .{ .source = "native", .encoded = "t" },
     .{ .source = "interrupted", .encoded = "u" },
-    .{ .source = "eventEnabled", .encoded = "$v" },
+    .{ .source = "eventEnabled", .encoded = "evOn" },
     .{ .source = "wire", .encoded = "w" },
     .{ .source = "queue", .encoded = "e" },
     .{ .source = "next", .encoded = "i" },
     .{ .source = "failure", .encoded = "v" },
-    .{ .source = "options", .encoded = "x" },
     .{ .source = "ready", .encoded = "y" },
     .{ .source = "opening", .encoded = "z" },
     .{ .source = "owned", .encoded = "A" },
@@ -54,7 +50,6 @@ pub fn field(source: []const u8) []const u8 {
 
 const Tag = struct { source: []const u8, encoded: u8 };
 const tags = [_]Tag{
-    .{ .source = "Hello", .encoded = 0 },
     .{ .source = "Ready", .encoded = 1 },
     .{ .source = "InitializationFailed", .encoded = 2 },
     .{ .source = "Closed", .encoded = 3 },
@@ -65,7 +60,6 @@ const tags = [_]Tag{
     .{ .source = "Ping", .encoded = 8 },
     .{ .source = "Pong", .encoded = 9 },
     .{ .source = "TransportFailure", .encoded = 10 },
-    .{ .source = "Defect", .encoded = 11 },
     .{ .source = "Success", .encoded = 12 },
     .{ .source = "Failure", .encoded = 13 },
     .{ .source = "Event", .encoded = 14 },

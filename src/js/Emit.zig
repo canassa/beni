@@ -1899,15 +1899,7 @@ const Emitter = struct {
         try text.appendSlice(e.scratch,
             \\const report = event => {
             \\  const cause = event.error ?? event.reason;
-            \\
-        );
-        const encoding = @import("WorkerEncoding.zig");
-        const encoded = e.encodeWorkerPrivate();
-        const marker = if (encoded) encoding.field("worker") else "worker";
-        const payload = if (encoded) encoding.field("payload") else "payload";
-        const defect = if (encoded) try std.fmt.allocPrint(e.scratch, "{d}", .{encoding.tag("Defect").?}) else "\"Defect\"";
-        try text.print(e.scratch, "  globalThis.postMessage({{{s}: 1, kind: {s}, {s}: {{\n", .{ marker, defect, payload });
-        try text.appendSlice(e.scratch,
+            \\  globalThis.postMessage({worker: 1, kind: "Defect", payload: {
             \\    name: typeof cause?.name === "string" ? cause.name.slice(0, 64) : null,
             \\    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").slice(0, 4096),
             \\    stack: String(cause?.stack ?? "").slice(0, 16384)
