@@ -221,6 +221,17 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             .top, .shared => return Cond.unprovable,
             else => {},
         }
+        // A callback answer may be what the label was supplied (unknown code
+        // may answer its argument): never apart from another entry that
+        // reaches a supply (`pickSecond`: `( f b, b )`).
+        if (l.kind == .ref and e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) {
+            var sl: std.ArrayList(u32) = .empty;
+            defer sl.deinit(g);
+            for (e.f.cbs.items[e.f.roots.items[l.root].a].args) |sv| try e.leavesOf(sv, 0, &sl);
+            for (ents.items) |o| if (o.leaf != en.leaf) for (sl.items) |x| {
+                if ((try overlap(e, o.leaf, x, false)).kind != .no) return Cond.unprovable;
+            };
+        }
     }
     var next: std.ArrayList(Ent) = .empty;
     defer next.deinit(g);
