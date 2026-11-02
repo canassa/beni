@@ -178,8 +178,9 @@ program definition =
                             input = Js.get hello "payload"
                             opts : Options
                             opts = guest (Js.get input "options")
-                            Js.set peer "eventLimit" (host opts.queuedEvents)
-                            Js.set peer "byteLimit" (host opts.queuedBytes)
+                            if Js.to (Js.get peer "eventEnabled") then
+                                Js.set peer "eventLimit" (host opts.queuedEvents)
+                                Js.set peer "byteLimit" (host opts.queuedBytes)
                             context =
                                 guest (Js.from { scope = owned, peer = peer, request = False })
                             case callbacks.init context (guest (Js.get input "config")) of
@@ -552,12 +553,18 @@ abandoned : V
 abandoned = Js.array []
 
 
+-- Child launch installs this edge; a leaf worker reaches only the empty hook.
+childAbandon : Js.Ref (⊤ → ⊤)
+childAbandon = Js.ref λ⊤ → ⊤
+
+
 installFatal : ⊤ → ⊤
 installFatal ⊤ =
     if Js.read installed then
         ⊤
     else
         Js.write installed True
+        Js.write childAbandon abandonUnfinished
         Task.chainDefect stopRealm
         _ =
             Js.call (Js.global "globalThis") "addEventListener"
@@ -970,6 +977,7 @@ runDefinition definition =
             , phase = "Starting"
             , greeting = Js.null
             , greetingWake = Js.null
+            , eventEnabled = not (Js.same (Js.get definition "$events") (host False))
             , eventCount = 0
             , eventBytes = 0
             , byteLimit = 1048576
@@ -1058,7 +1066,7 @@ runDefinition definition =
                             )
                     else
                         Task.start (λ⊤ → Task.cancel (guest (Js.get job "fiber"))) λ_ → ⊤
-            else if Js.same kind (host "EventAck") then
+            else if Js.same kind (host "EventAck") && Js.to (Js.get peer "eventEnabled") then
                 Js.set peer "eventCount" (host (Js.to (Js.get peer "eventCount") - 1))
                 Js.set
                     peer
@@ -1184,7 +1192,7 @@ stopRealm : ⊤ → ⊤
 stopRealm ⊤ =
     Js.write fatalStarted True
     if Js.isUndefined (Js.global "window") then
-        Task.shutdown 1000 λ_ → abandonUnfinished ⊤
+        Task.shutdown 1000 λ_ → (Js.read childAbandon) ⊤
     else
         if Js.typeIs (Js.read hostStop) "function" then
             Js.to (Js.apply (Js.read hostStop) [ host ⊤ ])

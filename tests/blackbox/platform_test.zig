@@ -2212,3 +2212,126 @@ test "mixed worker entries keep normalization only in the page and List worker" 
         try w.tmp.dir.deleteTree(w.io, "out");
     }
 }
+
+test "release leaf workers omit child cleanup and absent event machinery" {
+    const cases = [_]struct { types: []const u8, event: []const u8, inhabited: bool }{
+        .{ .types = "", .event = "⊥", .inhabited = false },
+        .{ .types = "type alias Impossible = { absent : ⊥ }\n", .event = "Impossible", .inhabited = false },
+        .{ .types = "", .event = "(List ⊥)", .inhabited = true },
+        .{ .types = "type Event = Tick | More Event\n", .event = "Event", .inhabited = true },
+        .{ .types = "", .event = "event", .inhabited = true },
+    };
+    for (cases) |case| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const source =
+            \\import Browser
+            \\import Browser.Worker as Worker
+            \\import Task
+            \\EXTRA_TYPES
+            \\worker : Worker.Program String String (Worker.Protocol String String ⊥ String EVENT_TYPE ⊥)
+            \\worker = Worker.program { init = λ_ config → Ok config, start = λ_ _ → ⊤, handle = λ_ state request → Ok (state ++ request), stream = Worker.noStream }
+            \\type Msg = Launch
+            \\main : Browser.Program
+            \\main = Browser.program
+            \\    { init = λ⊤ → 0
+            \\    , update = λ_ model →
+            \\        Task.start (λ⊤ → Task.scope λscope →
+            \\            case Worker.open scope worker "config" Worker.options of
+            \\                Ok handle →
+            \\                    _ = Worker.call handle "request"
+            \\                    _ = Worker.close handle
+            \\                    ⊤
+            \\                Err _ → ⊤) λ_ → ⊤
+            \\        model
+            \\    , view = λ_ → <button onClick={Launch}>launch</button>
+            \\    }
+            \\
+        ;
+        const typed = try std.mem.replaceOwned(u8, w.arena.allocator(), source, "EVENT_TYPE", case.event);
+        try w.write("Main.beni", try std.mem.replaceOwned(u8, w.arena.allocator(), typed, "EXTRA_TYPES", case.types));
+        const built = try w.run(&.{ "build", "--release", "--source-maps", "--allow-unchecked-workers", "--platform=browser", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        const files = try w.listFiles("out/_workers");
+        try testing.expectEqual(@as(usize, 2), files.len);
+        var bodies: usize = 0;
+        for (files) |file| {
+            const text = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/_workers/{s}", .{file}));
+            if (std.mem.endsWith(u8, file, ".map")) {
+                const map = try std.json.parseFromSliceLeaky(struct { sources: []const []const u8 }, w.arena.allocator(), text, .{ .ignore_unknown_fields = true });
+                for (map.sources) |path| try testing.expect(std.mem.indexOf(u8, path, "Browser/WorkerStream.beni") == null);
+            } else {
+                bodies += 1;
+                try testing.expect(std.mem.indexOf(u8, text, "abandonedWorkers") == null);
+                try testing.expect(std.mem.indexOf(u8, text, "NativeTerminated") == null);
+                try testing.expectEqual(case.inhabited, std.mem.indexOf(u8, text, "EventAck") != null);
+                try testing.expectEqual(case.inhabited, std.mem.indexOf(u8, text, "eventCount") != null);
+                try testing.expect(std.mem.indexOf(u8, text, "eventEnabled") == null);
+            }
+        }
+        try testing.expectEqual(@as(usize, 1), bodies);
+    }
+}
+
+test "worker metadata preserves identity and primitive boxing" {
+    const cases = [_]struct { value: []const u8, expected: []const u8 }{
+        .{ .value = "42", .expected = "object false 42 true\n" },
+        .{ .value = "({datum: 42})", .expected = "object true 42 true\n" },
+        .{ .value = "(() => 42)", .expected = "function true 42 true\n" },
+    };
+    for (cases) |case| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        try w.write("platform/Worker.beni",
+            \\import Js
+            \\import Probe
+            \\pub foreign type Program request reply state
+            \\pub foreign type Handle request reply
+            \\pub program : { init : (⊤, ⊤ → state), start : (state, ⊤ → ⊤), handle : (request, state, ⊤ → reply), stream : (⊤, state, ⊤, ⊤ → ⊤) } → Program request reply state
+            \\program _ = make ⊤
+            \\foreign impure make : ⊤ → Program request reply state
+            \\pub run : Program request reply state → ⊤
+            \\run definition = Probe.inspect (Js.from definition)
+            \\pub open : Program request reply state → Result String (Handle request reply)
+            \\open definition = nativeOpen definition
+            \\foreign impure nativeOpen : Program request reply state → Result String (Handle request reply)
+            \\
+        );
+        try w.write("platform/Worker.js", try std.fmt.allocPrint(w.arena.allocator(), "export const make = (_) => {{ globalThis.definition = {s}; return globalThis.definition; }};\nexport const nativeOpen = (definition) => ({{$: 'Err', a: 'unused'}});\n", .{case.value}));
+        try w.write("platform/Probe.beni", "import Js\npub foreign impure inspect : Js.Value → ⊤\n");
+        try w.write("platform/Probe.js",
+            \\export const inspect = (value) => {
+            \\  const datum = typeof value === 'function' ? value() : value.datum ?? Number(value);
+            \\  console.log(typeof value, value === globalThis.definition, datum, Object.hasOwn(value, '$wire'));
+            \\};
+            \\
+        );
+        try w.write("Main.beni",
+            \\import Page
+            \\import Worker
+            \\worker : Worker.Program String (List String) ⊤
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → [ message ], stream = λ_ _ _ _ → ⊤ }
+            \\main : Page.Program
+            \\main = Page.program (λ_ →
+            \\    _ = Worker.open worker
+            \\    ⊤)
+            \\
+        );
+        try w.write("probe.mjs",
+            \\import {readdirSync} from 'node:fs';
+            \\globalThis.addEventListener = () => {};
+            \\globalThis.removeEventListener = () => {};
+            \\globalThis.postMessage = () => {};
+            \\const id = readdirSync('out/_workers')[0];
+            \\await import('./out/_workers/' + id + '/_main.mjs');
+            \\
+        );
+        const built = try w.run(&.{ "build", "--release", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" });
+        try testing.expectEqualStrings("", built.stderr);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        try w.expectProgram("probe.mjs", .{ .stdout = case.expected });
+    }
+}

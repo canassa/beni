@@ -246,6 +246,8 @@ const Convention = @import("../check/Convention.zig");
 pub const Input = struct {
     worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
     worker_definition: ?u32 = null,
+    worker_events: ?bool = null,
+    worker_event_constructors: []const u32 = &.{},
     worker_host: bool = false,
     worker_host_client: bool = false,
     worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
@@ -3570,6 +3572,7 @@ pub const Lowerer = struct {
             .params => {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
+                if (l.in.worker_events) |enabled| if (std.mem.indexOfScalar(u32, l.in.worker_event_constructors, index) != null) try l.constructorEvents(record, enabled, p);
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
                 // The declaration's own arrow takes what it returns as its key
                 // (checker-v2.md §36, the declarations), its return var's
@@ -3621,10 +3624,33 @@ pub const Lowerer = struct {
                     const global = try l.add(.global_this, p, 0, 0);
                     const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
                     const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
+                    var properties: std.ArrayList(Node.Index) = .empty;
                     const plan = try l.wirePlan(l.in.worker_wire, l.in.module, index, p);
-                    if (l.b.tagOf(plan) != .null_lit) {
-                        const metadata = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p)}, p);
-                        value = try l.call(assign, &.{ value, metadata }, p);
+                    if (l.b.tagOf(plan) != .null_lit) try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
+                    if (l.in.worker_events) |enabled| try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$events"), try l.add(if (enabled) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p));
+                    if (properties.items.len != 0) {
+                        const metadata = try l.object(properties.items, p);
+                        if (l.in.development) {
+                            value = try l.call(assign, &.{ value, metadata }, p);
+                        } else {
+                            // Preserve the definition's identity. Direct stores expose
+                            // compiler-owned metadata to Spec; the original operation
+                            // still boxes a platform's primitive representation.
+                            const target = try l.fresh(l.well.temp);
+                            try l.constDecl(&stmts, target, value, p);
+                            const target_value = try l.ident(target, p);
+                            const is_object = try l.binary(.logical_and, try l.binary(.strict_eq, try l.unary(.type_of, target_value, p), try l.stringNode("object", p), p), try l.binary(.strict_ne, target_value, try l.nullNode(p), p), p);
+                            var stores: std.ArrayList(Node.Index) = .empty;
+                            for (properties.items) |prop| {
+                                const data = l.b.dataOf(prop);
+                                const field_target = try l.add(.member, p, target_value.int(), data.lhs);
+                                try stores.append(l.scratch, try l.add(.assign, p, field_target.int(), data.rhs));
+                            }
+                            try stores.append(l.scratch, target_value);
+                            const range = try l.b.addRange(stores.items);
+                            const direct = try l.add(.sequence, p, @backingInt(range.start), @backingInt(range.end));
+                            value = try l.condOf(is_object, direct, try l.call(assign, &.{ target_value, metadata }, p), p);
+                        }
                     }
                 }
 
@@ -6551,6 +6577,25 @@ pub const Lowerer = struct {
             try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(@backingInt(node.kind), p), try l.arrayNode(edges.items, p) }, p));
         }
         return l.arrayNode(&.{ try l.arrayNode(roles.items, p), try l.arrayNode(nodes.items, p) }, p);
+    }
+
+    /// Put the fact in the allocation itself: a later write would also join
+    /// the initially absent field's undefined value in the may-analysis.
+    fn constructorEvents(l: *Lowerer, record: JsIr.ExtraIndex, enabled: bool, p: u32) Allocator.Error!void {
+        const f = l.b.record(@backingInt(record), JsIr.Func);
+        const statements = try l.scratch.dupe(u32, l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]);
+        for (statements) |raw| {
+            const stmt: Node.Index = @fromBackingInt(raw);
+            if (l.b.tagOf(stmt) != .return_stmt) continue;
+            const value = @as(Node.OptionalIndex, @fromBackingInt(l.b.dataOf(stmt).lhs)).unwrap() orelse continue;
+            if (l.b.tagOf(value) != .object) continue;
+            const data = l.b.dataOf(value);
+            var props: std.ArrayList(Node.Index) = .empty;
+            for (l.b.extra.items[data.lhs..data.rhs]) |prop| try props.append(l.scratch, @fromBackingInt(prop));
+            try props.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$events"), try l.add(if (enabled) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p));
+            const range = try l.b.addRange(props.items);
+            l.b.nodes.items(.data)[value.int()] = .{ .lhs = @backingInt(range.start), .rhs = @backingInt(range.end) };
+        }
     }
 
     fn workerDescriptor(l: *Lowerer, descriptor: @import("WorkerEntry.zig").Descriptor, p: u32) Allocator.Error!Node.Index {

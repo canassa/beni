@@ -1362,6 +1362,8 @@ const Emitter = struct {
     deferred: []const Reach.Node = &.{},
     worker_entries: []const WorkerEntry.Descriptor = &.{},
     worker_runtime: ?EntryPlan.Value = null,
+    worker_kind: EntryPlan.KindIndex = .none,
+    worker_events: ?bool = null,
     output_prefix: []const u8 = "",
     /// `Lower.Input.core_private`, the same for every module of the build.
     core_private: Lower.CorePrivate = @splat(true),
@@ -1941,6 +1943,24 @@ const Emitter = struct {
         try e.workerFinally(&text);
         try e.produce(default_entry_file, text.items, e.session.store.path(e.graph().moduleFile(entry.module)));
     }
+    fn workerEventCapability(e: *Emitter, descriptor: WorkerEntry.Descriptor) Allocator.Error!?bool {
+        const parameters = e.options.platform.entry_kinds[@backingInt(descriptor.kind)].definition.parameters;
+        const wire = &e.session.checked.type_keys[descriptor.module.int()].wire;
+        for (parameters, 0..) |parameter, pi| {
+            if (!std.mem.eql(u8, parameter.role, "wire") or parameter.path.len != 1 or !std.mem.eql(u8, parameter.path[0], "event")) continue;
+            for (wire.roots) |root| {
+                if (root.decl != descriptor.decl) continue;
+                for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+                    if (role.index != pi) continue;
+                    const has_value = try @import("../check/Wire.zig").inhabited(e.scratch, wire);
+                    return has_value[role.node];
+                }
+            }
+            return true;
+        }
+        return null;
+    }
+
     fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
         var options = e.options;
         options.platform.entry_host = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).realm;
@@ -1966,6 +1986,8 @@ const Emitter = struct {
             .v2_whole = e.v2_whole,
             .forwarding_foreigns = e.forwarding_foreigns,
             .worker_fingerprint = descriptor.fingerprint,
+            .worker_kind = descriptor.kind,
+            .worker_events = try e.workerEventCapability(descriptor),
             .worker_candidates = e.worker_candidates,
             .deferred = e.deferred,
             .worker_entries = e.worker_entries,
@@ -7202,13 +7224,21 @@ const Emitter = struct {
             // module, if it has one (`backend.md` §9, *The join*). A
             // release build reads no row: its bytes come from the release
             // optimiser, not from development text.
+            var event_constructors: std.ArrayList(u32) = .empty;
+            if (e.worker_events != null and e.worker_kind != .none) {
+                const range = e.session.entry_plan.kinds.get(@backingInt(e.worker_kind)).constructors;
+                for (range.start..range.start + range.len) |ci| {
+                    const ctor = e.session.entry_plan.constructors.get(ci);
+                    if (ctor.value.module == m) try event_constructors.append(scratch, ctor.value.decl);
+                }
+            }
             var reuse: ?*const EmitPack.Row = null;
             // Walk 1 is untouched (`lower_only`): its one purpose is what
             // the module uses of the runtime module, and it prints nothing.
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7219,6 +7249,8 @@ const Emitter = struct {
                 }
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
+                .worker_events = e.worker_events,
+                .worker_event_constructors = event_constructors.items,
                 .bir = e.bir(m),
                 .worker_host = e.workerHostModule() == m,
                 .worker_host_client = (e.workerHostClient()) == m,
@@ -7605,6 +7637,7 @@ const Emitter = struct {
         std.mem.sortUnstable(Spec.FieldKey, field_keys.items, {}, Spec.FieldKey.lessThan);
         var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
+            .fold_object_types = e.worker_runtime != null,
             .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
             .modules = modules.items,
             .globals = ids.count(),
