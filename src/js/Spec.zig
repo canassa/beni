@@ -5192,6 +5192,7 @@ const Spec = struct {
         };
         if (binds.items.len == 0) return false;
         var any = false;
+        var discarded: ?Index = null;
         var reads = try s.takeStack();
         defer s.giveStack(&reads);
         const dead = try s.arena.alloc(bool, binds.items.len);
@@ -5246,9 +5247,13 @@ const Spec = struct {
                 // The binding goes, as `Opt` would drop it: a statement of
                 // its literal, which its list's fold takes out
                 // (`literalStmt`).
-                m.setNode(value, .undefined_lit, 0, 0);
-                if (value.int() < m.lit_of.len) m.lit_of[value.int()] = none;
-                m.setNode(node, .expr_stmt, value.int(), 0);
+                // A pattern's subject can be shared by its alias and field
+                // bindings. Remove this edge without rewriting that subject.
+                if (discarded == null) {
+                    discarded = try m.addNode(s.gpa, .undefined_lit, ir.pos(node), 0, 0);
+                    try s.grow();
+                }
+                m.setNode(node, .expr_stmt, discarded.?.int(), 0);
                 any = true;
             }
         }

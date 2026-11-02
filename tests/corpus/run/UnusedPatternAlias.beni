@@ -1,0 +1,18 @@
+import Io
+import Node
+import Ref
+
+
+type Pair
+    = Pair (Ref.Ref Int) (Ref.Ref Int)
+
+
+read : Pair → Int
+read ((Pair a b) as pair) = Ref.get a + Ref.get b
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    first = read (Pair (Ref.make 20) (Ref.make 22))
+    second = read (Pair (Ref.make 30) (Ref.make 12))
+    Node.print (String.fromInt (first + second))
