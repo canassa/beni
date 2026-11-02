@@ -1,7 +1,7 @@
 //! One name fence for resolution, diagnostics and generated API references.
 const std = @import("std");
 
-pub const Access = enum { core, task };
+pub const Access = enum { core, task, worker };
 const Entry = struct {
     module: []const u8,
     name: ?[]const u8,
@@ -10,6 +10,11 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Browser.Worker", .name = "run", .access = .worker },
+    .{ .module = "Browser.Worker", .name = "installHostStop", .access = .worker },
+    .{ .module = "Browser.WorkerRuntime", .name = "run", .access = .worker },
+    .{ .module = "Rt", .name = "workerStop", .access = .worker },
+    .{ .module = "Rt", .name = "workerDefect", .access = .worker },
     .{ .module = "Js", .name = "invoke", .value_only = true },
     .{ .module = "Js", .name = "completion", .access = .task, .value_only = true },
     .{ .module = "Js.Runtime", .name = "parked", .access = .task },
@@ -30,4 +35,8 @@ pub fn access(module: []const u8, name: []const u8, is_value: bool) ?Access {
         return entry.access;
     }
     return null;
+}
+
+pub fn workerCaller(platform: bool, module: []const u8) bool {
+    return platform and (std.mem.eql(u8, module, "Browser.Worker") or std.mem.eql(u8, module, "Browser.WorkerRuntime"));
 }

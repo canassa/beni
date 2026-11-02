@@ -427,8 +427,6 @@ transportFailed peer failure =
             (case failure of
                 CleanupAbandoned →
                     Abandoned
-                PeerUnresponsive →
-                    Unconfirmed LeaseExpired
                 _ →
                     Unconfirmed ConnectionLost
             )
@@ -556,7 +554,8 @@ installFatal ⊤ =
         ⊤
     else
         Js.write installed True
-        Task.onDefect stopRealm
+        -- Preserve the platform's Task.onDefect hook; native error reporting
+        -- below enters its page stop path after Task has called that hook.
         if Js.isUndefined (Js.global "window") then
             ⊤
         else
@@ -571,6 +570,7 @@ installFatal ⊤ =
                             else
                                 Js.write firstDefect cause
                                 Js.set cause "abandonedWorkers" abandoned
+                                stopRealm ⊤
                     ]
             ⊤
         Task.onShutdown λ⊤ →
@@ -907,10 +907,7 @@ close handle = Task.uninterruptible λ⊤ →
                 cleanup
             Nothing →
                 transportFailed peer PeerUnresponsive
-                if Js.to (Js.get peer "ready") then
-                    Unconfirmed LeaseExpired
-                else
-                    Unconfirmed ConnectionLost
+                Unconfirmed ConnectionLost
 
 
 pub abort : Handle protocol → Cleanup
@@ -1190,8 +1187,11 @@ stopRealm ⊤ =
     if Js.isUndefined (Js.global "window") then
         Task.shutdown 1000 λ_ → abandonUnfinished ⊤
     else
-        Js.to (Js.apply (Js.read hostStop) [ host ⊤ ])
-        Task.shutdown 1000 λcut → Js.to (Js.apply (Js.read hostStopped) [ host cut ])
+        if Js.typeIs (Js.read hostStop) "function" then
+            Js.to (Js.apply (Js.read hostStop) [ host ⊤ ])
+        Task.shutdown 1000 λcut →
+            if Js.typeIs (Js.read hostStopped) "function" then
+                Js.to (Js.apply (Js.read hostStopped) [ host cut ])
 
 
 terminalReply : V, Int, String, V → ⊤
@@ -1240,10 +1240,27 @@ workerDefect peer report =
         ⊤
     else
         Js.set peer "defected" (host True)
+        raw = Js.get report "message"
+        named = Js.get report "name"
+        native = Js.call raw "match" [ Js.regExp "^(?:Uncaught )?([A-Za-z]*Error): (.*)$" "s" ]
         message =
-            Js.call (Js.get report "message") "replace"
-                [ Js.regExp "^Uncaught (?:Error: )?" "", host "" ]
+            if Js.typeIs named "string" then
+                raw
+            else if Js.isNull native then
+                Js.call raw "replace" [ Js.regExp "^Uncaught " "", host "" ]
+            else
+                Js.at native 2
         cause = Js.construct (Js.global "Error") [ message ]
+        Js.set
+            cause
+            "name"
+            (if Js.typeIs named "string" then
+                named
+             else if Js.isNull native then
+                host "Error"
+             else
+                Js.at native 1
+            )
         stack = Js.get report "stack"
         if Js.typeIs stack "string" && not (Js.same stack (host "")) then Js.set cause "stack" stack
         Js.set cause "entryId" (Js.get peer "entry")

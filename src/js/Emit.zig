@@ -758,17 +758,7 @@ pub fn run(
         try e.findLifts();
         try e.cutPrerender();
     };
-    try e.eliminate(entry);
-    if (e.hasWorkerLaunch() or e.session.entry_plan.selected != .none) {
-        try e.workerCandidates();
-        e.reach.deferred = e.deferred;
-        var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
-        for (e.worker_candidates) |descriptor| {
-            if (descriptor.wire) |wire| try wire_types.appendSlice(e.scratch, wire.types);
-        }
-        e.reach.wire_types = wire_types.items;
-        try e.walk();
-    }
+    try e.workerDiscoveryReach(entry);
     try e.planWorkers(entry);
     if (e.workerHostModule() != null) {
         e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
@@ -875,6 +865,30 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     try e.checkSiblings();
     try e.checkMarkupRuntime();
     try e.checkEntryKinds();
+    // Entry reachability is needed only when this check can reach a worker
+    // launch. Ordinary checks keep their existing declaration-only path.
+    if (!e.hasErrors() and !options.allow_unchecked_workers and session.entry_plan.launches.len != 0) {
+        var entry: ?Emitter.Entry = null;
+        var multiple = false;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            if (e.graph().modulePackage(m) != .app) continue;
+            const b = e.bir(m);
+            for (b.decls, 0..) |d, di| {
+                if (d.kind != .value or b.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
+                if (entry != null) multiple = true else entry = .{ .module = m, .decl = @fromBackingInt(@intCast(di)) };
+            }
+        }
+        if (multiple) entry = null;
+        e.options.library = entry == null;
+        var pool: Emitter.Workers = try .init(gpa, session.io, e.workerCount());
+        defer pool.deinit();
+        e.pool = &pool;
+        e.extra_roots = try e.coarseRuntimeRoots();
+        try e.workerDiscoveryReach(entry);
+        var found: std.ArrayList(u32) = .empty;
+        try e.discoverWorkers(entry, &found);
+    }
     return e.diagnostics.toOwnedSlice(gpa);
 }
 
@@ -1598,6 +1612,20 @@ const Emitter = struct {
         }
     }
 
+    fn workerDiscoveryReach(e: *Emitter, entry: ?Entry) !void {
+        try e.eliminate(entry);
+        if (e.hasWorkerLaunch() or e.session.entry_plan.selected != .none) {
+            try e.workerCandidates();
+            e.reach.deferred = e.deferred;
+            var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
+            for (e.worker_candidates) |descriptor| {
+                if (descriptor.wire) |wire| try wire_types.appendSlice(e.scratch, wire.types);
+            }
+            e.reach.wire_types = wire_types.items;
+            try e.walk();
+        }
+    }
+
     fn hasWorkerLaunch(e: *const Emitter) bool {
         const plan = &e.session.entry_plan;
         for (0..plan.constructors.len) |ci| {
@@ -1808,7 +1836,8 @@ const Emitter = struct {
             \\const report = event => {
             \\  const cause = event.error ?? event.reason;
             \\  globalThis.postMessage({worker: 1, kind: "Defect", payload: {
-            \\    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").replace(/^Uncaught (?:Error: )?/, "").slice(0, 4096),
+            \\    name: typeof cause?.name === "string" ? cause.name.slice(0, 64) : null,
+            \\    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").slice(0, 4096),
             \\    stack: String(cause?.stack ?? "").slice(0, 16384)
             \\  }});
             \\};

@@ -306,6 +306,10 @@ pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, 
     const w = &out.writer;
     const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
     const method_text = r.env.interner.slice(method);
+    if (@import("../resolve/CorePrivate.zig").access(module_text, method_text, true) == .worker) {
+        w.writeAll("This name is private to the platform’s worker entry machinery.") catch return error.OutOfMemory;
+        return r.emit(.private_method, region, &out);
+    }
     w.print(
         \\`{s}.{s}` is not `pub`.
         \\
