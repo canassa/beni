@@ -106,6 +106,8 @@ pub const open_bit: u32 = 1 << 31;
 pub const below_min: usize = 16;
 
 /// One projected object: its leaf and the literal route that reached it.
+pub const Part = struct { leaf: u32, at: Slots.Rel };
+
 pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
 
 pub const Eval = struct {
@@ -233,6 +235,95 @@ pub const Eval = struct {
                 .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it[1] })),
             }
         }
+    }
+
+    /// A leaf of a value and the slot it sits at: `leavesOf`'s leaves, each
+    /// at the steps from the value's slot that name it (a part no step
+    /// names, a list's storage or an opaque value's, sits at its value's).
+    pub fn partsOf(e: *Eval, v0: u32, at0: []const u32, out: *std.ArrayList(Part)) Error!void {
+        const f = e.f;
+        const g = e.gpa();
+        const Item = struct { v: u32, tags: u32, at: []const u32 };
+        var stack: std.ArrayList(Item) = .empty;
+        defer stack.deinit(g);
+        try stack.append(g, .{ .v = v0, .tags = 0, .at = at0 });
+        while (stack.pop()) |it| {
+            try e.charge(.inspection, 1);
+            const x = f.val(it.v);
+            const here = try f.slots.relOfWords(g, f.account, f.places, it.at);
+            switch (x.kind) {
+                .built => {
+                    if (x.site != none) try out.append(g, .{ .leaf = try f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .at = here });
+                    if (x.form == .list and x.head != 0) {
+                        var ls: std.ArrayList(u32) = .empty;
+                        defer ls.deinit(g);
+                        try e.storageOf(x.head - 1, it.tags, &ls);
+                        for (ls.items) |l| try out.append(g, .{ .leaf = l, .at = here });
+                    }
+                    for (f.kidsOf(x), 0..) |kv, n| {
+                        const st: ?Step = switch (x.form) {
+                            .tuple => try Step.index(f.account, @intCast(n)),
+                            .ctor => try f.places.ctorStep(g, f.account, x.head, @intCast(n)),
+                            .list => Step.elem,
+                            .record => try Step.field(f.account, f.wordsOf(x.extra)[n]),
+                            .closure, .opaque_ => null,
+                        };
+                        const at = if (st) |stp| try std.mem.concat(e.arena, u32, &.{ it.at, &.{stp.word()} }) else it.at;
+                        try stack.append(g, .{ .v = kv, .tags = it.tags, .at = at });
+                    }
+                },
+                .alt => {
+                    const ks = f.kidsOf(x);
+                    var i: usize = 0;
+                    while (i < ks.len) : (i += 2) {
+                        const t = (try f.mergeTags(it.tags, try f.internTags(&.{.{ x.head, ks[i] }}))) orelse continue;
+                        try stack.append(g, .{ .v = ks[i + 1], .tags = t, .at = it.at });
+                    }
+                },
+                else => {
+                    var ls: std.ArrayList(u32) = .empty;
+                    defer ls.deinit(g);
+                    try e.leavesOf(it.v, it.tags, &ls);
+                    for (ls.items) |l| try out.append(g, .{ .leaf = l, .at = here });
+                },
+            }
+        }
+    }
+
+    /// The value at relative steps `words` of value `v`, by the walk's projection.
+    pub fn valueAt(e: *Eval, v0: u32, words: []const u32) Error!u32 {
+        const f = e.f;
+        var v = v0;
+        for (words) |wd| {
+            const x = f.val(v);
+            const st = Step.fromWord(wd);
+            v = switch (x.kind) {
+                .ref => blk: {
+                    if (x.family != Slots.empty) break :blk try f.top();
+                    const p = (try f.child(x.pos, if (st.kind == .elem) .plain else .plain, wd, 0)) orelse break :blk try f.top();
+                    break :blk try f.mk(.{ .kind = .ref, .root = x.root, .pos = p });
+                },
+                .built => blk: {
+                    const ks = f.kidsOf(x);
+                    switch (x.form) {
+                        .tuple => if (st.kind == .index and st.payload < ks.len) break :blk ks[st.payload],
+                        .ctor => if (st.kind == .ctor_arg) {
+                            const ca = f.places.ctorArgOf(st);
+                            if (ca[0] == x.head and ca[1] < ks.len) break :blk ks[ca[1]];
+                        },
+                        .record => if (st.kind == .field) for (f.wordsOf(x.extra), 0..) |r, n| {
+                            if (r == st.payload) break :blk ks[n];
+                        },
+                        .list => if (st.kind == .elem and ks.len == 1) break :blk ks[0],
+                        else => {},
+                    }
+                    break :blk try f.top();
+                },
+                .scalar, .bot => return v,
+                else => try f.top(),
+            };
+        }
+        return v;
     }
 
     /// The objects at value `v`'s own storage (a shallow write's target):

@@ -1,0 +1,3 @@
+# v2 refuses a passed-on callback's write of a record field that aliases another part, or is read again (§2.11.3).
+37:16 list_may_be_shared SanitiserPassedLabel.wrap
+39:16 list_still_used SanitiserPassedLabel.wrap
