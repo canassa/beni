@@ -9229,6 +9229,85 @@ body walk, so a contract at recursive boundaries alone does not reach it. The fu
 table, the scaling (copies are linear; payload fields add a pairwise term in the body walk) and the ledger. It is
 `experiments/recursive-contracts/report.md` on the branch.
 
+*Q8, continued: contracts plus S6d* [M 2026-11-02, #1372, #1590; a scratch prototype on branch
+`exp-contracts-s6d`, `exp-recursive-contracts` rebased onto `8d14b80c6`, self-hosted ReleaseSafe; not built,
+not specified]. The question: can a `case` join over a many-armed summary be made about linear in I_f, so that
+contracts and the data-oriented plan's S6d (`Propagate` as a position-ordered dynamic program) bring `removeMin`
+under the default allowance? The answer is **no**.
+- **The join, attributed.** `removeMin`'s two outer joins have 2 arms each. The arms are inside one arm's value:
+  `balance`'s 5-arm `res`, read lazily as views, with the port's knot below it. On walk 1, the largest join
+  is 34 299 records over 109 states of Σ and 58 output positions. On walk 3 it is 304 124 records over
+  1 194 states and 50 positions. About 90 % of the records are dictionary operations and inspections, and
+  the objects made are 7–11 %. `Propagate`'s own keyed memos are 10 %. The rest is in the readers that one
+  state calls: the κ machine 22–29 %, `frontierWith` 32–39 %, and `side` and `proj` 18–33 %.
+- **What a caller can observe is small.** The 109 states store 55 distinct (node, κ) entries, the 1 194 states
+  store 153, and each join has only **2 distinct κ conditions**. But the states cannot be merged exactly in
+  v2's domain:
+  - each state is a distinct set of the members' atoms (the non-union nodes under a member's union DAG), and
+    normalising the union DAGs merges none of them;
+  - splitting the runs into single atoms gives 3 024 (node, atom, position) triples, more than the states;
+  - the joined value folds at period 1, but the members' lazy unions of leaves, views and recasts stay
+    distinct nodes for many levels.
+- **S6d as built.** It is exact. Each function that pass 1 calls is computed once per distinct argument tuple
+  in the call, instead of once per run:
+  - `kappaOf` per (position, member, class);
+  - `cursorSteps` per context list;
+  - `frontierWith` per (node, class, step set);
+  - `proj(side(…))` per (member, step, inner place).
+
+  These functions are pure within a call, so Σ and the snapshot are fold-first's ids, and fold-first equals
+  the reference (§2.9 *It is exact*). The checks found no difference:
+  - `--ownership-order-check` on four probes;
+  - `-Downership-full-cross-check` against the reference in both orders, on `RemoveMinBig` and `Reversed`;
+  - every verdict line of the 478 ownership fixture tokens, unchanged for master, contracts and helper
+    contracts.
+- **Why S6d cannot be large.** Fold-first reads each state of Σ once. A DP in position order makes at least one
+  transfer per (position, state), so it reads at least |Σ| states. Ordering the positions can only replace
+  `Propagate`'s keyed memos, which are 10 % of the join.
+
+`removeMin`, total records by walk (cumulative, allowance 20M):
+
+| Walk | Master | Contracts | Contracts + S6d | Helper contracts + S6d (stage 8) |
+|---|---|---|---|---|
+| 1 | 34 680 | 109 181 | 107 073 | 112 825 |
+| 2 | 221 395 | 279 209 | 273 334 | 617 153 |
+| 3 | 1 011 332 | 1 168 453 | 1 013 372 | 1 145 642, settled |
+| 4 | 4 173 011 | 2 006 153, settled | 1 701 866, settled | |
+| growth | limit | 1 915 859 | 1 611 572 | 1 054 396 |
+
+- **None fits 65 536 growth.**
+  - `removeMinL` (`List Int` payloads): 3.73M records with contracts, 2.98M with S6d, 1.61M with helper
+    contracts and S6d.
+  - Core's `Dict.removeMin` stays a limit in every configuration, and `Dict.descend` stays a limit with
+    contracts.
+- **Per written instruction** (I_f = 93), contracts + S6d cost 1 151, 1 788, 7 957 and 7 403 records on walks
+  1–4. That is not c·I_f with a small c: walk 1 is already 1.1 K, against a budget of about 1.7 K·I_f for the
+  whole group.
+- **Walk 1 is the contract's port.** Its 20 empty slots already have the knot's structure. Master's walk 1,
+  with port ⊥, joins 19 states for 7 936 records.
+- **Scaling.** Copies stay exactly linear. Payload fields stay quadratic: +2.40M, +3.26M, +4.28M per field with
+  contracts + S6d, against +3.15M, +4.40M, +5.88M without S6d.
+- **Soundness and precision.**
+  - Every control of the last experiment still holds, and the forced-unsafe control traps under
+    `--sanitize-lists`.
+  - The ledger against master is the last experiment's, line for line: 65 accept→refuse with contracts, and
+    143 with helper contracts.
+  - The prototype trips `KappaRead.derivedCells`' flat/indexed cross-check, with or without S6d. In every
+    differing read, the indexed read is `lost`, so it costs precision, not soundness.
+
+**What it settles.** The joins stay superlinear although their states differ in nothing that a caller reads.
+So the limit is v2's local value model, not the order in which `propagate` visits positions. A linear local
+domain would need four properties:
+1. values keyed by canonical result paths (the contract's slots), not by shape nodes and routes;
+2. κ per slot as atoms over its arrivals;
+3. callee summaries instantiated once per call site as per-slot facts, not read lazily as views at each
+   position;
+4. an empty contract's port that is ⊥.
+
+At helpers, its measured price is the stage-8 ledger (143 lines), and the certificate's readers need slot knots
+(65 lines). The alternative is v2's precision with `Dict` as a known limit. That choice is the owner's, with
+Astra's review. The report is `experiments/contracts-s6d/report.md` on the branch.
+
 *One walk of `removeMin`, attributed (#1372, #1590)* [M 2026-11-01, master `212f366bb`, self-hosted Debug,
 `dump --stage=ownership --ownership=v2 --jobs=1`, the module allowance at 4 194 304; scratch instrumentation
 that tagged every committed record with its walk, its phase and its innermost reader, and counted the state
