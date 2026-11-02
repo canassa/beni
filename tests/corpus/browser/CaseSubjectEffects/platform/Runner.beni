@@ -1,0 +1,16 @@
+import Page
+import Task
+
+
+pub run : { init : (⊤, ⊤ → Result String state), start : (state, ⊤ → ⊤) } → ⊤
+run callbacks =
+    Task.start
+        (λ⊤ →
+            case callbacks.init ⊤ ⊤ of
+                Err _ →
+                    ⊤
+                Ok state →
+                    Page.button λ_ → Task.start (λ⊤ → callbacks.start state ⊤) λ_ → ⊤
+                    callbacks.start state ⊤
+        )
+        λ_ → ⊤

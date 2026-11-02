@@ -1,0 +1,13 @@
+-- No worker is defined or launched. Removing the init result must keep its effect.
+import Page
+import Runner
+
+
+init : ⊤, ⊤ → Result String ⊤
+init _ _ =
+    Page.text "initialized"
+    Ok ⊤
+
+
+main : Page.Program
+main = Page.program λ_ → Runner.run { init = init, start = λ_ _ → ⊤ }

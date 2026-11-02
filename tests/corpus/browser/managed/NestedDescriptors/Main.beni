@@ -1,7 +1,7 @@
 -- Hoisting must resolve the child descriptor from the final worker artifact.
 import Browser
 import Browser.Worker as Worker
-import Child
+import Deep.Child as Child
 import Hosted
 import Html exposing (Html)
 import Task

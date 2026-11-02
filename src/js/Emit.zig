@@ -8197,6 +8197,10 @@ const Emitter = struct {
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
     fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+        // Worker bindings are inside the bootstrap try block; none may
+        // be exported by the module-level footer after its finally.
+        if (e.worker_runtime != null and
+            (e.exportsProgram() or e.suppliedAs("flush") != null or e.suppliedAs("stop") != null)) return null;
         const scratch = e.scratch;
         var files: std.ArrayList(HandFile) = .empty;
 
@@ -8439,8 +8443,9 @@ const Emitter = struct {
             }
         }
 
-        if (e.worker_runtime != null) for (files.items) |f| {
+        if (e.worker_runtime != null) for (files.items, 0..) |f, i| {
             if (f.declined or f.read.imports.len != 0) return null;
+            if (runtime_index == @as(?u32, @intCast(i)) and f.read.exportBinding("flush") != null) return null;
             // The bootstrap lives outside the body's try scope. Its bindings
             // must not shadow a hand-written file's free host names.
             for ([_][]const u8{ "report", "pending", "hold" }) |name| {

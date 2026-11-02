@@ -1,0 +1,7 @@
+{
+  "platform": true,
+  "name": "case-subject-effects",
+  "entryHost": "window",
+  "program": "Page.Program",
+  "runtime": "runtime.js"
+}

@@ -1,0 +1,39 @@
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.Node as NativeNode
+import Browser.Host.Window as Window
+import Js
+
+
+pub foreign type Program
+
+
+pub program : sync (⊤ → ⊤) → Program
+program init = Js.to (Js.object [ ( "$init", Js.from init ) ])
+
+
+pub text : String → ⊤
+text value =
+    document = Window.document ⊤
+    case Document.querySelector document "output" of
+        Ok (Just element) →
+            NativeNode.setTextContent (Element.toNode element) value
+        Ok Nothing →
+            createOutput document value
+        Err _ →
+            internalSelector ⊤
+
+
+pub button : sync (⊤ → ⊤) → ⊤
+button callback = addButton (Window.document ⊤) callback
+
+
+foreign impure createOutput : Document.Document, String → ⊤
+
+
+foreign impure addButton : Document.Document, sync (⊤ → ⊤) → ⊤
+
+
+internalSelector : ⊤ → a
+internalSelector _ =
+    Js.throw (Js.construct (Js.global "Error") [ Js.from "invalid internal page selector" ])
