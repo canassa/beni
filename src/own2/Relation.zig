@@ -160,6 +160,9 @@ pub const Eval = struct {
     inst_depth: u32 = 0,
     /// A read-off pass (§2.3.4 *Reading*): 0 when none.
     pass: u32 = 0,
+    /// A deep projection read part by part (`Distinct.instSel`): a literal
+    /// below the slot gives each part's own objects at its own route.
+    parts: bool = false,
 
     pub fn deinit(e: *Eval) void {
         const g = e.f.gpa;
@@ -420,7 +423,7 @@ pub const Eval = struct {
                 .shared => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it.tags }), .route = it.route }),
                 .alt => {
                     // Read deep whole: its leaf set, the leaves its arms give.
-                    if (rest.len == 0 and deep) {
+                    if (rest.len == 0 and deep and !e.parts) {
                         var ls: std.ArrayList(u32) = .empty;
                         defer ls.deinit(e.gpa());
                         try e.leavesOf(it.v, it.tags, &ls);
@@ -463,6 +466,17 @@ pub const Eval = struct {
                     try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it.tags }), .route = it.route });
                 },
                 .built => {
+                    if (rest.len == 0 and deep and e.parts) {
+                        if (x.site != none) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .route = it.route });
+                        if (x.form == .list and x.head != 0) {
+                            var ls: std.ArrayList(u32) = .empty;
+                            defer ls.deinit(e.gpa());
+                            try e.storageOf(x.head - 1, it.tags, &ls);
+                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
+                        }
+                        for (e.f.kidsOf(x), 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = it.at, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
+                        continue;
+                    }
                     if (rest.len == 0) {
                         if (deep) {
                             var ls: std.ArrayList(u32) = .empty;
