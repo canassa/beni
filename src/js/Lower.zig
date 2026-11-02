@@ -3639,7 +3639,7 @@ pub const Lowerer = struct {
                             const target = try l.fresh(l.well.temp);
                             try l.constDecl(&stmts, target, value, p);
                             const target_value = try l.ident(target, p);
-                            const is_object = try l.binary(.logical_and, try l.binary(.strict_eq, try l.unary(.type_of, target_value, p), try l.stringNode("object", p), p), try l.binary(.strict_ne, target_value, try l.nullNode(p), p), p);
+                            const is_object = try l.binary(.logical_and, try l.binary(.strict_eq, try l.unary(.worker_definition_type, target_value, p), try l.stringNode("object", p), p), try l.binary(.strict_ne, target_value, try l.nullNode(p), p), p);
                             var stores: std.ArrayList(Node.Index) = .empty;
                             for (properties.items) |prop| {
                                 const data = l.b.dataOf(prop);

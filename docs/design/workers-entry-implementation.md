@@ -181,3 +181,8 @@ object literal. Release metadata stores preserve the Program's identity and keep
 the original primitive-boxing path; allocation-type folding removes that guard
 in known object cases. Constructor rows that predate this per-entry fact are not
 reused. These worker-only folds leave ordinary no-worker output unchanged.
+The compiler marks that metadata `typeof` as `worker_definition_type` in JsIr;
+ordinary source `typeof` expressions never use this allocation-site fold, even
+inside a worker. A possible undefined value prevents refinement, and a possible
+null value prevents refinement to function. Heap allocation sites alone do not
+describe these non-heap members of a points-to value.

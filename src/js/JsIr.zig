@@ -442,12 +442,15 @@ pub const UnaryOp = enum(u8) {
     /// assignment, so the printer brackets it everywhere but a `const`'s
     /// value, a `return` and an argument (`Print.precedence`).
     yield,
+    /// `typeof` only for the compiler-emitted worker metadata guard.
+    /// Separate from source `typeof`: allocation facts may refine this site.
+    worker_definition_type,
 
     pub fn text(op: UnaryOp) []const u8 {
         return switch (op) {
             .neg => "-",
             .not => "!",
-            .type_of => "typeof ",
+            .type_of, .worker_definition_type => "typeof ",
             .yield => "yield ",
         };
     }
@@ -456,7 +459,7 @@ pub const UnaryOp = enum(u8) {
     /// the adjacency guard puts back only where the next token needs it.
     pub fn compactText(op: UnaryOp) []const u8 {
         return switch (op) {
-            .type_of => "typeof",
+            .type_of, .worker_definition_type => "typeof",
             .yield => "yield",
             else => op.text(),
         };

@@ -2335,3 +2335,28 @@ test "worker metadata preserves identity and primitive boxing" {
         try w.expectProgram("probe.mjs", .{ .stdout = case.expected });
     }
 }
+
+test "release workers that launch a child retain forced child abandonment" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/browser/managed/NestedDefect", "_expected.");
+    const built = try w.run(&.{ "build", "--platform=platform", "--allow-unchecked-workers", "--release", "--source-maps", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    var parents: usize = 0;
+    var leaves: usize = 0;
+    for (try w.listFiles("out/_workers")) |path| {
+        if (!std.mem.endsWith(u8, path, ".mjs")) continue;
+        const body = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/_workers/{s}", .{path}));
+        // Only the parent carries a descriptor for another worker entry.
+        if (std.mem.indexOf(u8, body, "/_main.mjs") != null) {
+            parents += 1;
+            try testing.expect(std.mem.indexOf(u8, body, "NativeTerminated") != null);
+        } else {
+            leaves += 1;
+            try testing.expect(std.mem.indexOf(u8, body, "NativeTerminated") == null);
+        }
+    }
+    try testing.expectEqual(@as(usize, 1), parents);
+    try testing.expectEqual(@as(usize, 1), leaves);
+}

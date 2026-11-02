@@ -163,11 +163,14 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 cfefd9bdbb347f5df45a2396f173ac4b4e6b9c1da849c0f98a0205be68d8bf3f
-platform_test.test.release worker init runs when specialisation removes its unused state #0 15b8ba920a0799fdcb85b4a28ee99b9775d01e342c6ad7688a7890e53a9cbad0
+platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 928db6a96d5f5f124b9d1adba690ab5acde3b2bb31b44dab30901170340004ad
+platform_test.test.release worker init runs when specialisation removes its unused state #0 57279a8b8f77027305919e6e6e534e7693dad3da3eebddcdcedeff4479e6fb4b
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 1093639f584107e0b9df9fcf2df078a3f53381f293073dd3e4c53e245b0c9192
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 d7cbf2b2e0fdfa5061eb94915334ae2fb7ce0329f7afafbb8d03dfad8cdceff3
 platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 83f4e32899685b548eee52e3d2e60c48bd9d042095009db6b2b5fd2df73b5f0d
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 a544013d621e5b864ee4ee9395201a86b62ee72282c622b16bd5a92827d6740d
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 18fea0d2784a0a15bc11e34fbe96d82eb95d793e83f88971c09c889110d4ca58
 platform_test.test.worker launch URLs stay relative to their module under release specialization #0 80cee573752adbd9ce8f6bae43df2b61ef85e639487fcfdacd2a4e4f1a7b6d2b
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 09f8ba5978f007fde083986156e1b67a8d1ad4580ff8d576f9cde33855fc9a1d
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 f5f3f2f64ac77d820efa033f3f11d219a552be7e7e134d60c0f078f34cf99be9
+platform_test.test.worker metadata preserves identity and primitive boxing #0 5305702161e8c7c8a0066adf8a4b25a2b87136abd8341abff987fa376d6406dd
+platform_test.test.worker metadata preserves identity and primitive boxing #1 74c4694b840c95e4b5d60607eabc1b894c855d6f5c5747bc7c36150571eb8722
+platform_test.test.worker metadata preserves identity and primitive boxing #2 5451060d09b515ddfbe45de4977fd8d20b987db8090f6546356884c55d972295

@@ -278,9 +278,9 @@ pub const Tables = struct {
 };
 
 pub const Input = struct {
-    // Worker metadata guards preserve primitive boxing; other entries keep
-    // their existing output and pay for no allocation-type query.
-    fold_object_types: bool = false,
+    // Refine only the compiler-emitted worker_definition_type guard.
+    // Source typeof expressions never consult allocation-site types here.
+    fold_worker_metadata: bool = false,
     modules: []const Module,
     /// How many whole-program ids `Module.global` uses.
     globals: u32,
@@ -2990,7 +2990,7 @@ const Spec = struct {
             // that is neither `null` nor `undefined`.
             .unary => blk: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
-                if (op == .type_of and s.in.fold_object_types) {
+                if (op == .worker_definition_type and s.in.fold_worker_metadata) {
                     if (try s.objectTypeOf(m, @fromBackingInt(@intCast(d.lhs)))) |value| break :blk value;
                 }
                 const v = try s.unary(op, m.memo[d.lhs]);
@@ -3552,7 +3552,7 @@ const Spec = struct {
     fn objectTypeOf(s: *Spec, m: *Mod, operand: Index) Allocator.Error!?Lat {
         if (!s.pts.ok or m.ir.tag(operand) != .ident or operand.int() >= s.pts.vals[m.index].len) return null;
         const value = s.pts.vals[m.index][operand.int()];
-        if (value.top or value.prim or value.sites.len == 0) return null;
+        if (value.top or value.prim or value.undef or value.sites.len == 0) return null;
         var functions: ?bool = null;
         for (value.sites) |site_id| {
             const site = s.pts.sites.items[site_id];
@@ -3562,6 +3562,7 @@ const Spec = struct {
                 .arrow, .func_decl, .gen_decl => true,
                 else => return null,
             };
+            if (value.nul and is_function) return null;
             if (functions) |previous| if (previous != is_function) return null;
             functions = is_function;
         }
@@ -3574,7 +3575,7 @@ const Spec = struct {
             // A boolean, `true` exactly when its operand is falsy.
             .not => .{ .state = .nonnull, .truth = s.truthOf(a).not() },
             // The name of a type: a string that is never empty.
-            .type_of => .{ .state = .nonnull, .truth = .yes },
+            .type_of, .worker_definition_type => .{ .state = .nonnull, .truth = .yes },
             .neg => .nonnull,
             // What the generator is resumed with, not what it yields.
             .yield => .top,
@@ -3592,7 +3593,7 @@ const Spec = struct {
                 if (x == 0) return .top; // -0
                 return s.number(-x);
             },
-            .type_of => {
+            .type_of, .worker_definition_type => {
                 const text: []const u8 = switch (lit.kind) {
                     .number => "number",
                     .string => "string",
@@ -4479,7 +4480,7 @@ const Spec = struct {
         const d = ir.data(node);
         switch (ir.tag(node)) {
             .unary => return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                .not, .type_of => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+                .not, .type_of, .worker_definition_type => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .neg => s.primitive(m, @fromBackingInt(@intCast(d.lhs))) and try s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .yield => false,
             },
@@ -10642,7 +10643,7 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
         .index_get => return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true),
         .unary => {
             const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
-            return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, op != .not and op != .type_of);
+            return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, op != .not and op != .type_of and op != .worker_definition_type);
         },
         .binary => {
             const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
@@ -12102,7 +12103,7 @@ const Solver = struct {
             .effect => s.demote(sv.lat[sv.cellOf(mi, a)]),
             .unary => un: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
-                if (op == .type_of and s.in.fold_object_types) {
+                if (op == .worker_definition_type and s.in.fold_worker_metadata) {
                     if (try s.objectTypeOf(m, @fromBackingInt(@intCast(ir.data(node).lhs)))) |value| break :un value;
                 }
                 const u = try s.unary(op, sv.lat[sv.cellOf(mi, a)]);
@@ -17398,7 +17399,7 @@ fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
     return switch (ir.tag(node)) {
         .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-            .not, .type_of => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+            .not, .type_of, .worker_definition_type => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => false,
         },
         .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
