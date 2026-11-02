@@ -1,4 +1,4 @@
-//! L14: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
+//! L10: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
 //! §6, R-6.1–R-6.7, R-7.15): the operation, the base as written, the
 //! verdict, its cause and the detail naming the holder and its later use —
 //! v1's texts (`src/own/Ownership.zig`'s `resolveRaw`), so a golden compares
@@ -12,9 +12,8 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
-const Cell = @import("Cell.zig");
-const Demands = @import("Demands.zig");
-const Walk = @import("Walk.zig");
+const Eval = @import("Eval.zig");
+const Resolve = @import("Resolve.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 
@@ -48,9 +47,6 @@ pub const Frame = struct {
     module: u32,
     decl: Bir.Decl,
     places: *const Place.Table,
-    cells: *const Cell.Table,
-    /// `shared` index → `(module, decl)`.
-    shared: []const [2]u32,
     /// The `(module, decl)` a value reference names.
     ctx: *anyopaque,
     decl_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
@@ -120,7 +116,7 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
 }
 
 /// The base as written, and below it the path a writer call writes.
-fn writtenText(f: Frame, a: Allocator, d: Demands.Demand) Allocator.Error![]const u8 {
+fn writtenText(f: Frame, a: Allocator, d: Eval.Demand) Allocator.Error![]const u8 {
     const base = try baseText(f, a, d.base_inst);
     if (d.write_path == .none) return base;
     var buf: std.Io.Writer.Allocating = .init(a);
@@ -204,7 +200,7 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
 }
 
 /// The line of one resolved demand.
-pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator.Error!Facts.Line {
+pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Allocator.Error!Facts.Line {
     const d = l.demand;
     const o = l.outcome;
     const op: []const u8 = switch (d.kind) {
@@ -244,7 +240,7 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .unknown => w.writeAll("it came from a call of a function the checker cannot identify, which may return a list something else holds"),
             .comparison => w.writeAll("a type's `eq` and `compare` may only read the values they are handed"),
             .top_level => blk: {
-                const md = sharedOf(f, o.cell);
+                const md: ?[2]u32 = if (o.shared[0] == none) null else o.shared;
                 break :blk if (md) |x| w.print("{s}.{s} is a top-level value", .{ f.names.module_names[x[0]], f.names.declName(x[0], x[1]) }) else w.writeAll("it is a top-level value");
             },
             else => {},
@@ -262,10 +258,4 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
         .approx = o.verdict == .refused and o.exactness == .approximate,
         .detail = detail,
     };
-}
-
-fn sharedOf(f: Frame, c: Ids.CellId) ?[2]u32 {
-    if (c == .none) return null;
-    const idx = f.cells.get(c).a;
-    return if (idx < f.shared.len) f.shared[idx] else null;
 }
