@@ -225,3 +225,8 @@ operations; the request, cancellation, timeout and progress logic stays beni.
 `Browser.Host.Storage.Storage` type. Its key accumulator is `List String`.
 The generated adapters catch only the documented DOMException classes;
 unknown thrown values retain their identity and remain defects.
+
+**As built, 2026-11-02:** browser WebSocket stores typed text and reader queues,
+`Task.Resume` opening/read capabilities and a typed subscription listener.
+Generated native event operations project text or binary presence and close
+code/reason directly into typed callbacks; no event or socket enters Js.Value.

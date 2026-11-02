@@ -78,6 +78,9 @@ module Browser.Host.AbortSignal
   type AbortSignal
   value aborted : AbortSignal → Bool  -- impure
   value reasonIs : AbortSignal, DOMException → Bool  -- impure
+module Browser.Host.Console
+  type Console
+  value warn : String → ⊤  -- impure
 module Browser.Host.DOMException
   type DOMException
   value create : String, String → DOMException  -- impure
@@ -258,11 +261,27 @@ module Browser.Host.URL
   type URL
   value href : URL → String  -- impure
   value password : URL → String  -- impure
+  value protocol : URL → String  -- impure
+  value setProtocol : URL, String → ⊤  -- impure
   value tryCreate : String, String → Maybe URL  -- impure
   value username : URL → String  -- impure
 module Browser.Host.Uint8Array
   type Uint8Array
   value byteLength : Uint8Array → Int
+module Browser.Host.WebSocket
+  type WebSocket
+  value arrayBuffer : WebSocket → ⊤  -- impure
+  value bufferedAmount : WebSocket → Int  -- impure
+  value close : WebSocket, Int, String → ⊤  -- impure
+  value closeWithoutCode : WebSocket → ⊤  -- impure
+  value onClose : WebSocket, (Int, String → ⊤) → ⊤  -- impure
+  value onError : WebSocket, (⊤ → ⊤) → ⊤  -- impure
+  value onOpen : WebSocket, (⊤ → ⊤) → ⊤  -- impure
+  value onText : WebSocket, (Maybe String → ⊤) → ⊤  -- impure
+  value protocol : WebSocket → String  -- impure
+  value readyState : WebSocket → Int  -- impure
+  value send : WebSocket, String → ⊤  -- impure
+  value tryCreate : String, List String → Maybe WebSocket  -- impure
 module Browser.Host.Window
   type Frame
   type Window

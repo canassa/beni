@@ -6330,6 +6330,13 @@ for a WebSocket — is §9.11.)*
 
 ### 9.11 WebSocket, in a page and on the `node` server (2026-10-20)
 
+*As built, 2026-11-02:* the browser socket keeps its native WebSocket handle,
+unread text, waiting resume capabilities and subscription listener typed.
+Queues use the shared core Chain module. Generated native operations supply
+construction, events, send and close; only constructor SecurityError maps to
+Blocked. Unknown exceptions retain their identity. Binary-message policy,
+reader cancellation and connection lifetime remain beni.
+
 *Added 2026-10-20, for issues #524 (the page) and #340 (its WebSocket part). Status: proposed. The
 shape of the API is the owner's decision; (n) lists the two questions on the dashboard
 (`ws-q1`, `ws-q2`) and the recommendation each section follows until they are answered.* One
