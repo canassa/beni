@@ -2637,7 +2637,8 @@ fn synthPort(mod: *Module, g: *Group, k: usize, c: *Contract) Error!ClassId {
             keyed[i] = plain;
             var acc: Ids.NodeId = .none;
             for (approx.items) |x| {
-                const pl = mod.cells.place(x);
+                const pl0 = mod.cells.place(x);
+                const pl = if (pl0 == .none) at else pl0;
                 const lf = try mod.shapes.leaf(gpa, mod.account, pl, try mod.cells.sets.insert(gpa, env.charge, .none, x.int(), 1));
                 const r = if (pl == at) lf else try mod.shapes.recast(gpa, mod.account, at, lf);
                 acc = if (acc == .none) r else try mod.shapes.@"union"(gpa, mod.account, &mod.cells.sets, acc, r);
