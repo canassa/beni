@@ -185,7 +185,6 @@ pub const own = struct {
 };
 /// The ownership checker v2 (`docs/design/ownership-v2.md` §5), behind the
 /// hidden `--ownership=v2` while v1 is frozen.
-pub const own2_dbg = @import("own2/Dbg.zig"); // DEBUG-SLOTBUILD
 pub const own2 = struct {
     pub const Ids = @import("own2/Ids.zig");
     pub const Place = @import("own2/Place.zig");

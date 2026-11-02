@@ -498,7 +498,7 @@ pub const Eval = struct {
                 const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
                 if (!exact and !opened) continue;
                 const suffix = words[rw.len..];
-                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.arrivalLeavesAt(call, c, a, suffix, slot, &acc);
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.arrivalLeaves(call, c, a, suffix, &acc);
             }
         } else {
             // The pessimistic contract: whatever arrives is unknown.
@@ -586,7 +586,7 @@ pub const Eval = struct {
         const saved = e.cur_sub;
         e.cur_sub = .{ .kind = .forward, .a = ki };
         defer e.cur_sub = saved;
-        try e.arrivalLeavesAt(k.call, none, a, suffix, k.slot, &acc);
+        try e.arrivalLeaves(k.call, none, a, suffix, &acc);
         for (acc.items) |x| try e.addLeaf(ki, x);
     }
 
@@ -655,34 +655,6 @@ pub const Eval = struct {
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
-    /// `arrivalLeaves` at caller slot `at`: a deep arrival (every object of
-    /// a parameter, a cast's) brings only the objects of `at`'s type, since
-    /// an object has one type.
-    fn arrivalLeavesAt(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, at: PathId, out: *std.ArrayList(u32)) Error!void {
-        // A cast may read one object as another type (§2.13.9), so types
-        // never tell two objects apart: no filter.
-        if (true or !(a.kind == .param and a.deep) or at == .none or !Slots.isObject(e.places(), at)) return e.arrivalLeaves(call, c, a, suffix, out);
-        var tmp: std.ArrayList(u32) = .empty;
-        defer tmp.deinit(e.gpa());
-        try e.arrivalLeaves(call, c, a, suffix, &tmp);
-        const want = try e.f.slots.canon(e.gpa(), e.account(), e.places(), at);
-        for (tmp.items) |li| {
-            var l = e.f.leafAt(li);
-            if (l.kind != .ref) {
-                try out.append(e.gpa(), li);
-                continue;
-            }
-            const kept = try e.typed(l.slots, want);
-            if (kept == Slots.empty) continue;
-            if (kept == l.slots) {
-                try out.append(e.gpa(), li);
-                continue;
-            }
-            l.slots = kept;
-            try out.append(e.gpa(), try e.f.leaf(l));
-        }
-    }
-
     pub fn arrivalLeaves(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
         try e.charge(.edge, 1);
         const cl = e.f.calls.items[call];
@@ -1058,21 +1030,21 @@ pub const Eval = struct {
                 }
             }
         }
-        if (occs.list.items.len == 0) return acc;
-        return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.list.items)));
+        if (occs.run.items.len == 0) return acc;
+        return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
     }
 
     /// The occurrences a check gathers, each once.
     const Occs = struct {
-        list: std.ArrayList(u64) = .empty,
+        run: std.ArrayList(u64) = .empty,
         seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
         fn deinit(o: *Occs, g: Allocator) void {
-            o.list.deinit(g);
+            o.run.deinit(g);
             o.seen.deinit(g);
         }
         fn add(o: *Occs, g: Allocator, x: u64) Allocator.Error!void {
             if ((try o.seen.getOrPut(g, x)).found_existing) return;
-            try o.list.append(g, x);
+            try o.run.append(g, x);
         }
     };
 
@@ -1215,13 +1187,9 @@ pub const Eval = struct {
                 return acc;
             }
             if (xr and tr) {
-                // Two parameters: apart under both selections, of the slots
-                // that may hold one object (one object has one type).
-                const xs = try e.typed(x.slots, t.slots);
-                const ts = try e.typed(t.slots, x.slots);
-                if (xs == Slots.empty or ts == Slots.empty) return .no;
-                // The holder's objects need only be apart from the target's.
-                const c = try Cond.conj(e.arena, e.account(), try e.selOf(e.f.roots.items[x.root].a, xs, true), try e.sel(e.f.roots.items[t.root].a, ts));
+                // Two parameters: apart under both selections; the holder's
+                // objects need only be apart from the target's (§2.9.1).
+                const c = try Cond.conj(e.arena, e.account(), try e.selOf(e.f.roots.items[x.root].a, x.slots, true), try e.sel(e.f.roots.items[t.root].a, t.slots));
                 return .{ .kind = .under, .cond = c };
             }
             // A parameter's leaf and an atom.
@@ -1230,35 +1198,6 @@ pub const Eval = struct {
         // Two atoms.
         if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
         return .no;
-    }
-
-    /// The slots of `a` whose objects may be one of `b`'s: an object has
-    /// one type, so two slots meet only at one place, unless either holds
-    /// anything (a type variable's or an opaque type's place).
-    fn typed(e: *Eval, a: Slots.SetId, b: Slots.SetId) Error!Slots.SetId {
-        if (true) return a;
-        const pl = e.places();
-        var bs: std.AutoHashMapUnmanaged(u32, void) = .empty;
-        defer bs.deinit(e.gpa());
-        for (e.f.slots.items(b)) |y| {
-            try e.charge(.inspection, 1);
-            const p = pl.pathPlace(.from(y));
-            switch (pl.kind(p)) {
-                .@"var", .@"opaque" => return a,
-                else => try bs.put(e.gpa(), @backingInt(p), {}),
-            }
-        }
-        var keep: std.ArrayList(u32) = .empty;
-        defer keep.deinit(e.gpa());
-        var all = true;
-        for (e.f.slots.items(a)) |y| {
-            try e.charge(.inspection, 1);
-            const p = pl.pathPlace(.from(y));
-            const k = pl.kind(p);
-            if (k == .@"var" or k == .@"opaque" or bs.contains(@backingInt(p))) try keep.append(e.gpa(), y) else all = false;
-        }
-        if (all) return a;
-        return e.f.slots.internSorted(e.gpa(), e.account(), keep.items);
     }
 
     fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
@@ -1286,12 +1225,7 @@ pub const Eval = struct {
         const t = e.f.leafAt(ti);
         const r0 = e.f.roots.items[x.root];
         switch (r0.kind) {
-            .param => {
-                const xs = try e.typed(x.slots, t.slots);
-                const ts = try e.typed(t.slots, x.slots);
-                if (xs == Slots.empty or ts == Slots.empty) return .no;
-                return .{ .kind = .under, .cond = try Cond.conj(e.arena, e.account(), try e.selOf(r0.a, xs, true), try e.sel(r0.a, ts)) };
-            },
+            .param => return .{ .kind = .under, .cond = try Cond.conj(e.arena, e.account(), try e.selOf(r0.a, x.slots, true), try e.sel(r0.a, t.slots)) },
             .call => {
                 const sep = try e.instCond(r0.a);
                 if (!sep.no) return .{ .kind = .under, .cond = sep };

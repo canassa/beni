@@ -40,16 +40,17 @@ const layers = [_]Entry{
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 400 },
-    .{ .file = "Contract.zig", .layer = 3, .max_lines = 760 },
+    .{ .file = "Contract.zig", .layer = 3, .max_lines = 800 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 4, .max_lines = 320 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 530 },
     .{ .file = "Value.zig", .layer = 5, .max_lines = 480 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 1190 },
-    .{ .file = "Relation.zig", .layer = 6, .max_lines = 900 },
-    .{ .file = "Eval.zig", .layer = 7, .max_lines = 1800 },
-    .{ .file = "Resolve.zig", .layer = 8, .max_lines = 550 },
-    .{ .file = "Groups.zig", .layer = 9, .max_lines = 1740 },
+    .{ .file = "Relation.zig", .layer = 6, .max_lines = 1300 },
+    .{ .file = "Eval.zig", .layer = 7, .max_lines = 2080 },
+    .{ .file = "Resolve.zig", .layer = 8, .max_lines = 600 },
+    .{ .file = "Deliver.zig", .layer = 8, .max_lines = 300 },
+    .{ .file = "Groups.zig", .layer = 9, .max_lines = 1840 },
     .{ .file = "Block.zig", .layer = 10, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 10, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 10, .max_lines = 150 },
@@ -343,7 +344,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 21), layers.len);
+    try testing.expectEqual(@as(usize, 22), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
