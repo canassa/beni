@@ -170,3 +170,14 @@ in both window and worker realms; unrelated host errors do not stop the page.
 An optional page-stop bridge is called only when installed. Defect frames retain
 a bounded error name, and cleanup deadlines report ConnectionLost rather than
 claiming that a heartbeat lease expired.
+
+Leaf worker entries reach an empty child-abandon hook. A child launch installs
+its real cleanup hook, retaining peer shutdown and forced abandonment only in
+entries that may launch children. Worker-owned root cleanup remains unconditional.
+For a semantic event role with no finite inhabitants, the compiler supplies a
+reserved `$events = false` fact. Lists remain inhabited even with an empty element
+type; unresolved roles keep the capability. The flag starts in the constructor's
+object literal. Release metadata stores preserve the Program's identity and keep
+the original primitive-boxing path; allocation-type folding removes that guard
+in known object cases. Constructor rows that predate this per-entry fact are not
+reused. These worker-only folds leave ordinary no-worker output unchanged.

@@ -278,6 +278,9 @@ pub const Tables = struct {
 };
 
 pub const Input = struct {
+    // Worker metadata guards preserve primitive boxing; other entries keep
+    // their existing output and pay for no allocation-type query.
+    fold_object_types: bool = false,
     modules: []const Module,
     /// How many whole-program ids `Module.global` uses.
     globals: u32,
@@ -2987,6 +2990,9 @@ const Spec = struct {
             // that is neither `null` nor `undefined`.
             .unary => blk: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
+                if (op == .type_of and s.in.fold_object_types) {
+                    if (try s.objectTypeOf(m, @fromBackingInt(@intCast(d.lhs)))) |value| break :blk value;
+                }
                 const v = try s.unary(op, m.memo[d.lhs]);
                 break :blk if (op != .yield and v.state == .top) .{ .state = .nonnull, .truth = v.truth } else v;
             },
@@ -3538,6 +3544,28 @@ const Spec = struct {
             else => return .unknown,
         };
         return if (nonzero) .yes else .no;
+    }
+
+    /// Inspect only a name: replacing a call, getter, or object initializer
+    /// by its typeof could discard work. Unknown/native allocation sites
+    /// and mixed object/function sets keep the original test.
+    fn objectTypeOf(s: *Spec, m: *Mod, operand: Index) Allocator.Error!?Lat {
+        if (!s.pts.ok or m.ir.tag(operand) != .ident or operand.int() >= s.pts.vals[m.index].len) return null;
+        const value = s.pts.vals[m.index][operand.int()];
+        if (value.top or value.prim or value.sites.len == 0) return null;
+        var functions: ?bool = null;
+        for (value.sites) |site_id| {
+            const site = s.pts.sites.items[site_id];
+            if (site.module >= s.mods.len or site.node.int() >= s.mods[site.module].ir.nodes.len) return null;
+            const is_function = switch (s.mods[site.module].ir.tag(site.node)) {
+                .object, .array => false,
+                .arrow, .func_decl, .gen_decl => true,
+                else => return null,
+            };
+            if (functions) |previous| if (previous != is_function) return null;
+            functions = is_function;
+        }
+        return .of(try s.intern(.{ .kind = .string, .bytes = if (functions.?) "function" else "object" }));
     }
 
     fn unary(s: *Spec, op: JsIr.UnaryOp, a: Lat) Allocator.Error!Lat {
@@ -12074,6 +12102,9 @@ const Solver = struct {
             .effect => s.demote(sv.lat[sv.cellOf(mi, a)]),
             .unary => un: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
+                if (op == .type_of and s.in.fold_object_types) {
+                    if (try s.objectTypeOf(m, @fromBackingInt(@intCast(ir.data(node).lhs)))) |value| break :un value;
+                }
                 const u = try s.unary(op, sv.lat[sv.cellOf(mi, a)]);
                 break :un if (op != .yield and u.state == .top) .{ .state = .nonnull, .truth = u.truth } else u;
             },

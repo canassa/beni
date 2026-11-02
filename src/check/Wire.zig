@@ -436,3 +436,53 @@ pub fn normalization(a: Allocator, plan: *const Artifact) Allocator.Error![]bool
     }
     return needs;
 }
+
+/// The least fixed point of finite inhabitants. Lists admit [], products
+/// require every field, and tagged unions require one inhabited alternative.
+/// In particular the recursive encoding of Bottom has no base case.
+pub fn inhabited(a: Allocator, plan: *const Artifact) Allocator.Error![]bool {
+    const has_value = try a.alloc(bool, plan.nodes.len);
+    @memset(has_value, false);
+    const starts = try a.alloc(u32, plan.nodes.len + 1);
+    defer a.free(starts);
+    @memset(starts, 0);
+    for (plan.nodes) |node| for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
+        starts[edge.child + 1] += 1;
+    };
+    for (1..starts.len) |i| starts[i] += starts[i - 1];
+    const cursors = try a.dupe(u32, starts);
+    defer a.free(cursors);
+    const parents = try a.alloc(u32, starts[plan.nodes.len]);
+    defer a.free(parents);
+    const remaining = try a.alloc(u32, plan.nodes.len);
+    defer a.free(remaining);
+    var ready: std.ArrayList(u32) = .empty;
+    defer ready.deinit(a);
+    for (plan.nodes, 0..) |node, i| {
+        remaining[i] = node.edges.len;
+        for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
+            parents[cursors[edge.child]] = @intCast(i);
+            cursors[edge.child] += 1;
+        }
+        has_value[i] = switch (node.kind) {
+            .stable, .variable, .list => true,
+            .record, .tuple, .open_record => node.edges.len == 0,
+            .tagged => false,
+        };
+        if (has_value[i]) try ready.append(a, @intCast(i));
+    }
+    var at: usize = 0;
+    while (at < ready.items.len) : (at += 1) {
+        const child = ready.items[at];
+        for (parents[starts[child]..starts[child + 1]]) |parent| {
+            if (has_value[parent]) continue;
+            if (plan.nodes[parent].kind != .tagged) {
+                remaining[parent] -= 1;
+                if (remaining[parent] != 0) continue;
+            }
+            has_value[parent] = true;
+            try ready.append(a, parent);
+        }
+    }
+    return has_value;
+}
