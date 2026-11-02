@@ -9173,6 +9173,60 @@ are not read in these groups.
 - `descend`: states per node in `propagate` after §2.9 *Fold first* (#1543), not rounds.
 - So core's `Dict` stays a known limit after the rule (Q8).
 
+*Q8: the recursive-contract experiment* [M 2026-11-02, a scratch prototype on branch
+`exp-recursive-contracts` over `99f9dc078`, self-hosted Debug; not built, not specified]. This tests the astra
+review's alternative A (§7 of the review): a recursive group's port is a contract over a FIXED inventory, built
+afresh each round from the canonical paths of the result place (the slots), and never from a previous round's
+answer.
+- **The contract.** Per slot it has an origin set and joined use marks. One non-duplication predicate is inferred
+  from the BIR by occurrence tokens: per parameter, how often one of its objects can occur in the answer. A
+  separate validator re-evaluates each body against the candidate and rejects a false one.
+- **What stays v2's.** v2's own walk is the step, and its liveness, holders and demands are unchanged.
+
+The result is **refuted on cost**:
+- **The contract converges.** `removeMin` settles in 4 rounds on 20 slots and 18 origins. The predicate validates
+  (multiplicity 1), with no annotation.
+- **Every soundness control stays refused.** These are #1516 and #1530, recursive variants of both, the alias and
+  old-tree controls, a duplicating helper, a repeated payload, `pushDup` and `CombinePositions.aliased`/`mixed`. A
+  forced-unsafe contract is caught by `--sanitize-lists`.
+- **The useful caller is accepted** (a payload edited after `removeMin`), and the sanitised build prints the same.
+  So is an imported caller.
+- **It does not fit 65 536 growth.** The body walk is the cost: `%74` and `%87`, `removeMin`'s two outer `case`
+  joins over `balance`'s summary, cost about 35k each, even against an empty port.
+
+`removeMin`, with the allowance raised to 20M, cumulative growth by walk:
+
+| Walk | Master | Contract (with the predicate) |
+|---|---|---|
+| 2 | 124 682 | 182 740 |
+| 3 | 911 838 | 1 074 627 |
+| 4 | 4 051 238 | 1 908 265, settled |
+| 5 | 15 121 701, then a limit | — |
+
+The contract removes the growth from walk 3 on, not walk 2. Core's `Dict.removeMin` stays a limit, and
+`Dict.descend` becomes one: the `Cursor` × `Tree` product gives 87 slots and 6 rounds.
+
+The precision ledger, all 477 fixture tokens of `tests/corpus/ownership/`, diffed verdict line by verdict line
+against master:
+
+| Variant | Same | Accept→refuse | Refuse→accept | Limits |
+|---|---|---|---|---|
+| Recursive contracts with the predicate | 3 960 | 65, all fold-certificate witnesses (`FoldCertificate.oneView` and its family, `FoldedKnotCall`) | 2: `row4 = incAll (deeper t)` imported, sound (the predicate proves `deeper` puts each list once) | `FoldedPreimageCall` gains a check; `InitializationLimit.rotate` becomes a limit (the prototype re-walks where v2 delivers) |
+| Contracts at first-order helpers too, κ `lost` | 3 875 | 143 | 4: `CombinePositions.bump` call sites, with a new refusal in `bump`; the module stays refused | `removeMin` is still a limit at 1.45M growth |
+
+The witnesses are lost because the certificate's readers read a certified class through `widen`'s fold
+classes, and slot knots are not those classes.
+
+Three prototype defects, each found by a control and fixed, are requirements for any such design:
+1. One allocation is one cell at every slot.
+2. A preserved slot stores its arrivals' atoms, never `yes` that is read through the instantiated cell set.
+3. A slot at a type variable is a leaf, and approximate cells keep recast semantics.
+
+**What it settles.** A recursive boundary can be a fixed, checked contract. But the budget for `Dict` is the
+body walk, so a contract at recursive boundaries alone does not reach it. The full report has the test-set
+table, the scaling (copies are linear; payload fields add a pairwise term in the body walk) and the ledger. It is
+`experiments/recursive-contracts/report.md` on the branch.
+
 *One walk of `removeMin`, attributed (#1372, #1590)* [M 2026-11-01, master `212f366bb`, self-hosted Debug,
 `dump --stage=ownership --ownership=v2 --jobs=1`, the module allowance at 4 194 304; scratch instrumentation
 that tagged every committed record with its walk, its phase and its innermost reader, and counted the state
