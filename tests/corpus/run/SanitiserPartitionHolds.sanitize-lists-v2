@@ -1,0 +1,4 @@
+A runtime catch for a fold's open answer read back below its top (ownership-v2.md §2.10 Read-off): Dict.partition's
+result holds the values of the dictionary it is handed, and an edit in place of one of them is made while a half of the
+partition still holds it. Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each edit;
+were the read-off to say only the top slot of the fold's answer, the sanitised run would show the stale read.
