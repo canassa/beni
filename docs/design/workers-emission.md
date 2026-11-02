@@ -81,6 +81,16 @@ may shorten or eliminate private fields without changing another entry's wire
 layout. Clone-stable plans emit direct sends. Only non-crossing representation
 paths get normalization and reconstruction; universal codecs are not introduced.
 
+The embedded browser-worker runtime uses one compiler-owned table for private
+connection/ticket keys and numeric control/phase labels. Its startup reporter
+uses the same table, and descriptor fingerprints include the private ABI version.
+Prescribed keys are plain JsIr names so each entry keeps the same spelling.
+Public payload paths and constructor tags retain their ordinary Wire assignment;
+Options fields, native properties and diagnostic fields retain their representation.
+In particular the diagnostic `kind` key is not shortened. This lowering applies
+to the known embedded runtime; user modules and custom runtimes keep their own
+representation. It adds no runtime decoder or packing operation.
+
 Under `--release`, descriptor targets remain output-root-relative IR values until
 printing resolves them from the final referring artifact. Inlining and
 specialisation may relocate a descriptor without freezing its old module URL.

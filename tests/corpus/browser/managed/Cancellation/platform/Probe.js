@@ -5,8 +5,8 @@ export const install=()=>{
   globalThis.Worker=function(url,options){
     const worker=new Native(url,options);
     worker.addEventListener("message",event=>{
-      if(event.data.kind==="Event")events++;
-      if(event.data.kind==="Interrupt")terminals.push(events);
+      if((event.data.kind === "Event" || event.data.kind === 14))events++;
+      if((event.data.kind === "Interrupt" || event.data.kind === 6))terminals.push(events);
     });
     return worker;
   };

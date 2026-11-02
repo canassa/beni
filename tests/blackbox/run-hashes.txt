@@ -163,6 +163,11 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #0 f888f1c3ce0e744becfbc7735db37dc3ddae29d8a27b37dbd185501e4afebdda
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #1 ef03536cbb8e2581f8c129c1fb81491da5ad3b8294cb340fa9959c41bc9980b6
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #2 229b73cbe519fe2188ed47656d0f70f240f930409d475c3d97e3d20d3b988e26
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #3 07f29dd81f12a87812d9c8daf04ed62cfb7afad4dfb022d4517a9cc2af410344
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #4 4a4c2bec72e7a29e59608012ccb1695418dd794b5a33aac0bf7686918c8c31c8
 platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 928db6a96d5f5f124b9d1adba690ab5acde3b2bb31b44dab30901170340004ad
 platform_test.test.release worker init runs when specialisation removes its unused state #0 57279a8b8f77027305919e6e6e534e7693dad3da3eebddcdcedeff4479e6fb4b
 platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 1093639f584107e0b9df9fcf2df078a3f53381f293073dd3e4c53e245b0c9192

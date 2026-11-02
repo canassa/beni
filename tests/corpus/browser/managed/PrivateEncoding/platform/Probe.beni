@@ -1,0 +1,26 @@
+pub type Mark
+    = Ready
+    | Transport
+    | Failure
+
+
+pub type alias Packet =
+    worker : String
+    entry : String
+    generation : Int
+    requestId : Int
+    kind : Mark
+    payload :
+        phase : String
+        native : String
+        eventCount : Int
+    fingerprint : String
+
+
+pub foreign pure inspect : Packet → Bool
+
+
+pub foreign impure arm : ⊤ → ⊤
+
+
+pub foreign impure nativePassed : ⊤ → Bool

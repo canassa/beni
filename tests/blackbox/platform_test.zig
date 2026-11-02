@@ -2265,12 +2265,29 @@ test "release leaf workers omit child cleanup and absent event machinery" {
                 bodies += 1;
                 try testing.expect(std.mem.indexOf(u8, text, "abandonedWorkers") == null);
                 try testing.expect(std.mem.indexOf(u8, text, "NativeTerminated") == null);
-                try testing.expectEqual(case.inhabited, std.mem.indexOf(u8, text, "EventAck") != null);
-                try testing.expectEqual(case.inhabited, std.mem.indexOf(u8, text, "eventCount") != null);
-                try testing.expect(std.mem.indexOf(u8, text, "eventEnabled") == null);
+                try testing.expectEqual(case.inhabited, std.mem.indexOf(u8, text, ".$i") != null or std.mem.indexOf(u8, text, "$i:") != null);
+                try testing.expect(std.mem.indexOf(u8, text, "\"EventAck\"") == null);
+                try testing.expect(std.mem.indexOf(u8, text, ".$v") == null and std.mem.indexOf(u8, text, "$v:") == null);
             }
         }
         try testing.expectEqual(@as(usize, 1), bodies);
+        try w.write("probe.mjs",
+            \\import {readdirSync} from "node:fs";
+            \\const listeners = new Map();
+            \\globalThis.self = globalThis;
+            \\globalThis.addEventListener = (name, fn) => listeners.set(name, [...(listeners.get(name) ?? []), fn]);
+            \\globalThis.removeEventListener = (name, fn) => listeners.set(name, listeners.get(name).filter(f => f !== fn));
+            \\globalThis.postMessage = () => {};
+            \\globalThis.close = () => {};
+            \\const id = readdirSync("out/_workers")[0];
+            \\await import("./out/_workers/" + id + "/_main.mjs");
+            \\try {
+            \\  for (const receive of listeners.get("message")) receive({data: {a: 1, c: null, kind: 7, f: 0}});
+            \\  console.log("accepted");
+            \\} catch (error) { console.log(error.message); }
+            \\
+        );
+        try w.expectProgram("probe.mjs", .{ .stdout = if (case.inhabited) "accepted\n" else "Unknown managed worker control frame\n" });
     }
 }
 
