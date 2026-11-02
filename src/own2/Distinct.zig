@@ -19,6 +19,7 @@ const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
+const Paths = @import("Paths.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -210,18 +211,33 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     var plains: std.ArrayList(Proj) = .empty;
     defer plains.deinit(g);
     defer e.parts = false;
-    for (c.sel) |o| {
+    for (c.sel) |o| if (Contract.occParam(o) >= cl.args.len) return Cond.unprovable;
+    // Each parameter's occurrences are projected by one walk of its
+    // argument (§2.11.2 item 3): a step or an arm they share is read once.
+    const got = try e.arena.alloc(std.ArrayList(Proj), c.sel.len);
+    for (got) |*x| x.* = .empty;
+    defer for (got) |*x| x.deinit(g);
+    const reqs = try e.arena.alloc(Paths.Req, c.sel.len);
+    var js: std.ArrayList(u32) = .empty;
+    defer js.deinit(g);
+    for (c.sel, 0..) |o, i| {
         const j = Contract.occParam(o);
-        if (j >= cl.args.len) return Cond.unprovable;
-        const arg = cl.args[j];
-        var got: std.ArrayList(Proj) = .empty;
-        defer got.deinit(g);
+        if (std.mem.indexOfScalar(u32, js.items, j) != null) continue;
+        try js.append(g, j);
+        var n: usize = 0;
+        for (c.sel[i..], i..) |x, k| if (Contract.occParam(x) == j) {
+            reqs[n] = .{ .words = e.f.slots.relWords(Contract.occRel(x)), .deep = Contract.isDeep(x), .out = &got[k] };
+            n += 1;
+        };
         e.parts = mixed(c.sel, j);
         // Routes are per parameter: two parameters handed one value are
         // that value twice (the experiment's third requirement).
-        try e.project(arg, e.f.slots.relWords(Contract.occRel(o)), Contract.isDeep(o), 0, try e.routeStep(0, 0x8000_0000 | j), &got);
+        try Paths.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j));
+    }
+    for (c.sel, got) |o, *gp| {
+        e.parts = mixed(c.sel, Contract.occParam(o));
         const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
-        for (got.items) |p| try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o });
+        for (gp.items) |p| try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o });
     }
     try ps.appendSlice(g, plains.items);
     try withoutPlain(e, aps.items, plains.items, &ps);
