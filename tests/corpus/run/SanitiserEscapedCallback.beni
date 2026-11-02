@@ -11,8 +11,7 @@ import String
 
 
 show : List Int → String
-show l =
-    String.join (List.map l String.fromInt) ","
+show l = String.join (List.map l String.fromInt) ","
 
 
 main : Program

@@ -7,19 +7,18 @@
 -- writes a field the update does not replace: the base still holds it
 -- for the consumer, refused.
 type alias Model =
-    { items : List Int, kept : List Int, count : Int }
+    items : List Int
+    kept : List Int
+    count : Int
 
 
 pub grow : Model → Model
-grow m =
-    { m | items = List.push m.items 1, count = m.count + 1 }
+grow m = { m | items = List.push m.items 1, count = m.count + 1 }
 
 
 pub keepOld : Model → Model
-keepOld m =
-    { m | items = List.push m.items 1, kept = m.items }
+keepOld m = { m | items = List.push m.items 1, kept = m.items }
 
 
 pub other : Model → Model
-other m =
-    { m | items = List.push m.kept 1 }
+other m = { m | items = List.push m.kept 1 }
