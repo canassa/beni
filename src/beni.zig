@@ -187,6 +187,7 @@ pub const own = struct {
 /// hidden `--ownership=v2` while v1 is frozen.
 pub const own2 = struct {
     pub const Ids = @import("own2/Ids.zig");
+    pub const Scratch = @import("own2/Scratch.zig");
     pub const Place = @import("own2/Place.zig");
     pub const Cell = @import("own2/Cell.zig");
     pub const Facts = @import("own2/Facts.zig");

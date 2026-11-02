@@ -20,6 +20,7 @@ const Cond = @import("Cond.zig");
 const Demands = @import("Demands.zig");
 const Calls = @import("Calls.zig");
 const Cell = @import("Cell.zig");
+const Slots = @import("Scratch.zig");
 const NodeId = Ids.NodeId;
 const CellId = Ids.CellId;
 const SetId = Ids.SetId;
@@ -48,6 +49,25 @@ fn exactPath(steps: []const Step) bool {
     for (steps) |s| if (s.kind == .elem or s.kind == .level) return false;
     return true;
 }
+
+/// `otherPaths`' visited states and certified reads, kept by the frame by
+/// call depth (`Slots.Depths`, #1646).
+pub const Seen = struct {
+    seen: Slots.Hash(6) = .{},
+    seen_x: Slots.Hash(7) = .{},
+    seen_r: Slots.Hash(6) = .{},
+    read: Slots.Hash(5) = .{},
+
+    const sets = .{ "seen", "seen_x", "seen_r", "read" };
+
+    pub fn clear(x: *Seen) void {
+        inline for (sets) |name| @field(x, name).clear();
+    }
+
+    pub fn deinit(x: *Seen, gpa: Allocator) void {
+        inline for (sets) |name| @field(x, name).deinit(gpa);
+    }
+};
 
 /// The part of `Transfer.Frame` this file holds, over the frame `Transfer.zig` declares.
 pub fn Of(comptime Frame: type) type {
@@ -127,12 +147,11 @@ pub fn Of(comptime Frame: type) type {
             var relied: CondId = Cond.yes;
             var stack: std.ArrayList(Push) = .empty;
             defer stack.deinit(gpa);
-            var seen: Ids.FixedDict(6) = .{};
-            defer seen.deinit(gpa);
-            var seen_x: Ids.FixedDict(7) = .{};
-            defer seen_x.deinit(gpa);
-            var seen_r: Ids.FixedDict(6) = .{};
-            defer seen_r.deinit(gpa);
+            const sets = try f.beside_seen.take(gpa);
+            defer f.beside_seen.give(sets);
+            const seen = &sets.seen;
+            const seen_x = &sets.seen_x;
+            const seen_r = &sets.seen_r;
             // The certified views the spine meets (§2.11 item 3 (d), #1485).
             var cert: Cert = .{};
             defer cert.deinit(gpa);
@@ -166,8 +185,7 @@ pub fn Of(comptime Frame: type) type {
             // A deep demand's base is a reach, which no end of the write's
             // path names alone, and a `⊤` base may be anything: kept whole.
             arms.whole = deep or want.all or !split;
-            var read: Ids.FixedDict(5) = .{};
-            defer read.deinit(gpa);
+            const read = &sets.read;
             var excl: SetId = .none;
             // The test-only mutation leaves the tag out of the walk's keys.
             const untagged = mutated("cert-untagged");
@@ -282,12 +300,12 @@ pub fn Of(comptime Frame: type) type {
                         if (!it.stuck) {
                             try f.keepAnswered(bs, &want, it.v, ws[it.depth..], folded, refs.items, &arms.kept.items[idx], &excl, &relied);
                             if (fold) try f.approxAll(&arms.kept.items[idx]);
-                        } else if (!it.held) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
+                        } else if (!it.held) if (try f.certReadNode(&arms, read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
                             try f.keepBeside(bs, &want, it.v, folded, true, null, refs.items, &arms.kept.items[r], &excl, &relied, null);
                             if (fold) try f.approxAll(&arms.kept.items[r]);
                         };
                         held_below = true;
-                    } else if (beside) if (try f.certReadNode(&arms, &read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
+                    } else if (beside) if (try f.certReadNode(&arms, read, .{ it.v.int(), @intFromBool(folded), it.path.int(), it.inside.int(), key_tag }, idx, it.tag)) |r| {
                         const held = marks & 2 != 0 or d.kind == .leaf or (cells.mark_d != .none and cells.hasDeepRead(d.cells));
                         if (!split or it.path == .none) {
                             const w: Where = .{ .path = it.path, .written = &written, .paths = where_paths };
@@ -665,7 +683,7 @@ pub fn Of(comptime Frame: type) type {
         /// `Arms.read`, with C7's edge check on the read map (row 17 of
         /// *The two walls*): a read node an item of one certified view made is
         /// read again only by an item of the same view, `runtime_safety` only.
-        pub fn certReadNode(f: *Frame, arms: *Arms, read: *Ids.FixedDict(5), key: [5]u32, by: u32, tag: u32) Error!?u32 {
+        pub fn certReadNode(f: *Frame, arms: *Arms, read: *Slots.Hash(5), key: [5]u32, by: u32, tag: u32) Error!?u32 {
             const c = certOf(f).?;
             if (std.debug.runtime_safety) if (read.get(key)) |n| if ((c.read_tags.get(.{n}) orelse none) != tag)
                 std.debug.panic("ownership v2: a read node of one certified view is read by an item of another (C7, #1485)", .{});

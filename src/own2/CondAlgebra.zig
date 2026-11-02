@@ -478,13 +478,13 @@ pub fn Of(comptime Table: type) type {
         pub fn assertResolved(t: *Table, gpa: Allocator, charge: Charge, k: CondId) Error!void {
             _ = charge;
             if (!std.debug.runtime_safety or k == yes or fails(k)) return;
-            var seen: Ids.FixedDict(1) = .{};
-            defer seen.deinit(gpa);
+            const seen = try t.cond_marks.take(gpa);
+            defer t.cond_marks.give(seen);
             var stack: std.ArrayList(CondId) = .empty;
             defer stack.deinit(gpa);
             try stack.append(gpa, k);
             while (stack.pop()) |x| {
-                if (x == yes or (try seen.getOrPut(gpa, .{x.int()})).found_existing) continue;
+                if (x == yes or (try seen.getOrPut(gpa, x)).found_existing) continue;
                 const d = t.get(x);
                 if (d.kind == .atom) {
                     if (d.atom == .inst) std.debug.panic("ownership v2: an unresolved inst atom reached a reader that tests it", .{});

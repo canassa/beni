@@ -16,6 +16,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Scratch = @import("Scratch.zig");
 const stamped = @import("../stamped.zig");
 const Place = @import("Place.zig");
 const Calls = @import("Calls.zig");
@@ -82,7 +83,7 @@ pub fn Of(comptime Frame: type) type {
             }
             /// The node of a read of key `key` by node `by`: new (to read now)
             /// or null, and an edge from `by` either way.
-            pub fn read(a: *Arms, gpa: Allocator, dict: *Ids.FixedDict(5), key: [5]u32, by: u32) Allocator.Error!?u32 {
+            pub fn read(a: *Arms, gpa: Allocator, dict: *Scratch.Hash(5), key: [5]u32, by: u32) Allocator.Error!?u32 {
                 const got = try dict.getOrPut(gpa, key);
                 if (got.found_existing) {
                     try a.edge(gpa, by, got.value_ptr.*, none);

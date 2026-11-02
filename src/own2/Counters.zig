@@ -14,9 +14,10 @@
 //! - per table-resident dictionary and column, found by reflection over the
 //!   module's tables (so the line names the field path): gets, hits, puts,
 //!   new entries, and for a crit-bit dictionary the mean and longest descent;
-//! - per width of dictionary, and for columns and pools, a total over every
-//!   instance, local ones included: the difference to the sum of the table
-//!   lines is the walks' own working sets;
+//! - per width of dictionary, and for columns, pools and a walk's sparse
+//!   sets (`Scratch.zig`), a total over every instance, local ones included:
+//!   the difference to the sum of the table lines is the walks' own working
+//!   sets and the dictionaries no table holds;
 //! - the cardinality of every persistent set (`SetId`) and κ map, as a
 //!   histogram of the nodes made and of the requests made of them;
 //! - per node attribute: how many distinct nodes (or ids) an attribute column
@@ -94,7 +95,7 @@ pub const Hist = struct {
 // Dictionaries, columns, pools
 // ---------------------------------------------------------------------------
 
-pub const Kind = enum { dict, column, pool };
+pub const Kind = enum { dict, column, pool, sparse };
 
 pub const DictStats = struct {
     gets: u64 = 0,
@@ -132,11 +133,27 @@ pub const PoolStats = struct {
 };
 pub const PoolS = Field(PoolStats);
 
+/// A walk's sparse set, map or dictionary (`Scratch.zig`): `probes`
+/// counts the chain entries a dictionary compared.
+pub const SparseStats = struct {
+    gets: u64 = 0,
+    hits: u64 = 0,
+    puts: u64 = 0,
+    new: u64 = 0,
+    probes: u64 = 0,
+    max_probe: u32 = 0,
+    clears: u64 = 0,
+
+    pub const counter_kind: Kind = .sparse;
+};
+pub const Sparse = Field(SparseStats);
+
 /// Every instance, local working sets included. FixedDict(k) for k in 1...5
 /// at index k, wider at 0.
 var dict_totals: [6]DictStats = @splat(.{});
 var col_total: ColStats = .{};
 var pool_total: PoolStats = .{};
+var sparse_total: SparseStats = .{};
 
 /// Forget the totals: a module's report counts that module alone.
 pub fn reset() void {
@@ -144,6 +161,7 @@ pub fn reset() void {
     dict_totals = @splat(.{});
     col_total = .{};
     pool_total = .{};
+    sparse_total = .{};
 }
 
 /// A descent's length counter: nothing when off.
@@ -237,6 +255,43 @@ pub inline fn poolTake(s: anytype, created: bool) void {
         m.creates += 1;
         pool_total.creates += 1;
     }
+}
+
+fn sparseCount(m: *SparseStats, steps: u32) void {
+    m.probes += steps;
+    sparse_total.probes += steps;
+    m.max_probe = @max(m.max_probe, steps);
+    sparse_total.max_probe = @max(sparse_total.max_probe, steps);
+}
+
+pub inline fn sparseGet(s: anytype, hit: bool, steps: u32) void {
+    if (!enabled) return;
+    const m = mutable(s);
+    m.gets += 1;
+    sparse_total.gets += 1;
+    if (hit) {
+        m.hits += 1;
+        sparse_total.hits += 1;
+    }
+    sparseCount(m, steps);
+}
+
+pub inline fn sparsePut(s: anytype, found: bool, steps: u32) void {
+    if (!enabled) return;
+    const m = mutable(s);
+    m.puts += 1;
+    sparse_total.puts += 1;
+    if (!found) {
+        m.new += 1;
+        sparse_total.new += 1;
+    }
+    sparseCount(m, steps);
+}
+
+pub inline fn sparseClear(s: anytype) void {
+    if (!enabled) return;
+    mutable(s).clears += 1;
+    sparse_total.clears += 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +453,7 @@ fn writeLeaf(w: *std.Io.Writer, comptime path: []const u8, comptime F: type, v: 
             try w.writeAll("\n");
         },
         .pool => try w.print("counters pool {s}: takes {d}, created {d}\n", .{ path, v.stats.takes, v.stats.creates }),
+        .sparse => try w.print("counters sparse {s}: gets {d}, hits {d}, puts {d}, new {d}, clears {d}\n", .{ path, v.stats.gets, v.stats.hits, v.stats.puts, v.stats.new, v.stats.clears }),
     }
 }
 
@@ -444,6 +500,8 @@ pub fn write(w: *std.Io.Writer, mod: anytype) Error!void {
     }
     try w.print("counters total column: reads {d}, hits {d}, writes {d}, distinct {d}, clears {d}\n", .{ col_total.reads, col_total.hits, col_total.writes, col_total.fresh, col_total.clears });
     try w.print("counters total pool: takes {d}, created {d}\n", .{ pool_total.takes, pool_total.creates });
+    const ops = sparse_total.gets + sparse_total.puts;
+    try w.print("counters total sparse: gets {d}, hits {d}, puts {d}, new {d}, clears {d}, chain mean {d:.2}, max {d}\n", .{ sparse_total.gets, sparse_total.hits, sparse_total.puts, sparse_total.new, sparse_total.clears, if (ops == 0) 0.0 else @as(f64, @floatFromInt(sparse_total.probes)) / @as(f64, @floatFromInt(ops)), sparse_total.max_probe });
     try writeShapes(w, mod);
     try writeKappa(w, mod);
 }

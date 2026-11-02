@@ -48,6 +48,7 @@ const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const stamped = @import("../stamped.zig");
 const Stable = @import("Stable.zig");
+const Scratch = @import("Scratch.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const OverId = Ids.OverId;
@@ -131,17 +132,19 @@ pub const Table = struct {
     union_seen: stamped.Column(NodeId, void) = .{},
     /// `rank`'s memo: final ranks only (its in-progress marks are the call's).
     rank_memo: stamped.Column(NodeId, u32) = .{},
-    /// `reach`'s and `arrivals`' scratch, one per walk in progress (#1191).
-    reach_pool: stamped.Pool(ReachScratch) = .{},
-    /// Node marks for a walk over the node table, one per walk in progress,
-    /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
-    marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
+    /// `reach`'s and `arrivals`' scratch, one per walk in progress by
+    /// depth (#1191, `Scratch.Depths`).
+    reach_pool: Scratch.Depths(ReachScratch) = .{},
+    /// Node marks for a walk over the node table, one per walk in progress:
+    /// sparse sets, so a walk neither makes nor empties a slot per id (#1191,
+    /// #1646).
+    marks: Scratch.Depths(Scratch.Set(NodeId)) = .{},
     /// `cycleWalk`'s (index, low link) per record entered, likewise.
-    cycle_marks: stamped.Pool(stamped.Column(NodeId, [2]u32)) = .{},
-    /// `closure`'s set per node entered, likewise.
-    set_marks: stamped.Pool(stamped.Column(NodeId, SetId)) = .{},
+    cycle_marks: Scratch.Depths(Scratch.Map(NodeId, [2]u32)) = .{},
+    /// `closure`'s and `inners`' set per node entered, likewise.
+    set_marks: Scratch.Depths(Scratch.Map(NodeId, SetId)) = .{},
     /// `widen`'s scratch, likewise (`WidenScratch`).
-    widen_pool: stamped.Pool(WidenScratch) = .{},
+    widen_pool: Scratch.Depths(WidenScratch) = .{},
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
@@ -973,10 +976,10 @@ pub const Table = struct {
         const Frame = struct { node: NodeId, expanded: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
-        var open: stamped.Column(NodeId, void) = .{};
-        defer open.deinit(gpa);
-        var local: stamped.Column(NodeId, SetId) = .{};
-        defer local.deinit(gpa);
+        const open = try t.marks.take(gpa);
+        defer t.marks.give(open);
+        const local = try t.set_marks.take(gpa);
+        defer t.set_marks.give(local);
         var cyclic = false;
         try stack.append(gpa, .{ .node = n0, .expanded = false });
         while (stack.pop()) |f| {
@@ -1017,8 +1020,8 @@ pub const Table = struct {
         if (!cyclic) return local.get(n0).?;
         // A cycle: every recast the DAG reaches, each node once.
         var out: SetId = .none;
-        var seen: stamped.Column(NodeId, void) = .{};
-        defer seen.deinit(gpa);
+        const seen = try t.marks.take(gpa);
+        defer t.marks.give(seen);
         try stack.append(gpa, .{ .node = n0, .expanded = false });
         while (stack.pop()) |f| {
             const x = try t.force(gpa, account, f.node);
@@ -1117,7 +1120,7 @@ pub const Table = struct {
         defer comp.deinit(gpa);
         var visits: u32 = 0;
         const Push = struct {
-            fn go(tt: *Table, g: Allocator, a: *Account, w: Closure, fs: *std.ArrayList(Frame), sc: *std.ArrayList(NodeId), ix: *stamped.Column(NodeId, [2]u32), ac: *stamped.Column(NodeId, SetId), o: *stamped.Column(NodeId, void), cs: *std.ArrayList(NodeId), v: *u32, n: NodeId) Error!void {
+            fn go(tt: *Table, g: Allocator, a: *Account, w: Closure, fs: *std.ArrayList(Frame), sc: *std.ArrayList(NodeId), ix: *Scratch.Map(NodeId, [2]u32), ac: *Scratch.Map(NodeId, SetId), o: *Scratch.Set(NodeId), cs: *std.ArrayList(NodeId), v: *u32, n: NodeId) Error!void {
                 try a.reserve(.inspection, 1);
                 try ix.put(g, n, .{ v.*, v.* });
                 v.* += 1;
@@ -1181,8 +1184,8 @@ pub const Table = struct {
     /// deep snapshots' codec tests quadratic.
     pub fn holdsView(t: *Table, gpa: Allocator, n: NodeId) Allocator.Error!bool {
         if (n == .none) return false;
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(gpa);
+        const seen = try t.marks.take(gpa);
+        defer t.marks.give(seen);
         var visited: std.ArrayList(NodeId) = .empty;
         defer visited.deinit(gpa);
         var stack: std.ArrayList(NodeId) = .empty;
@@ -1190,8 +1193,7 @@ pub const Table = struct {
         try stack.append(gpa, n);
         while (stack.pop()) |x| {
             if (t.view_free.getAt(x, t.ties) != null) continue;
-            const got = try seen.getOrPut(gpa, .{x.int()});
-            if (got.found_existing) continue;
+            if ((try seen.getOrPut(gpa, x)).found_existing) continue;
             try visited.append(gpa, x);
             const d = t.get(x);
             switch (d.kind) {
@@ -2177,9 +2179,9 @@ pub const Table = struct {
     /// A `Reach`'s columns and stacks, kept by the table and emptied by
     /// generation per walk: a walk makes no slot an earlier walk made (#1191).
     pub const ReachScratch = struct {
-        index: stamped.Column(NodeId, u32) = .{},
-        low: stamped.Column(NodeId, u32) = .{},
-        on_stack: stamped.Column(NodeId, void) = .{},
+        index: Scratch.Map(NodeId, u32) = .{},
+        low: Scratch.Map(NodeId, u32) = .{},
+        on_stack: Scratch.Set(NodeId) = .{},
         scc_stack: std.ArrayList(NodeId) = .empty,
         /// Successors of a node, flattened: `(node, successor cursor)`.
         frames: std.ArrayList(Reach.Frame) = .empty,
@@ -3225,8 +3227,8 @@ pub const Table = struct {
         }.of;
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(gpa);
-        var open: stamped.Column(NodeId, void) = .{};
-        defer open.deinit(gpa);
+        const open = try t.marks.take(gpa);
+        defer t.marks.give(open);
         var kids: std.ArrayList(NodeId) = .empty;
         defer kids.deinit(gpa);
         var parts: std.ArrayList(LeafPart) = .empty;
@@ -3565,30 +3567,30 @@ pub const Table = struct {
         /// Union–find over node ids, made on first touch: a class's parent,
         /// its member list head to tail, its step-map entries head to tail,
         /// counted.
-        uf: stamped.Column(NodeId, Uf) = .{},
+        uf: Scratch.Map(NodeId, Uf) = .{},
         /// The step-map entries: `(step word, child node, next in class)`.
         entries: Ids.Columns(Entry) = .empty,
         /// `(class, step word)` → child node, for the live classes.
-        edges: Ids.FixedDict(2) = .{},
+        edges: Scratch.Dict(2, 0) = .{},
         /// Canonical path → the class at it.
-        by_path: stamped.Column(PathId, u32) = .{},
-        visited: stamped.Column(NodeId, void) = .{},
+        by_path: Scratch.Map(PathId, u32) = .{},
+        visited: Scratch.Set(NodeId) = .{},
         /// The unions, choices and positions nodes met on the cycle (at a
         /// `⟲`, or in a group's rounds at a place on a cycle), whose sides are
         /// walked as members of their class (§2.3): their meaning is their
         /// sides', so they ride beside no image.
-        opened: stamped.Column(NodeId, void) = .{},
+        opened: Scratch.Set(NodeId) = .{},
         /// How many times the walk reached each node: a node reached twice
         /// stands at two positions of its class.
-        occurs: stamped.Column(NodeId, u32) = .{},
+        occurs: Scratch.Map(NodeId, u32) = .{},
         pending: std.ArrayList([2]u32) = .empty,
-        image: stamped.Column(NodeId, NodeId) = .{},
+        image: Scratch.Map(NodeId, NodeId) = .{},
         kids: std.ArrayList(NodeId) = .empty,
         /// In a group's rounds (`Table.widen_rounds`): every `⟲`'s target, the
         /// class path it returns to, and each target with its ancestors.
         /// Computed once, on the first node that asks.
-        targets: stamped.Column(PathId, void) = .{},
-        toward: stamped.Column(PathId, void) = .{},
+        targets: Scratch.Set(PathId) = .{},
+        toward: Scratch.Set(PathId) = .{},
         /// The source nodes in the order first visited.
         seen_order: std.ArrayList(NodeId) = .empty,
 
@@ -3776,8 +3778,8 @@ pub const Table = struct {
             const Frame = struct { node: NodeId, path: PathId };
             var stack: std.ArrayList(Frame) = .empty;
             defer stack.deinit(w.gpa);
-            var seen: stamped.Column(NodeId, void) = .{};
-            defer seen.deinit(w.gpa);
+            const seen = try w.t.marks.take(w.gpa);
+            defer w.t.marks.give(seen);
             try stack.append(w.gpa, .{ .node = root, .path = try w.places.rootPath(w.gpa, w.t.place(root)) });
             while (stack.pop()) |f| {
                 try w.account.reserve(.edge, 1);
@@ -3885,8 +3887,8 @@ pub const Table = struct {
         /// image folded when its class has two members or one reached twice.
         fn exportFold(w: *Widen, fo: *Fold) Error!void {
             fo.merged = true;
-            var done: stamped.Column(NodeId, void) = .{};
-            defer done.deinit(w.gpa);
+            const done = try w.t.marks.take(w.gpa);
+            defer w.t.marks.give(done);
             for (w.s.seen_order.items) |n| {
                 try w.account.reserve(.inspection, 1);
                 const rep = w.find(n.int());

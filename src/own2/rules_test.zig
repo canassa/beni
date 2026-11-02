@@ -42,7 +42,10 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1000 },
     // The data-oriented measurement (S0): imported by any file, whatever its
     // layer, and imports nothing of own2/.
-    .{ .file = "Counters.zig", .layer = 0, .max_lines = 520 },
+    // 570 since #1646: the walks' sparse sets' counts.
+    .{ .file = "Counters.zig", .layer = 0, .max_lines = 570 },
+    // #1646: a walk's sparse sets, in slots by walk depth.
+    .{ .file = "Scratch.zig", .layer = 0, .max_lines = 440 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
@@ -102,7 +105,8 @@ const layers = [_]Entry{
     // bit, positions by their set of states) and its reference, out of Cond.
     // 1 350 since #1485: a widened knot's union sides keyed at a fold
     // (`keySides`, `unionSides`).
-    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1350 },
+    // 1 390 since #1646: a call's indices in a slot by depth (`Working`).
+    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1390 },
     // §5 says 1 805 since #1112: the observable-position frontier every κ
     // reader walks, exact propagation states, the snapshot trie (its
     // links, merges, folds and relabelling) and the one-alternative link.
@@ -156,7 +160,8 @@ const layers = [_]Entry{
     // route's stop at a parameter's leaf. 1 830 since #1439: the keys a
     // `Beside` spine's children are listed under (`keysOf`).
     // 2 450 since #1485: the fold certificate's readers, rule 4 and (d).
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2450 },
+    // 2 490 since #1646: a callback's grafter and a link walk in slots by depth.
+    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2490 },
     // 260 since #1457: the frame's accessors, value helpers and uses, split
     // out of Transfer (§5).
     .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
@@ -170,7 +175,8 @@ const layers = [_]Entry{
     // part B's `Canon` and switch beside them.
     // 1 800 since #1485 part 3: (d3) below a leaf, and a knot's view
     // compared by cells marked approximate (`foldedView`, `foldOcc`).
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1800 },
+    // 1 820 since #1646: `otherPaths`' visited states in a slot by depth.
+    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1820 },
     // 710 since #1439: the runs of a write's other-paths walk, a choice's
     // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
     // read by the runs of the ends that reach it.
@@ -543,7 +549,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 42), layers.len);
+    try testing.expectEqual(@as(usize, 43), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
