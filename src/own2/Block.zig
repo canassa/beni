@@ -250,7 +250,8 @@ const Reader = struct {
                     },
                     .fresh, .top => {},
                 }
-                _ = try Contract.Draft.addAt(out, r.arena, slot, open, a);
+                if (open) try Contract.Draft.markOpen(out, r.arena, slot);
+                _ = try Contract.Draft.addArrival(out, r.arena, slot, a);
             }
         }
     }

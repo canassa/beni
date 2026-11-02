@@ -1774,7 +1774,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
             // A call's or a supply's whole subtree read by structure is read
             // through one key below its position, never one per slot below it
             // (§2.10 *Read-off*).
-            if (by_structure and (r.kind == .call or r.kind == .supply) and l.slots == try f.slots.below(gpa, f.account, f.places, pslot)) return describeCallWide(s, l, pslot, q, out);
+            if (by_structure and (r.kind == .call or r.kind == .supply) and f.slots.items(l.slots).len > Relation.below_min and l.slots == try f.slots.below(gpa, f.account, f.places, pslot)) return describeCallWide(s, l, pslot, q, out);
             for (f.slots.items(l.slots)) |sl| {
                 // The result slot of this object: q, below by the steps from
                 // the position to the slot.
@@ -2063,7 +2063,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
             .param => {
                 // A deep effect on a whole subtree is one effect at its top.
                 const pslot = f.pos.items[l.pos].slot;
-                const whole = deep and l.slots == try f.slots.below(gpa, f.account, f.places, pslot);
+                const whole = deep and f.slots.items(l.slots).len > Relation.below_min and l.slots == try f.slots.below(gpa, f.account, f.places, pslot);
                 const one = [1]u32{pslot.int()};
                 for (if (whole) &one else f.slots.items(l.slots)) |sl| {
                     const eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep };
