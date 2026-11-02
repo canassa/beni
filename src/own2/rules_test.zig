@@ -54,9 +54,11 @@ const layers = [_]Entry{
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     .{ .file = "Walk.zig", .layer = 7, .max_lines = 1230 },
-    // One entry of many objects; an answer apart from nothing (#1710, #1711).
-    .{ .file = "Distinct.zig", .layer = 7, .max_lines = 680 },
-    .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
+    // One entry of many objects; an answer apart from nothing (#1710,
+    // #1711); what an answer may hold (§2.9.2 step 7).
+    .{ .file = "Distinct.zig", .layer = 7, .max_lines = 730 },
+    // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
+    .{ .file = "Eval.zig", .layer = 8, .max_lines = 1290 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     .{ .file = "Resolve.zig", .layer = 9, .max_lines = 680 },
@@ -358,7 +360,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 27), layers.len);
+    try testing.expectEqual(@as(usize, 28), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

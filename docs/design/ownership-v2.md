@@ -775,6 +775,15 @@ list that repeats an element were refused `disjoint` where nothing aliases the w
 6. **Two atoms** (`site`, `fresh`, `shared`): **may** when they are the same atom, else **no**. An atom and a
    parameter's leaf: **no** (an object this frame allocated is no parameter's; a parameter that holds a shared
    value is the caller's to refuse, where the actual is seen).
+7. **A label's answer** (§2.11.3). As the target: **may** (unknown code may answer anything it reaches). As the
+   holder, when the label has a direct call in this frame: the join of each leaf that call supplied against the
+   target, and of what the label's function slot `(j, s)` may hold: **no** for an object this activation built
+   (`site`, `fresh`), **under** `(j, s)~` and the selection of the target for another parameter's leaf, a call's
+   leaf expanded, otherwise **may**. A label the frame only passes on answers **may**. *Amended 2026-11-02
+   (#1685):* before, every answer was **may**, so a callback's answer pending in a list literal kept every later
+   supply of the same label (`[ f x, …mapL rest f ]`, `[ f x, f y ]`), and a writing callback was refused although
+   the label's own condition (its supplies' elements distinct, its function apart from them) already keeps
+   them apart.
 
 The relation is computed once per pair of leaves per walk and reserved before work.
 

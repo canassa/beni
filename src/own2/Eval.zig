@@ -121,13 +121,14 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
 /// place no step below it can name.
 fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
     if (p == .none) return false;
-    var seen: std.AutoHashMapUnmanaged(PlaceId, void) = .empty;
+    var seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, places.count());
     defer seen.deinit(gpa);
     var stack: std.ArrayList(PlaceId) = .empty;
     defer stack.deinit(gpa);
     try stack.append(gpa, p);
     while (stack.pop()) |x| {
-        if ((try seen.getOrPut(gpa, x)).found_existing) continue;
+        if (seen.isSet(x.int())) continue;
+        seen.set(x.int());
         switch (places.kind(x)) {
             .@"var", .@"opaque" => return true,
             else => {},
