@@ -50,6 +50,7 @@ const Eval = @import("Eval.zig");
 const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
 const Deliver = @import("Deliver.zig");
+const Closures = @import("Closures.zig");
 const Bir = @import("../bir/Bir.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
@@ -1443,6 +1444,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             const e = &evals[i];
             try Eval.finishDemands(e);
+            try Closures.escapedWrites(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra);
             // R-5.13.1: in a comparison's walk, a write of what arrived is
             // `comparison_changes_value`; a write of a fresh value stays

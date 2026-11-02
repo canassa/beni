@@ -56,6 +56,7 @@ const layers = [_]Entry{
     .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
     .{ .file = "Resolve.zig", .layer = 9, .max_lines = 600 },
     .{ .file = "Deliver.zig", .layer = 9, .max_lines = 300 },
+    .{ .file = "Closures.zig", .layer = 9, .max_lines = 80 },
     .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
     .{ .file = "Block.zig", .layer = 11, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 280 },
@@ -350,7 +351,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 26), layers.len);
+    try testing.expectEqual(@as(usize, 27), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
