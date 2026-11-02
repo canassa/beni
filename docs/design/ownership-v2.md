@@ -1074,8 +1074,9 @@ sorted, so a `cb` arrival could name another callback's answer, and a write onto
 sanitiser catches (#1737, `run/SanitiserCallbackLabels`); the result is put with the sorted numbers, as the
 supplies were. **Not built:** `writes`, `escapes` and `kept` are still flat lists and the covering fold is
 not applied to them; a call's instantiation is not yet per callee node through a choice chain's tag routes
-(the else-if chain's call costs 1 960 / 3 704 / 7 152 records at D = 8 / 16 / 32, nine tenths of it the
-call's selection instantiated over the chain's arms, `Distinct.instSel`). Measured (Debug): `w₃ / w₅ / w₈ /
+(the else-if chain's call costs 1 960 / 3 704 / 7 152 records at D = 8 / 16 / 32, nearly all of it
+under `Eval.finishDemands` and three quarters of it the callee's selection instantiated over the chain's
+arms, `Distinct.instSel`). Measured (Debug): `w₃ / w₅ / w₈ /
 w₁₀` 1 081 / 287 / 1 575 / 5 991, linear in the result's depth; `EvidenceDagBuildDepth32` has no limit line;
 `Schema.shapeOf` 256 826 (256 618 before); ledger: no verdict moves, 11 limit lines fewer, none new.
 
