@@ -2503,10 +2503,12 @@ node: u32 }`, hash-consed by content; `reads`, `writes`, `escapes` and `kept` on
 *Built so far (#1714):* the result trees, in `Trees.zig`. A node is its plain arrivals (a run of arrivals interned
 by content), its open ones (at its slot and, by structure, below it: today's open and wide entries are one
 run) and its kids, sorted by the step word, which is module-local; a reader that writes words sorts kids by
-their canonical keys. Every reader that asks one slot walks its steps from the root, one inspection a node
-(`instAt`, a key's feed, `throughCall`, the uniform-atom test, a known label's answer at a slot no place
-names); before, each scanned every entry, uncharged. The flat entries are still kept beside the tree for the
-readers that need every slot, until each reads the tree.
+their canonical keys. Every reader that asks one slot walks its steps from the root (`instAt`, a key's
+feed, `throughCall`, the uniform-atom test, a known label's answer at a slot no place names); before, each
+scanned every entry. The walk is the lookup of the key it fills and is charged as the scan was: the
+uniform-atom test an inspection a node visited (it was one an entry), the others nothing of their own, so
+every account is unchanged. The flat entries are still kept beside the tree for the readers that need every
+slot, until each reads the tree.
 
 A contract is immutable once read off; a join makes a new one. Its text (the dump's `summary` line) is
 `ContractText.zig`'s. The group solver keeps one candidate per member
