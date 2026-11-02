@@ -217,9 +217,12 @@ pub const Eval = struct {
         const x = e.f.val(v);
         switch (x.kind) {
             .scalar, .bot => {},
-            .built => if (x.site != none) {
-                try out.append(e.gpa(), try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = tags }));
-            } else if (x.form == .list and x.head != 0) try e.storageOf(x.head - 1, tags, out),
+            .built => {
+                if (x.site != none) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = tags }));
+                // A list built over a base may be that base's storage; a
+                // prepend only by a re-cons (§2.13.6, `prepended`).
+                if (x.form == .list and x.head != 0 and (x.site == none or try e.mayRecons(x))) try e.storageOf(x.head - 1, tags, out);
+            },
             .ref => {
                 const set = if (x.family != Slots.empty) try e.objects(x.family) else try e.f.slots.canon(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot);
                 if (set == Slots.empty) return;
@@ -236,6 +239,56 @@ pub const Eval = struct {
             .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = tags })),
             .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = tags })),
         }
+    }
+
+    /// Whether prepend `x` may answer its base's own array: a re-cons, when
+    /// the item put in front is `Js.same` as the element stored just before
+    /// the base's view. An object made after the base (a literal, a call's
+    /// fresh objects) is none of the base's, so it cannot be (`PrependFresh`).
+    fn mayRecons(e: *Eval, x: Value.Val) Error!bool {
+        const ks = e.f.kidsOf(x);
+        if (ks.len < 2) return true;
+        const birth = e.bornAt(x.head - 1);
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(e.gpa());
+        try e.leavesOf(ks[ks.len - 2], 0, &ls);
+        if (ls.items.len == 0) return true;
+        var depth: u32 = 0;
+        while (ls.items.len != 0) : (depth += 1) {
+            if (depth > 4) return true;
+            var next: std.ArrayList(u32) = .empty;
+            defer next.deinit(e.gpa());
+            for (ls.items) |li| {
+                const l = e.f.leafAt(li);
+                switch (l.kind) {
+                    .site => if (birth == none or l.atom <= birth) return true,
+                    .fresh => if (birth == none or e.f.calls.items[l.atom].point <= birth) return true,
+                    .ref => {
+                        if (!e.expandable(l) or e.f.roots.items[l.root].kind != .call) return true;
+                        if (birth == none or e.f.calls.items[e.f.roots.items[l.root].a].point <= birth) return true;
+                        try e.expand(li, &next);
+                    },
+                    else => return true,
+                }
+            }
+            std.mem.swap(std.ArrayList(u32), &ls, &next);
+        }
+        return false;
+    }
+
+    /// The point value `v` was made at: a parameter's before every point,
+    /// a call's at the call, a built one at its instruction; `none` unknown.
+    fn bornAt(e: *Eval, v: u32) u32 {
+        const x = e.f.val(v);
+        return switch (x.kind) {
+            .ref => switch (e.f.roots.items[x.root].kind) {
+                .param => 0,
+                .call => e.f.calls.items[e.f.roots.items[x.root].a].point,
+                else => none,
+            },
+            .built => if (x.site != none) x.site else none,
+            else => none,
+        };
     }
 
     /// The object slots of a slot set (its canonical names).
