@@ -285,7 +285,7 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
     if (!d.flags.cross and exclusive and !Env.has(rw, .fresh)) {
         // A result made of its parameters is separated when they are.
         var occs: std.ArrayList(u64) = .empty;
-        for (d.res.items) |s| for (s.arrivals.items) |a| if (a.kind == .param) try occs.append(env.arena, if (a.deep) Contract.occDeep(Contract.occ(a.j, a.slot)) else Contract.occ(a.j, a.slot));
+        for (d.res.items.items) |s| if (s.node == 0) if (s.a.kind == .param) try occs.append(env.arena, if (s.a.deep) Contract.occDeep(Contract.occ(s.a.j, s.a.slot)) else Contract.occ(s.a.j, s.a.slot));
         d.res_cond = try Contract.Cond.of(env.account, occs.items);
     }
     return env.commit(&d);

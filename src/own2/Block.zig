@@ -16,6 +16,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
+const Forest = @import("Forest.zig");
 
 pub const magic: u32 = 0x324e574f;
 pub const version: u32 = 16;
@@ -52,7 +53,10 @@ const Writer = struct {
     }
 
     fn rel(w: *Writer, r: Slots.Rel) Allocator.Error!void {
-        const words = w.slots.relWords(r);
+        return w.steps(w.slots.relWords(r));
+    }
+
+    fn steps(w: *Writer, words: []const u32) Allocator.Error!void {
         try w.word(@intCast(words.len));
         for (words) |wd| {
             const s = Step.fromWord(wd);
@@ -86,13 +90,16 @@ const Writer = struct {
         }
     }
 
-    fn res(w: *Writer, r: Ids.Range) Allocator.Error!void {
-        try w.word(r.len);
-        for (w.t.resOf(r)) |s| {
-            try w.rel(s.slot);
+    fn res(w: *Writer, root: Contract.Node) Allocator.Error!void {
+        var es: Forest.Entries = .{};
+        defer es.deinit(w.gpa);
+        try es.of(&w.t.trees, w.gpa, w.places, root, &.{});
+        try w.word(@intCast(es.items.items.len));
+        for (es.items.items) |s| {
+            try w.steps(es.wordsOf(s));
             try w.word(@intFromBool(s.open));
-            try w.word(s.arrivals.len);
-            for (w.t.arrivalsOf(s.arrivals)) |a| {
+            try w.word(@intCast(s.arrivals.len));
+            for (s.arrivals) |a| {
                 try w.word(@backingInt(a.kind) | (@as(u32, @intFromBool(a.deep)) << 8));
                 switch (a.kind) {
                     .param => {
@@ -114,7 +121,7 @@ const Writer = struct {
         const h = w.t.head(c);
         try w.word(h.arity);
         try w.word(@as(u8, @bitCast(h.flags)));
-        try w.res(h.res);
+        try w.res(h.res_root);
         try w.cond(h.res_cond);
         try w.effects(h.reads);
         try w.effects(h.writes);
@@ -130,7 +137,7 @@ const Writer = struct {
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
                 try w.word(s.k);
-                try w.res(s.res);
+                try w.res(s.res_root);
                 try w.effects(s.kept);
                 try w.cond(s.cond);
             }
@@ -226,7 +233,7 @@ const Reader = struct {
         }
     }
 
-    fn res(r: *Reader, out: *std.ArrayList(Contract.Draft.DraftSlot)) Error!void {
+    fn res(r: *Reader, out: *Contract.Draft.Res) Error!void {
         const n = try r.next();
         if (n > r.words.len) return error.BadBlock;
         for (0..n) |_| {

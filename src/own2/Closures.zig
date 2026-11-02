@@ -17,6 +17,7 @@
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
+const Forest = @import("Forest.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
 
@@ -118,8 +119,10 @@ fn handedBack(e: *Eval.Evaluation, out: *std.ArrayList(Eval.Escape)) Eval.Error!
     const gpa = e.gpa();
     for (f.calls.items, 0..) |call, q| {
         if (call.contract == none) continue;
-        const h = e.contracts.head(call.contract);
-        for (e.contracts.resOf(h.res)) |rs| for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
+        var es: Forest.Entries = .{};
+        defer es.deinit(gpa);
+        try es.of(&e.contracts.trees, gpa, f.places, e.contracts.head(call.contract).res_root, &.{});
+        for (es.items.items) |x| for (x.arrivals) |a| {
             if (a.kind != .param) continue;
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
