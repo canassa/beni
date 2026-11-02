@@ -234,31 +234,56 @@ nativeFailure error name =
 
 construct : V, Options → Result (OpenReason error) V
 construct descriptor opts =
-    credentials =
-        case opts.credentials of
-            Omit →
-                "omit"
-            SameOrigin →
-                "same-origin"
-            Include →
-                "include"
-    Ok
-        (Js.construct (Js.global "Worker")
-            [ Js.get descriptor "url"
-            , Js.object
-                [ ( "type", host "module" )
-                , ( "name", host opts.name )
-                , ( "credentials", host credentials )
-                ]
-            ]
-        )
+    if not (Js.typeIs (Js.global "Worker") "function") then
+        Err UnsupportedWorkerKind
+    else
+        credentials =
+            case opts.credentials of
+                Omit →
+                    "omit"
+                SameOrigin →
+                    "same-origin"
+                Include →
+                    "include"
+        Js.catchIf
+            (λ⊤ →
+                Ok
+                    (Js.construct (Js.global "Worker")
+                        [ Js.get descriptor "url"
+                        , Js.object
+                            [ ( "type", Js.from "module" )
+                            , ( "name", Js.from opts.name )
+                            , ( "credentials", Js.from credentials )
+                            ]
+                        ]
+                    )
+            )
+            (λcaught →
+                nativeFailure caught "SyntaxError"
+                    || nativeFailure caught "SecurityError"
+                    || Js.instanceOf caught (Js.global "TypeError")
+            )
+            λcaught →
+                Err
+                    (if nativeFailure caught "SyntaxError" then
+                        InvalidScriptUrl
+                     else if nativeFailure caught "SecurityError" then
+                        WorkerSecurityDenied
+                     else
+                        TrustedScriptUrlRejected
+                    )
 
 
 -- The wire envelope is private control. Application values travel only as payloads.
 post : V, V → Result SendError ⊤
 post target outgoing =
-    _ = Js.call target "postMessage" [ outgoing ]
-    Ok ⊤
+    Js.catchIf
+        (λ⊤ →
+            _ = Js.call target "postMessage" [ outgoing ]
+            Ok ⊤
+        )
+        (λcaught → nativeFailure caught "DataCloneError")
+        λ_ → Err (WorkerCloneRejected NativeCloneRejected)
 
 
 frame : String, V → V
@@ -468,19 +493,31 @@ received peer event =
 
 validOptions : Options → Result ConfigError ⊤
 validOptions opts =
-    if opts.queuedRequests ≤ 0 then
+    if opts.queuedRequests ≤ 0 || not (finiteNumber opts.queuedRequests) then
         Err (NonPositiveLimit "queuedRequests")
-    else if opts.queuedEvents ≤ 0 then
+    else if opts.queuedEvents ≤ 0 || not (finiteNumber opts.queuedEvents) then
         Err (NonPositiveLimit "queuedEvents")
-    else if opts.queuedBytes ≤ 0 then
+    else if opts.queuedBytes ≤ 0 || not (finiteNumber opts.queuedBytes) then
         Err (NonPositiveLimit "queuedBytes")
-    else if Duration.toMillis opts.readyWithin ≤ 0 then
+    else if
+        Duration.toMillis opts.readyWithin ≤ 0
+            || not (finiteNumber (Duration.toMillis opts.readyWithin))
+    then
         Err (InvalidDuration "readyWithin")
-    else if Duration.toMillis opts.cleanupWithin ≤ 0 then
+    else if
+        Duration.toMillis opts.cleanupWithin ≤ 0
+            || not (finiteNumber (Duration.toMillis opts.cleanupWithin))
+    then
         Err (InvalidDuration "cleanupWithin")
-    else if Duration.toMillis opts.heartbeatEvery ≤ 0 then
+    else if
+        Duration.toMillis opts.heartbeatEvery ≤ 0
+            || not (finiteNumber (Duration.toMillis opts.heartbeatEvery))
+    then
         Err (InvalidDuration "heartbeatEvery")
-    else if Duration.toMillis opts.leaseWithin < Duration.toMillis opts.heartbeatEvery then
+    else if
+        Duration.toMillis opts.leaseWithin < Duration.toMillis opts.heartbeatEvery
+            || not (finiteNumber (Duration.toMillis opts.leaseWithin))
+    then
         Err (InvalidDuration "leaseWithin")
     else
         Ok ⊤
@@ -1151,6 +1188,10 @@ failedOpen peer reason =
             _ →
                 observed
     Err { reason = reason, cleanup = cleanup }
+
+
+finiteNumber : Int → Bool
+finiteNumber value = Js.to (Js.call (Js.global "Number") "isFinite" [ host value ])
 
 
 workerDefect : V, V → a

@@ -1,0 +1,100 @@
+-- Reject non-finite numeric policy before the constructor. Constructor guards
+-- distinguish documented native classes and never absorb an unrelated error.
+import Browser
+import Browser.Worker as Worker
+import Duration
+import Hosted
+import Probe
+import Task
+
+
+type alias Protocol =
+    Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥
+
+
+worker : Worker.Program ⊤ ⊤ Protocol
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Ok ⊤, stream = Worker.noStream }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+label : Result (Worker.OpenError String) (Worker.Handle Protocol) → String
+label result =
+    case result of
+        Ok _ →
+            "unexpected ready"
+        Err { reason, cleanup } →
+            if cleanup ≠ Worker.Confirmed then
+                "unconfirmed"
+            else
+                case reason of
+                    Worker.UnsupportedWorkerKind →
+                        "missing"
+                    Worker.InvalidScriptUrl →
+                        "syntax"
+                    Worker.WorkerSecurityDenied →
+                        "security"
+                    Worker.TrustedScriptUrlRejected →
+                        "trusted"
+                    Worker.InvalidOptions (Worker.NonPositiveLimit field) →
+                        field
+                    Worker.InvalidOptions (Worker.InvalidDuration field) →
+                        field
+                    _ →
+                        "other"
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    Probe.configure "forbid"
+    badCount =
+        label (Worker.open owned worker ⊤ { Worker.options | queuedRequests = round (0 / 0) })
+    badTime =
+        label
+            (Worker.open owned worker ⊤
+                { Worker.options | readyWithin = Duration.millis (round (1 / 0)) }
+            )
+    Probe.configure "missing"
+    missing = label (Worker.open owned worker ⊤ Worker.options)
+    Probe.configure "syntax"
+    syntax = label (Worker.open owned worker ⊤ Worker.options)
+    Probe.configure "security"
+    security = label (Worker.open owned worker ⊤ Worker.options)
+    Probe.configure "trusted"
+    trusted = label (Worker.open owned worker ⊤ Worker.options)
+    Probe.configure "restore"
+    if
+        badCount == "queuedRequests"
+            && badTime == "readyWithin"
+            && missing == "missing"
+            && syntax == "syntax"
+            && security == "security"
+            && trusted == "trusted"
+    then
+        "options passed"
+    else
+        "options failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

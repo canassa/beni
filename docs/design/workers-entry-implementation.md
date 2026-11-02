@@ -135,3 +135,22 @@ layouts of exposed nominal types, opaque ones included, closed through their
 private type dependencies. A private payload field rename therefore invalidates
 cached Wire plans. Value-body edits with the same type layout keep the firewall;
 builds with no Wire roles retain the ordinary digest path.
+
+## Dedicated browser runtime (gated)
+
+The browser platform declares the dedicated handlers kind through entryKinds.
+Its runtime is beni over Js and Task's public scope/fiber APIs. It supports the
+Ready handshake, typed calls and pushed events, interrupt-and-wait, cooperative
+close, explicit abort, and fatal worker defects. Builds still require the hidden
+unchecked-worker flag at reachable launches; ordinary browser builds need none.
+The test platform remains for generic entry diagnostics and emission fixtures.
+
+The emitted Wire plan keeps the encoded role path and a fourth, semantic path.
+Record-role adapters keep using the encoded path. Browser.Worker's type-only
+Protocol grouping selects call/reply/error/event plans by the semantic path;
+no value of that grouping is constructed or sent. List materialization uses
+those plans on config, requests, replies, typed failures and events.
+
+Borrowed callback state remains #1658. The delivery manager deferred request Log
+context transport to #1665; that work needs a core-private effective-minimum
+snapshot and adds no public Log surface without the owner's decision.

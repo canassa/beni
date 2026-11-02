@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "clone rejected"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"clone rejected"</output>
+  </main>
+</body>
