@@ -540,6 +540,10 @@ firstDefect : Js.Ref V
 firstDefect = Js.ref Js.null
 
 
+fatalStarted : Js.Ref Bool
+fatalStarted = Js.ref False
+
+
 fatalDeadline : Js.Ref V
 fatalDeadline = Js.ref Js.null
 
@@ -554,25 +558,19 @@ installFatal ⊤ =
         ⊤
     else
         Js.write installed True
-        -- Preserve the platform's Task.onDefect hook; native error reporting
-        -- below enters its page stop path after Task has called that hook.
-        if Js.isUndefined (Js.global "window") then
-            ⊤
-        else
-            _ =
-                Js.call (Js.global "window") "addEventListener"
-                    [ host "error"
-                    , host λevent →
-                        if Js.isNull (Js.read firstDefect) then
-                            cause = Js.get event "error"
-                            if Js.isNullish cause then
-                                ⊤
-                            else
-                                Js.write firstDefect cause
-                                Js.set cause "abandonedWorkers" abandoned
-                                stopRealm ⊤
-                    ]
-            ⊤
+        Task.chainDefect stopRealm
+        _ =
+            Js.call (Js.global "globalThis") "addEventListener"
+                [ host "error"
+                , host λevent →
+                    if Js.read fatalStarted && Js.isNull (Js.read firstDefect) then
+                        cause = Js.get event "error"
+                        if Js.isNullish cause then
+                            ⊤
+                        else
+                            Js.write firstDefect cause
+                            Js.set cause "abandonedWorkers" abandoned
+                ]
         Task.onShutdown λ⊤ →
             Js.each (Js.call peers "values" []) λpeer →
                 _ = sendFrame peer "Close" 0 Js.null
@@ -1184,6 +1182,7 @@ installHostStop stop stopped =
 
 stopRealm : ⊤ → ⊤
 stopRealm ⊤ =
+    Js.write fatalStarted True
     if Js.isUndefined (Js.global "window") then
         Task.shutdown 1000 λ_ → abandonUnfinished ⊤
     else

@@ -1,0 +1,10 @@
+pub foreign impure watch : ⊤ → ⊤
+
+
+pub foreign impure observeChild : ⊤ → ⊤
+
+
+pub foreign impure cleaned : ⊤ → ⊤
+
+
+pub foreign impure defect : ⊤ → Result String String
