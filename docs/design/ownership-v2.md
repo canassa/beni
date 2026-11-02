@@ -306,8 +306,9 @@ place holds none; its object slots are below it.
   from each. Two slots **meet** exactly when their expansions share a path. A **slot set** is a sorted run of
   expanded object slots, interned per module; two sets meet when the runs share an element, found by one merge.
 - **`below(p)`**: the object slots at and below `p`, the closure of `p` under `extend` over each place's
-  steps. It is one module table, filled once per path when first asked, and charged on the asker's account
-  (§4.1). A slot that holds a `var` place stands for anything below it.
+  steps. It is one module table, filled once per path when first asked, and charged to every account
+  that reads it, at the entry's stored fill cost on that account's own first read (§4.1, *A module table's
+  entries*). A slot that holds a `var` place stands for anything below it.
 - **Relative steps.** A contract (§2.10) names a parameter's or a result's slot by its step words from the
   root, `π2#Node.0⟲#Node.1`. Constructor steps are `(ordinal, argument)` pairs and field steps are field
   names, so the words mean the same in every module (§3.6).
@@ -348,7 +349,7 @@ unchanged; a slot set may now hold `below(p)` **symbolically**:
   §3.5): an arrival the same at every slot below a cast, a parameter's or a label's subtree read by
   structure, a constructor's or a worded declaration's identity and its occurrences, a call's arrival read
   slot by slot below an open entry. There `↓p` is written out (`belowAll`): the full walk of `below`,
-  filled once per path and charged on the asker's account like it. An atom (`fresh`, `⊤`, a shared value)
+  filled once per path and charged per account like it. An atom (`fresh`, `⊤`, a shared value)
   is the same at every slot and stays one wide entry. A wide entry for any other arrival is not used: read
   back over a call's result, it needs the call's whole subtree described by structure at each slot, which
   cost `Schema.shapeOf` 540 000 records where the slots written out cost 215 000 (measured 2026-11-02).
@@ -782,6 +783,38 @@ storage write, the base's own storage at the written position (`at_position`); f
    call's leaves are expanded into the roots they come from first.
 6. **Exclusive.** What the overlaps relied on (§2.9.4): a selection of the frame's parameters is accepted
    `param` and added to `req`; anything else that is not given is refused `exclusive`.
+
+**Base keys** (#1714, 2026-11-02). A leaf's *base keys* are what it comes from: a parameter for a parameter's
+`ref`, the atom for a `site`, `fresh` or `shared` leaf, *unknown* for `⊤`, an answer or a callback's root, and
+for a call's or a supply's leaf the union of the base keys of its expansion (§2.9.2 step 4). They are part of
+the leaf's representation: a run per leaf, in a column of the frame's leaf table beside its slots and tags,
+made once, after the walk, by one post-order pass over the expansions that resolution reaches. Every reader
+of what a leaf comes from — a demand's ground and step 1, the holder index, the escape index — reads the run;
+none expands a call again. A chain of n calls (`a1 = List.push xs 1`, `a2 = List.push a1 1`, …) costs n
+leaves' runs in all, where expanding the chain once per demand cost n².
+
+**The holder index and its sweep** (#1714, 2026-11-02; #1214's live chains, restated on slots). Step 5 asks
+only the holders that are *live at the demand*: bound before its point and used after it (`Liveness.lastUse`).
+Each local is indexed under the base keys of its value's leaves; a local whose value reaches an unknown leaf
+is indexed under the unknown key, which every target meets. Resolution judges its demands in point order (each line
+keeps the walk's order, and the callback judgments of §2.11.3 are judged in the same sweep at their call's
+point): a holder joins its keys' **live lists** when the sweep passes its binding point and leaves them when
+the sweep reaches its last use. The lists are doubly linked in flat arrays over `(key, holder)` entries, so a
+join and a leave are O(1). A demand's candidates are the live lists of its targets' keys, every parameter's
+for a parameter's target (a parameter's object may be held through another parameter), and the unknown list:
+O(the live holders it meets), never every holder its root ever had. In the push chain above, each demand meets
+no holder at all: `a(i-1)` was last used by the push being judged.
+
+**The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
+every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
+tree of the least `rank₂` over each range of it. For an escape `x` before `p`, `x` is compatible with `p`
+exactly when `rank₂(x) < rank₂(p)` (§2.5). So a target's query takes, in each bucket its keys can meet (its
+atoms', every parameter's when it comes from a parameter, the unknown bucket always), the prefix of escapes
+before `p` by one binary search, then the escapes of that prefix whose `rank₂` is below `rank₂(p)` by
+descending the tree only into subtrees whose least `rank₂` is: O((1 + k) log e) for the k escapes found, each
+of which the relation judges as before. The search costs ⌈log₂(e + 1)⌉ + 1 records and every node it visits
+one more, reserved before the work. Before this, each target asked every escape and nothing was charged:
+`e × w` tests at growth 0 (the mixed term of the escapes × writes family was 0; master's v2 charged 144).
 
 The verdict's ground is `fresh` when every target is an atom this frame allocated (a `site` or a call's
 `fresh`), `call` when a target comes through a callee's contract only, and `param` when the write relies on
@@ -2672,8 +2705,25 @@ every growth reservation of §4.4 does. Per walk:
 | the relation of two leaves | once per pair met, plus a call's expansion | `cond` |
 | the distinct check | linear in entries and their ancestors' index hits (§2.9.3); pairs only for list-step groups | `cond`, `inspection` |
 | a call's instantiation | once per call per candidate generation: the callee's arrivals × the projected positions | `edge`, `inspection` |
-| demand resolution | per demand, its targets × the holders of their roots, plus one liveness query per holder path | `demand`, `use` |
+| demand resolution | per demand, its targets × the holders live at it (§2.8, *The holder index and its sweep*), plus one liveness query per holder path; its escapes by the escape index, O((1 + k) log e) | `demand`, `use`, `inspection` |
+| base keys | once per leaf, its expansion's runs (§2.8, *Base keys*) | `inspection`, `edge` |
 | deliveries (§2.12) | once per (edge, fact) | `edge` |
+
+*A module table's entries, charged per account* (#1714, amended 2026-11-02). The module's tables — `Place`'s
+`extend`, `levelsOf`, `foldsUp`, `hits` and expanded levels, `Slots`' `canon`, `relOf` and `relBelow`'s
+walks, `Subtree`'s `below`, `anchors` and `belowAll` — are filled once and read by every declaration of the
+module. Until this amendment an entry's fill was charged to whichever declaration asked first, and a hit cost
+one record, so swapping two declarations moved records between their accounts (`g` 336 against 328), against
+§4.4's guarantee that an account does not depend on declaration order. Each entry now stores its **fill cost**:
+the records its fill reserved, in which a read of another entry during the fill counts that entry's hit record
+and its fill cost, whether it was filled during this fill or before. An account pays the hit record on every
+read and an entry's fill cost, as `memo` records, on its **own first read** of the entry, never again; a read made during a fill is
+the fill's and marks nothing for the account. So the fill cost is a function of the entry alone, the entries an
+account reads are a function of its own walk, and every account's total, by category, is the same in either
+declaration order. An account's first reads are one bit per entry, a bitset per table over the table's dense
+ids, held while its declaration is checked. A fill runs under the reading account's limit: the records it counts
+are reserved against what that account has left before the work goes on, so a fill too large for it stops it
+exactly where a fill charged as it went would have.
 
 A recursive group costs its inference walks, its deliveries and its validation walks: two walks per member.
 Copies of a helper cost proportionally; payload fields add entries, never pairs (the experiment's families,
@@ -3309,7 +3359,7 @@ L12 Ownership
 L11 Block  Message  Report  Hoists
 L10 Groups
 L9  Resolve  Deliver  Closures
-L8  Eval
+L8  Eval  Holders
 L7  Walk  Distinct
 L6  Relation
 L5  Value  Liveness
@@ -3345,7 +3395,8 @@ L0  Ids  Counters  Scratch
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions |
+| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index (§2.8) | Ids, Value, Relation, Distinct, Contract, Walk, Regions |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
