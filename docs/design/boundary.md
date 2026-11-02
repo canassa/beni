@@ -3490,6 +3490,9 @@ the branch the build takes, in reachability and in lowering.
   says — and calls the hook a platform gave `Task.onDefect : (() -> ()) -> ()` (impure, core). A
   hosted mount hands it the page's stop, which reaches `Browser.beni` as the mount's fourth
   argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7).
+  `Task.chainDefect : sync (⊤ → ⊤) → ⊤` adds a hook before the current one,
+  preserving it, so another runtime layer can join the same defect stop. A later
+  `onDefect` replaces the complete composed hook, under its existing setter contract.
 - **An error a primitive did not expect is a throw in the fiber that waited on it** (rule 9):
   `Http`'s sibling names each failure `fetch` documents — a `TypeError` from `new URL` is
   `BadUrl`, a rejection with a `TypeError` is `NetworkError`, a `SyntaxError` from `JSON.parse`
