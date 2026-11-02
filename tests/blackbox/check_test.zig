@@ -1502,12 +1502,24 @@ fn pinNeeds(arena: std.mem.Allocator, decls: []const DumpDecl, sources: *std.Str
     }
     // A worded beni body of a module with v2 rows (the asserted rows of
     // R-5.10.8: List, Ref, Deferred) is justified with the helpers it
-    // runs: every declaration of its module it reaches. v1's rows keep
-    // v1's rule, their own body (a `Task` row reaches the scheduler).
+    // runs: every declaration of its module it reaches. A v1 row of such
+    // a module is justified the same way. A v1 row of a module with no
+    // v2 row keeps v1's rule, its own body (a `Task` row reaches the
+    // scheduler), and so do `Task`'s v1 rows now that it has v2 ones
+    // (`spawn`, `join`): the v2 rows reach `fork` and the parts of the
+    // scheduler a fiber runs, and those are pinned; the v1 rows
+    // (`timeout`, `firstOf`, …) keep the rule they had.
+    const v1_own_body = [_][]const u8{"Task"};
     var v2_modules: std.StringHashMapUnmanaged(void) = .empty;
     for (decls) |d| if (d.v2) try v2_modules.put(arena, d.module, {});
     var stack: std.ArrayList(usize) = .empty;
-    for (decls, 0..) |d, i| if (d.worded and !d.foreign and v2_modules.contains(d.module)) try stack.append(arena, i);
+    for (decls, 0..) |d, i| {
+        if (!d.worded or d.foreign or !v2_modules.contains(d.module)) continue;
+        const exempt = for (v1_own_body) |m| {
+            if (std.mem.eql(u8, m, d.module)) break true;
+        } else false;
+        if (d.v2 or !exempt) try stack.append(arena, i);
+    }
     var seen: std.AutoHashMapUnmanaged(usize, void) = .empty;
     while (stack.pop()) |i| {
         if ((try seen.getOrPut(arena, i)).found_existing) continue;
