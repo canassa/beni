@@ -61,6 +61,10 @@ pub const Line = struct {
     demand: Walk.Demand,
     outcome: Outcome,
     holder: ?Holder = null,
+    /// What the judgement added to `demand.relies` (the callee's own,
+    /// shared by its call's demands): gathered apart, so that a frame's
+    /// `req` reads a call's `relies` once, not once per write of it.
+    extra: Cond = .{},
     use_token: u32 = none,
 };
 
@@ -402,7 +406,7 @@ const Resolver = struct {
         }
         var relied: Holders.Gather = .{};
         defer relied.deinit(g);
-        try relied.add(g, r.account(), d.relies);
+        relied.no = d.relies.no;
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
         for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied)) {
@@ -501,7 +505,7 @@ const Resolver = struct {
             return line;
         }
         o.accepted = if (d.callback) .callback_param else ground;
-        line.demand.relies = try relied.cond(r.ev().arena, r.account());
+        line.extra = try relied.cond(r.ev().arena, r.account());
         r.e.ev.f.account.in_demands = false;
         return line;
     }
@@ -643,15 +647,15 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     for (jobs.items, got) |j, l| switch (j.kind) {
         .demand => {
             lines[j.i] = l;
-            if (l.outcome.verdict == .accepted) try req.add(arena, f.account, l.demand.relies);
+            if (l.outcome.verdict == .accepted) try req.addBoth(arena, f.account, l.demand.relies, l.extra);
         },
         .cb => switch (l.outcome.verdict) {
             .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ j.i, j.k, j.t }),
-            .accepted => try conds[j.i].add(arena, f.account, l.demand.relies),
+            .accepted => try conds[j.i].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
         .pass => switch (l.outcome.verdict) {
             .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
-            .accepted => try pconds[j.i].add(arena, f.account, l.demand.relies),
+            .accepted => try pconds[j.i].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
     };
     const cs = try arena.alloc(Cond, conds.len);

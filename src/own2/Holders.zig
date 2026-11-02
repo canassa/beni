@@ -27,16 +27,23 @@ pub const Key = [3]u32;
 /// or a parameter's, and the least shared value it reaches (`none`).
 pub const Facts = struct { unknown: bool = false, param: bool = false, shared: [2]u32 = .{ none, none } };
 
-/// Conditions gathered (§2.9.3, §2.9.4): each met condition's occurrences
-/// appended (one record each), made one selection at the end by one sort.
-/// A conjunction per condition met merged the selection so far each time:
-/// a frame's `req` over n demands cost n².
+/// Conditions gathered (§2.9.4): each met condition's occurrences appended,
+/// made one selection at the end by one sort, never merged one by one.
 pub const Gather = struct {
     no: bool = false,
     occ: std.ArrayList(u64) = .empty,
+    /// The shared runs added already (`addBoth`), by their address.
+    shared: std.AutoHashMapUnmanaged([2]usize, void) = .empty,
 
     pub fn deinit(x: *Gather, gpa: Allocator) void {
-        x.occ.deinit(gpa);
+        inline for (.{ &x.occ, &x.shared }) |l| l.deinit(gpa);
+    }
+
+    /// Add `shared` (one run several judgements hold) once, then `own`.
+    pub fn addBoth(x: *Gather, gpa: Allocator, account: *Ids.Account, shared: Cond, own: Cond) Error!void {
+        try account.reserve(.cond, 1);
+        if (shared.no or shared.sel.len == 0 or !(try x.shared.getOrPut(gpa, .{ @intFromPtr(shared.sel.ptr), shared.sel.len })).found_existing) try x.add(gpa, account, shared);
+        try x.add(gpa, account, own);
     }
 
     pub fn add(x: *Gather, gpa: Allocator, account: *Ids.Account, c: Cond) Error!void {
