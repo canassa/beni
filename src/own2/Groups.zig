@@ -1054,6 +1054,12 @@ pub const Module = struct {
         return .{ .params = mod.code_places.items[c.params.start..][0..c.params.len], .own = c.own, .result = c.result };
     }
 
+    fn siteSig(ctx: *anyopaque, inst: u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId {
+        const mod = self(ctx);
+        const v: Var.Optional = if (inst < mod.in.inst_type.len) mod.in.inst_type[inst] else .none;
+        return mod.fnPlaces(v, params);
+    }
+
     /// A `try`'s shape (§2.11.5): `(success, failure, failure arity)`
     /// ordinals of its scrutinee's type, `Ok`/`Err` or `Just`/`Nothing`.
     fn tryShape(ctx: *anyopaque, inst: u32) ?[3]u32 {
@@ -1084,6 +1090,7 @@ pub const Module = struct {
             .capturesOf = capturesOf,
             .contractOf = contractOf,
             .codeSig = codeSig,
+            .siteSig = siteSig,
             .pessimistic = pessimistic,
             .tryShape = tryShape,
         };
@@ -1437,6 +1444,15 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const e = &evals[i];
             try Eval.finishDemands(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra);
+            // R-5.13.1: in a comparison's walk, a write of what arrived is
+            // `comparison_changes_value`; a write of a fresh value stays
+            // accepted, and the contract keeps its writes (§2.13.13 item 13).
+            if (mod.comparison[r.decl]) for (got.lines) |*l| {
+                if (l.outcome.verdict == .accepted and l.outcome.accepted == .param) {
+                    l.outcome.verdict = .refused;
+                    l.outcome.cause = .comparison;
+                }
+            };
             try Eval.condsOff(e, ra, got.verdicts);
             const c = try mod.contracts.commit(gpa, &r.account, &mod.slots, &drafts[i]);
             const code = &mod.codes.items[id];
