@@ -140,9 +140,9 @@ fn isRaw(t: anytype, x: u32) bool {
 pub fn sideFact(t: anytype, x: u32, member: bool) bool {
     const n: NodeId = .from(x);
     if (x < t.counted.bit_length and t.counted.isSet(x)) return true;
-    if (t.drop_head.get(.{x}) != null or t.answered.get(n) != null or t.born.get(n) != null) return true;
+    if (t.drop_head.get(.from(x)) != null or t.answered.get(n) != null or t.born.get(n) != null) return true;
     if (t.memo_eager.get(n)) |e| if (e != n) return true;
-    return member and (t.proj_origin.get(.{x}) != null or t.bases.get(.{x}) != null);
+    return member and (t.proj_origin.get(.from(x)) != null or t.bases.get(.from(x)) != null);
 }
 
 /// `x`'s references as `(step word or slot, node)` pairs, in record order.

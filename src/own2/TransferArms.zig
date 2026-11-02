@@ -341,11 +341,11 @@ pub fn Of(comptime Frame: type) type {
         /// cell of the base (`steps`), from its `Beside` index.
         pub const Synthetic = struct {
             nodes: std.ArrayList(Item) = .empty,
-            list: std.ArrayList(Step) = .empty,
+            step_pool: std.ArrayList(Step) = .empty,
             ranges: std.ArrayList(?[2]u32) = .empty,
             pub fn deinit(s: *Synthetic, gpa: Allocator) void {
                 s.nodes.deinit(gpa);
-                s.list.deinit(gpa);
+                s.step_pool.deinit(gpa);
                 s.ranges.deinit(gpa);
             }
             /// The steps to read `it`'s children at, for a node of the
@@ -361,7 +361,7 @@ pub fn Of(comptime Frame: type) type {
                 if (n.u == it.u and n.v == it.v and n.stuck == it.stuck) return null;
                 if (n.u != it.u) return null;
                 if (s.ranges.items[it.depth] == null) {
-                    const start: u32 = @intCast(s.list.items.len);
+                    const start: u32 = @intCast(s.step_pool.items.len);
                     const sp = try f.spineOf(bs, n);
                     const r = bs.ranges.items[sp];
                     if (want.all) {
@@ -373,10 +373,10 @@ pub fn Of(comptime Frame: type) type {
                             try s.add(f.gpa, start, bs.kids.items[bs.links.items[link][0]].step);
                         }
                     }
-                    s.ranges.items[it.depth] = .{ start, @as(u32, @intCast(s.list.items.len)) - start };
+                    s.ranges.items[it.depth] = .{ start, @as(u32, @intCast(s.step_pool.items.len)) - start };
                 }
                 const r = s.ranges.items[it.depth].?;
-                return s.list.items[r[0]..][0..r[1]];
+                return s.step_pool.items[r[0]..][0..r[1]];
             }
             /// Whether the write's exact prefix meets a choice.
             pub fn split(s: *const Synthetic, f: *Frame, exact_to: usize) Error!bool {
@@ -387,8 +387,8 @@ pub fn Of(comptime Frame: type) type {
                 return false;
             }
             fn add(s: *Synthetic, gpa: Allocator, start: u32, step: Step) Allocator.Error!void {
-                for (s.list.items[start..]) |x| if (x.word() == step.word()) return;
-                try s.list.append(gpa, step);
+                for (s.step_pool.items[start..]) |x| if (x.word() == step.word()) return;
+                try s.step_pool.append(gpa, step);
             }
         };
 

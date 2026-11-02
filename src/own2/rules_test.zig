@@ -38,7 +38,8 @@ const layers = [_]Entry{
     // table is amended to 700 with the slice's design commit.
     // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
     // 900 since #1646 and the counters: `Columns`, a table with its columns hoisted.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 900 },
+    // 1 000 since #1646: `IdColumn`, a memo keyed by one dense id.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1000 },
     // The data-oriented measurement (S0): imported by any file, whatever its
     // layer, and imports nothing of own2/.
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 520 },
@@ -516,12 +517,17 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
             fail(&bad, "{s}: a `MultiArrayList` table: make it an `Ids.Columns` and read it through `col`", .{s.name});
         }
         // Only the BIR's instructions, another module's list, are read
-        // through `items`.
+        // through `items`; and only `Ids.Columns` touches its own `list`,
+        // which a write past `col` would leave out of step.
         var lines = std.mem.splitScalar(u8, production(s.text), '\n');
         var n: u32 = 0;
         while (lines.next()) |line| {
             n += 1;
-            if (isComment(line) or std.mem.indexOf(u8, line, ".items(.") == null) continue;
+            if (isComment(line)) continue;
+            if (!std.mem.eql(u8, s.name, "Ids.zig") and std.mem.indexOf(u8, line, ".list.") != null) {
+                fail(&bad, "{s}:{d}: an `Ids.Columns`' `list` reached from outside `Ids.zig`: use its methods and `col`", .{ s.name, n });
+            }
+            if (std.mem.indexOf(u8, line, ".items(.") == null) continue;
             if (std.mem.indexOf(u8, line, "bir.insts.items(.") != null) continue;
             fail(&bad, "{s}:{d}: a column read through `items`: read the table's `col`", .{ s.name, n });
         }

@@ -280,9 +280,9 @@ pub const Table = struct {
     ctor_args: Ids.FixedDict(2) = .{},
     /// `hits` and `up`'s memos, path → a run of `fold_runs` into
     /// `fold_paths` (§2.7, *A read that leaves its path on a cycle*).
-    hit_memo: Ids.FixedDict(1) = .{},
-    up_memo: Ids.FixedDict(1) = .{},
-    level_memo: Ids.FixedDict(1) = .{},
+    hit_memo: Ids.IdColumn(PathId) = .{},
+    up_memo: Ids.IdColumn(PathId) = .{},
+    level_memo: Ids.IdColumn(PathId) = .{},
     fold_runs: std.ArrayList([2]u32) = .empty,
     fold_paths: std.ArrayList(PathId) = .empty,
     limits: Limits = .{},
@@ -843,7 +843,7 @@ pub const Table = struct {
     /// path; a run of `fold_paths`, read by `foldPath`.
     pub fn foldsUp(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        if (t.up_memo.get(.{p.int()})) |i| return rangeOf(t.fold_runs.items[i]);
+        if (t.up_memo.get(p)) |i| return rangeOf(t.fold_runs.items[i]);
         var acc: std.ArrayList(PathId) = .empty;
         defer acc.deinit(gpa);
         if (t.cyclic(t.pathPlace(p))) {
@@ -863,7 +863,7 @@ pub const Table = struct {
     /// once; memoised per path; empty when the place is on no cycle.
     pub fn levelsOf(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        if (t.level_memo.get(.{p.int()})) |i| return rangeOf(t.fold_runs.items[i]);
+        if (t.level_memo.get(p)) |i| return rangeOf(t.fold_runs.items[i]);
         const target = t.pathPlace(p);
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
@@ -903,10 +903,10 @@ pub const Table = struct {
         return t.memoRun(gpa, &t.level_memo, p, acc.items);
     }
 
-    fn memoRun(t: *Table, gpa: Allocator, memo: *Ids.FixedDict(1), p: PathId, items: []const PathId) Allocator.Error!Ids.Range {
+    fn memoRun(t: *Table, gpa: Allocator, memo: *Ids.IdColumn(PathId), p: PathId, items: []const PathId) Allocator.Error!Ids.Range {
         const run: [2]u32 = .{ @intCast(t.fold_paths.items.len), @intCast(items.len) };
         try t.fold_paths.appendSlice(gpa, items);
-        (try memo.getOrPut(gpa, .{p.int()})).value_ptr.* = @intCast(t.fold_runs.items.len);
+        (try memo.getOrPut(gpa, p)).value_ptr.* = @intCast(t.fold_runs.items.len);
         try t.fold_runs.append(gpa, run);
         return rangeOf(run);
     }
@@ -942,7 +942,7 @@ pub const Table = struct {
     /// path of a cycle is visited once, on an explicit stack (#1138).
     fn hits(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error![2]u32 {
         try charge.reserve(gpa, .memo, 1);
-        if (t.hit_memo.get(.{x0.int()})) |i| return t.fold_runs.items[i];
+        if (t.hit_memo.get(x0)) |i| return t.fold_runs.items[i];
         if (try t.sealed(charge, gpa, x0)) {
             const r = try t.memoRun(gpa, &t.hit_memo, x0, &.{});
             return .{ r.start, r.len };
@@ -955,7 +955,7 @@ pub const Table = struct {
         try stack.append(gpa, .{ .path = x0, .expanded = false });
         while (stack.pop()) |f| {
             const x = f.path;
-            if (t.hit_memo.get(.{x.int()}) != null) continue;
+            if (t.hit_memo.get(x) != null) continue;
             const here = t.pathPlace(x);
             if (!f.expanded) try stack.append(gpa, .{ .path = x, .expanded = true });
             acc.clearRetainingCapacity();
@@ -970,14 +970,14 @@ pub const Table = struct {
                 const y = (try t.extend(gpa, charge, x, s)) orelse continue;
                 const plain = t.pathParent(y) == x and t.pathStep(y).word() == s.word();
                 if (!f.expanded) {
-                    if (plain and t.hit_memo.get(.{y.int()}) == null) {
+                    if (plain and t.hit_memo.get(y) == null) {
                         // A sealed first return folds nothing outside itself (#1253).
                         if (try t.sealed(charge, gpa, y)) _ = try t.memoRun(gpa, &t.hit_memo, y, &.{}) else try stack.append(gpa, .{ .path = y, .expanded = false });
                     }
                     continue;
                 }
                 if (plain) {
-                    const r = t.fold_runs.items[t.hit_memo.get(.{y.int()}).?];
+                    const r = t.fold_runs.items[t.hit_memo.get(y).?];
                     var k: u32 = 0;
                     while (k < r[1]) : (k += 1) {
                         try charge.reserve(gpa, .inspection, 1);
@@ -988,7 +988,7 @@ pub const Table = struct {
             if (!f.expanded) continue;
             _ = try t.memoRun(gpa, &t.hit_memo, x, acc.items);
         }
-        return t.fold_runs.items[t.hit_memo.get(.{x0.int()}).?];
+        return t.fold_runs.items[t.hit_memo.get(x0).?];
     }
 
     fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, charge: Charge, x: PathId, e: PathId, t: *const Table) Error!void {

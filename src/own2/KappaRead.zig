@@ -269,7 +269,7 @@ pub fn Of(comptime Table: type) type {
                 };
                 // The join stored at the view's last position, where this one
                 // reads alike on its region (*A read at another position*).
-                if (!t.no_memo) if (t.home_chain.get(.{x.int()})) |h| if (h != ctx.int() and try t.readsAlike(gpa, charge, v, ctx, .from(h), try v.shapes.region(gpa, charge.account, x))) {
+                if (!t.no_memo) if (t.home_chain.get(x)) |h| if (h != ctx.int() and try t.readsAlike(gpa, charge, v, ctx, .from(h), try v.shapes.region(gpa, charge.account, x))) {
                     const hit = t.memo_chain.get(.{ h, x.int() }).?;
                     joined = if (hit == Ids.none_int) null else CondId.from(hit);
                     try charge.reserve(gpa, .memo, 1);
@@ -287,7 +287,7 @@ pub fn Of(comptime Table: type) type {
                 if (t.no_memo) continue;
                 try charge.reserve(gpa, .memo, 1);
                 (try t.memo_chain.getOrPut(gpa, .{ ctx.int(), x.int() })).value_ptr.* = if (joined) |b| b.int() else Ids.none_int;
-                (try t.home_chain.getOrPut(gpa, .{x.int()})).value_ptr.* = ctx.int();
+                (try t.home_chain.getOrPut(gpa, x)).value_ptr.* = ctx.int();
             }
             return joined;
         }
@@ -614,35 +614,35 @@ pub fn Of(comptime Table: type) type {
         pub fn foldBelow(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas) Error!bool {
             if (ctx == .none) return false;
             try charge.reserve(gpa, .memo, 1);
-            if (t.memo_fold_below.get(.{ctx.int()})) |hit| return hit == 1;
+            if (t.memo_fold_below.get(ctx)) |hit| return hit == 1;
             const Frame = struct { at: Kappas, expanded: bool };
             var stack: std.ArrayList(Frame) = .empty;
             defer stack.deinit(gpa);
             try stack.append(gpa, .{ .at = ctx, .expanded = false });
             while (stack.pop()) |f| {
-                if (t.memo_fold_below.get(.{f.at.int()}) != null) continue;
+                if (t.memo_fold_below.get(f.at) != null) continue;
                 const p = t.position(f.at);
                 if (p.fold != 0) {
-                    (try t.memo_fold_below.getOrPut(gpa, .{f.at.int()})).value_ptr.* = 1;
+                    (try t.memo_fold_below.getOrPut(gpa, f.at)).value_ptr.* = 1;
                     continue;
                 }
                 if (!f.expanded) {
                     try charge.reserve(gpa, .inspection, 1);
                     try stack.append(gpa, .{ .at = f.at, .expanded = true });
                     var it = t.mapEntries(p.links);
-                    while (it.next()) |e| if (t.memo_fold_below.get(.{e.value}) == null) try stack.append(gpa, .{ .at = .from(e.value), .expanded = false });
+                    while (it.next()) |e| if (t.memo_fold_below.get(.from(e.value)) == null) try stack.append(gpa, .{ .at = .from(e.value), .expanded = false });
                     continue;
                 }
                 var any = false;
                 var it = t.mapEntries(p.links);
                 while (it.next()) |e| {
                     try charge.reserve(gpa, .inspection, 1);
-                    if (t.memo_fold_below.get(.{e.value}).? == 1) any = true;
+                    if (t.memo_fold_below.get(.from(e.value)).? == 1) any = true;
                 }
                 try charge.reserve(gpa, .memo, 1);
-                (try t.memo_fold_below.getOrPut(gpa, .{f.at.int()})).value_ptr.* = @intFromBool(any);
+                (try t.memo_fold_below.getOrPut(gpa, f.at)).value_ptr.* = @intFromBool(any);
             }
-            return t.memo_fold_below.get(.{ctx.int()}).? == 1;
+            return t.memo_fold_below.get(ctx).? == 1;
         }
 
         /// `eqOn(C, R)` on `region` (*The equality*): at every pair of positions
@@ -758,9 +758,9 @@ pub fn Of(comptime Table: type) type {
             const n = t.mapNode(m);
             if (n.mask == 0) return v.shapes.node_sets.insert(gpa, charge, .none, n.prefix, 0);
             try charge.reserve(gpa, .memo, 1);
-            if (t.memo_map_keys.get(.{m})) |hit| return .from(hit);
+            if (t.memo_map_keys.get(m)) |hit| return .from(hit);
             const out = try v.shapes.node_sets.unionMemo(gpa, charge, &v.shapes.memo_node_union, try t.mapKeys(gpa, charge, v, n.left), try t.mapKeys(gpa, charge, v, n.right));
-            (try t.memo_map_keys.getOrPut(gpa, .{m})).value_ptr.* = out.int();
+            (try t.memo_map_keys.getOrPut(gpa, m)).value_ptr.* = out.int();
             return out;
         }
 
@@ -929,13 +929,13 @@ pub fn Of(comptime Table: type) type {
                 return t.aggAdd(gpa, charge, cellt, places, .{}, .from(e.key), e.value == 1, false);
             }
             try charge.reserve(gpa, .memo, 1);
-            if (t.memo_set_agg.get(.{cells.int()})) |hit| return t.aggs.items[hit];
+            if (t.memo_set_agg.get(cells)) |hit| return t.aggs.items[hit];
             var stack: std.ArrayList(SetId) = .empty;
             defer stack.deinit(gpa);
             try stack.append(gpa, cells);
             while (stack.items.len > 0) {
                 const x = stack.items[stack.items.len - 1];
-                if (t.memo_set_agg.get(.{x.int()}) != null) {
+                if (t.memo_set_agg.get(x) != null) {
                     _ = stack.pop();
                     continue;
                 }
@@ -945,7 +945,7 @@ pub fn Of(comptime Table: type) type {
                     var missing = false;
                     for (kids, 0..) |kid, i| {
                         if (kid == .none) continue;
-                        if (t.memo_set_agg.get(.{kid.int()})) |h| halves[i] = t.aggs.items[h] else {
+                        if (t.memo_set_agg.get(kid)) |h| halves[i] = t.aggs.items[h] else {
                             missing = true;
                             try stack.append(gpa, kid);
                         }
@@ -959,10 +959,10 @@ pub fn Of(comptime Table: type) type {
                     break :blk try t.aggAdd(gpa, charge, cellt, places, .{}, .from(e.key), e.value == 1, false);
                 };
                 const got = try t.agg(gpa, a);
-                (try t.memo_set_agg.getOrPut(gpa, .{x.int()})).value_ptr.* = got;
+                (try t.memo_set_agg.getOrPut(gpa, x)).value_ptr.* = got;
                 _ = stack.pop();
             }
-            return t.aggs.items[t.memo_set_agg.get(.{cells.int()}).?];
+            return t.aggs.items[t.memo_set_agg.get(cells).?];
         }
 
         /// Two aggregates of disjoint cell sets as one, a set's two halves (*The
@@ -1218,7 +1218,7 @@ pub fn Of(comptime Table: type) type {
             a.group = try sets.insert(gpa, charge, a.group, c.int(), 0);
             a.group_len += 1;
             try charge.reserve(gpa, .memo, 1);
-            const prov = try t.group_prov.getOrPut(gpa, .{a.group.int()});
+            const prov = try t.group_prov.getOrPut(gpa, a.group);
             if (!prov.found_existing) {
                 prov.value_ptr.* = @intCast(t.group_steps.items.len);
                 try t.group_steps.append(gpa, .{ before.int(), c.int() });
@@ -1441,20 +1441,20 @@ pub fn Of(comptime Table: type) type {
                 return e.value == 1 or cellt.origin(.from(e.key)) == .top;
             }
             try charge.reserve(gpa, .memo, 1);
-            if (t.lost_memo.get(.{s.int()})) |v| return v == 1;
+            if (t.lost_memo.get(s)) |v| return v == 1;
             var stack: std.ArrayList(SetId) = .empty;
             defer stack.deinit(gpa);
             try stack.append(gpa, s);
             while (stack.items.len > 0) {
                 const x = stack.items[stack.items.len - 1];
-                if (t.lost_memo.get(.{x.int()}) != null) {
+                if (t.lost_memo.get(x) != null) {
                     _ = stack.pop();
                     continue;
                 }
                 try charge.reserve(gpa, .inspection, 1);
                 const v: bool = if (cellt.sets.branches(x)) |kids| blk: {
-                    const l = t.lost_memo.get(.{kids[0].int()});
-                    const r = t.lost_memo.get(.{kids[1].int()});
+                    const l = t.lost_memo.get(kids[0]);
+                    const r = t.lost_memo.get(kids[1]);
                     if (l == null or r == null) {
                         if (l == null) try stack.append(gpa, kids[0]);
                         if (r == null) try stack.append(gpa, kids[1]);
@@ -1466,10 +1466,10 @@ pub fn Of(comptime Table: type) type {
                     const e = it.next().?;
                     break :blk e.value == 1 or cellt.origin(.from(e.key)) == .top;
                 };
-                (try t.lost_memo.getOrPut(gpa, .{x.int()})).value_ptr.* = @intFromBool(v);
+                (try t.lost_memo.getOrPut(gpa, x)).value_ptr.* = @intFromBool(v);
                 _ = stack.pop();
             }
-            return t.lost_memo.get(.{s.int()}).? == 1;
+            return t.lost_memo.get(s).? == 1;
         }
 
         /// The aggregate of `n`'s reach (every cell of its explicit structure,
@@ -1521,16 +1521,14 @@ pub fn Of(comptime Table: type) type {
                 else
                     try t.aggAll(gpa, charge, v.cells, v.places, best orelse .{}, if (v.shapes.isLazy(f.node)) SetId.none else v.shapes.cells(f.node), false);
                 const got = try t.agg(gpa, a);
-                (try t.reach_agg.getOrPut(gpa, .{f.node.int()})).value_ptr.* = got;
-                (try t.reach_epoch.getOrPut(gpa, .{f.node.int()})).value_ptr.* = v.shapes.ties;
+                (try t.reach_agg.getOrPutAt(gpa, f.node, v.shapes.ties)).value_ptr.* = got;
             }
             return t.aggs.items[t.reachMemo(v, n).?];
         }
 
         /// `n`'s reach aggregate, if made since the last knot was tied.
         pub fn reachMemo(t: *const Table, v: View, n: NodeId) ?u32 {
-            const at = t.reach_agg.get(.{n.int()}) orelse return null;
-            return if (t.reach_epoch.get(.{n.int()}) == v.shapes.ties) at else null;
+            return t.reach_agg.getAt(n, v.shapes.ties);
         }
 
         /// The parts of `n` whose cells its reach holds.
@@ -1602,7 +1600,7 @@ pub fn Of(comptime Table: type) type {
                     break;
                 }
                 // A set no aggregate built: its cells from nothing.
-                const step = t.group_prov.get(.{at.int()}) orelse {
+                const step = t.group_prov.get(at) orelse {
                     base = at;
                     break;
                 };

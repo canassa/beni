@@ -500,5 +500,5 @@ fn writeKappa(w: *std.Io.Writer, mod: anytype) Error!void {
     }
     try here.write(w, "kmap", "conds.kpos.here", " (per position)");
     try links.write(w, "kmap", "conds.kpos.links", " (per position)");
-    try w.print("census kpos: {d} positions, {d} kmap nodes\n", .{ t.kpos.len(), t.kmaps.len() });
+    try w.print("census kpos: {d} positions, {d} kmap nodes\n", .{ t.kpos.len(), t.kmaps.items.len });
 }

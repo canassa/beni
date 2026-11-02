@@ -43,7 +43,7 @@ pub fn Of(comptime Table: type) type {
         // itself, its conditions keyed by node alone for every level below.
 
         pub fn mapNode(t: *const Table, id: u32) MapNode {
-            return t.kmaps.get(id);
+            return t.kmaps.items[id];
         }
 
         /// One map node, interned; reserved before the dictionary is touched.
@@ -54,7 +54,7 @@ pub fn Of(comptime Table: type) type {
                 Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
                 return got.value_ptr.*;
             }
-            got.value_ptr.* = @intCast(t.kmaps.len());
+            got.value_ptr.* = @intCast(t.kmaps.items.len);
             try t.kmaps.append(gpa, n);
             try Counters.setMade(&t.kmap_stats, gpa, n.mask == 0, n.left, n.right);
             Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
@@ -553,11 +553,6 @@ pub fn Of(comptime Table: type) type {
         /// remembers nodes, so a class added checks only the positions it adds.
         pub fn kappaHoldsView(t: *Table, gpa: Allocator, shapes: *Shape.Table, ctx: Kappas) Allocator.Error!bool {
             if (ctx == .none) return false;
-            if (t.kview_free_epoch != shapes.ties) {
-                t.kview_free.deinit(gpa);
-                t.kview_free = .{};
-                t.kview_free_epoch = shapes.ties;
-            }
             var seen: Ids.FixedDict(1) = .{};
             defer seen.deinit(gpa);
             var visited: std.ArrayList(Kappas) = .empty;
@@ -566,7 +561,7 @@ pub fn Of(comptime Table: type) type {
             defer stack.deinit(gpa);
             try stack.append(gpa, ctx);
             while (stack.pop()) |at| {
-                if (at == .none or t.kview_free.get(.{at.int()}) != null) continue;
+                if (at == .none or t.kview_free.getAt(at, shapes.ties) != null) continue;
                 if ((try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
                 try visited.append(gpa, at);
                 const p = t.position(at);
@@ -576,7 +571,7 @@ pub fn Of(comptime Table: type) type {
                 var lt = t.mapEntries(p.links);
                 while (lt.next()) |e| try stack.append(gpa, .from(e.value));
             }
-            for (visited.items) |at| (try t.kview_free.getOrPut(gpa, .{at.int()})).value_ptr.* = 1;
+            for (visited.items) |at| (try t.kview_free.getOrPutAt(gpa, at, shapes.ties)).value_ptr.* = 1;
             return false;
         }
 

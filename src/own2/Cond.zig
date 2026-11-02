@@ -104,7 +104,8 @@ pub const Table = struct {
     /// sets and live in `Cell.Table.sets`).
     atoms: Cell.Radix = .{},
     /// The κ maps' nodes, hash-consed.
-    kmaps: Ids.Columns(MapNode) = .empty,
+    /// Whole nodes, not columns: a descent reads every word of each node.
+    kmaps: std.ArrayList(MapNode) = .empty,
     kmap_intern: Ids.FixedDict(4) = .{},
     kmap_stats: Counters.Sets = Counters.zero(Counters.Sets),
     /// The snapshots' positions, hash-consed (`Kappas` indexes them).
@@ -113,7 +114,7 @@ pub const Table = struct {
     /// `flat`'s memo: the atom set of a condition (`.none` for `yes`).
     flat_memo: stamped.Column(CondId, SetId) = .{},
     /// `ofSet`'s memo: the canonical condition of an atom set.
-    of_set: Ids.FixedDict(1) = .{},
+    of_set: Ids.IdColumn(SetId) = .{},
     /// `deep`'s memo, keyed by the immutable map root, the node and the
     /// position: never stale.
     memo_deep: Ids.FixedDict(3) = .{},
@@ -141,13 +142,13 @@ pub const Table = struct {
     /// met → the snapshot its walk puts at its position. Written only once
     /// a call has finished.
     memo_prop: Ids.FixedDict(3) = .{},
-    /// The apart aggregates (#1121): reach memo (with tie epoch), group provenance, `anyLost`.
+    /// The apart aggregates (#1121): reach memo (at the shape table's `ties`
+    /// it was made at), group provenance, `anyLost`.
     aggs: std.ArrayList(Agg) = .empty,
-    reach_agg: Ids.FixedDict(1) = .{},
-    reach_epoch: Ids.FixedDict(1) = .{},
-    group_prov: Ids.FixedDict(1) = .{},
+    reach_agg: Ids.IdColumn(NodeId) = .{},
+    group_prov: Ids.IdColumn(SetId) = .{},
     group_steps: std.ArrayList([2]u32) = .empty,
-    lost_memo: Ids.FixedDict(1) = .{},
+    lost_memo: Ids.IdColumn(SetId) = .{},
     /// A folded class's obligation from the path-multiset primitive, by
     /// its image node (`widenValue`, §2.9, #1128).
     fold_cond: stamped.Column(NodeId, CondId) = .{},
@@ -166,12 +167,11 @@ pub const Table = struct {
     /// and the last a `(dag or inner, node, class)` read was stored at
     /// (`memoAt`): where a read at another position may take that entry
     /// (§2.11 *Part 2*, *A read at another position*).
-    home_chain: Ids.FixedDict(1) = .{},
+    home_chain: Ids.IdColumn(NodeId) = .{},
     home_read: Ids.FixedDict(3) = .{},
-    /// Positions `kappaHoldsView` found view-free, valid while the shape table's
-    /// `ties` is `kview_free_epoch`.
-    kview_free: Ids.FixedDict(1) = .{},
-    kview_free_epoch: u32 = 0,
+    /// Positions `kappaHoldsView` found view-free, each at the shape table's
+    /// `ties` it was found at.
+    kview_free: Ids.IdColumn(Kappas) = .{},
     /// Node marks for a walk over the node table, one per walk in progress,
     /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
     marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
@@ -190,13 +190,13 @@ pub const Table = struct {
     /// The memo entries a crossed read made, by key: their value then.
     memo_crossed: Ids.FixedDict(4) = .{},
     memo_eq: Ids.FixedDict(4) = .{},
-    memo_fold_below: Ids.FixedDict(1) = .{},
+    memo_fold_below: Ids.IdColumn(Kappas) = .{},
     memo_map_union: Ids.FixedDict(3) = .{},
     memo_diff: Ids.FixedDict(2) = .{},
-    memo_map_keys: Ids.FixedDict(1) = .{},
+    memo_map_keys: Ids.IdColumn(u32) = .{},
     memo_nodes_part: Ids.FixedDict(3) = .{},
     memo_per_cell: Ids.FixedDict(2) = .{},
-    memo_set_agg: Ids.FixedDict(1) = .{},
+    memo_set_agg: Ids.IdColumn(SetId) = .{},
     memo_cell_part: Ids.FixedDict(2) = .{},
     memo_agg_pair: Ids.FixedDict(2) = .{},
     /// A read made with no crossing (a redo, the cross-check) and with no
@@ -222,9 +222,9 @@ pub const Table = struct {
     hyp_knots: stamped.Column(NodeId, void) = .{},
     inst_queue: std.ArrayList(CondId) = .empty,
     inst_next: u32 = 0,
-    memo_resolved: Ids.FixedDict(1) = .{},
-    memo_resolved_root: Ids.FixedDict(1) = .{},
-    memo_inst_latest: Ids.FixedDict(1) = .{},
+    memo_resolved: Ids.IdColumn(CondId) = .{},
+    memo_resolved_root: Ids.IdColumn(CondId) = .{},
+    memo_inst_latest: Ids.IdColumn(CondId) = .{},
     no_cross: bool = false,
     no_memo: bool = false,
     /// `--ownership-order-check`: `propagateFrom` walks each call again with
@@ -282,7 +282,6 @@ pub const Table = struct {
         t.memo_implied.deinit(gpa);
         t.aggs.deinit(gpa);
         t.reach_agg.deinit(gpa);
-        t.reach_epoch.deinit(gpa);
         t.group_prov.deinit(gpa);
         t.group_steps.deinit(gpa);
         t.lost_memo.deinit(gpa);
@@ -1654,7 +1653,7 @@ test "a refused reservation leaves the condition table and the maps whole" {
     try testing.expectError(error.OwnershipLimit, f.conds.excl(gpa, .growth(&broke), p1));
     try testing.expectError(error.OwnershipLimit, f.conds.kappaSet(gpa, .growth(&broke), .none, l1, lost));
     try testing.expectEqual(n, f.conds.count());
-    try testing.expectEqual(@as(usize, 0), f.conds.kmaps.len());
+    try testing.expectEqual(@as(usize, 0), f.conds.kmaps.items.len);
     const e = try f.conds.excl(gpa, f.charge(), p1);
     try testing.expectEqual(n, e.int());
     const before = f.account.growth;
@@ -1766,7 +1765,7 @@ test "fault injection: a refusal before any dictionary, memo or path operation l
     const Snapshot = struct { conds: usize, kmaps: usize, atoms: usize, sets: usize, shapes: u32, cells: u32 };
     const snap = struct {
         fn take(ff: *Fixture) Snapshot {
-            return .{ .conds = ff.conds.conds.len(), .kmaps = ff.conds.kmaps.len(), .atoms = ff.conds.atoms.nodes.len(), .sets = ff.cells.sets.nodes.len(), .shapes = ff.shapes.count(), .cells = ff.cells.count() };
+            return .{ .conds = ff.conds.conds.len(), .kmaps = ff.conds.kmaps.items.len, .atoms = ff.conds.atoms.nodes.items.len, .sets = ff.cells.sets.nodes.items.len, .shapes = ff.shapes.count(), .cells = ff.cells.count() };
         }
     };
     var allowance: u32 = 0;
