@@ -1,0 +1,53 @@
+-- ownership: a fold's step whose argument holds the step's own answer
+-- (#1723). `put` reads an element of its accumulator, a closure that
+-- escapes keeps it, and it pushes onto the accumulator; `fold` hands `put`
+-- its own previous answer. v2's distinct check of the call asked the
+-- step's condition inside the step's own arguments, without end: the
+-- summary limit by default, a stack overflow with the limit raised. A
+-- cycle through a call now reads `no` on every path, as it did on the one
+-- path that guarded it. v1 accepts the fold; v2 refuses it, approximately,
+-- the fold-feedback precision of #1713.
+import Task
+
+
+fold : List a, b, (a, b → b) → b
+fold l acc f =
+    case l of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            fold rest (f x acc) f
+
+
+first : List a → Maybe a
+first l =
+    case l of
+        [] →
+            Nothing
+
+        [ x, …_ ] →
+            Just x
+
+
+orElse : Maybe a, a → a
+orElse m d =
+    case m of
+        Just v →
+            v
+
+        Nothing →
+            d
+
+
+put : List (List Int), Int → List (List Int)
+put rows key =
+    old = orElse (first rows) []
+    _ = Task.soon λ⊤ → if List.length old > 0 then ⊤ else ⊤
+    List.push rows [ key ]
+
+
+pub main : Int
+main =
+    rows = fold [ 1, 2 ] [] λkey acc → put acc key
+    List.length rows
