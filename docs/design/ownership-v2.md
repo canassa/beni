@@ -424,6 +424,42 @@ payloads are different slots**: a list's own storage is the list's slot, its ele
 write of a list's storage meets an element only where the element is a list of that slot. Leaves are interned
 per walk; `tags` is a tag set (§2.3.5).
 
+*Amended 2026-11-02 (#1714): a value's leaves are part of the value.* Until then every reader that wanted a
+value's deep leaves walked the value's kids again: a read-off pass read each use's value deep, the holder
+index listed each binding's leaves, and a value built over another (`r₁ = Rose [ r₀ ]` … `rₙ`) was walked
+once per use, Σ depth = n² records (`Rose [ r ]` at 10 / 40 / 160 levels: 892 / 8 234 / 109 836). A value
+that two kids share (`( t, t )`) was walked once per route, 2ⁿ. Master's v2 kept a persistent reach set per
+node. The slot domain now does the same:
+
+- **The leaf set.** Every value carries its **leaf set**, made with the value from its kids' sets (kids are
+  always made before their parent) and never recomputed. It is a persistent set over a leaf's id **with no
+  tags**: a big-endian Patricia tree, its nodes hash-consed per walk, so equal contents are one node, a set
+  built over a kid's shares the kid's nodes, and adding a leaf copies at most one path (33 nodes). An
+  element is `(leaf, tags, many)`: the tags common to every route that reaches the leaf (§2.3.5), and
+  `many` when two routes that coexist reach it (one value placed twice, *saturated at two*). Records: one
+  per node made or met, reserved before it is made; a union of two sets that share a subtree pays for the
+  path to it, not for the subtree.
+- **What each value's set is.** `scalar`, `bot`: empty. `top`, `shared`: their one leaf. `ref`: the
+  `ref` leaf of its family or of `below` of its position's slot (§2.3.1). `built`: its site's leaf, the
+  storage of the value it is built over (a list construction, §2.13.2), and every kid's set, joined as
+  coexisting. `alt`: §2.3.5. **Coexisting join**: a leaf in both sets keeps the tags common to both, and
+  is `many` unless the two tag sets give one choice two arms (the two never coexist, so the leaf is once).
+- **A deferred storage.** The storage of a prepend `[ x, …xs ]` is `xs`'s base only where the item put in
+  front may be a re-cons (§2.13.6, `prepended`), which a call's contract decides, and a walk makes values
+  before an evaluation reads contracts. Such a storage is the set's element `recons ι` (a leaf of its own
+  kind): a reader replaces it with the base's storage when the evaluation says the prepend may re-cons,
+  and with nothing otherwise. The rest of the set is the same in every evaluation.
+- **Reading.** A deep read of a value is its set's elements, the reader's outer tags merged into each (an
+  element that conflicts with them is dropped); a `many` element is two entries of the distinct check
+  (§2.9.3). A **pass** that reads many values' leaves for one purpose (the read-off's reads, §2.10) visits
+  each set node once: a node met again in the pass with no outer tags adds nothing, since every leaf below
+  it was taken. Each node carries one bit, whether a leaf below it is a `ref`, `⊤` or `answer`; a reader
+  of parameter effects skips a node without it, so a tower of literals costs its parameters' leaves,
+  never its atoms.
+
+This is the value's representation, not a memo: a set is made exactly once, when its value is, and stored
+in a column of the value table by the value's id (§3.3).
+
 #### 2.3.5 Choices as tags
 
 A `case` value is an `alt` keyed by the `case` instruction, the **choice**, with one arm per branch that can
@@ -435,6 +471,28 @@ projection of a list literal is a choice keyed by the literal: one element at a 
 
 Joins at a `case` keep each arm's value whole; they never merge arms' leaves into one set, so a separation
 that holds in every arm holds of the `alt`.
+
+*Amended 2026-11-02 (#1714): a leaf reached by several routes keeps the tags common to every route.* Until then
+a reader enumerated an `alt` DAG as a tree, so one object reached through two arms was two leaves, and a
+tower whose level is a choice of the level and the level below (K, `rₖ = if c then Rose [ rₖ₋₁ ] else rₖ₋₁`)
+multiplied its leaves by four a level (n = 8: 744 671 records; master's v2 5 431 at n = 5 and 10 152 at 8).
+Now:
+
+- **An `alt`'s leaf set** is its arms' sets joined: a leaf that only arm `a` reaches keeps its tags and gains
+  `(choice, a)`; a leaf that several arms reach keeps the tags common to them, and the choice's own tag
+  falls away (two arms of one choice share no tag of it). `many` is the arms' maximum, never their sum: two
+  arms never coexist. A join of two sets that share a subtree costs the path to it, so K costs a level's own
+  leaves.
+- **A walk over a value's structure** (a holder's paths, §2.8; the read-off's `describe`, §2.10) visits each
+  `(value, slot)` once. A value is made after its kids, so a walk that takes its items in descending value id
+  has met every route to a value before it reaches the value, and reads it once with the tags common to those
+  routes.
+- **Why this is sound.** Tags only ever answer *no* (§2.9.2 step 1): a leaf with fewer tags meets more, never
+  less. An element's tags are a subset of each route's, so every *no* it answers, each route answered.
+- **What it loses.** Two routes whose tags are each exclusive with a third leaf's, through *different* choices,
+  answer *no* separately but not together: `{(c, 1)}` and `{(d, 1)}` against `{(c, 0), (d, 0)}`. A pair of
+  two arms of *one* choice keeps its exclusion: a leaf reached once in each arm of `if c then ( p, [] ) else
+  ( [], p )` is once, and the two parts of the `alt` are still apart.
 
 ### 2.4 The state of a frame
 
@@ -2294,6 +2352,9 @@ kids      : []u32
 roots     : Columns { kind: u8, a: u32, place: PlaceId, path: PathId, pos: u32 }
 pos       : Columns { parent: u32, step: u8, a: u32, b: u32, root: u32, slot: PathId }   interned by (parent, step, a, b)
 leaves    : Columns { kind: u8, root: u32, pos: u32, slots: SetId, tags: u32, flags: u8 }   interned
+deep      : per value, its leaf set (§2.3.4): a node of `sets`, made with the value
+sets      : Leaves.Table { prefix: u32, mask: u32, left: u32, right: u32 }: hash-consed Patricia nodes;
+            a leaf node's `left` is its tags, `right` its `many` bit; a column of `refs` bits and pass stamps
 tags      : runs of (choice, arm) pairs, interned; 0 is the empty set
 calls     : Columns { inst: u32, contract: u32, args: Range, cond: u32, inst_map: Range }   one per call site
 inst_map  : runs of (result slot, leaf run): a call's instantiation, built once (§2.11.2)
@@ -3084,7 +3145,7 @@ L8  Eval
 L7  Walk  Distinct
 L6  Relation
 L5  Value  Liveness
-L4  Rows  Regions  ContractText
+L4  Rows  Regions  ContractText  Leaves
 L3  Contract  Subtree  Prepass
 L2  Slots  Facts
 L1  Place  Runs
@@ -3107,7 +3168,8 @@ L0  Ids  Counters  Scratch
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
-| `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract |
+| `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, its pass reader (§2.3.4, §2.3.5, #1714) | Ids |
+| `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
