@@ -400,6 +400,36 @@ pub const Eval = struct {
         return true;
     }
 
+    /// The shortest steps from path `from` to a path at place `target`,
+    /// into `out` (nothing when there is none).
+    fn stepsTo(e: *Eval, from: PathId, target: PlaceId, out: *std.ArrayList(u32)) Error!void {
+        const pl = e.places();
+        const Item = struct { p: PathId, back: u32, word: u32 };
+        var queue: std.ArrayList(Item) = .empty;
+        defer queue.deinit(e.gpa());
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(e.gpa());
+        try queue.append(e.gpa(), .{ .p = from, .back = none, .word = 0 });
+        _ = try seen.getOrPut(e.gpa(), .{from.int()});
+        var qi: usize = 0;
+        while (qi < queue.items.len) : (qi += 1) {
+            const it = queue.items[qi];
+            try e.charge(.path, 1);
+            if (qi != 0 and pl.pathPlace(it.p) == target) {
+                var k: u32 = @intCast(qi);
+                while (k != 0 and queue.items[k].back != none) : (k = queue.items[k].back) try out.append(e.gpa(), queue.items[k].word);
+                std.mem.reverse(u32, out.items);
+                return;
+            }
+            for (pl.steps(pl.pathPlace(it.p)).steps) |st| {
+                if (st.kind == .level) continue;
+                const nx = (try pl.extend(e.gpa(), e.f.gc(), it.p, st)) orelse continue;
+                if ((try seen.getOrPut(e.gpa(), .{nx.int()})).found_existing) continue;
+                try queue.append(e.gpa(), .{ .p = nx, .back = @intCast(qi), .word = st.word() });
+            }
+        }
+    }
+
     /// `⟲` into a built value: the values one or more levels below, at the
     /// same place, through the parts that stay on its cycle; then `rest`
     /// from each (the experiment's fourth requirement). A part not built
@@ -440,9 +470,21 @@ pub const Eval = struct {
                 .scalar, .bot => {},
                 .ref => if (it.below) {
                     if (it.place == place) try e.project(it.v, rest, deep, tags, it.route, out);
+                    // A part on the cycle at another place (a `List T` below a
+                    // `T`): its next level is the steps to the cycle's place.
+                    var to: std.ArrayList(u32) = .empty;
+                    defer to.deinit(e.gpa());
+                    if (it.place != place and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, place, &to);
                     // Its own levels below, by its slots (never its own storage).
                     var lv: std.ArrayList(u32) = .empty;
                     defer lv.deinit(e.gpa());
+                    if (to.items.len != 0) {
+                        try lv.appendSlice(e.gpa(), to.items);
+                        try lv.appendSlice(e.gpa(), rest);
+                        try e.project(it.v, lv.items, deep, tags, it.route, out);
+                        lv.clearRetainingCapacity();
+                        try lv.appendSlice(e.gpa(), to.items);
+                    }
                     try lv.append(e.gpa(), Step.level.word());
                     try lv.appendSlice(e.gpa(), rest);
                     try e.project(it.v, lv.items, deep, tags, it.route, out);
