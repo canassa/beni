@@ -1092,7 +1092,10 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         const dl = &d.labels.items[at];
-        dl.calls = @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(lab.calls))));
+        // Calls add up: a label the frame calls and also hands on
+        // (`[ f x, …myMap rest f ]`), or hands to two calls, may run more
+        // than once per activation, whatever each source says alone.
+        dl.calls = if (lab.calls == .none) dl.calls else if (dl.calls == .none) lab.calls else .many;
         // The supplies at this call's function type: a callee's supply slot
         // of a type variable's place (`apply : (a → b), a → b`) takes the
         // whole argument, whose structure this frame's type names. Each
