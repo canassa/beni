@@ -90,6 +90,23 @@ const Writer = struct {
         }
     }
 
+    /// The reads, a tree a parameter, written as its effects in order.
+    fn reads(w: *Writer, r: Ids.Range) Allocator.Error!void {
+        var es: Forest.Entries = .{};
+        defer es.deinit(w.gpa);
+        const at = w.out.items.len;
+        try w.word(0);
+        for (w.t.readsOf(r)) |x| {
+            try es.of(&w.t.trees, w.gpa, w.places, x[1], &.{});
+            for (es.items.items) |e| {
+                try w.word(x[0]);
+                try w.steps(es.wordsOf(e));
+                try w.word(@intFromBool(e.open));
+            }
+            w.out.items[at] += @intCast(es.items.items.len);
+        }
+    }
+
     fn res(w: *Writer, root: Contract.Node) Allocator.Error!void {
         var es: Forest.Entries = .{};
         defer es.deinit(w.gpa);
@@ -123,7 +140,7 @@ const Writer = struct {
         try w.word(@as(u8, @bitCast(h.flags)));
         try w.res(h.res_root);
         try w.cond(h.res_cond);
-        try w.effects(h.reads);
+        try w.reads(h.reads);
         try w.effects(h.writes);
         try w.cond(h.req);
         try w.effects(h.escapes);
