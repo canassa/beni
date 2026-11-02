@@ -1059,6 +1059,26 @@ report, F4). Master's v2 printed a shared subtree as `.1 = .0`. The contract bec
   limit line) and the width family (151, 155, 171) pass; the ledger moves no verdict from accepted to
   refused, and no summary says less.
 
+*As built (#1714), in part.* **Result trees** are built (§3.5): drafts hold arrivals and whole subtrees, a
+commit unites them into one hash-consed tree, and every reader walks it; no flat result entry is kept.
+**Reads** are one tree a parameter, a deep read covering what is below it (`Forest.foldDeep`); a call use
+of a parameter's subtree of more than 16 objects takes the callee's read tree whole. A parameter's whole
+subtree of more than 16 objects, read at its own acyclic place, is **one open arrival**, and a caller
+describes the argument's value there; by-structure continuation is exact only where no cycle is below the
+place (with `⟲` the result's level paths fold otherwise than the parameter's), so a slot with a cycle below
+it is still written out. Where nothing the frame reads grows and no place below the slot is on a cycle, the
+read-off **describes a value once per (value, place)** and a call once per (callee node, place). The text
+prints a kid equal to an earlier sibling as `.1 = .0`, for reads too (`π1#1.2 = π1#1.0`). A defect of the
+slot domain's base went with the trees: a result kept the draft's label numbers while the labels were
+sorted, so a `cb` arrival could name another callback's answer, and a write onto it was accepted that the
+sanitiser catches (#1737, `run/SanitiserCallbackLabels`); the result is put with the sorted numbers, as the
+supplies were. **Not built:** `writes`, `escapes` and `kept` are still flat lists and the covering fold is
+not applied to them; a call's instantiation is not yet per callee node through a choice chain's tag routes
+(the else-if chain's call costs 1 960 / 3 704 / 7 152 records at D = 8 / 16 / 32, nine tenths of it the
+call's selection instantiated over the chain's arms, `Distinct.instSel`). Measured (Debug): `w₃ / w₅ / w₈ /
+w₁₀` 1 081 / 287 / 1 575 / 5 991, linear in the result's depth; `EvidenceDagBuildDepth32` has no limit line;
+`Schema.shapeOf` 256 826 (256 618 before); ledger: no verdict moves, 11 limit lines fewer, none new.
+
 ### 2.11 Calls
 
 *Replaced 2026-11-02 (#1685). Until then a call grafted its callee's class onto the arguments lazily, as a
@@ -2510,6 +2530,16 @@ uniform-atom test an inspection a node visited (it was one an entry), the others
 every account is unchanged. The flat entries are still kept beside the tree for the readers that need every
 slot, until each reads the tree.
 
+*As built (#1714), next:* the flat entries are gone. `Head` keeps `res_root` and a supply `res_root`, each a
+node of `Trees.Table`; `reads` is a range of `(j, node)` pairs (`Table.eroots`), one a parameter, whose nodes
+are effect trees of the same table (a node's plain run says shallow, its open run deep, each the one arrival
+`Forest.mark`). A draft's `Res` holds arrivals, wide (open) arrivals, subtrees made whole (`node`) and a
+committed `base`; `putRes` builds the tree of its arrivals sorted by their slots' canonical keys, grafts and
+unites its subtrees and base in (`Forest.unite`), and renumbers `cb` arrivals by the labels' sorted rank.
+The readers are `Forest.zig` (one slot from the root, entries in the canonical order, each node once, union,
+graft, label maps, text helpers); `Conds.zig` holds the conditions, split from `Contract`. `writes`,
+`escapes` and `kept` are still `effects` ranges.
+
 A contract is immutable once read off; a join makes a new one. Its text (the dump's `summary` line) is
 `ContractText.zig`'s. The group solver keeps one candidate per member
 and the delivery queue of §2.12.
@@ -2537,6 +2567,20 @@ as a node table in post-order, each node once (its `open` bit, its arrivals, its
 pairs; an effect node's flag and kids), and each field as its root's index. The reader re-interns each node in
 its own table, so equal subtrees are one node there too, and the re-encoding check is unchanged: the words it
 writes again must equal the block's.
+
+*As built (#1714): version 17.* A contract is its arity and flags, then **its node table**: a count, then each
+node in post-order (a node after its kids, `Contract.Table.postOrder`, an explicit stack), each as its plain
+arrivals (a count, then each arrival as in version 16), its open arrivals, and its kids (a count, then per kid
+its one step `(kind, a, b)` and the index of an earlier node; index 0 is the empty node, the table counts from
+1). One table holds every node the contract's result, its reads and its supplies' results reach, each once;
+kids are written in the canonical order (`Forest.sortedKids`). Then the fields of version 16 in order, with
+`res` the root's index, `reads` a count of `(j, index)` pairs and a supply's `res` its root's index;
+`writes`, `escapes` and `kept` are still effect lists. The reader re-interns each node with
+`Trees.Table.node` (a kid that names a later node, a count past the block, or an arrival kind past `⊤` makes
+the block unknown) and commits the contract from those roots; the re-encoding check is unchanged. An
+imported `w₉`'s block no longer lists its result's 2²⁵⁶ paths (the imported doubling test: `h`'s total 1 767
+against the same-module 1 575 at k = 7, 6 648 against 5 991 at k = 9). A block of another version is unknown,
+as before; v2 still writes no cache entry, so none can hold a version 16 block.
 
 The block stays in the interface (`Interface.ownership`, inside the interface hash); v2 writes no cache entry
 (`Session` turns the cache off under `--ownership=v2`), so no cache entry can hold an old block. The version
@@ -3246,7 +3290,17 @@ not merely be renamed to this limit. Exhaustion is a compiler-resource error wit
 *Amended 2026-11-02 (#1685): the slot domain replaced the shape files.* `src/own2/` while v1 exists; renamed
 `src/own/` at S10. Imports go to strictly lower layers; same-layer files never import each other. *Amended
 2026-11-02 (#1685): `Runs`, `ContractText`, `Walk` and `Distinct` were split out of `Slots`, `Contract`, `Eval`
-and `Relation` along their seams, and the layers from `Distinct` up moved one place.*
+and `Relation` along their seams, and the layers from `Distinct` up moved one place.* *As built (#1714): a
+layer of tree readers below the contracts. `Forest` (the tree readers and the union, L3) and `Conds` (the
+conditions, from `Contract`, L3) are new, `ReadOff` (the read-off, from `Eval`, L10) is new, and every layer
+from `Contract` up moved one place: L4 `Contract`, `Subtree`, `Prepass`; L5 `Rows`, `Regions`,
+`ContractText`, `Leaves`; L6 `Value`, `Liveness`; L7 `Relation`; L8 `Walk`, `Distinct`; L9 `Eval`; L10
+`ReadOff`, `Resolve`, `Deliver`, `Closures`; L11 `Groups`; L12 `Block`, `Message`, `Report`, `Hoists`; L13
+`Ownership`; L14 `Enforce`. `rules_test`'s table is the list in force; the diagram and the table below are
+the layering before it. The new files: `Forest.zig` (L3: one slot's arrivals, entries in the canonical
+order, each node once, union, graft, label maps, the effect trees' fold; imports Ids, Place, Trees),
+`Conds.zig` (L3: conditions and occurrences; Ids, Slots), `ReadOff.zig` (L10: a frame's contract read off its
+values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Ids, Place, Relation, Slots, Subtree, Value).*
 
 ```
 L13 Enforce
