@@ -1,6 +1,8 @@
--- Executes the compiler's Wire plan. Known stable subgraphs pass directly to
--- structured clone; runtime shape walking is confined to type-variable positions.
+-- Executes the compiler's Wire plan. Stable subgraphs pass directly to
+-- structured clone; traversal callbacks keep their real function types.
+import Browser.Host.Data as Data
 import Js
+import Js.Protocol as Protocol
 
 
 type alias V =
@@ -39,11 +41,7 @@ visit nodes index value =
         kind = Js.to (Js.at node 0)
         edges = Js.at node 1
         if kind == 1 then
-            array =
-                if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
-                    value
-                else
-                    Js.call (Js.get value "b") "slice" [ Js.get value "o" ]
+            array = if Data.isArray value then value else copyArray value
             child : Int
             child = Js.to (Js.at (Js.at edges 0) 1)
             if Js.same (Js.at nodes child) (Js.from 0) then
@@ -51,60 +49,109 @@ visit nodes index value =
             else
                 mapFields array λ_ item → visit nodes child item
         else if kind == 4 then
-            variant =
-                Js.call edges "find" [ Js.from λedge → Js.same (Js.at edge 0) (Js.get value "$") ]
-            visit nodes (Js.to (Js.at variant 1)) value
+            visit nodes (variantNode edges (Js.get value "$") 0) value
         else if kind == 5 then
             variable value
         else
             result = Js.ref value
             Js.each edges λedge →
-                field = Js.at edge 0
+                field : String
+                field = Js.to (Js.at edge 0)
                 child : Int
                 child = Js.to (Js.at edge 1)
-                if Js.same (Js.at nodes child) (Js.from 0) then
-                    ⊤
-                else
+                if not (Js.same (Js.at nodes child) (Js.from 0)) then
                     replace result value field (visit nodes child (Js.get value field))
             if kind == 6 then
-                -- An open row is a type-variable position too. Known fields
-                -- already followed their plans, including stable ones to skip.
-                Js.each (Js.call (Js.global "Object") "keys" [ value ]) λfield →
-                    known = Js.call edges "some" [ Js.from λedge → Js.same field (Js.at edge 0) ]
-                    if not (Js.to known) then
-                        replace result value field (variable (Js.get value field))
+                visitUnknown edges value (Data.keys value) result
             Js.read result
+
+
+variantNode : V, V, Int → Int
+variantNode edges tag index =
+    if index ≥ Js.to (Js.get edges "length") then
+        Protocol.defect "Invalid Wire union variant"
+    else
+        edge = Js.at edges index
+        if Js.same (Js.at edge 0) tag then
+            Js.to (Js.at edge 1)
+        else
+            variantNode edges tag (index + 1)
+
+
+knownField : V, String, Int → Bool
+knownField edges field index =
+    if index ≥ Js.to (Js.get edges "length") then
+        False
+    else if Js.same (Js.at (Js.at edges index) 0) (Js.from field) then
+        True
+    else
+        knownField edges field (index + 1)
+
+
+visitUnknown : V, V, List String, Js.Ref V → ⊤
+visitUnknown edges value fields result =
+    case fields of
+        [] →
+            ⊤
+        [ field, …rest ] →
+            if not (knownField edges field 0) then
+                replace result value field (variable (Js.get value field))
+            visitUnknown edges value rest result
 
 
 variable : V → V
 variable value =
     if Js.isNullish value || not (Js.typeIs value "object") then
         value
-    else if Js.typeIs (Js.get value "$plain") "function" then
-        variable (Js.call value "$plain" [])
     else
         mapFields value λ_ item → variable item
 
 
-mapFields : V, (V, V → V) → V
+mapFields : V, (String, V → V) → V
 mapFields value transform =
     result = Js.ref value
-    Js.each (Js.call (Js.global "Object") "keys" [ value ]) λfield →
-        replace result value field (transform field (Js.get value field))
+    mapKeys value (Data.keys value) transform result
     Js.read result
 
 
-replace : Js.Ref V, V, V, V → ⊤
+mapKeys : V, List String, (String, V → V), Js.Ref V → ⊤
+mapKeys value fields transform result =
+    case fields of
+        [] →
+            ⊤
+        [ field, …rest ] →
+            replace result value field (transform field (Js.get value field))
+            mapKeys value rest transform result
+
+
+replace : Js.Ref V, V, String, V → ⊤
 replace result value field next =
-    if Js.to (Js.call (Js.global "Object") "is" [ Js.get value field, next ]) then
-        ⊤
-    else
+    if not (Data.same (Js.get value field) next) then
         if Js.same (Js.read result) value then
-            Js.write
-                result
-                (if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
-                    Js.call value "slice" []
-                 else
-                    Js.call (Js.global "Object") "assign" [ Js.object [], value ]
-                )
+            Js.write result
+                (if Data.isArray value then copyArray value else copyObject value)
         Js.set (Js.read result) field next
+
+
+copyArray : V → V
+copyArray value =
+    items : List V
+    items = Js.to value
+    Js.from (List.copy items)
+
+
+copyObject : V → V
+copyObject value =
+    target = Data.emptyObject ⊤
+    copyKeys value (Data.keys value) target
+    target
+
+
+copyKeys : V, List String, V → ⊤
+copyKeys value fields target =
+    case fields of
+        [] →
+            ⊤
+        [ field, …rest ] →
+            Js.set target field (Js.get value field)
+            copyKeys value rest target
