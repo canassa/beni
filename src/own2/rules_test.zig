@@ -80,6 +80,8 @@ const layers = [_]Entry{
     .{ .file = "Holders.zig", .layer = 9, .max_lines = 700 },
     // The holder index and its sweep, split from `Holders` (#1714): holds
     // listed once a holder, buckets by next use, the aggregated holders.
+    // A holder's later uses, split from `Resolve` for the best-hold descent (#1714).
+    .{ .file = "Later.zig", .layer = 9, .max_lines = 180 },
     .{ .file = "Sweep.zig", .layer = 9, .max_lines = 720 },
     // The pending operands by clock and key, split from the walk's copies (#1714).
     .{ .file = "Stack.zig", .layer = 9, .max_lines = 380 },
@@ -386,7 +388,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 40), layers.len);
+    try testing.expectEqual(@as(usize, 41), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
