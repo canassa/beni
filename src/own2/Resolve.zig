@@ -307,7 +307,7 @@ const Resolver = struct {
                 const k: *Ctx = @ptrCast(@alignCast(ctx));
                 return k.r.footprintReads(u, k.q);
             }
-        }.accept };
+        }.accept, .below_all = !fr.places.onCycle(fr.places.pathPlace(q)) };
         const charge: Ids.Charge = .growth(fr.account);
         var best: ?Liveness.UseId = try w.index.useAfter(g, charge, fr.places, r.regions, h, q, point, filter);
         if (try w.index.useUnder(g, charge, fr.places, r.regions, h, q, point, filter)) |u| {
@@ -358,7 +358,7 @@ const Resolver = struct {
     /// Whether an escape before `point` reaches a target.
     /// Whether an escape before `point` reaches a target (§2.8, *The
     /// escape index*).
-    fn escaped(r: *Resolver, t: u32, point: u32, call: u32, relied: *Cond) Error!bool {
+    fn escaped(r: *Resolver, t: u32, point: u32, call: u32, relied: *Holders.Gather) Error!bool {
         return r.escapes.escaped(r.ev(), &r.keys, r.regions, r.e.escapes.items, t, point, call, relied);
     }
 
@@ -400,7 +400,9 @@ const Resolver = struct {
             o.shared = fx.shared;
             return line;
         }
-        var relied: Cond = d.relies;
+        var relied: Holders.Gather = .{};
+        defer relied.deinit(g);
+        try relied.add(g, r.account(), d.relies);
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
         for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied)) {
@@ -422,7 +424,7 @@ const Resolver = struct {
                 const ov = try Distinct.overlap(r.ev(), l, t, true);
                 switch (ov.kind) {
                     .no => {},
-                    .under => relied = try Cond.conj(r.ev().arena, r.account(), relied, ov.cond),
+                    .under => try relied.add(g, r.account(), ov.cond),
                     .may => {
                         refuse(o, .disjoint);
                         return line;
@@ -446,7 +448,7 @@ const Resolver = struct {
                     .no => {},
                     .under => {
                         if (debug) std.debug.print("  pending {d} under {any}\n", .{ p.inst, ov.cond.sel });
-                        relied = try Cond.conj(r.ev().arena, r.account(), relied, ov.cond);
+                        try relied.add(g, r.account(), ov.cond);
                     },
                     .may => {
                         refuse(o, .held_operand);
@@ -473,7 +475,7 @@ const Resolver = struct {
                     const u = (try r.liveAt(h, x[0], d.point)) orelse continue;
                     switch (x[1].kind) {
                         .no => {},
-                        .under => relied = try Cond.conj(r.ev().arena, r.account(), relied, x[1].cond),
+                        .under => try relied.add(g, r.account(), x[1].cond),
                         .may => {
                             const up = w.index.get(u).point;
                             if (best == null or up < w.index.get(best.?.use).point or (up == w.index.get(best.?.use).point and h < best.?.h)) best = .{ .h = h, .use = u, .q = x[0], .exact = true };
@@ -499,8 +501,8 @@ const Resolver = struct {
             return line;
         }
         o.accepted = if (d.callback) .callback_param else ground;
+        line.demand.relies = try relied.cond(r.ev().arena, r.account());
         r.e.ev.f.account.in_demands = false;
-        line.demand.relies = relied;
         return line;
     }
 
@@ -630,26 +632,31 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
         };
     }
     const lines = try arena.alloc(Line, e.demands.items.len);
-    var req: Cond = .{};
+    // Each condition gathered over its judgements and made once (§2.9.4).
+    var req: Holders.Gather = .{};
     var kept: std.ArrayList([3]u32) = .empty;
-    const conds = try arena.alloc(Cond, f.cbs.items.len);
+    const conds = try arena.alloc(Holders.Gather, f.cbs.items.len);
     @memset(conds, .{});
     var pkept: std.ArrayList([4]u32) = .empty;
-    const pconds = try arena.alloc(Cond, e.passes.items.len);
+    const pconds = try arena.alloc(Holders.Gather, e.passes.items.len);
     @memset(pconds, .{});
     for (jobs.items, got) |j, l| switch (j.kind) {
         .demand => {
             lines[j.i] = l;
-            if (l.outcome.verdict == .accepted) req = try Cond.conj(e.ev.arena, f.account, req, l.demand.relies);
+            if (l.outcome.verdict == .accepted) try req.add(arena, f.account, l.demand.relies);
         },
         .cb => switch (l.outcome.verdict) {
             .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ j.i, j.k, j.t }),
-            .accepted => conds[j.i] = try Cond.conj(e.ev.arena, f.account, conds[j.i], l.demand.relies),
+            .accepted => try conds[j.i].add(arena, f.account, l.demand.relies),
         },
         .pass => switch (l.outcome.verdict) {
             .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
-            .accepted => pconds[j.i] = try Cond.conj(e.ev.arena, f.account, pconds[j.i], l.demand.relies),
+            .accepted => try pconds[j.i].add(arena, f.account, l.demand.relies),
         },
     };
-    return .{ .lines = lines, .verdicts = .{ .req = req, .kept = kept.items, .supply_cond = conds, .pass_kept = pkept.items, .pass_cond = pconds } };
+    const cs = try arena.alloc(Cond, conds.len);
+    for (conds, cs) |*x, *c| c.* = try x.cond(e.ev.arena, f.account);
+    const ps = try arena.alloc(Cond, pconds.len);
+    for (pconds, ps) |*x, *c| c.* = try x.cond(e.ev.arena, f.account);
+    return .{ .lines = lines, .verdicts = .{ .req = try req.cond(e.ev.arena, f.account), .kept = kept.items, .supply_cond = cs, .pass_kept = pkept.items, .pass_cond = ps } };
 }
