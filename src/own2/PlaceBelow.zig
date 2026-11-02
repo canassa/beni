@@ -1,7 +1,7 @@
 //! L2: what a place graph says below a path, read off the places and never
 //! off the paths (`docs/design/ownership-v2.md` §2.3.1): how many object
 //! slots lie at and below a place no cycle reaches, and whether a family
-//! (`[*]`, `⟲`) does. Split from `Subtree`, its one reader with `Distinct`.
+//! (`[*]`, `⟲`) does. Split from `Subtree`; read by `Distinct` and `Descent`.
 //!
 //! Obligations kept here: none of §2.14's directly (a count past its cap,
 //! or a cycle, answers "many": never fewer slots than there are).

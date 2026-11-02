@@ -13,7 +13,6 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
-const PlaceBelow = @import("PlaceBelow.zig");
 
 const Table = Slots.Table;
 const SetId = Slots.SetId;
@@ -53,9 +52,11 @@ pub fn wholeOf(t: *const Table, s: SetId) ?PathId {
 
 /// `below(p)`: the object slots at and below `p`, by their canonical
 /// names (§2.3.1): a walk of `extend` over each place's steps, each path
-/// once, filled once per path. Written out while it has at most
-/// `Slots.below_min` slots; past that the walk stops and the set is the symbol
-/// `↓p`, so its cost does not depend on how many paths a cycle has.
+/// once, filled once per path. It is the symbol `↓p` when the place graph
+/// counts more than `Slots.below_min` object places below `p`'s place, or
+/// a cycle below it that holds one (`Place.objectsBelow`), so no cycle is
+/// walked; else written out, unless the walk finds more slots than that
+/// (a `⟲` above `p` that stands for several paths).
 pub fn below(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
     try account.reserve(.memo, 1);
     if (t.below_of.get(p)) |hit| {
@@ -84,15 +85,10 @@ fn belowFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Ta
     defer found.deinit(gpa);
     var acc: std.ArrayList(u32) = .empty;
     defer acc.deinit(gpa);
-    // A path's slots are counted when it is found, not when it is
-    // walked: the walk stops at the first slot past `Slots.below_min`, after
-    // at most that many walked paths that hold one.
-    var whole = try note(t, gpa, account, places, p, &found, &acc);
-    // Below a place no cycle reaches, each path is a slot of its own: they
-    // are counted over the place graph, never walked path by path.
-    var counts: Ids.FixedDict(1) = .{};
-    defer counts.deinit(gpa);
-    if (!whole) whole = try PlaceBelow.slotsBelow(gpa, account, places, places.pathPlace(p), Slots.below_min + 1, &counts) == Slots.below_min + 1;
+    // Below an acyclic place, a path's slots are counted when it is found:
+    // the walk stops at the first slot past `Slots.below_min`.
+    var whole = places.objectsBelow(places.pathPlace(p)) > Slots.below_min;
+    if (!whole) whole = try note(t, gpa, account, places, p, &found, &acc);
     try queue.append(gpa, p);
     _ = try seen.getOrPut(gpa, .{p.int()});
     var qi: usize = 0;
