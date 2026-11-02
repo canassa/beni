@@ -1,0 +1,4 @@
+A runtime catch for two parts of a result counted apart when one object may be both: a callback's answers, a
+duplicating call answered whole, an identity at a type variable (ownership-v2.md §2.9.3): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses the program; were it to accept it, the sanitised run
+would show the stale read of each second part.

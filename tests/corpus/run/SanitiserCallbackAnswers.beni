@@ -1,0 +1,87 @@
+-- A runtime catch for two parts of a result counted apart when one object
+-- may be both (`ownership-v2.md` §2.9.3): two answers of one callback that
+-- answers what it captured (`callTwice`, also handed on by `wrap`), two
+-- callbacks that answer one list (`callBoth`), a callee that answers a
+-- duplicating call whole (`wrapDup`), and an identity at a type variable
+-- handed a tuple of one list twice (`idd`). v2 read each result as
+-- separated, so the push of the first part ran in place while the second
+-- was read; the sanitised run trapped. Each push is refused now.
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l =
+    case l of
+        [] →
+            "."
+
+        [ x, …rest ] →
+            String.fromInt x ++ "," ++ show rest
+
+
+callTwice : (⊤ → b) → b × b
+callTwice f = ( f ⊤, f ⊤ )
+
+
+wrap : (⊤ → b) → b × b
+wrap f = callTwice f
+
+
+callBoth : (⊤ → b), (⊤ → b) → b × b
+callBoth f g = ( f ⊤, g ⊤ )
+
+
+dup : a → a × a
+dup x = ( x, x )
+
+
+wrapDup : a → a × a
+wrapDup x = dup x
+
+
+idd : a → a
+idd x = x
+
+
+twice : Int → String
+twice n =
+    xs = [ n ]
+    ( a, b ) = callTwice λ⊤ → xs
+    w = List.push a 1
+    "${show w} ${show b}"
+
+
+handedOn : Int → String
+handedOn n =
+    xs = [ n ]
+    ( a, b ) = wrap λ⊤ → xs
+    w = List.push a 2
+    "${show w} ${show b}"
+
+
+both : Int → String
+both n =
+    xs = [ n ]
+    ( a, b ) = callBoth (λ⊤ → xs) λ⊤ → xs
+    w = List.push a 3
+    "${show w} ${show b}"
+
+
+wrapped : Int → String
+wrapped n =
+    ( a, b ) = wrapDup [ n ]
+    w = List.push a 4
+    "${show w} ${show b}"
+
+
+identity : Int → String
+identity n =
+    xs = [ n ]
+    ( a, b ) = idd ( xs, xs )
+    w = List.push a 5
+    "${show w} ${show b}"
+
+
+main : Program
+main = Node.print "${twice 1} ${handedOn 2} ${both 3} ${wrapped 4} ${identity 5}"
