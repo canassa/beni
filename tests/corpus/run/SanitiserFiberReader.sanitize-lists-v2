@@ -1,0 +1,4 @@
+A runtime catch for a loan across a suspension (ownership-v2.md §2.13.7): a helper spawns a fiber that holds a loan of
+a cell's contents across a sleep, and its caller edits the contents in place. Built again under --ownership=v2 and the
+list stale-read sanitiser. v2 refuses each edit, because the spawn's escape reaches through the cell; were the escape
+to stop at the cell, the sanitised run would show the fiber's stale read.
