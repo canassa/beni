@@ -59,7 +59,8 @@ const layers = [_]Entry{
     .{ .file = "Deliver.zig", .layer = 9, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
     .{ .file = "Closures.zig", .layer = 9, .max_lines = 140 },
-    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
+    // Evidence terms as function values (#1708).
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1900 },
     .{ .file = "Block.zig", .layer = 11, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 11, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 11, .max_lines = 150 },

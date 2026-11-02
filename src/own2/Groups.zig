@@ -660,6 +660,9 @@ pub const Module = struct {
     body_code: []u32 = &.{},
     /// Lambdas', local functions' and references' codes by instruction.
     code_of_inst: Ids.FixedDict(1) = .{},
+    /// Imported declarations passed as evidence: their codes by
+    /// `(module, declaration)`.
+    evidence_code: Ids.FixedDict(2) = .{},
     /// Per imported module read: its contracts by declaration.
     imported: stamped.Column(u32, ?[]u32) = .{},
     imported_owned: std.ArrayList([]u32) = .empty,
@@ -691,6 +694,7 @@ pub const Module = struct {
         mod.code_places.deinit(gpa);
         mod.code_caps.deinit(gpa);
         mod.code_of_inst.deinit(gpa);
+        mod.evidence_code.deinit(gpa);
         for (mod.imported_owned.items) |cs| gpa.free(cs);
         mod.imported_owned.deinit(gpa);
         mod.imported.deinit(gpa);
@@ -1042,6 +1046,53 @@ pub const Module = struct {
         return id;
     }
 
+    /// The codes of the declarations a dispatch site at `inst` passes as
+    /// evidence, every term however deep, each once (§2.11.4: a function
+    /// value handed to code the checker does not see).
+    fn evidenceCodes(ctx: *anyopaque, inst: u32, out: *std.ArrayList(u32)) Error!void {
+        const mod = self(ctx);
+        const dt = mod.in.dispatch orelse return;
+        const site = dt.siteOf(@fromBackingInt(inst)) orelse return;
+        var todo: std.ArrayList(Dispatch.TermIndex) = .empty;
+        defer todo.deinit(mod.gpa);
+        try todo.appendSlice(mod.gpa, dt.argsAt(site.evidence));
+        var seen: std.ArrayList(Dispatch.TermIndex) = .empty;
+        defer seen.deinit(mod.gpa);
+        while (todo.pop()) |ti| {
+            if (std.mem.indexOfScalar(Dispatch.TermIndex, seen.items, ti) != null) continue;
+            try seen.append(mod.gpa, ti);
+            try todo.appendSlice(mod.gpa, dt.argsOfTerm(ti));
+            const t0: [2]u32 = switch (dt.term(ti)) {
+                .top => |u| .{ mod.in.module, u.decl.int() },
+                .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| .{ u.module.int(), d.int() } else continue else continue,
+                else => continue,
+            };
+            // A type's `eq` or `compare` writes nothing in place (R-5.13.1
+            // refuses its writes), and a comparison composes it (§2.13.13).
+            const name = mod.in.birs[t0[0]].symbol(mod.in.birs[t0[0]].decls[t0[1]].name);
+            if (name == InternPool.WellKnown.eq.symbol() or name == InternPool.WellKnown.compare.symbol()) continue;
+            const t = mod.aliasTarget(t0);
+            if (t[0] == mod.in.module) {
+                if (t[1] >= mod.body_code.len or mod.body_code[t[1]] == none) continue;
+                const c = if (mod.in.bir.decls[t[1]].params != 0) mod.body_code[t[1]] else mod.lambdaBody(t[1]) orelse continue;
+                if (std.mem.indexOfScalar(u32, out.items, c) == null) try out.append(mod.gpa, c);
+                continue;
+            }
+            // Another module's: its published contract (a worded row writes
+            // only where its own call site is authorised, never through a
+            // function value).
+            const owner = mod.in.birs[t[0]];
+            if (owner.ownSlotsV2(owner.decls[t[1]]).len != 0) continue;
+            const got = try mod.evidence_code.getOrPut(mod.gpa, .{ t[0], t[1] });
+            if (!got.found_existing) {
+                const contract = (try mod.importedContract(t[0], t[1])) orelse none;
+                got.value_ptr.* = @intCast(mod.codes.items.len);
+                try mod.codes.append(mod.gpa, .{ .kind = .ref, .inst = inst, .own = owner.decls[t[1]].params, .contract = contract });
+            }
+            if (std.mem.indexOfScalar(u32, out.items, got.value_ptr.*) == null) try out.append(mod.gpa, got.value_ptr.*);
+        }
+    }
+
     fn codeOf(ctx: *anyopaque, inst: u32) ?u32 {
         return self(ctx).code_of_inst.get(.{inst});
     }
@@ -1100,6 +1151,7 @@ pub const Module = struct {
             .isListAppend = isListAppend,
             .callee = callee,
             .funcRef = funcRef,
+            .evidenceCodes = evidenceCodes,
             .codeOf = codeOf,
             .capturesOf = capturesOf,
             .contractOf = contractOf,

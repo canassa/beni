@@ -958,6 +958,13 @@ its parameter writes are `callsite` demands on `⊤` there, refused `unknown`, a
   holds its arguments, so the former row (every argument read, the result `fresh`) let `List.push` write a
   top-level list through `apply Fixed.parse input` (SchemaMemberHanded).
 - **A `method_call`**: the code `Dispatch` names, as a `call`; unresolved, the pessimistic contract.
+- **Evidence.** *Amended 2026-11-02 (#1708):* a declaration a dispatch site passes as `where`-clause evidence (every
+  `top`/`ext` term of the site, however deep) is a function value of that declaration's code, made at the site and
+  escaped there (§2.11.4): the binder calls it through a type variable (`x.bump 1`), an unresolved `method_call`
+  that the checker cannot follow, so a parameter the declaration writes is a `callsite` demand on `⊤` at the site,
+  refused `unknown`. A worded declaration is not taken: its words write only at a call site the checker
+  authorises, never through a function value. Before this, the evidence site made no demand and `bump`'s `param`
+  push ran on a box the caller read again (`one s`, then `s.items`).
 
 ### 2.12 Fixpoints and the pre-pass
 
