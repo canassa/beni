@@ -510,7 +510,9 @@ leaves by four a level (n = 8: 744 671 records; master's v2 5 431 at n = 5 and 1
     `(pair, tail)` by dense id, hash-consed (`Routes.zig`). An enclosing `case` is made after its arms,
     so its choice comes later: a reader going down a set meets the outer wraps first and puts each inner
     tag in front of the list it has, and the leaves below one wrap share its tags as their tail. A merge,
-    a conflict test or an implication walks two lists only to where they meet.
+    a conflict test or an implication walks two lists only to where they meet. *Amended 2026-11-03:* a
+    list also has a jump pointer down its tail (Myers’ skew-binary rule, one word a node), so a conflict
+    test passes a run of one list’s choices the other does not name in steps logarithmic in its length.
   - *A wrap inside a wrap* is kept as two wraps when every choice of the inner one comes before the outer
     one's, so tagging a tagged set is one node; opening a set pushes its wraps down one level, innermost
     first.
@@ -894,6 +896,16 @@ a round for n + 2 rounds: `GroupRotate` at n = 16 / 32 / 64 cost 110 353 / limit
 411 591 (growth 56 748 of 65 536: the rounds remain, each linear in n). An aggregated holder is also asked first
 whether its local has any use after the point compatible with it, one range query, before a liveness query per
 hold: in the `then` arm, the parameters the `else` arm's call reads are live by the sweep and never used.
+
+*Holds read by their tags* (2026-11-03). A hold whose tags conflict with the target’s is never the target’s
+holder (the relation’s first test answers `no`), so step 4 visits only the others. A holder’s holds are read, once
+it has more than eight, as the tree of their tag lists by shared tail (`TagTree.zig`), made the first time it is
+asked: a target meets its own list’s subtree and its ancestors’ holds whole, and below an ancestor only the kids
+that do not part from its own path (§2.9.3’s parting), each hold there tested exactly. A node whose siblings all
+part from it and whose parent holds none is passed by one pointer. The holds met are read in their order, so the
+witness is the same. A hold’s liveness does not depend on the target, so a judgement asks it once per holder,
+path and point. In `( incAll v, count v )` over an `else if` chain of D arms, each of about 4D targets met about
+4D holds: D = 8 / 16 / 32 cost 5 587 / 27 275 / 169 231 demands’ records, now 1 074 / 2 034 / 3 974.
 
 *Pending operands* (2026-11-03). The walk no longer copies its operand stack at every call: each operand on the
 stack is one entry, made once (its values, a record update's base by the fields its consumer keeps), with the
@@ -3527,7 +3539,7 @@ L6  Relation  Entries
 L5  Value  Liveness
 L4  Rows  Regions  ContractText  Leaves  Worded
 L3  Contract  Subtree  Prepass
-L2  Slots  Facts  Trees
+L2  Slots  Facts  Trees  TagTree
 L1  Place  Runs  Routes
 L0  Ids  Counters  Scratch
      bir/Bir, check/{TypeStore,Types,Walk,Dispatch,Edges,SchemaPlan,EffectPlan,Scc}, resolve/{Interface,Graph}, parse/Ast, InternPool, stamped
@@ -3540,8 +3552,9 @@ L0  Ids  Counters  Scratch
 | `Scratch.zig` | 0 | a walk's sparse sets and maps | Counters |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, levels and their expansion | Ids |
 | `Runs.zig` | 1 | runs of words interned by content, a column by path id (§3.2) | Ids |
-| `Routes.zig` | 1 | tag lists with shared tails, route sets, the atom pairs a parting rules out (§2.3.5, §2.9.3, #1714) | Ids |
+| `Routes.zig` | 1 | tag lists with shared tails and jump pointers, route sets, the atom pairs a parting rules out (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
+| `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
@@ -3562,7 +3575,7 @@ L0  Ids  Counters  Scratch
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Slots, Walk, Regions |
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder, buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Subtree, Value, Relation, Distinct |
 | `Stack.zig` | 8 | the pending operands by clock and key: their leaves listed once, lists by push with trees of removal and `rank₂`, aggregated ones (§2.8) | Ids, Value, Relation, Distinct, Walk, Regions |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |

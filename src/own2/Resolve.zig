@@ -33,6 +33,7 @@ const Regions = @import("Regions.zig");
 const Holders = @import("Holders.zig");
 const Sweep = @import("Sweep.zig");
 const Stack = @import("Stack.zig");
+const TagTree = @import("TagTree.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -75,6 +76,15 @@ pub const Result = struct {
     verdicts: Eval.Verdicts,
 };
 
+/// A holder's holds as `TagTree.Forest` reads them: each hold's tags.
+const HoldTags = struct {
+    f: *Value.Frame,
+    hs: []const Sweep.Hold,
+    pub fn listOf(x: HoldTags, i: usize) u32 {
+        return x.f.leafAt(x.hs[i].leaf).tags;
+    }
+};
+
 const Resolver = struct {
     e: *Eval.Evaluation,
     arena: Allocator,
@@ -89,6 +99,10 @@ const Resolver = struct {
     ops: Holders.Operands = .{},
     /// The pending operands by clock and key (§2.8 step 5).
     stack: Stack.Index = .{},
+    /// Per keyed holder, its holds by their tags (§2.8).
+    tags: TagTree.Forest = .{},
+    /// A judgement's `liveAt` answers (+1, 0 none), each asked once a target.
+    asked: Ids.FixedDict(3) = .{},
     /// Whether a judgement's aggregated holders add to the frame's `req`:
     /// a demand's do, a label's supplied part's are judged one by one.
     aggregate: bool = false,
@@ -113,6 +127,16 @@ const Resolver = struct {
         r.escapes.deinit(r.gpa());
         r.ops.deinit(r.gpa());
         r.stack.deinit(r.gpa());
+        r.tags.deinit(r.gpa());
+        r.asked.deinit(r.gpa());
+    }
+
+    fn liveOnce(r: *Resolver, h: u32, q: PathId, point: u32) Error!?Liveness.UseId {
+        try r.f().charge(.inspection, 1);
+        if (r.asked.get(.{ h, q.int(), point })) |x| return if (x == 0) null else .from(x - 1);
+        const u = try r.liveAt(h, q, point);
+        try r.asked.put(r.gpa(), .{ h, q.int(), point }, if (u) |x| x.int() + 1 else 0);
+        return u;
     }
 
     /// The holder index (§2.8): every bound local that is used after its
@@ -257,7 +281,7 @@ const Resolver = struct {
         var all = hs.items.len != 0;
         for (hs.items) |x| {
             if (x[1].kind != .under) continue;
-            if ((try r.liveAt(h, x[0], point)) == null) {
+            if ((try r.liveOnce(h, x[0], point)) == null) {
                 all = false;
                 continue;
             }
@@ -357,6 +381,7 @@ const Resolver = struct {
         const fr = r.f();
         const g = r.gpa();
         try fr.charge(.demand, 1);
+        r.asked.clearRetainingCapacity();
         var line: Line = .{ .demand = d, .outcome = .{} };
         const o = &line.outcome;
         const targets = w.leavesOfRun(d.targets);
@@ -455,11 +480,13 @@ const Resolver = struct {
             try r.live.begin(r.ev(), bs.items);
             while (try r.live.next(r.ev(), if (best) |bh| w.index.get(bh.use).point else std.math.maxInt(u32))) |hi| {
                 const h = r.live.holders.items[hi].local;
-                for (r.live.holdsOf(hi)) |hd| {
+                const hds = r.live.holdsOf(hi);
+                for (try r.tags.meeting(g, r.account(), &fr.sets.tags, hi, hds.len, HoldTags{ .f = fr, .hs = hds }, fr.leafAt(t).tags)) |k| {
+                    const hd = hds[k];
                     hs.clearRetainingCapacity();
                     try Sweep.holdsAt(r.ev(), hd, t, &hs);
                     for (hs.items) |x| {
-                        const u = (try r.liveAt(h, x[0], d.point)) orelse continue;
+                        const u = (try r.liveOnce(h, x[0], d.point)) orelse continue;
                         switch (x[1].kind) {
                             .no => {},
                             .under => try relied.add(g, r.account(), x[1].cond),
