@@ -71,10 +71,10 @@ pub const Evaluation = struct {
         }
     }
 
-    fn gpa(e: *Evaluation) Allocator {
+    pub fn gpa(e: *Evaluation) Allocator {
         return e.w.f.gpa;
     }
-    fn fr(e: *Evaluation) *Value.Frame {
+    pub fn fr(e: *Evaluation) *Value.Frame {
         return &e.w.f;
     }
     fn account(e: *Evaluation) *Ids.Account {
@@ -485,7 +485,7 @@ fn virtualOuter(e: *Evaluation, q: u32) ?[2]u32 {
     return null;
 }
 
-fn tokenOf(e: *Evaluation, inst: u32) u32 {
+pub fn tokenOf(e: *Evaluation, inst: u32) u32 {
     return e.w.bir.insts.items(.main_token)[inst];
 }
 
