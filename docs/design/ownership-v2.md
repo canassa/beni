@@ -6301,7 +6301,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
        the frame's effects so that callers keep it.
     3a. **Stores under a pending mover** (fifth review of #1672). The spawn point checked the mover's demand against
        the slot's contents at that moment, so it never saw a backing stored later. At every later store into a slot
-       with a pending mover, including a store a callee makes (instantiated from its effects), the mover's
+       with a pending mover, including a store a callee makes (instantiated from its effects) and a store applied
+       as a spawned callback's effects at a spawn point (so a filler spawned after the mover is checked too), the mover's
        `transfer` demand is run again over the stored payload's backings. The holders it checks are the ones rule 1
        collects: escaped, live across a may-suspend point after the store, or live at return. A holder found there
        refuses **the store**, with `worker_transfer_alias_live` naming the pending mover's spawn and its take. That
@@ -6318,7 +6319,12 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
        mover's demand over the backings at the end of the path. The same applies to every element when the path
        crosses a list's `[*]`. Contents that are unknown at a step refuse, approximately. The mover is also
        registered as pending on each inner slot it passed through, with the rest of its path, so a later store into
-       an inner slot (`Ref.set inner (Just buf)`) is checked by rule 3a too.
+       an inner slot (`Ref.set inner (Just buf)`) is checked by rule 3a too. **Termination** (seventh review of #1672):
+       the walk and the registration are memoised by (static slot, state in the folded path). A slot reached again
+       in a state already visited is not walked again, and an existing registration is never added again. Paths
+       are folded as §2.3's `widen` folds them, so a `Ref` that holds itself through a record
+       (`type Node = { next : Ref (Maybe Node) }`, drained by a recursive fiber) reaches a fixed point instead of
+       unrolling.
     4. **The demand.** The `transfer` demand's *not stored in a slot* condition also refuses a move of β when β has
        an outside alias.
     5. **Protocols.** Ŝ and the model's slot fixpoint (§2.13.17) are this rule applied at the constructor, where the
@@ -6452,7 +6458,10 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     parameter, which is bounded by the size of the summary. The slot column is one record per published handle. Ŝ and the model's slot fixpoint add one sparse propagation
     over the state's or model's slot places, at most one crossing per slot effect per edge (§2.12), on the entry
     row's account (§4.1).
-    Everything is charged to the owning declaration's account (§4.4). The only new baseline records are the two
+    Rule 3a's walk costs O(aliasing slots × path states) for one store under a pending mover, by the memo above. A
+    frame pays that once per (pending mover, store into one of its slots), so O(aliasing slots × path states ×
+    pending movers × stores into their slots). This counts growth records, and an exhausted account fails with
+    `ownership_limit`, never with a silent acceptance. Everything is charged to the owning declaration's account (§4.4). The only new baseline records are the two
     indexes' records, one per handle allocation and one per stored handle, because they are proportional to the
     source.
 
@@ -6484,6 +6493,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `TransferPendingMoverDeferredOfRef` *(sixth review)* | the same, with `outer` a `Deferred (Ref (Maybe Buffer))` completed with `inner` | refuse `worker_transfer_alias_live` at the store |
     | `TransferPendingMoverListOfRefs` *(sixth review)* | the same, with `outer` a `Ref (List (Ref (Maybe Buffer)))` set to `[ inner ]` and a mover through `[*]` | refuse `worker_transfer_alias_live` at the store |
     | `TransferPendingMoverInnerLater` *(sixth review)* | `Ref.set outer inner` while `inner` is empty, then `Ref.set inner (Just buf)` with `v` live across a sleep | refuse `worker_transfer_alias_live` at the inner store |
+    | `TransferPendingMoverSelfNode` *(seventh review)* | `type Node = { next : Ref (Maybe Node), buf : Maybe Buffer }`; a recursive fiber drains the chain, taking and moving each `buf`; the frame then stores a node holding `buf` with `v = view buf` live across a sleep; a twin drops `v` first | the walk terminates; refuse `worker_transfer_alias_live` at the store; the twin accepts |
+    | `TransferPendingMoverSpawnedFiller` *(seventh review)* | a mover fiber is spawned, then a filler fiber stores `buf` into the slot while its `v = view buf` is live across a sleep | refuse `worker_transfer_alias_live` at the spawn of the filler |
     | `TransferRefillCallerSync` *(sixth review)* | `v = view buf; refill r buf; get v 0`; later a take of `buf` from `r` and a move | accept |
     | `TransferRefillSync` *(fifth review)* | `refill r b = let v = view b in Ref.set r (Just b); get v 0`; later a take of `b` from `r` and a move | accept (`v` dies before any suspension) |
     | `TransferPageFibersShareRef.cached`, `TransferPageFibersShareRefImported` *(fifth review)* | the fiber bodies of `TransferPageFibersShareRef` in another module, cold and from the cache | refuse `worker_transfer_alias_live` (outside aliases cross the block) |
