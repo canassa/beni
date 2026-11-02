@@ -1,0 +1,10 @@
+-- Typed entry protocol. The only host operations are generated bindings.
+import Browser.Host.NodeProcess as Process
+import Node exposing (Program)
+
+
+pub run : Program → ⊤
+run program =
+    text = Node.output program
+    if text ≠ "" then Process.writeOut text
+    Process.setExitCode (Node.exitCode program)

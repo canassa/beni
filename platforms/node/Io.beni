@@ -12,14 +12,18 @@
 --!         Node.print "later"
 --!
 --! A primitive here is written in beni over `Task.callback` and one `impure`
---! function that starts the host's operation and returns what cancels it,
---! so that cancelling a fiber cancels what it was waiting on. Since
---! 2026-10-29 that function is beni over `Js` too (`plans/runtime-in-beni.md`
---! step 10): the module has no sibling, and reaches `node:fs/promises`
---! through `process.getBuiltinModule`.
+--! function that starts the host's operation and returns what cancels it.
+--! The control flow stays in beni over generated typed native bindings.
 
+import Browser.Host.AbortController as Abort
+import Browser.Host.AbortSignal as Signal
+import Browser.Host.NodeDirent as Dirent
+import Browser.Host.NodeFs as Fs
+import Browser.Host.NodeProcess as Process
+import Browser.Host.Promise as Promise
+import Browser.Host.Rejection as Rejection
 import Duration
-import Js exposing (Value)
+import Js
 import Log
 import Node exposing (Program)
 import Task exposing (Exit, Resume)
@@ -49,7 +53,7 @@ run body =
     ended = Js.ref False
     Log.setSink logLine
 
-    _ = Js.call (Js.global "process") "on" [ Js.from "beforeExit", Js.from λ_ → stranded ended ]
+    Process.beforeExit λ⊤ → stranded ended
 
     Task.start (λ⊤ → begin body) λexit →
         Js.write ended True
@@ -64,7 +68,7 @@ run body =
 -- nothing writes the code after this but the fiber's end.
 begin : (⊤ → Program) → Program
 begin body =
-    Js.set (Js.global "process") "exitCode" (Js.from 1)
+    Process.setExitCode 1
     body ⊤
 
 
@@ -78,9 +82,8 @@ stranded ended =
         ⊤
     else
         Js.write ended True
-        Js.set (Js.global "process") "exitCode" (Js.from 1)
-        _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from stuck ]
-        ⊤
+        Process.setExitCode 1
+        Process.writeError stuck
 
 
 stuck : String
@@ -93,27 +96,20 @@ stuck =
 -- event of `process.stderr` that nothing handles, so the program stops:
 -- an unknown failure crashes (`CLAUDE.md` rule 9).
 logLine : Log.Entry → ⊤
-logLine entry =
-    _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from "${Log.logfmt entry}\n" ]
-    ⊤
+logLine entry = Process.writeError "${Log.logfmt entry}\n"
 
 
--- How the fiber `run` started ended: its program's output and exit code,
--- or 130 when it was cancelled. `runtime.js` has already run the empty
--- program `main` evaluated to. A `Program` is plain data, `{ $c, $o }`
--- (`Node.beni`), read by its two keys.
+-- How the fiber ended: consume the same typed Program as the entry runtime.
 finish : Exit Program → ⊤
 finish exit =
     case exit of
         Task.Done program →
-            out = Js.get (Js.from program) "$o"
-            if not (Js.same (Js.get out "length") (Js.from 0)) then
-                _ = Js.call (Js.get (Js.global "process") "stdout") "write" [ out ]
-                ⊤
-            Js.set (Js.global "process") "exitCode" (Js.get (Js.from program) "$c")
+            out = Node.output program
+            if out ≠ "" then Process.writeOut out
+            Process.setExitCode (Node.exitCode program)
 
         Task.Cancelled →
-            Js.set (Js.global "process") "exitCode" (Js.from 130)
+            Process.setExitCode 130
 
 
 --| Wait `ms` milliseconds on the calling fiber's clock: `Task.sleep`. Only
@@ -197,75 +193,94 @@ pub readDir : String → Result FileError (List Entry)
 readDir path = Task.callback λresume → startReadDir path resume
 
 
-foreign impure startReadDir : String, Resume (Result FileError (List Entry)) → (⊤ → ⊤)
+startReadDir : String, Resume (Result FileError (List Entry)) → (⊤ → ⊤)
+startReadDir path resume =
+    cancelled = Js.ref False
+    Promise.observe (Fs.readDir path)
+        (λentries →
+            if not (Js.read cancelled) then
+                listed = List.map entries entryOf
+                Task.resume resume (Ok (List.sortBy listed .name))
+        )
+        λerror →
+            case fileError False error of
+                Just known →
+                    if not (Js.read cancelled) then Task.resume resume (Err known)
+                Nothing →
+                    Rejection.raise error
+    λ⊤ → Js.write cancelled True
 
 
--- Start one `fs.promises.readFile`, resume the waiting fiber once with its
--- answer, and return what aborts it. The module is asked of `process` at
--- each call, so a platform that replaces `readFile` (`run/ReadFileDefect`)
--- is seen. A rejection is one of three things: the abort the canceller
--- asked for, which no one waits for; a failure Node documents, by its
--- `code`, which is the `FileError`; or a defect, thrown again, so that it
--- is a rejection nothing handles and Node reports it and exits 1
--- (`CLAUDE.md` rule 9; `transparent-effects-proposal.md` §16.5).
+entryOf : Dirent.NodeDirent → Entry
+entryOf native =
+    { name = Dirent.name native
+    , kind =
+        if Dirent.isFile native then
+            File
+        else if Dirent.isDirectory native then
+            Directory
+        else if Dirent.isSymbolicLink native then
+            Symlink
+        else
+            Other
+    }
+
+
+-- The controller and promise keep their native types throughout the wait.
 startRead : String, Resume (Result FileError String) → (⊤ → ⊤)
 startRead path resume =
-    abort = Js.construct (Js.global "AbortController") []
-    signal = Js.get abort "signal"
-    fs = Js.call (Js.global "process") "getBuiltinModule" [ Js.from "node:fs/promises" ]
-    reading =
-        Js.apply (Js.get fs "readFile")
-            [ Js.from path, Js.object [ ( "encoding", Js.from "utf8" ), ( "signal", signal ) ] ]
-    _ =
-        Js.call reading "then"
-            [ Js.from λtext → Task.resume resume (Ok (Js.to text))
-            , Js.from λerror → rejected signal resume error
-            ]
-    λ⊤ →
-        _ = Js.call abort "abort" []
-        ⊤
+    abort = Abort.create ⊤
+    signal = Abort.signal abort
+    Promise.observe (Fs.readUtf8 path signal)
+        (λtext → Task.resume resume (Ok text))
+        (rejected signal resume _)
+    λ⊤ → Abort.abort abort
 
 
--- The rejection handler of a read (above).
-rejected : Value, Resume (Result FileError String), Value → ⊤
+rejected : Signal.AbortSignal, Resume (Result FileError String), Rejection.Rejection → ⊤
 rejected signal resume error =
-    isError = Js.instanceOf error (Js.global "Error")
-    if
-        Js.same (Js.get signal "aborted") (Js.from True)
-            && isError
-            && Js.same (Js.get error "name") (Js.from "AbortError")
-    then
+    if Signal.aborted signal && Rejection.name error == "AbortError" then
         ⊤
     else
-        code = if isError then Js.get error "code" else Js.undefined
-        if
-            Js.typeIs code "string" && Js.to (Js.call (Js.global "Object") "hasOwn" [ codes, code ])
-        then
-            Task.resume resume (Err (Js.to (Js.call (Js.global "Reflect") "get" [ codes, code ])))
-        else
-            Js.throw error
+        case fileError True error of
+            Just known →
+                Task.resume resume (Err known)
+            Nothing →
+                Rejection.raise error
 
 
--- `FileError`'s constructor for each failure Node documents for
--- `fs.promises.readFile`, by the error's `code`: one object, read by its
--- own keys alone (`Object.hasOwn`). The values are the constructors as
--- `Js.from` gives them, which keeps `FileError`'s string tags in a release
--- build (`backend.md` §9 item 4), as the sibling's annotation did.
-codes : Value
-codes =
-    Js.object
-        [ ( "ENOENT", Js.from NotFound )
-        , ( "EACCES", Js.from PermissionDenied )
-        , ( "EPERM", Js.from PermissionDenied )
-        , ( "EISDIR", Js.from IsADirectory )
-        , ( "ENOTDIR", Js.from NotADirectory )
-        , ( "EMFILE", Js.from TooManyOpenFiles )
-        , ( "ENFILE", Js.from TooManyOpenFiles )
-        , ( "ELOOP", Js.from SymlinkLoop )
-        , ( "ENAMETOOLONG", Js.from NameTooLong )
-        -- A TypeError: the path holds a NUL character.
-        , ( "ERR_INVALID_ARG_VALUE", Js.from InvalidPath )
-        -- A RangeError over 2 GiB, and an Error past V8's longest string.
-        , ( "ERR_FS_FILE_TOO_LARGE", Js.from TooLarge )
-        , ( "ERR_STRING_TOO_LONG", Js.from TooLarge )
-        ]
+-- Only documented file-operation failures become data. Unknown reasons are
+-- rethrown unchanged, including when the waiting fiber was cancelled.
+fileError : Bool, Rejection.Rejection → Maybe FileError
+fileError reading error =
+    case Rejection.code error of
+        Nothing →
+            Nothing
+        Just code →
+            case code of
+                "ENOENT" →
+                    Just NotFound
+                "EACCES" →
+                    Just PermissionDenied
+                "EPERM" →
+                    Just PermissionDenied
+                "EISDIR" →
+                    if reading then Just IsADirectory else Nothing
+                "ENOTDIR" →
+                    Just NotADirectory
+                "EMFILE" →
+                    Just TooManyOpenFiles
+                "ENFILE" →
+                    Just TooManyOpenFiles
+                "ELOOP" →
+                    Just SymlinkLoop
+                "ENAMETOOLONG" →
+                    Just NameTooLong
+                "ERR_INVALID_ARG_VALUE" →
+                    Just InvalidPath
+                "ERR_FS_FILE_TOO_LARGE" →
+                    if reading then Just TooLarge else Nothing
+                "ERR_STRING_TOO_LONG" →
+                    if reading then Just TooLarge else Nothing
+                _ →
+                    Nothing

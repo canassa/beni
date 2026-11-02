@@ -2,7 +2,15 @@
   "platform": true,
   "name": "node",
   "program": "Node.Program",
-  "runtime": "runtime.js",
+  "entryHost": "node",
+  "entryKinds": [{
+    "programType": "Node.Program",
+    "realm": "node",
+    "runtime": "NodeRuntime",
+    "constructors": [],
+    "launches": [],
+    "parameters": []
+  }],
   "platforms": ["html"],
   "reexports": ["Html"],
   "markup": { "lowering": "ssr", "runtime": "markup.js" },
