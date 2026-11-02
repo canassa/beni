@@ -520,7 +520,6 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "beni", .module = safe.beni }},
         }),
     });
-    session_driver.step.dependOn(&safe.exe.step);
     const session_driver_install = b.addInstallArtifact(session_driver, .{ .dest_dir = .{ .override = .{ .custom = "tools" } } });
     // The same compiler with `tests/platforms/toy` compiled in, exactly as
     // `-Dplatform=tests/platforms/toy` would compile it

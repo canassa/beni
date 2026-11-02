@@ -95,6 +95,8 @@ gpa: Allocator,
 io: Io,
 options: Options,
 store: SourceStore = .{},
+/// Core paths are queued once; resident runs reuse their numbered store rows.
+core_enumerated: bool = false,
 /// Per-file phase outputs, sized by `run` before the workers start.
 artifacts: Artifacts = .{},
 interner: InternPool.Global,
@@ -1138,7 +1140,7 @@ fn readAppManifest(session: *Session) RunError!void {
 }
 
 fn enumerateCore(session: *Session) RunError!void {
-    if (!session.options.core_package) return;
+    if (!session.options.core_package or session.core_enumerated) return;
     const gpa = session.gpa;
     if (session.options.core_root) |dir| {
         session.store.addPath(gpa, session.io, dir, dir, .core) catch |err| switch (err) {
@@ -1148,6 +1150,7 @@ fn enumerateCore(session: *Session) RunError!void {
                 return error.InputPath;
             },
         };
+        session.core_enumerated = true;
         return;
     }
     var buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -1155,6 +1158,7 @@ fn enumerateCore(session: *Session) RunError!void {
         const p = std.fmt.bufPrint(&buffer, "{s}/{s}", .{ core_package.dir, f.rel }) catch return error.OutOfMemory;
         try session.store.addEmbedded(gpa, p, core_package.dir.len + 1, .core, f.source);
     }
+    session.core_enumerated = true;
 }
 
 /// Whether `file` may write `equatable` (checker.md Appendix A): it is in
