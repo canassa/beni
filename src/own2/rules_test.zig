@@ -72,7 +72,7 @@ const layers = [_]Entry{
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
-    .{ .file = "ReadOff.zig", .layer = 10, .max_lines = 1100 },
+    .{ .file = "ReadOff.zig", .layer = 10, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 10, .max_lines = 680 },
     .{ .file = "Deliver.zig", .layer = 10, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).

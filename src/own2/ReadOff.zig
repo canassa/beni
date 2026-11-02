@@ -207,6 +207,13 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
             // to its inner's restores the inner exactly (§2.13.9), so the
             // result's storage is the position's, not every object below it.
             const by_structure = !whole or f.places.pathPlace(pslot) == f.places.pathPlace(q);
+            // A parameter's whole subtree of more than `Slots.below_min` objects
+            // read by structure at its own place, where no place below it is on
+            // a cycle (so its paths are its steps), is one open arrival, never one
+            // a slot below it (§2.10, *Arrivals by structure*).
+            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and try acyclicBelow(s, f.places.pathPlace(q)) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot)) {
+                return arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var" }, out);
+            }
             // A call's or a supply's whole subtree read by structure is read
             // through one key below its position, never one per slot below it
             // (§2.10 *Read-off*).
@@ -484,21 +491,37 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     for (opens) |a| {
         ls.clearRetainingCapacity();
         try e.ev.arrivalLeaves(call, c, a, &.{}, &ls);
+        // What holds below the slot: an arrival by structure is the
+        // argument's whole subtree there (`Relation.Eval.feedAt`).
+        var below: std.ArrayList(u32) = .empty;
+        defer below.deinit(gpa);
+        var da = a;
+        da.deep = true;
+        if (a.kind == .param and !a.deep) try e.ev.arrivalLeaves(call, c, da, &.{}, &below) else try below.appendSlice(gpa, ls.items);
         var atoms: std.ArrayList(u32) = .empty;
         defer atoms.deinit(gpa);
         var uniform = true;
-        for (ls.items) |x| if (!try e.ev.uniformAtoms(x, &atoms)) {
+        for (below.items) |x| if (!try e.ev.uniformAtoms(x, &atoms)) {
             uniform = false;
             break;
         };
         var calls = true;
-        for (ls.items) |x| if (!e.ev.expandable(f.leafAt(x))) {
+        for (below.items) |x| if (!e.ev.expandable(f.leafAt(x))) {
             calls = false;
         };
-        if (uniform or calls or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
-            for (if (uniform) atoms.items else ls.items) |x| if (try f.withTags(x, tags)) |y| {
+        // A projection with nothing at the slot itself (a record's, a
+        // constructor's) still has its parts below it.
+        if ((below.items.len != 0 and (uniform or calls)) or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+            for (if (uniform) atoms.items else below.items) |x| if (try f.withTags(x, tags)) |y| {
                 if (f.places.kind(f.places.pathPlace(q)) == .@"var") try describeLeaf(s, y, q, true, out) else try describeWide(s, y, q, out);
             };
+            continue;
+        }
+        // An argument's part read by structure: its value described at the
+        // slot, lazily, by its own structure (§2.10, *Arrivals by structure*).
+        const cl = f.calls.items[call];
+        if (a.kind == .param and !a.deep and tags == 0 and a.j < cl.args.len) {
+            try describe(s, try e.ev.valueAt(cl.args[a.j], f.slots.relWords(a.slot)), q, out);
             continue;
         }
         for (f.slots.items(try Subtree.belowAll(f.slots, gpa, f.account, f.places, cs))) |sl| {
