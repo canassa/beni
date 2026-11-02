@@ -1,0 +1,15 @@
+-- emit: reduced from browser Hosted.mapJob. Only the returned host call
+-- receives the hidden completion. The nested synchronous send does not.
+import Js
+
+
+pub mapJob : Js.Value, sync (Js.Value → Js.Value) → Js.Value
+mapJob job tag = Js.from λsend →
+    Js.suspending λ⊤ → Js.to (Js.apply job [ Js.from λmessage → Js.apply send [ tag message ] ])
+
+
+-- An earlier host call in the same body is not the protocol result either.
+pub beforeResult : Js.Value → ⊤
+beforeResult work = Js.suspending λ⊤ →
+    _ = Js.apply work [ Js.from 1 ]
+    Js.to (Js.apply work [ Js.from 2 ])

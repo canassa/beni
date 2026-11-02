@@ -74,3 +74,11 @@ V2's ownership parity currently falsely aliases the fresh chain snapshot with
 an earlier Ref read (#1664). The reduced fixture and six precise differences
 use §7.2's existing known-difference mechanism; default-checker verdicts and
 all other parity checks stay enforced. This is follow-up ownership work.
+
+Suspendable work calls stay direct: the compiler creates their continuation
+and sink before invoking the callee, then chains the returned value. No work
+thunk or protocol invocation sits between recursive callers and callees.
+Only the result host call of an in-place `Js.suspending` body receives its
+completion; nested synchronous functions and earlier host calls do not.
+Capability pruning debt, with the previous assertions in pending scenarios,
+is tracked in #1670.

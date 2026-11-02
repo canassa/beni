@@ -47,6 +47,8 @@ pub foreign pure from : returned a → Value
 pub foreign pure to : returned Value → a
 
 
+-- Identity is observed without retaining or editing either operand. The two
+-- types may differ, as when Task compares a typed result with its sentinel.
 --| `a === b`.
 pub foreign pure same : unused a, unused b → fresh bool
 

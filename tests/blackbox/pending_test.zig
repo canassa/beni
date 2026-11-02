@@ -76,6 +76,10 @@ const pending_root = "tests/pending";
 /// scenario's step is decided, and `Scenario.init` refuses an id missing
 /// from it, so no scenario can fall out of both steps.
 const scenarios = [_]struct { name: []const u8, step: Step }{
+    .{ .name = "scenario/TASK-NONE", .step = .fast },
+    .{ .name = "scenario/TASK-SYNC", .step = .fast },
+    .{ .name = "scenario/TASK-WAITS", .step = .fast },
+    .{ .name = "scenario/TASK-GUARDS", .step = .fast },
     // A fixed scenario leaves this table for `ordering_test.zig`,
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
@@ -426,4 +430,228 @@ fn continuationOf(dump: []const u8, owner: []const u8) !i64 {
         return std.fmt.parseInt(i64, digits[0..end], 10);
     }
     return error.NoAccount;
+}
+
+// #1670: original release-output assertions from before typed Task storage.
+test "scenario/TASK-NONE: an element whose commands are all Cmd.none ships no fiber runtime" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `Tea.element`'s command table and subscription diff name the fiber
+    // runtime only in the arms for `Cmd`'s items and `Sub.Listen`, which a
+    // program that never asks for work never builds (`backend.md` §9, *A
+    // `case` arm on a constructor nothing builds*). A fiber's record is the
+    // one place the runtime writes `interrupted`; typed storage is detected
+    // by its portable scheduler `MessageChannel` instead. A page that performs a
+    // command that may wait ships it.
+    var s = try Scenario.init("TASK-NONE");
+    defer s.deinit();
+    const w = &s.w;
+    try w.write("none/Main.beni", elementPage("Cmd.none"));
+    try w.write("waits/Main.beni", elementPage("Cmd.do λ⊤ → Time.sleep (Time.millis 1)"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const none = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=none-out", "none/Main.beni" }, .{ .raw_diagnostics = true });
+    const waits = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=waits-out", "waits/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (none.exit_code != 0) return s.finish(try s.failed(none));
+    if (waits.exit_code != 0) return s.finish(try s.failed(waits));
+    if (!(std.mem.indexOf(u8, try w.read("none-out/_main.mjs"), "MessageChannel") == null)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    if (!(std.mem.indexOf(u8, try w.read("waits-out/_main.mjs"), "MessageChannel") != null)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    try s.finish(.{ .green = true, .signature = "", .detail = "original capability assertions pass; promote to build_test.zig" });
+}
+
+// #1670: original release-output assertions from before typed Task storage.
+test "scenario/TASK-SYNC: an element whose commands never wait ships no fiber runtime" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A command whose body never waits runs with no fiber (`boundary.md`
+    // §9.8.11): `Cmd.perform` and `Cmd.keyed` build `Now` and `KeyedNow`
+    // for it, decided where the command is made, and the arms that start a
+    // fiber are on `Perform` and `Keyed`, which these pages never build.
+    // `Random.generate` is `Cmd.task` over `Random.value`, which never
+    // waits; the keyed body only sends.
+    var s = try Scenario.init("TASK-SYNC");
+    defer s.deinit();
+    const w = &s.w;
+    try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) λn → n"));
+    try w.write("keyed/Main.beni", elementPage("Cmd.keyed ⊤ Cmd.Restart λsend → send 1"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const random = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=random-out", "random/Main.beni" }, .{ .raw_diagnostics = true });
+    const keyed = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=keyed-out", "keyed/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (random.exit_code != 0) return s.finish(try s.failed(random));
+    if (keyed.exit_code != 0) return s.finish(try s.failed(keyed));
+    if (!(std.mem.indexOf(u8, try w.read("random-out/_main.mjs"), "MessageChannel") == null)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    if (!(std.mem.indexOf(u8, try w.read("keyed-out/_main.mjs"), "MessageChannel") == null)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    try s.finish(.{ .green = true, .signature = "", .detail = "original capability assertions pass; promote to build_test.zig" });
+}
+
+// #1670: original release-output assertions from before typed Task storage.
+test "scenario/TASK-WAITS: a page whose fibers only wait ships no finaliser walk and no children" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The fiber runtime keeps each capability behind a cell only its entry
+    // point writes (`core/Task.beni`): a fiber gets children only from
+    // `Task.spawn`, and holds finalisers only once something registers one
+    // (`bracket`, `scope`). A page whose body only sleeps uses neither, so
+    // its release build keeps `finalizers` only as the fiber record's key,
+    // and never makes a fiber's set of children; the pages that bracket and
+    // that spawn keep each.
+    var s = try Scenario.init("TASK-WAITS");
+    defer s.deinit();
+    const w = &s.w;
+    try w.write("waits/Main.beni", taskPage("Cmd.do λ⊤ → Time.sleep (Time.millis 1)"));
+    try w.write("brackets/Main.beni", taskPage("Cmd.do λ⊤ → Task.bracket (λ⊤ → ⊤) (λ_ _ → ⊤) λ_ → Time.sleep (Time.millis 1)"));
+    try w.write("spawns/Main.beni", taskPage("Cmd.do λ⊤ → Task.join (Task.spawn λ⊤ → Time.sleep (Time.millis 1))"));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const waits = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=waits-out", "waits/Main.beni" }, .{ .raw_diagnostics = true });
+    const brackets = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=brackets-out", "brackets/Main.beni" }, .{ .raw_diagnostics = true });
+    const spawns = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=spawns-out", "spawns/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (waits.exit_code != 0) return s.finish(try s.failed(waits));
+    if (brackets.exit_code != 0) return s.finish(try s.failed(brackets));
+    if (spawns.exit_code != 0) return s.finish(try s.failed(spawns));
+    const only_waits = try w.read("waits-out/_main.mjs");
+    if (!std.meta.eql(@as(usize, 1), std.mem.count(u8, only_waits, "finalizers"))) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    if (!(std.mem.indexOf(u8, only_waits, "children=new Set") == null)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    if (!(std.mem.count(u8, try w.read("brackets-out/_main.mjs"), "finalizers") > 1)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    if (!(std.mem.indexOf(u8, try w.read("spawns-out/_main.mjs"), "children=new Set") != null)) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    try s.finish(.{ .green = true, .signature = "", .detail = "original capability assertions pass; promote to build_test.zig" });
+}
+
+// #1670: original release-output assertions from before typed Task storage.
+test "scenario/TASK-GUARDS: a hosted page ships five guards" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The dispatcher, the after-render phase and `flush`'s guards are a
+    // hosted program's (`boundary.md` §9.8): a page that mounts only
+    // `Browser.program` must not ship them, so the runtime's always-kept
+    // loop may not name them (research 40 §8, rule 2). Each of them
+    // guards with `try`/`finally`, which nothing else an empty page keeps
+    // writes.
+    var s = try Scenario.init("TASK-GUARDS");
+    defer s.deinit();
+    const w = &s.w;
+    try w.write("plain/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : Int → Html msg
+        \\view _ =
+        \\    <></>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = λ⊤ → 0, update = λmsg model → model, view = view }
+        \\
+    );
+    try w.write("hosted/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : Int → Html msg
+        \\view _ =
+        \\    <></>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.hosted { init = λhost → 0, update = λhost msg model → model, settle = λhost model → model, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=plain-out", "plain/Main.beni" }, .{ .raw_diagnostics = true });
+    const hosted = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=hosted-out", "hosted/Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    if (plain.exit_code != 0) return s.finish(try s.failed(plain));
+    if (hosted.exit_code != 0) return s.finish(try s.failed(hosted));
+    const plain_js = try w.read("plain-out/_main.mjs");
+    const hosted_js = try w.read("hosted-out/_main.mjs");
+    // Every page guards `run` and `flush` with a `try … finally` that stops
+    // it on a defect (`boundary.md` §9.8.10 (c)); the hosted loop adds its
+    // own three latches, the dispatcher's, the render's and the
+    // after-render phase's.
+    if (!std.meta.eql(@as(usize, 2), std.mem.count(u8, plain_js, "finally"))) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    if (!std.meta.eql(@as(usize, 5), std.mem.count(u8, hosted_js, "finally"))) return s.finish(.{ .green = false, .signature = "retained-runtime", .detail = "#1670: original capability assertion fails" });
+    try s.finish(.{ .green = true, .signature = "", .detail = "original capability assertions pass; promote to build_test.zig" });
+}
+
+fn elementPage(comptime cmd: []const u8) []const u8 {
+    return
+    \\import Browser
+    \\import Cmd
+    \\import Html exposing (Html)
+    \\import Random
+    \\import Sub
+    \\import Tea
+    \\import Time
+    \\
+    \\
+    \\view : Int → Html msg
+    \\view _ =
+    \\    <></>
+    \\
+    \\
+    \\main : Browser.Program
+    \\main =
+    \\    Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λmsg model → ( model,
+    ++ cmd ++
+        \\ ), view = view, subscriptions = λ_ → Sub.none }
+        \\
+    ;
+}
+
+fn taskPage(comptime cmd: []const u8) []const u8 {
+    return
+    \\import Browser
+    \\import Cmd
+    \\import Html exposing (Html)
+    \\import Sub
+    \\import Task
+    \\import Tea
+    \\import Time
+    \\
+    \\
+    \\view : Int → Html msg
+    \\view _ =
+    \\    <></>
+    \\
+    \\
+    \\main : Browser.Program
+    \\main =
+    \\    Tea.element { init = λ⊤ → ( 0, Cmd.none ), update = λmsg model → ( model,
+    ++ cmd ++
+        \\ ), view = view, subscriptions = λ_ → Sub.none }
+        \\
+    ;
 }
