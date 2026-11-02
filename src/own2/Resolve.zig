@@ -24,6 +24,7 @@ const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const Cells = @import("Cells.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const Eval = @import("Eval.zig");
@@ -449,6 +450,11 @@ const Resolver = struct {
             .each = struct {
                 fn each(ctx: *anyopaque, _: u32, q: PathId, ov: Relation.Ov, use: ?Liveness.UseId) Error!void {
                     const x: *Ctx = @ptrCast(@alignCast(ctx));
+                    // A cell holds its contents behind the barrier (§2.13.7):
+                    // only the worded operations reach them, and what they
+                    // hand out (a loan, a callback's supply) is a holder of
+                    // its own.
+                    if (Cells.behindCell(x.r.f().places, q)) return;
                     const u = use.?;
                     const idx = &x.r.e.w.index;
                     switch (ov.kind) {
