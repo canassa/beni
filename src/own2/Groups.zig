@@ -48,7 +48,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
 const Resolve = @import("Resolve.zig");
-const Dbg = @import("Dbg.zig");
+const Deliver = @import("Deliver.zig");
 const Bir = @import("../bir/Bir.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Types = @import("../check/Types.zig");
@@ -1134,7 +1134,6 @@ pub fn checkModule(in: *const Input, mod: *Module) Allocator.Error!void {
             error.OutOfMemory => return error.OutOfMemory,
             error.OwnershipLimit, error.AccountingInvariant, error.ProbeLength => {
                 for (mod.results.items[first..]) |*r| {
-                    if (Dbg.enabled()) std.debug.print("FAIL {d} {t} total {d} growth {d} failed {any}\n", .{ r.decl, err, r.account.total(), r.account.growth, r.account.failed });
                     if (r.account.failed == null) r.account.failed = if (err == error.ProbeLength) .{ .limit = .probe_length } else .{ .exhausted = .other };
                     r.failure = r.account.failed;
                     r.lines = &.{};
@@ -1368,8 +1367,6 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         charging(mod, &r.account);
         mod.cur_locals = in.bir.decls[r.decl].locals_start;
         const w = try arena.create(Eval.Walk);
-        const s0 = Dbg.snap(&r.account);
-        defer Dbg.report("walk", id, &r.account, s0);
         try Eval.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), walkCode(mod, id), &atoms[owner.items[x]], w);
         mod.codes.items[id].walk = w;
         r.walks += 1;
@@ -1410,31 +1407,25 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         const ids = try ra.alloc(u32, n);
         for (order.items, 0..) |x, i| ids[i] = codes.items[x];
         for (drafts, ids) |*d, id| d.* = .{ .arity = mod.codes.items[id].params.len };
-        var solver: Eval.Solver = undefined;
+        var solver: Deliver.Solver = undefined;
         try solver.init(gpa, ids, evals, drafts);
         defer solver.deinit();
-        const sv: ?*Eval.Solver = if (validating or Dbg.plain) null else &solver;
+        const sv: ?*Deliver.Solver = if (validating) null else &solver;
         var opened: usize = 0;
         defer for (evals[0..opened]) |*e| e.deinit();
         for (order.items, 0..) |x, i| {
             const r = &rs[owner.items[x]];
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
-            const s0 = Dbg.snap(&r.account);
-            errdefer Dbg.report("FAILeval", mod.codes.items[ids[i]].decl, &r.account, s0);
-            try Eval.evaluate(mod.codes.items[ids[i]].walk.?, &mod.contracts, mod.context(), ra, sv, @intCast(i), &evals[i]);
+            try Eval.evaluate(mod.codes.items[ids[i]].walk.?, &mod.contracts, mod.context(), ra, if (sv) |v| &v.group else null, @intCast(i), &evals[i]);
             opened += 1;
-            Dbg.report("eval", mod.codes.items[ids[i]].decl, &r.account, s0);
         }
         for (order.items, 0..) |x, i| {
             const r = &rs[owner.items[x]];
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
-            const s0 = Dbg.snap(&r.account);
-            errdefer Dbg.report("FAILfacts", mod.codes.items[ids[i]].decl, &r.account, s0);
             try Eval.factsOff(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
-            Dbg.report("facts", mod.codes.items[ids[i]].decl, &r.account, s0);
         }
         for (order.items, 0..) |x, i| {
             const id = ids[i];
@@ -1443,21 +1434,10 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             const e = &evals[i];
-            const s1 = Dbg.snap(&r.account);
-            errdefer Dbg.report("FAILresolveconds", mod.codes.items[id].decl, &r.account, s1);
             try Eval.finishDemands(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra);
-            Dbg.report("resolve", mod.codes.items[id].decl, &r.account, s1);
-            const s2 = Dbg.snap(&r.account);
             try Eval.condsOff(e, ra, got.verdicts);
-            Dbg.report("conds", mod.codes.items[id].decl, &r.account, s2);
             const c = try mod.contracts.commit(gpa, &r.account, &mod.slots, &drafts[i]);
-            if (Dbg.enabled()) {
-                const h = mod.contracts.head(c);
-                var na: usize = 0;
-                for (mod.contracts.resOf(h.res)) |rr| na += rr.arrivals.len;
-                std.debug.print("ROUND {d} val={} decl {d} code {d}: res {d} arr {d} esc {d} wr {d} labels {d} rc.no={}\n", .{ round, validating, mod.codes.items[id].decl, id, h.res.len, na, h.escapes.len, h.writes.len, h.labels.len, h.res_cond.no });
-            }
             const code = &mod.codes.items[id];
             if (validating) {
                 // Not within its candidate: an inference defect, joined and
@@ -1469,7 +1449,6 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     // one dropped).
                     code.contract = c;
                 } else {
-                    if (Dbg.enabled()) std.debug.print("NOTWITHIN decl {d} code {d}\n", .{ code.decl, id });
                     code.contract = try mod.contracts.join(gpa, ra, &r.account, &mod.slots, code.contract, c);
                     code.version += 1;
                     moved = true;
@@ -1500,7 +1479,6 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             validating = true;
         }
         if (round > 4096) return error.OwnershipLimit;
-        if (Dbg.enabled() and round > 20) std.debug.print("ROUNDS {d} decl {d} moved {}\n", .{ round, rs[0].decl, moved });
     }
     for (rs, lines.items) |*r, *l| {
         r.rounds = round + 1;

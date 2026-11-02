@@ -34,7 +34,6 @@ const Regions = @import("Regions.zig");
 const Liveness = @import("Liveness.zig");
 const Prepass = @import("Prepass.zig");
 const Bir = @import("../bir/Bir.zig");
-const Dbg = @import("Dbg.zig");
 
 pub const Error = Ids.ChargeError;
 pub const PathId = Ids.PathId;
@@ -1161,7 +1160,7 @@ pub const Evaluation = struct {
     /// `(call, callee label)` pairs, for the read-off of its supplies.
     passes: std.ArrayList([3]u32) = .empty,
     /// The group being solved, and this code's index in it (§2.12).
-    solver: ?*Solver = null,
+    solver: ?*const Group = null,
     x: u32 = none,
     /// The read-off under way (`factsOff`): later demands and escapes go
     /// into it as they are made.
@@ -1193,9 +1192,9 @@ pub const Evaluation = struct {
 
 /// Begin an evaluation of `w`: every call's contract read now, each
 /// callee's labels mapped or applied, the calls' demands and escapes made.
-pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, solver: ?*Solver, x: u32, e: *Evaluation) Error!void {
+pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, solver: ?*const Group, x: u32, e: *Evaluation) Error!void {
     e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
-    if (solver) |sv| e.ev.live = &sv.live;
+    if (solver) |sv| e.ev.live = sv.live;
     const f = &w.f;
     const gpa = f.gpa;
     try e.demands.appendSlice(gpa, w.demands.items);
@@ -1354,12 +1353,12 @@ fn callEffects(e: *Evaluation, q: u32) Error!void {
     const f = e.fr();
     const call = f.calls.items[q];
     if (call.contract == none) return;
-    if (e.solver) |sv| if (call.code != none) if (sv.memberOf(call.code)) |mx| {
-        try sv.watchEffects(mx, e.x, q);
+    if (e.solver) |sv| if (call.code != none) if (sv.member(sv.ctx, call.code)) |m| {
+        try sv.watchEffects(sv.ctx, m.x, e.x, q);
         var i: usize = 0;
-        while (i < sv.drafts[mx].escapes.items.len) : (i += 1) try callEscape(e, q, sv.drafts[mx].escapes.items[i]);
+        while (i < m.draft.escapes.items.len) : (i += 1) try callEscape(e, q, m.draft.escapes.items[i]);
         i = 0;
-        while (i < sv.drafts[mx].writes.items.len) : (i += 1) try callWrite(e, q, sv.drafts[mx].writes.items[i]);
+        while (i < m.draft.writes.items.len) : (i += 1) try callWrite(e, q, m.draft.writes.items[i]);
         return;
     };
     const h = e.contracts.head(call.contract);
@@ -1675,7 +1674,7 @@ fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
     try f.charge(.edge, 1);
     if (try Contract.Draft.addArrival(list, s.arena, r, a)) {
         // A new fact of a member: delivered to what reads it (§2.12).
-        if (out.label == none) if (s.e.solver) |sv| try sv.resFact(s.e.x, r, open, a);
+        if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, open, a);
     }
 }
 
@@ -1760,7 +1759,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
             .param => for (f.slots.items(l.slots)) |sl| {
                 const eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep };
                 if (try Contract.Draft.addEffect(effList(s, out), s.arena, eff)) {
-                    if (out != .reads) if (e.solver) |sv| try sv.effFact(e.x, out == .writes, eff);
+                    if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
                 }
             },
             .call, .supply => {
@@ -2002,179 +2001,22 @@ fn paramKept(s: *Sink, li: u32, out: *std.ArrayList(Contract.Effect)) Error!void
 }
 
 // ===========================================================================
-// The group's deliveries (§2.12 step 2)
+// The group an evaluation is in (§2.12 step 2)
 // ===========================================================================
 
-/// The codes of a group being solved: their evaluations and drafts, who
-/// reads whose facts, and the queue of facts and keys still to deliver.
-/// Facts only grow (arrivals, writes, escapes), so each is delivered once
-/// per reader: semi-naive, never a walk or an evaluation again.
-pub const Solver = struct {
-    gpa: Allocator,
-    /// Group code → its index here.
-    member: Ids.FixedDict(1) = .{},
-    evals: []Evaluation,
-    drafts: []Contract.Draft,
-    /// `(member, result rel)` → a run of `res_lists`: the keys `(eval, key)`
-    /// reading that slot exactly; and per member every key reading it (an
-    /// open slot's arrivals reach the keys below it).
-    res_watch: Ids.FixedDict(2) = .{},
-    res_lists: std.ArrayList(std.ArrayList([2]u32)) = .empty,
-    all_watch: std.ArrayList(std.ArrayList([3]u32)) = .empty,
-    /// Per member: the calls `(eval, call)` of it whose effects it delivers.
-    eff_watch: std.ArrayList(std.ArrayList([2]u32)) = .empty,
-    queue: std.ArrayList(Item) = .empty,
-    draining: bool = false,
-    /// Some code read a member's draft or effects this round.
-    used: bool = false,
-    live: Relation.Live = undefined,
+/// The group being solved, as its evaluations see it: its members' drafts,
+/// and where their new facts go. `Deliver.Solver` implements it.
+pub const Group = struct {
+    ctx: *anyopaque,
+    live: *Relation.Live,
+    /// Code `code`'s index and draft when it is a member, else null.
+    member: *const fn (ctx: *anyopaque, code: u32) ?Member,
+    /// Evaluation `y`'s call `call` of member `x` gets `x`'s later writes and escapes.
+    watchEffects: *const fn (ctx: *anyopaque, x: u32, y: u32, call: u32) Error!void,
+    /// Member `x` gained arrival `a` at result slot `rel`.
+    resFact: *const fn (ctx: *anyopaque, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void,
+    /// Member `x` gained a write (or an escape).
+    effFact: *const fn (ctx: *anyopaque, x: u32, write: bool, eff: Contract.Effect) Error!void,
 
-    const Item = struct {
-        kind: enum(u8) { key, res, write, escape },
-        x: u32,
-        a: u32 = 0,
-        open: bool = false,
-        arrival: Contract.Arrival = .{ .kind = .top },
-        effect: Contract.Effect = .{ .j = 0, .slot = 0 },
-    };
-
-    pub fn init(s: *Solver, gpa: Allocator, codes: []const u32, evals: []Evaluation, drafts: []Contract.Draft) Error!void {
-        s.* = .{ .gpa = gpa, .evals = evals, .drafts = drafts };
-        s.live = .{ .ctx = s, .draftRes = draftRes, .watch = watch, .dirty = dirty, .deliver = deliverFn, .pump = pumpFn, .labelIn = labelIn };
-        for (codes, 0..) |c, x| {
-            try s.member.put(gpa, .{c}, @intCast(x));
-            try s.all_watch.append(gpa, .empty);
-            try s.eff_watch.append(gpa, .empty);
-        }
-    }
-
-    pub fn deinit(s: *Solver) void {
-        s.member.deinit(s.gpa);
-        s.res_watch.deinit(s.gpa);
-        for (s.res_lists.items) |*l| l.deinit(s.gpa);
-        s.res_lists.deinit(s.gpa);
-        for (s.all_watch.items) |*l| l.deinit(s.gpa);
-        s.all_watch.deinit(s.gpa);
-        for (s.eff_watch.items) |*l| l.deinit(s.gpa);
-        s.eff_watch.deinit(s.gpa);
-        s.queue.deinit(s.gpa);
-    }
-
-    pub fn memberOf(s: *const Solver, code: u32) ?u32 {
-        return s.member.get(.{code});
-    }
-
-    fn self(ctx: *anyopaque) *Solver {
-        return @ptrCast(@alignCast(ctx));
-    }
-
-    fn evalIndex(s: *Solver, ev: *Relation.Eval) u32 {
-        const e: *Evaluation = @fieldParentPtr("ev", ev);
-        return @intCast((@intFromPtr(e) - @intFromPtr(s.evals.ptr)) / @sizeOf(Evaluation));
-    }
-
-    fn draftRes(ctx: *anyopaque, code: u32) ?*std.ArrayList(Contract.Draft.DraftSlot) {
-        const s = self(ctx);
-        const x = s.memberOf(code) orelse return null;
-        return &s.drafts[x].res;
-    }
-
-    fn watch(ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Relation.Eval, key: u32) Error!void {
-        const s = self(ctx);
-        const x = s.memberOf(code).?;
-        const y = s.evalIndex(ev);
-        s.used = true;
-        const got = try s.res_watch.getOrPut(s.gpa, .{ x, rel });
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(s.res_lists.items.len);
-            try s.res_lists.append(s.gpa, .empty);
-        }
-        try s.res_lists.items[got.value_ptr.*].append(s.gpa, .{ y, key });
-        try s.all_watch.items[x].append(s.gpa, .{ y, key, rel });
-    }
-
-    fn dirty(ctx: *anyopaque, ev: *Relation.Eval, key: u32) Error!void {
-        const s = self(ctx);
-        try s.queue.append(s.gpa, .{ .kind = .key, .x = s.evalIndex(ev), .a = key });
-    }
-
-    fn deliverFn(ctx: *anyopaque, ev: *Relation.Eval, sub: Relation.Sub, leaf: u32) Error!void {
-        _ = ctx;
-        const e: *Evaluation = @fieldParentPtr("ev", ev);
-        try deliver(e, sub, leaf);
-    }
-
-    fn labelIn(ctx: *anyopaque, code: u32, i: u32, c: Contract.Id) ?u32 {
-        const s = self(ctx);
-        const x = s.memberOf(code) orelse return null;
-        const dl = s.drafts[x].labels.items[i];
-        const t = s.evals[x].contracts;
-        for (t.labelsOf(t.head(c).labels), 0..) |l, k| {
-            if (l.j == dl.j and l.slot == dl.slot and std.mem.eql(u32, &l.origin, &dl.origin)) return @intCast(k);
-        }
-        return null;
-    }
-
-    fn pumpFn(ctx: *anyopaque) Error!void {
-        try self(ctx).pump();
-    }
-
-    pub fn resFact(s: *Solver, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void {
-        try s.queue.append(s.gpa, .{ .kind = .res, .x = x, .a = rel, .open = open, .arrival = a });
-    }
-
-    pub fn effFact(s: *Solver, x: u32, write: bool, eff: Contract.Effect) Error!void {
-        try s.queue.append(s.gpa, .{ .kind = if (write) .write else .escape, .x = x, .effect = eff });
-    }
-
-    pub fn watchEffects(s: *Solver, x: u32, y: u32, call: u32) Error!void {
-        s.used = true;
-        try s.eff_watch.items[x].append(s.gpa, .{ y, call });
-    }
-
-    /// Deliver until nothing is queued (§2.12 step 2).
-    pub fn pump(s: *Solver) Error!void {
-        if (s.draining) return;
-        s.draining = true;
-        defer s.draining = false;
-        var at: usize = 0;
-        while (at < s.queue.items.len) : (at += 1) {
-            const it = s.queue.items[at];
-            switch (it.kind) {
-                .key => try s.evals[it.x].ev.drainKey(it.a),
-                .res => {
-                    const e0 = &s.evals[it.x];
-                    const rw = e0.fr().slots.relWords(it.a);
-                    if (it.open) {
-                        // Every key at or below an open slot.
-                        var i: usize = 0;
-                        while (i < s.all_watch.items[it.x].items.len) : (i += 1) {
-                            const kw = s.all_watch.items[it.x].items[i];
-                            const e = &s.evals[kw[0]];
-                            try e.ev.f.charge(.edge, 1);
-                            const words = e.fr().slots.relWords(kw[2]);
-                            if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
-                            try e.ev.feedDraft(kw[1], it.arrival, @intCast(rw.len));
-                        }
-                    } else if (s.res_watch.get(.{ it.x, it.a })) |li| {
-                        var i: usize = 0;
-                        while (i < s.res_lists.items[li].items.len) : (i += 1) {
-                            const kw = s.res_lists.items[li].items[i];
-                            try s.evals[kw[0]].ev.feedDraft(kw[1], it.arrival, @intCast(rw.len));
-                        }
-                    }
-                },
-                .write, .escape => {
-                    var i: usize = 0;
-                    while (i < s.eff_watch.items[it.x].items.len) : (i += 1) {
-                        const cw = s.eff_watch.items[it.x].items[i];
-                        const e = &s.evals[cw[0]];
-                        try e.ev.f.charge(.edge, 1);
-                        if (it.kind == .write) try callWrite(e, cw[1], it.effect) else try callEscape(e, cw[1], it.effect);
-                    }
-                },
-            }
-        }
-        s.queue.clearRetainingCapacity();
-    }
+    pub const Member = struct { x: u32, draft: *Contract.Draft };
 };

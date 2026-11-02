@@ -68,8 +68,6 @@ pub fn main(minimal: std.process.Init.Minimal) u8 {
         std.process.fatal("failed to parse environment variables: {t}", .{err});
     defer environ_map.deinit();
 
-    @import("beni").own2_dbg.on = environ_map.get("BENI_OWN_PROF") != null; // DEBUG-SLOTBUILD
-    @import("beni").own2_dbg.plain = environ_map.get("BENI_OWN_PLAIN") != null; // DEBUG-SLOTBUILD
     const preopens = std.process.Preopens.init(arena_allocator.allocator()) catch |err|
         std.process.fatal("failed to init preopens: {t}", .{err});
 

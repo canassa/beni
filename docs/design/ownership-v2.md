@@ -2913,7 +2913,7 @@ L12 Enforce
 L11 Ownership
 L10 Block  Message  Report  Hoists
 L9  Groups
-L8  Resolve
+L8  Resolve  Deliver
 L7  Eval
 L6  Relation
 L5  Value  Liveness
@@ -2942,7 +2942,8 @@ L0  Ids  Counters  Scratch
 | `Relation.zig` | 6 | the one relation, the distinct check, instantiation and expansion (§2.9, §2.11.2) | Ids, Place, Slots, Contract, Value |
 | `Eval.zig` | 7 | one walk: a rule per BIR tag, uses, demands, calls, labels, closures, read-off (§2.6, §2.10, §2.11) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Resolve.zig` | 8 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Value, Relation, Eval, Liveness, Regions |
-| `Groups.zig` | 9 | the module: adapters, callees, groups, deliveries, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Eval, Resolve |
+| `Deliver.zig` | 8 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
+| `Groups.zig` | 9 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Eval, Resolve, Deliver |
 | `Block.zig` | 10 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
 | `Message.zig` | 10 | diagnostic text | Ids, Facts, Place, Eval, Resolve, Groups |
 | `Report.zig` | 10 | dump lines and totals | Facts |
