@@ -1559,10 +1559,19 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
         // catches an initializer order that still follows a descriptor's
         // original body and would read a callback before its binding exists.
         var script: std.ArrayList(u8) = .empty;
-        try script.appendSlice(w.arena.allocator(), "const replies=[];\n");
+        try script.appendSlice(w.arena.allocator(),
+            \\const replies=[];
+            \\globalThis.self=globalThis;
+            \\let message;
+            \\globalThis.addEventListener=(kind,callback)=>{if(kind==='message')message=callback};
+            \\globalThis.removeEventListener=(kind,callback)=>{if(kind==='message'&&message===callback)message=null};
+            \\globalThis.postMessage=value=>replies.push(value);
+            \\globalThis.close=()=>{};
+            \\
+        );
         for (files) |path| {
-            if (!std.mem.startsWith(u8, path, "_workers/") or !std.mem.endsWith(u8, path, "/Main.mjs")) continue;
-            try script.print(w.arena.allocator(), "replies.push(Object.values(await import('./one/{s}'))[0].a.handle('plain',null,null));\n", .{path});
+            if (!std.mem.startsWith(u8, path, "_workers/") or !std.mem.endsWith(u8, path, "/_main.mjs")) continue;
+            try script.print(w.arena.allocator(), "await import('./one/{s}');\nawait new Promise(resolve=>setTimeout(resolve,0));\nmessage({{data:'plain'}});\nawait new Promise(resolve=>setTimeout(resolve,0));\n", .{path});
         }
         try script.appendSlice(w.arena.allocator(), "console.log(replies.sort().join(','));\n");
         try w.write("probe.mjs", script.items);
@@ -1727,16 +1736,9 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
         // EXECUTE: the second check reads the helper's cached interface.
         for (0..2) |_| {
             const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
-            // The checker accepts the generic obligations; the unchanged
-            // unchecked-worker gate is the only remaining diagnostic.
-            try testing.expectEqual(@as(u8, 1), good.exit_code);
-            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
-                .code = .invalid_entry_kind,
-                .severity = .@"error",
-                .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
-                .title = "INVALID ENTRY KIND",
-                .message = "Worker launches are unavailable until realm and Wire checks are implemented.",
-            }}), good.diagnostics);
+            // Checking discharges generic Wire obligations without launching a worker.
+            try testing.expectEqual(@as(u8, 0), good.exit_code);
+            try testing.expectEqual(@as(usize, 0), good.diagnostics.len);
         }
         const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
         const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });

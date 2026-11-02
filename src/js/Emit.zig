@@ -758,8 +758,17 @@ pub fn run(
         try e.findLifts();
         try e.cutPrerender();
     };
-    try e.workerCandidates();
     try e.eliminate(entry);
+    if (e.hasWorkerLaunch() or e.session.entry_plan.selected != .none) {
+        try e.workerCandidates();
+        e.reach.deferred = e.deferred;
+        var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
+        for (e.worker_candidates) |descriptor| {
+            if (descriptor.wire) |wire| try wire_types.appendSlice(e.scratch, wire.types);
+        }
+        e.reach.wire_types = wire_types.items;
+        try e.walk();
+    }
     try e.planWorkers(entry);
     if (entry) |root| try e.checkEntryRealm(root);
     if (e.hasErrors()) return e.nothingWritten(gpa);
@@ -1329,6 +1338,7 @@ const Emitter = struct {
     /// Scratch-owned, filled by `eliminate` before the first module is
     /// lowered.
     live: Reach.Result = .empty,
+    worker_fingerprint: []const u8 = "",
     worker_candidates: []const WorkerEntry.Descriptor = &.{},
     deferred: []const Reach.Node = &.{},
     worker_entries: []const WorkerEntry.Descriptor = &.{},
@@ -1543,8 +1553,36 @@ const Emitter = struct {
         return null;
     }
 
+    fn hasWorkerLaunch(e: *const Emitter) bool {
+        const plan = &e.session.entry_plan;
+        for (0..plan.constructors.len) |ci| {
+            const value = plan.constructors.get(ci).value;
+            if (e.live.decl(value.module, value.decl)) return true;
+        }
+        for (0..plan.launches.len) |li| {
+            const value = plan.launches.get(li).value;
+            if (e.live.decl(value.module, value.decl)) return true;
+        }
+        return false;
+    }
+
     fn workerCandidates(e: *Emitter) !void {
         if (e.session.entry_plan.launches.len == 0) return;
+        var fingerprint = std.hash.Wyhash.init(1);
+        fingerprint.update(if (e.options.release) "release" else "development");
+        for (e.options.platform.entry_kinds) |kind| fingerprint.update(try std.json.Stringify.valueAlloc(e.scratch, kind.definition, .{}));
+        for (0..e.graph().count()) |mi| {
+            const module: Graph.Index = @fromBackingInt(@intCast(mi));
+            const file = e.graph().moduleFile(module);
+            fingerprint.update(e.session.interner.slice(e.graph().moduleName(module)));
+            fingerprint.update(&.{0});
+            fingerprint.update(e.session.store.bytes(file));
+            for (e.bir(module).decls) |decl| if (decl.kind == .foreign_value) {
+                if (e.readAsset(try e.siblingPath(e.session.store.path(file)))) |bytes| fingerprint.update(bytes);
+                break;
+            };
+        }
+        e.worker_fingerprint = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{fingerprint.final()});
         var out: std.ArrayList(WorkerEntry.Descriptor) = .empty;
         for (0..e.graph().count()) |mi| {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
@@ -1558,7 +1596,7 @@ const Emitter = struct {
                 });
                 // Input-derived identity, independent of discovery order and jobs.
                 const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
-                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire });
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire, .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{s}", .{ e.worker_fingerprint, id }) });
             }
         }
         std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {
@@ -1636,6 +1674,10 @@ const Emitter = struct {
                             const launch = plan.launches.get(li);
                             if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
                             allowed[mi][data.lhs] = true;
+                            if (!e.options.allow_unchecked_workers) {
+                                try e.report(.invalid_entry_kind, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches are unavailable until realm and Wire checks are implemented.", .{});
+                                continue;
+                            }
                             if (e.options.library) {
                                 try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
                                 continue;
@@ -1716,20 +1758,43 @@ const Emitter = struct {
         const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
         var text: std.ArrayList(u8) = .empty;
         // These listeners must run before either imported module's initializers.
+        try text.print(e.scratch, "globalThis.__beniWorkerFingerprint = \"{s}\";\n", .{e.worker_fingerprint});
         try text.appendSlice(e.scratch,
-            \\globalThis.addEventListener("error", event => { globalThis.console.error(event.error ?? event.message); });
-            \\globalThis.addEventListener("unhandledrejection", event => { globalThis.console.error(event.reason); });
+            \\const report = event => {
+            \\  const cause = event.error ?? event.reason;
+            \\  globalThis.postMessage({worker: 1, kind: "Defect", payload: {
+            \\    message: String(event.message ?? cause ?? "Worker defect").slice(0, 4096),
+            \\    stack: String(cause?.stack ?? "").slice(0, 16384)
+            \\  }});
+            \\};
+            \\globalThis.addEventListener("error", report);
+            \\globalThis.addEventListener("unhandledrejection", report);
             \\const pending = [];
-            \\const hold = event => { event.stopImmediatePropagation(); pending.push(event.data); };
+            \\const hold = event => {
+            \\  event.stopImmediatePropagation();
+            \\  if (pending.length === 64) {
+            \\    for (const port of event.ports ?? []) port.close();
+            \\    throw new RangeError("Worker startup message queue is full");
+            \\  }
+            \\  pending.push(event);
+            \\};
             \\globalThis.addEventListener("message", hold);
+            \\globalThis.addEventListener("messageerror", hold);
             \\
         );
         try text.print(e.scratch,
-            \\const runtime = await import("./{s}");
-            \\const program = await import("./{s}");
-            \\runtime.{s}(program.{s});
-            \\globalThis.removeEventListener("message", hold);
-            \\for (const data of pending) globalThis.dispatchEvent(new MessageEvent("message", {{ data }}));
+            \\try {{
+            \\  const runtime = await import("./{s}");
+            \\  const program = await import("./{s}");
+            \\  runtime.{s}(program.{s});
+            \\}} finally {{
+            \\  globalThis.removeEventListener("message", hold);
+            \\  globalThis.removeEventListener("messageerror", hold);
+            \\}}
+            \\for (const event of pending) globalThis.dispatchEvent(new MessageEvent(event.type, {{
+            \\  data: event.data, origin: event.origin, lastEventId: event.lastEventId,
+            \\  source: event.source, ports: event.ports
+            \\}}));
             \\
         , .{ runtime_path, main_path, run_name, main_name });
         try e.produce(default_entry_file, text.items, e.session.store.path(e.graph().moduleFile(entry.module)));
@@ -1758,6 +1823,7 @@ const Emitter = struct {
             .clean_modules = e.clean_modules,
             .v2_whole = e.v2_whole,
             .forwarding_foreigns = e.forwarding_foreigns,
+            .worker_fingerprint = descriptor.fingerprint,
             .worker_candidates = e.worker_candidates,
             .deferred = e.deferred,
             .worker_entries = e.worker_entries,
@@ -1770,7 +1836,7 @@ const Emitter = struct {
     }
 
     fn planWorkers(e: *Emitter, entry: ?Entry) !void {
-        if (e.session.entry_plan.launches.len == 0) return;
+        if (e.worker_candidates.len == 0 and !e.hasWorkerLaunch()) return;
         var found: std.ArrayList(u32) = .empty;
         try e.discoverWorkers(entry, &found);
         if (e.options.library) {
@@ -1817,6 +1883,7 @@ const Emitter = struct {
                 .kind = root_entry.kind,
                 .identity = "",
                 .id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{root_entry.id}),
+                .fingerprint = try std.fmt.allocPrint(e.scratch, "{s}-{x:0>16}", .{ e.worker_fingerprint, root_entry.id }),
             };
             var projection = try e.workerProjection(descriptor);
             defer {
@@ -3021,10 +3088,6 @@ const Emitter = struct {
                 }
             };
             if (e.diagnostics.items.len != errors_before) continue;
-            if (row.launches.len != 0 and !e.options.allow_unchecked_workers) {
-                try e.entryKindError(kind, "Worker launches are unavailable until realm and Wire checks are implemented.", .{});
-                continue;
-            }
             const constructor_start: u32 = @intCast(plan.constructors.len);
             for (constructors.items) |constructor| try plan.constructors.append(e.gpa, constructor);
             const launch_start: u32 = @intCast(plan.launches.len);

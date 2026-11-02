@@ -1,0 +1,408 @@
+-- Dedicated workers. Launches remain behind --allow-unchecked-workers.
+import Browser.WorkerStream exposing (Sink, Stream)
+import Duration exposing (Duration)
+import Js
+import Schema exposing (Issue)
+import Task exposing (Scope)
+
+
+pub foreign type Program config state protocol
+
+
+pub foreign type Handle protocol
+
+
+pub foreign type Context event
+
+
+pub foreign type ConnectionId
+
+
+pub foreign type Policy
+
+
+pub type Credentials
+    = Omit
+    | SameOrigin
+    | Include
+
+
+pub type Cleanup
+    = Confirmed
+    | Unconfirmed Loss
+    | Abandoned
+
+
+pub type Loss
+    = ReadyExpired
+    | LeaseExpired
+    | ConnectionLost
+
+
+pub type ConfigError
+    = NonPositiveLimit String
+    | InvalidDuration String
+    | InvalidPoolBounds
+    | InvalidUtilization
+
+
+pub type PolicyError
+    = TrustedTypesUnavailable
+    | TrustedPolicyDenied
+    | NotTrustedScriptUrl
+    | PolicyRefused String
+    | InvalidPolicyName
+
+
+pub type CloneFailure
+    = DetachedBuffer
+    | ViewOutOfBounds
+    | ClosedResource
+    | StreamLocked
+    | CanvasHasContext
+    | TargetRealmUnavailable
+    | SameAgentClusterRequired
+    | SendingPortTransferred
+    | PortBusy
+    | DataChannelNotTransferable
+    | MediaSourceAlreadyAttached
+    | TrackDetached
+    | TrackHandleNotTransferable
+    | NativeCloneRejected
+
+
+pub type PrepareError
+    = InvalidMessage (List Issue)
+    | InvalidResource CloneFailure
+    | PreparationClosed
+
+
+pub type SendError
+    = WorkerCloneRejected CloneFailure
+    | CanvasTransferInvalidState
+    | ChannelClosed
+    | QueueFull
+    | PreparedForAnotherEndpoint
+
+
+pub type TransportError
+    = SendFailed SendError
+    | MessageDeserializationFailed
+    | ProtocolVersionMismatch
+    | ProtocolRejected (List Issue)
+    | PeerUnresponsive
+    | PeerClosed
+    | CleanupAbandoned
+
+
+pub type OpenReason error
+    = UnsupportedWorkerKind
+    | InvalidScriptUrl
+    | WorkerSecurityDenied
+    | ScriptPolicy PolicyError
+    | TrustedScriptUrlRejected
+    | WorkerLoadFailed
+    | ReadyDeadlineExceeded
+    | ClosedBeforeReady
+    | InvalidOptions ConfigError
+    | InitializationFailed error
+    | HandshakeFailed TransportError
+
+
+pub type alias OpenError error =
+    reason : OpenReason error
+    cleanup : Cleanup
+
+
+pub type CallError error
+    = Application error
+    | PreparationFailed PrepareError
+    | Transport TransportError
+
+
+pub type EmitError
+    = EventQueueFull
+    | EventChannelClosed
+    | EventTargetRequired
+    | EventCloneRejected CloneFailure
+    | EventCanvasTransferInvalidState
+
+
+pub type alias Options =
+    name : String
+    credentials : Credentials
+    readyWithin : Duration
+    cleanupWithin : Duration
+    heartbeatEvery : Duration
+    leaseWithin : Duration
+    queuedRequests : Int
+    queuedEvents : Int
+    queuedBytes : Int
+    policy : Maybe Policy
+
+
+pub type alias Protocol call reply streamRequest error event chunk =
+    call : call
+    reply : reply
+    stream : streamRequest
+    error : error
+    event : event
+    chunk : chunk
+
+
+pub type alias Definition config state call reply streamRequest error event chunk =
+    init : Context event, config → Result error state
+    start : Context event, state → ⊤
+    handle : Context event, state, call → Result error reply
+    stream : Context event, state, streamRequest, Sink error chunk → Result error ⊤
+
+
+pub program :
+      Definition config state call reply streamRequest error event chunk
+    → Program config state (Protocol call reply streamRequest error event chunk)
+program callbacks =
+    Js.to
+        (Js.from
+            { boot =
+                λgreeting greetingWake lifetime →
+                    Task.spawnIn lifetime λ⊤ →
+                        Task.scope λowned →
+                            config = Task.callback λresume →
+                                if Js.isNull (Js.read greeting) then
+                                    Js.write greetingWake (host resume)
+                                else
+                                    Task.resume resume (guest (Js.read greeting))
+                                λ⊤ → Js.write greetingWake Js.null
+                            context = guest (Js.from { scope = owned })
+                            case callbacks.init context config of
+                                Err error →
+                                    _ =
+                                        post
+                                            (Js.global "self")
+                                            (frame "InitializationFailed" (host error))
+                                    ⊤
+                                Ok state →
+                                    callbacks.start context state
+                                    _ = post (Js.global "self") (frame "Ready" Js.null)
+                                    Task.never ⊤
+            }
+        )
+
+
+pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
+noStream _ _ impossible _ = never impossible
+
+
+pub options : Options
+options =
+    { name = ""
+    , credentials = SameOrigin
+    , readyWithin = Duration.seconds 30
+    , cleanupWithin = Duration.seconds 5
+    , heartbeatEvery = Duration.seconds 5
+    , leaseWithin = Duration.seconds 30
+    , queuedRequests = 64
+    , queuedEvents = 64
+    , queuedBytes = 1048576
+    , policy = Nothing
+    }
+
+
+type alias V =
+    Js.Value
+
+
+host : a → V
+host value = Js.from value
+
+
+guest : V → a
+guest value = Js.to value
+
+
+nativeFailure : V, String → Bool
+nativeFailure error name =
+    Js.instanceOf error (Js.global "DOMException") && Js.same (Js.get error "name") (Js.from name)
+
+
+construct : V, Options → Result (OpenReason error) V
+construct descriptor opts =
+    credentials =
+        case opts.credentials of
+            Omit →
+                "omit"
+            SameOrigin →
+                "same-origin"
+            Include →
+                "include"
+    Ok
+        (Js.construct (Js.global "Worker")
+            [ Js.get descriptor "url"
+            , Js.object
+                [ ( "type", host "module" )
+                , ( "name", host opts.name )
+                , ( "credentials", host credentials )
+                ]
+            ]
+        )
+
+
+-- The wire envelope is private control. Application values travel only as payloads.
+post : V, V → Result SendError ⊤
+post target outgoing =
+    _ = Js.call target "postMessage" [ outgoing ]
+    Ok ⊤
+
+
+frame : String, V → V
+frame kind payload = Js.from { worker = 1, kind = kind, payload = payload }
+
+
+pub open :
+      Scope
+    , Program config state (Protocol call reply streamRequest error event chunk)
+    , config
+    , Options
+    → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))
+open owner definition config opts =
+    case construct (host definition) opts of
+        Err reason →
+            Err { reason = reason, cleanup = Confirmed }
+        Ok native →
+            peer =
+                Js.from
+                    { native = native
+                    , closed = False
+                    , ready = False
+                    , wake = Js.null
+                    , cleanup = opts.cleanupWithin
+                    }
+            Task.defer owner λ_ →
+                status = close (guest peer)
+                if status == Confirmed || status == Abandoned then
+                    ⊤
+                else
+                    Js.throw
+                        (Js.construct (Js.global "Error")
+                            [ Js.from "Worker cleanup was not confirmed" ]
+                        )
+            result = Task.timeout opts.readyWithin λ⊤ →
+                Task.callback λresume →
+                    Js.set peer "wake" (host resume)
+                    message =
+                        λevent →
+                            incoming = Js.get event "data"
+                            kind = Js.get incoming "kind"
+                            if Js.same kind (Js.from "Ready") then
+                                Js.set peer "ready" (Js.from True)
+                                Task.resume resume (Ok (guest peer))
+                            else if Js.same kind (Js.from "InitializationFailed") then
+                                Task.resume
+                                    resume
+                                    (Err (InitializationFailed (guest (Js.get incoming "payload"))))
+                            else if Js.same kind (Js.from "Closed") then
+                                Js.set peer "closed" (Js.from True)
+                                Task.resume resume (Err ClosedBeforeReady)
+                            else
+                                ⊤
+                    failure =
+                        λevent →
+                            if Js.instanceOf event (Js.global "ErrorEvent") then
+                                Js.throw
+                                    (Js.construct (Js.global "Error") [ Js.get event "message" ])
+                            else
+                                Task.resume resume (Err WorkerLoadFailed)
+                    _ = Js.call native "addEventListener" [ Js.from "message", Js.from message ]
+                    _ = Js.call native "addEventListener" [ Js.from "error", Js.from failure ]
+                    _ = post native (frame "Hello" (host config))
+                    λ⊤ → ⊤
+            case result of
+                Just (Ok handle) →
+                    Ok handle
+                Just (Err reason) →
+                    Err { reason = reason, cleanup = close (guest peer) }
+                Nothing →
+                    Err { reason = ReadyDeadlineExceeded, cleanup = close (guest peer) }
+
+
+pub close : Handle protocol → Cleanup
+close handle =
+    peer = host handle
+    if Js.to (Js.get peer "closed") then
+        Confirmed
+    else
+        _ = post (Js.get peer "native") (frame "Close" Js.null)
+        result = Task.timeout (guest (Js.get peer "cleanup")) λ⊤ →
+            Task.callback λresume →
+                listener =
+                    λevent →
+                        if Js.same (Js.get (Js.get event "data") "kind") (Js.from "Closed") then
+                            Js.set peer "closed" (Js.from True)
+                            Task.resume resume Confirmed
+                _ =
+                    Js.call (Js.get peer "native") "addEventListener"
+                        [ Js.from "message", Js.from listener ]
+                λ⊤ →
+                    Js.to
+                        (Js.call (Js.get peer "native") "removeEventListener"
+                            [ Js.from "message", Js.from listener ]
+                        )
+        case result of
+            Just cleanup →
+                cleanup
+            Nothing →
+                Unconfirmed ConnectionLost
+
+
+pub abort : Handle protocol → Cleanup
+abort handle =
+    peer = host handle
+    _ = Js.call (Js.get peer "native") "terminate" []
+    Js.set peer "closed" (Js.from True)
+    Abandoned
+
+
+pub scope : Context event → Scope
+scope context = guest (Js.get (host context) "scope")
+
+
+pub connection : Context event → Maybe ConnectionId
+connection _ = Nothing
+
+
+-- Entry runtime. run returns before initialization can suspend.
+pub run : Program config state protocol → ⊤
+run definition = runDefinition (host definition)
+
+
+runDefinition : V → ⊤
+runDefinition definition =
+    greeting = Js.ref Js.null
+    greetingWake = Js.ref Js.null
+    lifetime = Task.openRoot ⊤
+    root = guest (Js.call definition "boot" [ host greeting, host greetingWake, host lifetime ])
+    listener =
+        λevent →
+            incoming = Js.get event "data"
+            kind = Js.get incoming "kind"
+            if Js.same kind (Js.from "Hello") then
+                Js.write greeting (Js.get incoming "payload")
+                if Js.isNull (Js.read greetingWake) then
+                    ⊤
+                else
+                    Task.resume (guest (Js.read greetingWake)) (Js.read greeting)
+                    ⊤
+            else if Js.same kind (Js.from "Close") then
+                Task.start (λ⊤ → Task.cancel root) λ_ → ⊤
+    _ = Js.call (Js.global "self") "addEventListener" [ Js.from "message", Js.from listener ]
+    Task.start
+        (λ⊤ →
+            _ = Task.wait root
+            Task.closeRoot lifetime
+            _ = post (Js.global "self") (frame "Closed" Js.null)
+            _ =
+                Js.call (Js.global "self") "removeEventListener"
+                    [ Js.from "message", Js.from listener ]
+            Js.to (Js.call (Js.global "self") "close" [])
+        )
+        λ_ → ⊤

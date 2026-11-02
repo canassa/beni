@@ -2616,6 +2616,11 @@ fn wireKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifes
         if (std.mem.eql(u8, role.role, "wire")) break true;
     } else false;
     if (!has_wire) return false;
+    return session.entryKindUsed(a, kind);
+}
+
+fn entryKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifest.zig").EntryKind) Allocator.Error!bool {
+    if (kind.launches.len == 0) return false;
     const dot = std.mem.lastIndexOfScalar(u8, kind.programType, '.') orelse return false;
     const name = session.interner.find(kind.programType[0..dot]) orelse return false;
     const target = session.graph.lookup(.platform, name) orelse return false;
@@ -2656,7 +2661,7 @@ fn entryConstructors(session: *const Session, a: Allocator) Allocator.Error![]co
     const chain = session.options.chain orelse return &.{};
     var out: std.ArrayList([]const u8) = .empty;
     for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
-        if (kind.launches.len == 0) continue;
+        if (!try session.entryKindUsed(a, kind)) continue;
         for (kind.constructors) |c| try out.append(a, c.name);
     };
     return out.toOwnedSlice(a);

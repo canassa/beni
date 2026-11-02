@@ -676,6 +676,15 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.unchecked_workers = true;
         }
     }
+    if (kind == .browser or kind == .build_bad) {
+        const managed_dir = try std.fs.path.join(arena, &.{ kind_dir, "managed" });
+        const start = fixtures.items.len;
+        try collect(arena, managed_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser";
+            fixture.unchecked_workers = true;
+        }
+    }
     if (kind == .emit) {
         for ([_]bool{ false, true }) |release| {
             const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, if (release) "release/dedicated" else "dedicated" });
@@ -1523,7 +1532,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "prerender")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "managed") and !std.mem.eql(u8, entry.name, "prerender")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -3359,7 +3368,7 @@ const Case = struct {
         // that disagrees with it is the finding, so only a build's own
         // golden is blessed by it.
         const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
-            (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
+            ((!chrome or c.goldenExists("chrome-only")) and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         return .{
             .pass = pass,
             .golden = golden,

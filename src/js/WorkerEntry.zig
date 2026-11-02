@@ -9,5 +9,6 @@ pub const Descriptor = struct {
     identity: []const u8,
     id: []const u8,
     url: []const u8 = "",
+    fingerprint: []const u8 = "",
     wire: ?*const @import("../check/Wire.zig").Artifact = null,
 };
