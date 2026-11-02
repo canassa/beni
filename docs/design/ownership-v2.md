@@ -3526,6 +3526,8 @@ the layering before it. The new files: `Forest.zig` (L3: one slot's arrivals, en
 order, each node once, union, graft, label maps, the effect trees' fold; imports Ids, Place, Trees),
 `Conds.zig` (L3: conditions and occurrences; Ids, Slots), `ReadOff.zig` (L10: a frame's contract read off its
 values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Ids, Place, Relation, Slots, Subtree, Value).*
+*Amended 2026-11-03 (#1714): `Later` (a holder's later uses, L9 with `Holders` and `Sweep`) was split out of
+`Resolve` on the layer below it.*
 
 ```
 L13 Enforce
@@ -3533,7 +3535,7 @@ L12 Ownership
 L11 Block  Message  Report  Hoists
 L10 Groups
 L9  Resolve  Deliver  Closures
-L8  Eval  Holders  Sweep  Stack
+L8  Eval  Holders  Sweep  Stack  Later
 L7  Walk  Distinct
 L6  Relation  Entries
 L5  Value  Liveness
@@ -3572,10 +3574,11 @@ L0  Ids  Counters  Scratch
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
-| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Slots, Walk, Regions |
+| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder, buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Subtree, Value, Relation, Distinct |
 | `Stack.zig` | 8 | the pending operands by clock and key: their leaves listed once, lists by push with trees of removal and `rank₂`, aggregated ones (§2.8) | Ids, Value, Relation, Distinct, Walk, Regions |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree |
+| `Later.zig` | 8 | a holder's later uses that read a hold at a path, through call uses' footprints, asked once a judgement (§2.7, §2.8, #1714) | Ids, Facts, Slots, Value, Relation, Contract, Forest, Walk, Liveness, Regions |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
