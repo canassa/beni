@@ -163,7 +163,9 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 0f1e3963853e0ad6e0fe1f2bba950f941c702ce073d620b8ec46d8b577e07dae
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 552848506bd41015811709d4bb4e71761df14e488923a7b20b7bb76066fad6a8
-platform_test.test.worker launch URLs stay relative to their module under release specialization #0 6615b272684670554f351ac22065b1c8f5ffd24d94f019c5246d02fe65a09fa2
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 7e023296be02f8ae9c3757b5653a8835a787a7cece5d8cc02ece2ae09cf0ca7d
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 b0ef50d85ad00158bbdf50becdfa1fcbe66ae9da14ebc9943962b0bb1cc010f1
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 0e7c852bc3680604f629d3e674f83aafdeffc6e587c5706af52c756fd7a712c4
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 9082afd6f79d10c6e923a0abaf6557c141b9055d4a2405f4c23170c533028d70
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 70d4d0e4f73cae010b21ceb99e15ae364040688d5aff4baf5bb14fc5dec1847e
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 5c88e1474bd82b24d2b65494aac78699139ecb5e57fd2a67f42a6876e9538fdc
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 e6569261cda53ad6d9a1aad7dc37ded4d17162e56c136d59a3a3b2024949e4d5
