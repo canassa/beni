@@ -38,25 +38,31 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
+    .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 400 },
     .{ .file = "Contract.zig", .layer = 3, .max_lines = 800 },
     .{ .file = "Prepass.zig", .layer = 3, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 4, .max_lines = 320 },
     .{ .file = "Regions.zig", .layer = 4, .max_lines = 530 },
+    .{ .file = "ContractText.zig", .layer = 4, .max_lines = 160 },
     .{ .file = "Value.zig", .layer = 5, .max_lines = 480 },
     .{ .file = "Liveness.zig", .layer = 5, .max_lines = 1190 },
     .{ .file = "Relation.zig", .layer = 6, .max_lines = 1300 },
-    .{ .file = "Eval.zig", .layer = 7, .max_lines = 2080 },
-    .{ .file = "Resolve.zig", .layer = 8, .max_lines = 600 },
-    .{ .file = "Deliver.zig", .layer = 8, .max_lines = 300 },
-    .{ .file = "Groups.zig", .layer = 9, .max_lines = 1840 },
-    .{ .file = "Block.zig", .layer = 10, .max_lines = 380 },
-    .{ .file = "Message.zig", .layer = 10, .max_lines = 280 },
-    .{ .file = "Report.zig", .layer = 10, .max_lines = 150 },
-    .{ .file = "Hoists.zig", .layer = 10, .max_lines = 170 },
-    .{ .file = "Ownership.zig", .layer = 11, .max_lines = 340 },
-    .{ .file = "Enforce.zig", .layer = 12, .max_lines = 510 },
+    // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
+    // values, the distinct check reads a call's instantiation.
+    .{ .file = "Walk.zig", .layer = 7, .max_lines = 1230 },
+    .{ .file = "Distinct.zig", .layer = 7, .max_lines = 640 },
+    .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
+    .{ .file = "Resolve.zig", .layer = 9, .max_lines = 600 },
+    .{ .file = "Deliver.zig", .layer = 9, .max_lines = 300 },
+    .{ .file = "Groups.zig", .layer = 10, .max_lines = 1840 },
+    .{ .file = "Block.zig", .layer = 11, .max_lines = 380 },
+    .{ .file = "Message.zig", .layer = 11, .max_lines = 280 },
+    .{ .file = "Report.zig", .layer = 11, .max_lines = 150 },
+    .{ .file = "Hoists.zig", .layer = 11, .max_lines = 170 },
+    .{ .file = "Ownership.zig", .layer = 12, .max_lines = 340 },
+    .{ .file = "Enforce.zig", .layer = 13, .max_lines = 510 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -264,8 +270,8 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
     for (sources.items) |s| {
         if (std.mem.eql(u8, s.name, "rules_test.zig")) continue;
         // Only `Cell` defines `alias`.
-        if (!std.mem.eql(u8, s.name, "Relation.zig") and std.mem.indexOf(u8, s.text, "fn overlap(") != null) {
-            fail(&bad, "{s} defines `overlap`: only Relation.overlap relates leaves (§2.9.2)", .{s.name});
+        if (!std.mem.eql(u8, s.name, "Distinct.zig") and std.mem.indexOf(u8, s.text, "fn overlap(") != null) {
+            fail(&bad, "{s} defines `overlap`: only Distinct.overlap relates leaves (§2.9.2)", .{s.name});
         }
         // The normal form's words are build-local (§3.5: this module's
         // place ids, union sides in id order): only `Summary` makes them
@@ -344,7 +350,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 22), layers.len);
+    try testing.expectEqual(@as(usize, 26), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

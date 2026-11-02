@@ -1,4 +1,4 @@
-//! L10: contracts as words (`docs/design/ownership-v2.md` §3.6, format
+//! L11: contracts as words (`docs/design/ownership-v2.md` §3.6, format
 //! v-next): what a module publishes for its importers. Every module-local
 //! id is written canonically: a relative slot as its steps, a field by its
 //! name (a string of the block's table), a constructor argument by

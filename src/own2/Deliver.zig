@@ -1,4 +1,4 @@
-//! L8: a recursive group's deliveries (`docs/design/ownership-v2.md`
+//! L9: a recursive group's deliveries (`docs/design/ownership-v2.md`
 //! §2.12 step 2). The members' evaluations are open at once; a member's
 //! new fact (an arrival, a write, an escape) is delivered to the keys and
 //! calls that read it, once per reader, and a key's new leaf to each of its
