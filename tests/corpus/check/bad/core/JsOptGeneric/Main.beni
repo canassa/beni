@@ -1,9 +1,6 @@
--- D2: imported generic constraints reject both nested Opt and Js.Value.
+-- D2: imported generic constraints reject nested Opt.
 import Generic
 import Js
 
 
 pub nested = Generic.wrap (Js.some 3)
-
-
-pub hole = Generic.wrap Js.undefined

@@ -139,7 +139,6 @@ pub const Entry = struct {
 entries: []Entry,
 key_kinds: []TypeStore.Kind,
 js_opt: TypeId = .none,
-js_value: TypeId = .none,
 /// Borrowed session interface slots, used to map schema member references
 /// back to their endpoint identity.
 interfaces: []const Interface,
@@ -644,7 +643,6 @@ pub fn build(
     for (types.entries, 0..) |e, i| {
         if (e.package != .core or !std.mem.eql(u8, interner.slice(e.module_name), "Js")) continue;
         if (std.mem.eql(u8, interner.slice(e.name), "Opt")) types.js_opt = @fromBackingInt(@intCast(i));
-        if (std.mem.eql(u8, interner.slice(e.name), "Value")) types.js_value = @fromBackingInt(@intCast(i));
     }
     types.key_kinds = try gpa.alloc(TypeStore.Kind, key_count);
     @memset(types.key_kinds, .any);
@@ -654,7 +652,7 @@ pub fn build(
     };
     for (types.entries) |e| {
         if (e.package != .core or e.arity != 1 or !std.mem.eql(u8, interner.slice(e.module_name), "Js")) continue;
-        if (std.mem.eql(u8, interner.slice(e.name), "Opt")) types.key_kinds[e.key_start] = .defined;
+        if (std.mem.eql(u8, interner.slice(e.name), "Opt")) types.key_kinds[e.key_start] = .opt_payload;
         if (std.mem.eql(u8, interner.slice(e.name), "Cell")) types.key_kinds[e.key_start] = .record;
     }
     try TypeFacts.settle(&types, gpa, graph, artifacts);
@@ -665,10 +663,10 @@ pub fn build(
 
 /// Immutable once the declaring module has prepared its types. A cache
 /// hit installs the same published parameter facts before its dependents.
-pub fn isJsSlot(types: *const Types, id: TypeId) bool {
+pub fn isJsOptional(types: *const Types, id: TypeId) bool {
     if (id == .none) return false;
     const e = types.entry(id);
-    return e.package == .core and (types.js_opt == id or types.js_value == id);
+    return e.package == .core and types.js_opt == id;
 }
 
 pub fn keyKinds(types: *const Types, id: TypeId) []const TypeStore.Kind {

@@ -113,7 +113,7 @@ module Clock
   value adjust : Virtual, Duration → ⊤  -- suspends
   value now : ⊤ → Int  -- impure
   value run : (Virtual), (⊤ → a) → a  -- impure
-  value virtual : Int → Virtual
+  value virtual : Int → Virtual  -- impure
 module Debug
   value log : String, a → a  -- impure
   value logAs : Value, String, a → a  -- impure
@@ -229,7 +229,7 @@ module Js
   value object : fields → Value
   value pure : (⊤ → a) → a
   value read : Ref a → a  -- impure
-  value ref : a → Ref a
+  value ref : a → Ref a  -- impure
   value regExp : pattern, flags → Value
   value rem : int, int → int
   value same : a, b → bool
@@ -551,7 +551,7 @@ module Schema
   value read : Schema e a, Value → Result (List Issue) a  -- impure
   value readWith : Schema e a, Options, Value → Result (List Issue) a  -- impure
   value record : Fields pe pa, Mapping pe e, Mapping pa a → Schema e a
-  value recursive : String, (Schema e a → Schema e a) → Schema e a
+  value recursive : String, (Schema e a → Schema e a) → Schema e a  -- impure
   value string : Schema String String
   value structural : ⊤ → Codec a where a.codec : ⊤ → Codec a
   value tagged : String, List (Variant e a) → Schema e a
@@ -672,7 +672,7 @@ module Task
   value onSchedulerIdle : (Scheduler), (⊤ → ⊤) → ⊤  -- impure
   value onShutdown : (⊤ → ⊤) → ⊤  -- impure
   value onTurn : ((⊤ → ⊤) → ⊤) → ⊤  -- impure
-  value openRoot : ⊤ → Scope
+  value openRoot : ⊤ → Scope  -- impure
   value par : (⊤ → a), (⊤ → b) → a × b  -- suspends
   value par3 : (⊤ → a), (⊤ → b), (⊤ → c) → a × b × c  -- suspends
   value parOk : (⊤ → Result e a), (⊤ → Result e b) → Result e (a × b)  -- suspends

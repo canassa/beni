@@ -110,3 +110,19 @@ falsy ⊤ =
     empty = Js.optWithDefault (Js.some "") "fallback"
     unit = Js.optMatch (Js.some ⊤) (λ⊤ → "missing") λ⊤ → "unit"
     if Js.optWithDefault (Js.some False) True then "bad boolean" else "${zero}:${empty}:${unit}"
+
+
+foreign impure hostUnit : ⊤ → ⊤
+
+
+pub remember : (⊤ → a) → Js.Opt a
+remember host = Js.some (host ⊤)
+
+
+pub sentinelChecks : ⊤ → String
+sentinelChecks ⊤ =
+    direct = Js.some (hostUnit ⊤)
+    generic = remember hostUnit
+    raw = Generic.wrap Js.undefined
+    tag slot = Js.optMatch slot (λ⊤ → "none") λ_ → "present"
+    tag direct ++ ":" ++ tag generic ++ ":" ++ tag raw ++ ":" ++ tag Generic.empty

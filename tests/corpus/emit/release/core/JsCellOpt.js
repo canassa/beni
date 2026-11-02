@@ -1,1 +1,1 @@
-const a=b=>({next:undefined,state:b}),b=(a,c)=>{a.state=c;a.next=c;let d=a.next;return d!==undefined?d:a.state};export{a,b};
+import{a}from"./_core/Js.mjs";const b=c=>({next:a,state:c}),c=(b,d)=>{b.state=d;b.next=d;let e=b.next;return e!==a?e:b.state};export{b,c};

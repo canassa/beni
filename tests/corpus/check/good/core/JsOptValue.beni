@@ -1,0 +1,5 @@
+-- D2: A unique sentinel distinguishes absence from a present undefined.
+import Js
+
+
+pub present = Js.some Js.undefined

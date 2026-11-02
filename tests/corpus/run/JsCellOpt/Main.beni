@@ -16,4 +16,5 @@ main =
         , Cells.firstClass ⊤
         , Cells.constructorIdentity ⊤
         , Cells.falsy ⊤
+        , Cells.sentinelChecks ⊤
         ]

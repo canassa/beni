@@ -1,0 +1,22 @@
+-- No Js import: a platform's typed values cannot unlock Js methods.
+import Cells
+
+
+pub read ⊤ =
+    c = Cells.make 0
+    c.cellRead .value
+
+
+pub write ⊤ =
+    c = Cells.make 0
+    c.cellWrite 5 .value
+
+
+pub default ⊤ =
+    slot = Cells.empty ⊤
+    slot.optWithDefault 0
+
+
+pub branch ⊤ =
+    slot = Cells.empty ⊤
+    slot.optMatch (λ⊤ → 0) λn → n

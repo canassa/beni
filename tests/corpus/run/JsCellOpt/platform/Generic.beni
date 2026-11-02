@@ -5,3 +5,7 @@ pub wrap value = Js.some value
 
 
 pub constructor = Js.some
+
+
+pub empty : Js.Opt Int
+empty = Js.none ⊤

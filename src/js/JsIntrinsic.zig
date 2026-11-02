@@ -18,6 +18,7 @@ const Inst = Bir.Inst;
 const same = @import("Operator.zig").same;
 
 pub const Which = enum {
+    optNone,
     null,
     undefined,
     from,
@@ -264,7 +265,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
+}
+
+pub fn needsOptNone(which: Which) bool {
+    return which == .none or which == .optMatch or which == .optWithDefault;
 }

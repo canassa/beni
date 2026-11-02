@@ -16,3 +16,11 @@ set cell value = Js.cellWrite cell value .value
 
 pub get : Slot a → a
 get cell = Js.cellRead cell .value
+
+
+pub empty : ⊤ → Js.Opt Int
+empty ⊤ = Js.none ⊤
+
+
+pub type alias Optional a =
+    Js.Opt a

@@ -1,0 +1,21 @@
+-- Intrinsics require qualified calls, including in privileged code.
+import Js
+
+
+pub computed ⊤ =
+    c = Js.cell { n = 1 }
+    c.cellRead λr → r.n + 1
+
+
+pub stored ⊤ =
+    c = Js.cell { n = 1 }
+    c.cellWrite 5 .n
+
+
+pub oldGet : Js.Value → Js.Value
+oldGet v = v.get "n"
+
+
+pub oldWrite ⊤ =
+    r = Js.ref 0
+    r.write 1

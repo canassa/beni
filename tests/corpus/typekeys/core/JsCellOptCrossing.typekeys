@@ -1,0 +1,15 @@
+module JsCellOptCrossing
+  key #0 Basics.Int
+  key #1 { inCell : #0 }
+  key #2 { inOpt : #0 }
+  wild #0
+  wild #1
+  wild #2
+  decl sendCell wild
+    local cell wild
+  decl sendOpt wild
+    local slot wild
+  decl useCell wild
+    local cell wild
+  decl useOpt wild
+    local slot wild

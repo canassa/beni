@@ -1544,8 +1544,17 @@ at one type and read at another, a silent wrong answer. `Queue.unbounded ⊤` an
   it is found, as `rigid_mismatch` with its own text (`Messages.madeByCall`), and poisoned with its
   scheme, so step 6 does not report it again.
 
-*Why it is sound.* Only a call can run an effect, and only an effect can make a cell (`Ref`,
-`Deferred`, `Queue`, a `foreign type`). A non-expansive right-hand side runs no call, so it makes
+*Amended 2026-11-02:* the primitive factories `Js.ref` and `Js.cell` are impure.
+Their allocation creates writable identity, so a top-level call cannot quantify a
+variable in its contents. This applies to direct calls and factory aliases; concrete
+annotations and functions that allocate a fresh cell per call remain valid.
+Private primitive schema descriptors use concrete endpoints, including Int32
+as Char already did, so their caches do not quantify unrelated endpoint types.
+
+*Why it is sound.* Only a call can run an effect. Every trusted factory that
+allocates shared mutable storage for a language value is impure (`Js.ref`,
+`Js.cell`, `Deferred`, `Queue`). Pure data constructors can carry existing cells,
+whose contents already have one type. A non-expansive right-hand side runs no call, so it makes
 no cell, and generalising it is HM's. An expansive one may have made one, but a variable that
 occurs only covariantly cannot type a cell's contents: a cell's type is a named type other than
 `List`, every one of whose arguments counts as invariant here, and a closure that writes a captured
@@ -6481,19 +6490,20 @@ not recursive membership in a key kind. Each membership check still inspects
 only the scalar head. A schema used with Bool outside a Dict remains valid when
 only a separate wrapper's use of that endpoint requires a scalar key.
 
-### D1/D2 amendment — typed runtime cells and defined optional payloads (2026-11-02)
+### D1/D2 amendment — typed runtime cells and optional payloads (2026-11-02)
 
 `Js.Cell r` is nominal identity storage over a record row `r`. The row keeps
 all writable field types; a literal accessor relates a read result or stored
 value to that exact field. Cell is not a record alias: structural record
 operations and structural equality cannot consume it. `Js.Opt a` retains a
-new defined parameter kind, disjoint from Js.Value and Opt; aliases preserve
-this constraint, generic schemes publish it, and every instantiation checks
-it. A record/list containing Opt is itself defined. Payload access occurs
+non-Opt payload parameter constraint: aliases preserve it, generic schemes
+publish it, and every instantiation checks it. This excludes only direct Opt
+payloads; Js.Value, ⊤ and values containing Opt are admitted. The private
+sentinel makes undefined a safe present payload (owner, 2026-11-02). Payload access occurs
 only inside the present branch of optMatch, or with a typed default. The API,
 access fence, emission and soundness argument are `workers-task-storage.md`.
 
-The existing interface kind byte now admits defined (6) and record (7),
+The existing interface kind byte now admits non-Opt payload (6) and record (7),
 including parameter facts, without changing row widths. Cached boundary
 rows also preserve the boxed-wrapper fact's nominal type reference through
 remapping. A warm build retains both the payload constraint and its runtime

@@ -36,6 +36,7 @@
 --! `Presence`, through ordinary patterns. Every function a builder keeps is
 --! `sync`, because a runner calls it during the run.
 
+import Int32
 import Js
 
 
@@ -898,7 +899,7 @@ derivedChar = primitive CharKind
 
 
 -- A safe integer from −2³¹ to 2³¹ − 1.
-derivedInt32 : Schema e a
+derivedInt32 : Schema Int32.Int32 Int32.Int32
 derivedInt32 = primitive Int32Kind
 
 

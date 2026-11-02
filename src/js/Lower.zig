@@ -3510,7 +3510,7 @@ pub const Lowerer = struct {
                 if (which == .cellRead or which == .cellWrite) return;
                 records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
                 l.restartNames();
-                try l.constDecl(out, try l.topName(index), try l.jsTypedValue(which, l.pos(d.inst_start)), l.pos(d.inst_start));
+                try l.constDecl(out, try l.topName(index), if (which == .optNone) try l.object(&.{}, l.pos(d.inst_start)) else try l.jsTypedValue(which, l.pos(d.inst_start)), l.pos(d.inst_start));
                 try l.recEnd(records.direct, index);
                 return;
             },
@@ -3931,6 +3931,7 @@ pub const Lowerer = struct {
             const spelling = l.text(l.bir.symbol(d.name));
             if (std.mem.eql(u8, spelling, "stop") or std.mem.eql(u8, spelling, "stopped")) return true;
         }
+        if (l.typedIntrinsicDecl(d) == .optNone) return true;
         if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
             const spelling = l.text(l.bir.symbol(d.name));
             return std.mem.eql(u8, spelling, "chain") or std.mem.eql(u8, spelling, "continueWith");
@@ -11466,6 +11467,21 @@ pub const Lowerer = struct {
     // ownership pin begin: some
     // ownership pin begin: optMatch
     // ownership pin begin: optWithDefault
+    fn optNone(l: *Lowerer, p: u32) !Node.Index {
+        const module_name = l.interner.global.find("Js") orelse return l.missingCoreValue(p, "Js", "optNone", "the core module is missing");
+        const module = l.in.graph.lookup(.core, module_name) orelse return l.missingCoreValue(p, "Js", "optNone", "the core module is missing");
+        const bir = l.in.birs[module.int()];
+        for (bir.decls, 0..) |d, i| {
+            const symbol = bir.symbol(d.name);
+            if (!std.mem.eql(u8, l.text(symbol), "optNone")) continue;
+            if (module == l.in.module) return l.ident(try l.topName(@intCast(i)), p);
+            const needed: Needed = .{ .module = module, .base = symbol.toOptional() };
+            try l.needName(needed);
+            return l.ident(try l.neededName(needed), p);
+        }
+        return l.missingCoreValue(p, "Js", "optNone", "the private constant is missing");
+    }
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
@@ -11482,9 +11498,9 @@ pub const Lowerer = struct {
         const result = switch (which) {
             .cell => try l.object(&.{try l.add(.spread_property, p, values[0].int(), Node.Data.unused)}, p),
             .some => values[0],
-            .none => try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            .none => try l.optNone(p),
             .optMatch, .optWithDefault => blk: {
-                const test_ = try l.binary(.strict_ne, values[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const test_ = try l.binary(.strict_ne, values[0], try l.optNone(p), p);
                 const yes = if (which == .optMatch) try l.call(values[2], &.{values[0]}, p) else values[0];
                 const no = if (which == .optMatch) try l.call(values[1], &.{try l.nullNode(p)}, p) else values[1];
                 const conditional = try l.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
@@ -11663,14 +11679,14 @@ pub const Lowerer = struct {
                 l.b.markCell(object_);
                 break :blk object_;
             },
-            W.cellRead, W.cellWrite => unreachable,
-            W.none => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.optNone, W.cellRead, W.cellWrite => unreachable,
+            W.none => l.optNone(p),
             W.some => v[0],
             W.optMatch, W.optWithDefault => blk: {
                 const slot = try l.bindSubject(out, v[0], p);
                 const missing = try l.bindSubject(out, v[1], p);
                 const present = if (which == .optMatch) try l.bindSubject(out, v[2], p) else slot;
-                const test_ = try l.binary(.strict_ne, slot, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const test_ = try l.binary(.strict_ne, slot, try l.optNone(p), p);
                 const yes = if (which == .optMatch) try l.call(present, &.{slot}, p) else slot;
                 const no = if (which == .optMatch) try l.call(missing, &.{try l.nullNode(p)}, p) else missing;
                 const conditional = try l.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
