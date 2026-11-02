@@ -1,0 +1,5 @@
+-- Observe the outgoing native message before structured clone reads properties.
+pub foreign impure watch : a, b → ⊤
+
+
+pub foreign impure passed : ⊤ → Bool

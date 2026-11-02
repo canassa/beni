@@ -1,5 +1,5 @@
--- Executes the compiler's concrete Wire normalization plan. Stable subgraphs
--- pass directly to structured clone; only List descendants are materialized.
+-- Executes the compiler's Wire plan. Known stable subgraphs pass directly to
+-- structured clone; runtime shape walking is confined to type-variable positions.
 import Js
 
 
@@ -49,11 +49,13 @@ visit nodes index value =
             if Js.same (Js.at nodes child) (Js.from 0) then
                 array
             else
-                Js.call array "map" [ Js.from λitem → visit nodes child item ]
+                mapFields array λ_ item → visit nodes child item
         else if kind == 4 then
             variant =
                 Js.call edges "find" [ Js.from λedge → Js.same (Js.at edge 0) (Js.get value "$") ]
             visit nodes (Js.to (Js.at variant 1)) value
+        else if kind == 5 then
+            variable value
         else
             result = Js.ref value
             Js.each edges λedge →
@@ -63,14 +65,46 @@ visit nodes index value =
                 if Js.same (Js.at nodes child) (Js.from 0) then
                     ⊤
                 else
-                    previous = Js.get value field
-                    next = visit nodes child previous
-                    if Js.same previous next then
-                        ⊤
-                    else
-                        if Js.same (Js.read result) value then
-                            Js.write
-                                result
-                                (Js.call (Js.global "Object") "assign" [ Js.object [], value ])
-                        Js.set (Js.read result) field next
+                    replace result value field (visit nodes child (Js.get value field))
+            if kind == 6 then
+                -- An open row is a type-variable position too. Known fields
+                -- already followed their plans, including stable ones to skip.
+                Js.each (Js.call (Js.global "Object") "keys" [ value ]) λfield →
+                    known = Js.call edges "some" [ Js.from λedge → Js.same field (Js.at edge 0) ]
+                    if not (Js.to known) then
+                        replace result value field (variable (Js.get value field))
             Js.read result
+
+
+variable : V → V
+variable value =
+    if Js.isNullish value || not (Js.typeIs value "object") then
+        value
+    else if Js.typeIs (Js.get value "$plain") "function" then
+        variable (Js.call value "$plain" [])
+    else
+        mapFields value λ_ item → variable item
+
+
+mapFields : V, (V, V → V) → V
+mapFields value transform =
+    result = Js.ref value
+    Js.each (Js.call (Js.global "Object") "keys" [ value ]) λfield →
+        replace result value field (transform field (Js.get value field))
+    Js.read result
+
+
+replace : Js.Ref V, V, V, V → ⊤
+replace result value field next =
+    if Js.to (Js.call (Js.global "Object") "is" [ Js.get value field, next ]) then
+        ⊤
+    else
+        if Js.same (Js.read result) value then
+            Js.write
+                result
+                (if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+                    Js.call value "slice" []
+                 else
+                    Js.call (Js.global "Object") "assign" [ Js.object [], value ]
+                )
+        Js.set (Js.read result) field next

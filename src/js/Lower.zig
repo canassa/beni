@@ -6535,7 +6535,7 @@ pub const Lowerer = struct {
             var edges: std.ArrayList(Node.Index) = .empty;
             for (wire.edges[node.edges.start..][0..node.edges.len], 0..) |edge, ei| {
                 const label = if (edge.label.unwrap()) |label|
-                    if (node.kind == .record) try l.fieldString(label, p) else try l.stringNode(l.interner.slice(label), p)
+                    if (node.kind == .record or node.kind == .open_record) try l.fieldString(label, p) else try l.stringNode(l.interner.slice(label), p)
                 else
                     try l.stringNode(l.interner.slice(try l.slotName(@intCast(ei))), p);
                 try edges.append(l.scratch, try l.arrayNode(&.{ label, try l.intNode(edge.child, p) }, p));
