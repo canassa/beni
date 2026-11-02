@@ -2352,6 +2352,12 @@ const Case = struct {
                 _ = std.fmt.parseUnsigned(u32, at[0..colon], 10) catch continue;
                 _ = std.fmt.parseUnsigned(u32, at[colon + 1 ..], 10) catch continue;
                 const verdict = std.mem.indexOf(u8, line, ": accepted") orelse continue;
+                // v2's `callback-param` is a callsite demand: what a known
+                // callback's code writes, said at the call that hands it the
+                // value (`List.map <call List.map>`). The write is the code's
+                // own, which has a line of its own. v1 says `callback-param`
+                // at the write itself.
+                if (std.mem.eql(u8, checker, "v2") and std.mem.startsWith(u8, line[verdict..], ": accepted callback-param")) continue;
                 var rest = line[space + 1 .. verdict];
                 var value = false;
                 if (std.mem.startsWith(u8, rest, "value ")) {
