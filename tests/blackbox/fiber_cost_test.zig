@@ -16,24 +16,14 @@ test "fiber benchmark forwards resumed results through beni entries" {
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     try w.write("out/workloads.mjs", try source(&w, "bench/fiber/workloads.mjs"));
-    // Only the beni workloads are under test. Comparison functions return
-    // their exact expected results without adding an npm dependency to gates.
-    try w.write("out/check.mjs",
-        \\import * as beni from './Bench.mjs';
-        \\import { all } from './workloads.mjs';
-        \\const comparison = {loopFlatMap:n=>n,loopGen:n=>n,loopYielding:async n=>n,fanOut:async n=>n*(n+1)/2};
-        \\await all(beni,comparison,{calls:8,sequenced:2,yields:3,fibers:3,effectCalls:1,effectYields:1});
-        \\console.log('benchmark results checked');
-        \\
-    );
-    try w.expectProgram("out/check.mjs", .{ .stdout = "benchmark results checked\n" });
+    try w.write("out/check.mjs", try source(&w, "tests/blackbox/fiber_entries.mjs"));
+    try w.expectProgram("out/check.mjs", .{ .stdout = "all 18 benchmark entries checked\n" });
 }
 
 fn costTool(w: *World, body: []const u8) !void {
     try w.write("out/cost.mjs", try source(w, "bench/fiber/cost.mjs"));
     const script = try std.mem.concat(w.arena.allocator(), u8, &.{
-        "// Cost cache target: " ++ @tagName(@import("builtin").target.cpu.arch) ++ "\n",
-        "import {fileURLToPath} from 'node:url';\nimport {measureCosts,checkCosts,measureBuiltSizes,checkSizes} from './cost.mjs';\nconst root=fileURLToPath(new URL('.',import.meta.url));\nconst budgets=",
+        "import * as cost from './cost.mjs';\nimport {fileURLToPath} from 'node:url';\nimport {measureCosts,checkCosts,measureBuiltSizes,checkSizes} from './cost.mjs';\nconst root=fileURLToPath(new URL('.',import.meta.url));\nconst budgets=",
         try source(w, "bench/fiber/budgets.json"),
         ";\n",
         body,
@@ -58,7 +48,16 @@ test "fiber retained bytes and allocation deltas stay within ratchets" {
         try testing.expectEqual(@as(u8, 0), built.exit_code);
         try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     }
-    try costTool(&w, "const rows=measureCosts(root);checkCosts(rows,budgets);const invalid=structuredClone(rows);invalid['fast-path'].large=NaN;const assert=await import('node:assert/strict');assert.throws(()=>checkCosts(invalid,budgets),{name:'Error',message:'fast-path: invalid numeric sample'});console.log('fiber cost ratchets checked');\n");
+    try costTool(&w,
+        \\const rows=measureCosts(root);
+        \\checkCosts(rows,budgets);
+        \\const invalid=structuredClone(rows);
+        \\invalid['fast-path'].large=NaN;
+        \\const assert=await import('node:assert/strict');
+        \\assert.throws(()=>checkCosts(invalid,budgets),{name:'Error',message:'Fiber budget failures:\nfast-path: invalid numeric sample\n'+cost.budgetAdvice});
+        \\console.log('fiber cost ratchets checked');
+        \\
+    );
     try w.expectProgram("out/check.mjs", .{ .stdout = "fiber cost ratchets checked\n" });
 }
 
@@ -79,4 +78,32 @@ test "fiber release bundle brotli sizes stay within ratchets" {
     }
     try costTool(&w, "checkSizes(measureBuiltSizes(root),budgets);console.log('fiber bundle ratchets checked');\n");
     try w.expectProgram("out/check.mjs", .{ .stdout = "fiber bundle ratchets checked\n" });
+}
+
+test "fiber budget reports include every failure slack and targets" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try costTool(&w,
+        \\const assert=await import('node:assert/strict');
+        \\const limits={node:process.version,retained:{parked:{counts:[1,3],deltaBytes:10},completed:{counts:[1,3],deltaBytes:20}},allocated:{'fast-path':{counts:[1,3],deltaBytes:0}},brotli:{S0Plain:100,S1Start:200},targets:{'fast-path':0}};
+        \\const rows={parked:{metric:'retained',counts:[1,3],small:100,large:112},completed:{metric:'retained',counts:[1,3],small:100,large:125},'fast-path':{metric:'allocated',counts:[1,3],small:0,large:8}};
+        \\const sizes=[{fiber:'S0Plain',raw:1000,brotli:105},{fiber:'S1Start',raw:2000,brotli:207}];
+        \\const advice="Review bench/fiber/budgets.json; do not raise caps to hide a regression.\nMeasure: node bench/fiber/cost.mjs ./zig-out/bin/beni zig-out/fiber-cost\nRe-record verified hashes: zig build test-run-hashes -Dtest-filter='fiber '";
+        \\const costErrors='parked: delta 12 bytes, budget 10 (2 over)\ncompleted: delta 25 bytes, budget 20 (5 over)\nfast-path: delta 8 bytes, budget 0 (8 over)';
+        \\const sizeErrors='S0Plain: 105 brotli bytes, budget 100 (5 over); raw 1000\nS1Start: 207 brotli bytes, budget 200 (7 over); raw 2000';
+        \\assert.throws(()=>checkCosts(rows,limits),{name:'Error',message:'Fiber budget failures:\n'+costErrors+'\n'+advice});
+        \\assert.equal(cost.budgetAdvice,advice);
+        \\assert.throws(()=>checkSizes(sizes,limits),{name:'Error',message:'Fiber budget failures:\n'+sizeErrors+'\n'+advice});
+        \\assert.throws(()=>cost.checkBudgets(rows,sizes,limits),{name:'Error',message:'Fiber budget failures:\n'+costErrors+'\n'+sizeErrors+'\n'+advice});
+        \\const under=structuredClone(rows);under.parked.large=108;under.completed.large=116;under['fast-path'].large=4;
+        \\assert.deepEqual(cost.costSlack(under,limits),[{case:'parked',bytesPerUnit:4,slackDeltaBytes:2,slackBytesPerUnit:1},{case:'completed',bytesPerUnit:8,slackDeltaBytes:4,slackBytesPerUnit:2},{case:'fast-path',bytesPerUnit:2,slackDeltaBytes:-4,slackBytesPerUnit:-2,targetBytesPerUnit:0,distanceToTargetBytesPerUnit:2}]);
+        \\limits.targets['fast-path']=1;
+        \\assert.equal(cost.costSlack(under,limits)[2].distanceToTargetBytesPerUnit,1);
+        \\const smaller=[{fiber:'S0Plain',raw:1000,brotli:90},{fiber:'S1Start',raw:2000,brotli:200}];
+        \\assert.deepEqual(cost.sizeSlack(smaller,limits),[{case:'S0Plain',brotliBytes:90,slackBytes:10},{case:'S1Start',brotliBytes:200,slackBytes:0}]);
+        \\assert.equal(cost.formatSlack(under,smaller,limits),'parked: slack 2 bytes (1.000 bytes/unit); review tightening budgets.json\ncompleted: slack 4 bytes (2.000 bytes/unit); review tightening budgets.json\nfast-path: slack -4 bytes (-2.000 bytes/unit); target 1 bytes/unit, distance 1.000 bytes/unit\nS0Plain: slack 10 brotli bytes; review tightening budgets.json\nS1Start: slack 0 brotli bytes\n');
+        \\console.log('all budget reports checked');
+        \\
+    );
+    try w.expectProgram("out/check.mjs", .{ .stdout = "all budget reports checked\n" });
 }

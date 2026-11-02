@@ -16,7 +16,7 @@ Time remains outside the gates. The runners check every completed answer before
 reporting their warm-up/median timing results. Their comparisons use Effect v4
 from this directory's pinned package.json.
 
-`zig build test-blackbox-fiber-cost` runs the benchmark bridge check and all cost
+`zig build test-blackbox-fiber-cost` checks all 18 benchmark entries and all cost
 ratchets. It is included in `zig build gates`. To print the full measurements:
 
 ```sh
@@ -27,6 +27,9 @@ node bench/size.mjs --fibers-only
 `budgets.json` contains today's values as ceilings, not the redesign's targets.
 The fast path currently allocates about 208 bytes/point under the controlled
 measurement. Zero is its target; setting its current cap to zero correctly fails.
+The measurement command prints slack for every ceiling and the distance to the
+fast-path target. Positive slack asks for a tighter cap. A failing check lists
+every over-budget case, the budget file and the measurement/hash commands.
 Tighten caps after improvements. Do not bless a growth merely to pass the gate.
 
 The memory and allocation programs use only public Task, Deferred, List and Io
@@ -49,7 +52,7 @@ These controlled interpreter measurements differ from normal-JIT timing and
 heap measurements; compare like with like.
 
 The black-box run hashes cover emitted programs, the cost script, the budget
-literals, the test target architecture and the pinned Node version. Unchanged
+literals and the pinned Node version. Unchanged
 verified output skips the measurement processes. Changed caps also invalidate
 the record. Refresh with `zig build test-run-hashes -Dtest-filter='fiber '`.
 
