@@ -52,6 +52,44 @@ pub const Ov = struct {
     }
 };
 
+/// What consumes a growing instantiation (§2.12 *Deliveries*): a key's
+/// leaves reach it once each, the ones it saw when it subscribed and every
+/// one added after. `forward` adds them to another key (`a`); the other
+/// kinds are the read-off's (`Eval.zig` delivers them).
+pub const SubKind = enum(u8) { forward, describe, effect, supply, escape };
+pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, tags: u32 = 0 };
+
+/// The group being solved (§2.12): its members' drafts, read while they
+/// grow, and the queue of what is still to be delivered.
+pub const Live = struct {
+    ctx: *anyopaque,
+    /// The draft result slots of code `code` when it is a member being
+    /// solved now, else null.
+    draftRes: *const fn (ctx: *anyopaque, code: u32) ?*std.ArrayList(Contract.Draft.DraftSlot),
+    /// Key `key` of `ev` reads member `code`'s result at relative steps `rel`.
+    watch: *const fn (ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Eval, key: u32) Error!void,
+    /// Key `key` of `ev` has leaves a subscriber has not seen.
+    dirty: *const fn (ctx: *anyopaque, ev: *Eval, key: u32) Error!void,
+    /// A subscriber of the read-off consumes a leaf.
+    deliver: *const fn (ctx: *anyopaque, ev: *Eval, sub: Sub, leaf: u32) Error!void,
+    /// Deliver everything queued, unless a delivery is under way.
+    pump: *const fn (ctx: *anyopaque) Error!void,
+    /// Member `code`'s draft label `i` as the label of the same identity
+    /// in contract `c` (its candidate), or null when `c` has none yet.
+    labelIn: *const fn (ctx: *anyopaque, code: u32, i: u32, c: Contract.Id) ?u32,
+};
+
+/// A live instantiation: one call's leaves at one caller slot, growing.
+const Key = struct {
+    call: u32,
+    slot: PathId,
+    which: u32,
+    leaves: std.ArrayList(u32) = .empty,
+    subs: std.ArrayList(SubAt) = .empty,
+    dirty: bool = false,
+};
+const SubAt = struct { sub: Sub, cursor: u32 };
+
 /// One projected object: its leaf and the literal route that reached it.
 pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
 
@@ -86,6 +124,16 @@ pub const Eval = struct {
     /// again while it is expanded adds nothing.
     expanding: Ids.FixedDict(1) = .{},
     scratch: std.ArrayList(u32) = .empty,
+    /// Set while a group is solved (§2.12): a member's call reads its
+    /// growing draft, and what reads a key subscribes to it.
+    live: ?*Live = null,
+    /// The consumer the next `instAt` subscribes (null: a one-off read).
+    cur_sub: ?Sub = null,
+    keys: std.ArrayList(Key) = .empty,
+    /// `(key, leaf)`: the key has the leaf; `(key, sub…)`: subscribed.
+    key_has: Ids.FixedDict(2) = .{},
+    key_subs: Ids.FixedDict(6) = .{},
+    inst_depth: u32 = 0,
 
     pub fn deinit(e: *Eval) void {
         const g = e.f.gpa;
@@ -102,6 +150,13 @@ pub const Eval = struct {
         e.routes.deinit(g);
         e.expanding.deinit(g);
         e.scratch.deinit(g);
+        for (e.keys.items) |*k| {
+            k.leaves.deinit(g);
+            k.subs.deinit(g);
+        }
+        e.keys.deinit(g);
+        e.key_has.deinit(g);
+        e.key_subs.deinit(g);
     }
 
     fn charge(e: *Eval, cat: Ids.Category, n: u32) Error!void {
@@ -350,6 +405,7 @@ pub const Eval = struct {
     /// (a path under the call's result root), or, with `which` a supply
     /// `(label << 16) | k`, at the supply's slot. Built once per key.
     pub fn instAt(e: *Eval, call: u32, slot: PathId, which: u32) Error![]const u32 {
+        if (e.live) |lv| return e.instAtLive(lv, call, slot, which);
         try e.charge(.memo, 1);
         const key: [3]u32 = .{ call, slot.int(), which };
         if (e.inst_memo.get(key)) |r| {
@@ -392,6 +448,147 @@ pub const Eval = struct {
         if (keep) try e.inst_memo.put(e.gpa(), key, @intCast(e.inst_runs.items.len));
         try e.inst_runs.append(e.gpa(), .{ start, @intCast(acc.items.len) });
         return e.inst_leaves.items[start..][0..acc.items.len];
+    }
+
+    /// `instAt` while a group is solved (§2.12 *Deliveries*): the key is
+    /// made once, filled from the callee's contract or, for a member, from
+    /// its draft as it stands; it grows when the draft does, and the
+    /// consumer reading it (`cur_sub`) gets every leaf, now or later.
+    fn instAtLive(e: *Eval, lv: *Live, call: u32, slot: PathId, which: u32) Error![]const u32 {
+        try e.charge(.memo, 1);
+        const sub = e.cur_sub;
+        const keyv: [3]u32 = .{ call, slot.int(), which };
+        if (e.inst_memo.get(keyv)) |ki| {
+            // A consumer already subscribed has had these leaves, and gets
+            // the rest: it reads nothing twice (and a fold's answer that
+            // feeds itself ends here).
+            if (sub) |s| if (!try e.subscribe(ki, s)) return &.{};
+            return e.keys.items[ki].leaves.items;
+        }
+        const ki: u32 = @intCast(e.keys.items.len);
+        try e.keys.append(e.gpa(), .{ .call = call, .slot = slot, .which = which });
+        try e.inst_memo.put(e.gpa(), keyv, ki);
+        e.inst_depth += 1;
+        e.cur_sub = .{ .kind = .forward, .a = ki };
+        defer e.cur_sub = sub;
+        const code = e.f.calls.items[call].code;
+        const draft = if (which == none and code != none) lv.draftRes(lv.ctx, code) else null;
+        const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), slot));
+        if (draft) |list| {
+            // A member: its draft now, and what it gains later (`feed`).
+            try lv.watch(lv.ctx, code, try e.f.slots.relOf(e.gpa(), e.account(), e.places(), slot), e, ki);
+            var si: usize = 0;
+            while (si < list.items.len) : (si += 1) {
+                const rs = list.items[si];
+                const rw = e.f.slots.relWords(rs.slot);
+                const exact = std.mem.eql(u32, rw, words);
+                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
+                if (!exact and !opened) continue;
+                var ai: usize = 0;
+                while (ai < list.items[si].arrivals.items.len) : (ai += 1) try e.feedDraft(ki, list.items[si].arrivals.items[ai], @intCast(rw.len));
+            }
+        } else if (e.contractOf(call)) |c| {
+            const h = e.contracts.head(c);
+            const res: Ids.Range = if (which == none) h.res else blk: {
+                const l = e.contracts.labelsOf(h.labels)[which >> 16];
+                for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) break :blk s.res;
+                break :blk .{};
+            };
+            for (e.contracts.resOf(res)) |rs| {
+                const rw = e.f.slots.relWords(rs.slot);
+                const exact = std.mem.eql(u32, rw, words);
+                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
+                if (!exact and !opened) continue;
+                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.feed(ki, a, @intCast(rw.len));
+            }
+        } else try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
+        e.cur_sub = sub;
+        e.inst_depth -= 1;
+        // What the queue adds now is in the run returned; the consumer
+        // subscribes after it, so it gets each leaf once.
+        if (e.inst_depth == 0) try lv.pump(lv.ctx);
+        if (sub) |s| _ = try e.subscribe(ki, s);
+        return e.keys.items[ki].leaves.items;
+    }
+
+    /// Arrival `a` of key `ki`'s callee, at a slot whose steps are the
+    /// first `at` of the key's: its leaves added to the key.
+    pub fn feed(e: *Eval, ki: u32, a: Contract.Arrival, at: u32) Error!void {
+        const k = e.keys.items[ki];
+        const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));
+        const suffix = try e.gpa().dupe(u32, words[@min(at, words.len)..]);
+        defer e.gpa().free(suffix);
+        var acc: std.ArrayList(u32) = .empty;
+        defer acc.deinit(e.gpa());
+        const saved = e.cur_sub;
+        e.cur_sub = .{ .kind = .forward, .a = ki };
+        defer e.cur_sub = saved;
+        try e.arrivalLeaves(k.call, none, a, suffix, &acc);
+        for (acc.items) |x| try e.addLeaf(ki, x);
+    }
+
+    /// An arrival of a member's draft: its label, if any, renamed to the
+    /// candidate's (the labels the evaluation applied); one the candidate
+    /// does not have yet arrives in a later round.
+    pub fn feedDraft(e: *Eval, ki: u32, a0: Contract.Arrival, at: u32) Error!void {
+        var a = a0;
+        if (a.kind == .cb) {
+            const call = e.f.calls.items[e.keys.items[ki].call];
+            if (call.contract == none) return;
+            a.j = e.live.?.labelIn(e.live.?.ctx, call.code, a.j, call.contract) orelse return;
+        }
+        try e.feed(ki, a, at);
+    }
+
+    /// The words of key `ki`'s caller slot.
+    pub fn keyRel(e: *Eval, ki: u32) Error!Slots.Rel {
+        return e.f.slots.relOf(e.gpa(), e.account(), e.places(), e.keys.items[ki].slot);
+    }
+
+    fn addLeaf(e: *Eval, ki: u32, x: u32) Error!void {
+        if ((try e.key_has.getOrPut(e.gpa(), .{ ki, x })).found_existing) return;
+        try e.charge(.edge, 1);
+        const k = &e.keys.items[ki];
+        try k.leaves.append(e.gpa(), x);
+        if (k.subs.items.len != 0 and !k.dirty) {
+            k.dirty = true;
+            try e.live.?.dirty(e.live.?.ctx, e, ki);
+        }
+    }
+
+    /// Whether `s` is new to key `ki`.
+    fn subscribe(e: *Eval, ki: u32, s: Sub) Error!bool {
+        if (s.kind == .forward and s.a == ki) return false;
+        const got = try e.key_subs.getOrPut(e.gpa(), .{ ki, @backingInt(s.kind), s.a, s.b, s.c, s.tags });
+        if (got.found_existing) return false;
+        try e.charge(.edge, 1);
+        const k = &e.keys.items[ki];
+        try k.subs.append(e.gpa(), .{ .sub = s, .cursor = @intCast(k.leaves.items.len) });
+        return true;
+    }
+
+    /// Deliver key `ki`'s new leaves to each subscriber, once each.
+    pub fn drainKey(e: *Eval, ki: u32) Error!void {
+        e.keys.items[ki].dirty = false;
+        var si: usize = 0;
+        while (si < e.keys.items[ki].subs.items.len) : (si += 1) {
+            while (true) {
+                const at = e.keys.items[ki].subs.items[si];
+                if (at.cursor >= e.keys.items[ki].leaves.items.len) break;
+                const x = e.keys.items[ki].leaves.items[at.cursor];
+                e.keys.items[ki].subs.items[si].cursor += 1;
+                const saved = e.cur_sub;
+                e.cur_sub = null;
+                defer e.cur_sub = saved;
+                switch (at.sub.kind) {
+                    .forward => {
+                        const y = (try e.f.withTags(x, at.sub.tags)) orelse continue;
+                        try e.addLeaf(at.sub.a, y);
+                    },
+                    else => try e.live.?.deliver(e.live.?.ctx, e, at.sub, x),
+                }
+            }
+        }
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
@@ -459,6 +656,25 @@ pub const Eval = struct {
     pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
         const l = e.f.leafAt(li);
         const r = e.f.roots.items[l.root];
+        if (e.live != null) {
+            // Keys meet cycles themselves: a key read again while it is
+            // made gives what it has, and its consumer gets the rest.
+            const call: u32, const which: u32 = switch (r.kind) {
+                .call => .{ r.a, none },
+                .supply => blk: {
+                    const s = e.f.supplies.items[r.a];
+                    break :blk .{ s.call, (s.label << 16) | s.k };
+                },
+                .cb, .param => unreachable,
+            };
+            for (e.f.slots.items(l.slots)) |s| {
+                // A copy: a consumer's work may grow the key under it.
+                const run = try e.gpa().dupe(u32, try e.instAt(call, .from(s), which));
+                defer e.gpa().free(run);
+                for (run) |x| if (try e.f.withTags(x, l.tags)) |y| try out.append(e.gpa(), y);
+            }
+            return;
+        }
         const got = try e.expanding.getOrPut(e.gpa(), .{li});
         if (got.found_existing and got.value_ptr.* == 1) return;
         got.value_ptr.* = 1;
@@ -587,7 +803,11 @@ pub const Eval = struct {
         var ents: std.ArrayList(Ent) = .empty;
         defer ents.deinit(g);
         for (ps) |p| try ents.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none });
-        var acc: Cond = .{};
+        const acc: Cond = .{};
+        // The conditions met, gathered and made one at the end: a merge per
+        // entry or group would cost their product (§2.9.3's linear bound).
+        var occs: Occs = .{};
+        defer occs.deinit(g);
         // A family asks its own root's separation; ⊤ and shared objects are
         // never known to be once.
         for (ents.items) |en| {
@@ -595,8 +815,7 @@ pub const Eval = struct {
             switch (l.kind) {
                 .ref => if (!l.at_pos and e.isFamily(l)) {
                     if (e.f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
-                    acc = try Cond.conj(e.arena, e.account(), acc, try e.sepLeaf(en.leaf));
-                    if (acc.no) return acc;
+                    if (try e.gather(&occs, try e.sepLeaf(en.leaf))) return Cond.unprovable;
                 },
                 .top, .shared => return Cond.unprovable,
                 else => {},
@@ -665,14 +884,16 @@ pub const Eval = struct {
                 const r = e.f.roots.items[root];
                 switch (r.kind) {
                     .param => if (idx.items.len >= 2 or params >= 2) {
-                        var set: Slots.SetId = Slots.empty;
-                        for (idx.items) |i| set = try e.f.slots.unionOf(g, e.account(), set, e.f.leafAt(ents.items[i].leaf).slots);
-                        acc = try Cond.conj(e.arena, e.account(), acc, try e.sel(r.a, set));
-                        if (acc.no) return acc;
+                        // One sort of the group's slots, never a union per entry.
+                        var all: std.ArrayList(u32) = .empty;
+                        defer all.deinit(g);
+                        for (idx.items) |i| try all.appendSlice(g, e.f.slots.items(e.f.leafAt(ents.items[i].leaf).slots));
+                        const set = try e.f.slots.sorted(g, e.account(), all.items);
+                        try e.charge(.cond, @intCast(1 + e.f.slots.items(set).len));
+                        for (e.f.slots.items(set)) |x| try occs.add(g, Contract.occ(r.a, try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
                     },
                     .call => if (idx.items.len >= 2) {
-                        acc = try Cond.conj(e.arena, e.account(), acc, try e.instCond(r.a));
-                        if (acc.no) return acc;
+                        if (try e.gather(&occs, try e.instCond(r.a))) return Cond.unprovable;
                     },
                     .supply, .cb => if (idx.items.len >= 2) {
                         if (!e.expandable(e.f.leafAt(ents.items[idx.items[0]].leaf))) return Cond.unprovable;
@@ -685,6 +906,10 @@ pub const Eval = struct {
             // The latest expandable root meets another: its entries become
             // what they come from (one level), a block it vouched for.
             next.clearRetainingCapacity();
+            // An expansion of a call is one block of alternatives: one entry
+            // per leaf (pairs inside a block are never compared).
+            var seen: Ids.FixedDict(1) = .{};
+            defer seen.deinit(g);
             for (ents.items) |en| {
                 const l = e.f.leafAt(en.leaf);
                 if (l.kind != .ref or l.root != latest) {
@@ -700,6 +925,7 @@ pub const Eval = struct {
                     try e.charge(.edge, 1);
                     e.route_count += 1;
                     const blk = if (e.f.roots.items[latest].kind == .call) latest else none;
+                    if (blk != none and (try seen.getOrPut(g, .{x})).found_existing) continue;
                     try next.append(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = 0, .block = blk });
                 }
             }
@@ -710,12 +936,39 @@ pub const Eval = struct {
                 const l = e.f.leafAt(en.leaf);
                 if (l.kind == .ref and !l.at_pos and e.isFamily(l) and !e.expandable(l)) {
                     if (e.f.roots.items[l.root].kind == .cb) return Cond.unprovable;
-                    acc = try Cond.conj(e.arena, e.account(), acc, try e.sepLeaf(en.leaf));
-                    if (acc.no) return acc;
+                    if (try e.gather(&occs, try e.sepLeaf(en.leaf))) return Cond.unprovable;
                 }
             }
         }
-        return acc;
+        if (occs.list.items.len == 0) return acc;
+        return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.list.items)));
+    }
+
+    /// The occurrences a check gathers, each once.
+    const Occs = struct {
+        list: std.ArrayList(u64) = .empty,
+        seen: std.AutoHashMapUnmanaged(u64, void) = .empty,
+        fn deinit(o: *Occs, g: Allocator) void {
+            o.list.deinit(g);
+            o.seen.deinit(g);
+        }
+        fn add(o: *Occs, g: Allocator, x: u64) Allocator.Error!void {
+            if ((try o.seen.getOrPut(g, x)).found_existing) return;
+            try o.list.append(g, x);
+        }
+    };
+
+    /// Add condition `c`'s occurrences to `occs`; whether it is `no`.
+    /// A condition gathered again (one interned run) is not read again.
+    fn gather(e: *Eval, occs: *Occs, c: Cond) Error!bool {
+        if (c.no) return true;
+        if (c.sel.len == 0) return false;
+        try e.charge(.cond, 1);
+        const key: u64 = @intFromPtr(c.sel.ptr) ^ (@as(u64, c.sel.len) << 48);
+        if ((try occs.seen.getOrPut(e.gpa(), key | (1 << 63))).found_existing) return false;
+        try e.charge(.cond, @intCast(c.sel.len));
+        for (c.sel) |x| try occs.add(e.gpa(), x);
+        return false;
     }
 
     /// Whether two entries of one root may name one object: at related

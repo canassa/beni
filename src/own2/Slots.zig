@@ -293,9 +293,13 @@ pub const Table = struct {
 
     /// `below` of every slot of `s`, joined.
     pub fn belowSet(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, s: SetId) Error!SetId {
-        var acc: SetId = empty;
-        for (t.items(s)) |x| acc = try t.unionOf(gpa, account, acc, try t.below(gpa, account, places, .from(x)));
-        return acc;
+        // One sort of every member's run, never a union per member: the
+        // cost is linear in the parts, not in their product.
+        if (t.items(s).len == 1) return t.below(gpa, account, places, .from(t.items(s)[0]));
+        var acc: std.ArrayList(u32) = .empty;
+        defer acc.deinit(gpa);
+        for (t.items(s)) |x| try acc.appendSlice(gpa, t.items(try t.below(gpa, account, places, .from(x))));
+        return t.sorted(gpa, account, acc.items);
     }
 
     /// The relative steps of path `p` from its root.
