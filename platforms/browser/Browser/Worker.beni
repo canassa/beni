@@ -917,7 +917,16 @@ runDefinition definition =
                 else
                     Js.set job "interrupted" (host True)
                     if Js.isNull (Js.get job "fiber") then
-                        ⊤
+                        offset = Js.call (Js.get peer "queue") "indexOf" [ job ]
+                        _ = Js.call (Js.get peer "queue") "splice" [ offset, host 1 ]
+                        _ = Js.call (Js.get peer "requests") "delete" [ Js.get job "id" ]
+                        _ = sendFrame peer "Interrupt" (guest (Js.get job "id")) Js.null
+                        Js.set
+                            peer
+                            "terminal"
+                            (Js.call (Js.global "Math") "max"
+                                [ Js.get peer "terminal", Js.get job "id" ]
+                            )
                     else
                         Task.start (λ⊤ → Task.cancel (guest (Js.get job "fiber"))) λ_ → ⊤
             else if Js.same kind (host "EventAck") then
