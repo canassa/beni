@@ -1038,8 +1038,9 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
-    // A code that writes one of its captures is `once` (R-2.8).
-    for (d.writes.items) |x| if (x.j >= code.params.len) {
+    // A code that writes one of its captures is `once` (R-2.8); a cell
+    // operation on a captured `Ref` is not such a write (§2.11.4).
+    for (d.writes.items) |x| if (x.j >= code.params.len and !Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
 }
