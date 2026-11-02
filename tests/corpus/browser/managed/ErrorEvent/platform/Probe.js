@@ -1,3 +1,3 @@
 export const defect = handle => {
-  handle.native.dispatchEvent(new globalThis.ErrorEvent("error", {message: "post-ready worker defect"}));
+  (handle.native ?? handle.t).dispatchEvent(new globalThis.ErrorEvent("error", {message: "post-ready worker defect"}));
 };

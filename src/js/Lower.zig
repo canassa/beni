@@ -244,6 +244,7 @@ pub const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
+    encode_worker_private: bool = false,
     worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
     worker_definition: ?u32 = null,
     worker_events: ?bool = null,
@@ -1868,11 +1869,25 @@ pub const Lowerer = struct {
         return l.add(.property, p, @backingInt(n), value.int());
     }
 
-    /// A beni record's field, as a key or a read: the name carries
-    /// `Name.field`, which is what `--release` renames and nothing else is
-    /// (`backend.md` §9, *Item 4, taken up*). A development build prints it
-    /// as its text, exactly as a plain name.
+    /// Literals in the closed, embedded worker protocol implementation.
+    /// Constructor tagLiteral and interpolation chunks bypass this path.
+    fn privateWorkerString(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
+        if (l.in.encode_worker_private) {
+            const encoding = @import("WorkerEncoding.zig");
+            if (encoding.tag(bytes)) |tag| return l.intNode(tag, p);
+            return l.stringNode(encoding.field(bytes), p);
+        }
+        return l.stringNode(bytes, p);
+    }
+
+    /// A record field normally uses Name.field. Prescribed private worker
+    /// keys are plain names so each projection keeps the same encoding.
     fn fieldName(l: *Lowerer, field: Symbol) !JsIr.NameIndex {
+        if (l.in.encode_worker_private) {
+            const source = l.text(field);
+            const encoded = @import("WorkerEncoding.zig").field(source);
+            if (!std.mem.eql(u8, source, encoded)) return l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, encoded), .tag = JsIr.Name.no_tag });
+        }
         return l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.field });
     }
 
@@ -7112,7 +7127,8 @@ pub const Lowerer = struct {
                     std.unicode.utf8Encode(0xFFFD, &buf) catch unreachable;
                 return l.stringNode(buf[0..len], p);
             },
-            .string, .chunk => return l.stringNode(l.bir.bytes(inst), p),
+            .string => return l.privateWorkerString(l.bir.bytes(inst), p),
+            .chunk => return l.stringNode(l.bir.bytes(inst), p),
             .interp => {
                 // Segment by segment, left to right (`language.md` §6); a
                 // literal chunk evaluates nothing, so only the expression
@@ -11479,7 +11495,7 @@ pub const Lowerer = struct {
         var list_len: usize = 0;
         for (args, 0..) |arg, i| {
             if (name_at != null and name_at.? == i and l.bir.instTag(arg) == .string and isIdentifier(l.bir.bytes(arg))) {
-                literal_name = l.bir.bytes(arg);
+                literal_name = if (l.in.encode_worker_private) @import("WorkerEncoding.zig").field(l.bir.bytes(arg)) else l.bir.bytes(arg);
                 continue;
             }
             if (list_at != null and list_at.? == i) {
@@ -16799,7 +16815,7 @@ pub const Lowerer = struct {
             const v: Inst.Index = @fromBackingInt(c.value);
             const value = switch (fb.instTag(v)) {
                 .int, .float => try l.numberNode(fb.bytes(v), p),
-                .string => try l.stringNode(fb.bytes(v), p),
+                .string => if (r.fn_module == l.in.module.int()) try l.privateWorkerString(fb.bytes(v), p) else try l.stringNode(fb.bytes(v), p),
                 .ext_ctor => value: {
                     const d = fb.instData(v);
                     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));

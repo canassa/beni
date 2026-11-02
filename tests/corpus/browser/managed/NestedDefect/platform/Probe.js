@@ -28,7 +28,7 @@ export const watch = () => {
 export const observeChild = () => {
   const post = globalThis.Worker.prototype.postMessage;
   globalThis.Worker.prototype.postMessage = function(frame) {
-    if (frame.kind === "Close") signal("Close");
+    if ((frame.kind === "Close" || frame.kind === 4)) signal("Close");
     return post.call(this, frame);
   };
 };

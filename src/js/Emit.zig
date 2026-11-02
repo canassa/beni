@@ -1652,6 +1652,16 @@ const Emitter = struct {
         return worker;
     }
 
+    fn encodeWorkerPrivate(e: *Emitter) bool {
+        if (!e.options.release or e.worker_candidates.len == 0) return false;
+        for (e.worker_candidates) |descriptor| if (!e.workerWirePlanOptional(descriptor.kind)) return false;
+        return true;
+    }
+
+    fn privateWorkerModule(e: *Emitter, module: Graph.Index) bool {
+        return e.encodeWorkerPrivate() and e.builtinWorkerWire() == module;
+    }
+
     fn workerWirePlanOptional(e: *Emitter, kind: EntryPlan.KindIndex) bool {
         const runtime = e.session.entry_plan.kinds.get(@backingInt(kind)).runtime;
         const module = e.graph().find(.platform, e.session.interner.find("Browser.WorkerRuntime") orelse return false) orelse return false;
@@ -1702,6 +1712,7 @@ const Emitter = struct {
         if (e.session.entry_plan.launches.len == 0) return;
         var fingerprint = std.hash.Wyhash.init(1);
         fingerprint.update(if (e.options.release) "release" else "development");
+        if (e.options.release and e.builtinWorkerWire() != null) fingerprint.update(@import("WorkerEncoding.zig").version);
         for (e.options.platform.entry_kinds) |kind| fingerprint.update(try std.json.Stringify.valueAlloc(e.scratch, kind.definition, .{}));
         for (0..e.graph().count()) |mi| {
             const module: Graph.Index = @fromBackingInt(@intCast(mi));
@@ -1888,7 +1899,15 @@ const Emitter = struct {
         try text.appendSlice(e.scratch,
             \\const report = event => {
             \\  const cause = event.error ?? event.reason;
-            \\  globalThis.postMessage({worker: 1, kind: "Defect", payload: {
+            \\
+        );
+        const encoding = @import("WorkerEncoding.zig");
+        const encoded = e.encodeWorkerPrivate();
+        const marker = if (encoded) encoding.field("worker") else "worker";
+        const payload = if (encoded) encoding.field("payload") else "payload";
+        const defect = if (encoded) try std.fmt.allocPrint(e.scratch, "{d}", .{encoding.tag("Defect").?}) else "\"Defect\"";
+        try text.print(e.scratch, "  globalThis.postMessage({{{s}: 1, kind: {s}, {s}: {{\n", .{ marker, defect, payload });
+        try text.appendSlice(e.scratch,
             \\    name: typeof cause?.name === "string" ? cause.name.slice(0, 64) : null,
             \\    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").slice(0, 4096),
             \\    stack: String(cause?.stack ?? "").slice(0, 16384)
@@ -7249,6 +7268,7 @@ const Emitter = struct {
                 }
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
+                .encode_worker_private = e.privateWorkerModule(m),
                 .worker_events = e.worker_events,
                 .worker_event_constructors = event_constructors.items,
                 .bir = e.bir(m),

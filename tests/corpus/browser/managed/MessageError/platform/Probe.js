@@ -1,1 +1,1 @@
-export const fail = handle => { handle.native.dispatchEvent(new globalThis.MessageEvent("messageerror")); };
+export const fail = handle => { (handle.native ?? handle.t).dispatchEvent(new globalThis.MessageEvent("messageerror")); };

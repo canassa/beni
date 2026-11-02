@@ -4,7 +4,7 @@ export const install=()=>{
   globalThis.Worker=function(url,opts){
     worker=new Native(url,opts);
     const post=worker.postMessage.bind(worker);
-    worker.postMessage=frame=>{if(frame.kind!=="Hello"&&frame.kind!=="Close")post(frame)};
+    worker.postMessage=frame=>{if((frame.kind !== "Hello" && frame.kind !== 0)&&(frame.kind !== "Close" && frame.kind !== 4))post(frame)};
     queueMicrotask(()=>{
       worker.dispatchEvent(new globalThis.Event("error"));
       globalThis.document.querySelector("#stage").textContent="load failed";
