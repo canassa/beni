@@ -178,8 +178,9 @@ pub const Walk = struct {
     bir: *const Bir,
     bindings: []Binding,
     uses: std.ArrayList(Facts.Use) = .empty,
-    /// Per use of kind `call`: its call and argument (`use_node`).
+    /// Per footprint (`use_node`): one call and argument; calls of one callee and arity share it (§2.7).
     foots: std.ArrayList([2]u32) = .empty,
+    foot_of: Ids.FixedDict(4) = .{},
     /// The local each `.local` read was of, per use (for texts).
     demands: std.ArrayList(Demand) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
@@ -205,19 +206,8 @@ pub const Walk = struct {
         const gpa = w.f.gpa;
         w.f.deinit();
         gpa.free(w.bindings);
-        w.uses.deinit(gpa);
-        w.foots.deinit(gpa);
-        w.demands.deinit(gpa);
-        w.escapes.deinit(gpa);
-        w.sites.deinit(gpa);
-        w.closures.deinit(gpa);
-        w.pending_runs.deinit(gpa);
-        w.value_runs.deinit(gpa);
-        w.leaf_runs.deinit(gpa);
-        w.index.deinit(gpa);
-        w.virt.deinit(gpa);
-        w.derived.deinit(gpa);
-        w.supply_of.deinit(gpa);
+        inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs }) |l| l.deinit(gpa);
+        inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.virt, &w.derived, &w.supply_of }) |l| l.deinit(gpa);
     }
 
     pub fn leavesOfRun(w: *const Walk, r: Ids.Range) []const u32 {
@@ -301,21 +291,23 @@ const Walker = struct {
 
     // ---- uses ---------------------------------------------------------------
 
-    fn use(k: *Walker, operand: u32, point: u32, kind: Facts.UseKind, foot: [2]u32) Error!void {
+    fn use(k: *Walker, operand: u32, point: u32, kind: Facts.UseKind, foot: [2]u32, callee: [3]u32) Error!void {
         const r = k.res[k.rel(operand)];
         if (r.local == none or r.path == .none) return;
         try k.charge(.use, 1);
         var node: Ids.NodeId = .none;
         if (kind == .call) {
-            node = .from(@intCast(k.w.foots.items.len));
-            try k.w.foots.append(k.gpa, foot);
+            const got = try k.w.foot_of.getOrPut(k.gpa, .{ callee[0], callee[1], callee[2], foot[1] });
+            if (!got.found_existing) got.value_ptr.* = @intCast(k.w.foots.items.len);
+            if (!got.found_existing) try k.w.foots.append(k.gpa, foot);
+            node = .from(got.value_ptr.*);
         }
         k.atom.* += 1;
         try k.w.uses.append(k.gpa, .{ .local = r.local, .path = r.path, .point = point, .kind = kind, .region = k.w.regions.regionOf(point), .use_node = node, .atom = k.atom.* });
     }
 
     fn consume(k: *Walker, operand: u32, point: u32) Error!void {
-        try k.use(operand, point, .whole, .{ none, none });
+        try k.use(operand, point, .whole, .{ none, none }, .{ none, none, none });
         k.pop(operand);
     }
 
@@ -577,7 +569,7 @@ const Walker = struct {
                 k.pop(d.lhs);
                 if (target.local != none) {
                     if (try fr.places.extend(k.gpa, fr.gc(), target.path, st)) |p| return .{ .v = v, .local = target.local, .path = p };
-                    try k.use(d.lhs, i, .whole, .{ none, none });
+                    try k.use(d.lhs, i, .whole, .{ none, none }, .{ none, none, none });
                 }
                 return .{ .v = v };
             },
@@ -700,7 +692,7 @@ const Walker = struct {
                 // of the definition it returns from (§2.11.5).
                 const scrut = try k.valueOf(d.lhs);
                 k.pop(d.lhs);
-                try k.use(d.lhs, i, .whole, .{ none, none });
+                try k.use(d.lhs, i, .whole, .{ none, none }, .{ none, none, none });
                 const shape = k.ctx.tryShape(k.ctx.ctx, i) orelse return .{ .v = try fr.top() };
                 var payload: u32 = none;
                 if (shape[2] != 0) {
@@ -840,7 +832,7 @@ const Walker = struct {
                 for (arg_insts) |a| try k.consume(a, i);
                 // A function value called reads what its closure holds.
                 if (head != none) {
-                    try k.use(head, i, .whole, .{ none, none });
+                    try k.use(head, i, .whole, .{ none, none }, .{ none, none, none });
                     k.pop(head);
                 }
                 return fr.scalar();
@@ -864,7 +856,7 @@ const Walker = struct {
             .value => {
                 const fv = if (head != none) try k.valueOf(head) else try fr.top();
                 if (head != none) {
-                    try k.use(head, i, .whole, .{ none, none });
+                    try k.use(head, i, .whole, .{ none, none }, .{ none, none, none });
                     k.pop(head);
                 }
                 return k.valueCall(i, fv, arg_insts, vals.items, 0);
@@ -916,7 +908,7 @@ const Walker = struct {
         const ci: u32 = @intCast(fr.calls.items.len);
         // Arguments read through the callee's footprint (§2.7).
         for (arg_insts, 0..) |a, n| {
-            try k.use(a, i, .call, .{ ci, @intCast(n) });
+            try k.use(a, i, .call, .{ ci, @intCast(n) }, .{ code, fixed orelse none, @intCast(vals.len + captures.len) });
             k.pop(a);
         }
         var all: std.ArrayList(u32) = .empty;
@@ -1209,7 +1201,7 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     }
     // The result: the body's value, with the early returns of `try`.
     const body = code.body;
-    try k.use(body, body, .whole, .{ none, none });
+    try k.use(body, body, .whole, .{ none, none }, .{ none, none, none });
     var result = try k.valueOf(body);
     var arms: std.ArrayList(u32) = .empty;
     defer arms.deinit(gpa);
