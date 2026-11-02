@@ -1,0 +1,18 @@
+-- Separate reads of one module-level Cell share the stored callback's class.
+import Js
+
+
+pub foreign suspends park : ⊤ → ⊤
+
+
+pub foreign pure requireSync : sync (⊤ → ⊤) → Int
+
+
+shared : Js.Cell { callback : ⊤ → ⊤ }
+shared = Js.cell { callback = λ⊤ → ⊤ }
+
+
+pub write ⊤ = Js.cellWrite shared park .callback
+
+
+pub read ⊤ = requireSync (Js.cellRead shared .callback)

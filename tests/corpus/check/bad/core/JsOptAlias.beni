@@ -1,4 +1,4 @@
--- D2: aliases and nominal parameter facts retain Opt's defined kind.
+-- D2: aliases and nominal parameter facts retain Opt's non-Opt payload constraint.
 import Js
 
 
@@ -10,5 +10,5 @@ type Wrapped a
     = Wrapped (Js.Opt (Id a))
 
 
-pub bad : Wrapped Js.Value → Int
+pub bad : Wrapped (Js.Opt Int) → Int
 bad _ = 0

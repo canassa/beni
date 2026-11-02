@@ -556,9 +556,24 @@ obligation at synchronous host boundaries. Schemas neither grant user packages
 `optMatch` and `optWithDefault` are also available to platform runtimes.
 Applications cannot name them. Cell selectors retain the field type; Opt
 extraction branches before handing a typed payload to its callback. The exact
-signatures and defined-kind rule are in `workers-task-storage.md`. These
-compiler-owned operations have no sibling export; their first-class forms
-are emitted by the compiler. All other foreigns retain exact sibling coverage.
+signatures and non-nesting rule are in `workers-task-storage.md`. These
+compiler-owned operations have no sibling export. First-class forms are emitted
+by the compiler except `cellRead` and `cellWrite`: those require direct, saturated
+calls with literal selectors; wrap such a call in a function to pass it around.
+Core Js intrinsics do not support dot-call dispatch, including `get` and `write`.
+The qualified call remains available only to core/platform code, so a value
+returned by a platform cannot bypass the name fence. Wire refuses both Cell
+and Opt. All other foreigns retain exact sibling coverage.
+
+*Owner amendment, 2026-11-02:* Opt's absence is one unique private core
+sentinel constant per program, explicitly stored in empty fields. Some is
+identity, and presence tests compare with that sentinel. Payloads may include
+⊤, Js.Value and undefined; only a direct nested Opt remains refused, through
+aliases and generic instantiation too. This replaces the earlier defined-kind
+and undefined-hole rule. Wrappers whose release erasure could expose an empty
+Opt must remain boxed. Release hoists and shortens the shared sentinel; it
+does not make a sentinel per module or per use.
+
 
 *Added 2026-10-02, when the owner ordered the browser runtime rewritten in beni (`plans/browser-
 decisions.md`, R47-1 and R47-2).* Core's `Js` module is research 47 §2's draft, adopted as it
@@ -594,12 +609,13 @@ one as written, and a `const` that holds an import is never its callee.
 | declaration | rung | written as |
 |---|---|---|
 | `pub foreign type Ref a` | — | a cell holding an `a` |
-| `ref : a -> Ref a` | pure | a new cell: `{ v: x }`, or a `let` |
+| `ref : a -> Ref a` | impure | a new cell: `{ v: x }`, or a `let` |
 | `read : Ref a -> a` | impure | what the cell holds: `r.v`, or the `let`'s name |
 | `write : Ref a, a -> ()` | impure | the statement `r.v = x`, or `n = x`; its value `null` |
 
-`ref` is pure because making a cell is making an object — a pure `ref` nobody reads may be dropped,
-and nothing that can be dropped can be merged, since no optimiser merges two evaluations. `read` is
+`ref` and `cell` are impure because allocation creates writable identity: the
+top-level value restriction must not generalise their contents. Local JavaScript
+optimisation can still discard an unused allocation when no effect escapes. `read` is
 impure because its answer is not a function of its argument: a `read` that nothing reads may go, and
 none may move past a `write`. **A cell that does not escape is a plain `let`**, a read of it the
 name and a write an assignment — the shape hand-written JavaScript uses for the same thing

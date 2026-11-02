@@ -1,21 +1,27 @@
--- A spare field stays initialised so later writes cannot add a hidden class.
+-- A linked graph keeps cells in place; spare is written but never read.
 import Js
 
 
-make : Int → Js.Cell { state : Int, next : Js.Opt Int, spare : Js.Opt Int }
-make n = Js.cell { state = n, next = Js.none ⊤, spare = Js.none ⊤ }
+type Link
+    = Link (Js.Cell { previous : Js.Opt Link, spare : Js.Opt Link, active : Bool, value : Int })
+
+
+build : Int, Js.Opt Link → Js.Opt Link
+build n previous =
+    if n == 0 then
+        previous
+    else
+        made = Link (Js.cell { previous = previous, spare = Js.none ⊤, active = True, value = n })
+        Js.optMatch previous (λ⊤ → ⊤) λ(Link before) → Js.cellWrite before (Js.some made) .spare
+        build (n - 1) (Js.some made)
+
+
+sum : Link, Int → Int
+sum (Link cell) acc =
+    next = if Js.cellRead cell .active then acc + Js.cellRead cell .value else acc
+    previous = Js.optWithDefault (Js.cellRead cell .previous) (Link cell)
+    if Js.same previous (Link cell) then next else sum previous next
 
 
 pub many : ⊤ → String
-many ⊤ =
-    cells = List.map [ 1, 2, 3 ] make
-    cells
-        ▷ List.map λcell →
-            other = cell
-            Js.cellWrite cell (Js.cellRead cell .state + 10) .state
-            Js.cellWrite cell (Js.some (Js.cellRead cell .state)) .next
-            if Js.same cell other then
-                String.fromInt (Js.optWithDefault (Js.cellRead other .next) 0)
-            else
-                "lost identity"
-        ▷ String.join ","
+many ⊤ = Js.optMatch (build 3 (Js.none ⊤)) (λ⊤ → "0") λlink → String.fromInt (sum link 0)

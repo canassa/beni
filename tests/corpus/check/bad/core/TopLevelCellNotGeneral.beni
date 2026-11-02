@@ -1,0 +1,23 @@
+-- A module evaluates each allocation once; its contents cannot be polymorphic.
+import Js
+
+
+shared = Js.cell { x = [] }
+
+
+optional = Js.cell { x = Js.none ⊤ }
+
+
+reference = Js.ref []
+
+
+pub write ⊤ =
+    Js.cellWrite shared [ 42 ] .x
+    Js.cellWrite optional (Js.some 42) .x
+    Js.write reference [ 42 ]
+
+
+pub read ⊤ =
+    String.concat (Js.cellRead shared .x)
+        ++ String.toUpper (Js.optWithDefault (Js.cellRead optional .x) "empty")
+        ++ String.concat (Js.read reference)

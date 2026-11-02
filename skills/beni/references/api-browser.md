@@ -273,8 +273,8 @@ module Rt
   value start : V → ⊤  -- impure
   value styles : V, V, V → V  -- impure
   value swap : V, V → ⊤  -- impure
-  value template : String → ⊤ → V  -- impure
-  value templateOf : String, Int → ⊤ → V  -- impure
+  value template : String → (⊤ → V)  -- impure
+  value templateOf : String, Int → (⊤ → V)  -- impure
   value text : V → V
   value unit : V, V → V  -- impure
 module Storage

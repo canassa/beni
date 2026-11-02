@@ -654,7 +654,7 @@ fn kindAccepts(u: *Unify, kind: TypeStore.Kind, v: Var) bool {
     return switch (kind) {
         .any => true,
         .number => app.args.len == 0 and (app.type == wk.int or app.type == wk.float),
-        .dict_key, .int_key, .string_key, .defined, .record => unreachable,
+        .dict_key, .int_key, .string_key, .opt_payload, .record => unreachable,
         .appendable => (app.args.len == 0 and app.type == wk.string) or
             (app.args.len == 1 and app.type == wk.list),
     };

@@ -226,7 +226,7 @@ pub foreign type Ref a
 
 
 --| A new cell holding `v`.
-pub foreign pure ref : escaped a → fresh Ref a
+pub foreign impure ref : escaped a → fresh Ref a
 
 
 --| What the cell holds now.
@@ -333,7 +333,7 @@ pub cell foreign type Cell record
 
 
 --| A fresh cell with the record's fields. A literal is written in place.
-pub foreign pure cell : aliased record → fresh Cell record
+pub foreign impure cell : aliased record → fresh Cell record
 
 
 --| Read one field, selected with a literal accessor such as `.state`.
@@ -348,25 +348,29 @@ pub foreign impure cellWrite :
     → ⊤
 
 
---| An optional value represented by undefined or its defined payload.
-pub foreign type Opt defined
+--| An optional value represented by the private sentinel or its payload.
+pub foreign type Opt payload
 
 
---| The empty slot. No object is allocated.
-pub foreign pure none : unused ⊤ → fresh Opt defined
+--| The empty slot. Uses the one private sentinel; no per-slot allocation.
+pub foreign pure none : unused ⊤ → fresh Opt payload
 
 
---| A present slot. The payload cannot be Value or another Opt.
-pub foreign pure some : returned defined → Opt defined
+--| A present slot. Only another Opt is excluded as the direct payload.
+pub foreign pure some : returned payload → Opt payload
 
 
 --| Call exactly one sync branch. The present branch receives a safe payload.
 pub foreign impure optMatch :
-      escaped Opt defined
+      escaped Opt payload
     , once returned sync (⊤ → b)
-    , once returned sync (defined → b)
+    , once returned sync (payload → b)
     → b
 
 
 --| Read the slot, or use its typed default when empty.
-pub foreign pure optWithDefault : returned Opt defined, returned defined → defined
+pub foreign pure optWithDefault : returned Opt payload, returned payload → payload
+
+
+-- The compiler-owned absence identity, private to the runtime protocol.
+foreign pure optNone : Value

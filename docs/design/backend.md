@@ -2862,11 +2862,13 @@ object literal, with no helper or Ref boxes; an existing record argument is
 copied into a new object. `cellRead` emits a member read and `cellWrite`
 a member store. Development retains field names; release uses the same field
 renaming as immutable records. Cell identity is preserved through aliases.
-Opt's `some` is the identity and `none` is undefined. `optMatch` branches on
-`!== undefined` before calling the present callback; `optWithDefault` uses the
-same test. No per-slot object is made. An Opt payload cannot acquire an
-undefined representation through release wrapper unboxing. Programs using
-neither primitive retain byte-identical output.
+Opt's `some` is identity; `none` is the one private core sentinel.
+`optMatch` and `optWithDefault` compare with that identity, never undefined.
+Core emits the object once, exports it only for compiler-generated references,
+and release hoists it under one short name. Empty Cell fields explicitly store
+it. Every payload except a direct Opt is admitted, including host-returned ⊤
+and Js.Value. Wrappers that could erase to the sentinel remain boxed.
+Programs using neither primitive retain byte-identical output.
 
 ## 5. Module output and linking
 

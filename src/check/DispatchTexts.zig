@@ -198,7 +198,7 @@ pub fn undeterminedMethodReceiver(
             .dict_key => "`key` — either Int or String",
             .int_key => "an Int key",
             .string_key => "a String key",
-            .defined => "a type whose value cannot be undefined",
+            .opt_payload => "a type whose value cannot be undefined",
             .record => "a record row",
             .any => "a type variable no use of this value determines",
         },
@@ -315,6 +315,10 @@ pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, 
     const w = &out.writer;
     const module_text = r.env.interner.slice(r.env.graph.moduleName(module));
     const method_text = r.env.interner.slice(method);
+    if (r.env.graph.modulePackage(module) == .core and std.mem.eql(u8, module_text, "Js")) {
+        w.print("Js primitives cannot be called with dot syntax. Call `Js.{s}` by its qualified name in core or platform code. Applications cannot reach Js operations through values returned by a platform.", .{method_text}) catch return error.OutOfMemory;
+        return r.emit(.private_method, region, &out);
+    }
     if (@import("../resolve/CorePrivate.zig").access(module_text, method_text, true) == .worker) {
         w.writeAll("This name is private to the platform’s worker entry machinery.") catch return error.OutOfMemory;
         return r.emit(.private_method, region, &out);

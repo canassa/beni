@@ -103,7 +103,7 @@ pub const Kind = enum(u8) {
     dict_key,
     int_key,
     string_key,
-    defined,
+    opt_payload,
     record,
 
     pub fn meet(a: Kind, b: Kind) ?Kind {
@@ -118,13 +118,14 @@ pub const Kind = enum(u8) {
             3 => .number,
             12 => .appendable,
             5 => .dict_key,
-            63 => .defined,
+            63 => .opt_payload,
             16 => .record,
             else => null,
         };
     }
 
-    // Int, Float, String and List. Membership is closed at the scalar head;
+    // Int, Float, String, List, record, other non-Opt, and Opt domains.
+    // Membership is closed at the head;
     // these bits are a constraint lattice, never a structural type walk.
     fn members(k: Kind) u8 {
         return switch (k) {
@@ -134,7 +135,7 @@ pub const Kind = enum(u8) {
             .dict_key => 5,
             .int_key => 1,
             .string_key => 4,
-            .defined => 63,
+            .opt_payload => 63,
             .record => 16,
         };
     }
@@ -148,7 +149,7 @@ pub const Kind = enum(u8) {
     }
 
     pub fn isParameter(k: Kind) bool {
-        return k.isKey() or k == .defined or k == .record;
+        return k.isKey() or k == .opt_payload or k == .record;
     }
 
     pub fn scalar(k: Kind) bool {
@@ -161,7 +162,7 @@ pub const Kind = enum(u8) {
             .number, .int_key => "number",
             .appendable, .string_key => "appendable",
             .dict_key => "key",
-            .defined => "defined",
+            .opt_payload => "payload",
             .record => "record",
         };
     }

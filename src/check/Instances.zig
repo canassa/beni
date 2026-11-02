@@ -176,6 +176,12 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
     }
     // 3. The module rule, keyed on `(TypeId, name)`.
     const entry = cx.types.entry(a.type);
+    // Js intrinsics are compiler-owned qualified calls, never methods. A
+    // platform may return a Js value, so checking only imports is insufficient.
+    if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js")) {
+        const intrinsic = std.meta.stringToEnum(@import("../js/JsIntrinsic.zig").Which, cx.interner.slice(w.method)) != null;
+        if (intrinsic) return refusePrivate(s, id, a.type, w.method);
+    }
     if (entry.module == cx.module) {
         if (s.ownValue(w.method)) |decl| return ownMethod(s, id, root, decl, entry);
     } else if (entry.module.int() >= cx.interfaces.len) {
@@ -187,7 +193,12 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
             !privacy.workerCaller(cx.graph.modulePackage(cx.module) == .platform, cx.interner.slice(cx.graph.moduleName(cx.module))))
             return refusePrivate(s, id, a.type, w.method);
         const iface = cx.iface(entry.module);
-        if (iface.findValue(cx.interner, w.method)) |value| return importedMethod(s, id, root, a.type, entry, value);
+        if (iface.findValue(cx.interner, w.method)) |value| {
+            const caller = cx.graph.modulePackage(cx.module);
+            if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js") and caller != .core and caller != .platform)
+                return refusePrivate(s, id, a.type, w.method);
+            return importedMethod(s, id, root, a.type, entry, value);
+        }
         if (privateIn(s, entry.module, w.method)) return refusePrivate(s, id, a.type, w.method);
     }
     // 5. Derivation, for a well-known name on a shape that supports it.

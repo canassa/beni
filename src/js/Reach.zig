@@ -940,6 +940,7 @@ pub const Builder = struct {
     /// declaration the lowerer names with no target of its own (see the
     /// header).
     string_compare: ?Node = null,
+    opt_none: ?Node = null,
     /// The `core/List` values `Lower` calls with no reference of the
     /// program's own to them (`backend.md` §7, §8): `unsafeGet` and `view`
     /// for a list pattern, `slice` for a spread with items after it, and
@@ -988,6 +989,15 @@ pub const Builder = struct {
             .in = in,
             .scratch = scratch,
             .string_compare = in.coreDecl(.String, .compare),
+            .opt_none = blk: {
+                const interner = in.interner orelse break :blk null;
+                const js = interner.find("Js") orelse break :blk null;
+                const js_module = in.graph.lookup(.core, js) orelse break :blk null;
+                for (in.birOf(js_module).decls, 0..) |d, i| {
+                    if (std.mem.eql(u8, interner.slice(in.birOf(js_module).symbol(d.name)), "optNone")) break :blk Node{ .module = js_module, .kind = .decl, .index = @intCast(i) };
+                }
+                break :blk null;
+            },
             .list_get = in.coreDecl(.List, .unsafeGet),
             .list_view = in.coreDecl(.List, .view),
             .list_base = in.coreDecl(.List, .base),
@@ -1051,7 +1061,16 @@ pub const Builder = struct {
                 // A schema's own node is its `via`s, whose expressions are its
                 // instructions like a value's body (`schema.md` §6).
                 .value, .schema => {},
-                .foreign_value, .type, .type_alias, .foreign_type, .annotation_only, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
+                .foreign_value => {
+                    if (b.opt_none) |sentinel| if (sentinel.module == m) {
+                        const interner = b.in.interner.?;
+                        if (std.meta.stringToEnum(JsIntrinsic.Which, interner.slice(bir.symbol(d.name)))) |which| {
+                            if (JsIntrinsic.needsOptNone(which)) try decl_targets.append(b.scratch, .{ .node = sentinel });
+                        }
+                    };
+                    continue;
+                },
+                .type, .type_alias, .foreign_type, .annotation_only, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
             }
             try guards.declaration(@intCast(i), d);
             b.stream.clearRetainingCapacity();
@@ -1302,6 +1321,7 @@ pub const Builder = struct {
         var end = false;
         var cons = false;
         var append = false;
+        var opt_none = false;
         const dispatch = b.in.dispatchOf(m);
         const list = b.in.graph.lookup(.core, InternPool.WellKnown.List.symbol());
         var inst = d.inst_start.int();
@@ -1310,6 +1330,11 @@ pub const Builder = struct {
             const data = bir.instData(at);
             // `==`, not a switch with an `else` prong (`Bir.Inst.Tag.set`).
             const tag = bir.instTag(at);
+            if (tag == .ext_value) {
+                if (b.in.interner) |interner| if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, at, interner)) |which| {
+                    opt_none = opt_none or JsIntrinsic.needsOptNone(which);
+                };
+            }
             if (tag == .pat_list) {
                 pattern = true;
                 const items = bir.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
@@ -1329,6 +1354,7 @@ pub const Builder = struct {
             .{ end, b.list_slice },
             .{ cons, b.list_close },
             .{ append, b.list_append },
+            .{ opt_none, b.opt_none },
         };
         for (picks) |pick| {
             if (!pick[0]) continue;

@@ -1,0 +1,26 @@
+-- Cell and Opt hold their parameters; passing them to JavaScript crosses them.
+import Js
+
+
+type alias CellPayload =
+    inCell : Int
+
+
+type alias OptPayload =
+    inOpt : Int
+
+
+sendCell : Js.Cell { item : a } → Js.Value
+sendCell cell = Js.from cell
+
+
+sendOpt : Js.Opt a → Js.Value
+sendOpt slot = Js.from slot
+
+
+useCell : Js.Cell { item : CellPayload } → Js.Value
+useCell cell = sendCell cell
+
+
+useOpt : Js.Opt OptPayload → Js.Value
+useOpt slot = sendOpt slot

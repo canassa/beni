@@ -92,8 +92,8 @@ build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the ho
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #2 7db7649a1d5c30f89ffcf3f5cb086e53af78235b5c7a3310cf198e23f9d24d38
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #3 e47b5d072944e9849ea6ab42d80aa8bbf6e4c8f5368900fd124efcd43495f479
 build_test.test.the list sanitiser runs only where ownership is enforced, and writes its runtime only there #0 2d458da340dbc26f87ee5618407377316245c6ee7620099d540fa76acaf52f87
-build_test.test.typed Cell and Opt preserve release behavior through a warm cache #0 655c8d0a7b6736e5fe5f09d7f84b8c13b66fe045f81e5a7dae9c58749188c70f
-build_test.test.typed Cell and Opt preserve release behavior through a warm cache #1 655c8d0a7b6736e5fe5f09d7f84b8c13b66fe045f81e5a7dae9c58749188c70f
+build_test.test.typed Cell and Opt preserve release behavior through a warm cache #0 b78bf1885bb1397e5598135d6663d069af45522e1d441f464855396f0ce0511b
+build_test.test.typed Cell and Opt preserve release behavior through a warm cache #1 b78bf1885bb1397e5598135d6663d069af45522e1d441f464855396f0ce0511b
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 9833039a12024afda091c227fa10131c7f5cdfbc145a6eef4a49782ec81da55b
 cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 bc475c5d2c04ac9f587ac3abf6246e721b73e4c564245368e3e18d6653da1fa8
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 cbb27331034679de9078f956f45d4a9146ffa8c06a038ff9b83d0c6a3e8335da
@@ -109,8 +109,8 @@ cache_test.test.a moved derived context rebuilds evidence as a cold build: a pay
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 aa869998a3197a2b2db1849fa027c2442a8227f9c7fb88e5fc8729020c608e06
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 d543f3690df5c093a4356392b847337eec82d5c2141a21692cf08980ddcf0717
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 8ba6e3c3cae8e76782dde844385e157329f3e1dd0cc32454b8149f8b28baeea5
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 10ef7456c5b13682b9c3b9805e4d814a221fd7bde6729a9cc52c864b1a2e665b
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 574a4341dec39b4ef1ff00899b69cddd9b401fbf798dde3a7352564010ceae94
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 4a733b5b721641c036950ce19a527a1083843d8d5c7474523385c0e6cb0f169f
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 295d240a7b89fb9aace9fb4ac568a2e2fb514b2248d139d9259f4b1c96948d73
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 0dd4302ba2412b80c8cccc0b470d73008414b72a2855bae2626fb2cfcd646546
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 cc9451494c3f16f62537169f47c76d26b0b705635712cd60bff82f4c36be828e
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 7a028d805e3da47f6e497efa88ca9fee041c86d6bd41c774b577533e35e24b2b
@@ -148,14 +148,14 @@ fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #4 8
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #5 c13bed2c0dc507242f407b9d0952eae2109ef443b18fb99ba110883c79afca3e
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #6 7bfa79e2838e5d193097d3c73324dcbb07ea9ad8abb8c701f6adfa9fc0920a85
 fiber_cost_test.test.fiber retained bytes and allocation deltas stay within ratchets #0 6d9b22fa0d3fe4aa06d46221d65777ca4ba321a8b0bc5421d4fb49b1670fce05
-iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 5c1b1bdef16ee359275c54d689abacd7fcb9d1af0df604ea0292debb6b23dcca
+iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 76d318b5bad7f309f69bf4faf8a9e4feb76df0595817ece7c124baea7baa2a60
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 3d9305d46bb2bc4f4cc16d46497010be02749f323089c8b8d909e55caee428a3
-ordering_test.test.Json.decode inferred from use prints the same reversed #0 2666f31596e6320f6ef6c4035a338e0de1de58eeecd147052a5342ffe8b64407
+ordering_test.test.Json.decode inferred from use prints the same reversed #0 2e9c5e6700f3491a4fa792d61a41b815a443b73e1b3b241f2928b648c1bf5472
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 cd0be7eccfc9dc2c918af28e7b8480355be5f9de293ee00549c2ceae5853c3b7
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 063da0f41cba99fd23fe892297c8171e4903c174ccada167f049edf73c23621f
 ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 bad5555c354b2f4343a52f5dfdcbb092f4db05e583085f11efca264fe95ec89d
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 14b30c7ff7ee51f14951aed9a5adc7b2c4a876d7c4d4a4624a09e1d509f542ba
-ordering_test.test.mutually recursive schema declarations print the same reversed #0 b46ddba369fbfdec5cbe9b0901ccd3dbbb6793d6b1ab4fd91f359d9fa6f46fed
+ordering_test.test.mutually recursive schema declarations print the same reversed #0 724ed16ff183aafe7602ad6c53b0aa3924c08c743c27b937404f8bdd21f0eba7
 ordering_test.test.nullary methods and record defaults print the same reversed #0 4b82a541713d2a1be9f08f673e10fddf5148f81cdff5a101513a016cb029fa79
 page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 0d37a864eb40547418413eee5e00c3f5aae2ed1d971b44bc1f4e66349fb8ac05
 page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 0ff3b2135026bf1b2044feed1559d8424a3b32e38288c3e61bd26e204113be07
@@ -175,19 +175,19 @@ platform_test.test.generic entry runtime metadata recheck replaces the selected 
 platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
 platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
 platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
-platform_test.test.release leaf workers omit child cleanup and absent event machinery #0 e128ee5813873446fe1645f1d60bb4d974ae36a6690a871d9e612e34e3ab192f
-platform_test.test.release leaf workers omit child cleanup and absent event machinery #1 0dd1573cd52ddf71dc76ed95c1f7975621bf4ed166be4885ace10e736cb5419f
-platform_test.test.release leaf workers omit child cleanup and absent event machinery #2 3be21974c97658d29fc9d9872201e0d06f70dfa427c9063d467b83d8d91e893e
-platform_test.test.release leaf workers omit child cleanup and absent event machinery #3 46e230666929ec22ce255cac2f2d3197d909d72b9864c66518a26cbc66eb3528
-platform_test.test.release leaf workers omit child cleanup and absent event machinery #4 9dd5715aaf6b2d5849545834ac89524d01f0806a5558ed3c8e865e47c047d5e4
-platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 928db6a96d5f5f124b9d1adba690ab5acde3b2bb31b44dab30901170340004ad
-platform_test.test.release worker init runs when specialisation removes its unused state #0 57279a8b8f77027305919e6e6e534e7693dad3da3eebddcdcedeff4479e6fb4b
-platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 1093639f584107e0b9df9fcf2df078a3f53381f293073dd3e4c53e245b0c9192
-platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 d7cbf2b2e0fdfa5061eb94915334ae2fb7ce0329f7afafbb8d03dfad8cdceff3
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 83f4e32899685b548eee52e3d2e60c48bd9d042095009db6b2b5fd2df73b5f0d
-platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 18fea0d2784a0a15bc11e34fbe96d82eb95d793e83f88971c09c889110d4ca58
-platform_test.test.worker launch URLs stay relative to their module under release specialization #0 80cee573752adbd9ce8f6bae43df2b61ef85e639487fcfdacd2a4e4f1a7b6d2b
-platform_test.test.worker launch URLs stay relative to their module under release specialization #1 f5f3f2f64ac77d820efa033f3f11d219a552be7e7e134d60c0f078f34cf99be9
-platform_test.test.worker metadata preserves identity and primitive boxing #0 5305702161e8c7c8a0066adf8a4b25a2b87136abd8341abff987fa376d6406dd
-platform_test.test.worker metadata preserves identity and primitive boxing #1 74c4694b840c95e4b5d60607eabc1b894c855d6f5c5747bc7c36150571eb8722
-platform_test.test.worker metadata preserves identity and primitive boxing #2 5451060d09b515ddfbe45de4977fd8d20b987db8090f6546356884c55d972295
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #0 6c8b5fc08253b8a57b9605552c5f5c255008e843c1c192eb105aa60b2cd78c47
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #1 a4b0540e07fcb65c70282e65511cf4c4a0a83b72317a3e19a3f6b03bbe27196f
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #2 016d31f467a00404681f8855f76f06c5b0cba3fb6c7716fac53392328eedb749
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #3 5281ec2e9363cdbbd0aa49303f46ee7e489bbf03e5645db719c3be0b50256961
+platform_test.test.release leaf workers omit child cleanup and absent event machinery #4 a961a99dc4f6d25e1c8d358540499e20daa6fb1cc6ba08e52538ecb064b5061c
+platform_test.test.release worker entries hoist with joined source maps around the bootstrap #0 09de18900bd7e9761ea0accf738d53eb7595a2a64f7074b078b89b5148b20bd8
+platform_test.test.release worker init runs when specialisation removes its unused state #0 ca9176fd9e9bc9db70e8dba83ede731486af55baec982e771e4e2434a3cb99fe
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 9f48bde1a83368c4c4c7501208a5410c5bc2968a4b7e7167947bedef3cb093c4
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 f93bec7cea8df22ebb7d664b37e24a3a3c42882560189a4007493a42bbd7f413
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 b92758a02db891fc33b256af0cec4e4747879b73b019a734bdefe83945c95f32
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 e5d94aa26e32e5e80889bfec227282e1dbc61342ef83f711083e8ab7ae80c3f7
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 07ad305c9da32e7e879b2e8a548c744633a734252afe91104ce30b74c7114487
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 3558b8aa4771643f24e34a4d935c8d73e7bdc7f621f03d689ec1d3a272774c91
+platform_test.test.worker metadata preserves identity and primitive boxing #0 36140d939f6cadcf584ef370a30d424d32df887931dc385e23ab675fbccf65dc
+platform_test.test.worker metadata preserves identity and primitive boxing #1 5c1599ce459b5075760878502aef1f27dfbd8ec7a16df5f9d783f36c52509833
+platform_test.test.worker metadata preserves identity and primitive boxing #2 231c1c41b667552cb33f5408a11d53726f0de7574104e0f7a003ceda6de131f6

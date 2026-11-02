@@ -91,27 +91,29 @@ fields (a literal is fused into that construction). `Js.cellRead c .field`
 reads a field; `Js.cellWrite c value .field` stores a value of that field's
 exact type. The selector must be a literal, single-field accessor (the
 matching `λr → r.field` is also accepted). No arbitrary callback is run.
+`cell` and `ref` are impure factories: their writable identity makes a top-level
+polymorphic allocation invalid under checker-v2 §8.4. Js intrinsics require
+qualified calls; dot-call dispatch cannot bypass selectors or access fences.
 A cell never becomes an immutable record: record copy, record update and
 structural comparison reject it. `Js.Ref` keeps its existing representation
 and API. Cells remain typed storage for ownership, effects and realms;
 a stored callable is charged to the writer. Wire rejects cells.
 
-`Js.Opt a` is an unboxed optional. `Js.none ⊤` is `undefined`; `Js.some x`
+`Js.Opt a` is an unboxed optional. `Js.none ⊤` is the one private core sentinel; `Js.some x`
 is `x`. `Js.optMatch slot missing present` calls `missing ⊤` when the
-slot is undefined and otherwise calls `present` with its value. Both callbacks
+slot equals the sentinel and otherwise calls `present` with its value. Both callbacks
 are sync. `Js.optWithDefault slot fallback` returns the value or fallback.
 There is no unchecked extraction operation.
 
-Opt's parameter has a retained **defined** kind: its top-level runtime
-representation cannot be undefined. `Js.Value` and `Js.Opt _`, including
-aliases of either, are refused. No hole representation is used. Generic
-variables acquire the kind when used under Opt; instantiation, unification,
-alias/ADT parameter facts and interface schemes retain it. Thus a generic
-`a → Js.Opt a` cannot later be instantiated at Value or Opt. Records and
-lists containing Opt are defined and accepted. Release unboxing must keep
-any wrapper used as an Opt payload boxed if unboxing it could expose undefined;
-the safety of an Opt must be identical in development and release.
-No Task, Chain, Hosted or Listen migration belongs to this primitive slice.
+Opt's parameter retains a non-nesting constraint. A direct Opt payload,
+including an alias or generic instantiation at one, is refused. Every other
+type is admitted, including ⊤ and Js.Value: a foreign host may return undefined
+for either, but it cannot forge the private sentinel. Records and lists
+containing Opt are accepted. A wrapper used as an Opt payload stays boxed
+when release unboxing could expose an empty inner Opt. The private absence
+object is emitted once from core; empty fields explicitly store it, and
+release hoists and shortens the constant. No Task, Chain, Hosted or Listen
+migration belongs to this primitive slice.
 
 The new intrinsics are compiler-owned in every position: a saturated call
 is written in place, and a first-class use (except the field-selector
@@ -122,7 +124,7 @@ names in core Js; user and platform foreign declarations keep all four
 checks. The literal field-selector operations must be called directly.
 
 A Cell's literal field set is fixed. Release field elimination must not
-remove its initial undefined field and then leave stores that add that
+remove one of its initial fields and then leave stores that add that
 property later: that would introduce extra hidden classes. Cell literals
 carry a fixed-shape bit in the existing JsIr node flag byte. Copying and
 suspension lowering preserve it; field elimination respects it. This does

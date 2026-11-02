@@ -8181,3 +8181,9 @@ retain that payload. Both callbacks run at most once, synchronously, and
 are not retained. `ownership/core/JsCellOptWords` pins the alias verdicts.
 Their implementation pins cover the code generator in `src/js/Lower.zig`;
 compiler-owned core Js operations have no sibling implementation to pin.
+
+*Rechecked after private worker encoding (2026-11-02):* the lowering span
+pinned for typed cells and Opt now encodes closed worker property names.
+This changes key spelling, without changing allocation, stored payloads,
+aliases or branch callbacks. Record construction and literal cell selectors
+use the same mapping; the ownership words above remain justified.

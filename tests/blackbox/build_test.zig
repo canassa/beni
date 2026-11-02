@@ -13580,7 +13580,7 @@ test "typed Cell and Opt preserve release behavior through a warm cache" {
         const result = try w.run(&.{ "build", "--release", "--platform=platform", "--cache-dir=cache", "--self-profile=warm.json", "--out=out", "Main.beni" });
         // VERIFY OUTPUT AND SIDE EFFECTS
         try expectBuilt(result);
-        try w.expectProgram(world.entry_file, .{ .stdout = "7:second:11\n3,none,9\n5:8\npresent wrapper\n11,12,13\ndistinct\n1:2\n7\n4,5\nsame constructor\n0::unit\n" });
+        try w.expectProgram(world.entry_file, .{ .stdout = "7:second:11\n3,none,9\n5:8\npresent wrapper\n11,12,13\ndistinct\n1:2\n7\n4,5\nsame constructor\n0::unit\npresent:present:present:none\n" });
         if (round == 1) {
             const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
             const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });

@@ -1,5 +1,0 @@
--- D2: undefined cannot be confused with a present Js.Value.
-import Js
-
-
-pub bad = Js.some Js.undefined

@@ -1,0 +1,16 @@
+-- An Opt's private sentinel never crosses a worker Wire boundary.
+import Cells
+import Page
+import Worker
+
+
+worker : Worker.Program (Cells.Optional Int) String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    _ = Worker.open worker
+    ⊤
