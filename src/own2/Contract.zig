@@ -468,12 +468,6 @@ pub const Table = struct {
     pub fn commit(t: *Table, gpa: Allocator, account: *Ids.Account, slots: *const Slots.Table, d: *Draft) Error!Id {
         try account.reserve(.class, 1);
         var h: Head = .{ .arity = d.arity, .flags = d.flags };
-        h.res = try t.putSlots(gpa, slots, d.res.items);
-        h.res_cond = try t.putCond(gpa, slots, d.res_cond);
-        h.reads = try t.putEffects(gpa, slots, d.reads.items);
-        h.writes = try t.putEffects(gpa, slots, d.writes.items);
-        h.req = try t.putCond(gpa, slots, d.req);
-        h.escapes = try t.putEffects(gpa, slots, d.escapes.items);
         // Labels: sorted by (j, slot, origin); `cb` arrivals renumbered.
         const order = try gpa.alloc(u32, d.labels.items.len);
         defer gpa.free(order);
@@ -493,6 +487,14 @@ pub const Table = struct {
         for (order, 0..) |o, r| rank[o] = @intCast(r);
         renumberCb(d.res.items, rank);
         for (d.labels.items) |*l| for (l.supplies.items) |*s| renumberCb(s.res.items, rank);
+        // The result is put after the renumbering: it names the labels by
+        // their sorted order, as the supplies do (#1737).
+        h.res = try t.putSlots(gpa, slots, d.res.items);
+        h.res_cond = try t.putCond(gpa, slots, d.res_cond);
+        h.reads = try t.putEffects(gpa, slots, d.reads.items);
+        h.writes = try t.putEffects(gpa, slots, d.writes.items);
+        h.req = try t.putCond(gpa, slots, d.req);
+        h.escapes = try t.putEffects(gpa, slots, d.escapes.items);
         const lstart: u32 = @intCast(t.labels.items.len);
         for (order) |o| {
             const l = &d.labels.items[o];

@@ -1,0 +1,3 @@
+A runtime catch for a callback's answer named by the wrong label (ownership-v2.md §2.10): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses the program; were it to accept it, the sanitised run
+would show the stale read of the list the second callback hands back.

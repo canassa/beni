@@ -1,0 +1,42 @@
+-- A runtime catch for a callback's answer named by the wrong label
+-- (`ownership-v2.md` §2.10): `keepThenHand` answers `f`'s answer first and
+-- `g`'s second, but its contract numbered the callback labels as the draft
+-- made them while the labels were sorted, so it said the second part was
+-- `f`'s answer. Here `f` answers a fresh list and `g` answers the list it is
+-- handed, so the checker read `other` as fresh and the push ran in place
+-- while `xs` was still read; the sanitised run trapped. The push is refused
+-- now.
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l =
+    case l of
+        [] →
+            "."
+
+        [ x, …rest ] →
+            String.fromInt x ++ "," ++ show rest
+
+
+keepThenHand :
+      (List Int → List Int × Int)
+    , (List Int → List Int)
+    , List Int
+    → (List Int × Int) × List Int
+keepThenHand f g xs =
+    t = f xs
+    ( t, g xs )
+
+
+run : ⊤ → String
+run ⊤ =
+    xs = [ 1, 2 ]
+    ( ( kept, _ ), other ) = keepThenHand (λ_ → ( [ 7 ], 1 )) (λys → ys) xs
+    pushed = List.push other 9
+    show xs ++ " " ++ show pushed
+
+
+main : Program
+main = Node.print (run ⊤)
