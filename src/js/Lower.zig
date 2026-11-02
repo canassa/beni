@@ -6510,8 +6510,14 @@ pub const Lowerer = struct {
         for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
             const parameter = parameters[role.index];
             var path: std.ArrayList(Node.Index) = .empty;
-            for (parameter.path) |field| try path.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, field), p));
-            try roles.append(l.scratch, try l.arrayNode(&.{ try l.intNode(parameter.index, p), try l.intNode(role.node, p), try l.arrayNode(path.items, p) }, p));
+            var semantic_path: std.ArrayList(Node.Index) = .empty;
+            for (parameter.path) |field| {
+                try path.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, field), p));
+                try semantic_path.append(l.scratch, try l.stringNode(field, p));
+            }
+            // Record-role adapters use the encoded path; type-only protocol
+            // groups select a member by its declared name without sending it.
+            try roles.append(l.scratch, try l.arrayNode(&.{ try l.intNode(parameter.index, p), try l.intNode(role.node, p), try l.arrayNode(path.items, p), try l.arrayNode(semantic_path.items, p) }, p));
         }
         var nodes: std.ArrayList(Node.Index) = .empty;
         for (wire.nodes, 0..) |node, ni| {
@@ -6541,6 +6547,7 @@ pub const Lowerer = struct {
         return l.object(&.{
             try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(descriptor.wire, descriptor.module, descriptor.decl, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "id"), try l.stringNode(descriptor.id, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "fingerprint"), try l.stringNode(descriptor.fingerprint, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
         }, p);
     }

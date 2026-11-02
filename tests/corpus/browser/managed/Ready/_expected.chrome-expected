@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "ready"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"ready"</output>
+  </main>
+</body>
