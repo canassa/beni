@@ -641,6 +641,16 @@ effects, which a contract stores sorted by parameter and canonical key (§2.10):
 path, one per proper prefix for a deep entry above it. Each costs ⌈log₂(E + 1)⌉ + 1 records, reserved before
 its work. Before this, every use group scanned the whole effect list, uncharged.
 
+*Amended 2026-11-03 (#1714):* a footprint is the callee's, not the call's. Calls of one callee (one code, or one
+fixed contract) and one arity read an argument through one footprint, since an evaluation gives them one
+contract, so their uses at one path are one **group** of the index and the filter judges the group once. Before,
+each call had its own footprint and its uses were a group each: `len r` called after each of N writes of `r.fᵢ`
+was N groups at `r`, and every write's query judged all of them (N = 64 → 256: 122 532 → 1 842 568 records).
+A subtree query (*the table below*, a use under `q`) splits its range: the uses at `q` itself are filtered by
+group, and the uses strictly below `q` are one `firstAfter`, because a footprint read at a path below the hold
+always reaches the hold. That holds only where `q`'s place is not on a cycle; on a cycle a path below `q` can
+fold back onto it, and the query filters the whole range by group, as before.
+
 A **use** is `(atom, local, PathId, point, kind, callee-use-node?)`, where `atom` is the use occurrence: unique in
 its declaration and deterministic, not the operand instruction, so one instruction reading a local twice has two
 uses and the transfer rules of §2.6 need no change. Kinds: `field` (this frame's own field chain,
@@ -992,6 +1002,12 @@ callers must establish it, and the demand is accepted `param`. A condition on a 
 callee's `res_cond` does not give is `no`, and the demand is refused `exclusive` (cause precedence of §2.8
 step 6). A demand whose target is fresh and that meets no holder is accepted `fresh`; one whose target comes
 through a call's contract only is accepted `call`.
+
+*Amended 2026-11-03 (#1714):* the conditions are **gathered**, never conjoined one by one. Each condition a
+demand meets appends its occurrences to the demand's list (a record each), and the list is made one selection,
+sorted once, when the demand is accepted. The frame's `req`, a label's supply condition and a passed-on
+label's are gathered the same way over their accepted judgements. A conjunction per condition merged the whole
+selection so far each time, so n demands that each add a slot cost n² for `req` alone.
 
 #### 2.9.5 Why this is sound
 

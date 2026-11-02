@@ -69,6 +69,9 @@ pub const none: u32 = Ids.none_int;
 pub const Filter = struct {
     ctx: *anyopaque,
     accept: *const fn (ctx: *anyopaque, use: Use, id: UseId) Error!bool,
+    /// The filter accepts every use strictly below a subtree query's path:
+    /// that part of the range is one `firstAfter`, never a group at a time.
+    below_all: bool = false,
 
     /// Every use counts.
     pub const all: Filter = .{ .ctx = undefined, .accept = yes };
@@ -611,7 +614,16 @@ pub const Index = struct {
         const at = stepCharge(charge, places, lanes, q);
         try at.reserve(gpa, .inspection, 1);
         const r = x.range(places, h, steps.items, true);
-        return x.earliest(gpa, at, r, p, t, filter);
+        if (!filter.below_all or r.len == 0) return x.earliest(gpa, at, r, p, t, filter);
+        // The uses at `q` itself come first and are filtered; those below it
+        // all count.
+        try at.reserve(gpa, .inspection, std.math.log2_int_ceil(u32, r.len + 1) + 1);
+        const end = x.exactEnd(r, @intCast(steps.items.len));
+        var best = try x.earliest(gpa, at, .{ .start = r.start, .len = end - r.start }, p, t, filter);
+        if (try x.firstAfter(gpa, at, .{ .start = end, .len = r.start + r.len - end }, p, t)) |u| {
+            if (best == null or pairLess(x.pairOf(u), x.pairOf(best.?))) best = u;
+        }
+        return best;
     }
 
     /// The charge of step `path` on `lanes`, or `charge` at a root, with
