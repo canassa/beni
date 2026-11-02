@@ -1,0 +1,52 @@
+-- The receiver never builds the other realm's constructors. Their case arms
+-- must survive entry-local DCE, including constructors from another module.
+import Def exposing (Cmd, Go, Stop, Dark, Light, Reply)
+import List
+import Page
+import String
+import Worker
+
+
+worker : Worker.Program Cmd Reply ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λmessage _ _ →
+                case message of
+                    Go count →
+                        { answerText = Just (Dark { count = count, values = [ "q", "z" ] })
+                        , rank = 9
+                        }
+                    Stop →
+                        { answerText = Nothing, rank = 0 }
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+show : Reply → ⊤
+show reply =
+    text =
+        case reply.answerText of
+            Just (Dark data) →
+                String.fromInt data.count ++ String.join data.values ","
+            Just Light →
+                "light"
+            Nothing →
+                "none"
+    Page.text (text ++ String.fromInt reply.rank)
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle show
+            Worker.send handle (Go 7)
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

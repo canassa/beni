@@ -1,0 +1,14 @@
+{
+  "idl": {
+    "package": "@webref/idl",
+    "version": "3.86.0",
+    "url": "https://registry.npmjs.org/@webref/idl/-/idl-3.86.0.tgz",
+    "sha256": "f820cd04584ca7f815b8cee1381d76e27363090cd62e0cb88962d8188bc7c90a"
+  },
+  "bcd": {
+    "package": "@mdn/browser-compat-data",
+    "version": "8.1.7",
+    "url": "https://registry.npmjs.org/@mdn/browser-compat-data/-/browser-compat-data-8.1.7.tgz",
+    "sha256": "4e7a8747cac26a68087df5f38405f834a352245283af1128f4cf189989bd691e"
+  }
+}

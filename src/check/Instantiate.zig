@@ -99,6 +99,8 @@ active_casts: std.ArrayList(u32) = .empty,
 /// variable this module instantiated it at (checker-v2.md §36): what
 /// `TypeKeys` follows once every type is final.
 crossing: std.ArrayList(CrossingUse) = .empty,
+wire: std.ArrayList(@import("Wire.zig").Use) = .empty,
+host_free: std.ArrayList(CrossingUse) = .empty,
 /// Every own scheme quantifier's copy (`CopyPair`).
 copies: std.ArrayList(CopyPair) = .empty,
 /// The declaration a copy in progress notes its quantifiers for, while
@@ -129,6 +131,8 @@ pub fn deinit(in: *Instantiate) void {
     in.cast_copies.deinit(in.cx.gpa);
     in.active_casts.deinit(in.cx.gpa);
     in.crossing.deinit(in.cx.gpa);
+    in.wire.deinit(in.cx.gpa);
+    in.host_free.deinit(in.cx.gpa);
     in.copies.deinit(in.cx.gpa);
 }
 
@@ -548,14 +552,34 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
         const s = iface.schemes[@backingInt(scheme)];
         for (in.quantified.items, 0..) |q, i| {
             if (i >= s.quantified_count) break;
+            if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & Interface.Quantified.wire_bit != 0) try in.wire.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
+            if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & (1 << 12) != 0) try in.host_free.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
             // The flag word alone: bit 10 is `crosses`.
             if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & Interface.Quantified.crosses_bit != 0) try in.crossing.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
+        }
+    }
+    if (which == .value and in.track_crossing) {
+        const s = iface.schemes[@backingInt(scheme)];
+        if (s.wire_paths != Interface.no_terms) {
+            var at: usize = s.wire_paths;
+            const count = iface.extra[at];
+            at += 1;
+            for (0..count) |_| {
+                const quantifier = iface.extra[at];
+                const len = iface.extra[at + 1];
+                at += 2;
+                const path = try cx.scratch.alloc(Types.Symbol, len);
+                for (path, iface.extra[at..][0..len]) |*field, index_| field.* = iface.symbol(@fromBackingInt(index_));
+                at += len;
+                if (quantifier < in.quantified.items.len) try in.wire.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = in.quantified.items[quantifier], .path = path });
+            }
         }
     }
     return v;
 }
 
-/// Constructor `index` of `module`'s type — this module's `Bir` constructor
+/// Constructor `index`
+/// of `module`'s type — this module's `Bir` constructor
 /// or another's interface constructor — instantiated fresh at the frame's
 /// rank: `args → T params`, or `T params` for a nullary one. What a derived
 /// codec reads a nominal type's payloads from (`Codec.zig`).

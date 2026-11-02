@@ -244,6 +244,10 @@ pub const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
+    worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
+    worker_definition: ?u32 = null,
+    worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
+    worker_wire: ?*const @import("../check/Wire.zig").Artifact = null,
     bir: *const Bir,
     /// The module's token start offsets, for `Node.pos`.
     token_starts: []const u32,
@@ -3474,6 +3478,14 @@ pub const Lowerer = struct {
             // The parser already reported it and there is no body.
             .annotation_only => return,
         }
+        if (l.in.worker_definition == null or l.in.worker_definition.? != index) {
+            for (l.in.worker_descriptors) |descriptor| {
+                if (descriptor.module != l.in.module or descriptor.decl != index) continue;
+                if (!l.liveDecl(index)) return;
+                try l.constDecl(out, try l.topName(index), try l.workerDescriptor(descriptor, Node.no_pos), Node.no_pos);
+                return;
+            }
+        }
         if (d.body == .none) return;
         // The direct record opens before the consumed check, so the unit
         // the check drops carries the answer: a build whose program hook
@@ -3595,7 +3607,17 @@ pub const Lowerer = struct {
                     try out.append(l.scratch, try l.add(.let_decl, decl_p, @backingInt(n), @backingInt(value.toOptional())));
                     return;
                 }
-                const value = try l.expr(&stmts, body);
+                var value = try l.expr(&stmts, body);
+                if (l.in.worker_definition != null and l.in.worker_definition.? == index and l.in.worker_wire != null and for (l.in.worker_wire.?.roots) |root| {
+                    if (root.decl == index) break true;
+                } else false) {
+                    const global = try l.add(.global_this, p, 0, 0);
+                    const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+                    const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
+                    const metadata = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(l.in.worker_wire, l.in.module, index, p), p)}, p);
+                    value = try l.call(assign, &.{ value, metadata }, p);
+                }
+
                 // A constant whose lowering needed statements cannot be a
                 // bare `const`: wrap it in a called arrow, which is the one
                 // place lowering emits an IIFE and the one place §9.2's
@@ -6421,7 +6443,63 @@ pub const Lowerer = struct {
     /// machinery that makes `?` evaluate in written order makes this do so
     /// too. A branch of a short circuit or of a `case` has an `out` of its
     /// own, so nothing is ever evaluated that the source would not have.
+    fn wirePlan(l: *Lowerer, maybe: ?*const @import("../check/Wire.zig").Artifact, module: Graph.Index, decl: u32, p: u32) Allocator.Error!Node.Index {
+        const wire = maybe orelse return l.nullNode(p);
+        const root = for (wire.roots) |root| {
+            if (root.decl == decl) break root;
+        } else return l.nullNode(p);
+        const needs = try @import("../check/Wire.zig").normalization(l.scratch, wire);
+        var roles: std.ArrayList(Node.Index) = .empty;
+        // A descriptor may name a Program declared outside the opening module.
+        const parameters = for (l.in.worker_descriptors) |descriptor| {
+            if (descriptor.module == module and descriptor.decl == decl) break l.in.worker_kinds[@backingInt(descriptor.kind)].definition.parameters;
+        } else return l.nullNode(p);
+        for (wire.roles[root.roles.start..][0..root.roles.len]) |role| {
+            const parameter = parameters[role.index];
+            var path: std.ArrayList(Node.Index) = .empty;
+            for (parameter.path) |field| try path.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, field), p));
+            try roles.append(l.scratch, try l.arrayNode(&.{ try l.intNode(parameter.index, p), try l.intNode(role.node, p), try l.arrayNode(path.items, p) }, p));
+        }
+        var nodes: std.ArrayList(Node.Index) = .empty;
+        for (wire.nodes, 0..) |node, ni| {
+            if (!needs[ni]) {
+                try nodes.append(l.scratch, try l.intNode(0, p));
+                continue;
+            }
+            var edges: std.ArrayList(Node.Index) = .empty;
+            for (wire.edges[node.edges.start..][0..node.edges.len], 0..) |edge, ei| {
+                const label = if (edge.label.unwrap()) |label|
+                    if (node.kind == .record) try l.fieldString(label, p) else try l.stringNode(l.interner.slice(label), p)
+                else
+                    try l.stringNode(l.interner.slice(try l.slotName(@intCast(ei))), p);
+                try edges.append(l.scratch, try l.arrayNode(&.{ label, try l.intNode(edge.child, p) }, p));
+            }
+            try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(@backingInt(node.kind), p), try l.arrayNode(edges.items, p) }, p));
+        }
+        return l.arrayNode(&.{ try l.arrayNode(roles.items, p), try l.arrayNode(nodes.items, p) }, p);
+    }
+
+    fn workerDescriptor(l: *Lowerer, descriptor: @import("WorkerEntry.zig").Descriptor, p: u32) Allocator.Error!Node.Index {
+        const global = try l.add(.global_this, p, 0, 0);
+        const ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "URL"), p);
+        const path = try l.stringNode(descriptor.url, p);
+        const base = try l.add(.import_meta_url, p, 0, 0);
+        const url = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{ path, base }))));
+        return l.object(&.{
+            try l.property(try l.interner.getOrPut(l.gpa, "$wire"), try l.wirePlan(descriptor.wire, descriptor.module, descriptor.decl, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "id"), try l.stringNode(descriptor.id, p), p),
+            try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
+        }, p);
+    }
+
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (l.in.worker_descriptors.len != 0) {
+            if (l.declTarget(l.in.module.int(), inst)) |ref| {
+                for (l.in.worker_descriptors) |descriptor| {
+                    if (descriptor.module.int() == ref[0] and descriptor.decl == ref[1]) return l.workerDescriptor(descriptor, l.pos(inst));
+                }
+            }
+        }
         const saved = l.evidence_out;
         l.evidence_out = out;
         defer l.evidence_out = saved;
@@ -10396,6 +10474,43 @@ pub const Lowerer = struct {
         return .{ .c = c, .x = x };
     }
 
+    // Keep native recipe temporaries out of the recursive ordinary-call frame.
+    noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
+        if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
+            switch (native.recipe) {
+                .query_selector, .text_content, .timeout => {}, // Precise generated adapters.
+                else => {
+                    const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder;
+                    const values = if (ignores_unit) blk: {
+                        // Unit arguments can perform effects before the native call.
+                        for (arg_insts) |arg| try l.discard(out, arg, p);
+                        break :blk @as([]const Node.Index, &.{});
+                    } else try l.orderedExprs(out, arg_insts, false);
+                    const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+                    switch (native.recipe) {
+                        .document, .worker_self => return try l.member(global, try l.interner.getOrPut(l.gpa, if (native.recipe == .document) "document" else "self"), p),
+                        .identity => return values[0],
+                        .byte_length => return try l.member(values[0], try l.interner.getOrPut(l.gpa, "byteLength"), p),
+                        .encode => return try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "encode"), p), values[1..], p),
+                        .text_encoder => {
+                            const target = try l.member(global, try l.interner.getOrPut(l.gpa, "TextEncoder"), p);
+                            const range = try l.b.addRange(&.{});
+                            const record = try l.b.addRecord(range);
+                            return try l.add(.new_call, p, target.int(), @backingInt(record));
+                        },
+                        .set_text_content => {
+                            const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "textContent"), p);
+                            try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                            return try l.nullNode(p);
+                        },
+                        else => unreachable,
+                    }
+                },
+            }
+        }
+        return null;
+    }
+
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
         // this instruction is an evidence ARGUMENT and they are numbered
@@ -10513,6 +10628,7 @@ pub const Lowerer = struct {
             return l.binary(.add, v[0], v[1], p);
         }
 
+        if (try l.nativeCallExpr(out, callee_inst, arg_insts, p)) |native| return native;
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).
         if (l.jsIntrinsicOf(callee_inst)) |which| {

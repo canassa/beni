@@ -655,6 +655,41 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     // not exist, and the one that wanted to be one carried an unrelated
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
+    // Dedicated module workers are exercised on a test-only platform.
+    if (kind == .build_bad) {
+        const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, "dedicated" });
+        const start = fixtures.items.len;
+        try collect(arena, worker_dir, false, false, &fixtures, true);
+        const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = worker_platform;
+            fixture.unchecked_workers = true;
+        }
+    }
+    if (kind == .browser) {
+        const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, "dedicated" });
+        const start = fixtures.items.len;
+        try collect(arena, worker_dir, false, false, &fixtures, true);
+        const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = worker_platform;
+            fixture.unchecked_workers = true;
+        }
+    }
+    if (kind == .emit) {
+        for ([_]bool{ false, true }) |release| {
+            const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, if (release) "release/dedicated" else "dedicated" });
+            const start = fixtures.items.len;
+            try collect(arena, worker_dir, false, false, &fixtures, true);
+            const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
+            for (fixtures.items[start..]) |*fixture| {
+                fixture.platform = worker_platform;
+                fixture.unchecked_workers = true;
+                fixture.app = true;
+                fixture.release = release;
+            }
+        }
+    }
     // `repkeys/inline/`: release applications built for `browser-inline`,
     // whose lifted pieces are where a lifted arm's parameter takes its
     // local's key.
@@ -1431,6 +1466,7 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
     /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
+    unchecked_workers: bool = false,
     /// A `browser/tea/` page's second case, when it carries a
     /// `.fuzz-run-hash`: its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
@@ -1487,7 +1523,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "prerender")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "prerender")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1760,6 +1796,7 @@ const Case = struct {
     fn argv(c: Case, args: []const []const u8) ![]const []const u8 {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
+        if (c.fixture.unchecked_workers and args.len != 0 and std.mem.eql(u8, args[0], "build")) try list.append(c.arena, "--allow-unchecked-workers");
         if (c.fixture.core) try list.append(c.arena, "--core");
         // Enforcement refusals use the same platform as their ownership dump.
         if (c.kind == .check_bad and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
@@ -3407,6 +3444,13 @@ const Case = struct {
     /// `plan`, skipped when its output tree, golden, DOM, driver and script
     /// were verified together before. Chrome always runs.
     fn checkedPlan(c: Case, plan: PagePlan, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
+        // happy-dom has no Worker implementation; still build both modes.
+        if (c.cfg.chrome == null and c.goldenExists("chrome-only")) {
+            var skipped = plan;
+            skipped.skip = true;
+            skipped.checked = true;
+            return skipped;
+        }
         if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !plan.bless and c.cfg.chrome == null) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(plan.golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 const line = try run_hash.lineWith(c.arena, c.w, plan.out, @tagName(plan.pass), plan.golden, bytes, try browser.page(c.arena, h, script.bytes));
@@ -3851,6 +3895,15 @@ const Case = struct {
             return err;
         };
         try c.expectGolden("js", js);
+        if (c.goldenExists("files")) {
+            const files = try c.w.listFiles("out");
+            try c.expectGolden("files", try std.fmt.allocPrint(c.arena, "{s}\n", .{try std.mem.join(c.arena, "\n", files)}));
+            for (files) |path| {
+                if (std.mem.startsWith(u8, path, "_workers/") and std.mem.endsWith(u8, path, "/_main.mjs")) {
+                    try c.expectGolden("worker-entry.js", try c.w.read(try std.fmt.allocPrint(c.arena, "out/{s}", .{path})));
+                }
+            }
+        }
         try c.expectAbsent();
     }
 

@@ -1,0 +1,27 @@
+-- A launch alias must be diagnosed instead of emitting a missing URL.
+import Page
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+openIt : Worker.Program String String ⊤ → Result Worker.OpenError (Worker.Handle String String)
+openIt = Worker.open
+
+
+start : ⊤ → ⊤
+start _ =
+    _ = openIt worker
+    ⊤
+
+
+main : Page.Program
+main = Page.program start

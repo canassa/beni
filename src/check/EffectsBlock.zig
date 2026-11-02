@@ -42,8 +42,8 @@ pub fn write(
     defer gpa.free(worth);
     @memset(worth, false);
     for (classes, 0..) |c, i| {
-        if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
-        for (s.depsOf(c)) |d| worth[d] = true;
+        if (c.rung != .pure or c.realms != 0 or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
+        for (s.depsOf(c)) |d| worth[d & ~Interface.EffectBlock.realm_only] = true;
     }
 
     var sites: std.ArrayList(BlockSite) = .empty;
@@ -94,10 +94,11 @@ pub fn write(
         const class = classes[c];
         deps.clearRetainingCapacity();
         for (s.depsOf(class)) |d| {
-            if (number[d] != none) try deps.append(gpa, number[d]);
+            const index = d & ~Interface.EffectBlock.realm_only;
+            if (number[index] != none) try deps.append(gpa, number[index] | (d & Interface.EffectBlock.realm_only));
         }
         std.mem.sort(u32, deps.items, {}, std.sort.asc(u32));
-        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
+        try extra.append(extra_gpa, @as(u32, @backingInt(class.rung)) | (@as(u32, class.realms) << 16) | (if (class.sync) Interface.EffectBlock.sync_bit else 0) | (if (class.sensitive) Interface.EffectBlock.sensitive_bit else 0));
         try extra.append(extra_gpa, @intCast(deps.items.len));
         try extra.appendSlice(extra_gpa, deps.items);
     }
@@ -115,7 +116,7 @@ pub fn write(
 /// §14.6's walk: from each root in turn, depth first, parameters before
 /// the result, arguments and elements in order, a record's fields by name
 /// text then its extension, an alias's expansion; each variable once. Every
-/// function type and function-holding application is a site, with the path
+/// function type, function-holding application and unknown realm source is a site, with the path
 /// that reached it first.
 fn walkSites(
     e: *Effects,
@@ -142,7 +143,7 @@ fn walkSites(
             const r = store.find(f.v);
             if (store.mark(r) == mark) continue;
             store.setMark(r, mark);
-            if (e.carries(r)) {
+            if (e.realmCarrier(r)) {
                 // A variable the graph never met is in no class a summary has.
                 if (e.solved.nodeIfAny(r)) |id| {
                     const steps_start: u32 = @intCast(steps.items.len);

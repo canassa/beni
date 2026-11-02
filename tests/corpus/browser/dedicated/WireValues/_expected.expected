@@ -1,0 +1,9 @@
+-- load
+<body>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "page:ping!:7worker:23:18:page:tuple7:42private"
+<body>
+  <button>"launch"</button>
+  <output>"page:ping!:7worker:23:18:page:tuple7:42private"</output>
+</body>

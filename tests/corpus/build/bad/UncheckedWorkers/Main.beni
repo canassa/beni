@@ -1,0 +1,23 @@
+-- Declaring launches must not enable unchecked public worker emission.
+import Page
+import Worker
+
+
+worker : Worker.Program
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ =
+    _ = Worker.open worker
+    ⊤
+
+
+main : Page.Program
+main = Page.program start

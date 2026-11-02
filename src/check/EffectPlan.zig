@@ -210,6 +210,8 @@ fn bucket(p: *Plan) Error!void {
         const target = schemeDecl(e, r.scheme) orelse continue;
         const start: u32 = @intCast(p.choice_nodes.items.len);
         for (e.pairs.items[r.start..][0..r.len]) |pair| {
+            // Realm-only generic sources cannot select a suspendable body.
+            if (!e.carries(e.store.find(pair.a))) continue;
             const node = nodeOf(p, pair.b) orelse continue;
             try p.choice_nodes.append(scratch, node);
         }
@@ -338,6 +340,7 @@ fn reach(p: *Plan, start: u32, tag: u32) Error!bool {
         if (p.relevant[x] == tag and level(p, x) != .suspends) met = true;
         var at = s.head.items[x];
         while (at != none) : (at = s.next.items[at]) {
+            if (s.origin.items[at] == Effects.realm_origin) continue;
             const y = s.find(s.to.items[at]);
             if (p.seen[y] == w) continue;
             p.seen[y] = w;
@@ -425,8 +428,10 @@ fn answers(p: *Plan) Error!Result {
         }
         var own: Suspend = .no;
         if (rootOf(p, d)) |r| own = answer(p, r, tag);
-        decls[d] = .{ .own = own, .twin = p.twin[d] };
-        if (own != .no or p.twin[d]) any_decl = true;
+        const realms = if (rootOf(p, d)) |r| p.e.realmOf(r) else 0;
+        const eval_realms = if (p.e.eval[d].unwrap()) |v| if (p.e.nodeOf(v)) |r| p.e.realmOf(r) else 0 else 0;
+        decls[d] = .{ .own = own, .twin = p.twin[d], .realms = realms, .eval_realms = eval_realms };
+        if (own != .no or p.twin[d] or realms != 0 or eval_realms != 0) any_decl = true;
     }
     // One row per instruction: a call's own answer and a method call's
     // choice of body land on the same instruction.
@@ -506,6 +511,7 @@ fn taint(p: *Plan, d: u32) Error!void {
         while (p.stack.pop()) |x| {
             var at = s.head.items[x];
             while (at != none) : (at = s.next.items[at]) {
+                if (s.origin.items[at] == Effects.realm_origin) continue;
                 const y = s.find(s.to.items[at]);
                 if (p.tainted[y] == tag) continue;
                 p.tainted[y] = tag;

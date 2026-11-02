@@ -84,6 +84,8 @@ const Var = TypeStore.Var;
 
 /// What `Driver.checkInner` hands the checker for one module.
 pub const Input = struct {
+    entry_constructors: []const []const u8 = &.{},
+    entry_kinds: []const @import("../js/Manifest.zig").EntryKind = &.{},
     gpa: Allocator,
     scratch: *Arena,
     patterns: *Arena,
@@ -108,6 +110,8 @@ pub const Input = struct {
     roundtrip_dispatch: bool = false,
     /// Compute the crossing bits (checker-v2.md §36).
     crossing: bool = true,
+    /// Internal rollout option; enable after typed Task storage lands.
+    host_free: bool = false,
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
     /// `unit_discarded` is emitted (checker-v2.md §34).
@@ -176,7 +180,9 @@ pub fn check(in: Input) Error!Check.Counters {
     schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
     defer too_deep.deinit(scratch);
+    var wire_readings: std.ArrayList(Context.WireReading) = .empty;
     var cx: Context = .{
+        .wire_readings = if (in.entry_kinds.len != 0) &wire_readings else null,
         .gpa = gpa,
         .scratch = scratch,
         .store = store,
@@ -279,7 +285,7 @@ pub fn check(in: Input) Error!Check.Counters {
     var solver: Solve = undefined;
     solver.init(&cx, &report, retained);
     // The crossing bits' records (checker-v2.md §36), when the run computes them.
-    solver.instantiate.track_crossing = in.crossing;
+    solver.instantiate.track_crossing = in.crossing or in.host_free;
     defer solver.deinit();
     solver.decl_scheme = decl_scheme;
     solver.own_values = own_values;
@@ -348,6 +354,7 @@ pub fn check(in: Input) Error!Check.Counters {
     try @import("Nullary.zig").checked(gpa, bir, &solver.evidence);
     // Every group, nested check and derived context has recorded its
     // edges: the summaries now (§14.4), before P6 and P8 read them.
+    try @import("Realms.zig").seed(&effects, &cx, decl_scheme, &report);
     const effects_token = if (in.profile) |p| p.begin() else null;
     const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence);
     // What the lowering reads of the bits (transparent-effects-proposal.md
@@ -433,7 +440,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // The type-key artifact (checker-v2.md §36), while the store is alive,
     // and before P8, which publishes each declaration's crossing
     // quantifiers.
-    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0 and (keyed or in.crossing)) try TypeKeys.build(.{
+    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0 and (keyed or in.crossing or in.host_free)) try TypeKeys.build(.{
         .cx = &cx,
         .gpa = gpa,
         .scratch = scratch,
@@ -451,13 +458,46 @@ pub fn check(in: Input) Error!Check.Counters {
         .schemas = &schemas,
         .dispatch = in.dispatch,
         .keyed = keyed,
+        .host_free = in.host_free,
+        .host_free_uses = solver.instantiate.host_free.items,
+        .report = &report,
     }) else null;
     if (type_keys) |t| {
         in.type_keys.deinit(gpa);
         in.type_keys.* = t.artifact;
     }
 
-    // Declaration termination needs the elaborated callees and the solved
+    var wire_quantifiers: []const bool = &.{};
+    var wire_paths: []const @import("Wire.zig").Requirement = &.{};
+    if (!quiet and report.errors == 0 and (in.entry_kinds.len != 0 or solver.instantiate.wire.items.len != 0)) {
+        const wire = try @import("Wire.zig").build(.{
+            .cx = &cx,
+            .gpa = gpa,
+            .scratch = scratch,
+            .store = store,
+            .types = in.types,
+            .interner = in.interner,
+            .bir = bir,
+            .local_type = local_type,
+            .inst_type = inst_type,
+            .decl_scheme = decl_scheme,
+            .decl_display = decl_display,
+            .casts = &.{},
+            .uses = &.{},
+            .copies = solver.instantiate.copies.items,
+            .schemas = &schemas,
+            .dispatch = in.dispatch,
+            .keyed = false,
+        }, solver.instantiate.wire.items, in.entry_kinds, report.staging().items);
+        in.type_keys.wire = wire.artifact;
+        wire_quantifiers = wire.quantifiers;
+        wire_paths = wire.paths;
+
+        try report.flush();
+    }
+
+    // Declaration termination needs
+    // the elaborated callees and the solved
     // effect rungs. Publish only a closed, acyclic pure call graph.
     if (!quiet) try @import("Totality.zig").run(&effects, .{
         .scratch = scratch,
@@ -485,6 +525,9 @@ pub fn check(in: Input) Error!Check.Counters {
         .contexts = &solver.contexts,
         .dispatch = in.dispatch,
         .crossing = if (type_keys) |t| t.crossing else &.{},
+        .wire = wire_quantifiers,
+        .wire_paths = wire_paths,
+        .host_free = if (type_keys) |t| t.host_free else &.{},
     });
     try reportKeyErrors(&report, key_errors.items, &reported_keys);
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
@@ -495,7 +538,8 @@ pub fn check(in: Input) Error!Check.Counters {
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
     if (in.roundtrip_dispatch) try roundtripKeys(in, &report);
     if (!quiet) {
-        try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
+        const deferred = try @import("../entry/Static.zig").definitions(scratch, bir, in.module, in.graph, in.interfaces, in.interner, in.entry_constructors);
+        try Cycles.runDeferred(scratch, bir, in.dispatch, in.interner, report.staging(), deferred);
         try report.flush();
         // Last, so every error the module has gates it.
         if (report.errors == 0) try assertEvidence(in, bir, &report, p6);

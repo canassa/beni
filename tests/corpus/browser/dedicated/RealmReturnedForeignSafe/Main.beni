@@ -1,0 +1,39 @@
+-- Stored and returned callbacks must keep their execution realm.
+import Page
+import RealmProbe
+import Worker
+
+
+pageCb : ⊤ → ⊤
+pageCb _ = ⊤
+
+
+recv = RealmProbe.mkRecv ⊤
+
+
+go _ = recv pageCb
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                go ⊤
+                "safe"
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    Page.text "ready"
+    Page.button λ_ →
+        case Worker.open worker of
+            Ok handle →
+                Worker.receive handle Page.text
+                Worker.send handle "ping"
+            Err _ →
+                Page.text "open failed"

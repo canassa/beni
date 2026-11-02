@@ -1,0 +1,3 @@
+-- A library needs no runtime for the platform's top Program.
+pub answer : Int
+answer = 42

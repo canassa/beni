@@ -1,0 +1,11 @@
+import Worker
+
+
+pub worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }

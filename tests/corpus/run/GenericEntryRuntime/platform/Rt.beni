@@ -1,0 +1,12 @@
+import Js
+import Start exposing (Program)
+
+
+pub type alias Runner =
+    Program → ⊤
+
+
+pub run : Runner
+run program =
+    _ = Js.call (Js.global "console") "log" [ Js.from (Start.text program) ]
+    ⊤

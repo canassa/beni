@@ -1,0 +1,324 @@
+[
+  {
+    "type": "AudioData",
+    "attributes": "Exposed=(Window,DedicatedWorker), Serializable, Transferable",
+    "source": "webcodecs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webcodecs.idl",
+    "spec": "WebCodecs (https://w3c.github.io/webcodecs/)"
+  },
+  {
+    "type": "Blob",
+    "attributes": "Exposed=(Window,Worker), Serializable",
+    "source": "FileAPI.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/FileAPI.idl",
+    "spec": "File API (https://w3c.github.io/FileAPI/)"
+  },
+  {
+    "type": "CropTarget",
+    "attributes": "Exposed=(Window,Worker), Serializable",
+    "source": "mediacapture-region.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/mediacapture-region.idl",
+    "spec": "Region Capture (https://w3c.github.io/mediacapture-region/)"
+  },
+  {
+    "type": "CryptoKey",
+    "attributes": "SecureContext,Exposed=(Window,Worker),Serializable",
+    "source": "webcrypto.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webcrypto.idl",
+    "spec": "Web Cryptography API Level 2 (https://w3c.github.io/webcrypto/)"
+  },
+  {
+    "type": "DOMException",
+    "attributes": "Exposed=*,  Serializable",
+    "source": "webidl.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webidl.idl",
+    "spec": "Web IDL Standard (https://webidl.spec.whatwg.org/)"
+  },
+  {
+    "type": "DOMMatrix",
+    "attributes": "Exposed=(Window,Worker),  Serializable,  LegacyWindowAlias=(SVGMatrix,WebKitCSSMatrix)",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "DOMMatrixReadOnly",
+    "attributes": "Exposed=(Window,Worker),  Serializable",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "DOMPoint",
+    "attributes": "Exposed=(Window,Worker),  Serializable,  LegacyWindowAlias=SVGPoint",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "DOMPointReadOnly",
+    "attributes": "Exposed=(Window,Worker),  Serializable",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "DOMQuad",
+    "attributes": "Exposed=(Window,Worker),  Serializable",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "DOMRect",
+    "attributes": "Exposed=(Window,Worker),  Serializable,  LegacyWindowAlias=SVGRect",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "DOMRectReadOnly",
+    "attributes": "Exposed=(Window,Worker),  Serializable",
+    "source": "geometry.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/geometry.idl",
+    "spec": "Geometry Interfaces Module Level 1 (https://drafts.csswg.org/geometry-1/)"
+  },
+  {
+    "type": "EncodedAudioChunk",
+    "attributes": "Exposed=(Window,DedicatedWorker), Serializable",
+    "source": "webcodecs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webcodecs.idl",
+    "spec": "WebCodecs (https://w3c.github.io/webcodecs/)"
+  },
+  {
+    "type": "EncodedVideoChunk",
+    "attributes": "Exposed=(Window,DedicatedWorker), Serializable",
+    "source": "webcodecs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webcodecs.idl",
+    "spec": "WebCodecs (https://w3c.github.io/webcodecs/)"
+  },
+  {
+    "type": "FencedFrameConfig",
+    "attributes": "Exposed=Window, Serializable",
+    "source": "fenced-frame.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/fenced-frame.idl",
+    "spec": "Fenced Frame (https://wicg.github.io/fenced-frame/)"
+  },
+  {
+    "type": "File",
+    "attributes": "Exposed=(Window,Worker), Serializable",
+    "source": "FileAPI.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/FileAPI.idl",
+    "spec": "File API (https://w3c.github.io/FileAPI/)"
+  },
+  {
+    "type": "FileList",
+    "attributes": "Exposed=(Window,Worker), Serializable",
+    "source": "FileAPI.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/FileAPI.idl",
+    "spec": "File API (https://w3c.github.io/FileAPI/)"
+  },
+  {
+    "type": "FileSystemDirectoryHandle",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Serializable",
+    "source": "fs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/fs.idl",
+    "spec": "File System Standard (https://fs.spec.whatwg.org/)"
+  },
+  {
+    "type": "FileSystemFileHandle",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Serializable",
+    "source": "fs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/fs.idl",
+    "spec": "File System Standard (https://fs.spec.whatwg.org/)"
+  },
+  {
+    "type": "FileSystemHandle",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Serializable",
+    "source": "file-system-access.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/file-system-access.idl",
+    "spec": "File System Access (https://wicg.github.io/file-system-access/)"
+  },
+  {
+    "type": "FileSystemHandle",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Serializable",
+    "source": "fs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/fs.idl",
+    "spec": "File System Standard (https://fs.spec.whatwg.org/)"
+  },
+  {
+    "type": "GPUCompilationInfo",
+    "attributes": "Exposed=(Window, Worker), Serializable, SecureContext",
+    "source": "webgpu.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webgpu.idl",
+    "spec": "WebGPU (https://gpuweb.github.io/gpuweb/)"
+  },
+  {
+    "type": "GPUCompilationMessage",
+    "attributes": "Exposed=(Window, Worker), Serializable, SecureContext",
+    "source": "webgpu.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webgpu.idl",
+    "spec": "WebGPU (https://gpuweb.github.io/gpuweb/)"
+  },
+  {
+    "type": "GPUPipelineError",
+    "attributes": "Exposed=(Window, Worker), SecureContext, Serializable",
+    "source": "webgpu.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webgpu.idl",
+    "spec": "WebGPU (https://gpuweb.github.io/gpuweb/)"
+  },
+  {
+    "type": "ImageBitmap",
+    "attributes": "Exposed=(Window,Worker), Serializable, Transferable",
+    "source": "html.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/html.idl",
+    "spec": "HTML Standard (https://html.spec.whatwg.org/multipage/)"
+  },
+  {
+    "type": "ImageData",
+    "attributes": "Exposed=(Window,Worker),  Serializable",
+    "source": "html.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/html.idl",
+    "spec": "HTML Standard (https://html.spec.whatwg.org/multipage/)"
+  },
+  {
+    "type": "MIDIAccess",
+    "attributes": "SecureContext, Exposed=(Window,Worker), Transferable",
+    "source": "webmidi.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webmidi.idl",
+    "spec": "Web MIDI API (https://webaudio.github.io/web-midi-api/)"
+  },
+  {
+    "type": "MediaSourceHandle",
+    "attributes": "Transferable, Exposed=(Window,DedicatedWorker)",
+    "source": "media-source.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/media-source.idl",
+    "spec": "Media Source Extensions\u2122 (https://w3c.github.io/media-source/)"
+  },
+  {
+    "type": "MediaStreamTrack",
+    "attributes": "Exposed=(Window,DedicatedWorker), Transferable",
+    "source": "mediacapture-extensions.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/mediacapture-extensions.idl",
+    "spec": "Media Capture and Streams Extensions (https://w3c.github.io/mediacapture-extensions/)"
+  },
+  {
+    "type": "MediaStreamTrackHandle",
+    "attributes": "Exposed=(Window,DedicatedWorker), Transferable",
+    "source": "mediacapture-transform.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/mediacapture-transform.idl",
+    "spec": "MediaStreamTrack Insertable Media Processing using Streams (https://w3c.github.io/mediacapture-transform/)"
+  },
+  {
+    "type": "MessagePort",
+    "attributes": "Exposed=(Window,Worker,AudioWorklet), Transferable",
+    "source": "html.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/html.idl",
+    "spec": "HTML Standard (https://html.spec.whatwg.org/multipage/)"
+  },
+  {
+    "type": "OffscreenCanvas",
+    "attributes": "Exposed=(Window,Worker), Transferable",
+    "source": "html.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/html.idl",
+    "spec": "HTML Standard (https://html.spec.whatwg.org/multipage/)"
+  },
+  {
+    "type": "QuotaExceededError",
+    "attributes": "Exposed=*, Serializable",
+    "source": "webidl.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webidl.idl",
+    "spec": "Web IDL Standard (https://webidl.spec.whatwg.org/)"
+  },
+  {
+    "type": "RTCCertificate",
+    "attributes": "Exposed=Window, Serializable",
+    "source": "webrtc.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webrtc.idl",
+    "spec": "WebRTC: Real-Time Communication in Browsers (https://w3c.github.io/webrtc-pc/)"
+  },
+  {
+    "type": "RTCDataChannel",
+    "attributes": "Exposed=(Window,DedicatedWorker), Transferable",
+    "source": "webrtc.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webrtc.idl",
+    "spec": "WebRTC: Real-Time Communication in Browsers (https://w3c.github.io/webrtc-pc/)"
+  },
+  {
+    "type": "RTCEncodedAudioFrame",
+    "attributes": "Exposed=(Window,DedicatedWorker), Serializable",
+    "source": "webrtc-encoded-transform.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webrtc-encoded-transform.idl",
+    "spec": "WebRTC Encoded Transform (https://w3c.github.io/webrtc-encoded-transform/)"
+  },
+  {
+    "type": "RTCEncodedVideoFrame",
+    "attributes": "Exposed=(Window,DedicatedWorker), Serializable",
+    "source": "webrtc-encoded-transform.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webrtc-encoded-transform.idl",
+    "spec": "WebRTC Encoded Transform (https://w3c.github.io/webrtc-encoded-transform/)"
+  },
+  {
+    "type": "ReadableStream",
+    "attributes": "Exposed=*, Transferable",
+    "source": "streams.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/streams.idl",
+    "spec": "Streams Standard (https://streams.spec.whatwg.org/)"
+  },
+  {
+    "type": "RestrictionTarget",
+    "attributes": "Exposed=(Window,Worker), Serializable",
+    "source": "element-capture.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/element-capture.idl",
+    "spec": "Element Capture (https://screen-share.github.io/element-capture/)"
+  },
+  {
+    "type": "TransformStream",
+    "attributes": "Exposed=*, Transferable",
+    "source": "streams.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/streams.idl",
+    "spec": "Streams Standard (https://streams.spec.whatwg.org/)"
+  },
+  {
+    "type": "VideoFrame",
+    "attributes": "Exposed=(Window,DedicatedWorker), Serializable, Transferable",
+    "source": "webcodecs.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webcodecs.idl",
+    "spec": "WebCodecs (https://w3c.github.io/webcodecs/)"
+  },
+  {
+    "type": "WebTransportDatagramsWritable",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Transferable",
+    "source": "webtransport.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webtransport.idl",
+    "spec": "WebTransport (https://w3c.github.io/webtransport/)"
+  },
+  {
+    "type": "WebTransportError",
+    "attributes": "Exposed=(Window,Worker), Serializable, SecureContext",
+    "source": "webtransport.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webtransport.idl",
+    "spec": "WebTransport (https://w3c.github.io/webtransport/)"
+  },
+  {
+    "type": "WebTransportReceiveStream",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Transferable",
+    "source": "webtransport.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webtransport.idl",
+    "spec": "WebTransport (https://w3c.github.io/webtransport/)"
+  },
+  {
+    "type": "WebTransportSendStream",
+    "attributes": "Exposed=(Window,Worker), SecureContext, Transferable",
+    "source": "webtransport.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/webtransport.idl",
+    "spec": "WebTransport (https://w3c.github.io/webtransport/)"
+  },
+  {
+    "type": "WritableStream",
+    "attributes": "Exposed=*, Transferable",
+    "source": "streams.idl",
+    "url": "https://github.com/w3c/webref/blob/main/ed/idl/streams.idl",
+    "spec": "Streams Standard (https://streams.spec.whatwg.org/)"
+  }
+]

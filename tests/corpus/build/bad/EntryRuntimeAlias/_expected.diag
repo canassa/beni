@@ -1,0 +1,1 @@
+[{"code":"entry_runtime_suspends","severity":"error","span":{"file":"platform/Rt.beni","start":{"line":19,"col":1},"end":{"line":19,"col":4}},"title":"ENTRY RUNTIME SUSPENDS","message":"`Rt.run` may suspend, but the generated entry calls it synchronously. Install\nlisteners, start an owned root fiber, then return; initialization may suspend\ninside that fiber."}]

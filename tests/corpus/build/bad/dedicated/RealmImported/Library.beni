@@ -1,0 +1,12 @@
+-- A native page operation must remain visible in the worker's inferred summary.
+import Browser.Host.Document as Document
+import Browser.Host.Window as Window
+
+
+pub dom : ⊤ → String
+dom _ =
+    case Document.querySelector (Window.document ⊤) "body" of
+        Ok _ →
+            "found"
+        Err _ →
+            "bad selector"

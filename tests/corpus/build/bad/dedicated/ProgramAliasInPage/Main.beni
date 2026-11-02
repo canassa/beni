@@ -1,0 +1,27 @@
+-- Launching a Program does not make its alias executable on the page.
+import Page
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+selected : Worker.Program String String ⊤
+selected = worker
+
+
+start : ⊤ → ⊤
+start _ =
+    _ = Worker.open worker
+    Worker.run selected
+
+
+main : Page.Program
+main = Page.program start

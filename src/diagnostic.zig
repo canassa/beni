@@ -510,6 +510,17 @@ pub const Code = enum {
     /// changes a value it is handed, or calls a function that does, at the
     /// write. A language rule; the ownership checker v2's, an error.
     comparison_changes_value,
+    /// Generic entry contracts (workers-entry-implementation.md). Appended after
+    /// upstream diagnostics. Cached ordinals are compiler-build-key scoped.
+    invalid_entry_kind,
+    worker_message_not_concrete,
+    worker_message_not_serializable,
+    worker_realm_violation,
+    host_value_erasure,
+    invalid_native_binding,
+    obsolete_host_promise,
+    entry_runtime_suspends,
+    worker_entry_not_static,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -612,6 +623,15 @@ pub fn title(code: Code) []const u8 {
         .missing_main => "MISSING MAIN",
         .duplicate_main => "TWO MAINS",
         .main_not_program => "MAIN IS NOT A PROGRAM",
+        .invalid_entry_kind => "INVALID ENTRY KIND",
+        .worker_message_not_concrete => "WORKER MESSAGE NOT CONCRETE",
+        .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
+        .worker_realm_violation => "WORKER REALM VIOLATION",
+        .host_value_erasure => "HOST VALUE ERASURE",
+        .invalid_native_binding => "INVALID NATIVE BINDING",
+        .obsolete_host_promise => "OBSOLETE HOST PROMISE",
+        .worker_entry_not_static => "WORKER ENTRY NOT STATIC",
+        .entry_runtime_suspends => "ENTRY RUNTIME SUSPENDS",
         .where_variable_unbound => "UNKNOWN CONSTRAINED VARIABLE",
         .duplicate_where_constraint => "DUPLICATE CONSTRAINT",
         .unknown_method => "UNKNOWN METHOD",

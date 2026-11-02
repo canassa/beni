@@ -83,6 +83,7 @@ const Lower = @import("Lower.zig");
 const CheckedTypes = @import("../check/Types.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
+const EntryPlan = @import("../entry/Plan.zig");
 const JsIr = @import("JsIr.zig");
 const Join = @import("Join.zig");
 const Opt = @import("Opt.zig");
@@ -112,6 +113,7 @@ const beni_markup = @import("beni_markup");
 const Interface = @import("../resolve/Interface.zig");
 const Writes = @import("../writes/Writes.zig");
 const Lift = @import("Lift.zig");
+const WorkerEntry = @import("WorkerEntry.zig");
 
 const Emit = @This();
 
@@ -159,7 +161,16 @@ const entry_export_binding = "$beniExport";
 
 /// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
 /// output key taken from the first package of the chain that declares it.
+pub const EntryKind = struct {
+    definition: Manifest.EntryKind,
+    root: []const u8,
+    layer: u32,
+};
+
 pub const Platform = struct {
+    entry_kinds: []const EntryKind = &.{},
+    entry_host: EntryPlan.Realm = .unknown,
+    obsolete_host_root: ?[]const u8 = null,
     /// Module-qualified name of the opaque `Program` type `main` must have.
     /// Null for a chain that declares none, which only a library builds for.
     program: ?[]const u8 = null,
@@ -468,6 +479,7 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
+    allow_unchecked_workers: bool = false,
     /// `--test-hooks`, the hidden test-only flag (`src/Cli.zig`): what
     /// `Js.testHooks ()` is (`backend.md` §4, *`Js.testHooks` is the
     /// build's test hooks*); a platform's test hooks are in the build only
@@ -665,6 +677,7 @@ pub fn run(
     options: Options,
     io_failure: *?Session.IoFailure,
 ) Error!Result {
+    session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -688,12 +701,14 @@ pub fn run(
     // platform whose manifest names an impossible entry file is broken
     // whatever the program does, and `--library` — which writes no entry
     // file at all — must not be the way to find out it is fine.
+    if (options.platform.obsolete_host_root) |root| try e.reportInFile(.obsolete_host_promise, .{ .path = try std.fmt.allocPrint(scratch, "{s}/beni.json", .{root}) }, "The platform-wide `host: page` promise is obsolete. Declare `entryHost: window` for the page entry; entryKinds supply each worker realm. EntryHost checks every entry separately.", .{});
     try e.checkEntryFileName();
     try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
+    try e.checkEntryKinds();
     // A library has no entry point and is not asked for one (§2): the
     // search is off, so `missing_main` does not fire and a `main` that
     // happens to be there is not type-checked against the platform's
@@ -702,6 +717,10 @@ pub fn run(
     // export list — `Reach.collectRoots` says why at length.
     const entry = if (options.library) null else try e.findEntry();
     if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
+    if (session.entry_plan.selected != .none) {
+        e.options.platform.entry_host = session.entry_plan.kinds.get(@backingInt(session.entry_plan.selected)).realm;
+        e.options.platform.page = false;
+    }
 
     // §9's reachability walk, between `findEntry` and `emitModules` and
     // BEFORE lowering: an unreachable declaration is then never lowered at
@@ -734,7 +753,11 @@ pub fn run(
         try e.findLifts();
         try e.cutPrerender();
     };
+    try e.workerCandidates();
     try e.eliminate(entry);
+    try e.planWorkers(entry);
+    if (entry) |root| try e.checkEntryRealm(root);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     try e.shareValidators();
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
@@ -775,6 +798,8 @@ pub fn run(
     // §2's page shell, beside the entry file, in either layout.
     if (entry) |at| try e.emitShell(at);
     try e.emitDirectPlan();
+    try e.emitWorkers();
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.hasErrors()) return e.nothingWritten(gpa);
@@ -813,6 +838,7 @@ pub fn run(
 /// Diagnostics are owned by the caller, messages included, like `run`'s.
 pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, options: Options) Allocator.Error![]const Item {
     var io_failure: ?Session.IoFailure = null;
+    session.entry_plan.reset();
     var e: Emitter = .{
         .gpa = gpa,
         .scratch = scratch,
@@ -823,12 +849,14 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     errdefer for (e.diagnostics.items) |d| gpa.free(d.message);
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
+    if (options.platform.obsolete_host_root) |root| try e.reportInFile(.obsolete_host_promise, .{ .path = try std.fmt.allocPrint(scratch, "{s}/beni.json", .{root}) }, "The platform-wide `host: page` promise is obsolete. Declare `entryHost: window` for the page entry; entryKinds supply each worker realm. EntryHost checks every entry separately.", .{});
     try e.checkEntryFileName();
     try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
     try e.checkMarkupRuntime();
+    try e.checkEntryKinds();
     return e.diagnostics.toOwnedSlice(gpa);
 }
 
@@ -1296,6 +1324,11 @@ const Emitter = struct {
     /// Scratch-owned, filled by `eliminate` before the first module is
     /// lowered.
     live: Reach.Result = .empty,
+    worker_candidates: []const WorkerEntry.Descriptor = &.{},
+    deferred: []const Reach.Node = &.{},
+    worker_entries: []const WorkerEntry.Descriptor = &.{},
+    worker_runtime: ?EntryPlan.Value = null,
+    output_prefix: []const u8 = "",
     /// `Lower.Input.core_private`, the same for every module of the build.
     core_private: Lower.CorePrivate = @splat(true),
     /// `Lower.Input.clean_modules`, the same for every module of the build.
@@ -1376,6 +1409,7 @@ const Emitter = struct {
     fuzz_seeds: []const Fields.Seed = &.{},
     /// The fields' short spellings, assigned after the optimiser.
     field_table: ?Fields.Table = null,
+    wire_names: ?*const Fields.Table = null,
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
@@ -1471,11 +1505,349 @@ const Emitter = struct {
         }
     };
 
-    fn graph(e: *Emitter) *const Graph {
+    fn resolvedValue(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index) ?Reach.Node {
+        const b = e.bir(m);
+        const d = b.instData(at);
+        return switch (b.instTag(at)) {
+            .top => .{ .module = m, .kind = .decl, .index = d.lhs },
+            .ext_value => blk: {
+                const other: Graph.Index = @fromBackingInt(d.lhs);
+                if (other.int() >= e.session.resolution.provenance.len) return null;
+                const p = e.session.resolution.provenance[other.int()];
+                if (d.rhs >= p.value_decl.len) return null;
+                break :blk .{ .module = other, .kind = .decl, .index = p.value_decl[d.rhs].int() };
+            },
+            else => null,
+        };
+    }
+
+    fn constructorKind(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index) ?EntryPlan.KindIndex {
+        const b = e.bir(m);
+        if (b.instTag(at) != .call) return null;
+        const callee = e.resolvedValue(m, @fromBackingInt(b.instData(at).lhs)) orelse return null;
+        const plan = &e.session.entry_plan;
+        for (0..plan.kinds.len) |ki| {
+            const k = plan.kinds.get(ki);
+            if (k.launches.len == 0) continue;
+            for (k.constructors.start..k.constructors.start + k.constructors.len) |ci| {
+                const c = plan.constructors.get(ci).value;
+                if (callee.module == c.module and callee.index == c.decl) return @fromBackingInt(@intCast(ki));
+            }
+        }
+        return null;
+    }
+
+    fn workerCandidates(e: *Emitter) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        var out: std.ArrayList(WorkerEntry.Descriptor) = .empty;
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |d, di| {
+                if (d.kind != .value or d.params_start != d.params_end) continue;
+                const body = d.body.unwrap() orelse continue;
+                const kind = e.constructorKind(m, body) orelse continue;
+                const identity = try std.fmt.allocPrint(e.scratch, "{s}/{s}/{s}", .{
+                    try e.outputPath(m), e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(d.name)),
+                });
+                // Input-derived identity, independent of discovery order and jobs.
+                const id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{std.hash.Wyhash.hash(0, identity)});
+                try out.append(e.scratch, .{ .module = m, .decl = @intCast(di), .kind = kind, .identity = identity, .id = id, .wire = &e.session.checked.type_keys[m.int()].wire });
+            }
+        }
+        std.mem.sort(WorkerEntry.Descriptor, out.items, {}, struct {
+            fn less(_: void, a: WorkerEntry.Descriptor, b: WorkerEntry.Descriptor) bool {
+                return std.mem.lessThan(u8, a.identity, b.identity);
+            }
+        }.less);
+        e.worker_candidates = out.items;
+        const deferred = try e.scratch.alloc(Reach.Node, out.items.len);
+        for (deferred, out.items) |*n, d| n.* = .{ .module = d.module, .kind = .decl, .index = d.decl };
+        e.deferred = deferred;
+    }
+
+    fn staticPrograms(e: *Emitter, m: Graph.Index, at: Bir.Inst.Index, kind: EntryPlan.KindIndex, found: *std.ArrayList(u32), allowed: ?[][]bool, depth: u32) Allocator.Error!bool {
+        if (depth > max_alias_depth) return false;
+        const b = e.bir(m);
+        if (e.resolvedValue(m, at)) |n| {
+            for (e.worker_candidates, 0..) |candidate, i| {
+                if (candidate.module == n.module and candidate.decl == n.index and candidate.kind == kind) {
+                    if (std.mem.indexOfScalar(u32, found.items, @intCast(i)) == null) try found.append(e.scratch, @intCast(i));
+                    if (allowed) |refs| refs[m.int()][at.int()] = true;
+                    return true;
+                }
+            }
+            const target = e.bir(n.module).decls[n.index];
+            if (target.params_start != target.params_end) return false;
+            const ok = try e.staticPrograms(n.module, target.body.unwrap() orelse return false, kind, found, allowed, depth + 1);
+            if (ok) if (allowed) |refs| {
+                refs[m.int()][at.int()] = true;
+            };
+            return ok;
+        }
+        const d = b.instData(at);
+        switch (b.instTag(at)) {
+            .case => {
+                const branches = b.extraSlice(b.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
+                for (branches) |branch| {
+                    if (!try e.staticPrograms(m, @fromBackingInt(b.instData(branch).rhs), kind, found, allowed, depth + 1)) return false;
+                }
+                return branches.len != 0;
+            },
+            else => return false,
+        }
+    }
+
+    fn isDeferred(e: *Emitter, m: Graph.Index, di: usize, selected: ?Entry) bool {
+        for (e.deferred) |n| {
+            if (n.module == m and n.index == di) return selected == null or selected.?.module != m or selected.?.decl.int() != di;
+        }
+        return false;
+    }
+
+    fn discoverWorkers(e: *Emitter, selected: ?Entry, found: *std.ArrayList(u32)) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        const plan = &e.session.entry_plan;
+        const allowed = try e.scratch.alloc([]bool, e.graph().count());
+        for (allowed, 0..) |*refs, mi| {
+            refs.* = try e.scratch.alloc(bool, e.bir(@fromBackingInt(@intCast(mi))).insts.len);
+            @memset(refs.*, false);
+        }
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di)) continue;
+                if (e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    if (b.instTag(at) != .call) continue;
+                    const data = b.instData(at);
+                    const callee = e.resolvedValue(m, @fromBackingInt(data.lhs)) orelse continue;
+                    for (0..plan.kinds.len) |ki| {
+                        const k = plan.kinds.get(ki);
+                        for (k.launches.start..k.launches.start + k.launches.len) |li| {
+                            const launch = plan.launches.get(li);
+                            if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
+                            allowed[mi][data.lhs] = true;
+                            if (e.options.library) {
+                                try e.report(.not_implemented, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches in `--library` builds are not implemented yet.", .{});
+                                continue;
+                            }
+                            const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                            if (launch.parameter >= args.len or !try e.staticPrograms(m, args[launch.parameter], @fromBackingInt(@intCast(ki)), found, allowed, 0)) {
+                                try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "This launch needs a top-level Program declaration, or a finite choice between such references. A runtime factory cannot define a worker entry.", .{});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only the callee position of a direct call is a supported launch
+        // reference. Passing it to a callback or alias would hide the edge.
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di)) continue;
+                if (e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    if (allowed[mi][ii]) continue;
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    const value = e.resolvedValue(m, at) orelse continue;
+                    for (0..plan.launches.len) |li| {
+                        const launch = plan.launches.get(li).value;
+                        if (value.module != launch.module or value.index != launch.decl) continue;
+                        try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Use this worker launch as a direct call. Passing or aliasing the launch function hides its worker entry.", .{});
+                    }
+                }
+            }
+        }
+        if (e.hasErrors()) return;
+        // Program bodies belong to their own realm. Only references reached
+        // through a launch argument may become descriptors in this realm.
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            const b = e.bir(m);
+            for (b.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di) or e.isDeferred(m, di, selected)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
+                    if (allowed[mi][ii]) continue;
+                    const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                    if (e.resolvedValue(m, at) == null) continue;
+                    for (0..plan.kinds.len) |ki| {
+                        var candidates: std.ArrayList(u32) = .empty;
+                        if (!try e.staticPrograms(m, at, @fromBackingInt(@intCast(ki)), &candidates, null, 0) or candidates.items.len == 0) continue;
+                        try e.report(.worker_entry_not_static, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Use this Program only as a worker launch argument, directly or through an alias or finite choice. Its body runs only in its own worker.", .{});
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn descriptorsFor(e: *Emitter, module: Graph.Index) ![]const WorkerEntry.Descriptor {
+        if (e.worker_candidates.len == 0) return &.{};
+        const out = try e.scratch.dupe(WorkerEntry.Descriptor, e.worker_candidates);
+        const from = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, try e.outputPath(module) });
+        for (out) |*d| {
+            const to = try std.fmt.allocPrint(e.scratch, "_workers/{s}/_main.mjs", .{d.id});
+            d.url = try relativeSpecifier(e.scratch, from, to);
+        }
+        return out;
+    }
+
+    fn selectedRuntime(e: *const Emitter) ?EntryPlan.Value {
+        return e.worker_runtime orelse e.session.entry_plan.runtime();
+    }
+
+    fn workerBootstrap(e: *Emitter, entry: Entry) !void {
+        const runner = e.worker_runtime.?;
+        const runtime_path = try e.outputPath(runner.module);
+        const main_path = try e.outputPath(entry.module);
+        const run_name = try e.moduleSpelling(runner.module, "run");
+        const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
+        var text: std.ArrayList(u8) = .empty;
+        // These listeners must run before either imported module's initializers.
+        try text.appendSlice(e.scratch,
+            \\globalThis.addEventListener("error", event => { globalThis.console.error(event.error ?? event.message); });
+            \\globalThis.addEventListener("unhandledrejection", event => { globalThis.console.error(event.reason); });
+            \\const pending = [];
+            \\const hold = event => { event.stopImmediatePropagation(); pending.push(event.data); };
+            \\globalThis.addEventListener("message", hold);
+            \\
+        );
+        try text.print(e.scratch,
+            \\const runtime = await import("./{s}");
+            \\const program = await import("./{s}");
+            \\runtime.{s}(program.{s});
+            \\globalThis.removeEventListener("message", hold);
+            \\for (const data of pending) globalThis.dispatchEvent(new MessageEvent("message", {{ data }}));
+            \\
+        , .{ runtime_path, main_path, run_name, main_name });
+        try e.produce(default_entry_file, text.items, e.session.store.path(e.graph().moduleFile(entry.module)));
+    }
+    fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
+        var options = e.options;
+        options.platform.entry_host = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).realm;
+        options.platform.page = false;
+        options.platform.lowering = null;
+        options.platform.markup_runtime = null;
+        options.platform.markup_module = null;
+        options.platform.runtime = null;
+        options.platform.html = null;
+        options.platform.exports = .none;
+        options.platform.entry_exports = &.{};
+        options.platform.entry = default_entry_file;
+        options.fuzz = false;
+        return .{
+            .gpa = e.gpa,
+            .scratch = e.scratch,
+            .session = e.session,
+            .options = options,
+            .io_failure = e.io_failure,
+            .pool = e.pool,
+            .core_private = e.core_private,
+            .clean_modules = e.clean_modules,
+            .v2_whole = e.v2_whole,
+            .forwarding_foreigns = e.forwarding_foreigns,
+            .worker_candidates = e.worker_candidates,
+            .deferred = e.deferred,
+            .worker_entries = e.worker_entries,
+            .wire_names = e.wire_names,
+            .worker_runtime = e.session.entry_plan.kinds.get(@backingInt(descriptor.kind)).runtime,
+            .output_prefix = try std.fmt.allocPrint(e.scratch, "_workers/{s}/", .{descriptor.id}),
+        };
+    }
+
+    fn planWorkers(e: *Emitter, entry: ?Entry) !void {
+        if (e.session.entry_plan.launches.len == 0) return;
+        var found: std.ArrayList(u32) = .empty;
+        try e.discoverWorkers(entry, &found);
+        if (e.options.library) {
+            for (e.worker_candidates) |d| if (e.live.decl(d.module, d.decl)) {
+                try e.report(.not_implemented, e.graph().moduleFile(d.module), e.bir(d.module).decls[d.decl].name_token, "Worker Program exports in `--library` builds are not implemented yet.", .{});
+            };
+            return;
+        }
+        var at: usize = 0;
+        while (at < found.items.len and !e.hasErrors()) : (at += 1) {
+            const descriptor = e.worker_candidates[found.items[at]];
+            var projection = try e.workerProjection(descriptor);
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
+            try projection.eliminate(root);
+            try projection.checkEntryRealm(root);
+            try projection.discoverWorkers(root, &found);
+            try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
+            projection.diagnostics.deinit(e.gpa);
+        }
+        const selected = try e.scratch.alloc(bool, e.worker_candidates.len);
+        @memset(selected, false);
+        for (found.items) |i| selected[i] = true;
+        var entries: std.ArrayList(WorkerEntry.Descriptor) = .empty;
+        for (e.worker_candidates, selected) |d, keep| if (keep) try entries.append(e.scratch, d);
+        if (e.hasErrors()) return;
+        e.worker_entries = entries.items;
+        try e.planWireNames();
+        for (entries.items) |d| try e.session.entry_plan.entries.append(e.gpa, .{
+            .module = d.module,
+            .decl = d.decl,
+            .kind = d.kind,
+            .id = std.hash.Wyhash.hash(0, d.identity),
+        });
+    }
+
+    fn emitWorkers(e: *Emitter) !void {
+        const plan = &e.session.entry_plan;
+        for (0..plan.entries.len) |i| {
+            const root_entry = plan.entries.get(i);
+            const descriptor: WorkerEntry.Descriptor = .{
+                .module = root_entry.module,
+                .decl = root_entry.decl,
+                .kind = root_entry.kind,
+                .identity = "",
+                .id = try std.fmt.allocPrint(e.scratch, "{x:0>16}", .{root_entry.id}),
+            };
+            var projection = try e.workerProjection(descriptor);
+            defer {
+                for (projection.owned.items) |bytes| e.gpa.free(bytes);
+                projection.owned.deinit(e.gpa);
+                projection.points_to.deinit(e.gpa);
+                projection.rep_key_text.deinit(e.gpa);
+            }
+            const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            try projection.eliminate(root);
+            try projection.shareValidators();
+            try projection.refuseMarkupWithoutLowering();
+            if (e.options.release and !e.options.allow_debug) try projection.refuseDebug();
+            if (!projection.hasErrors()) {
+                try projection.openDebugContext();
+                try projection.emitModules(root);
+                if (!projection.hasErrors()) {
+                    try projection.copyAssets();
+                    try projection.workerBootstrap(root);
+                }
+            }
+            try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
+            projection.diagnostics.deinit(e.gpa);
+            // Produce copies before freeing this projection's print buffers.
+            for (projection.pending.items) |out| try e.produce(out.path, out.bytes, out.origin);
+            if (e.hasErrors()) return;
+        }
+    }
+
+    fn checkEntryRealm(e: *Emitter, entry: Entry) !void {
+        try @import("RealmCheck.zig").check(e, entry.module, entry.decl.int());
+    }
+
+    pub fn graph(e: *Emitter) *const Graph {
         return &e.session.graph;
     }
 
-    fn bir(e: *Emitter, m: Graph.Index) *const Bir {
+    pub fn bir(e: *Emitter, m: Graph.Index) *const Bir {
         return e.session.artifacts.bir(e.graph().moduleFile(m));
     }
 
@@ -1592,7 +1964,7 @@ const Emitter = struct {
         return diagnostic.position(line_starts, e.session.store.bytes(file), tokens.starts[token]);
     }
 
-    fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
+    pub fn report(e: *Emitter, code: diagnostic.Code, file: SourceStore.Index, token: u32, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{ .code = code, .file = file, .token = token, .message = message });
@@ -2062,6 +2434,7 @@ const Emitter = struct {
     /// file, copied once, whose exports include `run` — or no file, the
     /// runtime module being both (`moduleIsRuntime`).
     fn markupRuntimeIsProgramRuntime(e: *Emitter) bool {
+        if (e.genericRuntimeSelected()) return false;
         const p = e.options.platform;
         if (e.moduleIsRuntime()) return true;
         const markup = p.markup_runtime orelse return false;
@@ -2312,6 +2685,370 @@ const Emitter = struct {
         }
     }
 
+    /// Checked interface view, including alias arguments. No checker inference
+    /// runs in emit: this reads the immutable schemes it already proved.
+    fn genericRuntimeSelected(e: *const Emitter) bool {
+        if (e.session.entry_plan.validated) return e.selectedRuntime() != null;
+        // Before validation this selects the legacy markup export request,
+        // not an executable or trusted runtime. Publication follows below.
+        const program = e.options.platform.program orelse return false;
+        for (e.options.platform.entry_kinds) |kind| {
+            if (std.mem.eql(u8, program, kind.definition.programType)) return true;
+        }
+        return false;
+    }
+
+    fn entryRun(e: *const Emitter) ?struct { module: Graph.Index, decl: u32 } {
+        if (e.selectedRuntime()) |runner| return .{ .module = runner.module, .decl = runner.decl };
+        const module = e.runtime_module orelse return null;
+        const runner = e.suppliedAs("run") orelse return null;
+        return .{ .module = module, .decl = runner.decl };
+    }
+
+    const RuntimeType = struct {
+        iface: *const Interface,
+        at: Interface.TermIndex,
+        bindings: []const RuntimeType = &.{},
+    };
+
+    fn expandRuntimeType(e: *Emitter, original: RuntimeType) !RuntimeType {
+        var view = original;
+        for (0..max_alias_depth) |_| {
+            const term = view.iface.term(view.at);
+            switch (term.tag) {
+                .@"var" => {
+                    if (term.lhs >= view.bindings.len) return view;
+                    view = view.bindings[term.lhs];
+                },
+                .alias => {
+                    const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return view;
+                    if (ref.body == .none) return view;
+                    const args = view.iface.range(term.rhs);
+                    const bindings = try e.scratch.alloc(RuntimeType, args.len);
+                    for (args, bindings) |arg, *binding| binding.* = .{ .iface = view.iface, .at = @fromBackingInt(@intCast(arg)), .bindings = view.bindings };
+                    view = .{ .iface = view.iface, .at = ref.body, .bindings = bindings };
+                },
+                else => return view,
+            }
+        }
+        return view;
+    }
+
+    fn runtimeNamesProgram(e: *Emitter, original: RuntimeType, qualified: []const u8, arity: u32, generic: ?Interface.Scheme) !bool {
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag != .app) return false;
+        const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return false;
+        if (ref.package != .platform or
+            !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.module)), platformModule(qualified)) or
+            !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.name)), shortName(qualified))) return false;
+        const args = view.iface.range(term.rhs);
+        if (args.len != arity) return false;
+        if (generic) |scheme| {
+            const seen = try e.scratch.alloc(u32, args.len);
+            for (args, 0..) |arg, i| {
+                const argument = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(arg)), .bindings = view.bindings });
+                const t = argument.iface.term(argument.at);
+                if (t.tag != .@"var" or t.lhs >= scheme.quantified_count) return false;
+                const quantified = view.iface.quantified(scheme, t.lhs);
+                if ((quantified.flags() & ~(Interface.Quantified.wire_bit | Interface.Quantified.crosses_bit)) != 0 or quantified.constraints_len != 0) return false;
+                for (seen[0..i]) |previous| if (previous == t.lhs) return false;
+                seen[i] = t.lhs;
+            }
+        }
+        return true;
+    }
+
+    fn entryKindError(e: *Emitter, kind: EntryKind, comptime fmt: []const u8, args: anytype) !void {
+        try e.reportInFile(.invalid_entry_kind, .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ kind.root, Manifest.file_name }) }, fmt, args);
+    }
+
+    fn entryKindModule(e: *Emitter, name: []const u8) !?Graph.Index {
+        return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
+    }
+
+    const RuntimeValue = struct { module: Graph.Index, decl: u32, iface: *const Interface, scheme: Interface.Scheme, scheme_index: Interface.SchemeIndex };
+
+    fn entryKindValue(e: *Emitter, qualified: []const u8) !?RuntimeValue {
+        const module = try e.entryKindModule(platformModule(qualified)) orelse return null;
+        const decl = e.moduleValue(module, shortName(qualified)) orelse return null;
+        if (module.int() >= e.session.resolution.interfaces.len) return null;
+        const iface = &e.session.resolution.interfaces[module.int()];
+        const b = e.bir(module);
+        const value = iface.findValue(&e.session.interner, b.symbol(b.decls[decl].name)) orelse return null;
+        const scheme_index = iface.values[@backingInt(value)].scheme;
+        if (scheme_index == .none or @backingInt(scheme_index) >= iface.schemes.len) return null;
+        return .{ .module = module, .decl = decl, .iface = iface, .scheme = iface.schemes[@backingInt(scheme_index)], .scheme_index = scheme_index };
+    }
+
+    /// A concrete record exposes its field path now. Generic variables retain
+    /// the path obligation in the entry row for instantiation; they are not
+    /// certified Wire merely because this structural check succeeds.
+    fn entryRolesFit(e: *Emitter, original: RuntimeType, row: Manifest.EntryKind) !bool {
+        const root = try e.expandRuntimeType(original);
+        const term = root.iface.term(root.at);
+        if (term.tag != .app) return false;
+        const args = root.iface.range(term.rhs);
+        for (row.parameters) |parameter| {
+            if (parameter.index >= args.len) return false;
+            var view: RuntimeType = .{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[parameter.index])), .bindings = root.bindings };
+            for (parameter.path) |field_name| {
+                view = try e.expandRuntimeType(view);
+                const field_type = view.iface.term(view.at);
+                if (field_type.tag == .@"var") break;
+                if (field_type.tag != .record) return false;
+                const fields = view.iface.range(field_type.lhs);
+                var found: ?Interface.TermIndex = null;
+                var i: usize = 0;
+                while (i < fields.len) : (i += 2) {
+                    const symbol = view.iface.symbol(@fromBackingInt(@intCast(fields[i])));
+                    if (std.mem.eql(u8, e.session.interner.slice(symbol), field_name)) {
+                        found = @fromBackingInt(@intCast(fields[i + 1]));
+                        break;
+                    }
+                }
+                view.at = found orelse return false;
+            }
+        }
+        return true;
+    }
+
+    fn checkConstructorRecord(e: *Emitter, original: RuntimeType, machine: bool) !bool {
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag != .record) return false;
+        const extension = try e.expandRuntimeType(.{
+            .iface = view.iface,
+            .at = @fromBackingInt(@intCast(term.rhs)),
+            .bindings = view.bindings,
+        });
+        if (extension.iface.term(extension.at).tag != .empty_record) return false;
+        const fields = view.iface.range(term.lhs);
+        const names: []const []const u8 = if (machine) &.{ "init", "update", "subscriptions", "request", "stream" } else &.{ "init", "start", "handle", "stream" };
+        const arities: []const u32 = if (machine) &.{ 2, 3, 1, 2, 2 } else &.{ 2, 2, 3, 4 };
+        if (fields.len != names.len * 2) return false;
+        for (names, arities) |name, arity| {
+            var found = false;
+            var field_index: usize = 0;
+            while (field_index < fields.len) : (field_index += 2) {
+                const symbol = view.iface.symbol(@fromBackingInt(@intCast(fields[field_index])));
+                if (!std.mem.eql(u8, e.session.interner.slice(symbol), name)) continue;
+                const field = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(fields[field_index + 1])), .bindings = view.bindings });
+                const function = field.iface.term(field.at);
+                if (function.tag != .func or field.iface.range(function.lhs).len != arity) return false;
+                found = true;
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    fn checkEntryKinds(e: *Emitter) !void {
+        const plan = &e.session.entry_plan;
+        plan.reset();
+        if (e.options.platform.entry_kinds.len == 0) return;
+        errdefer plan.reset();
+        const Identity = struct { module: Graph.Index, type: Interface.TypeIndex };
+        const identities = try e.scratch.alloc(?Identity, e.options.platform.entry_kinds.len);
+        @memset(identities, null);
+        for (e.options.platform.entry_kinds, 0..) |kind, kind_index| {
+            const row = kind.definition;
+            const errors_before = e.diagnostics.items.len;
+            const realm = std.meta.stringToEnum(EntryPlan.Realm, row.realm);
+            if (realm == null) {
+                try e.entryKindError(kind, "The entry kind `{s}` names unknown realm `{s}`.", .{ row.programType, row.realm });
+                continue;
+            }
+            const program_module = try e.entryKindModule(platformModule(row.programType)) orelse {
+                try e.entryKindError(kind, "I cannot find the entry kind's Program module `{s}`.", .{platformModule(row.programType)});
+                continue;
+            };
+            if (program_module.int() >= e.session.resolution.interfaces.len) continue;
+            const program_iface = &e.session.resolution.interfaces[program_module.int()];
+            const program_name = try e.session.interner.getOrPut(e.gpa, shortName(row.programType));
+            const type_index = program_iface.findType(&e.session.interner, program_name) orelse {
+                try e.entryKindError(kind, "The entry kind `{s}` must name a public nominal Program type.", .{row.programType});
+                continue;
+            };
+            const identity: Identity = .{ .module = program_module, .type = type_index };
+            const duplicate = for (identities[0..kind_index]) |previous| {
+                if (previous) |actual| if (actual.module == identity.module and actual.type == identity.type) break true;
+            } else false;
+            identities[kind_index] = identity;
+            if (duplicate) {
+                try e.entryKindError(kind, "The entry kind `{s}` is declared more than once. A Program type identifies one entry kind.", .{row.programType});
+                continue;
+            }
+            const program_type = program_iface.types[@backingInt(type_index)];
+            if (program_type.kind == .alias) {
+                try e.entryKindError(kind, "The entry kind `{s}` names an alias. Name its nominal Program type instead.", .{row.programType});
+                continue;
+            }
+            for (row.parameters, 0..) |parameter, parameter_index| {
+                if (parameter.index >= program_type.arity or (!std.mem.eql(u8, parameter.role, "wire") and !std.mem.eql(u8, parameter.role, "local"))) {
+                    try e.entryKindError(kind, "The entry kind `{s}` has an invalid type-parameter role at index {d}.", .{ row.programType, parameter.index });
+                    continue;
+                }
+                for (parameter.path) |field| if (field.len == 0) {
+                    try e.entryKindError(kind, "The entry kind `{s}` has an empty field in a type-role path.", .{row.programType});
+                };
+                for (row.parameters[0..parameter_index]) |previous| {
+                    if (previous.index != parameter.index) continue;
+                    const prefix = @min(previous.path.len, parameter.path.len);
+                    var overlap = true;
+                    for (previous.path[0..prefix], parameter.path[0..prefix]) |a, b| overlap = overlap and std.mem.eql(u8, a, b);
+                    if (overlap) try e.entryKindError(kind, "The entry kind `{s}` has overlapping type roles at index {d}.", .{ row.programType, parameter.index });
+                }
+            }
+            for (0..program_type.arity) |parameter_index| {
+                const covered = for (row.parameters) |parameter| {
+                    if (parameter.index == parameter_index) break true;
+                } else false;
+                if (!covered) try e.entryKindError(kind, "The entry kind `{s}` has no role for type parameter {d}.", .{ row.programType, parameter_index });
+            }
+            var constructors: std.ArrayList(EntryPlan.Constructor) = .empty;
+            for (row.constructors) |constructor| {
+                const protocol_known = std.mem.eql(u8, constructor.callbackProtocol, "handlers") or std.mem.eql(u8, constructor.callbackProtocol, "machine");
+                const value = try e.entryKindValue(constructor.name);
+                if (!protocol_known or value == null) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` must resolve to a public beni function and name callbackProtocol handlers or machine.", .{constructor.name});
+                    continue;
+                }
+                const root = try e.expandRuntimeType(.{ .iface = value.?.iface, .at = value.?.scheme.body });
+                const term = root.iface.term(root.at);
+                if (term.tag != .func or constructor.parameter >= root.iface.range(term.lhs).len or
+                    !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings }, row.programType, program_type.arity, null))
+                {
+                    try e.entryKindError(kind, "The entry constructor `{s}` has an invalid callback parameter index or Program result.", .{constructor.name});
+                    continue;
+                }
+                if (!try e.entryRolesFit(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings }, row)) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` has a Program result that does not contain the declared type-role paths.", .{constructor.name});
+                }
+                const callback = root.iface.range(term.lhs)[constructor.parameter];
+                if (!try e.checkConstructorRecord(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(callback)), .bindings = root.bindings }, std.mem.eql(u8, constructor.callbackProtocol, "machine"))) {
+                    try e.entryKindError(kind, "The entry constructor `{s}` needs a closed `{s}` callback record with the protocol's field arities.", .{ constructor.name, constructor.callbackProtocol });
+                }
+                try constructors.append(e.scratch, .{
+                    .value = .{ .module = value.?.module, .decl = value.?.decl, .scheme = value.?.scheme_index },
+                    .parameter = constructor.parameter,
+                    .protocol = std.meta.stringToEnum(EntryPlan.Protocol, constructor.callbackProtocol).?,
+                });
+            }
+            var launches: std.ArrayList(EntryPlan.Launch) = .empty;
+            for (row.launches) |launch| {
+                const value = try e.entryKindValue(launch.name) orelse {
+                    try e.entryKindError(kind, "I cannot find the public beni entry launch `{s}`.", .{launch.name});
+                    continue;
+                };
+                const root = try e.expandRuntimeType(.{ .iface = value.iface, .at = value.scheme.body });
+                const term = root.iface.term(root.at);
+                const args = if (term.tag == .func) root.iface.range(term.lhs) else &.{};
+                if (launch.parameter >= args.len or
+                    !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[launch.parameter])), .bindings = root.bindings }, row.programType, program_type.arity, null))
+                {
+                    try e.entryKindError(kind, "The entry launch `{s}` has an invalid Program parameter index or type.", .{launch.name});
+                    continue;
+                }
+                if (!try e.entryRolesFit(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[launch.parameter])), .bindings = root.bindings }, row)) {
+                    try e.entryKindError(kind, "The entry launch `{s}` has a Program parameter that does not contain the declared type-role paths.", .{launch.name});
+                }
+                try launches.append(e.scratch, .{
+                    .value = .{ .module = value.module, .decl = value.decl, .scheme = value.scheme_index },
+                    .parameter = launch.parameter,
+                });
+            }
+            const run_name = try std.fmt.allocPrint(e.scratch, "{s}.run", .{row.runtime});
+            const runner = try e.entryKindValue(run_name) orelse {
+                try e.entryKindError(kind, "The entry kind `{s}` needs runtime module `{s}` with a public beni `run` value.", .{ row.programType, row.runtime });
+                continue;
+            };
+            const file = e.graph().moduleFile(runner.module);
+            if (file.int() >= e.session.file_layers.len or e.session.file_layers[file.int()] != kind.layer) {
+                try e.entryKindError(kind, "The runtime module `{s}` must belong to the platform package declaring entry kind `{s}`.", .{ row.runtime, row.programType });
+                continue;
+            }
+            const root = try e.expandRuntimeType(.{ .iface = runner.iface, .at = runner.scheme.body });
+            const term = root.iface.term(root.at);
+            if (term.tag != .func) {
+                try e.report(.invalid_entry_kind, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` must take exactly one `{s}` and return `⊤`, with no evidence parameters or specialized type arguments.", .{ row.runtime, row.programType });
+                continue;
+            }
+            const args = root.iface.range(term.lhs);
+            const result = try e.expandRuntimeType(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = root.bindings });
+            const convention = Convention.ofDecl(e.dispatchOf(runner.module), e.bir(runner.module), runner.decl);
+            if (term.tag != .func or args.len != 1 or convention.arity != 1 or convention.evidence != 0 or result.iface.term(result.at).tag != .unit or
+                !try e.runtimeNamesProgram(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(args[0])), .bindings = root.bindings }, row.programType, program_type.arity, runner.scheme))
+            {
+                try e.report(.invalid_entry_kind, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` must take exactly one `{s}` and return `⊤`, with no evidence parameters or specialized type arguments.", .{ row.runtime, row.programType });
+                continue;
+            }
+            var may_suspend = false;
+            if (runner.iface.effectBlock(runner.scheme)) |effects| {
+                var sites = effects.sites();
+                while (sites.next()) |site| {
+                    if (site.root != 0) continue;
+                    // Alias expansions still name run's own arrow. Structural
+                    // steps enter a parameter/result or another nested value.
+                    const own_arrow = for (site.steps) |step| {
+                        if (Interface.EffectBlock.stepKind(step) != @backingInt(@import("../check/Walk.zig").StepKind.expansion) or
+                            Interface.EffectBlock.stepIndex(step) != 0) break false;
+                    } else true;
+                    if (!own_arrow) continue;
+                    const class = effects.class(site.class);
+                    const effect_dependency = for (class.deps) |dependency| {
+                        if (dependency & Interface.EffectBlock.realm_only == 0) break true;
+                    } else false;
+                    may_suspend = may_suspend or class.rung == 2 or (effect_dependency and !class.sync);
+                }
+            }
+            if (may_suspend) {
+                try e.report(.entry_runtime_suspends, file, e.bir(runner.module).decls[runner.decl].name_token, "`{s}.run` may suspend, but the generated entry calls it synchronously. Install listeners, start an owned root fiber, then return; initialization may suspend inside that fiber.", .{row.runtime});
+                continue;
+            }
+            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+                if (e.exportsProgram()) {
+                    try e.entryKindError(kind, "The generic entry runtime for `{s}` returns `⊤`, so it cannot also supply the result required by exports program.", .{row.programType});
+                    continue;
+                }
+            };
+            if (e.diagnostics.items.len != errors_before) continue;
+            if (row.launches.len != 0 and !e.options.allow_unchecked_workers) {
+                try e.entryKindError(kind, "Worker launches are unavailable until realm and Wire checks are implemented.", .{});
+                continue;
+            }
+            const constructor_start: u32 = @intCast(plan.constructors.len);
+            for (constructors.items) |constructor| try plan.constructors.append(e.gpa, constructor);
+            const launch_start: u32 = @intCast(plan.launches.len);
+            for (launches.items) |launch| try plan.launches.append(e.gpa, launch);
+            const role_start: u32 = @intCast(plan.roles.len);
+            for (row.parameters) |parameter| {
+                const symbols = try e.scratch.alloc(InternPool.Symbol, parameter.path.len);
+                for (parameter.path, symbols) |field, *symbol| symbol.* = try e.session.interner.getOrPut(e.gpa, field);
+                try plan.appendRole(e.gpa, parameter.index, std.meta.stringToEnum(EntryPlan.RoleKind, parameter.role).?, symbols);
+            }
+            const resolved = try plan.appendKind(e.gpa, .{
+                .program = e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(row.programType)), program_name),
+                .module = program_module,
+                .interface_type = type_index,
+                .arity = program_type.arity,
+                .realm = realm.?,
+                .layer = kind.layer,
+                .runtime = .{ .module = runner.module, .decl = runner.decl, .scheme = runner.scheme_index },
+                .constructors = .{ .start = constructor_start, .len = @intCast(constructors.items.len) },
+                .launches = .{ .start = launch_start, .len = @intCast(launches.items.len) },
+                .roles = .{ .start = role_start, .len = @intCast(row.parameters.len) },
+            });
+            if (e.options.platform.program) |program| if (std.mem.eql(u8, program, row.programType)) {
+                plan.selected = resolved;
+            };
+        }
+        if (!e.options.library and !e.hasErrors() and e.options.platform.entry_kinds.len != 0 and e.options.platform.runtime == null and !e.moduleIsRuntime() and plan.selected == .none) {
+            if (e.options.platform.program) |program| try e.reportInFile(.invalid_entry_kind, .{ .path = try e.manifestPath() }, "The platform has no runtime file or entryKinds row for its top Program `{s}`.", .{program});
+        }
+        if (e.hasErrors()) plan.reset() else plan.finish();
+    }
+
     // ---- boundary.md §9.2: the runtime module -----------------------------
 
     /// The runtime module the chain names, or null (`boundary.md` §9.2, *A
@@ -2453,8 +3190,9 @@ const Emitter = struct {
     /// module*), coarse: every export it supplies and every value the file
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
-        const module = e.runtime_module orelse return &.{};
         var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtime_module orelse return out.items;
         for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
         for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
@@ -2466,7 +3204,9 @@ const Emitter = struct {
     /// a lowering imported, `run` and `start` where the entry file calls
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
-        const module = e.runtime_module orelse return &.{};
+        var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = .decl, .index = runner.decl });
+        const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
         try names.appendSlice(e.scratch, e.module_uses.items);
         if (entry != null) {
@@ -2486,7 +3226,7 @@ const Emitter = struct {
         const uses = try e.programUses(entry);
         try names.appendSlice(e.scratch, uses);
         e.program_uses = uses;
-        var out: std.ArrayList(Reach.Node) = .empty;
+
         for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
         };
@@ -2781,8 +3521,9 @@ const Emitter = struct {
     /// is looked through (`boundary.md` §5: an alias is the same type, so
     /// `main : App` with `type alias App = Node.Program` is a program), or
     /// null for anything that is not a named type — a function, a record,
-    /// an unbound parameter. An applied nominal type is null too: the
-    /// platform's `Program` takes no arguments.
+    /// an unbound parameter. An applied nominal Program is accepted when
+    /// entryKinds supplies its checked generic runtime contract; legacy
+    /// platform program declarations retain their zero-argument contract.
     fn expandedTypeName(
         e: *Emitter,
         module: Graph.Index,
@@ -2817,7 +3558,7 @@ const Emitter = struct {
         if (id == .none) return null;
         const named = types.entry(id);
         if (named.kind != .alias) {
-            if (args.len != 0) return null;
+            if (args.len != 0 and !e.genericRuntimeSelected()) return null;
             return .{
                 .module = e.session.interner.slice(named.module_name),
                 .name = e.session.interner.slice(named.name),
@@ -4839,6 +5580,63 @@ const Emitter = struct {
     /// name, and a build that reaches `Debug` — only under the harness's
     /// `--allow-debug` — prints field names and tags: neither renames a
     /// field or gives a type integer tags.
+    /// Union the real entry boundaries before assigning the wire palette.
+    /// Complete solved row facts supply interference, including private fields
+    /// that will be shortened independently in each projection.
+    fn planWireNames(e: *Emitter) !void {
+        if (!e.options.release or e.worker_entries.len == 0) return;
+        var wire_fields: std.StringArrayHashMapUnmanaged(void) = .empty;
+        for (e.worker_entries) |descriptor| {
+            const plan = descriptor.wire orelse continue;
+            const kind = e.options.platform.entry_kinds[@backingInt(descriptor.kind)].definition;
+            for (kind.parameters) |parameter| {
+                if (!std.mem.eql(u8, parameter.role, "wire")) continue;
+                for (parameter.path) |field| try wire_fields.put(e.scratch, field, {});
+            }
+            for (plan.nodes) |node| {
+                if (node.kind != .record) continue;
+                for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
+                    const label = edge.label.unwrap() orelse continue;
+                    try wire_fields.put(e.scratch, try e.scratch.dupe(u8, e.session.interner.slice(label)), {});
+                }
+            }
+        }
+        if (wire_fields.count() == 0) return;
+        var pinned: std.StringHashMapUnmanaged(void) = .empty;
+        var plain: std.StringHashMapUnmanaged(void) = .empty;
+        // Constructor slots and representation/runtime properties are plain
+        // JavaScript properties, not record fields.
+        for ("abcdefghijklmnopqrstuvwxyz") |ch| {
+            const text = try e.scratch.dupe(u8, &.{ch});
+            try plain.put(e.scratch, text, {});
+        }
+        for ([_][]const u8{ "$", "$wire", "$plain", "$b", "$o", "length", "id", "url" }) |text| try plain.put(e.scratch, text, {});
+        try e.closeBoundary();
+        if (e.boundary) |boundary| {
+            var it = boundary.pinned.keyIterator();
+            while (it.next()) |text| try pinned.put(e.scratch, text.*, {});
+        } else for (wire_fields.keys()) |text| try pinned.put(e.scratch, text, {});
+        for (e.worker_entries) |descriptor| {
+            var projection = try e.workerProjection(descriptor);
+            projection.extra_roots = try projection.coarseRuntimeRoots();
+            try projection.eliminate(.{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) });
+            try projection.closeBoundary();
+            if (projection.boundary) |boundary| {
+                var it = boundary.pinned.keyIterator();
+                while (it.next()) |text| try pinned.put(e.scratch, text.*, {});
+            } else for (wire_fields.keys()) |text| try pinned.put(e.scratch, text, {});
+            projection.diagnostics.deinit(e.gpa);
+        }
+        var it = pinned.keyIterator();
+        while (it.next()) |text| try plain.put(e.scratch, text.*, {});
+        const counts = try e.scratch.alloc(Fields.Count, wire_fields.count());
+        for (counts, wire_fields.keys()) |*count, text| count.* = .{ .text = text, .uses = 1 };
+        var conflicts = try e.fieldConflicts(counts);
+        const table = try e.scratch.create(Fields.Table);
+        table.* = try Fields.assignReserved(e.scratch, counts, &pinned, &plain, &conflicts, &plain);
+        e.wire_names = table;
+    }
+
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
         if (!e.options.release or e.options.library or e.reachesDebug()) return;
@@ -4856,7 +5654,16 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
+        var runtime_types: std.ArrayList(Dispatch.TypeId) = .empty;
+        if (e.worker_entries.len != 0 and e.options.platform.runtime != null) {
+            if (e.options.platform.program) |qualified| {
+                const id = e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(qualified)), try e.session.interner.getOrPut(e.gpa, shortName(qualified)));
+                if (id != .none) try runtime_types.append(e.scratch, id);
+            }
+        }
         e.boundary = try Fields.close(.{
+            .observed_types = runtime_types.items,
+
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,
@@ -4866,6 +5673,10 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .seeds = e.fuzz_seeds,
         });
+        if (e.boundary) |*boundary| for (e.worker_entries) |descriptor| {
+            const plan = descriptor.wire orelse continue;
+            for (plan.types) |id| if (id != .none and id.int() < boundary.integer_tags.bit_length) boundary.integer_tags.unset(id.int());
+        };
     }
 
     /// `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type
@@ -5043,7 +5854,29 @@ const Emitter = struct {
         for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
         var conflicts = try e.fieldConflicts(counts);
         for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
-        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
+        var reserved: std.StringHashMapUnmanaged(void) = .empty;
+        // Reserve the wire palette before assigning entry-local names. A
+        // page-private field can never steal a wire spelling in this entry.
+        if (e.wire_names) |wire| {
+            var kept = wire.kept.keyIterator();
+            while (kept.next()) |text| {
+                try boundary.pinned.put(e.scratch, text.*, {});
+                try reserved.put(e.scratch, text.*, {});
+            }
+            var names = wire.map.iterator();
+            while (names.next()) |entry| {
+                try boundary.pinned.put(e.scratch, entry.key_ptr.*, {});
+                try reserved.put(e.scratch, entry.value_ptr.*, {});
+            }
+        }
+        e.field_table = try Fields.assignReserved(e.scratch, counts, &boundary.pinned, &plain, &conflicts, &reserved);
+        if (e.wire_names) |wire| {
+            var names = wire.map.iterator();
+            while (names.next()) |entry| {
+                _ = e.field_table.?.kept.remove(entry.key_ptr.*);
+                try e.field_table.?.map.put(e.scratch, entry.key_ptr.*, entry.value_ptr.*);
+            }
+        }
     }
 
     /// `browser-inline.md` §8.4, amended 2026-10-24: a route whose function
@@ -5139,7 +5972,15 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
+        // Entry roles are bidirectional boundary types: their constructors
+        // may arrive from a peer even when this projection never builds one.
+        var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
+        for (e.worker_candidates) |descriptor| {
+            const wire = descriptor.wire orelse continue;
+            try wire_types.appendSlice(e.scratch, wire.types);
+        }
         var in: Reach.Input = .{
+            .wire_types = wire_types.items,
             .graph = e.graph(),
             .store = &e.session.store,
             .birs = birs,
@@ -5153,6 +5994,7 @@ const Emitter = struct {
             .release = e.options.release,
             .vocabulary = e.graph().markup.vocabulary,
             .extra_roots = e.extra_roots,
+            .deferred = e.deferred,
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
             .test_hooks = e.options.test_hooks,
@@ -5604,6 +6446,7 @@ const Emitter = struct {
                 const source_path = e.session.store.path(e.graph().moduleFile(m));
                 slot.specifiers = try specifierTable(e.scratch, &by_depth, paths, paths[i]);
                 slot.sibling = try e.siblingSpecifier(source_path);
+                slot.worker_descriptors = try e.descriptorsFor(m);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
                 if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
@@ -5814,6 +6657,7 @@ const Emitter = struct {
     /// One module's way from `Bir` to bytes. Written by the one worker that
     /// took the module, read by the calling thread once every worker is done.
     const ModuleSlot = struct {
+        worker_descriptors: []const WorkerEntry.Descriptor = &.{},
         specifiers: []const []const u8 = &.{},
         sibling: []const u8 = "",
         derived_runtime: []const u8 = "",
@@ -6143,6 +6987,10 @@ const Emitter = struct {
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .worker_kinds = e.options.platform.entry_kinds,
+                .worker_wire = &e.session.checked.type_keys[m.int()].wire,
+                .worker_descriptors = slot.worker_descriptors,
+                .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
@@ -6175,7 +7023,7 @@ const Emitter = struct {
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,
                 .direct = if (e.direct) |*d| d else null,
-                .inline_once = e.options.release,
+                .inline_once = e.options.release and e.worker_entries.len == 0,
                 .unit_results = e.options.release,
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
@@ -6347,6 +7195,9 @@ const Emitter = struct {
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
     fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry_or_library: ?Entry, one_scope: bool) !void {
+        // #1627: cross-module copies would relocate import.meta.url while
+        // keeping its descriptor path. Local release optimization is safe.
+        if (e.worker_entries.len != 0) return;
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
@@ -6432,6 +7283,7 @@ const Emitter = struct {
             }
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
+        if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, "run")));
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
             const b = e.bir(entry.module);
@@ -7165,6 +8017,7 @@ const Emitter = struct {
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
     fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+        if (e.worker_entries.len != 0) return null; // Descriptor URLs are module-relative.
         const scratch = e.scratch;
         var files: std.ArrayList(HandFile) = .empty;
 
@@ -7198,7 +8051,7 @@ const Emitter = struct {
             // `run` and `start` are the file's unless the runtime module
             // supplies them (`backend.md` §15.1, *The runtime module*).
             if (e.suppliedAs("run") == null) try files.items[runtime_index.?].keep.appendSlice(scratch, &.{"run"});
-        } else if (!e.moduleIsRuntime() or e.suppliedAs("run") == null) return null;
+        } else if (e.entryRun() == null) return null;
         var markup_index: ?u32 = null;
         if (e.markupRuntimeIsProgramRuntime()) {
             markup_index = runtime_index;
@@ -7269,7 +8122,10 @@ const Emitter = struct {
             (if (module_at.get(paths[rt.int()]) != null) .{ .module = rt.int() } else null)
         else
             null;
-        if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
+        if (e.selectedRuntime()) |runner| {
+            if (module_at.get(paths[runner.module.int()]) == null) return null;
+            try entry_edges.append(scratch, .{ .module = runner.module.int() });
+        } else if (e.suppliedAs("run") != null) try entry_edges.append(scratch, module_piece orelse return null);
         var start: @FieldType(Hoist, "start") = null;
         if (try e.startData()) |s| {
             if (e.suppliedAs("start") != null) {
@@ -7671,23 +8527,23 @@ const Emitter = struct {
             } else try e.moduleSpelling(e.runtime_module.?, "start");
             try out.print(scratch, "{s}({s});", .{ callee, s.data });
         }
-        const run_name = if (e.suppliedAs("run") != null)
-            try e.moduleSpelling(e.runtime_module.?, "run")
-        else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
-        if (e.options.prerender == .tree) {
-            // No call: the exports above are the whole entry.
-        } else if (e.exportsProgram()) {
-            // `boundary.md` §9.12 (c): the hoisted file exports what `run`
-            // returns. The bindings are longer than any short name `Rename`
-            // spells (8 characters at most), so no hoisted declaration can
-            // take them.
-            const prog = entry_program_binding;
-            const exp = entry_export_binding;
-            try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
-            for (e.options.platform.entry_exports, 0..) |name, i| {
-                try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
-            }
-        } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        if (e.options.prerender != .tree) {
+            const run_name = if (e.entryRun()) |runner|
+                try e.moduleSpelling(runner.module, "run")
+            else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
+            if (e.exportsProgram()) {
+                // `boundary.md` §9.12 (c): the hoisted file exports what `run`
+                // returns. The bindings are longer than any short name `Rename`
+                // spells (8 characters at most), so no hoisted declaration can
+                // take them.
+                const prog = entry_program_binding;
+                const exp = entry_export_binding;
+                try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
+                for (e.options.platform.entry_exports, 0..) |name, i| {
+                    try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
+                }
+            } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        }
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
@@ -7867,6 +8723,9 @@ const Emitter = struct {
                 }
             }
         }
+        if (entry != null) if (e.selectedRuntime()) |runner| {
+            if (e.globals.lookup(try e.moduleName(runner.module, "run"))) |ordinal| e.imported.set(ordinal);
+        };
         // What the markup runtime and the entry file import from the
         // runtime module (`backend.md` §15.1, *The runtime module*).
         if (e.runtime_module) |module| {
@@ -8262,6 +9121,7 @@ const Emitter = struct {
         // `checkEntryExports` has refused the one chain this cannot serve,
         // a runtime module, so `exportsProgram` here means a runtime file.
         if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
+        if (e.selectedRuntime()) |runner| return e.emitEntryWithModule(entry, runner.module, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -8448,12 +9308,12 @@ const Emitter = struct {
             }
         };
         const as = " as ";
-        if (e.suppliedAs("run") != null) {
+        if (e.entryRun() != null) {
             try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}run", .{ try e.moduleSpelling(module, "run"), as }));
         } else try Add.one(e, &imports, runtime_path, "run");
         if (start) |s| {
             if (e.suppliedAs("start") != null) {
-                try Add.one(e, &imports, module_path, try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(module, "start"), as }));
+                try Add.one(e, &imports, try e.outputPath(e.runtime_module.?), try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(e.runtime_module.?, "start"), as }));
             } else try Add.one(e, &imports, s.path, "start");
         }
         var text: std.ArrayList(u8) = .empty;
@@ -8477,20 +9337,20 @@ const Emitter = struct {
         // The page's `flush` (§15.11), from the module the page loads when
         // the runtime module supplies it: the entry file imports `run` from
         // no program runtime, so it is the one a harness reads.
-        if (e.suppliedAs("flush")) |s| if (e.live.decl(module, s.decl)) {
-            const spelled = try e.moduleSpelling(module, "flush");
+        if (e.suppliedAs("flush")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtime_module.?, "flush");
             if (release)
-                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, module_path })
+                try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
             else
-                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, module_path });
+                try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17).
-        if (e.suppliedAs("stop")) |s| if (e.live.decl(module, s.decl)) {
-            const spelled = try e.moduleSpelling(module, "stop");
+        if (e.suppliedAs("stop")) |s| if (e.live.decl(e.runtime_module.?, s.decl)) {
+            const spelled = try e.moduleSpelling(e.runtime_module.?, "stop");
             if (release)
-                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, module_path })
+                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) })
             else
-                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, module_path });
+                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }
@@ -8995,7 +9855,7 @@ const Emitter = struct {
     fn planMap(e: *Emitter, slot: *ModuleSlot, root: MapRoot, path: []const u8, file: SourceStore.Index) Allocator.Error!void {
         slot.map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{path});
         slot.map_footer = try std.fmt.allocPrint(e.scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(path)});
-        slot.source_url = try e.sourceUrl(root, slot.map_file, file);
+        slot.source_url = try e.sourceUrl(root, try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, slot.map_file }), file);
     }
 
     /// The URL of `file` in the map at `map_file`, a path in the output
@@ -9014,7 +9874,7 @@ const Emitter = struct {
             try e.owned.append(e.gpa, bytes);
         }
         try e.pending.append(e.scratch, .{
-            .path = try e.scratch.dupe(u8, relative_path),
+            .path = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, relative_path }),
             .bytes = bytes,
             .origin = try e.scratch.dupe(u8, origin),
         });
@@ -9022,7 +9882,7 @@ const Emitter = struct {
 
     fn produce(e: *Emitter, relative_path: []const u8, bytes: []const u8, origin: []const u8) Allocator.Error!void {
         try e.pending.append(e.scratch, .{
-            .path = try e.scratch.dupe(u8, relative_path),
+            .path = try std.fmt.allocPrint(e.scratch, "{s}{s}", .{ e.output_prefix, relative_path }),
             .bytes = try e.scratch.dupe(u8, bytes),
             .origin = try e.scratch.dupe(u8, origin),
         });

@@ -1,0 +1,9 @@
+-- load
+<body>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "ok"
+<body>
+  <button>"launch"</button>
+  <output>"ok"</output>
+</body>

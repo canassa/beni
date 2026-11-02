@@ -1,0 +1,5 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type Uint8Array
+
+
+pub foreign pure byteLength : Uint8Array → Int

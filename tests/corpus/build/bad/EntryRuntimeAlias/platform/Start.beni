@@ -1,0 +1,10 @@
+pub type Program
+    = Program String
+
+
+pub make : String → Program
+make value = Program value
+
+
+pub text : Program → String
+text (Program value) = value

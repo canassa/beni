@@ -1,0 +1,33 @@
+file,line,declaration,op,receiver,member,upcast
+platforms/browser-inline/Browser/Navigation.beni,222,request,get,event,"""defaultPrevented""",MouseEvent → Event
+platforms/browser-inline/Browser/Navigation.beni,234,request,call,a,"""hasAttribute""",HTMLAnchorElement → Element
+platforms/browser-inline/Browser/Navigation.beni,235,request,call,a,"""hasAttribute""",HTMLAnchorElement → Element
+platforms/browser-inline/Browser/Navigation.beni,240,request,call,event,"""preventDefault""",MouseEvent → Event
+platforms/browser-inline/Browser/Navigation.beni,268,anchorOf,call,event,"""composedPath""",MouseEvent → Event
+platforms/browser-inline/Browser/Navigation.beni,302,listen,call,host,"""addEventListener""",Window → EventTarget
+platforms/browser-inline/Browser/Navigation.beni,303,listen,call,host,"""addEventListener""",Window → EventTarget
+platforms/browser-inline/Browser/Navigation.beni,306,listen,call,host,"""removeEventListener""",Window → EventTarget
+platforms/browser-inline/Browser/Navigation.beni,307,listen,call,host,"""removeEventListener""",Window → EventTarget
+platforms/browser-inline/Browser/Navigation.beni,315,listenOne,call,host,"""addEventListener""",Window → EventTarget
+platforms/browser-inline/Browser/Navigation.beni,316,listenOne,call,host,"""removeEventListener""",Window → EventTarget
+platforms/browser-inline/Browser/Navigation.beni,358,change,call,"(Js.global ""window"")","""dispatchEvent""",Window → EventTarget
+platforms/browser-inline/Inline.beni,116,crashScreen,call,screen,"""setAttribute""",HTMLElement → Element
+platforms/browser-inline/Inline.beni,122,crashScreen,set,screen,"""textContent""",HTMLElement → Node
+platforms/browser-inline/Inline.beni,129,crashScreen,call,"(Js.get document ""body"")","""appendChild""",HTMLElement → Node (receiver and appended screen)
+platforms/browser-inline/Inline.beni,141,crashScreen,get,screen,"""textContent""",HTMLElement → Node
+platforms/browser-inline/Inline.beni,142,crashScreen,set,screen,"""textContent""",HTMLElement → Node
+platforms/browser-inline/Inline.beni,145,crashScreen,call,"(Js.global ""window"")","""addEventListener""",Window → EventTarget
+platforms/browser-inline/Inline.beni,281,arrived,call,"(Js.global ""window"")","""dispatchEvent""",Window → EventTarget
+platforms/browser-inline/Inline.beni,328,pageData,get,script,"""textContent""",Element → Node
+platforms/browser-inline/Inline.beni,517,on,call,node,"""addEventListener""",Element → EventTarget
+platforms/browser-inline/Inline.beni,535,onArm,call,node,"""addEventListener""",Element → EventTarget
+platforms/browser-inline/Inline.beni,547,armsShown,get,"(Js.get arms ""$a"")","""parentNode""",Text → Node
+platforms/browser-inline/Inline.beni,617,take,get,unit,"""parentNode""",Element → Node
+platforms/browser-inline/Inline.beni,634,take,get,at,"""lastChild""",Element → Node
+platforms/browser-inline/Inline.beni,671,adopt,call,"(Js.global ""document"")","""createTreeWalker""",Element → Node (tree root argument)
+platforms/browser-inline/Inline.beni,756,hiddenArms,get,c,"""parentNode""",Comment → Node
+platforms/browser-inline/Inline.beni,790,madeOf,call,w.at,"""cloneNode""",Element → Node
+platforms/browser-inline/Inline.beni,792,madeOf,get,holder,"""lastChild""",Element → Node (holder lastChild receiver)
+platforms/browser-inline/Inline.beni,890,caught,call,at,"""contains""",Element → Node (contains receiver)
+platforms/browser-inline/Inline.beni,902,listen,call,node,"""addEventListener""",Element → EventTarget
+platforms/browser-inline/Inline.beni,951,deliver,call,top,"""contains""",Element → Node (contains receiver)

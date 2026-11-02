@@ -966,3 +966,924 @@ test "browser-inline named by its directory keeps a program's keys apart" {
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(by_name, by_dir);
 }
+fn writeGenericRuntime(w: *World, runtime: []const u8) !void {
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"generic","program":"Start.Program","entryKinds":[{"programType":"Start.Program","realm":"node","runtime":"Rt","constructors":[],"launches":[],"parameters":[]}]}
+    );
+    try w.write("platform/Start.beni",
+        \\pub type Program = Program String
+        \\
+        \\pub make : String → Program
+        \\make value = Program value
+        \\
+        \\pub text : Program → String
+        \\text (Program value) = value
+        \\
+    );
+    try w.write("platform/Rt.beni", runtime);
+    try w.write("Main.beni",
+        \\import Start
+        \\
+        \\main : Start.Program
+        \\main = Start.make "generic runtime"
+        \\
+    );
+}
+
+test "generic entry runtime runs without markup in development and release" {
+    // PREPARE: the app never imports Rt, whose run is a metadata root.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeGenericRuntime(&w,
+        \\import Js
+        \\import Start exposing (Program)
+        \\
+        \\pub type alias App = Program
+        \\
+        \\pub run : App → ⊤
+        \\run program =
+        \\    _ = Js.call (Js.global "console") "log" [ Js.from (Start.text program) ]
+        \\    ⊤
+        \\
+    );
+
+    // EXECUTE and VERIFY OUTPUT: both modes execute the real emitted entry.
+    for ([_][]const []const u8{
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        &.{ "build", "--platform=platform", "--release", "--out=out", "Main.beni" },
+    }) |args| {
+        const built = try w.run(args);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "generic runtime\n", .exit_code = 0 });
+        try testing.expect(!w.exists("out/_platform/runtime.foreign.mjs"));
+    }
+}
+
+test "generic entry runtime signature failures agree in check and build" {
+    const bad = [_]struct { runtime: []const u8, name: []const u8 }{
+        .{ .runtime = "pub run = ⊤\n", .name = "not a function" },
+        .{ .runtime = "pub run : Int\nrun = 1\n", .name = "integer value" },
+        .{ .runtime = "import Start exposing (Program)\npub run : Program, Int → ⊤\nrun _ _ = ⊤\n", .name = "wrong arity" },
+        .{ .runtime = "pub run : Int → ⊤\nrun _ = ⊤\n", .name = "wrong Program" },
+        .{ .runtime = "import Start exposing (Program)\npub run : Program → Int\nrun _ = 1\n", .name = "wrong result" },
+    };
+    for (bad) |scenario| {
+        _ = scenario.name;
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w, scenario.runtime);
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "Main.beni" },
+            &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            // Diagnostics underline the definition name. Wrong Program has
+            // no import and therefore starts on the preceding line.
+            const line: u32 = if (std.mem.eql(u8, scenario.name, "not a function")) 1 else if (std.mem.eql(u8, scenario.name, "wrong Program") or std.mem.eql(u8, scenario.name, "integer value")) 2 else 3;
+            try testing.expectEqualDeep(diagnostic.Diagnostic{
+                .code = .invalid_entry_kind,
+                .severity = .@"error",
+                .span = .{ .file = "platform/Rt.beni", .start = .{ .line = line, .col = if (line == 1) 5 else 1 }, .end = .{ .line = line, .col = if (line == 1) 8 else 4 } },
+                .title = "INVALID ENTRY KIND",
+                .message = "`Rt.run` must take exactly one `Start.Program` and return `⊤`, with no evidence\nparameters or specialized type arguments.",
+            }, result.diagnostics[0]);
+            try testing.expect(!w.exists("out"));
+        }
+    }
+}
+
+test "generic entry runtime cannot suspend through a helper" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeGenericRuntime(&w,
+        \\import Duration
+        \\import Start exposing (Program)
+        \\import Task
+        \\
+        \\pause : ⊤ → ⊤
+        \\pause ⊤ = Task.sleep (Duration.millis 1)
+        \\
+        \\pub run : Program → ⊤
+        \\run _ = pause ⊤
+        \\
+    );
+    for ([_][]const []const u8{
+        &.{ "check", "--platform=platform", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+    }) |args| {
+        const result = try w.run(args);
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+        try testing.expectEqualDeep(diagnostic.Diagnostic{
+            .code = .entry_runtime_suspends,
+            .severity = .@"error",
+            .span = .{ .file = "platform/Rt.beni", .start = .{ .line = 9, .col = 1 }, .end = .{ .line = 9, .col = 4 } },
+            .title = "ENTRY RUNTIME SUSPENDS",
+            .message = "`Rt.run` may suspend, but the generated entry calls it synchronously. Install\nlisteners, start an owned root fiber, then return; initialization may suspend\ninside that fiber.",
+        }, result.diagnostics[0]);
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "generic entry runtime metadata is checked rather than silently ignored" {
+    const scenarios = [_]struct { kinds: []const u8, message: []const u8 }{
+        .{
+            .kinds = "[{\"programType\":\"Missing.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"constructors\":[],\"launches\":[],\"parameters\":[]}]",
+            .message = "I cannot find the entry kind's Program module `Missing`.",
+        },
+        .{
+            .kinds = "[{\"programType\":\"Start.Program\",\"realm\":\"space\",\"runtime\":\"Rt\",\"constructors\":[],\"launches\":[],\"parameters\":[]}]",
+            .message = "The entry kind `Start.Program` names unknown realm `space`.",
+        },
+        .{
+            .kinds = "[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Missing\",\"constructors\":[],\"launches\":[],\"parameters\":[]}]",
+            .message = "The entry kind `Start.Program` needs runtime module `Missing` with a public beni\n`run` value.",
+        },
+        .{
+            .kinds = "[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"constructors\":[],\"launches\":[],\"parameters\":[]},{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"constructors\":[],\"launches\":[],\"parameters\":[]}]",
+            .message = "The entry kind `Start.Program` is declared more than once. A Program type\nidentifies one entry kind.",
+        },
+        .{
+            .kinds = "[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"constructors\":[{\"name\":\"Start.make\",\"parameter\":0,\"callbackProtocol\":\"handlers\"}],\"launches\":[],\"parameters\":[]}]",
+            .message = "The entry constructor `Start.make` needs a closed `handlers` callback record\nwith the protocol's field arities.",
+        },
+        .{
+            .kinds = "[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"launches\":[{\"name\":\"Start.text\",\"parameter\":1}],\"constructors\":[],\"parameters\":[]}]",
+            .message = "The entry launch `Start.text` has an invalid Program parameter index or type.",
+        },
+        .{
+            .kinds = "[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"parameters\":[{\"index\":0,\"role\":\"local\"}],\"constructors\":[],\"launches\":[]}]",
+            .message = "The entry kind `Start.Program` has an invalid type-parameter role at index 0.",
+        },
+    };
+    for (scenarios) |scenario| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w,
+            \\import Start exposing (Program)
+            \\pub run : Program → ⊤
+            \\run _ = ⊤
+            \\
+        );
+        try w.write("platform/beni.json", try std.fmt.allocPrint(w.arena.allocator(), "{{\"platform\":true,\"program\":\"Start.Program\",\"entryKinds\":{s}}}", .{scenario.kinds}));
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "Main.beni" },
+            &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqualDeep(diagnostic.Diagnostic{
+                .code = .invalid_entry_kind,
+                .severity = .@"error",
+                .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+                .title = "INVALID ENTRY KIND",
+                .message = scenario.message,
+            }, result.diagnostics[0]);
+            try testing.expect(!w.exists("out"));
+        }
+    }
+}
+
+test "generic entry runtime preserves polymorphic Program arguments" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeGenericRuntime(&w,
+        \\import Start
+        \\
+        \\type alias App a = Start.Program a
+        \\
+        \\pub run : App a → ⊤
+        \\run _ = ⊤
+        \\
+    );
+    try w.write("platform/beni.json",
+        \\{"platform":true,"program":"Start.Program","entryKinds":[{"programType":"Start.Program","realm":"node","runtime":"Rt","parameters":[{"index":0,"role":"local"}],"constructors":[],"launches":[]}]}
+    );
+    try w.write("platform/Start.beni",
+        \\pub type Program a = Program a
+        \\
+        \\pub make : a → Program a
+        \\make value = Program value
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Start
+        \\
+        \\main : Start.Program String
+        \\main = Start.make "generic runtime"
+        \\
+    );
+    const built = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "", .exit_code = 0 });
+
+    // The same generic contract cannot choose Int, number or evidence for a.
+    for ([_][]const u8{
+        "import Start\npub run : Start.Program Int → ⊤\nrun _ = ⊤\n",
+        "import Start\npub run : Start.Program number → ⊤\nrun _ = ⊤\n",
+        "import Start\npub run : Start.Program a → ⊤ where a.eq : a, a → Bool\nrun _ = ⊤\n",
+    }) |bad_runtime| {
+        try w.write("platform/Rt.beni", bad_runtime);
+        const refused = try w.run(&.{ "build", "--platform=platform", "--out=bad", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), refused.exit_code);
+        try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+        try testing.expectEqualDeep(diagnostic.Diagnostic{
+            .code = .invalid_entry_kind,
+            .severity = .@"error",
+            .span = .{ .file = "platform/Rt.beni", .start = .{ .line = 3, .col = 1 }, .end = .{ .line = 3, .col = 4 } },
+            .title = "INVALID ENTRY KIND",
+            .message = "`Rt.run` must take exactly one `Start.Program` and return `⊤`, with no evidence\nparameters or specialized type arguments.",
+        }, refused.diagnostics[0]);
+        try testing.expect(!w.exists("bad"));
+    }
+}
+
+test "generic entry runtime rejects an unresolved callback effect dependency" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeGenericRuntime(&w,
+        \\import Start exposing (Program)
+        \\pub run : Program → ⊤
+        \\run program = Start.invoke program
+        \\
+    );
+    try w.write("platform/Start.beni",
+        \\pub type Program = Program (⊤ → ⊤)
+        \\
+        \\pub make : (⊤ → ⊤) → Program
+        \\make body = Program body
+        \\
+        \\pub invoke : Program → ⊤
+        \\invoke (Program body) = body ⊤
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Start
+        \\
+        \\main : Start.Program
+        \\main = Start.make (λ⊤ → ⊤)
+        \\
+    );
+    const refused = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .entry_runtime_suspends,
+        .severity = .@"error",
+        .span = .{ .file = "platform/Rt.beni", .start = .{ .line = 3, .col = 1 }, .end = .{ .line = 3, .col = 4 } },
+        .title = "ENTRY RUNTIME SUSPENDS",
+        .message = "`Rt.run` may suspend, but the generated entry calls it synchronously. Install\nlisteners, start an owned root fiber, then return; initialization may suspend\ninside that fiber.",
+    }, refused.diagnostics[0]);
+    try testing.expect(!w.exists("out"));
+}
+
+test "generic entry runtime unit result cannot supply exports program" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeGenericRuntime(&w,
+        \\import Start exposing (Program)
+        \\pub run : Program → ⊤
+        \\run _ = ⊤
+        \\
+    );
+    try w.write("platform/beni.json",
+        \\{"platform":true,"program":"Start.Program","exports":"program","entryKinds":[{"programType":"Start.Program","realm":"node","runtime":"Rt","constructors":[],"launches":[],"parameters":[]}]}
+    );
+    for ([_][]const []const u8{
+        &.{ "check", "--platform=platform", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+    }) |args| {
+        const refused = try w.run(args);
+        try testing.expectEqual(@as(u8, 1), refused.exit_code);
+        try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+        try testing.expectEqualDeep(diagnostic.Diagnostic{
+            .code = .invalid_entry_kind,
+            .severity = .@"error",
+            .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+            .title = "INVALID ENTRY KIND",
+            .message = "The generic entry runtime for `Start.Program` returns `⊤`, so it cannot also\nsupply the result required by exports program.",
+        }, refused.diagnostics[0]);
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "generic entry runtime requires a closed callback record" {
+    for ([_]bool{ false, true }) |open| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w,
+            \\import Start exposing (Program)
+            \\pub run : Program → ⊤
+            \\run _ = ⊤
+            \\
+        );
+        const start = try w.read("platform/Start.beni");
+        try w.write("platform/Start.beni", try std.fmt.allocPrint(
+            w.arena.allocator(),
+            "{s}\npub construct : {{ {s}init : (Int, Int → Int), start : (Int, Int → Int), handle : (Int, Int, Int → Int), stream : (Int, Int, Int, Int → Int) }} → Program\nconstruct _ = Program \"callback\"\n",
+            .{ start, if (open) "r | " else "" },
+        ));
+        try w.write("platform/beni.json",
+            \\{"platform":true,"program":"Start.Program","entryKinds":[{"programType":"Start.Program","realm":"node","runtime":"Rt","constructors":[{"name":"Start.construct","parameter":0,"callbackProtocol":"handlers"}],"launches":[],"parameters":[]}]}
+        );
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "Main.beni" },
+            &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            if (!open) {
+                try testing.expectEqual(@as(u8, 0), result.exit_code);
+                try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+            } else {
+                try testing.expectEqual(@as(u8, 1), result.exit_code);
+                try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+                    .code = .invalid_entry_kind,
+                    .severity = .@"error",
+                    .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+                    .title = "INVALID ENTRY KIND",
+                    .message = "The entry constructor `Start.construct` needs a closed `handlers` callback\nrecord with the protocol's field arities.",
+                }}, result.diagnostics);
+                try testing.expect(!w.exists("out"));
+            }
+        }
+    }
+}
+
+test "generic entry runtime metadata recheck replaces the selected runtime" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeGenericRuntime(&w,
+        \\import Start exposing (Program)
+        \\pub run : Program → ⊤
+        \\run _ = ⊤
+        \\
+    );
+    const first = try w.run(&.{ "build", "--platform=platform", "--out=first", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), first.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), first.diagnostics);
+    try w.expectProgram("first/_main.mjs", .{ .stdout = "", .exit_code = 0 });
+
+    // The checked interfaces can be cached, but the new manifest selects Other.
+    try w.write("platform/Other.beni",
+        \\import Js
+        \\import Start exposing (Program)
+        \\pub run : Program → ⊤
+        \\run _ =
+        \\    _ = Js.call (Js.global "console") "log" [ Js.from "replacement runtime" ]
+        \\    ⊤
+        \\
+    );
+    try w.write("platform/beni.json",
+        \\{"platform":true,"program":"Start.Program","entryKinds":[{"programType":"Start.Program","realm":"node","runtime":"Other","constructors":[],"launches":[],"parameters":[]}]}
+    );
+    const checked = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), checked.diagnostics);
+    const replacement = try w.run(&.{ "build", "--platform=platform", "--out=second", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), replacement.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), replacement.diagnostics);
+    try w.expectProgram("second/_main.mjs", .{ .stdout = "replacement runtime\n", .exit_code = 0 });
+
+    // A rejected recheck cannot retain either previously accepted runner.
+    try w.write("platform/Other.beni",
+        \\import Start exposing (Program)
+        \\pub run : Program → Int
+        \\run _ = 1
+        \\
+    );
+    for ([_][]const []const u8{
+        &.{ "check", "--platform=platform", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=rejected", "Main.beni" },
+    }) |args| {
+        const refused = try w.run(args);
+        try testing.expectEqual(@as(u8, 1), refused.exit_code);
+        try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+            .code = .invalid_entry_kind,
+            .severity = .@"error",
+            .span = .{ .file = "platform/Other.beni", .start = .{ .line = 3, .col = 1 }, .end = .{ .line = 3, .col = 4 } },
+            .title = "INVALID ENTRY KIND",
+            .message = "`Other.run` must take exactly one `Start.Program` and return `⊤`, with no\nevidence parameters or specialized type arguments.",
+        }}, refused.diagnostics);
+        try testing.expect(!w.exists("rejected"));
+    }
+}
+
+test "generic entry runtime requires every manifest table" {
+    const tables = [_][]const u8{ "constructors", "launches", "parameters" };
+    for (tables, 0..) |_, omitted| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w,
+            \\import Start exposing (Program)
+            \\pub run : Program → ⊤
+            \\run _ = ⊤
+            \\
+        );
+        var manifest: std.Io.Writer.Allocating = .init(w.arena.allocator());
+        try manifest.writer.writeAll("{\"platform\":true,\"program\":\"Start.Program\",\"entryKinds\":[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\"");
+        for (tables, 0..) |table, index| if (index != omitted) {
+            try manifest.writer.print(",\"{s}\":[]", .{table});
+        };
+        try manifest.writer.writeAll("}]}");
+        try w.write("platform/beni.json", manifest.written());
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "Main.beni" },
+            &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        }) |args| {
+            const result = try w.runWith(args, .{ .raw_diagnostics = true });
+            try testing.expectEqual(@as(u8, 2), result.exit_code);
+            try testing.expectEqualStrings("", result.stdout);
+            try testing.expectEqualStrings("beni: cannot read 'platform/beni.json': it is not a JSON object\n", result.stderr);
+            try testing.expect(!w.exists("out"));
+        }
+    }
+}
+
+test "generic runtime suspension cannot hide behind function type aliases" {
+    const cases = [_]struct { annotation: []const u8, aliases: []const u8, imported: bool = false }{
+        .{ .annotation = "Runner", .aliases = "pub type alias Runner = Program → ⊤\n" },
+        .{ .annotation = "Program → ⊤", .aliases = "" },
+        .{ .annotation = "Runner", .aliases = "pub type alias Inner a = a → ⊤\npub type alias Middle a = Inner a\npub type alias Runner = Middle Program\n" },
+        .{ .annotation = "Runner", .aliases = "pub type alias Identity a = a\npub type alias Runner = Identity (Program → ⊤)\n" },
+        .{ .annotation = "Types.Runner", .aliases = "", .imported = true },
+    };
+    for (cases) |scenario| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const runtime = try std.fmt.allocPrint(w.arena.allocator(), "import Start exposing (Program)\nimport Task\n{s}\n{s}\npub run : {s}\nrun _ = Task.yieldNow ⊤\n", .{ if (scenario.imported) "import Types\n" else "", scenario.aliases, scenario.annotation });
+        try writeGenericRuntime(&w, runtime);
+        if (scenario.imported) try w.write("platform/Types.beni", "import Start exposing (Program)\npub type alias Identity a = a\npub type alias Arrow a = a → ⊤\npub type alias Runner = Identity (Arrow Program)\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=cold.json", "Main.beni" },
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "--self-profile=warm.json", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.entry_runtime_suspends, result.diagnostics[0].code);
+            try testing.expectEqualStrings("platform/Rt.beni", result.diagnostics[0].span.file);
+            try testing.expectEqualStrings("ENTRY RUNTIME SUSPENDS", result.diagnostics[0].title);
+            try testing.expect(!w.exists("out"));
+        }
+        const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+        for ([_][]const u8{ "cold.json", "warm.json" }, 0..) |name, index| {
+            const parsed = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read(name), .{ .ignore_unknown_fields = true });
+            var found = false;
+            for (parsed.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+                if (index == 0) try testing.expect(count > 0) else try testing.expectEqual(@as(u64, 0), count);
+                found = true;
+            };
+            try testing.expect(found);
+        }
+    }
+}
+
+test "generic aliased runtime may store a suspending callback without calling it" {
+    for ([_]bool{ false, true }) |impure| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeGenericRuntime(&w, try std.fmt.allocPrint(w.arena.allocator(), "import Start exposing (Program)\n{s}\npub type alias Runner = Program → ⊤\npub run : Runner\nrun _ =\n{s}    ⊤\n", .{ if (impure) "import Js\n" else "", if (impure) "    _ = Js.call (Js.global \"console\") \"log\" [ Js.from \"ready\" ]\n" else "" }));
+        try w.write("platform/Start.beni",
+            \\pub type alias Callback = ⊤ → ⊤
+            \\pub type Program = Program Callback
+            \\pub make : Callback → Program
+            \\make body = Program body
+            \\pub invoke : Program → ⊤
+            \\invoke (Program body) = body ⊤
+            \\
+        );
+        try w.write("Main.beni", "import Start\nimport Task\nmain : Start.Program\nmain = Start.make Task.yieldNow\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni" },
+        }, 0..) |args, index| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 0), result.exit_code);
+            try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+            if (index >= 2) try w.expectProgram("out/_main.mjs", .{ .stdout = if (impure) "ready\n" else "", .exit_code = 0 });
+        }
+        // Merely retaining the callback is synchronous; invoking its unresolved
+        // effect dependency through the same aliased arrow is not.
+        try w.write("platform/Rt.beni", "import Start exposing (Program)\npub type alias Runner = Program → ⊤\npub run : Runner\nrun program = Start.invoke program\n");
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=refused", "Main.beni" },
+        }) |args| {
+            const result = try w.run(args);
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.entry_runtime_suspends, result.diagnostics[0].code);
+            try testing.expect(!w.exists("refused"));
+        }
+    }
+}
+
+// Dedicated workers stay on this test platform until realm and Wire checks ship.
+fn writeWorkerPlatform(w: *World) !void {
+    for ([_][]const u8{ "beni.json", "Page.beni", "Page.js", "Worker.beni", "Worker.js", "WorkerRuntime.beni", "runtime.js" }) |name| {
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(w.arena.allocator(), "tests/platforms/worker/{s}", .{name}), w.arena.allocator(), .limited(world.max_stream_bytes));
+        try w.write(try std.fmt.allocPrint(w.arena.allocator(), "platform/{s}", .{name}), bytes);
+    }
+}
+
+test "worker discovery terminates cycles and emits identical entries at jobs 1 and 8" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\a : Worker.Program String String ⊤
+        \\a = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleA, stream = λ_ _ _ _ → ⊤ }
+        \\b : Worker.Program String String ⊤
+        \\b = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleB, stream = λ_ _ _ _ → ⊤ }
+        \\handleA : String, ⊤, ⊤ → String
+        \\handleA message _ _ =
+        \\    if message == "shared" then handleB message ⊤ ⊤
+        \\    else if message == "nested" then
+        \\        _ = Worker.open b
+        \\        message
+        \\    else "a:" ++ message
+        \\handleB : String, ⊤, ⊤ → String
+        \\handleB message _ _ =
+        \\    if message == "nested" then
+        \\        _ = Worker.open a
+        \\        message
+        \\    else "b:" ++ message
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    _ = Worker.open a
+        \\    ⊤
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    for ([_]bool{ false, true }) |release| {
+        // EXECUTE
+        const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
+        const one = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=one", "--no-source-maps", "--jobs=1", "Main.beni" }, flags }));
+        try testing.expectEqual(@as(u8, 0), one.exit_code);
+        try testing.expectEqual(@as(usize, 0), one.diagnostics.len);
+        const eight = try w.run(try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=eight", "--no-source-maps", "--jobs=8", "Main.beni" }, flags }));
+        try testing.expectEqual(@as(u8, 0), eight.exit_code);
+        try testing.expectEqual(@as(usize, 0), eight.diagnostics.len);
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        const files = try w.listFiles("one");
+        try testing.expectEqualDeep(files, try w.listFiles("eight"));
+        var entries: usize = 0;
+        for (files) |path| {
+            try testing.expectEqualStrings(try w.read(try std.fmt.allocPrint(w.arena.allocator(), "one/{s}", .{path})), try w.read(try std.fmt.allocPrint(w.arena.allocator(), "eight/{s}", .{path})));
+            if (std.mem.startsWith(u8, path, "_workers/") and std.mem.endsWith(u8, path, "/_main.mjs")) entries += 1;
+        }
+        try testing.expectEqual(@as(usize, 2), entries);
+        // Import each projected user module and execute its handler. This
+        // catches an initializer order that still follows a descriptor's
+        // original body and would read a callback before its binding exists.
+        var script: std.ArrayList(u8) = .empty;
+        try script.appendSlice(w.arena.allocator(), "const replies=[];\n");
+        for (files) |path| {
+            if (!std.mem.startsWith(u8, path, "_workers/") or !std.mem.endsWith(u8, path, "/Main.mjs")) continue;
+            try script.print(w.arena.allocator(), "replies.push(Object.values(await import('./one/{s}'))[0].a.handle('plain',null,null));\n", .{path});
+        }
+        try script.appendSlice(w.arena.allocator(), "console.log(replies.sort().join(','));\n");
+        try w.write("probe.mjs", script.items);
+        try w.expectProgram("probe.mjs", .{ .stdout = "a:plain,b:plain\n" });
+    }
+}
+
+test "worker runtime factories are diagnosed before writing any output" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\
+        \\factory : ⊤ → Worker.Program String String ⊤
+        \\factory _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    _ = Worker.open (factory ⊤)
+        \\    ⊤
+        \\
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    // EXECUTE
+    const result = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" });
+    // VERIFY OUTPUT AND SIDE EFFECTS
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualDeep(&[_]diagnostic.Diagnostic{.{
+        .code = .worker_entry_not_static,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 9, .col = 9 }, .end = .{ .line = 9, .col = 20 } },
+        .title = "WORKER ENTRY NOT STATIC",
+        .message = "This launch needs a top-level Program declaration, or a finite choice between\nsuch references. A runtime factory cannot define a worker entry.",
+    }}, result.diagnostics);
+    try testing.expect(!w.exists("out"));
+}
+
+test "worker launch URLs stay relative to their module under release specialization" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Nested/Open.beni",
+        \\import Worker
+        \\worker : Worker.Program String String ⊤
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\pub open : ⊤ → ⊤
+        \\open _ =
+        \\    _ = Worker.open worker
+        \\    ⊤
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\import Nested.Open
+        \\worker : Worker.Program String String ⊤
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    _ = Worker.open worker
+        \\    Nested.Open.open ⊤
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    try w.write("probe.mjs",
+        \\import {existsSync} from 'node:fs';
+        \\import {fileURLToPath} from 'node:url';
+        \\let launches = 0;
+        \\globalThis.Worker = class {
+        \\  constructor(url) {
+        \\    if (!existsSync(fileURLToPath(url))) throw new Error(`launch points outside emitted worker tree: ${url}`);
+        \\    launches++;
+        \\  }
+        \\  addEventListener() {}
+        \\};
+        \\Object.values(await import('./out/Main.mjs'))[0].a(null);
+        \\console.log(`launched ${launches} workers`);
+        \\
+    );
+    for ([_]bool{ false, true }) |release| {
+        // EXECUTE
+        const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
+            &.{ "build", "--allow-unchecked-workers", "--root=.", "--platform=platform", "--out=out", "Main.beni", "Nested/Open.beni" },
+            if (release) &.{"--release"} else &.{},
+        });
+        const result = try w.run(args);
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+        try w.expectProgram("probe.mjs", .{ .stdout = "launched 2 workers\n" });
+    }
+}
+
+test "worker Wire rejects function fields and native values" {
+    const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20 }{
+        .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function" },
+        .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`" },
+        .{ .message = "{ outer : { inner : { callback : (⊤ → ⊤) } } }", .path = "message.outer.inner.callback", .reason = "a function" },
+    };
+    for (cases) |scenario| {
+        // PREPARE
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        // Expose the native alias from the same platform as the transport.
+        const worker = try w.read("platform/Worker.beni");
+        try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n", .{worker}));
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\nmain : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open worker\n    ⊤)\n", .{scenario.message}));
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni" },
+        }) |args| {
+            // EXECUTE
+            const result = try w.run(args);
+            // VERIFY OUTPUT AND SIDE EFFECTS
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            const message = try std.fmt.allocPrint(w.arena.allocator(), "Message field `{s}` cannot cross a worker boundary:\n\nIt contains {s}.\n\nConvert it to a concrete Wire value before sending it.", .{ scenario.path, scenario.reason });
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+                .code = .worker_message_not_serializable,
+                .severity = .@"error",
+                .span = .{ .file = "Main.beni", .start = .{ .line = scenario.line, .col = scenario.col }, .end = .{ .line = scenario.line, .col = scenario.end_col } },
+                .title = "WORKER MESSAGE NOT SERIALIZABLE",
+                .message = message,
+            }}), result.diagnostics);
+            try testing.expect(!w.exists("out"));
+        }
+    }
+}
+
+test "worker Wire obligations survive generic helpers and warm interfaces" {
+    for ([_]bool{ false, true }) |field_role| {
+        // PREPARE
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        if (field_role) try w.write("platform/beni.json",
+            \\{"platform":true,"name":"wire-path-test","program":"Page.Program","runtime":"runtime.js","entryKinds":[{"programType":"Worker.Program","realm":"dedicatedWorker","runtime":"WorkerRuntime","constructors":[{"name":"Worker.program","parameter":0,"callbackProtocol":"handlers"}],"launches":[{"name":"Worker.open","parameter":0}],"parameters":[{"index":0,"path":["wire"],"role":"wire"},{"index":1,"role":"wire"},{"index":2,"role":"local"}]}]}
+        );
+        try w.write("Forward.beni",
+            \\import Worker
+            \\worker : a → Worker.Program a String ⊤
+            \\worker _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+            \\pub forward : a → ⊤
+            \\forward value =
+            \\    case Worker.open (worker value) of
+            \\        Ok handle → Worker.send handle value
+            \\        Err _ → ⊤
+            \\
+        );
+        try w.write("Main.beni", if (field_role)
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward { wire = \"ok\", local = λ_ → ⊤ })\n"
+        else
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
+        // EXECUTE: the second check reads the helper's cached interface.
+        for (0..2) |_| {
+            const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            // The checker accepts the generic obligations; the unchanged
+            // unchecked-worker gate is the only remaining diagnostic.
+            try testing.expectEqual(@as(u8, 1), good.exit_code);
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+                .code = .invalid_entry_kind,
+                .severity = .@"error",
+                .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+                .title = "INVALID ENTRY KIND",
+                .message = "Worker launches are unavailable until realm and Wire checks are implemented.",
+            }}), good.diagnostics);
+        }
+        const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+        const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });
+        var warm = false;
+        for (trace.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+            try testing.expectEqual(@as(u64, 0), count);
+            warm = true;
+        };
+        try testing.expect(warm);
+        try w.write("Main.beni", if (field_role)
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward { wire = λ_ → ⊤, local = \"ok\" })\n"
+        else
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward (λ_ → ⊤))\n");
+        const bad = try w.run(&.{ "check", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+            .code = .worker_message_not_serializable,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 27 }, .end = .{ .line = 4, .col = 42 } },
+            .title = "WORKER MESSAGE NOT SERIALIZABLE",
+            .message = if (field_role)
+                "Message field `message.wire` cannot cross a worker boundary:\n\nIt contains a function.\n\nConvert it to a concrete Wire value before sending it."
+            else
+                "Message field `message` cannot cross a worker boundary:\n\nIt contains a function.\n\nConvert it to a concrete Wire value before sending it.",
+        }}), bad.diagnostics);
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "worker Wire follows opaque payload layouts across warm caches" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\import Box
+        \\import String
+        \\worker : Worker.Program Box.Box Box.Box ⊤
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\main : Page.Program
+        \\main = Page.program (λ_ →
+        \\    case Worker.open worker of
+        \\        Ok handle →
+        \\            suffix = case [ 0, 1, 2 ] of
+        \\                [ _, …tail ] → tail
+        \\                _ → []
+        \\            Worker.receive handle (λmessage → Page.text (String.fromInt (Box.sum message)))
+        \\            Worker.send handle (Box.make suffix)
+        \\        Err _ → Page.text "open failed")
+        \\
+    );
+    try w.write("probe.mjs",
+        \\globalThis.Worker = class {
+        \\  addEventListener(name, callback) { if (name === 'message') this.message = callback; }
+        \\  postMessage(value) { this.message({data: structuredClone(value)}); }
+        \\};
+        \\const output = {set textContent(value) { console.log(value); }};
+        \\globalThis.document = {querySelector() { return output; }};
+        \\await import('./out/_main.mjs');
+        \\
+    );
+    for ([_][]const u8{ "values", "renamed" }) |field| {
+        try w.write("platform/Box.beni", try std.fmt.allocPrint(w.arena.allocator(), "import List\npub opaque type Box = Box {{ {s} : List Int }}\npub make : List Int → Box\nmake values = Box {{ {s} = values }}\npub sum : Box → Int\nsum (Box record) = List.sum record.{s}\n", .{ field, field, field }));
+        // EXECUTE: the second build changes a private representation while
+        // retaining every public value signature and structural marker.
+        const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+        // VERIFY OUTPUT: the compiled plan must normalize the new payload
+        // path before the real native structured clone runs.
+        try w.expectProgram("probe.mjs", .{ .stdout = "3\n" });
+    }
+}
+
+test "obsolete platform-wide page host is refused before output" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"stale","program":"App.Program","runtime":"runtime.js","host":"page"}
+    );
+    try w.write("platform/App.beni", "pub foreign type Program\n\n\npub foreign pure app : Program\n");
+    try w.write("platform/App.js", "export const app = null;\n");
+    try w.write("platform/runtime.js", "export const run = (program) => null;\n");
+    try w.write("Main.beni", "import App\n\n\nmain : App.Program\nmain = App.app\n");
+    const result = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.obsolete_host_promise, result.diagnostics[0].code);
+    try testing.expect(!w.exists("out"));
+}
+
+test "native callable loading validates the trusted core signature" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "core", "_expected.");
+    try w.write("core/Browser/Host/TextEncoder.beni",
+        \\pub foreign type TextEncoder
+        \\
+        \\
+        \\pub foreign impure create : String → TextEncoder
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Browser.Host.TextEncoder as TextEncoder
+        \\
+        \\
+        \\pub value = TextEncoder.create "invalid signature"
+        \\
+    );
+    const result = try w.run(&.{ "check", "--core-root=core", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
+}
+
+test "worker realm obligations survive generic imported writers and warm interfaces" {
+    // PREPARE: the updater is inferred in a different module. The page and
+    // worker use separate cells, so a portable instantiation remains valid.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.copyTree("tests/corpus/browser/dedicated/RealmGenericPageWorkerSafe", "_expected.");
+    try w.write("Storage.beni", "import Ref\n\n\npub store : Ref.Ref a, a → ⊤\nstore r x = Ref.set r x\n");
+    const original = try w.read("Main.beni");
+    const imported = try std.mem.replaceOwned(u8, w.arena.allocator(), original, "import Ref", "import Ref\nimport Storage");
+    const source = try std.mem.replaceOwned(u8, w.arena.allocator(), imported, "store r x = Ref.set r x", "store r x = Storage.store r x");
+    try w.write("Main.beni", source);
+    // EXECUTE AND VERIFY: warm compilation must read the published generic
+    // obligation while keeping the page's DOM instantiation independent.
+    for (0..2) |_| {
+        const good = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "--self-profile=warm.json", "Main.beni", "Storage.beni" });
+        try testing.expectEqual(@as(u8, 0), good.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), good.diagnostics);
+    }
+    const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+    const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });
+    var warm = false;
+    for (trace.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+        try testing.expectEqual(@as(u64, 0), count);
+        warm = true;
+    };
+    try testing.expect(warm);
+
+    // Changing only the caller must discharge the same cached obligation at
+    // its new callback type, and must leave no partially written output.
+    try w.copyTree("tests/corpus/build/bad/dedicated/RealmGenericImported", "_expected.");
+    const expected_bytes = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/build/bad/dedicated/RealmGenericImported/_expected.diag", w.arena.allocator(), .limited(world.max_stream_bytes));
+    const expected = try std.json.parseFromSlice([]const diagnostic.Diagnostic, w.arena.allocator(), expected_bytes, .{});
+    for (0..2) |_| {
+        const bad = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=refused", "Main.beni", "Storage.beni" });
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expectEqualDeep(expected.value, bad.diagnostics);
+        try testing.expect(!w.exists("refused"));
+    }
+}

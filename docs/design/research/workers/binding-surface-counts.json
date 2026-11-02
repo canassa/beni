@@ -1,0 +1,33 @@
+{
+  "source": {
+    "package": "@webref/idl",
+    "version": "3.86.0",
+    "url": "https://registry.npmjs.org/@webref/idl/-/idl-3.86.0.tgz",
+    "sha256": "f820cd04584ca7f815b8cee1381d76e27363090cd62e0cb88962d8188bc7c90a"
+  },
+  "idl_files": 346,
+  "declaration_blocks": {
+    "interface": 1153,
+    "dictionary": 936,
+    "partial interface": 363,
+    "interface mixin": 98,
+    "namespace": 9,
+    "partial dictionary": 181,
+    "partial namespace": 10,
+    "partial interface mixin": 29,
+    "callback interface": 3
+  },
+  "semicolon_member_rows": {
+    "interface": 6056,
+    "dictionary": 3047,
+    "partial interface": 743,
+    "interface mixin": 1248,
+    "namespace": 52,
+    "partial dictionary": 317,
+    "partial namespace": 81,
+    "partial interface mixin": 58,
+    "callback interface": 19
+  },
+  "method": "Tokenize comments and quoted strings separately, preserving URLs inside string literals. Balance declaration braces. Count one member row for each semicolon at the immediate body depth of an interface, callback interface, mixin, namespace or dictionary. Count overload declarations separately. Count partial blocks separately under their kind; do not merge or expand includes. Dictionary rows are fields. Exclude typedefs, enums, standalone callback declarations and includes statements. Totals by kind sum to the complete counted input, not generated output declarations or bytes.",
+  "correction": "The syntax-aware parser counts 11621 members, including 3047 primary dictionary fields and 3364 dictionary fields including partials. The earlier regex comment stripper removed the URL-bearing namespace field of html.idl SanitizerElementNamespace: DOMString? _namespace = \"http://www.w3.org/1999/xhtml\"; the // inside that quoted string is not a comment. Files (346), blocks (2782) and non-dictionary members (8257) are unchanged."
+}

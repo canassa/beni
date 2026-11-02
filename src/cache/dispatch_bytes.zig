@@ -92,7 +92,8 @@ pub const magic = "BENIDSP\x00";
 /// 13 since scalar dictionary keys (#294) carry key domains.
 /// 14 adds checked render identity facts and their local paths.
 /// 15: effect declaration byte 2 carries the totality proof.
-pub const format_version: u32 = 15;
+/// 16: effect rows grow to 8 bytes with call and initializer realm masks.
+pub const format_version: u32 = 16;
 
 pub const Column = enum(u32) {
     terms,
@@ -140,7 +141,7 @@ pub const Column = enum(u32) {
             .render_facts => 16,
             .render_links => 8,
             .effect_sites => 8,
-            .effect_decls => 4,
+            .effect_decls => 8,
             .boundary => 12,
             .debug => 16,
             .debug_nodes => 12,
@@ -354,10 +355,12 @@ pub fn write(
     defer gpa.free(effect_decls);
     @memset(effect_decls, 0);
     for (d.effect_decls, 0..) |e, i| {
-        const row = effect_decls[i * 4 ..][0..4];
+        const row = effect_decls[i * 8 ..][0..8];
         row[0] = @backingInt(e.own);
         row[1] = @intFromBool(e.twin);
         row[2] = @intFromBool(e.total);
+        row[3] = e.realms;
+        row[4] = e.eval_realms;
     }
     const boundary = try gpa.alloc(u8, d.boundary.len * Column.boundary.width());
     defer gpa.free(boundary);
@@ -925,12 +928,14 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         const decls = try gpa.alloc(Dispatch.EffectDecl, lengths[@backingInt(Column.effect_decls)]);
         out.table.effect_decls = decls;
         for (decls, 0..) |*e, i| {
-            const row = in_bytes[i * 4 ..][0..4];
-            if (row[1] > 1 or row[2] > 1) return error.BadSidecar;
+            const row = in_bytes[i * 8 ..][0..8];
+            if (row[1] > 1 or row[2] > 1 or row[3] > 31 or row[4] > 31) return error.BadSidecar;
             e.* = .{
                 .own = std.enums.fromInt(Dispatch.Suspend, row[0]) orelse return error.BadSidecar,
                 .twin = row[1] == 1,
                 .total = row[2] == 1,
+                .realms = row[3],
+                .eval_realms = row[4],
             };
         }
     }

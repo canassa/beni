@@ -8130,7 +8130,7 @@ const Spec = struct {
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try s.scanNode(fm, t, params, out, depth + 1, own);
                 try s.scanList(fm, ir.subRange(@fromBackingInt(@intCast(d.rhs))), params, out, depth, own);
             },
-            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+            .break_stmt, .continue_stmt, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => {},
             .expr_stmt, .throw_stmt => try s.scanNode(fm, @fromBackingInt(@intCast(d.lhs)), params, out, depth + 1, own),
             // A `return` in either block is the callee's own: written where
             // the call stood, it leaves the caller from inside the same
@@ -10404,7 +10404,7 @@ const Spec = struct {
                 },
                 .field_name => return c.node(from, tag, (try c.property(@fromBackingInt(@intCast(d.lhs)))).int(), 0),
                 .number, .string, .template_chunk, .regex => return c.node(from, tag, try c.bytesOf(from), d.rhs),
-                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return c.node(from, tag, 0, 0),
+                .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => return c.node(from, tag, 0, 0),
                 .template, .object, .array => {
                     const r = try c.exprs(ir.extraSlice(JsIr.inlineRange(d), Index), depth);
                     return c.node(from, tag, @backingInt(r.start), @backingInt(r.end));
@@ -10604,7 +10604,7 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .ident => return if (d.lhs == p.int()) .found else .clean,
-        .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit => return .clean,
+        .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .import_meta_url, .this_lit => return .clean,
         .member => return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, true),
         .index_get => return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true),
         .unary => {
@@ -10825,17 +10825,17 @@ const mark_node: u32 = mark_exit - 1;
 
 /// The leaves the evaluating walks (`Spec.eval`, `Pts.expr`) take without
 /// their stack.
-const value_leaves = TagSet(&.{ .field_name, .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
+const value_leaves = TagSet(&.{ .field_name, .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit, .template_chunk });
 
 inline fn isValueLeaf(t: Node.Tag) bool {
     return value_leaves[@backingInt(t)];
 }
 
 /// The leaves `Spec.patchStmt` has nothing to patch in.
-const patch_leaves = TagSet(&.{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
+const patch_leaves = TagSet(&.{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .import_meta_url, .this_lit });
 
 /// The leaves `Spec.countExpr` has nothing to count in: none is a name.
-const count_leaves = TagSet(&.{ .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
+const count_leaves = TagSet(&.{ .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit });
 
 /// Whether a node of `tag` is a literal, as `Spec.literalValue` reads one.
 fn isLiteralTag(tag: Node.Tag) bool {
@@ -12732,7 +12732,7 @@ fn constantVal(ir: *const JsIr, node: Index) Pts.Val {
 /// (`Pts.literal_vals`, `Pts.combineNow` of a `constantValue` node).
 fn constantTop(ir: *const JsIr, node: Index) bool {
     return switch (ir.tag(node)) {
-        .global_this, .this_lit => true,
+        .global_this, .import_meta_url, .this_lit => true,
         .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(ir.data(node).rhs))) == .yield,
         else => false,
     };
@@ -16520,7 +16520,7 @@ const Pts = struct {
             .number, .string, .template, .template_chunk, .true_lit, .false_lit => Val.prim_val,
             .null_lit => Val.nul_val,
             .undefined_lit => Val.undef_val,
-            .global_this, .this_lit => Val.top_val,
+            .global_this, .import_meta_url, .this_lit => Val.top_val,
             .ident => try p.narrowed(mi, node, try p.view(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))))),
             .member => blk: {
                 const obj = vals[d.lhs];
@@ -16999,7 +16999,7 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
         // million times over a page, and one exhaustive `switch` is one
         // jump where an `else` prong first checks the tag in Zig's own
         // backend, and a second call checks it again.
-        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => {},
         .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
         .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.rhs))),
@@ -17410,7 +17410,7 @@ fn inertOf(ir: *const JsIr, root: Index, comptime field_reads: bool) bool {
         budget -= 1;
         const d = ir.data(node);
         switch (ir.tag(node)) {
-            .arrow, .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+            .arrow, .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => {},
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @fromBackingInt(@intCast(d.rhs));

@@ -1,0 +1,19 @@
+import Js
+
+
+pub type Program
+    = Program (⊤ → ⊤)
+
+
+pub make : (⊤ → ⊤) → Program
+make init = Program init
+
+
+pub invoke : Program → ⊤
+invoke (Program init) = init ⊤
+
+
+pub log : String → ⊤
+log text =
+    _ = Js.call (Js.global "console") "log" [ Js.from text ]
+    ⊤

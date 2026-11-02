@@ -1,0 +1,48 @@
+-- Stored and returned callbacks must keep their execution realm.
+import Page
+import Ref
+import Worker
+
+
+pageCb : ⊤ → ⊤
+pageCb _ = ⊤
+
+
+cell : Ref.Ref (⊤ → ⊤)
+cell = Ref.make λ⊤ → ⊤
+
+
+setIt _ = cell.set pageCb
+
+
+callIt _ = (Ref.get cell) ⊤
+
+
+go _ =
+    setIt ⊤
+    callIt ⊤
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                go ⊤
+                "safe"
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    Page.text "ready"
+    Page.button λ_ →
+        case Worker.open worker of
+            Ok handle →
+                Worker.receive handle Page.text
+                Worker.send handle "ping"
+            Err _ →
+                Page.text "open failed"

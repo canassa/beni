@@ -301,6 +301,10 @@ pub const Input = struct {
     /// hand-written runtime or the entry file reads, or that a lowering
     /// imports (`backend.md` §15.1, *The runtime module*).
     extra_roots: []const Node = &.{},
+    // Wire values arrive from another entry, outside this entry's builders.
+    wire_types: []const Types.TypeId = &.{},
+    // Deferred Program bodies belong only to their selected entry.
+    deferred: []const Node = &.{},
     /// The schema plans, one per module: what a schema member's edges are
     /// read from (`schema.md` §6).
     plans: []const SchemaPlan = &.{},
@@ -538,6 +542,12 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
         if (mark(modules, root)) try stack.append(scratch, root);
     }
     while (stack.pop()) |node| {
+        if (node.kind == .decl and (in.entry == null or !std.meta.eql(node, in.entry.?))) {
+            const deferred = for (in.deferred) |d| {
+                if (std.meta.eql(node, d)) break true;
+            } else false;
+            if (deferred) continue;
+        }
         const module = node.module;
         const out = if (node.kind == .lift) (if (node.index < in.lift_targets.len) in.lift_targets[node.index] else &.{}) else edges[module.int()].targets(node);
         for (out) |next| {
@@ -614,6 +624,10 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     const seen = try scratch.alloc(std.DynamicBitSetUnmanaged, count);
     for (seen, 0..) |*s, i| s.* = try .initEmpty(scratch, in.birOf(@fromBackingInt(@intCast(@as(u32, @intCast(i))))).decls.len);
     var work: std.ArrayList(TypeDecl) = .empty;
+    for (in.wire_types) |id| {
+        const entry = in.types.entry(id);
+        try work.append(scratch, .{ .module = entry.module, .decl = entry.decl.int() });
+    }
     for (0..count) |i| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {
@@ -876,7 +890,7 @@ pub const ModuleEdges = struct {
     chains: []const Chain = &.{},
     chain_ctors: []const Node = &.{},
 
-    fn targets(e: ModuleEdges, node: Node) []const Target {
+    pub fn targets(e: ModuleEdges, node: Node) []const Target {
         const at, const list = switch (node.kind) {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },

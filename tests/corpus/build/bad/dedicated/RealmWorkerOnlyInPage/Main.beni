@@ -1,0 +1,8 @@
+import Browser.Host.WorkerGlobalScope as WorkerGlobalScope
+import Page
+
+
+main : Page.Program
+main = Page.program λ_ →
+    self = WorkerGlobalScope.self ⊤
+    ⊤

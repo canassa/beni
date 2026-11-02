@@ -1,0 +1,40 @@
+-- Js.from in Task.start must preserve the body's realm until typed Task storage lands.
+import Browser.Host.Document as Document
+import Browser.Host.Window as Window
+import Page
+import Task
+import Worker
+
+
+dom : ⊤ → String
+dom _ =
+    case Document.querySelector (Window.document ⊤) "body" of
+        Ok _ →
+            "found"
+        Err _ →
+            "bad selector"
+
+
+go _ = Task.start (λ⊤ → Page.text (dom ⊤)) λ_ → ⊤
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                go ⊤
+                "done"
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    case Worker.open worker of
+        Ok _ →
+            ⊤
+        Err _ →
+            ⊤

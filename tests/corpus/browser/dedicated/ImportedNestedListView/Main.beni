@@ -1,0 +1,18 @@
+-- An imported Program opened inside another worker needs its own wire plan.
+import Page
+import Relay
+import String
+import Worker
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open Relay.relay of
+        Ok handle →
+            Worker.receive handle λsum → Page.text (String.fromInt sum)
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

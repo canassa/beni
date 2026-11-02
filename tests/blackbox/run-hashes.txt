@@ -145,12 +145,27 @@ ordering_test.test.a recursive group's nullary read and dot-call print the same 
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 14b30c7ff7ee51f14951aed9a5adc7b2c4a876d7c4d4a4624a09e1d509f542ba
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 b46ddba369fbfdec5cbe9b0901ccd3dbbb6793d6b1ab4fd91f359d9fa6f46fed
 ordering_test.test.nullary methods and record defaults print the same reversed #0 4b82a541713d2a1be9f08f673e10fddf5148f81cdff5a101513a016cb029fa79
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 d1b5cbf4f3d3b12f0329e74f56392319e53a3d96acce76fbf35ca5084415c8cd
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 9d7c15876b6c0c4067e4981dc227b12137d992c0ce170df060cf33fc1f439091
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 8cdea03e8044eff88245dbb74ee9e44395787018705ee6a58d0d5b426a4d0059
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 ed6545c930344234c135f920cd718fbb7084230f257c453ea0cccadd353020e2
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 c9d2586932ecfc3928650866569d102b144fabafe33cf5909962fc8cc2738c6a
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 522f7234e64879d0a8aff34055c9273d4f9232a9e105002cd33f821eeb54a440
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 cbc1691fc7873ec3b832ef17298485f66045aa0c1fed6d90e233ec3d6deee7d0
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 6934993e129407a12867cbeca34a7894ad063eafa0f0c2ef91b691fbcb8ca016
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 69a44580ac025f3a49fa5c4b488acf633f03f0d51eae19483d7466aef09eef0b
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 2c662446b453f07205846a92ca4a2f796763b2b9c9b9a00d0101a18c1d5ebf5a
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 2b2e7f5ba1be83822f35e32ecce93e432e36a759435ff5125691f0f91d6d9ecb
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 a9e3bdfb4730cf733ce9fd29884045fb3a195244540f8d1909ae52de7f976f40
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 9f3ae5a0c08f50414a483875cdf8b9ee7066ad766809556f41cfb4b0657b6ff2
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 6fe0515971745e5e0d4d6c1a12dd1aa78ce47965a0e80169d6074e8e30f33a11
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 971f9cc77820dea89f4654ac49b0551de3815c8c251b90e1f1b7e4c3b2715adc
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 894ffb135ded5bc905e1941bc1df845d03446348bb42f18802c6fbfb74c6a671
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 cc12fb90b64981940baf6d3aa327c34acd759b278b3b41b1f8f99bec983d2401
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 7ebd8a471118cd3046dcafef4011c35aa9efdf09013ae4154f51051c6df2b217
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #2 ba3c84c27fdeb5944a3beb60d45b7e69a3475601d75c23244b92549636ea3593
+platform_test.test.generic aliased runtime may store a suspending callback without calling it #3 36f148b2ee6e64c043bb46fba68e44f01bc8c136757ff0a76bc4da7af14e92ca
+platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #0 552778c27edf20abfb9ab735e12b97f7a6bf4ddff165405bd01ebccb27a8fae7
+platform_test.test.generic entry runtime metadata recheck replaces the selected runtime #1 3ae44a88e14cb4d6e1698816bdba76e183aa4689f03b6d2ebf33ac249eb8a2dd
+platform_test.test.generic entry runtime preserves polymorphic Program arguments #0 79de53dbee5e244bc669ab1014762788c3fce91c9535700aeb7465aca2aa5add
+platform_test.test.generic entry runtime runs without markup in development and release #0 6999b5ccd619c0d0166f659a03f0d9bc62ba7f2cacd0f87bc0129a3ac05b8e42
+platform_test.test.generic entry runtime runs without markup in development and release #1 7dbf62f03fd1c978e3e7f4deba19c1f1262e99c322de09198a2e87da99513d4c
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #0 65e05d0f8e00e2ebedacd1575eeed6740c3e6d041094d181db36b9fca7fecb80
+platform_test.test.worker Wire follows opaque payload layouts across warm caches #1 a75aa42b0411f71addc5db6135ec3a8676c1d0ecf56a162a32c2643c07d0906b
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #0 eb86d7e8d77cd7ebf1c5d5e61e32b3bfe30d8c3d4595737a8c32c0a8965ba5b1
+platform_test.test.worker discovery terminates cycles and emits identical entries at jobs 1 and 8 #1 f7777ee73c069d7c6e09db8379b8c6a981f8311e346f6a049b5235dfc5df137a
+platform_test.test.worker launch URLs stay relative to their module under release specialization #0 0e6b6c28e5cccaf70384836025115a5bb8f1cbe096be70a6a663eab28734a398
+platform_test.test.worker launch URLs stay relative to their module under release specialization #1 676175aa76d9a6099f9e86ca3fb125a6fd1bfb5101198ab67e0da12ea499da14

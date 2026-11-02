@@ -87,6 +87,7 @@ pub const Input = struct {
     /// Written types JavaScript sees besides the build's own: under
     /// `--fuzz`, each program's message type (`browser-direct.md` §8.3).
     seeds: []const Seed = &.{},
+    observed_types: []const TypeId = &.{},
 
     fn alive(in: Input, m: Graph.Index, decl: usize) bool {
         if (m.int() >= in.gone.len) return true;
@@ -106,6 +107,7 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
     if (orderedReflectively(in)) {
         if (!try walk.comparedTypes()) return null;
     }
+    for (in.observed_types) |id| try walk.observe(id);
     // The seeds: what a live declaration says or was solved to say.
     for (in.birs, 0..) |bir, mi| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
@@ -351,6 +353,18 @@ pub fn assign(
     plain: *const std.StringHashMapUnmanaged(void),
     conflicts: *const Conflicts,
 ) Allocator.Error!Table {
+    return assignReserved(arena, counts, pinned, plain, conflicts, null);
+}
+
+/// Keep an already assigned cross-entry palette out of local spellings.
+pub fn assignReserved(
+    arena: Allocator,
+    counts: []Count,
+    pinned: *const std.StringHashMapUnmanaged(void),
+    plain: *const std.StringHashMapUnmanaged(void),
+    conflicts: *const Conflicts,
+    reserved: ?*const std.StringHashMapUnmanaged(void),
+) Allocator.Error!Table {
     const Order = struct {
         fn lessThan(_: void, a: Count, b: Count) bool {
             if (a.uses != b.uses) return a.uses > b.uses;
@@ -372,6 +386,7 @@ pub fn assign(
             var buf: [8]u8 = undefined;
             const spelled = Rename.spell(next, &buf);
             if (std.mem.indexOfScalar(u8, spelled, '$') != null or kept.contains(spelled)) continue;
+            if (reserved) |set| if (set.contains(spelled)) continue;
             slot.* = try arena.dupe(u8, spelled);
             next += 1;
             break;

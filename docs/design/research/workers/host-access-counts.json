@@ -1,0 +1,51 @@
+{
+  "revision": "ff8e02df3",
+  "groups": {
+    "platforms/browser-inline": {
+      "foreign_tokens": 3,
+      "operations": 321,
+      "literal-member": 184,
+      "literal-global": 52,
+      "value-operation": 69,
+      "dynamic-member": 15,
+      "dynamic-global": 1
+    },
+    "platforms/browser": {
+      "foreign_tokens": 19,
+      "operations": 1100,
+      "value-operation": 255,
+      "literal-global": 92,
+      "literal-member": 736,
+      "dynamic-member": 15,
+      "dynamic-global": 2
+    },
+    "core": {
+      "foreign_tokens": 71,
+      "operations": 1435,
+      "literal-member": 969,
+      "literal-global": 137,
+      "value-operation": 308,
+      "dynamic-member": 21
+    }
+  },
+  "receiver_origins": {
+    "platforms/browser-inline": {
+      "direct-global": 39,
+      "global-selector": 53,
+      "local-or-computed-value": 120,
+      "declaration-parameter": 109
+    },
+    "platforms/browser": {
+      "direct-global": 74,
+      "global-selector": 94,
+      "local-or-computed-value": 482,
+      "declaration-parameter": 450
+    },
+    "core": {
+      "direct-global": 133,
+      "global-selector": 137,
+      "declaration-parameter": 558,
+      "local-or-computed-value": 607
+    }
+  }
+}

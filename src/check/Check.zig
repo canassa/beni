@@ -164,6 +164,8 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
 }
 
 pub const Options = struct {
+    entry_constructors: []const []const u8 = &.{},
+    entry_kinds: []const @import("../js/Manifest.zig").EntryKind = &.{},
     /// Where the per-module `constrain` and `solve` events go (checker.md
     /// §9). The two halves are timed separately because the
     /// constraint/solve split is the architecture (research/02 §1), and a
@@ -173,6 +175,7 @@ pub const Options = struct {
     /// Keep each module's store and variable tables alive after the check,
     /// for `dump --stage=types`.
     keep_stores: bool = false,
+    host_free: bool = false,
     ownership: ?*const @import("../own/Enforce.zig").Context = null,
     /// The ownership checker v2's hook (`ownership-v2.md` §3.7, §8 S3a), in
     /// place of v1's under the hidden `--ownership=v2`.
@@ -337,6 +340,7 @@ pub fn run(
     // and `fast-compiler.md` §12 makes the trace the instrument of record.
     const types_token = if (options.profile) |p| p.begin() else null;
     check.types = try Types.build(gpa, graph, artifacts, interfaces, provenance, interner);
+    if (options.host_free) check.types.host_free = try @import("HostFree.zig").build(gpa, scratch.allocator(), &check.types, graph, artifacts, interfaces, interner);
     if (options.profile) |p| p.end(0, types_token.?, .types, Profile.Event.no_file, 0);
 
     const modules = graph.count();

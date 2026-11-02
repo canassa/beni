@@ -1,0 +1,8 @@
+import Start exposing (Program)
+import Task
+
+
+pub run : Program → ⊤
+run program =
+    _ = Task.spawnDetached λ⊤ → Start.invoke program
+    ⊤
