@@ -55,6 +55,7 @@ const Calls = @import("Calls.zig");
 const Bir = @import("../bir/Bir.zig");
 const TransferFrame = @import("TransferFrame.zig");
 const TransferBeside = @import("TransferBeside.zig");
+const Scratch = @import("Scratch.zig");
 const TransferArms = @import("TransferArms.zig");
 const TransferPattern = @import("TransferPattern.zig");
 const TransferConstruct = @import("TransferConstruct.zig");
@@ -181,6 +182,7 @@ pub const Frame = struct {
     /// `TransferBeside.foldedView`'s answers by template root, for the
     /// walk: 1 a knot, 0 none. Shape nodes are immutable.
     knots: Ids.FixedDict(1) = .{},
+    beside_seen: Scratch.Depths(TransferBeside.Seen) = .{},
     group_steps: std.ArrayList(Step) = .empty,
     call_snaps: std.ArrayList(CallSnap) = .empty,
     call_args: std.ArrayList(Inst.Index) = .empty,
@@ -198,6 +200,7 @@ pub const Frame = struct {
         gpa.free(f.binds);
         gpa.free(f.binding);
         f.knots.deinit(gpa);
+        f.beside_seen.deinit(gpa);
         f.uses.deinit(gpa);
         f.use_tokens.deinit(gpa);
         f.param_reads.deinit(gpa);

@@ -35,6 +35,7 @@ const Shape = @import("Shape.zig");
 const CondAlgebra = @import("CondAlgebra.zig");
 const Kappa = @import("Kappa.zig");
 const options = @import("ownership_options");
+const Scratch = @import("Scratch.zig");
 
 const NodeId = Ids.NodeId;
 const CondId = Ids.CondId;
@@ -54,6 +55,28 @@ pub const Mode = enum(u8) { alternatives, together };
 /// What one call by the rule read and built: `--ownership-propagate`'s line,
 /// and the counted tests'.
 pub const Stats = struct { states: u32 = 0, edges: u32 = 0, open: u32 = 0, folds: u32 = 0, resumed: u32 = 0 };
+
+/// A call's state and node indices, kept by the table by call depth
+/// (`Scratch.Depths`): a call neither allocates them nor clears them in
+/// proportion to the id space (#1646).
+pub const Working = struct {
+    index: Scratch.Hash(3) = .{},
+    slice_at: Scratch.Dict(1, 0) = .{},
+    below_at: Scratch.Hash(4) = .{},
+    front_at: Scratch.Hash(3) = .{},
+    node_at: Scratch.Dict(1, 0) = .{},
+    node_edge_at: Scratch.Hash(2) = .{},
+
+    const fields = .{ "index", "slice_at", "below_at", "front_at", "node_at", "node_edge_at" };
+
+    pub fn clear(w: *Working) void {
+        inline for (fields) |f| @field(w, f).clear();
+    }
+
+    pub fn deinit(w: *Working, gpa: Allocator) void {
+        inline for (fields) |f| @field(w, f).deinit(gpa);
+    }
+};
 
 /// The reference walk's frames past which a call is not compared, and a
 /// line names it (§2.9 *The `runtime_safety` check*).
@@ -203,25 +226,26 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             /// where a reader looks*): alternatives over one member.
             kept_call: bool,
             states: std.ArrayList(State) = .empty,
-            index: Ids.FixedDict(3) = .{},
+            working: *Working = undefined,
+            index: *Scratch.Hash(3) = undefined,
             edges: std.ArrayList(Edge) = .empty,
             runs: std.ArrayList(NodeId) = .empty,
             run_ctxs: std.ArrayList(Kappas) = .empty,
             slices: std.ArrayList(Slice) = .empty,
-            slice_at: Ids.FixedDict(1) = .{},
+            slice_at: *Scratch.Dict(1, 0) = undefined,
             words: std.ArrayList(u64) = .empty,
-            below_at: Ids.FixedDict(4) = .{},
+            below_at: *Scratch.Hash(4) = undefined,
             belows: std.ArrayList(Below) = .empty,
-            front_at: Ids.FixedDict(3) = .{},
+            front_at: *Scratch.Hash(3) = undefined,
             fronts: std.ArrayList(Next) = .empty,
             items: std.ArrayList(Item) = .empty,
             next: std.ArrayList(Next) = .empty,
             stack: std.ArrayList(u32) = .empty,
             /// The states read since pass 2 last ran.
             batch: std.ArrayList(u32) = .empty,
-            node_at: Ids.FixedDict(1) = .{},
+            node_at: *Scratch.Dict(1, 0) = undefined,
             nodes: std.ArrayList(NodeInfo) = .empty,
-            node_edge_at: Ids.FixedDict(2) = .{},
+            node_edge_at: *Scratch.Hash(2) = undefined,
             node_edges: std.ArrayList([2]u32) = .empty,
             comps: std.ArrayList(Comp) = .empty,
             bitwords: std.ArrayList(u64) = .empty,
@@ -230,7 +254,13 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             fn deinit(s: *Sigma) void {
                 const gpa = s.gpa;
                 inline for (.{ "states", "edges", "runs", "run_ctxs", "slices", "words", "belows", "fronts", "items", "next", "stack", "batch", "nodes", "node_edges", "comps", "bitwords" }) |f| @field(s, f).deinit(gpa);
-                inline for (.{ "index", "slice_at", "below_at", "front_at", "node_at", "node_edge_at" }) |f| @field(s, f).deinit(gpa);
+                s.t.prop_working.give(s.working);
+            }
+
+            /// The call's `Working`, from the table's slot at its depth.
+            fn open(s: *Sigma) Error!void {
+                s.working = try s.t.prop_working.take(s.gpa);
+                inline for (Working.fields) |f| @field(s, f) = &@field(s.working, f);
             }
 
             /// The run `runs[first..][0..len]` interned as a cons list of
@@ -878,6 +908,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
             const call = t.prop_calls;
             t.prop_calls += 1;
             var s: Sigma = .{ .t = t, .gpa = gpa, .charge = charge, .in = in, .memo = memo, .reverse = reverse, .kept_call = in.mode == .alternatives and in.members.len == 1 };
+            try s.open();
             defer s.deinit();
             // Pass 1, and pass 2 over it.
             try s.runs.appendSlice(gpa, in.members);
@@ -1123,6 +1154,7 @@ pub fn Of(comptime Table: type, comptime View: type, comptime Traversal: type, c
         /// route)`, each met once. Null past `reference_cap` frames.
         fn reference(t: *Table, gpa: Allocator, charge: Charge, in: *const Input, reverse: bool) Error!?Kappas {
             var s: Sigma = .{ .t = t, .gpa = gpa, .charge = charge, .in = in, .memo = false, .reverse = reverse, .kept_call = in.mode == .alternatives and in.members.len == 1 };
+            try s.open();
             defer s.deinit();
             try s.runs.appendSlice(gpa, in.members);
             try s.run_ctxs.appendSlice(gpa, in.ctxs);

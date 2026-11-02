@@ -10,6 +10,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Counters = @import("Counters.zig");
+const Scratch = @import("Scratch.zig");
 const Shape = @import("Shape.zig");
 const CondId = Ids.CondId;
 const NodeId = Ids.NodeId;
@@ -581,10 +582,10 @@ pub fn Of(comptime Table: type) type {
         /// record per position and entry, each shared position once.
         pub fn kappaRelabel(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel) Error!Kappas {
             if (ctx == .none) return .none;
-            var memo: Ids.FixedDict(1) = .{};
-            defer memo.deinit(gpa);
-            var maps: Ids.FixedDict(1) = .{};
-            defer maps.deinit(gpa);
+            const memo = try t.relabel_marks.take(gpa);
+            defer t.relabel_marks.give(memo);
+            const maps = try t.relabel_marks.take(gpa);
+            defer t.relabel_marks.give(maps);
             // Post-order on an explicit stack (#1130): a snapshot's depth is the
             // source's, never native-stack depth. A position's children are
             // relabelled before it; a shared one once (the memo).
@@ -605,7 +606,7 @@ pub fn Of(comptime Table: type) type {
                     continue;
                 }
                 if (memo.get(.{f.at.int()}) != null) continue;
-                try t.relabelOne(gpa, charge, f.at, r, &memo, &maps);
+                try t.relabelOne(gpa, charge, f.at, r, memo, maps);
             }
             return .from(memo.get(.{ctx.int()}).?);
         }
@@ -615,7 +616,7 @@ pub fn Of(comptime Table: type) type {
         /// that many positions share is mapped once (§2.9: read-off maps κ
         /// submaps once under one correspondence). Two keys with one image
         /// join their conditions. The recursion is the key width.
-        pub fn relabelMap(t: *Table, gpa: Allocator, charge: Charge, m: u32, r: Relabel, maps: *Ids.FixedDict(1)) Error!u32 {
+        pub fn relabelMap(t: *Table, gpa: Allocator, charge: Charge, m: u32, r: Relabel, maps: *Scratch.Dict(1, 0)) Error!u32 {
             if (m == Ids.none_int) return Ids.none_int;
             try charge.reserve(gpa, .memo, 1);
             if (maps.get(.{m})) |hit| return hit;
@@ -645,7 +646,7 @@ pub fn Of(comptime Table: type) type {
         }
 
         /// One position relabelled, its children's images in `memo` already.
-        pub fn relabelOne(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Ids.FixedDict(1), maps: *Ids.FixedDict(1)) Error!void {
+        pub fn relabelOne(t: *Table, gpa: Allocator, charge: Charge, ctx: Kappas, r: Relabel, memo: *Scratch.Dict(1, 0), maps: *Scratch.Dict(1, 0)) Error!void {
             const p = t.position(ctx);
             var here: u32 = Ids.none_int;
             // `(image, source)` of each entry whose image stands for several

@@ -58,6 +58,7 @@ const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
 const Stable = @import("Stable.zig");
 const stamped = @import("../stamped.zig");
+const Scratch = @import("Scratch.zig");
 pub const full_cross_check = @import("ownership_options").full_cross_check;
 const CondAlgebra = @import("CondAlgebra.zig");
 const Kappa = @import("Kappa.zig");
@@ -172,9 +173,21 @@ pub const Table = struct {
     /// Positions `kappaHoldsView` found view-free, each at the shape table's
     /// `ties` it was found at.
     kview_free: Ids.IdColumn(Kappas) = .{},
-    /// Node marks for a walk over the node table, one per walk in progress,
-    /// emptied by generation: a walk makes no slot an earlier walk made (#1191).
-    marks: stamped.Pool(stamped.Column(NodeId, void)) = .{},
+    /// Node marks for a walk over the node table, one per walk in progress
+    /// by depth (#1191, `Scratch.Depths`); `dagFacts`' facts per node, and
+    /// `machine`'s state per task, likewise (#1646).
+    marks: Scratch.Depths(Scratch.Set(NodeId)) = .{},
+    dag_local: Scratch.Depths(Scratch.Map(NodeId, DagFacts)) = .{},
+    machine_state: Scratch.Depths(Scratch.Dict(4, 2)) = .{},
+    /// `propagate`'s state and node indices per call in progress, likewise.
+    prop_working: Scratch.Depths(Propagate.Working) = .{},
+    /// `kappaRelabel`'s images of positions and of map nodes, likewise.
+    relabel_marks: Scratch.Depths(Scratch.Dict(1, 0)) = .{},
+    /// `arrivalAggs`' multisets per node, likewise.
+    class_marks: Scratch.Depths(Scratch.Map(NodeId, ClassAggs)) = .{},
+    /// `cursorSteps`' steps met, and `assertResolved`'s conditions met.
+    step_marks: Scratch.Depths(Scratch.Hash(1)) = .{},
+    cond_marks: Scratch.Depths(Scratch.Set(CondId)) = .{},
     /// `kappaMerge`'s memo: an unordered pair of positions → their merge.
     memo_merge: Ids.FixedDict(2) = .{},
     /// The reads across a call (§2.11 *κ across a call*): a DAG node's sides'
@@ -265,6 +278,13 @@ pub const Table = struct {
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.marks.deinit(gpa);
+        t.dag_local.deinit(gpa);
+        t.machine_state.deinit(gpa);
+        t.prop_working.deinit(gpa);
+        t.relabel_marks.deinit(gpa);
+        t.class_marks.deinit(gpa);
+        t.step_marks.deinit(gpa);
+        t.cond_marks.deinit(gpa);
         t.conds.deinit(gpa);
         t.intern.deinit(gpa);
         t.atoms.deinit(gpa);

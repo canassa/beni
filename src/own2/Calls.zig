@@ -42,6 +42,7 @@ const Summary = @import("Summary.zig");
 const Holders = @import("Holders.zig");
 const Place = @import("Place.zig");
 const stamped = @import("../stamped.zig");
+const Slots = @import("Scratch.zig");
 
 pub const NodeId = Ids.NodeId;
 pub const CellId = Ids.CellId;
@@ -74,12 +75,45 @@ pub const Scratch = struct {
     /// The place the caller reads the call's result at (its instruction's),
     /// or `.none`: a structured result template is instantiated there.
     result_place: PlaceId = .none,
+    /// `linkArgs`' walks and `knotFree`'s colours, one per walk in
+    /// progress by depth (#1646).
+    links: Slots.Depths(Grafter.LinkWalk) = .{},
+    colours: Slots.Depths(Slots.Map(NodeId, bool)) = .{},
 
     pub fn deinit(s: *Scratch, gpa: Allocator) void {
+        s.links.deinit(gpa);
+        s.colours.deinit(gpa);
         s.steps.deinit(gpa);
         s.memo.deinit(gpa);
         s.escaped.deinit(gpa);
         s.members.deinit(gpa);
+    }
+
+    pub fn clear(s: *Scratch) void {
+        s.memo.clear();
+        inline for (.{ "escaped", "members", "steps" }) |f| @field(s, f).clearRetainingCapacity();
+        s.result_place = .none;
+    }
+};
+
+/// A view callback's grafter's scratch and memos, kept by `Views` by
+/// callback depth (`Views.grafterAt`, #1646).
+const Graft = struct {
+    s: Scratch = .{},
+    folded: Slots.Dict(2, 1) = .{},
+    deeps: Slots.Dict(2, 1) = .{},
+    prefix_args: Slots.Dict(2, 1) = .{},
+
+    const memos = .{ "folded", "deeps", "prefix_args" };
+
+    pub fn clear(w: *Graft) void {
+        w.s.clear();
+        inline for (memos) |f| @field(w, f).clear();
+    }
+
+    pub fn deinit(w: *Graft, gpa: Allocator) void {
+        w.s.deinit(gpa);
+        inline for (memos) |f| @field(w, f).deinit(gpa);
     }
 };
 
@@ -497,9 +531,13 @@ const Grafter = struct {
     s: *Scratch,
     /// `foldedArg` by `(argument, template path)`; the deep read at the
     /// prefix, and the argument there, by `(argument, prefix)` (#1159).
-    folded: Ids.FixedDict(2) = .{},
-    deeps: Ids.FixedDict(2) = .{},
-    prefix_args: Ids.FixedDict(2) = .{},
+    folded: Slots.Dict(2, 1) = .{},
+    deeps: Slots.Dict(2, 1) = .{},
+    prefix_args: Slots.Dict(2, 1) = .{},
+    /// A callback's: the slot its memos were moved out of, given back
+    /// with them at `deinit`.
+    slot: ?*Graft = null,
+    slots: *Slots.Depths(Graft) = undefined,
     /// The environment of the call's view, and at an identity class its
     /// root and the actual it answers (`relabelNode`).
     view_env: u32 = Ids.none_int,
@@ -507,6 +545,10 @@ const Grafter = struct {
     answer: NodeId = .none,
 
     fn deinit(g: *Grafter) void {
+        if (g.slot) |w| {
+            inline for (Graft.memos) |f| @field(w, f) = @field(g, f);
+            return g.slots.give(w);
+        }
         g.folded.deinit(g.env.gpa);
         g.deeps.deinit(g.env.gpa);
         g.prefix_args.deinit(g.env.gpa);
@@ -917,11 +959,11 @@ const Grafter = struct {
     /// into its parent's once, on the way back. No route scan, no path
     /// replayed from the root.
     fn linkArgs(g: *Grafter, kappa: Cond.Kappas, res: NodeId) Error!Cond.Kappas {
-        var w: LinkWalk = .{};
-        defer w.deinit(g.gpa());
+        const w = try g.s.links.take(g.gpa());
+        defer g.s.links.give(w);
         try w.builders.append(g.gpa(), .{ .at = kappa });
         w.acyclic = try g.knotFree(res);
-        try g.linkAt(&w, res, 0);
+        try g.linkAt(w, res, 0);
         return g.finishBuilder(w.builders.items[0]);
     }
 
@@ -929,8 +971,8 @@ const Grafter = struct {
     /// walk, each node once.
     fn knotFree(g: *Grafter, res: NodeId) Error!bool {
         const shapes = g.env.shapes;
-        var colour: stamped.Column(NodeId, bool) = .{};
-        defer colour.deinit(g.gpa());
+        const colour = try g.s.colours.take(g.gpa());
+        defer g.s.colours.give(colour);
         const Frame = struct { node: NodeId, exit: bool };
         var stack: std.ArrayList(Frame) = .empty;
         defer stack.deinit(g.gpa());
@@ -968,28 +1010,32 @@ const Grafter = struct {
         builders: std.ArrayList(Builder) = .empty,
         /// The nodes on the route: each its builder's index (a backedge's
         /// fold is there), set on entry, cleared on exit.
-        active: stamped.Column(NodeId, u32) = .{},
+        active: Slots.Map(NodeId, u32) = .{},
         /// Paths interned as `(parent, step)`, 0 the root; `(node, path)` visited.
-        paths: Ids.FixedDict(2) = .{},
-        visited: Ids.FixedDict(2) = .{},
+        paths: Slots.Dict(2, 0) = .{},
+        visited: Slots.Hash(2) = .{},
         next_path: u32 = 1,
         /// `argKappa` per `(argument, path)`, from its parent path's.
-        arg_at: Ids.FixedDict(2) = .{},
+        arg_at: Slots.Dict(2, 1) = .{},
         /// The `(argument, path)`s a level step or a missing position stopped.
-        arg_stopped: Ids.FixedDict(2) = .{},
+        arg_stopped: Slots.Dict(2, 1) = .{},
         /// When `res` has no knot: each finished position by `(node, snapshot it
         /// starts from)`, so a node shared by many paths is linked once (#1252).
         acyclic: bool = false,
-        shared: Ids.FixedDict(2) = .{},
+        shared: Slots.Hash(2) = .{},
 
-        fn deinit(w: *LinkWalk, gpa_: Allocator) void {
+        const sets = .{ "active", "paths", "visited", "arg_at", "arg_stopped", "shared" };
+
+        pub fn clear(w: *LinkWalk) void {
+            w.builders.items.len = 0;
+            inline for (sets) |f| @field(w, f).clear();
+            w.next_path = 1;
+            w.acyclic = false;
+        }
+
+        pub fn deinit(w: *LinkWalk, gpa_: Allocator) void {
             w.builders.deinit(gpa_);
-            w.active.deinit(gpa_);
-            w.paths.deinit(gpa_);
-            w.visited.deinit(gpa_);
-            w.arg_at.deinit(gpa_);
-            w.arg_stopped.deinit(gpa_);
-            w.shared.deinit(gpa_);
+            inline for (sets) |f| @field(w, f).deinit(gpa_);
         }
     };
 
@@ -1715,6 +1761,7 @@ pub const Views = struct {
     /// certificate, so the keys of two classes that land in one class of
     /// the caller meet in one group. Never a count restarted per class.
     rule4_groups: Ids.FixedDict(4) = .{},
+    grafts: Slots.Depths(Graft) = .{},
 
     pub const GroupPorts = struct { ctx: *anyopaque, isPort: *const fn (ctx: *anyopaque, class: ClassId) bool };
 
@@ -1726,6 +1773,7 @@ pub const Views = struct {
         v.members.deinit(gpa);
         v.places_of.deinit(gpa);
         v.rule4_groups.deinit(gpa);
+        v.grafts.deinit(gpa);
     }
 
     /// Set on `v.shapes` once, before the first call.
@@ -1744,6 +1792,17 @@ pub const Views = struct {
 
     fn of(ctx: *anyopaque) *Views {
         return @ptrCast(@alignCast(ctx));
+    }
+
+    /// A callback's grafter over environment `e`: its scratch and memos
+    /// from the slot at its depth, emptied.
+    fn grafterAt(v: *Views, gpa_: Allocator, account_: *Ids.Account, e: u32) Error!Grafter {
+        const w = try v.grafts.take(gpa_);
+        var g = v.grafter(gpa_, account_, e, &w.s);
+        inline for (Graft.memos) |f| @field(g, f) = @field(w, f);
+        g.slot = w;
+        g.slots = &v.grafts;
+        return g;
     }
 
     /// A grafter over environment `e`, charging the reader's kernel.
@@ -1766,9 +1825,7 @@ pub const Views = struct {
         switch (d.kind) {
             .leaf => {
                 if (v.places.kind(at) != .@"var") return at;
-                var none: Scratch = .{};
-                defer none.deinit(gpa_);
-                var g = v.grafter(gpa_, account_, e, &none);
+                var g = try v.grafterAt(gpa_, account_, e);
                 defer g.deinit();
                 return g.instantiatedPlace(at, d.cells);
             },
@@ -1830,27 +1887,21 @@ pub const Views = struct {
 
     fn leafImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId) Error!NodeId {
         const v = of(ctx);
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, account_, e, &none);
+        var g = try v.grafterAt(gpa_, account_, e);
         defer g.deinit();
         return g.viewLeaf(&v.members, t.place(template), t.cells(template));
     }
 
     fn partsImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, template: NodeId, out: *std.ArrayList(Shape.Table.LeafPart)) Error!void {
         const v = of(ctx);
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, account_, e, &none);
+        var g = try v.grafterAt(gpa_, account_, e);
         defer g.deinit();
         return g.eagerParts(t.place(template), t.cells(template), out);
     }
 
     fn cellsImage(ctx: *anyopaque, _: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, s: SetId, at: PlaceId) Error!SetId {
         const v = of(ctx);
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, account_, e, &none);
+        var g = try v.grafterAt(gpa_, account_, e);
         defer g.deinit();
         return g.imageCells(s, at);
     }
@@ -1885,9 +1936,7 @@ pub const Views = struct {
     /// images by §2.9 rule 4 (`Grafter.ruleFourKey`).
     fn hypKeys(ctx: *anyopaque, gpa_: Allocator, charge: Ids.Charge, e: u32, cells: SetId, out: *std.ArrayList(Cond.Table.HypKey)) Error!void {
         const v = of(ctx);
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, charge.account, e, &none);
+        var g = try v.grafterAt(gpa_, charge.account, e);
         defer g.deinit();
         var keys: std.ArrayList([2]u32) = .empty;
         defer keys.deinit(gpa_);
@@ -1913,9 +1962,7 @@ pub const Views = struct {
     /// Class condition `k` instantiated at the call of environment `e`.
     fn resolveImage(ctx: *anyopaque, t: *Cond.Table, gpa_: Allocator, charge: Ids.Charge, k: u32, e: u32, set: bool) Error!CondId {
         const v = of(ctx);
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, charge.account, e, &none);
+        var g = try v.grafterAt(gpa_, charge.account, e);
         defer g.deinit();
         if (!set) return t.instantiate(gpa_, charge, .from(k), .{ .ctx = &g, .atom = Grafter.atom });
         // An atom set (a class's `xreq`): each atom answered here, conjoined.
@@ -1935,9 +1982,7 @@ pub const Views = struct {
         const v = of(ctx);
         if (t.kind(template) != .leaf) return null;
         const cell = rerootCell(v.cells, t.cells(template)) orelse return null;
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, account_, e, &none);
+        var g = try v.grafterAt(gpa_, account_, e);
         defer g.deinit();
         const x = v.cells.get(cell);
         return try g.argKappa(x.a, .from(x.b));
@@ -1945,9 +1990,7 @@ pub const Views = struct {
 
     fn reachImage(ctx: *anyopaque, t: *Shape.Table, gpa_: Allocator, account_: *Ids.Account, e: u32, c: CellId, approx: u1) Error!SetId {
         const v = of(ctx);
-        var none: Scratch = .{};
-        defer none.deinit(gpa_);
-        var g = v.grafter(gpa_, account_, e, &none);
+        var g = try v.grafterAt(gpa_, account_, e);
         defer g.deinit();
         const x = v.cells.get(c);
         if (x.origin == .param) return t.reach(gpa_, account_, &v.cells.sets, try g.argAt(x.a, .from(x.b), g.placeOfCell(c)));

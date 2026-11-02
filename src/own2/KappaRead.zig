@@ -184,10 +184,10 @@ pub fn Of(comptime Table: type) type {
             const Frame = struct { node: NodeId, expanded: bool };
             var stack: std.ArrayList(Frame) = .empty;
             defer stack.deinit(gpa);
-            var local: stamped.Column(NodeId, DagFacts) = .{};
-            defer local.deinit(gpa);
-            var open: stamped.Column(NodeId, void) = .{};
-            defer open.deinit(gpa);
+            const local = try t.dag_local.take(gpa);
+            defer t.dag_local.give(local);
+            const open = try t.marks.take(gpa);
+            defer t.marks.give(open);
             var cyclic = false;
             try stack.append(gpa, .{ .node = root, .expanded = false });
             while (stack.pop()) |f| {
@@ -433,8 +433,8 @@ pub fn Of(comptime Table: type) type {
             defer frames.deinit(gpa);
             var vals: std.ArrayList(Read) = .empty;
             defer vals.deinit(gpa);
-            var state: Ids.FixedDict(4) = .{};
-            defer state.deinit(gpa);
+            const state = try t.machine_state.take(gpa);
+            defer t.machine_state.give(state);
             var done: std.ArrayList(Read) = .empty;
             defer done.deinit(gpa);
             // Under `runtime_safety`: what each snapshot stores for a node a
@@ -1823,10 +1823,10 @@ pub fn Of(comptime Table: type) type {
         /// a choice). A source on a cycle has no finite multiset by this walk:
         /// every class it reaches reads all its cells repeated (sound, `lost`).
         pub fn arrivalAggs(t: *Table, gpa: Allocator, charge: Charge, v: View, x: NodeId, fold: *const Shape.Table.Fold) Error!ClassAggs {
-            var memo: stamped.Column(NodeId, ClassAggs) = .{};
-            defer memo.deinit(gpa);
-            var open: stamped.Column(NodeId, void) = .{};
-            defer open.deinit(gpa);
+            const memo = try t.class_marks.take(gpa);
+            defer t.class_marks.give(memo);
+            const open = try t.marks.take(gpa);
+            defer t.marks.give(open);
             const Frame = struct { node: NodeId, expanded: bool };
             var stack: std.ArrayList(Frame) = .empty;
             defer stack.deinit(gpa);
@@ -1882,12 +1882,12 @@ pub fn Of(comptime Table: type) type {
             }
             if (!cyclic) return memo.get(root).?;
             // On a cycle: every source node's cells at its class, all repeated.
-            var all: stamped.Column(NodeId, SetId) = .{};
-            defer all.deinit(gpa);
+            const all = try v.shapes.set_marks.take(gpa);
+            defer v.shapes.set_marks.give(all);
             var images: std.ArrayList(NodeId) = .empty;
             defer images.deinit(gpa);
-            var seen: stamped.Column(NodeId, void) = .{};
-            defer seen.deinit(gpa);
+            const seen = try t.marks.take(gpa);
+            defer t.marks.give(seen);
             var walk: std.ArrayList(NodeId) = .empty;
             defer walk.deinit(gpa);
             try walk.append(gpa, try v.shapes.force(gpa, charge.account, x));
@@ -2700,8 +2700,8 @@ pub fn Of(comptime Table: type) type {
         pub fn crossingsAt(t: *Table, gpa: Allocator, charge: Charge, v: View, ctx: Kappas, n: NodeId, out: *std.ArrayList(Pair)) Error!void {
             var stack: std.ArrayList(NodeId) = .empty;
             defer stack.deinit(gpa);
-            var seen: stamped.Column(NodeId, void) = .{};
-            defer seen.deinit(gpa);
+            const seen = try t.marks.take(gpa);
+            defer t.marks.give(seen);
             try stack.append(gpa, n);
             while (stack.pop()) |x| {
                 if (seen.contains(x)) continue;
@@ -2958,8 +2958,8 @@ pub fn Of(comptime Table: type) type {
         pub fn cursorSteps(t: *Table, gpa: Allocator, charge: Charge, cursors: []const Kappas, out: *std.ArrayList(u64)) Error!bool {
             const from = out.items.len;
             var fold = false;
-            var seen: Ids.FixedDict(1) = .{};
-            defer seen.deinit(gpa);
+            const seen = try t.step_marks.take(gpa);
+            defer t.step_marks.give(seen);
             for (cursors) |c| {
                 if (c != .none and t.position(c).fold != 0) fold = true;
                 var it = t.kappaLinks(c);
