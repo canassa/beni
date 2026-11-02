@@ -6005,10 +6005,10 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
 
     | Protocol | Field | Obligation |
     |---|---|---|
-    | handlers | `init` | **W1.** `S₀` is `res` at the `Ok` payload of the result. The `Result`-like carrier is resolved by its shape, as for `lentoptional`, with no name test. `S₀` gets a deep no-loan demand: a loan cannot outlive `init`'s region into root state (§2.13.7). A capture of `init` moves into `S₀` only when no other callback of the record keeps it (R-5.8.3). `S₀` is registered as the **root-state holder** `R`, live until root cleanup. |
-    | handlers | `start`, `handle`, `stream` | **W2.** The state parameter is **borrowed**. At every path q of `use(π₂)` that is not below a `◆`, there is no `W` (cause `write`), no `S`, no `T` (§2.13.18) and no `consumed` or once-take use. This includes what the callback's callees and the closures it makes add, through their classes and keep edges (§2.11). `R`, `A` and `E` are accepted. The root holder stays live, so a later move of a state cell that escaped is refused at that demand by Dead or Unescaped (§2.8), not here. At or below a `◆`, §2.13.7's cell contract governs the cells: a slot operation on a state `Ref` is a `writer` on its `◆`, not a write of state. **A move is the exception** (revised 2026-11-02 after the review of #1672). A `T` below a `◆` of π₂ moves a backing taken out of a state slot. At the constructor, that is mapped onto `S₀` through `init`'s `res` and its `slot` annotations (§2.13.18). It is refused unless no other handle reachable from `S₀`, inside or outside a `◆`, may share the moved slot. Otherwise a later handler could read a detached view: `init` stores `{ slot = Ref.make (Just buf), view = Uint8Array.view buf }`, one `handle` takes `buf` out and transfers it, and the next reads `s.view`. When `S₀` is unknown at that path, the move is refused. The handler's result also counts as a move at its `transfer`-mode backing places, because the runtime commits it: a returned handle whose slot may alias a slot of `S₀` is refused (§2.13.18, *Values that a callback returns to the runtime*). |
-    | machine | `init` | **W3.** `M₀` is `res` at the `.0` of the `Ok` payload, and `.1` (the commands) escapes (R-5.8.5). `M₀` gets a deep no-loan demand. Then `M₀` is exactly §2.13.4's, with R-5.8.3. |
-    | machine | `update` | **W4.** §2.13.4's `update` under the role substitution: model π₃ owned, message π₂ owned. The result's `.0` is the new model, joined into the sparse fixpoint over `M` and κ(M) (R-5.8.7), and `.1` escapes (R-5.8.5). Each `W{F}` on `π₃·q` is an `entry` demand on `M@q`. A command that captures or moves a model cell is checked against the installed model: moving a buffer out of the model is accepted only when `.0` no longer holds it (Dead against the model holder). |
+    | handlers | `init` | **W1.** `S₀` is `res` at the `Ok` payload of the result. The `Result`-like carrier is resolved by its shape, as for `lentoptional`, with no name test. The `Err` payload is committed to the opener (`InitializationFailed`), so it carries `T` at its `transfer`-mode backing places. That is a `transfer` demand at `init`'s return point against `init`'s live holders, such as the escaped captures of a fiber that it started in the root scope. `S₀` gets a deep no-loan demand: a loan cannot outlive `init`'s region into root state (§2.13.7). A capture of `init` moves into `S₀` only when no other callback of the record keeps it (R-5.8.3). `S₀` is registered as the **root-state holder** `R`, live until root cleanup. |
+    | handlers | `start`, `handle`, `stream` | **W2.** The state parameter is **borrowed**. At every path q of `use(π₂)` that is not below a `◆`, there is no `W` (cause `write`), no `S`, no `T` (§2.13.18) and no `consumed` or once-take use. This includes what the callback's callees and the closures it makes add, through their classes and keep edges (§2.11). `R`, `A` and `E` are accepted. The root holder stays live, so a later move of a state cell that escaped is refused at that demand by Dead or Unescaped (§2.8), not here. At or below a `◆`, §2.13.7's cell contract governs the cells: a slot operation on a state `Ref` is a `writer` on its `◆`, not a write of state. **A move is the exception** (revised 2026-11-02 after the review of #1672). A `T` below a `◆` of π₂ moves a backing taken out of a state slot. At the constructor, that move is checked against the **state slot fixpoint** Ŝ (revised again after the second review of #1672). Ŝ is not `S₀` alone, because handlers can store new aliases into state `Ref`s. Ŝ starts from `S₀`'s handles and its `◆` contents, with their `slot` annotations (§2.13.18). It then joins the published slot effects on π₂ of every `start`, `handle` and `stream`, and those of the children that `start` installs, through their classes. These are the stored payloads in `effects`, with their slot annotations. The join is iterated to a fixed point by §2.12's sparse propagation, the same way §2.13.4 iterates the model. The move is refused unless no other handle in Ŝ, inside or outside a `◆`, may share the moved slot. Otherwise a later handler could read a detached view. For example, `init` stores `{ slot = Ref.make (Just buf), view = Uint8Array.view buf }`, one `handle` takes `buf` out and transfers it, and the next reads `s.view`. Or `handle₁` stores `[ view b ]` into `s.views`, `handle₂` moves `b`, and `handle₃` reads the views. When Ŝ is unknown at that path, the move is refused. The handler's result also counts as a move at its `transfer`-mode backing places, because the runtime commits it. A returned handle whose slot may alias a slot of Ŝ is refused (§2.13.18, *Values that a callback returns to the runtime*). |
+    | machine | `init` | **W3.** `M₀` is `res` at the `.0` of the `Ok` payload, and `.1` (the commands) escapes (R-5.8.5). `M₀` gets a deep no-loan demand. The `Err` payload carries `T` at its `transfer`-mode places, as in W1. Then `M₀` is exactly §2.13.4's, with R-5.8.3. |
+    | machine | `update` | **W4.** §2.13.4's `update` under the role substitution: model π₃ owned, message π₂ owned. The result's `.0` is the new model, joined into the sparse fixpoint over `M` and κ(M) (R-5.8.7), and `.1` escapes (R-5.8.5). Each `W{F}` on `π₃·q` is an `entry` demand on `M@q`. A command that captures or moves a model cell is checked against the installed model: moving a buffer out of the model is accepted only when `.0` no longer holds it (Dead against the model holder). A move out of a model `Ref` is checked as in W2, against the model's slot fixpoint: `M₀`'s handles and `◆` contents joined with the slot effects on the model of every `update` arm and of its commands, iterated with the model's own fixpoint. |
     | machine | `subscriptions` | **W5.** The model is `read-only` (R-5.8.6), with no `S`, `T` or `consumed` use of it. |
     | machine | `request`, `stream` | **W6.** No model. `call` and `streamRequest` are owned and fresh. The result joins the message domain as `msg`. |
 
@@ -6089,6 +6089,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `WorkerStateRecordUpdate` | `{ base \| handle = mover }`; and `{ base \| handle = reader }` | refuse; accept |
     | `WorkerStateRefTake` | `handle` takes a buffer from a state `Ref` with `( old, Nothing )` and transfers it; no other state path aliases the buffer | accept (but see open question Q2 below) |
     | `WorkerStateRefTakeAliased` *(review of #1672)* | `init` stores `{ slot = Ref.make (Just buf), view = Uint8Array.view buf }`; `handle` takes `buf` out of `slot` and transfers it; the next `handle` reads `s.view` | refuse `worker_state_not_borrowed` |
+    | `WorkerStateViewsAddedLater` *(second review of #1672)* | `S₀` has `views = []`; `handle₁` stores `[ view b ]` into the `Ref` `s.views` and puts `b` back into `s.slot`; `handle₂` takes `b` out of `s.slot` and transfers it; `handle₃` reads `s.views` | refuse `worker_state_not_borrowed` |
+    | `WorkerMachineViewsInModelRef` *(second review of #1672)* | the machine twin: one `update` arm stores a view into a model `Ref`, another moves the buffer | refuse `worker_transfer_alias_live` |
+    | `WorkerInitErrMove` *(second review of #1672)* | `init` spawns a root-scope fiber that captures `b`, then returns `Err { buf = b }`; also the machine twin | refuse `worker_transfer_alias_live` |
     | `WorkerStateReply` *(review of #1672)* | `handle ctx s _ = Ok s.buffer` | refuse `worker_state_not_borrowed` while the mode of the buffer place is `transfer` or unresolved (Q3) |
     | `WorkerInitLoan` | `init` returns state that holds `Ref.get r` | refuse (the loan escapes) |
     | `WorkerCallbackUnresolved` | a field whose callable is `⊤call` reaches a launched entry | refuse `worker_callback_contract_unresolved` |
@@ -6119,7 +6122,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     review of #1672 the same day; not built; slice S7-workers (§8).*
 
     **What this item reads.** Unlike §2.13.17, this item is not written against the summary interface alone. It
-    adds one thing to the summary interface: a `slot` annotation on every backing leaf of `res`, its block column
+    adds one thing to the summary interface: a `slot` annotation on every handle it publishes (in `res`, `effects`, `classes` and `supply`), its block column
     and its instantiation rule (*In a summary*, below), plus the use mark `T`. It also reads three local internals of
     a frame: the `backs` relation, the index from a slot to its handle cells, and the settled `contents` relation of
     §2.13.7. And it reads the holder kinds of §2.8: binding, pending operand, capture, the entry's model holder and
@@ -6174,8 +6177,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     contents are reached only through loans or by owning extraction. B is deduplicated by identity: one backing
     reached twice in one message is one move. For every β in B, and every handle cell h′ whose slot may alias β
     (found through the slot-to-handles index), all of the following must hold:
-    - **Known.** h′ is not `⊤` and not a loan, and its slot is not `⊤`. A `Ref.get` loan cannot be moved; the fix is
-      owning extraction (§2.13.7).
+    - **Known**, for the moved handles only: every handle h reached from the argument is not `⊤`, not a loan, and
+      has a slot that is not `⊤`. A `Ref.get` loan cannot be moved; the fix is owning extraction (§2.13.7). Another
+      handle h′ whose slot is `⊤` is not refused for that reason (revised after the second review of #1672). It may
+      alias β, so it is an ordinary member of β's class and is checked by Unescaped, *not stored in a slot* and
+      Dead. A dead handle of unknown slot blocks nothing; a live one is refused, approximately.
     - **Unescaped.** h′ is not escaped. The captures of a spawned fiber or of a queued command are escaped
       (R-5.12.1), as are values given to JavaScript, a `shared` top-level and a `read-only` model.
     - **Not stored in a slot.** h′ is not in the current contents of any `◆` slot, according to the settled
@@ -6202,14 +6208,32 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     that the deep no-loan demand of the store already makes.
 
     **In a summary.** There are three parts:
-    - **`slot` annotations on `res`.** Every backing leaf of `res` carries `slot σ`. σ is `πᵢ·q`, meaning the slot
-      of parameter i's handle at q; or `new n`, meaning the call's n-th fresh slot, numbered like `fresh`; or `⊤`.
-      `mk b = { buf = b, view = Uint8Array.view b }` publishes `slot π₁` on both fields. The block has a column with
-      one slot annotation per backing leaf. At a call ι, `πᵢ·q` becomes the `backs` of the actual's handle at q (each
+    - **`slot` annotations on every published handle** (widened after the second review of #1672). Every handle
+      that a summary publishes carries `slot σ`:
+      - a backing leaf of `res`;
+      - a payload that `effects` stores into a slot (`stash r b = Ref.set r (Just (view b))`);
+      - a capture in the environment of a class in `classes` (`mkReader b = let v = view b in λ⊤ → length v`);
+      - a node of `supply(λ, k)` (`withView b f = f (view b)`).
+
+      σ is `πᵢ·q`, meaning the slot of parameter i's handle at q; or `new n`, meaning the call's n-th fresh slot,
+      numbered like `fresh`; or `⊤`. `mk b = { buf = b, view = Uint8Array.view b }` publishes `slot π₁` on both
+      fields. **q may cross `◆`** (N5). Then σ names the slot of whatever handle the slot at q's `◆` prefix
+      contains on entry. `take slot = Ref.modify slot λold → ( old, Nothing )` publishes `slot π₁·◆·#Just.0` on its
+      result. At the call, such a σ is resolved against the caller's settled `contents` snapshot at the call
+      point: it becomes the slots of the handles stored there, a weak union for a slot that may alias, and `⊤`
+      only when those contents are unknown. The take's own strong update then removes the handle from the
+      contents. So `Worker.prepare (take slot)` passes Known. The block has a column with one slot annotation per
+      published handle, in `res`, `effects`, `classes` and `supply`. At a call ι, `πᵢ·q` becomes the `backs` of the actual's handle at q (each
       of them, for a set); `new n` becomes a slot for `(ι, n)`, which is a singleton unless ι is in a folded or
       recursive position, where it may alias itself (a weak slot); `⊤` becomes top. Without this annotation,
       `r = mk buf; send h (Worker.prepare buf); Uint8Array.get r.view 0` would pass Dead, because `r.view` would not
-      be in `buf`'s class.
+      be in `buf`'s class. The same instantiation applies to each kind of published handle:
+      - Applying a callee's stored-payload effects at a call updates the handle-to-slots index and the `contents`
+        relation with the instantiated slots.
+      - Instantiating a returned or carried class gives its captured handles their instantiated slots, so a holder
+        of the closure is a holder in β's class.
+      - A supply node's slot follows the handle into the callback's actual class, whose own effects and captures
+        then name the right slot.
     - **The `T` mark.** A callee's demand reaches its callers as a new use mark `T` at a path of `use(i)`, beside `W`
       and `S` (§2.10): "the backing identities reached at q are moved". `T` is deep over backing places only. That is
       why `S` cannot serve: `S` consumes every cell, so a cloned list in the same message would become unusable,
@@ -6256,7 +6280,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     `transfer` demand in the handler's frame, against its live holders, such as the captures of children that it
     started. At the constructor, any returned handle whose slot is `π₂·q`, or may alias a slot of `S₀`, is
     `worker_state_not_borrowed` (W2). So `handle ctx s _ = Ok s.buffer` is refused while the mode of `reply`'s buffer
-    place is `transfer` or unresolved. It would be accepted if Q3 made that place `clone`. Values given to `emit`,
+    place is `transfer` or unresolved. It would be accepted if Q3 made that place `clone`. `init`'s `Err` payload is
+    committed to the opener in the same way (W1, W3). Values given to `emit`,
     `emitTo`, `Sink.write`, `respond` and `finish` are direct calls, and their parameters carry `transferred`.
 
     **Together with §2.13.7.** Owning extraction composes with this item. For
@@ -6278,8 +6303,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     *Slot completeness.* Every handle that a run creates for a backing β has a slot that may alias β's:
     - WB1 and WB2 give a slot to every handle that a native row makes.
     - A projection or an alias keeps the cell, and with it the slot.
-    - A summarised call's results carry `slot` annotations whose instantiation names the actual's slots, a fresh
-      slot or top (H3's case).
+    - Every handle that a summarised call publishes carries a `slot` annotation, whether in its result, in a stored
+      payload, in a capture or in a supply. Its instantiation names the actual's slots (through `contents` when q
+      crosses `◆`), a fresh slot or top. The worker fixpoints Ŝ and the model's slot fixpoint over-approximate every
+      reachable state or model slot content under any order of handlers, because P-sync makes each slot step
+      atomic and the join is over all of them (§2.13.17).
     - An unknown handle has slot `⊤`, which aliases every slot.
 
     *Holder completeness.* By Lemma 1 (i)–(v), every reference that a continuation of p may use is held by one of
@@ -6302,8 +6330,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     **runtime_safety.** The following are asserted:
     - Every handle cell has a slot when it is made, so no `backs` lookup misses. The slot of a `backingof` result is
       a slot of its argument.
-    - Every backing leaf of a published `res` carries a `slot` annotation, and every `πᵢ·q` annotation names a
-      backing place of πᵢ.
+    - Every published handle (in `res`, `effects`, `classes` and `supply`) carries a `slot` annotation, and every
+      `πᵢ·q` annotation names a backing place of πᵢ, possibly through `◆`.
     - The handle-to-slots index agrees with the `contents` relation after each store and each write-back.
     - B is not empty when a non-crossing value of the argument's type reaches a `transfer` place, or when the
       argument is a token, and deduplication is idempotent.
@@ -6318,7 +6346,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     per handle in β's class, through the slot-to-handles index, which is chained like `set_head` (dense ids). The
     slot check costs one query per handle through the handle-to-slots index. Both are O(h log) per demand for h
     handles in the class. The generic-forwarding rule costs one overlap test per (`T` path, `res` path) pair of a
-    parameter, which is bounded by the size of the summary. The slot column is one record per backing leaf of `res`.
+    parameter, which is bounded by the size of the summary. The slot column is one record per published handle. Ŝ and the model's slot fixpoint add one sparse propagation
+    over the state's or model's slot places, at most one crossing per slot effect per edge (§2.12), on the entry
+    row's account (§4.1).
     Everything is charged to the owning declaration's account (§4.4). The only new baseline records are the two
     indexes' records, one per handle allocation and one per stored handle, because they are proportional to the
     source.
@@ -6341,6 +6371,11 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
     | `TransferGenericReturns` *(review)* | `both x = ( Worker.prepare x, x )`; `(p, b2) = both buf; send h p; view b2` | refuse `worker_transfer_alias_live` at the call of `both` |
     | `TransferGeneric` | a generic forwarder over `a` that prepares and does not return its argument; the caller reads the buffer after the send; and an instantiation at `Int` | refuse; accept |
     | `TransferCallbackSupply` *(review)* | `apply f b = let _ = f b in Uint8Array.length (view b)`, called as `apply (λx → send h (Worker.prepare x)) buf` | refuse `worker_transfer_alias_live` (borrowed supply) |
+    | `TransferHelperStashesView` *(second review)* | `stash r b = Ref.set r (Just (view b))`; `stash r buf; send h (Worker.prepare buf); Ref.get r` | refuse `worker_transfer_alias_live` (stored in a slot) |
+    | `TransferHelperReturnsReader` *(second review)* | `mkReader b = let v = view b in λ⊤ → length v`; `rd = mkReader buf; send h (Worker.prepare buf); rd ⊤` | refuse `worker_transfer_alias_live` (captured) |
+    | `TransferHelperSuppliesView` *(second review)* | `withView b f = f (view b)`; `withView buf (λv → Ref.set r (Just v)); send h (Worker.prepare buf); Ref.get r` | refuse `worker_transfer_alias_live` (stored in a slot) |
+    | `TransferUnknownSlotDead` *(second review)* | a handle of slot `⊤` (returned by an unknown function value) is read and then dead; a fresh buffer is sent | accept; its twin that reads the `⊤` handle after the send refuses, approximately |
+    | `TransferRefTakeHelper` *(second review)* | `take slot = Ref.modify slot λold → ( old, Nothing )` as a helper, `Worker.prepare (take slot)`, no other alias | accept |
     | `TransferStateField` | a handler moves a state buffer | refuse `worker_state_not_borrowed` (§2.13.17) |
     | `TransferStateReply` *(review)* | `handle ctx s _ = Ok s.buffer` | refuse `worker_state_not_borrowed` while the mode is `transfer` or unresolved |
     | `TransferHelper`, `TransferImported` | the same moves through a helper and an imported helper | the same verdicts as the direct moves |
