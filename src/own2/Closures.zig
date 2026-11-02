@@ -12,6 +12,8 @@
 //! A closure whose code writes a capture is `once` (R-2.8): an escape of it,
 //! or a callee that may call it more than once (a label whose `calls` is
 //! many, or two labels of one function slot), refuses the write, `once`.
+//! A cell operation on a captured `Ref` (`Eval.cellWrite`) is not such a
+//! write: the cell is the shared mutable place (§2.13.7).
 //!
 //! Obligations kept here: O1 (an unknown caller's supplies are `⊤`).
 
@@ -69,8 +71,9 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
                 // A parameter: what an unknown caller hands it is unknown.
                 try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .top }));
             } else {
-                // A capture: the code may run again.
-                if (wr.j - sig.own >= caps.len) continue;
+                // A capture: the code may run again, unless the write is a
+                // cell operation, which stales no reader (§2.11.4).
+                if (wr.j - sig.own >= caps.len or Eval.cellWrite(f.slots, wr)) continue;
                 var ps: std.ArrayList(Relation.Proj) = .empty;
                 defer ps.deinit(gpa);
                 try e.ev.project(caps[wr.j - sig.own], f.slots.relWords(wr.slot), wr.deep, 0, 0, &ps);
@@ -98,7 +101,7 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         const call = f.calls.items[d.call];
         if (!call.virtual or call.callee_val == none or d.arg == none) continue;
         const own = call.args.len - f.kidsOf(f.val(call.callee_val)).len;
-        if (d.arg < own) continue;
+        if (d.arg < own or d.cell) continue;
         const outer = Eval.virtualOuter(e, d.call) orelse continue;
         const labels = e.contracts.labelsOf(e.contracts.head(f.calls.items[outer[0]].contract).labels);
         const lab = labels[outer[1]];

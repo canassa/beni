@@ -277,6 +277,51 @@ pub fn callEscape(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, q);
 }
 
+/// Whether write `x` is a cell operation (§2.13.7): a shallow write of a
+/// `◆` slot, `Ref.set`/`update`/`modify`. Rewriting the cell stales no
+/// reader, so it never makes a closure `once` (§2.11.4).
+pub fn cellWrite(slots: *const Slots.Table, x: Contract.Effect) bool {
+    const words = slots.relWords(x.slot);
+    return !x.deep and words.len != 0 and Step.fromWord(words[words.len - 1]).kind == .contents;
+}
+
+/// A cell's `◆` (§2.13.7), `words` ending in it, below value `arg`: the
+/// contents position of each cell the argument names, whatever its
+/// contents' type, appended to `leaf_runs`. A parameter's projection may
+/// name its cells by slots below its position (`m.world` of a captured
+/// record): each named slot's `◆`.
+fn cellTargets(e: *Evaluation, arg: u32, words: []const u32) Error!void {
+    const f = e.fr();
+    const gpa = e.gpa();
+    var ps: std.ArrayList(Relation.Proj) = .empty;
+    defer ps.deinit(gpa);
+    try e.ev.project(arg, words[0 .. words.len - 1], false, 0, 0, &ps);
+    each: for (ps.items) |p| {
+        const l = f.leafAt(p.leaf);
+        if (l.kind == .ref) if (try f.child(l.pos, .plain, Step.contents.word(), 0)) |cp| {
+            const set = try f.slots.internSorted(gpa, f.account, &.{f.pos.items[cp].slot.int()});
+            try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .ref, .root = l.root, .pos = cp, .slots = set, .tags = l.tags, .at_pos = true }));
+            continue;
+        };
+        if (l.kind == .ref and !l.at_pos and l.slots != Slots.empty) {
+            var cs: std.ArrayList(u32) = .empty;
+            defer cs.deinit(gpa);
+            for (f.slots.elems(l.slots)) |el| {
+                if (Slots.isNot(el)) continue;
+                if (Slots.isSub(el)) break;
+                const c = (try f.places.extend(gpa, f.gc(), Slots.pathOf(el), Step.contents)) orelse break;
+                try cs.append(gpa, c.int());
+            } else if (cs.items.len != 0) {
+                std.mem.sort(u32, cs.items, {}, std.sort.asc(u32));
+                const set = try f.slots.internSorted(gpa, f.account, cs.items);
+                try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = set, .tags = l.tags }));
+                continue :each;
+            }
+        }
+        try e.w.leaf_runs.append(gpa, p.leaf);
+    }
+}
+
 /// A write of call `q`'s callee: a demand at the call. What it relies on
 /// is instantiated once the group's facts are in (`finishDemands`).
 pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
@@ -293,21 +338,8 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
         defer ps.deinit(gpa);
         try e.ev.project(arg, words, true, 0, 0, &ps);
         for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
-    } else if (words.len != 0 and Step.fromWord(words[words.len - 1]).kind == .contents) {
-        // A cell's `◆` (§2.13.7): the contents position of each cell the
-        // argument names, whatever its contents' type.
-        var ps: std.ArrayList(Relation.Proj) = .empty;
-        defer ps.deinit(gpa);
-        try e.ev.project(arg, words[0 .. words.len - 1], false, 0, 0, &ps);
-        for (ps.items) |p| {
-            const l = f.leafAt(p.leaf);
-            if (l.kind == .ref) if (try f.child(l.pos, .plain, Step.contents.word(), 0)) |cp| {
-                const set = try f.slots.internSorted(gpa, f.account, &.{f.pos.items[cp].slot.int()});
-                try e.w.leaf_runs.append(gpa, try f.leaf(.{ .kind = .ref, .root = l.root, .pos = cp, .slots = set, .tags = l.tags, .at_pos = true }));
-                continue;
-            };
-            try e.w.leaf_runs.append(gpa, p.leaf);
-        }
+    } else if (cellWrite(f.slots, x)) {
+        try cellTargets(e, arg, words);
     } else if (words.len == 0) {
         var ls: std.ArrayList(u32) = .empty;
         defer ls.deinit(gpa);
@@ -338,6 +370,7 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
         .pending = if (site) |st| st.pending else .{},
         .call = q,
         .arg = x.j,
+        .cell = cellWrite(f.slots, x),
     };
     // The other arguments are its operands (§2.11.2 item 4): a write must
     // not reach what the call is also handed (`List.set b 0 (Node b)`).
@@ -456,29 +489,35 @@ pub fn tokenOf(e: *Evaluation, inst: u32) u32 {
 }
 
 /// A closure whose code writes a capture (§2.11.4, R-2.8): a `once`
-/// demand at its creation on each written capture.
+/// demand at its creation on each written capture. A cell operation on a
+/// captured `Ref` is a `writer` demand on the cell's `◆` there instead,
+/// never `once`: the code's frame keeps the write (§2.13.7).
 fn onceDemands(e: *Evaluation) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     for (e.w.closures.items) |cl| {
         const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
         const h = e.contracts.head(c);
-        if (!h.flags.once) continue;
         const sig = try e.ctx.codeSig(e.ctx.ctx, cl.code);
         const x = f.val(cl.value);
         const caps = f.kidsOf(x);
         for (e.contracts.effectsOf(h.writes)) |wr| {
             if (wr.j < sig.own or wr.j - sig.own >= caps.len) continue;
+            const cell = cellWrite(f.slots, wr);
+            if (!cell and !h.flags.once) continue;
             const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
-            var ps: std.ArrayList(Relation.Proj) = .empty;
-            defer ps.deinit(gpa);
-            try e.ev.project(caps[wr.j - sig.own], f.slots.relWords(wr.slot), wr.deep, 0, 0, &ps);
-            for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
+            if (cell) try cellTargets(e, caps[wr.j - sig.own], f.slots.relWords(wr.slot)) else {
+                var ps: std.ArrayList(Relation.Proj) = .empty;
+                defer ps.deinit(gpa);
+                try e.ev.project(caps[wr.j - sig.own], f.slots.relWords(wr.slot), wr.deep, 0, 0, &ps);
+                for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
+            }
             const cap_local = e.ctx.capturesOf(e.ctx.ctx, cl.code)[wr.j - sig.own];
             const write_path: PathId = if (cap_local != none) try pathAt(e, try e.ctx.placeOfLocal(e.ctx.ctx, cap_local), f.slots.relWords(wr.slot)) else .none;
             try e.demands.append(gpa, .{
                 .point = cl.point,
-                .kind = .once,
+                .kind = if (cell) .writer else .once,
+                .cell = cell,
                 .token = tokenOf(e, cl.inst),
                 .base_inst = cl.inst,
                 .base_local = cap_local,
@@ -1190,8 +1229,9 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
-    // A code that writes one of its captures is `once` (R-2.8).
-    for (d.writes.items) |x| if (x.j >= code.params.len) {
+    // A code that writes one of its captures is `once` (R-2.8); a cell
+    // operation on a captured `Ref` is not such a write (§2.11.4).
+    for (d.writes.items) |x| if (x.j >= code.params.len and !cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
 }

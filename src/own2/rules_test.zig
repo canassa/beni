@@ -53,12 +53,14 @@ const layers = [_]Entry{
     .{ .file = "Relation.zig", .layer = 6, .max_lines = 1300 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
-    .{ .file = "Walk.zig", .layer = 7, .max_lines = 1230 },
+    // A demand says whether it is a cell operation (#1727).
+    .{ .file = "Walk.zig", .layer = 7, .max_lines = 1240 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 7, .max_lines = 730 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
-    .{ .file = "Eval.zig", .layer = 8, .max_lines = 1290 },
+    // A closure's cell operations on its captures, at its creation (#1727).
+    .{ .file = "Eval.zig", .layer = 8, .max_lines = 1330 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     .{ .file = "Resolve.zig", .layer = 9, .max_lines = 680 },
