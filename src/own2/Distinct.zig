@@ -303,17 +303,12 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                         got.value_ptr.* = @intCast(atom_members.items.len);
                         try atom_members.append(g, .empty);
                     }
-                    for (atom_members.items[got.value_ptr.*].items) |fi| {
-                        const o = ents.items[fi];
-                        if (o.block != none and o.block == en.block) continue;
-                        if (Contract.isApart(o.occ) and Contract.isApart(en.occ)) continue;
-                        if ((try e.f.mergeTags(l.tags, e.f.leafAt(o.leaf).tags)) != null) return Cond.unprovable;
-                    }
                     try atom_members.items[got.value_ptr.*].append(g, @intCast(i));
                 },
                 else => {},
             }
         }
+        for (atom_members.items) |m| if (try atomTwice(e, ents.items, m.items)) return Cond.unprovable;
         var params: u32 = 0;
         for (group_root.items) |root| if (e.f.roots.items[root].kind == .param) {
             params += 1;
@@ -544,6 +539,14 @@ fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!
         }
     }
     return false;
+}
+
+/// Whether two entries `idx` of one atom may hold together (`Routes.Table.anyPair`).
+fn atomTwice(e: *Eval, ents: []const Ent, idx: []const u32) Error!bool {
+    var es: std.ArrayList(@TypeOf(e.f.sets.tags).Entry) = .empty;
+    defer es.deinit(e.gpa());
+    for (idx) |i| try es.append(e.gpa(), .{ .tags = e.f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ) });
+    return e.f.sets.tags.anyPair(e.gpa(), e.account(), es.items);
 }
 
 fn pairMay(e: *Eval, a: Ent, b: Ent, routed: bool) Error!bool {
