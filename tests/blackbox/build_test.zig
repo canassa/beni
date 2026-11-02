@@ -9344,6 +9344,48 @@ fn continuationFor(w: *World, src: []const u8, owner: []const u8) !u64 {
     return accountField(dump.stdout, owner, "continuation");
 }
 
+test "the checker v2's call cost is flat in its argument's width" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `wrap r = [ r ]` applied to a literal record of w lists: the call's own
+    // records (`one`'s continuation less `zero`'s, which builds the same
+    // literal) must not grow with w. A call view by reference
+    // (`ownership-v2.md` §2.11 *Representation of a view*) costs the callee's
+    // size; grafting the callee's class over the argument cost ~5.5 records a
+    // field.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var cost: [2]i64 = undefined;
+    for ([_]u32{ 25, 100 }, 0..) |width, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "type alias R =\n");
+        for (1..width + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
+        try src.appendSlice(a, "\n\nwrap : R → List R\nwrap r = [ r ]\n\n\npub zero : ⊤ → R\nzero ⊤ =\n    { ");
+        for (1..width + 1) |i| try src.print(a, "{s}f{d} = [ {d} ]", .{ if (i == 1) "" else ", ", i, i });
+        try src.appendSlice(a, " }\n\n\npub one : ⊤ → List R\none ⊤ =\n    wrap { ");
+        for (1..width + 1) |i| try src.print(a, "{s}f{d} = [ {d} ]", .{ if (i == 1) "" else ", ", i, i });
+        try src.appendSlice(a, " }\n");
+        try w.write("Main.beni", src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), dump.exit_code);
+        const one: i64 = @intCast(try accountField(dump.stdout, "one", "continuation"));
+        const zero: i64 = @intCast(try accountField(dump.stdout, "zero", "continuation"));
+        cost[run] = one - zero;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(cost[1] <= cost[0] + 64);
+}
+
 test "the checker v2's call costs are flat per call through chains of calls and linear in a result's depth" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

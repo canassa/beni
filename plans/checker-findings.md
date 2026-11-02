@@ -6448,7 +6448,7 @@ type, so R-4.7.4 requires it accepted.
 
 ## CK-280 — a write to one list of a recursive part needs the whole region exclusive (2026-10-25)
 
-**Issue:** #400 (the Lean bridge's `Case5230`). **Fixture:** `tests/pending/ownership/WriteOneLevel.beni`.
+**Issue:** #400 (the Lean bridge's `Case5230`). **Fixture:** `tests/corpus/ownership/WriteOneLevel.beni` (promoted from `tests/pending/`; fixed).
 `f` pushes the left child's list and returns the right subtree. `run` and `runFresh` hand it a tree that
 holds one list at three levels, none of them in the right subtree, and both calls are refused
 `exclusive`: the checker cannot tell a write to one of the region's lists from a write to every one.

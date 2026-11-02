@@ -79,7 +79,6 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A fixed scenario leaves this table for `ordering_test.zig`,
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
-    .{ .name = "scenario/CK-314", .step = .fast },
     .{ .name = "scenario/CK-316", .step = .fast },
 };
 
@@ -362,42 +361,6 @@ const Scenario = struct {
 };
 
 // ┌─────────────────────────────────────────────────────────────────────────┐
-// │ CK-314: a call's cost grows with its argument's width (#1097)           │
-// └─────────────────────────────────────────────────────────────────────────┘
-
-// `wrap r = [ r ]` applied to a literal record of w lists: the call's own
-// records (`one`'s continuation less `zero`'s, which builds the same
-// literal) grow with w, because `Calls.apply` grafts the class over the
-// argument (~5.5 records a field). A call view by reference (§2.11
-// *Representation of a view*) costs the callee's size: flat in w.
-test "scenario/CK-314: a call's own cost is flat in its argument's width" {
-    var s = try Scenario.init("CK-314");
-    defer s.deinit();
-    const a = s.arena();
-    var cost: [2]i64 = undefined;
-    for ([_]u32{ 25, 100 }, 0..) |w, run| {
-        var src: std.ArrayList(u8) = .empty;
-        try src.appendSlice(a, "type alias R =\n");
-        for (1..w + 1) |i| try src.print(a, "    f{d} : List Int\n", .{i});
-        try src.appendSlice(a, "\n\nwrap : R → List R\nwrap r = [ r ]\n\n\npub zero : ⊤ → R\nzero ⊤ =\n    { ");
-        for (1..w + 1) |i| try src.print(a, "{s}f{d} = [ {d} ]", .{ if (i == 1) "" else ", ", i, i });
-        try src.appendSlice(a, " }\n\n\npub one : ⊤ → List R\none ⊤ =\n    wrap { ");
-        for (1..w + 1) |i| try src.print(a, "{s}f{d} = [ {d} ]", .{ if (i == 1) "" else ", ", i, i });
-        try src.appendSlice(a, " }\n");
-        try s.w.write("Main.beni", src.items);
-        const r = try s.w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" }, .{ .raw_diagnostics = true });
-        if (r.exit_code != 0) return s.finish(try s.failed(r));
-        cost[run] = try continuationOf(r.stdout, "one") - try continuationOf(r.stdout, "zero");
-    }
-    const flat = cost[1] <= cost[0] + 64;
-    try s.finish(.{
-        .green = flat,
-        .signature = "grows",
-        .detail = try std.fmt.allocPrint(a, "w=25: {d} records; w=100: {d}", .{ cost[0], cost[1] }),
-    });
-}
-
-// ┌─────────────────────────────────────────────────────────────────────────┐
 // │ CK-316: v1's summary limit on a write-free tuple DAG (#856)             │
 // └─────────────────────────────────────────────────────────────────────────┘
 
@@ -412,18 +375,4 @@ test "scenario/CK-316: v1 checks a write-free tuple DAG under --ownership-everyw
     const r = try s.w.runWith(&.{ "check", "--diagnostics=json", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 170_000 });
     if (r.exit_code == 0) return s.finish(.{ .green = true, .signature = "", .detail = "" });
     try s.finish(try s.failed(r));
-}
-
-/// `account <owner>: … continuation <n> of …` in a dump.
-fn continuationOf(dump: []const u8, owner: []const u8) !i64 {
-    var lines = std.mem.splitScalar(u8, dump, '\n');
-    while (lines.next()) |l| {
-        const t = std.mem.trim(u8, l, " ");
-        if (!std.mem.startsWith(u8, t, "account ") or !std.mem.startsWith(u8, t["account ".len..], owner) or t["account ".len + owner.len] != ':') continue;
-        const at = std.mem.indexOf(u8, t, " continuation ") orelse return error.NoField;
-        const digits = t[at + " continuation ".len ..];
-        const end = std.mem.indexOfNone(u8, digits, "0123456789") orelse digits.len;
-        return std.fmt.parseInt(i64, digits[0..end], 10);
-    }
-    return error.NoAccount;
 }
