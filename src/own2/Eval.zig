@@ -1218,6 +1218,7 @@ pub const Evaluation = struct {
         if (e.facts_on) {
             e.sink.label_at.deinit(g);
             e.sink.described.deinit(g);
+            e.sink.effected.deinit(g);
         }
     }
 
@@ -1627,6 +1628,9 @@ const Sink = struct {
     /// there. Describing it again adds nothing, and a fold's answer that
     /// feeds itself would describe it without end.
     described: Ids.FixedDict(4) = .{},
+    /// `(leaf, deep, list)`: a leaf whose parameter effects are said
+    /// already. Effects only grow, so saying them again adds nothing.
+    effected: Ids.FixedDict(3) = .{},
 };
 
 fn labelIndex(s: *Sink, cb: u32) Error!u32 {
@@ -2051,6 +2055,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
     try stack.append(gpa, li);
     while (stack.pop()) |x| {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
+        if ((try s.effected.getOrPut(gpa, .{ x, @intFromBool(deep), @backingInt(out) })).found_existing) continue;
         const l = f.leafAt(x);
         if (l.kind != .ref) continue;
         const r = f.roots.items[l.root];
