@@ -43,16 +43,21 @@ pub const Cond = struct {
         return a.no == b.no and std.mem.eql(u64, a.sel, b.sel);
     }
 
-    /// `a` asks no more than `b` (b ⇒ a).
+    /// `a` asks no more than `b` (b ⇒ a). An apart occurrence is asked
+    /// by itself or by the plain one.
     pub fn weaker(a: Cond, b: Cond) bool {
         if (b.no) return true;
         if (a.no) return false;
-        var j: usize = 0;
         for (a.sel) |x| {
-            while (j < b.sel.len and b.sel[j] < x) j += 1;
-            if (j >= b.sel.len or b.sel[j] != x) return false;
+            if (std.sort.binarySearch(u64, b.sel, x, order) != null) continue;
+            if (isApart(x) and std.sort.binarySearch(u64, b.sel, x & ~apart_bit, order) != null) continue;
+            return false;
         }
         return true;
+    }
+
+    fn order(x: u64, y: u64) std.math.Order {
+        return std.math.order(x, y);
     }
 
     /// The conjunction: the union of the selections, in `arena`.
@@ -80,7 +85,19 @@ pub const Cond = struct {
             }
             n += 1;
         }
-        return .{ .sel = out[0..n] };
+        return .{ .sel = dropAsked(out[0..n]) };
+    }
+
+    /// Drop each apart occurrence whose plain one is in the run too (the
+    /// plain one asks more): a sorted run, in place.
+    fn dropAsked(run: []u64) []u64 {
+        var n: usize = 0;
+        for (run) |x| {
+            if (isApart(x) and std.sort.binarySearch(u64, run, x & ~apart_bit, order) != null) continue;
+            run[n] = x;
+            n += 1;
+        }
+        return run[0..n];
     }
 
     /// A selection of `run` (unsorted, owned by `arena`): sorted, deduplicated.
@@ -93,15 +110,25 @@ pub const Cond = struct {
             run[n] = x;
             n += 1;
         }
-        return .{ .sel = run[0..n] };
+        return .{ .sel = dropAsked(run[0..n]) };
     }
 };
 
 pub fn occ(j: u32, r: Rel) u64 {
     return (@as(u64, j) << 32) | r;
 }
+/// An occurrence that only has to be apart from the others (§2.9.1): its
+/// objects may repeat among themselves. A holder beside a write needs no
+/// more: the written object is none of the holder's.
+pub const apart_bit: u64 = 1 << 63;
+pub fn occApart(j: u32, r: Rel) u64 {
+    return occ(j, r) | apart_bit;
+}
+pub fn isApart(o: u64) bool {
+    return o & apart_bit != 0;
+}
 pub fn occParam(o: u64) u32 {
-    return @intCast(o >> 32);
+    return @intCast((o >> 32) & 0x7fff_ffff);
 }
 pub fn occRel(o: u64) Rel {
     return @truncate(o);
@@ -614,7 +641,8 @@ pub fn sortOccs(slots: *const Slots.Table, run: []u64) void {
     std.mem.sort(u64, run, slots, struct {
         fn lt(s: *const Slots.Table, x: u64, y: u64) bool {
             if (occParam(x) != occParam(y)) return occParam(x) < occParam(y);
-            return s.relLess(occRel(x), occRel(y));
+            if (occRel(x) != occRel(y)) return s.relLess(occRel(x), occRel(y));
+            return !isApart(x) and isApart(y);
         }
     }.lt);
 }
@@ -660,6 +688,7 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
             last = occParam(o);
         } else try w.writeAll(",");
         try relText(slots, places, names, w, occRel(o));
+        if (isApart(o)) try w.writeAll("~");
     }
     try w.writeAll("}");
 }
