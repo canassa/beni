@@ -1,0 +1,67 @@
+-- A runtime catch for a method that writes its own parameter, passed as
+-- `where`-clause evidence (`ownership-v2.md` §2.11.4): `one` and `both` call
+-- `x.bump`, which the checker cannot see, so `bump`'s callers there are
+-- unknown. v2 accepted the push in `bump` as `param`, relying on callers
+-- it could not see, and made no demand where `bump` was passed: the
+-- sanitised run trapped on the read of the box the evidence had pushed onto
+-- in place. Each site that passes a writing method as evidence is refused,
+-- for a type of this module (`Box`) and of another (`Stack`).
+import Node exposing (Program)
+import Stack
+import String
+
+
+show : List Int → String
+show l =
+    case l of
+        [] →
+            "."
+
+        [ x, …rest ] →
+            String.fromInt x ++ "," ++ show rest
+
+
+type Box
+    = Box (List Int)
+
+
+pub bump : Box, Int → Box
+bump s k =
+    case s of
+        Box xs →
+            Box (List.push xs k)
+
+
+pub items : Box → List Int
+items s =
+    case s of
+        Box xs →
+            xs
+
+
+one : a → a
+    where a.bump : a, Int → a
+one x = x.bump 1
+
+
+both : a, a → a × a
+    where a.bump : a, Int → a
+both x y = ( x.bump 1, y.bump 2 )
+
+
+local : Int → String
+local n =
+    s = Box [ n ]
+    a = one s
+    "${show a.items} ${show s.items}"
+
+
+across : Int → String
+across n =
+    s = Stack.make [ n ]
+    ( a, b ) = both s s
+    "${show a.items} ${show b.items}"
+
+
+main : Program
+main = Node.print "${local 5} ${across 6}"

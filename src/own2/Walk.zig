@@ -67,6 +67,9 @@ pub const Context = struct {
     /// constructor, a schema member): its code or fixed contract (with
     /// `fixed_bit`), or null when it is not a function.
     funcRef: *const fn (ctx: *anyopaque, inst: u32) Error!?u32,
+    /// The codes of the declarations a dispatch site at `inst` passes as
+    /// evidence (appended, each once).
+    evidenceCodes: *const fn (ctx: *anyopaque, inst: u32, out: *std.ArrayList(u32)) Error!void,
     /// The code of a lambda or a local function's `let_def`.
     codeOf: *const fn (ctx: *anyopaque, inst: u32) ?u32,
     /// A code's captures (declaration-relative locals, sorted).
@@ -579,6 +582,7 @@ const Walker = struct {
                 return .{ .v = v };
             },
             .top, .ext_value, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => {
+                try k.evidence(i);
                 if (k.isCallee(i)) return .{};
                 if (k.ctx.sharedOf(k.ctx.ctx, i)) |md| {
                     if (Slots.holdsAny(fr.places, try fr.places.rootPath(k.gpa, try k.placeOf(i)))) return .{ .v = try fr.mk(.{ .kind = .shared, .head = md[0], .site = md[1] }) };
@@ -630,6 +634,7 @@ const Walker = struct {
                 return .{ .v = try k.record(i, fields, d.lhs) };
             },
             .call => {
+                try k.evidence(i);
                 if (k.ctx.isListAppend(k.ctx.ctx, i) and k.args(i).len == 2) return .{ .v = try k.appendChain(i) };
                 var all: std.ArrayList(u32) = .empty;
                 defer all.deinit(k.gpa);
@@ -637,6 +642,7 @@ const Walker = struct {
                 return .{ .v = try k.call(i, d.lhs, all.items) };
             },
             .method_call => {
+                try k.evidence(i);
                 const m = k.bir.extraData(@fromBackingInt(d.rhs), Bir.MethodCall);
                 var all: std.ArrayList(u32) = .empty;
                 defer all.deinit(k.gpa);
@@ -792,6 +798,16 @@ const Walker = struct {
         const v = try k.built(i, .closure, code, if (code & fixed_bit == 0) i else none, ks.items, &.{});
         if (code & fixed_bit == 0) try k.w.closures.append(k.gpa, .{ .code = code, .value = v, .point = i, .inst = i });
         return v;
+    }
+
+    /// The declarations a dispatch site passes as evidence: function values
+    /// handed to code the checker does not see, so each escapes at the
+    /// site (§2.11.4), and a parameter it writes is refused there.
+    fn evidence(k: *Walker, i: u32) Error!void {
+        var codes: std.ArrayList(u32) = .empty;
+        defer codes.deinit(k.gpa);
+        try k.ctx.evidenceCodes(k.ctx.ctx, i, &codes);
+        for (codes.items) |c| try k.escapeValue(try k.closureOf(i, c, &.{}), i);
     }
 
     fn captureUse(k: *Walker, l: u32, i: u32) Error!void {
