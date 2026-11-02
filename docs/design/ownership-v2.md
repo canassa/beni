@@ -1086,6 +1086,25 @@ The cost is linear in the entries and their ancestors' index hits; payload field
 (the experiment's *Fields* family: relation facts 819, 835, 1 421, 2 904 at 1, 2, 4 and 8 fields). A check
 that needs a dense relation reserves each pair as growth.
 
+*The rounds' state* (#1714, 2026-11-03; `Entries.zig`). A round expands one root, so a literal of n calls takes
+n rounds; each round regrouped every entry and re-ran every group's check, n × n. The check now keeps its working
+state across its rounds: every entry is made once, with the entry it was expanded from and its place in that
+expansion (the inline order the rounds read: an expansion takes the place of the entry it expands); groups by root
+and by atom stay built, each with its within-group index and the count of its members whose pairs and
+occurrences were asked. A round places only the entries the last expansion made, re-checks only the groups they
+changed (a parameter's group for its new members' pairs and occurrences; a call's, a supply's and an atom's whole,
+as before), and asks the answer rule only for pairs with a new entry; a second parameter's group makes every
+parameter group ask its occurrences, as before. A new member is compared with the earlier ones, pairwise up to
+eight and then by the index, which also lists each entry under every ancestor (`(ancestor, 5, slot)`) so that a
+new entry meets the earlier ones below it. The root to expand is the greatest of a heap of the expandable roots,
+or of the groups that ask to be expanded (`must`), a stale one skipped. A vouched block keeps the first of two
+equal leaves in the inline order (its members compared by the expansions they came from). Each round charges a
+record, one per new entry and one per changed group, besides the work of its checks. Every outcome is the one the
+regrouping check gave: a group's check reads its members only, and the conditions gathered are a set. This is
+the fixpoint's own working state, never a table of earlier answers. *Live sibling positions* at n = 10 / 20 / 40
+/ 80: 4 090 / 11 883 / 38 608 / 136 538 records, now 3 134 / 6 370 / 12 923 / 26 191 (with the pending operands
+of §2.8): flat per position.
+
 #### 2.9.4 What a write relies on
 
 A demand (§2.8) is resolved against the relation. Every **under** it meets is added to the condition the write
@@ -3492,7 +3511,7 @@ L10 Groups
 L9  Resolve  Deliver  Closures
 L8  Eval  Holders  Sweep  Stack
 L7  Walk  Distinct
-L6  Relation
+L6  Relation  Entries
 L5  Value  Liveness
 L4  Rows  Regions  ContractText  Leaves  Worded
 L3  Contract  Subtree  Prepass
@@ -3524,8 +3543,9 @@ L0  Ids  Counters  Scratch
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
+| `Entries.zig` | 6 | the distinct check's entries and its rounds' state: groups kept across rounds, the within-group index, the heaps of roots to expand (§2.9.3) | Ids, Slots, Subtree, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
-| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
+| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Slots, Walk, Regions |
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder, buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Subtree, Value, Relation, Distinct |
