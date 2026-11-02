@@ -298,6 +298,7 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
         const c = (Groups.declaredClass(mod, @intCast(di)) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {
+                if (err == error.ProbeLength) _ = mod.base_account.probeFailed();
                 why.* = try limitText(arena, mod);
                 return null;
             },
@@ -316,6 +317,7 @@ pub fn publish(gpa: Allocator, arena: Allocator, names: Names, mod: *Groups.Modu
     Block.write(mod.env(), &mod.sums, classes.items, block_names, &words) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => {
+            if (err == error.ProbeLength) _ = mod.base_account.probeFailed();
             why.* = try limitText(arena, mod);
             return null;
         },

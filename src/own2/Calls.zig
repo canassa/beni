@@ -1013,7 +1013,7 @@ const Grafter = struct {
         active: Slots.Map(NodeId, u32) = .{},
         /// Paths interned as `(parent, step)`, 0 the root; `(node, path)` visited.
         paths: Slots.Dict(2, 0) = .{},
-        visited: Slots.Hash(2) = .{},
+        visited: Ids.FixedDict(2) = .{},
         next_path: u32 = 1,
         /// `argKappa` per `(argument, path)`, from its parent path's.
         arg_at: Slots.Dict(2, 1) = .{},
@@ -1022,7 +1022,7 @@ const Grafter = struct {
         /// When `res` has no knot: each finished position by `(node, snapshot it
         /// starts from)`, so a node shared by many paths is linked once (#1252).
         acyclic: bool = false,
-        shared: Slots.Hash(2) = .{},
+        shared: Ids.FixedDict(2) = .{},
 
         const sets = .{ "active", "paths", "visited", "arg_at", "arg_stopped", "shared" };
 

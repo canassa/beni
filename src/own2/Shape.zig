@@ -93,7 +93,7 @@ pub const Table = struct {
     intern: Ids.FixedDict(5) = .{},
     /// Whole nodes, not columns: a descent reads every word of each node.
     overs: std.ArrayList(OverNode) = .empty,
-    over_intern: Ids.FixedDict(4) = .{},
+    over_intern: Ids.Interned(4) = .{},
     memo_proj: Ids.FixedDict(2) = .{},
     /// The projection correspondence (§2.9 *Keyed where a reader looks*): a
     /// union, choice or positions node that `proj` made as the projection of
@@ -469,13 +469,22 @@ pub const Table = struct {
         return t.overs.items[id];
     }
 
+    /// `over_intern`'s keys: the step map's nodes themselves.
+    const OverKeys = struct {
+        t: *const Table,
+        pub fn keyAt(c: OverKeys, i: u32) [4]u32 {
+            const n = c.t.overs.items[i];
+            return .{ n.prefix, n.mask, n.left, n.right };
+        }
+    };
+
     fn makeOver(t: *Table, gpa: Allocator, account: *Account, n: OverNode) Error!u32 {
         try account.reserve(.shape, 1);
-        const got = try t.over_intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
-        if (got.found_existing) return got.value_ptr.*;
-        got.value_ptr.* = @intCast(t.overs.items.len);
-        try t.overs.append(gpa, n);
-        return got.value_ptr.*;
+        try t.overs.ensureUnusedCapacity(gpa, 1);
+        if (try t.over_intern.getOrInsert(gpa, .{ n.prefix, n.mask, n.left, n.right }, OverKeys{ .t = t }, t.overs.items.len)) |hit| return hit;
+        const id: u32 = @intCast(t.overs.items.len);
+        t.overs.appendAssumeCapacity(n);
+        return id;
     }
 
     inline fn matches(key: u32, prefix: u32, mask: u32) bool {
@@ -3002,7 +3011,7 @@ pub const Table = struct {
     /// The record at `slot`, made raw by `mapWalk`, interned: an equal
     /// record already interned is the image, and `slot` is left inert (no
     /// node names it); otherwise `slot` is interned as itself. `make`'s key.
-    fn mapAdopt(t: *Table, gpa: Allocator, slot: NodeId) Allocator.Error!NodeId {
+    fn mapAdopt(t: *Table, gpa: Allocator, slot: NodeId) Ids.IndexError!NodeId {
         const n = t.get(slot);
         const keyed: u32 = if (n.kind == .recast or n.kind == .delta) Ids.none_int else n.cells.int();
         const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), keyed, n.a, n.b });

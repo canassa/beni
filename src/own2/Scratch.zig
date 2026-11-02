@@ -11,7 +11,9 @@
 //! - `Dict(k, lead)` is the same over keys of `k` words: the sparse index
 //!   is by the word `lead`, a dense id, and the entries of one lead word
 //!   form a chain. Its entries are numbered in the order they were added,
-//!   as `Ids.FixedDict`'s are.
+//!   as `Ids.FixedDict`'s are. A key with no lead word a chain can hang
+//!   from goes in an `Ids.FixedDict`, which a walk's slot holds as well:
+//!   its `clear` is one generation's increment.
 //! - `Depths(T)` holds one `T` per walk in progress: `take` gives the slot
 //!   of the next depth, emptied, and `give` returns it. A nested walk is one
 //!   depth deeper, so it never shares a slot with the walk around it, and a
@@ -253,121 +255,6 @@ pub fn Dict(comptime k: usize, comptime lead: usize) type {
 
         pub fn put(d: *Self, gpa: Allocator, key: Key, v: u32) Allocator.Error!void {
             (try d.getOrPut(gpa, key)).value_ptr.* = v;
-        }
-    };
-}
-
-/// A map from keys of `k` words to `u32` whose words are not one dense id
-/// a chain can hang from: open addressing over the entries' indices, the
-/// slots stamped with a generation, so `clear` is one increment and the
-/// slots are kept for the next walk. The hash is fixed: the probes never
-/// depend on anything but the keys. Entries are numbered in the order they
-/// were added.
-pub fn Hash(comptime k: usize) type {
-    return struct {
-        /// `(generation, entry)`; a slot of another generation is empty.
-        slots: std.ArrayList([2]u32) = .empty,
-        gen: u32 = 1,
-        keys: std.ArrayList(u32) = .empty,
-        values: std.ArrayList(u32) = .empty,
-        stats: Counters.Sparse = Counters.zero(Counters.Sparse),
-
-        const Self = @This();
-        pub const Key = [k]u32;
-        pub const counter_kind = Counters.Kind.sparse;
-
-        pub const GetOrPut = struct { found_existing: bool, value_ptr: *u32, index: u32 };
-
-        pub fn deinit(d: *Self, gpa: Allocator) void {
-            d.slots.deinit(gpa);
-            d.keys.deinit(gpa);
-            d.values.deinit(gpa);
-        }
-
-        pub fn clear(d: *Self) void {
-            Counters.sparseClear(&d.stats);
-            d.keys.items.len = 0;
-            d.values.items.len = 0;
-            d.gen +%= 1;
-            if (d.gen != 0) return;
-            for (d.slots.items) |*x| x[0] = 0;
-            d.gen = 1;
-        }
-
-        pub fn count(d: *const Self) u32 {
-            return @intCast(d.values.items.len);
-        }
-
-        pub fn keyAt(d: *const Self, i: u32) Key {
-            return d.keys.items[i * k ..][0..k].*;
-        }
-
-        inline fn hash(key: Key) u64 {
-            var h: u64 = 0x243f6a8885a308d3;
-            inline for (0..k) |j| {
-                h = (h ^ key[j]) *% 0x9e3779b97f4a7c15;
-                h ^= h >> 29;
-            }
-            return h ^ (h >> 32);
-        }
-
-        /// The slot of `key`, or the empty slot where it would go.
-        fn probe(d: *const Self, key: Key, steps: *u32) u32 {
-            const mask: u32 = @intCast(d.slots.items.len - 1);
-            var at: u32 = @as(u32, @truncate(hash(key))) & mask;
-            while (true) : (at = (at + 1) & mask) {
-                steps.* += 1;
-                const x = d.slots.items[at];
-                if (x[0] != d.gen) return at;
-                const ks = d.keys.items[x[1] * k ..][0..k];
-                var same = true;
-                inline for (0..k) |j| same = same and ks[j] == key[j];
-                if (same) return at;
-            }
-        }
-
-        pub fn get(d: *const Self, key: Key) ?u32 {
-            var steps: u32 = 0;
-            const hit: ?u32 = if (d.slots.items.len == 0) null else blk: {
-                const x = d.slots.items[d.probe(key, &steps)];
-                break :blk if (x[0] == d.gen) x[1] else null;
-            };
-            Counters.sparseGet(&d.stats, hit != null, steps);
-            return if (hit) |i| d.values.items[i] else null;
-        }
-
-        pub fn getOrPut(d: *Self, gpa: Allocator, key: Key) Allocator.Error!GetOrPut {
-            var steps: u32 = 0;
-            if (2 * (d.values.items.len + 1) > d.slots.items.len) try d.grow(gpa);
-            const at = d.probe(key, &steps);
-            const x = d.slots.items[at];
-            Counters.sparsePut(&d.stats, x[0] == d.gen, steps);
-            if (x[0] == d.gen) return .{ .found_existing = true, .value_ptr = &d.values.items[x[1]], .index = x[1] };
-            try d.keys.ensureUnusedCapacity(gpa, k);
-            try d.values.ensureUnusedCapacity(gpa, 1);
-            const i: u32 = @intCast(d.values.items.len);
-            d.slots.items[at] = .{ d.gen, i };
-            d.keys.appendSliceAssumeCapacity(&key);
-            d.values.appendAssumeCapacity(undefined);
-            return .{ .found_existing = false, .value_ptr = &d.values.items[i], .index = i };
-        }
-
-        pub fn put(d: *Self, gpa: Allocator, key: Key, v: u32) Allocator.Error!void {
-            (try d.getOrPut(gpa, key)).value_ptr.* = v;
-        }
-
-        /// Twice the slots, the entries placed again.
-        fn grow(d: *Self, gpa: Allocator) Allocator.Error!void {
-            const n = @max(16, 2 * d.slots.items.len);
-            try d.slots.resize(gpa, n);
-            @memset(d.slots.items, .{ 0, 0 });
-            d.gen = 1;
-            const mask: u32 = @intCast(n - 1);
-            for (0..d.values.items.len) |i| {
-                var at: u32 = @as(u32, @truncate(hash(d.keyAt(@intCast(i))))) & mask;
-                while (d.slots.items[at][0] == d.gen) at = (at + 1) & mask;
-                d.slots.items[at] = .{ d.gen, @intCast(i) };
-            }
         }
     };
 }

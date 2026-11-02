@@ -504,7 +504,7 @@ No κ of the container separates two traversals: each visits every index again. 
 
 ### 2.3 Abstract values: shape nodes
 
-Structurally interned per owning summary with deterministic comparison trees (thesis §4.2; Chase–Wegman–Zadeck). A node denotes a function from paths to sets of
+Structurally interned per owning summary with deterministic fixed-hash indexes (§4.1 *The fixed-key dictionary*; thesis §4.2; Chase–Wegman–Zadeck). A node denotes a function from paths to sets of
 `(cell, approx)`.
 
 | Node kind | Fields | Meaning |
@@ -6672,7 +6672,7 @@ labels     : MultiArrayList { inst: u32, callee_label: LabelId (.none = the fram
   place    : PlaceId
   parent   : CellId   the trie parent: the path minus one step, or the refined cell; .none at a root
   children : Range    into `child_cells`: the trie children in first-sight order (the descendants of a cell the program named)
-intern     : owner-local comparison tree (origin, kind, a, b, c, place) → CellId
+intern     : owner-local index (origin, kind, a, b, c, place) → CellId
 sets       : persistent compressed binary radix sets of (CellId, approx), u32 keys; at most 33 nodes per insertion
              union shares unchanged subtrees; duplicate exact evidence wins (approx ⊑ exact in the evidence order);
              `Radix`: insert, member, unionWith, subset, intersection (the common keys, approximate when either
@@ -6694,11 +6694,11 @@ Shape.Table (per walk)
   reach    : SetId     memo, persistent (.none until asked)
 child_tab  : []NodeId          dense per node in the place's step order
 over_tab   : MultiArrayList { step, child: NodeId, left, right: OverId }   persistent sorted tree
-intern     : owner-local comparison tree (kind, place, own cells, child-run id, b) → NodeId; runs built by charged chunks
+intern     : owner-local index (kind, place, own cells, child-run id, b) → NodeId; runs built by charged chunks
 cell_memo  : NodeId → persistent cell-set root for union/positions, lazy internal reads; collect precomputes
              its requested root by per-item inserts. Cache completion cannot change structural identity
 memo_proj  : stamped column NodeId → bounded inline cache of (step, immutable input version, NodeId); misses use owner-local operation records
-memo_join  : owner-local comparison tree (mode: union | choice, canonical member-run id) → NodeId; memo_leq / memo_eq: (NodeId, NodeId, immutable version ids) → u8 (coinductive shape assumption only)
+memo_join  : owner-local index (mode: union | choice, canonical member-run id) → NodeId; memo_leq / memo_eq: (NodeId, NodeId, immutable version ids) → u8 (coinductive shape assumption only)
 memo_map   : stamped column NodeId → NodeId within one immutable substitution context/version; different contexts never reuse that stamp
 env_tab    : interned environment records (ClassId, run of actual Values, invocation LabelId) → EnvId, for `view`
 memo_force : stamped column NodeId → NodeId, a view's one-step expansion (§2.11 *Representation of a view*)
@@ -6730,7 +6730,7 @@ node and one made after it are the same node.
 *Since #1214 the holder index is `Holders`' offline sweep (§2.8 *The holder index*), and what follows is
 history.* The inverted holder index belongs to `Demands` (S3a), over Cell's persistent set nodes: dense
 `CellId → live set-node head`, same-cell links, a live count per set node, live parent links, holder-root lists,
-and §2.8's anchor and refinement chains (heads in an owner-local comparison tree keyed by
+and §2.8's anchor and refinement chains (heads in an owner-local index keyed by
 `(base origin, PathId, class)`, links in dense columns). Cell itself
 contains neither liveness nor a holder registry. Holders are found through the live inverted set index (§2.8), never a scope scan.
 Live parent links and their transition/query tasks use §4.1 accounting.
@@ -6742,7 +6742,7 @@ Cond.Table (per walk)
   kind    : u8      yes | and | atom | shared | lost
   a, b    : u32     and: (CondId, CondId); atom: (atom kind: excl | sep | within | apart | keep | writes, operands)
 groups    : canonical persistent apart groups with the path-multiset roots below; sets never erase multiplicity; sorted runs only on charged export
-intern    : owner-local comparison tree (kind, a, b) → CondId
+intern    : owner-local index (kind, a, b) → CondId
 kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a frame holds value → KappaId and
             a class one root for res and each supply; use shapes carry marks, not value κ. Each is an immutable
             persistent hash-consed trie: a position record `{ here, links, fold, coverage, arrivals }`, `here` a radix map
@@ -6775,7 +6775,7 @@ kappa     : KappaId roots, one per value interpretation (shape root, KappaId); a
             membership, approximation, coverage and both routes to a repeated cell. Persistent subtree
             summary memos support incremental reads; a root-only memo cannot reuse a changed spine
 flat      : memo CondId → sorted atom run (print, compare, block)
-memo_sep  : owner-local comparison tree (CellId, CellId, interpretation/κ version, traversal) → CondId
+memo_sep  : owner-local index (CellId, CellId, interpretation/κ version, traversal) → CondId
 memo_read : (node, cursor, class, immutable substitution/traversal context) → completed read
 arrivals  : interned DAG columns { kind: source | choice | together, source position/interpretation,
             choice id, child range }; shared edges, repeated together edges never deduplicated
@@ -7354,7 +7354,7 @@ enters the product task (#1225; pending fixture CK-312). The corpus pins `Patter
 
 For §2.9's eight fixed-place tower families (the call-built family starts at S3b) the distinct written extensions, aggregate records and
 read-off continuations are source-proportional; fixed-word radix insertion bounds their per-incidence
-record work, and comparison-tree navigation/canonical export adds at most a logarithmic time factor.
+record work, and fixed-key dictionary probes (expected O(1), at most `probe_length`+1) and canonical export add at most a logarithmic time factor.
 Their length spends no summary-growth allowance. General pair/context products remain growth, reserved
 before expansion. Measure B_f/G_f/N_f and category counts over **the whole analysis**, plus codec bytes
 and charged codec work; a linear shape count can conceal quadratic reads. Ordinary-length refusals in
@@ -7381,7 +7381,7 @@ record does not prove its children separate. A selected result occurrence is `(s
 same occurrence and k is shared, different allocation ids or allocating invocation occurrences are apart.
 Walk scope edges to the first divergence and retain selected-path memos; total traversed edges are P.
 The certificate scan plus selected-path traversal is O(E_template+P); fixed-key interning adds its stated
-logarithmic cost. This is a subalgorithm, **not** O(E+P) construction of every explicit ordinary wrapper label.
+expected-constant cost. This is a subalgorithm, **not** O(E+P) construction of every explicit ordinary wrapper label.
 Exported labels, full κ queries and contexts outside this fragment still count in N_f, and the unforced scope
 DAG must not conceal required export work.
 
@@ -7395,8 +7395,7 @@ error; ordinary labels are never merged to make the resource fit. The three gene
 
 **Persistent sets: representation and total accounting.** Use persistent 32-bit radix trees in
 columns, keys ordered by canonical semantic ranks; path copying shares unchanged subtrees. Dense roots/memos use columns.
-Owner-local composite-key dictionaries and operation memos use deterministic comparison trees over constant-size keys; do not rely on average
-hash-table cost for this bound. Variable-length paths, groups and child lists are persistent cons/tree records
+Owner-local composite-key dictionaries and operation memos use *the fixed-key dictionary* below. Variable-length paths, groups and child lists are persistent cons/tree records
 with bounded-size keys; constructing or comparing their sequences uses the tasks below. Physically shared
 nodes are logically registered once to each owner which relies on them. The tree is a fixed bitwise trie with unary paths compressed only canonically: insertion copies at most
 33 nodes, with no median rebuilding. Equal-content sets have the same canonical structure/rank order. Inserting an existing key and union adding no facts return the original destination root; charged
@@ -7424,8 +7423,8 @@ kernel for a pair. Memoise a completed answer only after all fallible checks suc
 provisional cycle knots are private and invalidated on failure. A task runs at most once, reads/writes O(1) already-addressable words and
 creates at most a fixed number of successor requests/notification edges. Iterating a long adjacency run,
 copying a variable-width key, bulk allocation, traversing children and retrying an unsuccessful lookup all
-require continuations. Dictionary navigation of a fixed key may do O(log(N_f+2)) comparisons without a record
-per comparison; variable-key equality is not such a comparison. Source scans outside the account execute
+require continuations. Dictionary navigation of a fixed key may probe at most `probe_length`+1 slots, expected O(1), without a record
+per probe; variable-key equality is not such a comparison. Source scans outside the account execute
 once, O(E), using dense columns/radix ordering over input ids, and only reserve initial tasks. A source seed
 that needs composite lookup first reserves its unique source-event task in O(1) via a dense slot; the lookup
 then belongs to that charged task. This avoids an uncharged E log N term; no uncharged interpreter loop, SCC rescan, polling or repeated
@@ -7440,7 +7439,8 @@ of new semantic allocation, not a licence to execute its body again. All such ev
 **Proof.** Classify every data/task/edge/tree-copy record before allocation: consume its unique source lane or reserve growth;
 never refund within an owner's computation. There are N_f retained records, baseline plus growth as defined below. Every task executes once and
 issues boundedly many requests, every registered edge fires once, and source seeds total O(E). Thus there are
-O(E) direct source steps and O(Σ N_f) charged steps/fixed-key dictionary operations. Their height is O(log(N_f+2)); every
+O(E) direct source steps and O(Σ N_f) charged steps/fixed-key dictionary operations. Each operation probes expected O(1) slots and at
+most `probe_length`+1 (*The fixed-key dictionary* below); a longer probe stops the owner loudly, never slowly; every
 variable-width operation was split into accounted steps. Summing gives the displayed module bound, including
 zero-addition unions, repeated holder activations, failed separation and validation. Workspace teardown happens
 after validation and encoding, not between rounds; normalisation/compaction cannot refund the allowance. In an
@@ -7452,6 +7452,29 @@ These are **real retained memo/continuation records**, used for deduplication, i
 resumption and diagnostics, not a second counter of instructions or rounds. Dropping them to retry work later
 is outside this implementation. The cost counts the full workspace, and the limit guards all records outside the proved source lanes
 (§4.4); counting only final serialized facts would not prove the bound. Instrument category counts separately.
+
+**The fixed-key dictionary** [O 2026-11-02, #1646]. Every composite-key dictionary, memo and intern table is open
+addressing over entry indices (`Ids.Index`, the shape of Zig's `InternPool` maps): a slot holds only an entry's
+index, the keys stay in dense columns (a memo's own key column, or an intern table's records, which then hold each key
+once), and nothing iterates the slots. The hash is fixed: from the seed 0x243f6a8885a308d3 each key word is
+xor-ed in, multiplied by ⌊2⁶⁴/φ⌋ = 0x9e3779b97f4a7c15 and xor-shifted right by 29; the result is xor-ed with its
+high half, and its low bits select the home slot. It reads nothing but the key, so where a key lands never depends
+on the run, the worker count or the address space (§3.8). Collisions probe linearly. The load factor is at most 1/2:
+the slots double, from 16, before an insertion would pass it. Under that load an operation probes an expected O(1)
+slots, so the dictionary contributes **expected O(1) per operation** to every bound of this section, where the
+comparison tree it replaced contributed O(log(N_f+2)). The index keeps the longest displacement of any of its
+entries, and a lookup probes no further, so a miss costs no more than the longest hit. **The probe-length check:**
+an insertion whose displacement would pass `probe_length` (1,024, §4.4) is refused before it writes, and a rehash
+that passes it completes and then refuses, so the index stays correct; the owner then stops with `ownership_limit`
+naming `probe_length`, as for any input/format limit. An adversarial key set is therefore loud and never slow:
+every operation that succeeds probes at most 1,025 slots. The keys are internal ids, not user input. The measured
+longest displacement (2026-11-02) is 42 over the ownership corpus, `run/` with `--ownership-everywhere` and
+FoldCertificate's family, 26 over core and 35 on core `Dict`'s `removeMin` at a 4 M summary size, against the
+expected ln n/(α−1−ln α) ≈ 45 of linear probing at α=1/2. Charges are unchanged: a lookup is still reserved by
+the task that makes it, hit or miss, and the records are those the comparison tree retained. A per-parent chain
+(entries of one lead id linked from a column) was measured for `memo_proj` and `extend_memo` and gained nothing
+measurable (±0.2 % instructions), and a chain's length is its parent's out-degree, which no probe check bounds,
+so every composite key uses the index.
 
 **Source work versus growth [O 2026-10-25, O 2026-10-29].** The resource counter is **G_f**,
 non-source-proportional retained records, not every record of a declaration. Its default allowance **R_f** is
@@ -7606,8 +7629,8 @@ contexts/queries are growth. A callee's raised R never propagates as a required 
 **Whole-module bound with this trigger.** Keep the retained-operation proof above with N_f=B_f+G_f. It gives
 O(E + Σ_f (c S_f+R_f) log(c S_f+R_f+2)) time and O(E + Σ_f (c S_f+R_f)) storage for general analysis; the
 radix-only source kernel takes O(E+Σ S_f) fixed-word work; source seeds that use
-comparison-tree composite dictionaries instead cost O((E+Σ S_f) log(N_max+2)), where N_max=max_f N_f.
-The storage bound B_f≤c S_f holds in both cases; the logarithmic dictionary traversal allocates no
+composite dictionaries add expected O(1) probes per lookup, at most `probe_length`+1, to that work.
+The storage bound B_f≤c S_f holds in both cases; the dictionary probe allocates no
 unaccounted continuation records (an iterative fixed-key lookup). Sum S_f honestly counts import reads per owner,
 not just the bytes in the module. This is not an unrestricted source-linear theorem. Wrapper label products and
 closure-context copies outside direct-obligation lanes remain growth even when their originals were imported, so exponential families still
@@ -7738,6 +7761,7 @@ Existing huge **input/format** limits remain; these are not extra inference budg
 | `ctor_steps` | 2²⁸ | distinct `(constructor, argument)` steps in one module's place table (a step has a 4-bit kind and a 28-bit pair-table index); reserve/check before interning, named `ctor_steps`; never split 28 bits into small independent constructor/argument caps |
 | `declaration_insts` | 2³¹ | written BIR instructions of one declaration |
 | `block_bytes` | 2³¹ | bytes in one module's encoded block |
+| `probe_length` | 1,024 | the displacement of a key in a fixed-key dictionary's index (§4.1 *The fixed-key dictionary*); measured at most 42, against an expected ≈45 at load 1/2; checked before the insertion writes |
 
 v1's precision/round caps (R-7.5) have no counterpart. Their existing small fixtures must get ordinary verdicts,
 not merely be renamed to this limit. Exhaustion is a compiler-resource error with restructure/raise suggestions
@@ -7775,10 +7799,10 @@ L0  Ids
 
 | File | L | Responsibility | Public API | Imports (own2) | Lines |
 |---|---|---|---|---|---|
-| `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1; a table with its columns hoisted (`Columns`) and a memo keyed by one dense id (`IdColumn`) | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce`, `Columns`, `IdColumn` | — | ≤ 1 000 (#1646: `IdColumn`, a column indexed by the id with an epoch per slot; 900 for #1646 and the counters: `Columns`, a table with its columns hoisted; 760 before, S3b slice 4a: which copy of the source lanes a walk takes) |
-| `Counters.zig` | 0 | the data-oriented measurement, behind the hidden build option `-Downership-v2-counters` (off: every stats field is `void` and every hook returns at once): per table dictionary, column and pool counts, totals for a walk's sparse sets, and a census of set and κ-map sizes, attribute demand and `tie`'s kind writes | `enabled`, the stats types and hooks, `write` | — (imported by any file, whatever its layer) | ≤ 570 (#1646: the walks' sparse sets' counts); 520 before |
+| `Ids.zig` | 0 | every id newtype (`PlaceId`, `PathId`, `CellId`, `SetId`, `NodeId`, `OverId`, `CondId`, `SplitId`, `KappaId`, `ClassId`, `UseId`, `DemandId`, `SummaryAccountId`, `TaskId`); the constant-record account/reservation, named input limits, `Charge` (a lane or growth, chosen before an operation), the kernel a walk is in (`Account.enter`/`leave`), chunks, the fixed-key dictionary and one-shot queue primitives of §4.1; a table with its columns hoisted (`Columns`) and a memo keyed by one dense id (`IdColumn`) | types, `Account.reserve`, `Account.limit`, `Charge`, `Task.enqueueOnce`, `Columns`, `IdColumn` | — | ≤ 1 120 (#1646: `Index` and `Interned`, open addressing over entry indices; 1 000 for #1646: `IdColumn`, a column indexed by the id with an epoch per slot; 900 for #1646 and the counters: `Columns`, a table with its columns hoisted; 760 before, S3b slice 4a: which copy of the source lanes a walk takes) |
+| `Counters.zig` | 0 | the data-oriented measurement, behind the hidden build option `-Downership-v2-counters` (off: every stats field is `void` and every hook returns at once): per table dictionary, column and pool counts, totals for a walk's sparse sets, and a census of set and κ-map sizes, attribute demand and `tie`'s kind writes | `enabled`, the stats types and hooks, `write` | — (imported by any file, whatever its layer) | ≤ 580 (#1646: an index's longest displacement; 570 for #1646: the walks' sparse sets' counts); 520 before |
 | `Scratch.zig` | 0 | a walk's working sets (#1646): Briggs–Torczon sparse sets, maps and lead-word dictionaries over dense ids, emptied in O(1), and `Depths`, one slot per walk in progress by depth, whose slots never move | `Set`, `Map`, `Dict`, `Depths` | — (Counters) | ≤ 440 |
-| `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 210 (since #1566: `equals` skips the pairs an earlier walk proved; since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
+| `Place.zig` | 1 | place graphs, steps, canonical paths, holds, opaque slots, structural encoding | `Table`, `of`, `child`, `steps`, `kind`, `holds`, `pathOf`, `encode`, `decode` | Ids | ≤ 1 220 (since #1646: `path_index` reads its keys from the paths; since #1566: `equals` skips the pairs an earlier walk proved; since #1345: `foldsUp` and `levelsOf`, the fold targets and levels of a path on a cycle, memoised per path; since #1253: the first return, its seal, and the walks taking a sealed one whole; one position, one name, `levelPaths` and `expandLevels`, §2.1) |
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 390 (#1485 part B: rule 4's overlap trie `keysOverlap`, its memo and its unit test, §8 slice 4 *As built, part B*); 1 240 before (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Stable.zig` | 2 | stable images (§2.3 *The two pieces that (b) adds, prototyped (4e)*): a graph's canonical form by partition refinement, the move onto an equal graph made before and its precondition, `map`'s knot and `widen`'s components; the shape table is given as `anytype` | `Store`, `Redirect`, `canon`, `moveHolds`, `mapKnot`, `widened`, `sideFact` | Ids | ≤ 500 (4e) |
@@ -7786,7 +7810,7 @@ L0  Ids
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing`, `isAtom` | Ids, Scratch, Place, Cell, Stable | ≤ 4 110 (the counters, `Counters.zig`: the placeholders census); 4 100 for #1570 (`interned` and `rawCopy`, an imported class image kept raw, §8 slice 4 *As built, part 4*); 4 075 for #1485 part 2: C1, a saturated positions node keeps its aggregate, §8 slice 4 *As built, part 2*); 4 025 before #1485 (#1483: the atom rule, `isAtom` and `settle`, §2.3; 4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
 | `CondAlgebra.zig` | 3 | the condition algebra of `Cond.Table`: the three constants, the atoms, `and`, the flat form and the lattice, the lazy `inst` atoms and their resolution (§2.11 *κ across a call*), instantiation, rely, text | `yes/lost/shared`, `and`, the atoms, `flat`, `ofSet`, `join`, `leq`, `instAtom`, `instSet`, `resolved`, `instantiate`, `rely`, `print` (`Cond.Table`'s methods, `Cond`'s names) | Ids, Facts, Cell | ≤ 600 (#1308: split out of `Cond.zig`, 578 lines as moved: the algebra is the part every other part reads, and it needs no shape) |
-| `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Scratch, Shape, CondAlgebra | ≤ 710 (the counters, `Counters.zig`: the κ map requests); 700 for #1308 (split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
+| `Kappa.zig` | 4 | κ storage of `Cond.Table`: per-value immutable κ snapshots, the hash-consed radix maps and the trie of positions, links, merges, folds, relabelling (`relabelMap`, §2.9, §3.4) | `Kappas`, `position`, `kappaGet`, `kappaChild`, `kappaSet`, `kappaAt`, `kappaSetAt`, `kappaLink`, `kappaMerge`, `kappaFold`, `kappaRelabel` | Ids, Scratch, Shape, CondAlgebra | ≤ 720 (since #1646: the κ intern tables read their keys from their records; 710 for the counters, `Counters.zig`: the κ map requests); 700 for #1308 (split out of `Cond.zig`, 679 lines as moved: storage keys snapshots by node and step and derives no condition from cells) |
 | `KappaRead.zig` | 5 | κ reads of `Cond.Table`: the read machine through views and the crossing (`crossAt`, `eqOn`, `diffKeys`, §2.11 *κ across a call*), a view's chain and its home (`chainStored`), the κ derived from a node's cells, the apart aggregates and the path-multiset primitive, shallow `apart`/`sep`, `deep` (a walk of a value's observable frontier, §2.9; `excl` at the path of a projected summary arrival), `lower`, the frontier, `kappaLeq` | `View`, `Item`, `Traversal`, `kappaOf`, `kappaLeq`, `deep`, `sep`, `apart`, `lower`, `frontier`, `classesOf`, `aggCond` | Ids, Scratch, Cell, Shape, CondAlgebra, Kappa | ≤ 3 180 (#1559: rule 4 across the classes of one certificate, `ruleFourAgg`, `certClassesAggs` and `assertClassesSum`, §2.9 rule 4); 3 020 for #1485 part 2: a certificate's class κ read at a position, `ClassPos`, §8 slice 4 *As built, part 2*); 2 980 for part 1 (the fold certificate's readers, rule 4 and (d), *As built, part 1*); 2 730 before #1485 (#1420: `impliedBy`, the check that a read implies what a rebuild dropped, §2.3; #1308: split out of `Cond.zig`, 2 527 lines as moved: every reader of a stored snapshot, which `propagate` and the layers above call; #1473: §2.9 *Two positions of one image* in `apartImage` and `sep`, and *The repeating split*) |
 | `Cond.zig` | 6 | the condition table: its columns, the binding of the four parts' methods to one `Table` (`Propagate`'s `propagate` among them) and `widenValue` | `Table`, `Mode`, `propagate`, `propagateFrom`, `widenValue`, and every name of the four parts | Ids, Scratch, Facts, Cell, Shape, Stable, CondAlgebra, Kappa, KappaRead, Propagate | ≤ 975 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 830 before #1485 (#1543: `propagate` moved to `Propagate.zig`; #1526: `propagate`'s order check, §2.9; 4e: `widenValue` interns its image by canonical form, `fold_cond` in the key, and the check that the move is a bisimulation; #1459: the projection correspondence, `joinImplied` and a group read-off's filter; 4 620 until #1308; the split leaves here the columns, `init`/`deinit`, 169 bindings, `propagate` with its memos and `widenValue`, 1 129 lines as moved) |
 | `Summary.zig` | 7 | the class record and table, lattice (κ joined through `Cond`), normal form, equality, unknown class, text; each fun's selected write-backs (§2.13.6) | `Class`, `join`, `leq`, `eq`, `normalize`, `unknown`, `print` | Ids, Facts, Place, Cell, Shape, Cond | ≤ 1 980 (#1485: the fold certificate's readers, rule 4 and (d), §8 slice 4 *As built, part 1*); 1 925 before #1485 (#1459: a class join merges its members' snapshots first, and a covered arm's drop and cover test carry the join below the root; 1 710 on master; S3b slice 4a: use shapes joined path by path, `UseMerge`, from Rows; 4d: a class join drops what the other side covers, `dropCovered`) |

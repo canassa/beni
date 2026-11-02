@@ -190,12 +190,12 @@ pub const Table = struct {
     /// Keyed by `(origin·kind, a, b, c, place)`: a cell is one object at one
     /// place, so a `result`, `site` or refinement made at another place is
     /// another cell, whatever order made them.
-    intern: Ids.FixedDict(5) = .{},
+    intern: Ids.Interned(5) = .{},
     labels: Ids.Columns(Label) = .empty,
-    label_intern: Ids.FixedDict(3) = .{},
+    label_intern: Ids.Interned(3) = .{},
     splits: Ids.Columns(Split) = .empty,
     /// `(container, label)` → split.
-    split_intern: Ids.FixedDict(2) = .{},
+    split_intern: Ids.Interned(2) = .{},
     sets: Radix = .{},
     /// `R`, `D`, `A` once made: their readers never intern, so no `D` costs nothing.
     mark_r: CellId = .none,
@@ -271,11 +271,11 @@ pub const Table = struct {
     /// against the owning declaration (§4.4).
     pub fn label(t: *Table, gpa: Allocator, account: *Account, inst: u32, callee_label: LabelId, folded: bool) Error!LabelId {
         try account.reserve(.label, 1);
-        const got = try t.label_intern.getOrPut(gpa, .{ inst, callee_label.int(), @intFromBool(folded) });
-        if (got.found_existing) return .from(got.value_ptr.*);
-        got.value_ptr.* = @intCast(t.labels.len());
+        try t.labels.ensureUnusedCapacity(gpa, 1);
+        if (try t.label_intern.getOrInsert(gpa, .{ inst, callee_label.int(), @intFromBool(folded) }, LabelKeys{ .t = t }, t.labels.len())) |hit| return .from(hit);
+        const id: LabelId = .from(@intCast(t.labels.len()));
         try t.labels.append(gpa, .{ .inst = inst, .callee_label = callee_label, .folded = folded, .supplies = .empty });
-        return .from(got.value_ptr.*);
+        return id;
     }
 
     pub fn labelOf(t: *const Table, l: LabelId) Label {
@@ -289,14 +289,36 @@ pub const Table = struct {
 
     // ---- interning ----------------------------------------------------------
 
+    /// The interning keys, rebuilt from each table's records.
+    const CellKeys = struct {
+        t: *const Table,
+        pub fn keyAt(c: CellKeys, i: u32) [5]u32 {
+            const col = c.t.cells.col;
+            return .{ (@as(u32, @backingInt(col.origin[i])) << 8) | @backingInt(col.kind[i]), col.a[i], col.b[i], col.c[i], col.place[i].int() };
+        }
+    };
+    const LabelKeys = struct {
+        t: *const Table,
+        pub fn keyAt(c: LabelKeys, i: u32) [3]u32 {
+            const col = c.t.labels.col;
+            return .{ col.inst[i], col.callee_label[i].int(), @intFromBool(col.folded[i]) };
+        }
+    };
+    const SplitKeys = struct {
+        t: *const Table,
+        pub fn keyAt(c: SplitKeys, i: u32) [2]u32 {
+            const col = c.t.splits.col;
+            return .{ col.container[i].int(), col.label[i].int() };
+        }
+    };
+
     /// The cell `(origin, kind, a, b, c)` at `place`, interned, with its
     /// trie parent. One growth record when new.
     fn internCell(t: *Table, gpa: Allocator, account: *Account, o: Origin, k: Kind, a: u32, b: u32, c: u32, at: PlaceId, trie_parent: CellId) Error!CellId {
         try account.reserve(.cell, 1);
-        const got = try t.intern.getOrPut(gpa, .{ (@as(u32, @backingInt(o)) << 8) | @backingInt(k), a, b, c, at.int() });
-        if (got.found_existing) return .from(got.value_ptr.*);
+        try t.cells.ensureUnusedCapacity(gpa, 1);
+        if (try t.intern.getOrInsert(gpa, .{ (@as(u32, @backingInt(o)) << 8) | @backingInt(k), a, b, c, at.int() }, CellKeys{ .t = t }, t.count())) |hit| return .from(hit);
         const id: CellId = .from(t.count());
-        got.value_ptr.* = id.int();
         try t.cells.append(gpa, .{ .origin = o, .kind = k, .a = a, .b = b, .c = c, .place = at, .parent = trie_parent, .first_child = .none, .last_child = .none, .next_sibling = .none });
         if (trie_parent != .none) {
             const p = trie_parent.int();
@@ -367,7 +389,7 @@ pub const Table = struct {
         var found: CellId = .none;
         while (true) {
             const key = [5]u32{ (@as(u32, @backingInt(o)) << 8) | @backingInt(Kind.ofPlace(places.kind(places.pathPlace(at)))), index, at.int(), j, places.pathPlace(at).int() };
-            if (t.intern.get(key)) |hit| {
+            if (t.intern.get(key, CellKeys{ .t = t })) |hit| {
                 found = .from(hit);
                 break;
             }
@@ -411,7 +433,7 @@ pub const Table = struct {
         while (places.pathParent(at) != .none) {
             const pl = places.pathPlace(at);
             const key = [5]u32{ (@as(u32, @backingInt(Origin.part)) << 8) | @backingInt(Kind.ofPlace(places.kind(pl))), anchor.int(), Ids.none_int, at.int(), pl.int() };
-            if (t.intern.get(key)) |hit| {
+            if (t.intern.get(key, CellKeys{ .t = t })) |hit| {
                 found = .from(hit);
                 break;
             }
@@ -490,11 +512,11 @@ pub const Table = struct {
     /// with `cond` on first sight.
     pub fn split(t: *Table, gpa: Allocator, account: *Account, container: CellId, inst: u32, l: LabelId, cond: CondId) Error!SplitId {
         try account.reserve(.other, 1);
-        const got = try t.split_intern.getOrPut(gpa, .{ container.int(), l.int() });
-        if (got.found_existing) return .from(got.value_ptr.*);
-        got.value_ptr.* = @intCast(t.splits.len());
+        try t.splits.ensureUnusedCapacity(gpa, 1);
+        if (try t.split_intern.getOrInsert(gpa, .{ container.int(), l.int() }, SplitKeys{ .t = t }, t.splits.len())) |hit| return .from(hit);
+        const id: SplitId = .from(@intCast(t.splits.len()));
         try t.splits.append(gpa, .{ .container = container, .inst = inst, .label = l, .cond = cond });
-        return .from(got.value_ptr.*);
+        return id;
     }
 
     pub fn splitOf(t: *const Table, s: SplitId) Split {
@@ -502,7 +524,7 @@ pub const Table = struct {
     }
 
     pub fn findSplit(t: *const Table, container: CellId, l: LabelId) SplitId {
-        return if (t.split_intern.get(.{ container.int(), l.int() })) |s| .from(s) else .none;
+        return if (t.split_intern.get(.{ container.int(), l.int() }, SplitKeys{ .t = t })) |s| .from(s) else .none;
     }
 
     // ---- may-alias --------------------------------------------------------------
@@ -635,7 +657,7 @@ pub const Table = struct {
         return overlap;
     }
 
-    fn keysOverlapTrie(t: *const Table, gpa: Allocator, places: *const Places, keys: SetId) Allocator.Error!struct { overlap: bool, cost: u32 } {
+    fn keysOverlapTrie(t: *const Table, gpa: Allocator, places: *const Places, keys: SetId) Ids.IndexError!struct { overlap: bool, cost: u32 } {
         // A trie node `(origin, index, c, path)`: 1 a key ends there, 0 an
         // inner node.
         var nodes: Ids.FixedDict(4) = .{};
@@ -877,8 +899,8 @@ pub const Radix = struct {
     category: Ids.Category = .set,
     /// Hash-consing: equal contents have one canonical structure, and with
     /// every node interned by `(prefix, mask, left, right)` they have one
-    /// id too.
-    intern: Ids.FixedDict(4) = .{},
+    /// id too. The keys are the nodes themselves (`keyAt`).
+    intern: Ids.Interned(4) = .{},
     stats: Counters.Sets = Counters.zero(Counters.Sets),
 
     pub fn deinit(r: *Radix, gpa: Allocator) void {
@@ -891,6 +913,12 @@ pub const Radix = struct {
         return r.nodes.items[id.int()];
     }
 
+    /// Node `i`'s key in `intern`.
+    pub fn keyAt(r: *const Radix, i: u32) [4]u32 {
+        const n = r.nodes.items[i];
+        return .{ n.prefix, n.mask, n.left.int(), n.right.int() };
+    }
+
     /// One node, interned. The record is reserved BEFORE the dictionary is
     /// touched, so a refused reservation leaves no half-written entry; and
     /// it is reserved on a hit as well as a miss (§4.1: a request reserves
@@ -898,14 +926,13 @@ pub const Radix = struct {
     /// what a request costs never depends on which owner built the node).
     fn make(r: *Radix, gpa: Allocator, charge: Charge, n: RadixNode) Error!SetId {
         try charge.reserve(gpa, r.category, 1);
-        const got = try r.intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left.int(), n.right.int() });
-        if (got.found_existing) {
-            Counters.setMakeRequest(&r.stats, got.value_ptr.*);
-            return .from(got.value_ptr.*);
+        try r.nodes.ensureUnusedCapacity(gpa, 1);
+        if (try r.intern.getOrInsert(gpa, .{ n.prefix, n.mask, n.left.int(), n.right.int() }, r, r.nodes.items.len)) |hit| {
+            Counters.setMakeRequest(&r.stats, hit);
+            return .from(hit);
         }
         const id: SetId = .from(@intCast(r.nodes.items.len));
-        got.value_ptr.* = id.int();
-        try r.nodes.append(gpa, n);
+        r.nodes.appendAssumeCapacity(n);
         try Counters.setMade(&r.stats, gpa, n.mask == 0, n.left.int(), n.right.int());
         Counters.setMakeRequest(&r.stats, id.int());
         return id;
@@ -958,7 +985,7 @@ pub const Radix = struct {
     /// makes it one node): what an inverted index keyed by a cell starts
     /// from (§2.8's `set_head`). Allocates nothing.
     pub fn leafOf(r: *const Radix, key: u32, value: u1) ?SetId {
-        return if (r.intern.get(.{ key, 0, value, Ids.none_int })) |id| .from(id) else null;
+        return if (r.intern.get(.{ key, 0, value, Ids.none_int }, r)) |id| .from(id) else null;
     }
 
     pub fn nodeCount(r: *const Radix) u32 {

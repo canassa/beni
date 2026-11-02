@@ -39,18 +39,21 @@ const layers = [_]Entry{
     // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
     // 900 since #1646 and the counters: `Columns`, a table with its columns hoisted.
     // 1 000 since #1646: `IdColumn`, a memo keyed by one dense id.
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1000 },
+    // 1 120 since #1646: `Index` and `Interned`, open addressing over entry indices.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     // The data-oriented measurement (S0): imported by any file, whatever its
     // layer, and imports nothing of own2/.
     // 570 since #1646: the walks' sparse sets' counts.
-    .{ .file = "Counters.zig", .layer = 0, .max_lines = 570 },
+    // 580 since #1646: an index's longest displacement.
+    .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     // #1646: a walk's sparse sets, in slots by walk depth.
     .{ .file = "Scratch.zig", .layer = 0, .max_lines = 440 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
     // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1210 },
+    // 1 220 since #1646: `path_index` reads its keys from the paths.
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
@@ -82,7 +85,8 @@ const layers = [_]Entry{
     // 700 since #1308: κ storage, the radix maps and the trie of positions,
     // split out of Cond (§5).
     // 710 since the counters (`Counters.zig`): the κ map requests.
-    .{ .file = "Kappa.zig", .layer = 4, .max_lines = 710 },
+    // 720 since #1646: the κ intern tables read their keys from their records.
+    .{ .file = "Kappa.zig", .layer = 4, .max_lines = 720 },
     // 2 560 since #1308: κ reads (the machine, views, the crossing, the
     // aggregates, `deep`, `sep`, `apart`, `lower`, the frontier), split out of
     // Cond (§5).

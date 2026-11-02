@@ -52,7 +52,7 @@ pub const Redirect = struct {
     pub fn contains(r: *const Redirect, k: u32) bool {
         return r.d.get(.{k}) != null;
     }
-    pub fn put(r: *Redirect, gpa: Allocator, k: u32, v: u32) Allocator.Error!void {
+    pub fn put(r: *Redirect, gpa: Allocator, k: u32, v: u32) Ids.IndexError!void {
         (try r.d.getOrPut(gpa, .{k})).value_ptr.* = v;
     }
     pub fn count(r: *const Redirect) u32 {
@@ -305,7 +305,7 @@ pub fn canon(t: anytype, gpa: Allocator, account: *Account, root: NodeId, lo: u3
 /// both are set, one side word (`fold_cond`), no side fact on either, and
 /// references that pair under σ (an external one as it is); σ is
 /// injective on `members`.
-pub fn moveHolds(t: anytype, gpa: Allocator, members: []const u32, redir: *const Redirect, extra: ?Extra) Allocator.Error!bool {
+pub fn moveHolds(t: anytype, gpa: Allocator, members: []const u32, redir: *const Redirect, extra: ?Extra) Ids.IndexError!bool {
     var seen: Redirect = .{};
     defer seen.deinit(gpa);
     var a: std.ArrayList(u32) = .empty;
@@ -463,7 +463,7 @@ pub fn widened(t: anytype, gpa: Allocator, account: *Account, root: NodeId, lo: 
 
 /// Every node the records from `root` reach, into `out` (the check's
 /// "inside the value").
-pub fn reachable(t: anytype, gpa: Allocator, root: NodeId, out: *Redirect) Allocator.Error!void {
+pub fn reachable(t: anytype, gpa: Allocator, root: NodeId, out: *Redirect) Ids.IndexError!void {
     var stack: std.ArrayList(u32) = .empty;
     defer stack.deinit(gpa);
     var rf: std.ArrayList(u32) = .empty;
