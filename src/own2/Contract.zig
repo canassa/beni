@@ -221,7 +221,10 @@ pub const Draft = struct {
     escapes: std.ArrayList(Effect) = .empty,
     labels: std.ArrayList(DraftLabel) = .empty,
 
-    pub const DraftSlot = struct { slot: Rel, open: bool = false, arrivals: std.ArrayList(Arrival) = .empty };
+    /// `wide`: an entry of arrivals that hold at the slot and, by structure,
+    /// at every slot below it (an open entry of its own, §2.10 *Read-off*),
+    /// beside the slot's plain entry.
+    pub const DraftSlot = struct { slot: Rel, open: bool = false, wide: bool = false, arrivals: std.ArrayList(Arrival) = .empty };
     pub const DraftLabel = struct {
         j: u32,
         slot: Rel,
@@ -244,7 +247,7 @@ pub const Draft = struct {
 
     /// The arrivals list of result slot `slot`, made when missing.
     pub fn slotOf(list: *std.ArrayList(DraftSlot), arena: Allocator, slot: Rel) Allocator.Error!*std.ArrayList(Arrival) {
-        for (list.items) |*s| if (s.slot == slot) return &s.arrivals;
+        for (list.items) |*s| if (s.slot == slot and !s.wide) return &s.arrivals;
         try list.append(arena, .{ .slot = slot });
         return &list.items[list.items.len - 1].arrivals;
     }
@@ -254,6 +257,27 @@ pub const Draft = struct {
         for (list.items) |*s| if (s.slot == slot) {
             s.open = true;
         };
+    }
+
+    /// The wide entry of `slot`, made when missing.
+    pub fn wideOf(list: *std.ArrayList(DraftSlot), arena: Allocator, slot: Rel) Allocator.Error!*std.ArrayList(Arrival) {
+        for (list.items) |*s| if (s.slot == slot and s.wide) return &s.arrivals;
+        try list.append(arena, .{ .slot = slot, .open = true, .wide = true });
+        return &list.items[list.items.len - 1].arrivals;
+    }
+
+    /// An arrival at `slot` and, by structure, at every slot below it.
+    pub fn addWide(list: *std.ArrayList(DraftSlot), arena: Allocator, slot: Rel, a: Arrival) Allocator.Error!bool {
+        const arrs = try wideOf(list, arena, slot);
+        for (arrs.items) |x| if (x.eql(a)) return false;
+        try arrs.append(arena, a);
+        return true;
+    }
+
+    /// An arrival of a committed entry, into the entry of the same kind.
+    pub fn addAt(list: *std.ArrayList(DraftSlot), arena: Allocator, slot: Rel, open: bool, a: Arrival) Allocator.Error!bool {
+        if (open) return addWide(list, arena, slot, a);
+        return addArrival(list, arena, slot, a);
     }
 
     pub fn addArrival(list: *std.ArrayList(DraftSlot), arena: Allocator, slot: Rel, a: Arrival) Allocator.Error!bool {
@@ -355,16 +379,31 @@ pub const Table = struct {
     fn putSlots(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Draft.DraftSlot) Allocator.Error!Range {
         std.mem.sort(Draft.DraftSlot, list, slots, struct {
             fn lt(s: *const Slots.Table, a: Draft.DraftSlot, b: Draft.DraftSlot) bool {
-                return s.relLess(a.slot, b.slot);
+                const o = s.relOrder(a.slot, b.slot);
+                if (o != .eq) return o == .lt;
+                return !a.open and b.open;
             }
         }.lt);
         const start: u32 = @intCast(t.res.items.len);
-        for (list) |*s| {
-            if (s.arrivals.items.len == 0) continue;
-            std.mem.sort(Arrival, s.arrivals.items, slots, arrivalLess);
+        var i: usize = 0;
+        while (i < list.len) {
+            // One entry per (slot, open): a wide entry and a type variable's
+            // open one are one entry.
+            var n = i + 1;
+            while (n < list.len and list[n].slot == list[i].slot and list[n].open == list[i].open) n += 1;
             const astart: u32 = @intCast(t.arrivals.items.len);
-            try t.arrivals.appendSlice(gpa, s.arrivals.items);
-            try t.res.append(gpa, .{ .slot = s.slot, .open = s.open, .arrivals = .{ .start = astart, .len = @intCast(s.arrivals.items.len) } });
+            for (list[i..n]) |s| try t.arrivals.appendSlice(gpa, s.arrivals.items);
+            const run = t.arrivals.items[astart..];
+            std.mem.sort(Arrival, run, slots, arrivalLess);
+            var m: usize = 0;
+            for (run) |a| {
+                if (m != 0 and run[m - 1].eql(a)) continue;
+                run[m] = a;
+                m += 1;
+            }
+            t.arrivals.shrinkRetainingCapacity(astart + m);
+            if (m != 0) try t.res.append(gpa, .{ .slot = list[i].slot, .open = list[i].open, .arrivals = .{ .start = astart, .len = @intCast(m) } });
+            i = n;
         }
         return .{ .start = start, .len = @intCast(t.res.items.len - start) };
     }
@@ -372,8 +411,14 @@ pub const Table = struct {
     fn putEffects(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Effect) Allocator.Error!Range {
         std.mem.sort(Effect, list, slots, effectLess);
         const start: u32 = @intCast(t.effects.items.len);
-        try t.effects.appendSlice(gpa, list);
-        return .{ .start = start, .len = @intCast(list.len) };
+        // An effect below a deep one of the same parameter says nothing more.
+        outer: for (list) |x| {
+            for (t.effects.items[start..]) |y| {
+                if (y.j == x.j and y.deep and y.slot != x.slot and continues(slots, y.slot, &.{}, x.slot, true)) continue :outer;
+            }
+            try t.effects.append(gpa, x);
+        }
+        return .{ .start = start, .len = @intCast(t.effects.items.len - start) };
     }
 
     /// Commit a draft: every list in its canonical order (§2.10).
@@ -453,7 +498,7 @@ pub const Table = struct {
         for (t.resOf(r)) |s| {
             var arrs: std.ArrayList(Arrival) = .empty;
             try arrs.appendSlice(arena, t.arrivalsOf(s.arrivals));
-            try out.append(arena, .{ .slot = s.slot, .open = s.open, .arrivals = arrs });
+            try out.append(arena, .{ .slot = s.slot, .open = s.open, .wide = s.open, .arrivals = arrs });
         }
     }
 
@@ -499,11 +544,10 @@ pub const Table = struct {
     }
 
     fn mergeSlots(t: *const Table, arena: Allocator, out: *std.ArrayList(Draft.DraftSlot), r: Range, map: []const u32) Allocator.Error!void {
-        for (t.resOf(r)) |s| if (s.open) try Draft.markOpen(out, arena, s.slot);
         for (t.resOf(r)) |s| for (t.arrivalsOf(s.arrivals)) |a0| {
             var a = a0;
             if (a.kind == .cb) a.j = map[a.j];
-            _ = try Draft.addArrival(out, arena, s.slot, a);
+            _ = try Draft.addAt(out, arena, s.slot, s.open, a);
         };
     }
 
@@ -547,7 +591,7 @@ pub const Table = struct {
     }
 
     /// `within(got, claim)` (§2.10): `got` says no more than `claim`.
-    pub fn within(t: *const Table, arena: Allocator, got: Id, claim: Id) Allocator.Error!bool {
+    pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got: Id, claim: Id) Allocator.Error!bool {
         const g = t.heads.items[got];
         const c = t.heads.items[claim];
         if (g.flags.returns and !c.flags.returns) return false;
@@ -556,7 +600,7 @@ pub const Table = struct {
             if (!(try t.cond(arena, g.res_cond)).weaker(try t.cond(arena, c.res_cond))) return false;
         }
         if (!(try t.cond(arena, g.req)).weaker(try t.cond(arena, c.req))) return false;
-        if (!t.effectsWithin(g.reads, c.reads) or !t.effectsWithin(g.writes, c.writes) or !t.effectsWithin(g.escapes, c.escapes)) return false;
+        if (!t.effectsWithin(slots, g.reads, c.reads) or !t.effectsWithin(slots, g.writes, c.writes) or !t.effectsWithin(slots, g.escapes, c.escapes)) return false;
         // Labels by identity; `cb` arrivals compared through them.
         for (t.labelsOf(g.labels)) |l| {
             const m = t.findLabel(c, l) orelse return false;
@@ -565,12 +609,12 @@ pub const Table = struct {
                 const u = for (t.suppliesOf(m.supplies)) |u| {
                     if (u.k == s.k) break u;
                 } else return false;
-                if (!t.slotsWithin(got, claim, s.res, u.res)) return false;
-                if (!t.effectsWithin(s.kept, u.kept)) return false;
+                if (!t.slotsWithin(slots, got, claim, s.res, u.res)) return false;
+                if (!t.effectsWithin(slots, s.kept, u.kept)) return false;
                 if (!u.cond.no and !(try t.cond(arena, s.cond)).weaker(try t.cond(arena, u.cond))) return false;
             }
         }
-        return t.slotsWithin(got, claim, g.res, c.res);
+        return t.slotsWithin(slots, got, claim, g.res, c.res);
     }
 
     fn findLabel(t: *const Table, h: Head, l: Label) ?Label {
@@ -578,36 +622,65 @@ pub const Table = struct {
         return null;
     }
 
-    fn effectsWithin(t: *const Table, a: Range, b: Range) bool {
+    /// Every effect of `a` is one of `b`'s, or below a deep one of `b`'s.
+    fn effectsWithin(t: *const Table, slots: *const Slots.Table, a: Range, b: Range) bool {
         for (t.effectsOf(a)) |x| {
             const found = for (t.effectsOf(b)) |y| {
-                if (x.j == y.j and x.slot == y.slot and (!x.deep or y.deep)) break true;
+                if (x.j != y.j) continue;
+                if (x.slot == y.slot and (!x.deep or y.deep)) break true;
+                if (y.deep and continues(slots, y.slot, &.{}, x.slot, true)) break true;
             } else false;
             if (!found) return false;
         }
         return true;
     }
 
-    fn slotsWithin(t: *const Table, got: Id, claim: Id, a: Range, b: Range) bool {
+    /// Every arrival of `a` is one of `b`'s at its slot: at the same slot, of an
+    /// entry of the same kind, or of an open entry of `b` above it, continued
+    /// by the steps between (an atom is the same at every slot below).
+    fn slotsWithin(t: *const Table, slots: *const Slots.Table, got: Id, claim: Id, a: Range, b: Range) bool {
         for (t.resOf(a)) |x| {
-            const y = for (t.resOf(b)) |y| {
-                if (y.slot == x.slot) break y;
-            } else return false;
+            const xw = slots.relWords(x.slot);
             for (t.arrivalsOf(x.arrivals)) |p| {
-                const found = for (t.arrivalsOf(y.arrivals)) |q| {
-                    if (p.kind != q.kind) continue;
-                    if (p.kind == .cb) {
-                        const lp = t.labelAt(got, p.j);
-                        const lq = t.labelAt(claim, q.j);
-                        if (lp.j == lq.j and lp.slot == lq.slot and std.mem.eql(u32, &lp.origin, &lq.origin)) break true;
-                        continue;
-                    }
-                    if (p.eql(q)) break true;
+                const found = for (t.resOf(b)) |y| {
+                    const yw = slots.relWords(y.slot);
+                    if (yw.len > xw.len or !std.mem.eql(u32, yw, xw[0..yw.len])) continue;
+                    const suffix = xw[yw.len..];
+                    if (suffix.len == 0 and x.open and !y.open) continue;
+                    if (suffix.len != 0 and !y.open) continue;
+                    if (t.arrivalsHas(slots, got, claim, y.arrivals, p, suffix)) break true;
                 } else false;
                 if (!found) return false;
             }
         }
         return true;
+    }
+
+    /// Whether `run` holds `p` once continued by `suffix`.
+    fn arrivalsHas(t: *const Table, slots: *const Slots.Table, got: Id, claim: Id, run: Range, p: Arrival, suffix: []const u32) bool {
+        for (t.arrivalsOf(run)) |q| {
+            if (p.kind != q.kind) continue;
+            switch (p.kind) {
+                .fresh, .top => return true,
+                .shared => if (p.j == q.j and p.slot == q.slot) return true,
+                .cb => {
+                    const lp = t.labelAt(got, p.j);
+                    const lq = t.labelAt(claim, q.j);
+                    if (lp.j == lq.j and lp.slot == lq.slot and std.mem.eql(u32, &lp.origin, &lq.origin) and continues(slots, q.slot, suffix, p.slot, false)) return true;
+                },
+                .param => if (p.j == q.j and (!p.deep or q.deep) and continues(slots, q.slot, suffix, p.slot, q.deep)) return true,
+            }
+        }
+        return false;
+    }
+
+    /// Whether slot `p` is `q` continued by `suffix` (or below it, `deep`).
+    fn continues(slots: *const Slots.Table, q: Rel, suffix: []const u32, p: Rel, deep: bool) bool {
+        const qw = slots.relWords(q);
+        const pw = slots.relWords(p);
+        if (pw.len < qw.len or !std.mem.eql(u32, qw, pw[0..qw.len])) return false;
+        if (deep) return true;
+        return std.mem.eql(u32, pw[qw.len..], suffix);
     }
 };
 
@@ -707,6 +780,7 @@ fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *cons
         try w.writeAll(if (first) " " else ", ");
         first = false;
         try relText(slots, places, names, w, s.slot);
+        if (s.open) try w.writeAll("…");
         for (t.arrivalsOf(s.arrivals)) |a| switch (a.kind) {
             .param => {
                 try w.print(" π{d}", .{a.j + 1});
@@ -809,5 +883,5 @@ test "a join keeps every result slot of both sides" {
     const b = try t.commit(gpa, &account, &slots, &db);
     const j = try t.join(gpa, arena, &account, &slots, a, b);
     try testing.expectEqual(@as(u32, 2), t.head(j).res.len);
-    try testing.expect(try t.within(arena, a, j) and try t.within(arena, b, j) and !try t.within(arena, j, a));
+    try testing.expect(try t.within(arena, &slots, a, j) and try t.within(arena, &slots, b, j) and !try t.within(arena, &slots, j, a));
 }
