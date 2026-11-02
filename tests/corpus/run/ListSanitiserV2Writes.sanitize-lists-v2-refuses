@@ -1,0 +1,2 @@
+# #1704: under v2 a core call's result reads as unknown (core's contracts are pessimistic), so the push of `List.range`'s fresh list is refused. Remove this file when #1704 lands.
+64:23 list_may_be_shared List.push

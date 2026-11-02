@@ -1,4 +1,0 @@
-RecordSameCall f: lines 16-19 (not built: record_update)
-RecordSameCall h: lines 22-25 (not built: record_update)
-RecordSameCall nested: lines 28-31 (not built: call)
-RecordSameCall twice: lines 34-37 (not built: call)
