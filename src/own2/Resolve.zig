@@ -85,6 +85,7 @@ const Resolver = struct {
     /// Each leaf's base keys and the escape index (§2.8).
     keys: Holders.Keys = .{},
     escapes: Holders.Escapes = .{},
+    ops: Holders.Operands = .{},
     /// Whether a judgement's aggregated holders add to the frame's `req`:
     /// a demand's do, a label's supplied part's are judged one by one.
     aggregate: bool = false,
@@ -107,6 +108,7 @@ const Resolver = struct {
         r.ancestry.deinit(r.gpa());
         r.keys.deinit(r.gpa());
         r.escapes.deinit(r.gpa());
+        r.ops.deinit(r.gpa());
     }
 
     /// The holder index (§2.8): every bound local that is used after its
@@ -175,18 +177,6 @@ const Resolver = struct {
         return keys.items;
     }
 
-    /// Whether `l` is a parameter's untagged target, not a cell's `◆`
-    /// (§2.8, *Holder entries judged by base leaves*, step 2).
-    fn paramTarget(r: *Resolver, l: Value.Leaf) bool {
-        const fr = r.f();
-        if (l.kind != .ref or l.tags != 0 or fr.roots.items[l.root].kind != .param) return false;
-        if (l.at_pos) {
-            const tp = fr.pos.items[l.pos];
-            if (tp.kind == .plain and Place.Step.fromWord(tp.a).kind == .contents) return false;
-        }
-        return true;
-    }
-
     /// The buckets of the holders that may hold target `t` (§2.8): the
     /// unknown one; for a parameter's untagged target judged with
     /// aggregation, the buckets at related positions (true: every other
@@ -196,7 +186,7 @@ const Resolver = struct {
         const g = r.gpa();
         const l = r.f().leafAt(t);
         if (r.live.unknownBucket()) |b| try out.append(g, b);
-        if (r.aggregate and r.paramTarget(l)) {
+        if (r.aggregate and Holders.paramTarget(r.f(), l)) {
             try r.live.related(r.ev(), l.pos, out);
             return true;
         }
@@ -230,6 +220,7 @@ const Resolver = struct {
             try fr.charge(.inspection, 1);
             if (r.live.visited(hi)) continue;
             const h = r.live.holders.items[hi];
+            if (!try r.usedAfter(h.local, point)) continue;
             var all = true;
             for (r.live.holdsOf(hi), 0..) |hd, k| {
                 if (!hd.agg or hd.done) continue;
@@ -245,6 +236,7 @@ const Resolver = struct {
             try fr.charge(.inspection, 1);
             if (r.live.visited(hi)) continue;
             const local = r.live.holders.items[hi].local;
+            if (!try r.usedAfter(local, point)) continue;
             for (r.live.holdsOf(hi)) |hd| if (hd.agg and (try r.aggHold(local, hd, t, point, relied))[0]) return;
         }
     }
@@ -313,6 +305,15 @@ const Resolver = struct {
             }
         }
         return best;
+    }
+
+    /// Whether local `h` has a use after `point` compatible with it, at
+    /// any path: one range query, before a query per hold.
+    fn usedAfter(r: *Resolver, h: u32, point: u32) Error!bool {
+        const w = r.e.w;
+        if (h >= w.index.by_local.len) return false;
+        try r.f().charge(.region, 1);
+        return (try w.index.firstAfter(r.gpa(), .growth(r.account()), w.index.by_local[h], point, r.regions.rank2(point))) != null;
     }
 
     /// Whether a use reads the hold at `q` (§2.7): a whole or field use does;
@@ -395,11 +396,19 @@ const Resolver = struct {
             o.exactness = .approximate;
             return line;
         }
-        for (w.valuesOfRun(d.operands)) |v| {
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(g);
-            try r.ev().leavesOf(v, 0, &ls);
-            for (ls.items) |l| for (targets) |t| {
+        // A call's other arguments by the operand index (§2.8 step 4): the
+        // aggregated ones join `req` once, at the end.
+        const by_call = r.aggregate and d.call != none and !fr.calls.items[d.call].virtual and d.operands.len + 1 == fr.calls.items[d.call].args.len;
+        var writes: std.ArrayList([3]u32) = .empty;
+        defer writes.deinit(g);
+        var ols: std.ArrayList(u32) = .empty;
+        defer ols.deinit(g);
+        for (targets) |t| {
+            ols.clearRetainingCapacity();
+            if (by_call) {
+                if (try r.ops.judged(r.ev(), &r.keys, d.call, d.arg, t, &relied, &ols)) try writes.append(g, .{ d.call, d.arg, t });
+            } else for (w.valuesOfRun(d.operands)) |v| try r.ev().leavesOf(v, 0, &ols);
+            for (ols.items) |l| {
                 const ov = try Distinct.overlap(r.ev(), l, t, true);
                 switch (ov.kind) {
                     .no => {},
@@ -409,7 +418,7 @@ const Resolver = struct {
                         return line;
                     },
                 }
-            };
+            }
         }
         // A kept supply written by a known code.
         if (d.kept or d.many) {
@@ -494,6 +503,7 @@ const Resolver = struct {
         // What the aggregated holders added is in `req` from now on.
         for (done_holds.items) |k| r.live.holds.items[k].done = true;
         for (dones.items) |hi| r.live.aggDone(hi);
+        try r.ops.writes.appendSlice(g, writes.items);
         line.extra = try relied.cond(r.ev().arena, r.account());
         r.e.ev.f.account.in_demands = false;
         return line;
@@ -629,6 +639,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     const lines = try arena.alloc(Line, e.demands.items.len);
     // Each condition gathered over its judgements and made once (§2.9.4).
     var req: Holders.Gather = .{};
+    try r.ops.finish(&e.ev, &r.keys, &req);
     var kept: std.ArrayList([3]u32) = .empty;
     const conds = try arena.alloc(Holders.Gather, f.cbs.items.len);
     @memset(conds, .{});

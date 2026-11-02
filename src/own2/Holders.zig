@@ -1,6 +1,7 @@
 //! L8: what resolution reads of a frame's leaves, built once per
 //! resolution (`docs/design/ownership-v2.md` §2.8): each leaf's base keys
-//! (*Base keys*), and the escape index (*The escape index*). The holder
+//! (*Base keys*), the escape index (*The escape index*) and the operand
+//! index (*Operands*). The holder
 //! index is `Sweep`'s.
 //!
 //! Obligations kept here: O2's resolution half reads the escapes through
@@ -15,6 +16,8 @@ const Contract = @import("Contract.zig");
 const Slots = @import("Slots.zig");
 const Walk = @import("Walk.zig");
 const Regions = @import("Regions.zig");
+const Value = @import("Value.zig");
+const Place = @import("Place.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -449,6 +452,169 @@ pub const Escapes = struct {
             return false;
         }
     };
+};
+
+/// Whether `l` is a parameter's untagged target, not a cell's `◆` (§2.8,
+/// *Holder entries judged by base leaves*, step 2).
+pub fn paramTarget(f: *const Value.Frame, l: Value.Leaf) bool {
+    if (l.kind != .ref or l.tags != 0 or f.roots.items[l.root].kind != .param) return false;
+    if (l.at_pos) {
+        const tp = f.pos.items[l.pos];
+        if (tp.kind == .plain and Place.Step.fromWord(tp.a).kind == .contents) return false;
+    }
+    return true;
+}
+
+/// A call's operands by their base keys (§2.8 step 4, #1714): its
+/// arguments' leaves, made once a resolution. A leaf whose keys are
+/// parameters' only is *aggregated*: against a parameter's untagged target
+/// at a position its keys are not related to, it answers no or `under` an
+/// apart selection of its own and the target's (*the factorisation*). So a
+/// write of argument `j` judges only the other arguments' other leaves and
+/// those of its target's parameter at related positions; the target's
+/// selection joins when an aggregated leaf answers `under`, and each
+/// aggregated leaf's own once a resolution (`finish`), at a write of
+/// another argument that was accepted.
+pub const Operands = struct {
+    /// Per call: its run of `calls`, `none` while not made.
+    at: std.ArrayList(u32) = .empty,
+    calls: std.ArrayList(Run) = .empty,
+    items: std.ArrayList(Item) = .empty,
+    /// Per call, `(parameter, position, item)` of its aggregated items'
+    /// parameter keys, sorted; and its other items.
+    keyed: std.ArrayList([3]u32) = .empty,
+    plain: std.ArrayList(u32) = .empty,
+    /// The accepted writes judged with aggregation: `(call, argument, target)`.
+    writes: std.ArrayList([3]u32) = .empty,
+    mark: std.ArrayList(u32) = .empty,
+    query: u32 = 0,
+
+    const Run = struct { items: [2]u32, keyed: [2]u32, plain: [2]u32 };
+    pub const Item = struct { leaf: u32, arg: u32, agg: bool };
+
+    pub fn deinit(x: *Operands, g: Allocator) void {
+        inline for (.{ &x.at, &x.plain, &x.mark }) |l| l.deinit(g);
+        x.calls.deinit(g);
+        x.items.deinit(g);
+        x.keyed.deinit(g);
+        x.writes.deinit(g);
+    }
+
+    fn make(x: *Operands, ev: *Relation.Eval, keys: *Keys, call: u32) Error!Run {
+        const g = ev.gpa();
+        if (call >= x.at.items.len) try x.at.appendNTimes(g, none, call + 1 - x.at.items.len);
+        if (x.at.items[call] != none) return x.calls.items[x.at.items[call]];
+        var run: Run = .{ .items = .{ @intCast(x.items.items.len), 0 }, .keyed = .{ @intCast(x.keyed.items.len), 0 }, .plain = .{ @intCast(x.plain.items.len), 0 } };
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(g);
+        for (ev.f.calls.items[call].args, 0..) |a, k| {
+            ls.clearRetainingCapacity();
+            try ev.leavesOf(a, 0, &ls);
+            for (ls.items) |l| {
+                try ev.f.charge(.inspection, 1);
+                const ks = try keys.of(ev, l);
+                const i: u32 = @intCast(x.items.items.len);
+                try x.items.append(g, .{ .leaf = l, .arg = @intCast(k), .agg = !ks.unknown });
+                try x.mark.append(g, 0);
+                if (ks.unknown) try x.plain.append(g, i) else for (ks.keys) |kk| if (kk[0] == 0) try x.keyed.append(g, .{ kk[1], kk[2], i });
+            }
+        }
+        run.items[1] = @as(u32, @intCast(x.items.items.len)) - run.items[0];
+        run.keyed[1] = @as(u32, @intCast(x.keyed.items.len)) - run.keyed[0];
+        run.plain[1] = @as(u32, @intCast(x.plain.items.len)) - run.plain[0];
+        const kd = x.keyed.items[run.keyed[0]..][0..run.keyed[1]];
+        try ev.f.charge(.inspection, @intCast(1 + kd.len));
+        std.mem.sort([3]u32, kd, {}, struct {
+            fn lt(_: void, a: [3]u32, b: [3]u32) bool {
+                return std.mem.order(u32, &a, &b) == .lt;
+            }
+        }.lt);
+        x.at.items[call] = @intCast(x.calls.items.len);
+        try x.calls.append(g, run);
+        return run;
+    }
+
+    /// Call `call`'s operand leaves a write of argument `j` judges against
+    /// target `t` one by one (`out`, leaf ids); true when `t` is a
+    /// parameter's untagged target and the others are aggregated (`T(t)`
+    /// then joins `relied` through one that answers `under`).
+    pub fn judged(x: *Operands, ev: *Relation.Eval, keys: *Keys, call: u32, j: u32, t: u32, relied: *Gather, out: *std.ArrayList(u32)) Error!bool {
+        const g = ev.gpa();
+        const f = ev.f;
+        const run = try x.make(ev, keys, call);
+        const items = x.items.items[run.items[0]..][0..run.items[1]];
+        const tl = f.leafAt(t);
+        if (!paramTarget(f, tl)) {
+            for (items) |it| if (it.arg != j) try out.append(g, it.leaf);
+            return false;
+        }
+        x.query += 1;
+        for (x.plain.items[run.plain[0]..][0..run.plain[1]]) |i| if (x.items.items[i].arg != j) {
+            x.mark.items[i] = x.query;
+            try out.append(g, x.items.items[i].leaf);
+        };
+        const a = f.roots.items[tl.root].a;
+        const kd = x.keyed.items[run.keyed[0]..][0..run.keyed[1]];
+        try ev.f.charge(.inspection, std.math.log2_int_ceil(u32, @intCast(kd.len + 1)) + 1);
+        var at = std.sort.partitionPoint([3]u32, kd, a, struct {
+            fn below(p: u32, e: [3]u32) bool {
+                return e[0] < p;
+            }
+        }.below);
+        while (at < kd.len and kd[at][0] == a) : (at += 1) {
+            const i = kd[at][2];
+            if (x.mark.items[i] == x.query or x.items.items[i].arg == j) continue;
+            if ((try f.related(kd[at][1], tl.pos)).rel != .related) continue;
+            x.mark.items[i] = x.query;
+            try out.append(g, x.items.items[i].leaf);
+        }
+        // `T(t)`: the first aggregated leaf that answers `under`.
+        for (run.items[0]..run.items[0] + run.items[1]) |i| {
+            const it = x.items.items[i];
+            if (it.arg == j or x.mark.items[i] == x.query) continue;
+            try ev.f.charge(.inspection, 1);
+            const o = try Distinct.overlap(ev, it.leaf, t, true);
+            if (o.kind == .under) {
+                try relied.add(g, ev.account(), o.cond);
+                break;
+            }
+        }
+        return true;
+    }
+
+    /// Each aggregated leaf's own selection, into `req`: through a write of
+    /// another argument of its call that was accepted with aggregation and
+    /// for whose target it was aggregated and answers `under`.
+    pub fn finish(x: *Operands, ev: *Relation.Eval, keys: *Keys, req: *Gather) Error!void {
+        const f = ev.f;
+        std.mem.sort([3]u32, x.writes.items, {}, struct {
+            fn lt(_: void, a: [3]u32, b: [3]u32) bool {
+                return std.mem.order(u32, &a, &b) == .lt;
+            }
+        }.lt);
+        var w: usize = 0;
+        while (w < x.writes.items.len) {
+            const call = x.writes.items[w][0];
+            var end = w;
+            while (end < x.writes.items.len and x.writes.items[end][0] == call) end += 1;
+            const run = try x.make(ev, keys, call);
+            for (x.items.items[run.items[0]..][0..run.items[1]]) |it| for (x.writes.items[w..end]) |wr| {
+                try f.charge(.inspection, 1);
+                if (it.arg == wr[1] or !it.agg) continue;
+                const tl = f.leafAt(wr[2]);
+                const ks = try keys.of(ev, it.leaf);
+                const near = for (ks.keys) |kk| {
+                    if (kk[0] == 0 and kk[1] == f.roots.items[tl.root].a and (try f.related(kk[2], tl.pos)).rel == .related) break true;
+                } else false;
+                if (near) continue;
+                const o = try Distinct.overlap(ev, it.leaf, wr[2], true);
+                if (o.kind != .under) continue;
+                try req.add(ev.gpa(), ev.account(), o.cond);
+                break;
+            };
+            w = end;
+        }
+    }
 };
 
 /// Whether effect run `r` (sorted by parameter, then canonical key, §2.10)
