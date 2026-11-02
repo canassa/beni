@@ -177,6 +177,8 @@ pub const Effect = struct {
     j: u32,
     slot: Rel,
     deep: bool = false,
+    /// A read: the reads of a tree below `slot` (§2.10, *Effects as trees*).
+    node: Node = 0,
 };
 
 /// A stored condition: `no`, or a run of `occs`.
@@ -221,6 +223,7 @@ pub const Head = struct {
     /// `res` as a result tree: its root node.
     res_root: Node = 0,
     res_cond: StoredCond = .{},
+    /// One tree a parameter (`Table.readsOf`).
     reads: Range = .{},
     writes: Range = .{},
     req: StoredCond = .{},
@@ -305,7 +308,7 @@ pub const Draft = struct {
     }
 
     pub fn addEffect(list: *std.ArrayList(Effect), arena: Allocator, e: Effect) Allocator.Error!bool {
-        for (list.items) |*x| if (x.j == e.j and x.slot == e.slot) {
+        for (list.items) |*x| if (x.j == e.j and x.slot == e.slot and x.node == e.node) {
             if (e.deep and !x.deep) {
                 x.deep = true;
                 return true;
@@ -327,6 +330,8 @@ pub const Draft = struct {
 pub const Table = struct {
     heads: std.ArrayList(Head) = .empty,
     effects: std.ArrayList(Effect) = .empty,
+    /// The reads: `(j, tree)` a parameter.
+    eroots: std.ArrayList([2]u32) = .empty,
     occs: std.ArrayList(u64) = .empty,
     labels: std.ArrayList(Label) = .empty,
     supplies: std.ArrayList(Supply) = .empty,
@@ -337,6 +342,7 @@ pub const Table = struct {
         t.trees.deinit(gpa);
         t.heads.deinit(gpa);
         t.effects.deinit(gpa);
+        t.eroots.deinit(gpa);
         t.occs.deinit(gpa);
         t.labels.deinit(gpa);
         t.supplies.deinit(gpa);
@@ -347,6 +353,9 @@ pub const Table = struct {
     }
     pub fn effectsOf(t: *const Table, r: Range) []const Effect {
         return t.effects.items[r.start..][0..r.len];
+    }
+    pub fn readsOf(t: *const Table, r: Range) []const [2]u32 {
+        return t.eroots.items[r.start..][0..r.len];
     }
     pub fn labelsOf(t: *const Table, r: Range) []const Label {
         return t.labels.items[r.start..][0..r.len];
@@ -410,6 +419,44 @@ pub const Table = struct {
             try t.effects.append(gpa, x);
         }
         return .{ .start = start, .len = @intCast(t.effects.items.len - start) };
+    }
+
+    /// A draft's reads as one tree a parameter (§2.10, *Effects as trees*):
+    /// a deep read covers what is below it.
+    fn putReads(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []const Effect) Ids.IndexError!Range {
+        const start: u32 = @intCast(t.eroots.items.len);
+        var memo: Ids.FixedDict(2) = .{};
+        defer memo.deinit(gpa);
+        var js: std.ArrayList(u32) = .empty;
+        defer js.deinit(gpa);
+        for (list) |e| if (std.mem.indexOfScalar(u32, js.items, e.j) == null) try js.append(gpa, e.j);
+        std.mem.sort(u32, js.items, {}, std.sort.asc(u32));
+        for (js.items) |j| {
+            var r: Draft.Res = .{};
+            defer {
+                r.items.deinit(gpa);
+                r.has.deinit(gpa);
+                r.marked.deinit(gpa);
+            }
+            for (list) |e| {
+                if (e.j != j) continue;
+                _ = if (e.node != 0) try Draft.addNode(&r, gpa, e.slot, e.node) else if (e.deep) try Draft.addWide(&r, gpa, e.slot, Forest.mark) else try Draft.addArrival(&r, gpa, e.slot, Forest.mark);
+            }
+            const n = try Forest.foldDeep(&t.trees, gpa, &memo, try t.putRes(gpa, slots, &r, &.{}));
+            if (n != 0) try t.eroots.append(gpa, .{ j, n });
+        }
+        return .{ .start = start, .len = @intCast(t.eroots.items.len - start) };
+    }
+
+    fn readsWithin(t: *const Table, arena: Allocator, a: Range, b: Range) Ids.IndexError!bool {
+        var memo: Ids.FixedDict(2) = .{};
+        for (t.readsOf(a)) |x| {
+            const y = for (t.readsOf(b)) |y| {
+                if (y[0] == x[0]) break y[1];
+            } else 0;
+            if (!try Forest.effectsWithin(&t.trees, arena, &memo, x[1], y)) return false;
+        }
+        return true;
     }
 
     // ---- result trees (§2.10, *a contract is a tree of shared subtrees*) ---
@@ -513,7 +560,7 @@ pub const Table = struct {
         // The result and the supplies name the labels by their sorted order.
         h.res_root = try t.putRes(gpa, slots, &d.res, rank);
         h.res_cond = try t.putCond(gpa, slots, d.res_cond);
-        h.reads = try t.putEffects(gpa, slots, d.reads.items);
+        h.reads = try t.putReads(gpa, slots, d.reads.items);
         h.writes = try t.putEffects(gpa, slots, d.writes.items);
         h.req = try t.putCond(gpa, slots, d.req);
         h.escapes = try t.putEffects(gpa, slots, d.escapes.items);
@@ -546,7 +593,7 @@ pub const Table = struct {
         var d: Draft = .{ .arity = h.arity, .flags = h.flags };
         d.res.base = h.res_root;
         d.res_cond = try t.cond(arena, h.res_cond);
-        try d.reads.appendSlice(arena, t.effectsOf(h.reads));
+        for (t.readsOf(h.reads)) |x| try d.reads.append(arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         try d.writes.appendSlice(arena, t.effectsOf(h.writes));
         d.req = try t.cond(arena, h.req);
         try d.escapes.appendSlice(arena, t.effectsOf(h.escapes));
@@ -599,7 +646,7 @@ pub const Table = struct {
             }
         }
         try t.mergeRes(gpa, slots, &d.res, hb.res_root, map);
-        for (t.effectsOf(hb.reads)) |e| _ = try Draft.addEffect(&d.reads, arena, e);
+        for (t.readsOf(hb.reads)) |x| _ = try Draft.addEffect(&d.reads, arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         for (t.effectsOf(hb.writes)) |e| _ = try Draft.addEffect(&d.writes, arena, e);
         for (t.effectsOf(hb.escapes)) |e| _ = try Draft.addEffect(&d.escapes, arena, e);
     }
@@ -621,7 +668,7 @@ pub const Table = struct {
         if (x.arity != y.arity or @as(u8, @bitCast(x.flags)) != @as(u8, @bitCast(y.flags))) return false;
         if (!t.condEql(x.res_cond, y.res_cond) or !t.condEql(x.req, y.req)) return false;
         if (x.res_root != y.res_root) return false;
-        if (!t.effectsEql(x.reads, y.reads) or !t.effectsEql(x.writes, y.writes) or !t.effectsEql(x.escapes, y.escapes)) return false;
+        if (!std.mem.eql([2]u32, t.readsOf(x.reads), t.readsOf(y.reads)) or !t.effectsEql(x.writes, y.writes) or !t.effectsEql(x.escapes, y.escapes)) return false;
         if (x.labels.len != y.labels.len) return false;
         for (t.labelsOf(x.labels), t.labelsOf(y.labels)) |p, q| {
             if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls) return false;
@@ -644,7 +691,7 @@ pub const Table = struct {
     }
 
     /// `within(got, claim)` (§2.10): `got` says no more than `claim`.
-    pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got: Id, claim: Id) Allocator.Error!bool {
+    pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got: Id, claim: Id) Ids.IndexError!bool {
         const g = t.heads.items[got];
         const c = t.heads.items[claim];
         if (g.flags.returns and !c.flags.returns) return false;
@@ -653,7 +700,7 @@ pub const Table = struct {
             if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
         }
         if (!(try t.cond(arena, g.req)).weakerIn(slots, try t.cond(arena, c.req))) return false;
-        if (!t.effectsWithin(slots, g.reads, c.reads) or !t.effectsWithin(slots, g.writes, c.writes) or !t.effectsWithin(slots, g.escapes, c.escapes)) return false;
+        if (!try t.readsWithin(arena, g.reads, c.reads) or !t.effectsWithin(slots, g.writes, c.writes) or !t.effectsWithin(slots, g.escapes, c.escapes)) return false;
         const ids: [2]Id = .{ got, claim };
         // Labels by identity; `cb` arrivals compared through them.
         for (t.labelsOf(g.labels)) |l| {
