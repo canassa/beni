@@ -23,27 +23,37 @@
 --! stops. Every operation on a closed socket is total, so a model may hold
 --! one.
 --!
---! Written over `Js`. A socket is the object `{ w, q, r, o, e, l, k, opened,
---! u }`: the host's `WebSocket`, the messages no one has read, the fibers
---! waiting in `read`, the fiber waiting in `connect` for the open (or
---! null), the end once there is one (or null), the subscription's send (or
---! null), whether a subscription opened it, whether it has opened, and the
---! URL as the program wrote it, for the console's line.
+--! Native handles and callbacks retain their types. Message and reader queues
+--! use the shared core storage module; connection policy stays in beni.
 
+import Browser.Host.Console as Console
+import Browser.Host.Document as Document
+import Browser.Host.RegExp as HostRegExp
 import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.URL as URL
 import Browser.Host.Uint8Array as Uint8Array
+import Browser.Host.WebSocket as Native
 import Cmd exposing (Cmd)
 import Js
+import Js.Chain as Chain
+import Js.Protocol as Protocol
 import Sub exposing (Sub)
 import Task exposing (Resume)
 
 
-type alias V =
-    Js.Value
-
-
 --| A connection. Two sockets are equal only when they are one connection.
-pub foreign type Socket
+pub opaque type Socket
+    = Socket
+        { native : Native.WebSocket
+        , messages : Chain.Chain String
+        , readers : Chain.Chain (Resume (Result Close String))
+        , opening : Js.Ref (Maybe (Resume Bool))
+        , ending : Js.Ref (Maybe Close)
+        , listener : Js.Ref (Maybe (Event → ⊤))
+        , listened : Bool
+        , opened : Js.Ref Bool
+        , url : String
+        }
 
 
 --| Whether `a` and `b` are one connection: `==` on a model that holds a
@@ -120,7 +130,7 @@ connect url protocols use =
             Ok s →
                 opened = Task.callback λresume → waitOpen s resume
                 if opened then
-                    Ok (use (Js.to s))
+                    Ok (use s)
                 else
                     Err Unreachable
 
@@ -130,7 +140,7 @@ connect url protocols use =
 --| message before the end was read. A subscription's socket hands every
 --| message to the subscription, so `read` on it answers only the end.
 pub read : Socket → Result Close String
-read socket = Task.callback λresume → take (Js.from socket) resume
+read socket = Task.callback λresume → take socket resume
 
 
 --| Send `text` as one message: `Err NotOpen` when the connection is not
@@ -139,11 +149,9 @@ read socket = Task.callback λresume → take (Js.from socket) resume
 --| `network.websocket.max-message-size`); nothing catches that, so it is a
 --| defect, by choice (#542).
 pub write : Socket, String → Result WriteError ⊤
-write socket text =
-    s = Js.from socket
-    w = Js.get s "w"
-    if Js.isNull (Js.get s "e") && Js.to (Js.get w "readyState") == 1 then
-        _ = Js.call w "send" [ Js.from text ]
+write (Socket s) text =
+    if Js.read s.ending == Nothing && Native.readyState s.native == 1 then
+        Native.send s.native text
         Ok ⊤
     else
         Err NotOpen
@@ -158,25 +166,21 @@ close socket why =
     else if utf8Length why.reason > 123 then
         Err ReasonTooLong
     else
-        w = Js.get (Js.from socket) "w"
-        if Js.to (Js.get w "readyState") ≤ 1 then
-            _ = Js.call w "close" [ Js.from why.code, Js.from why.reason ]
-            Ok ⊤
-        else
-            Ok ⊤
+        Socket s = socket
+        if Native.readyState s.native ≤ 1 then
+            Native.close s.native why.code why.reason
+        Ok ⊤
 
 
 --| The bytes `write` accepted that the host has not sent yet; 0 once the
 --| connection has ended, since nothing more will be sent.
 pub buffered : Socket → Int
-buffered socket =
-    s = Js.from socket
-    if Js.isNull (Js.get s "e") then Js.to (Js.get (Js.get s "w") "bufferedAmount") else 0
+buffered (Socket s) = if Js.read s.ending == Nothing then Native.bufferedAmount s.native else 0
 
 
 --| The subprotocol the server chose, or `""`.
 pub protocol : Socket → String
-protocol socket = Js.to (Js.get (Js.get (Js.from socket) "w") "protocol")
+protocol (Socket s) = Native.protocol s.native
 
 
 -- ---------------------------------------------------------------------------
@@ -227,66 +231,43 @@ hold url protocols emit =
         Err error →
             emit (Failed error)
             λ⊤ → ⊤
-
-        Ok s →
-            Js.set s "l" (Js.from emit)
-
+        Ok ((Socket state) as socket) →
+            Js.write state.listener (Just emit)
             λ⊤ →
-                Js.set s "l" Js.null
-                stop s
+                Js.write state.listener Nothing
+                stop socket
 
 
 -- ---------------------------------------------------------------------------
 -- The socket
 -- ---------------------------------------------------------------------------
 
--- Steps 1–3 of §9.11 (c): the socket, open or opening, or why there is
--- none. Each failure the standard documents is found by a test of the
--- value, but `SecurityError`, which only the constructor reports.
-start : String, List String, Bool → Result ConnectError V
+-- Validate values before invoking the host constructor. Only its documented
+-- SecurityError becomes Blocked; unknown constructor failures remain defects.
+start : String, List String, Bool → Result ConnectError Socket
 start url protocols listened =
-    target = resolve url
-    if Js.isNull target then
-        Err (BadUrl url)
-    else
-        case scheme (Js.to (Js.get target "protocol")) of
-            Nothing →
-                Err (BadUrl url)
-
-            Just ws →
-                Js.set target "protocol" (Js.from ws)
-                href : String
-                href = Js.to (Js.get target "href")
-                if String.contains href "#" then
+    case URL.tryCreate url (Document.baseURI ⊤) of
+        Nothing →
+            Err (BadUrl url)
+        Just target →
+            case scheme (URL.protocol target) of
+                Nothing →
                     Err (BadUrl url)
-                else
-                    case badProtocol protocols [] of
-                        Just p →
-                            Err (BadProtocol p)
-
-                        Nothing →
-                            case construct href protocols of
-                                Nothing →
-                                    Err Blocked
-
-                                Just w →
-                                    Ok (attach w url listened)
-
-
--- The URL resolved against the page, or null: `URL.parse` answers null for
--- what does not parse, and an engine without it has `new URL`, whose one
--- documented failure is a `TypeError`.
-resolve : String → V
-resolve url =
-    constructor = Js.global "URL"
-    base = Js.get (Js.global "document") "baseURI"
-    if Js.isUndefined (Js.get constructor "parse") then
-        Js.catchIf
-            (λ⊤ → Js.construct constructor [ Js.from url, base ])
-            (λerror → Js.instanceOf error (Js.global "TypeError"))
-            λ_ → Js.null
-    else
-        Js.call constructor "parse" [ Js.from url, base ]
+                Just ws →
+                    URL.setProtocol target ws
+                    href = URL.href target
+                    if String.contains href "#" then
+                        Err (BadUrl url)
+                    else
+                        case badProtocol protocols [] of
+                            Just p →
+                                Err (BadProtocol p)
+                            Nothing →
+                                case Native.tryCreate href protocols of
+                                    Nothing →
+                                        Err Blocked
+                                    Just native →
+                                        Ok (attach native url listened)
 
 
 -- The WebSocket scheme of a URL's scheme, as the standard maps it.
@@ -323,232 +304,184 @@ badProtocol protocols seen =
                 badProtocol rest [ …seen, p ]
 
 
--- RFC 9110's `token`: one or more `tchar`.
+-- RFC 9110's token: one or more tchar.
 isToken : String → Bool
 isToken text =
-    Js.to (Js.call (Js.regExp "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" "") "test" [ Js.from text ])
+    case HostRegExp.create "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" "" of
+        Ok pattern →
+            HostRegExp.test pattern text
+        Err _ →
+            Protocol.defect "invalid WebSocket protocol pattern"
 
 
--- The host's socket, or `Nothing` when the host refused it with a
--- `SecurityError`. Anything else the constructor throws is a defect.
-construct : String, List String → Maybe V
-construct href protocols =
-    Js.catchIf
-        (λ⊤ →
-            Just
-                (Js.construct (Js.global "WebSocket")
-                    [ Js.from href, pushed (Js.array []) protocols ]
-                )
-        )
-        (λerror →
-            Js.instanceOf error (Js.global "DOMException")
-                && Js.same (Js.get error "name") (Js.from "SecurityError")
-        )
-        λ_ → Nothing
-
-
--- `items` pushed onto the array `a`: what the host's constructor takes.
-pushed : V, List String → V
-pushed a items =
-    case items of
-        [] →
-            a
-
-        [ item, …rest ] →
-            _ = Js.call a "push" [ Js.from item ]
-            pushed a rest
-
-
--- The socket's object, its listeners on the host's socket added. `url` is
--- the address as the program wrote it, for the console's line.
-attach : V, String, Bool → V
-attach w url listened =
-    s =
-        Js.from
-            { w = w
-            , q = Js.array []
-            , r = Js.array []
-            , o = Js.null
-            , e = Js.null
-            , l = Js.null
-            , k = listened
-            , opened = False
-            , u = url
+attach : Native.WebSocket, String, Bool → Socket
+attach native url listened =
+    socket =
+        Socket
+            { native = native
+            , messages = Chain.make ⊤
+            , readers = Chain.make ⊤
+            , opening = Js.ref Nothing
+            , ending = Js.ref Nothing
+            , listener = Js.ref Nothing
+            , listened = listened
+            , opened = Js.ref False
+            , url = url
             }
-    Js.set w "binaryType" (Js.from "arraybuffer")
-    _ = Js.call w "addEventListener" [ Js.from "open", Js.from λ_ → onOpen s ]
-    _ =
-        Js.call w "addEventListener"
-            [ Js.from "message", Js.from λevent → onMessage s (Js.get event "data") ]
-    _ = Js.call w "addEventListener" [ Js.from "close", Js.from λevent → onClose s event ]
-    _ = Js.call w "addEventListener" [ Js.from "error", Js.from λ_ → onError s ]
-    s
+    Native.arrayBuffer native
+    Native.onOpen native λ⊤ → onOpen socket
+    Native.onText native λtext → onMessage socket text
+    Native.onClose native λcode reason → onClose socket { code = code, reason = reason }
+    Native.onError native λ⊤ → onError socket
+    socket
 
 
-onOpen : V → ⊤
-onOpen s =
-    Js.set s "opened" (Js.from True)
-    o = Js.get s "o"
-    if not (Js.isNull o) then
-        Js.set s "o" Js.null
-        Js.to (Js.apply o [ Js.from True ])
-    else
-        tell s (Opened (Js.to s))
+onOpen : Socket → ⊤
+onOpen ((Socket s) as socket) =
+    Js.write s.opened True
+    case Js.read s.opening of
+        Just resume →
+            Js.write s.opening Nothing
+            Task.resume resume True
+        Nothing →
+            tell socket (Opened socket)
 
 
-onMessage : V, V → ⊤
-onMessage s data =
-    if not (Js.isNull (Js.get s "e")) then
-        ⊤
-    else if Js.typeIs data "string" then
-        text : String
-        text = Js.to data
-        if Js.to (Js.get s "k") then
-            tell s (Received text)
-        else
-            r = Js.get s "r"
-            if Js.to (Js.get r "length") > 0 then
-                Js.to (Js.apply (Js.call r "shift" []) [ Js.from (Ok text) ])
+onMessage : Socket, Maybe String → ⊤
+onMessage ((Socket s) as socket) data =
+    case Js.read s.ending of
+        Just _ →
+            ⊤
+        Nothing →
+            case data of
+                Just text →
+                    if s.listened then
+                        tell socket (Received text)
+                    else
+                        case Chain.shift s.readers of
+                            Just resume →
+                                Task.resume resume (Ok text)
+                            Nothing →
+                                _ = Chain.append s.messages text
+                                ⊤
+                Nothing →
+                    url = s.url
+                    Console.warn
+                        "beni: WebSocket: a binary message arrived from ${url}; this version reads text messages only, so the connection is closed (1003)"
+                    Native.closeWithoutCode s.native
+                    ended socket { code = 1003, reason = "" }
+
+
+onClose : Socket, Close → ⊤
+onClose ((Socket s) as socket) why =
+    case Js.read s.ending of
+        Just _ →
+            ⊤
+        Nothing →
+            if Js.read s.opened then ended socket why else refused socket
+
+
+-- WebKit can fire error without close. End here; a later close is ignored.
+onError : Socket → ⊤
+onError ((Socket s) as socket) =
+    case Js.read s.ending of
+        Just _ →
+            ⊤
+        Nothing →
+            if Js.read s.opened then
+                ended socket { code = 1006, reason = "" }
             else
-                Js.to (Js.call (Js.get s "q") "push" [ data ])
-    else
-        -- A binary message: §9.11 (j). The page may not send 1003, so it
-        -- closes with no code, and reports 1003 itself.
-        url : String
-        url = Js.to (Js.get s "u")
-        _ =
-            Js.call (Js.global "console") "warn"
-                [ Js.from
-                    "beni: WebSocket: a binary message arrived from ${url}; this version reads text messages only, so the connection is closed (1003)"
-                ]
-        _ = Js.call (Js.get s "w") "close" []
-        ended s { code = 1003, reason = "" }
+                refused socket
 
 
-onClose : V, V → ⊤
-onClose s event =
-    if not (Js.isNull (Js.get s "e")) then
-        ⊤
-    else if Js.to (Js.get s "opened") then
-        ended s { code = Js.to (Js.get event "code"), reason = Js.to (Js.get event "reason") }
-    else
-        refused s
+refused : Socket → ⊤
+refused ((Socket s) as socket) =
+    Js.write s.ending (Just { code = 1006, reason = "" })
+    case Js.read s.opening of
+        Just resume →
+            Js.write s.opening Nothing
+            Task.resume resume False
+        Nothing →
+            tell socket (Failed Unreachable)
 
 
--- The standard fires `close` after every `error`, with 1006, but WebKit
--- fires `error` alone when a connection fails (§9.11, the amendment after
--- the review of #531): so an `error` ends the connection by itself, with
--- what its `close` would have said, and the `close` that may follow finds
--- it ended.
-onError : V → ⊤
-onError s =
-    if not (Js.isNull (Js.get s "e")) then
-        ⊤
-    else if Js.to (Js.get s "opened") then
-        ended s { code = 1006, reason = "" }
-    else
-        refused s
+ended : Socket, Close → ⊤
+ended ((Socket s) as socket) why =
+    Js.write s.ending (Just why)
+    waiting = Chain.toList s.readers
+    Chain.clear s.readers
+    finishReaders waiting why
+    tell socket (Closed why)
 
 
--- The connection failed before it opened.
-refused : V → ⊤
-refused s =
-    Js.set s "e" (Js.from { code = 1006, reason = "" })
-    o = Js.get s "o"
-    if not (Js.isNull o) then
-        Js.set s "o" Js.null
-        Js.to (Js.apply o [ Js.from False ])
-    else
-        tell s (Failed Unreachable)
+finishReaders : List (Resume (Result Close String)), Close → ⊤
+finishReaders waiting why =
+    case waiting of
+        [] →
+            ⊤
+        [ resume, …rest ] →
+            Task.resume resume (Err why)
+            finishReaders rest why
 
 
--- The connection ended, after it opened: the end is kept for `read`, each
--- waiting reader is answered, and the subscription hears `Closed`.
-ended : V, Close → ⊤
-ended s why =
-    Js.set s "e" (Js.from why)
-    r = Js.get s "r"
-    Js.set s "r" (Js.array [])
-    Js.each r λresume → Js.to (Js.apply resume [ Js.from (endOf why) ])
-    tell s (Closed why)
+tell : Socket, Event → ⊤
+tell (Socket s) event =
+    case Js.read s.listener of
+        Nothing →
+            ⊤
+        Just listener →
+            Protocol.call listener event
 
 
-endOf : Close → Result Close String
-endOf why = Err why
-
-
--- An event for the subscription, when one holds the socket.
-tell : V, Event → ⊤
-tell s event =
-    l = Js.get s "l"
-    if Js.isNull l then ⊤ else Js.to (Js.apply l [ Js.from event ])
-
-
--- `connect`'s wait for the open: at once when the socket opened or ended
--- already.
-waitOpen : V, Resume Bool → (⊤ → ⊤)
-waitOpen s resume =
-    if Js.to (Js.get s "opened") then
+waitOpen : Socket, Resume Bool → (⊤ → ⊤)
+waitOpen (Socket s) resume =
+    if Js.read s.opened then
         Task.resume resume True
         λ⊤ → ⊤
-    else if not (Js.isNull (Js.get s "e")) then
-        Task.resume resume False
-        λ⊤ → ⊤
     else
-        Js.set s "o" (Js.from resume)
-        λ⊤ → Js.set s "o" Js.null
+        case Js.read s.ending of
+            Just _ →
+                Task.resume resume False
+                λ⊤ → ⊤
+            Nothing →
+                Js.write s.opening (Just resume)
+                λ⊤ → Js.write s.opening Nothing
 
 
--- `read`'s wait: the oldest message, the end, or a place in the queue of
--- readers, which a cancelled reader leaves.
-take : V, Resume (Result Close String) → (⊤ → ⊤)
-take s resume =
-    q = Js.get s "q"
-    if Js.to (Js.get q "length") > 0 then
-        text : String
-        text = Js.to (Js.call q "shift" [])
-        Task.resume resume (Ok text)
-        λ⊤ → ⊤
-    else if not (Js.isNull (Js.get s "e")) then
-        Task.resume resume (Err (Js.to (Js.get s "e")))
-        λ⊤ → ⊤
-    else
-        r = Js.get s "r"
-        waiter = Js.from resume
-        _ = Js.call r "push" [ waiter ]
-
-        λ⊤ →
-            i : Int
-            i = Js.to (Js.call r "indexOf" [ waiter ])
-            if i ≥ 0 then
-                Js.to (Js.call r "splice" [ Js.from i, Js.from 1 ])
-            else
-                ⊤
+take : Socket, Resume (Result Close String) → (⊤ → ⊤)
+take (Socket s) resume =
+    case Chain.shift s.messages of
+        Just text →
+            Task.resume resume (Ok text)
+            λ⊤ → ⊤
+        Nothing →
+            case Js.read s.ending of
+                Just why →
+                    Task.resume resume (Err why)
+                    λ⊤ → ⊤
+                Nothing →
+                    link = Chain.append s.readers resume
+                    λ⊤ →
+                        _ = Chain.remove s.readers link
+                        ⊤
 
 
--- The owner of a socket stopped: an open one is closed with 1000, one
--- still opening is stopped.
-stopped : Result ConnectError V → ⊤
+stopped : Result ConnectError Socket → ⊤
 stopped started =
     case started of
         Err _ →
             ⊤
+        Ok socket →
+            stop socket
 
-        Ok s →
-            stop s
 
-
-stop : V → ⊤
-stop s =
-    w = Js.get s "w"
-    state : Int
-    state = Js.to (Js.get w "readyState")
+stop : Socket → ⊤
+stop (Socket s) =
+    state = Native.readyState s.native
     if state == 0 then
-        Js.to (Js.call w "close" [])
+        Native.closeWithoutCode s.native
     else if state == 1 then
-        Js.to (Js.call w "close" [ Js.from 1000, Js.from "" ])
-    else
-        ⊤
+        Native.close s.native 1000 ""
 
 
 -- The length of `text` in UTF-8, after the host's `USVString` conversion.
