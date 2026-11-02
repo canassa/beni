@@ -19,7 +19,7 @@ export const watch = (value, nested) => {
       // The existing byte-accounting walk reads it once. Normalization
       // must preserve the object and add no property reads of this branch.
       const readsBefore = reads;
-      const fields = Object.values(frame.payload ?? frame.f);
+      const fields = Object.values(frame.payload);
       observed = fields.includes(stable) && readsBefore === 1 && fields.some(part =>
         part !== null && typeof part === "object" && Object.values(part).includes(nestedStable));
       stable = null;

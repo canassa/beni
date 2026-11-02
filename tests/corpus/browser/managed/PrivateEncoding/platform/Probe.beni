@@ -1,3 +1,6 @@
+import Js
+
+
 pub type Mark
     = Ready
     | Transport
@@ -23,4 +26,8 @@ pub foreign pure inspect : Packet → Bool
 pub foreign impure arm : ⊤ → ⊤
 
 
-pub foreign impure nativePassed : ⊤ → Bool
+pub nativePassed : ⊤ → Bool
+nativePassed _ = nativeFor (Js.development ⊤)
+
+
+foreign impure nativeFor : Bool → Bool
