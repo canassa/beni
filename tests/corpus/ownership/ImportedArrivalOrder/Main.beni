@@ -1,0 +1,18 @@
+-- ownership (project): an imported block is read again in the importer's
+-- terms and must encode to its own words (R-5.7.4). `Codec.Encode.list`'s
+-- result names several callback arrivals at one slot, which the contract
+-- table sorted by their intern ids where it sorts a parameter's by their
+-- canonical words: the importer interns those slots in another order, so
+-- the round trip differed, the block was unknown, and every call into
+-- `Codec.Encode` read the pessimistic contract. `pairs` appends to a list
+-- it has just built, accepted `fresh`, as v1 accepts it; read as unknown,
+-- v2 refused it `disjoint`.
+import Codec.Encode as Encode
+
+
+pub pairs : String → List (String × Encode.Value)
+pairs s = [ ( "a", Encode.string s ) ] ++ [ ( "b", Encode.list [ s ] Encode.string ) ]
+
+
+pub shown : String → String
+shown s = Encode.encode (Encode.object (pairs s)) 0

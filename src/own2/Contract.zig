@@ -744,7 +744,7 @@ fn arrivalLess(slots: *const Slots.Table, a: Arrival, b: Arrival) bool {
     if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
     if (a.j != b.j) return a.j < b.j;
     if (a.deep != b.deep) return !a.deep;
-    if (a.kind == .param) return slots.relLess(a.slot, b.slot);
+    if (a.kind == .param or a.kind == .cb) return slots.relLess(a.slot, b.slot);
     return a.slot < b.slot;
 }
 
