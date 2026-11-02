@@ -6548,7 +6548,11 @@ pub const Lowerer = struct {
     fn workerDescriptor(l: *Lowerer, descriptor: @import("WorkerEntry.zig").Descriptor, p: u32) Allocator.Error!Node.Index {
         const global = try l.add(.global_this, p, 0, 0);
         const ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "URL"), p);
-        const path = try l.stringNode(descriptor.url, p);
+        const path = if (l.in.development) try l.stringNode(descriptor.url, p) else blk: {
+            const target = try std.fmt.allocPrint(l.scratch, "_workers/{s}/_main.mjs", .{descriptor.id});
+            const offset, const len = try l.b.addString(target);
+            break :blk try l.add(.worker_path, p, offset, len);
+        };
         const base = try l.add(.import_meta_url, p, 0, 0);
         const url = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{ path, base }))));
         return l.object(&.{
@@ -13138,7 +13142,11 @@ pub const Lowerer = struct {
                 if (literalCondFan(c.tree)) |fan| {
                     if (fan.edgeCount() > 1 and !l.isRead(c.roots[0])) {
                         const roots = try l.scratch.dupe(Node.Index, c.roots);
+                        const before = out.items.len;
                         roots[0] = try l.bindSubject(out, roots[0], c.p);
+                        const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+                        if (out.items.len > before and l.mayHaveEffect(scrutinee))
+                            try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                         c.roots = roots;
                     }
                 }
@@ -13327,8 +13335,15 @@ pub const Lowerer = struct {
                 break :blk value;
             } else if (reads == 1 and !spread)
                 value
-            else
-                try l.bindSubject(out, value, p);
+            else blk: {
+                const before = out.items.len;
+                const bound = try l.bindSubject(out, value, p);
+                // Specialisation can remove every later read of this subject.
+                // Its original evaluation must retain any checker-known effects.
+                if (out.items.len > before and l.mayHaveEffect(source))
+                    try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+                break :blk bound;
+            };
         }
 
         var shared: std.ArrayList(u32) = .empty;

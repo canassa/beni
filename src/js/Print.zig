@@ -158,6 +158,8 @@ pub const Options = struct {
     marks: ?*SourceMap.Marks = null,
     /// Bytes written after the module: its `//# sourceMappingURL=` line.
     footer: []const u8 = "",
+    // Output-root-relative path after relocation and scope hoisting.
+    artifact_path: []const u8 = "",
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -176,6 +178,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .ir = ir,
         .names = names,
         .plan = options.plan,
+        .artifact_path = options.artifact_path,
         .rename = options.rename,
         .compact = options.compact,
         .imported = options.imported,
@@ -479,6 +482,7 @@ const Spelling = struct {
 };
 
 const Printer = struct {
+    artifact_path: []const u8 = "",
     joiner: Joiner,
     ir: *const JsIr,
     names: Names,
@@ -575,6 +579,16 @@ const Printer = struct {
         const at = p.ir.pos(node);
         if (at == Node.no_pos) return;
         try marks.add(p.joiner.length, at, try p.mapName(marks, index));
+    }
+
+    fn workerPath(p: *Printer, node: Index) Allocator.Error!void {
+        var path: std.ArrayList(u8) = .empty;
+        const depth = std.mem.count(u8, p.artifact_path, "/");
+        if (depth == 0) try path.appendSlice(p.spelled, "./") else {
+            for (0..depth) |_| try path.appendSlice(p.spelled, "../");
+        }
+        try path.appendSlice(p.spelled, p.ir.bytes(node));
+        try p.quoted(path.items);
     }
 
     /// `index`'s entry in the map's `names`, numbered the first time it is
@@ -2503,6 +2517,7 @@ const Printer = struct {
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
             .import_meta_url => try p.push("import.meta.url"),
+            .worker_path => try p.workerPath(node),
             .this_lit => try p.push("this"),
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
@@ -2676,6 +2691,7 @@ const Printer = struct {
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
             .import_meta_url => try p.push("import.meta.url"),
+            .worker_path => try p.workerPath(node),
             .this_lit => try p.push("this"),
             .call => {
                 // callee, then `call_rest`
@@ -2922,7 +2938,7 @@ const Printer = struct {
         var n = p.resolve(node);
         while (true) switch (p.ir.tag(n)) {
             .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => return true,
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => return true,
             else => return false,
         };
     }

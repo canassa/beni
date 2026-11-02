@@ -1654,7 +1654,7 @@ test "worker launch URLs stay relative to their module under release specializat
         \\  }
         \\  addEventListener() {}
         \\};
-        \\Object.values(await import('./out/Main.mjs'))[0].a(null);
+        \\await import('./out/_main.mjs');
         \\console.log(`launched ${launches} workers`);
         \\
     );
@@ -1987,4 +1987,123 @@ test "worker runtime entry cannot be called through static dispatch" {
         .title = "PRIVATE METHOD",
         .message = "This name is private to the platform’s worker entry machinery.",
     }}), result.diagnostics);
+}
+
+test "release worker entries hoist with joined source maps around the bootstrap" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\seed : String
+        \\seed = Worker.initializer "worker-map"
+        \\worker : Worker.Program String String ⊤
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → seed ++ message, stream = λ_ _ _ _ → ⊤ }
+        \\start : ⊤ → ⊤
+        \\start _ =
+        \\    Page.text "page-map"
+        \\    _ = Worker.open worker
+        \\    ⊤
+        \\main : Page.Program
+        \\main = Page.program start
+        \\
+    );
+    try w.write("probe.mjs",
+        \\import assert from 'node:assert/strict';
+        \\import {readFileSync,readdirSync} from 'node:fs';
+        \\import {SourceMap} from 'node:module';
+        \\const id=readdirSync('out/_workers')[0];
+        \\assert.deepEqual(readdirSync('out/_workers/'+id).sort(),['_main.mjs','_main.mjs.map']);
+        \\const source=readFileSync('Main.beni','utf8').split('\n');
+        \\for(const [file,word] of [['out/_main.mjs','page-map'],['out/_workers/'+id+'/_main.mjs','worker-map']]) {
+        \\  const code=readFileSync(file,'utf8');
+        \\  const json=JSON.parse(readFileSync(file+'.map','utf8'));
+        \\  assert.equal(json.file,'_main.mjs');
+        \\  assert.ok(code.endsWith('//# sourceMappingURL=_main.mjs.map\n'));
+        \\  const map=new SourceMap(json);
+        \\  const at=text=>{
+        \\    const offset=code.indexOf(text);
+        \\    assert.ok(offset>=0,'missing '+text);
+        \\    const lines=code.slice(0,offset).split('\n');
+        \\    return map.findEntry(lines.length-1,lines.at(-1).length);
+        \\  };
+        \\  const hit=at('"'+word+'"');
+        \\  const row=source.findIndex(line=>line.includes('"'+word+'"'));
+        \\  assert.deepEqual({file:hit.originalSource.split('/').at(-1),line:hit.originalLine,column:hit.originalColumn},
+        \\    {file:'Main.beni',line:row,column:source[row].indexOf('"'+word+'"')});
+        \\  if(word==='worker-map') {
+        \\    for(const text of ['globalThis.__beniWorkerFingerprint','globalThis.removeEventListener("message", hold)','for (const event of pending)'])
+        \\      assert.equal(at(text).originalSource,undefined,'bootstrap must be unmapped: '+text);
+        \\  }
+        \\}
+        \\console.log('page and worker maps resolve; bootstrap is unmapped');
+        \\
+    );
+    const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--release", "--source-maps", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try testing.expect(!w.exists("out/Main.mjs"));
+    try w.expectProgram("probe.mjs", .{ .stdout = "page and worker maps resolve; bootstrap is unmapped\n" });
+}
+
+test "release worker init runs when specialisation removes its unused state" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    // Match the real worker's Result-valued init: its case subject loses
+    // every read when init always succeeds and no callback reads the state.
+    const source = try w.read("platform/Worker.beni");
+    const signature = try std.mem.replaceOwned(u8, w.arena.allocator(), source, "init : (⊤, ⊤ → state)", "init : (⊤, ⊤ → Result String state)");
+    const old =
+        \\                    state = callbacks.init ⊤ ⊤
+        \\                    listen λmessage →
+        \\                        Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+        \\                    callbacks.start state ⊤
+        \\
+    ;
+    const replacement =
+        \\                    case callbacks.init ⊤ ⊤ of
+        \\                        Err _ → ⊤
+        \\                        Ok state →
+        \\                            listen λmessage →
+        \\                                Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+        \\                            callbacks.start state ⊤
+        \\
+    ;
+    try w.write("platform/Worker.beni", try std.mem.replaceOwned(u8, w.arena.allocator(), signature, old, replacement));
+    try w.write("platform/Probe.beni", "pub foreign impure mark : ⊤ → ⊤\n");
+    try w.write("platform/Probe.js", "export const mark = (_) => globalThis.onInit();\n");
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\import Probe
+        \\worker : Worker.Program String String ⊤
+        \\worker = Worker.program { init = init, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\init : ⊤, ⊤ → Result String ⊤
+        \\init _ _ =
+        \\    Probe.mark ⊤
+        \\    Ok ⊤
+        \\main : Page.Program
+        \\main = Page.program (λ_ →
+        \\    _ = Worker.open worker
+        \\    ⊤)
+        \\
+    );
+    try w.write("probe.mjs",
+        \\import {readdirSync} from 'node:fs';
+        \\const initialized=new Promise(resolve=>{globalThis.onInit=()=>resolve()});
+        \\globalThis.addEventListener=()=>{};
+        \\globalThis.removeEventListener=()=>{};
+        \\globalThis.postMessage=()=>{};
+        \\const id=readdirSync('out/_workers')[0];
+        \\await import('./out/_workers/'+id+'/_main.mjs');
+        \\await initialized;
+        \\console.log('worker init ran');
+        \\
+    );
+    const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--release", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try w.expectProgram("probe.mjs", .{ .stdout = "worker init ran\n" });
 }

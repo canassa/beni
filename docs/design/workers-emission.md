@@ -81,6 +81,17 @@ may shorten or eliminate private fields without changing another entry's wire
 layout. Clone-stable plans emit direct sends. Only non-crossing representation
 paths get normalization and reconstruction; universal codecs are not introduced.
 
+Under `--release`, descriptor targets remain output-root-relative IR values until
+printing resolves them from the final referring artifact. Inlining and
+specialisation may relocate a descriptor without freezing its old module URL.
+Hoist each eligible entry independently. A hoisted worker installs the bootstrap
+defect and held-message listeners first, evaluates all body initializers and
+invokes its runtime inside the bootstrap try/finally, then replays held events.
+Its joined release map rebases body stretches over the unmapped bootstrap prefix
+and ends them before the unmapped finally and replay. A worker with an external
+static dependency retains the dynamic-import bootstrap so that dependency cannot
+initialize ahead of the defect listeners.
+
 Lower each projection with its own roots, runtime, EntryHost proof and private
 state, plus the immutable build wire table. Existing optimizer and field naming
 algorithms can be reused behind this boundary. Sharing an emitted chunk requires

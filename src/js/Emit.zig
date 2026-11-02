@@ -1823,14 +1823,8 @@ const Emitter = struct {
         return e.worker_runtime orelse e.session.entry_plan.runtime();
     }
 
-    fn workerBootstrap(e: *Emitter, entry: Entry) !void {
-        const runner = e.worker_runtime.?;
-        const runtime_path = try e.outputPath(runner.module);
-        const main_path = try e.outputPath(entry.module);
-        const run_name = try e.moduleSpelling(runner.module, e.runtimeRunName());
-        const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
-        var text: std.ArrayList(u8) = .empty;
-        // These listeners must run before either imported module's initializers.
+    fn workerPrelude(e: *Emitter, text: *std.ArrayList(u8)) !void {
+        // Install the realm listeners before any emitted or imported initializer.
         try text.print(e.scratch, "globalThis.__beniWorkerFingerprint = \"{s}\";\n", .{e.worker_fingerprint});
         try text.appendSlice(e.scratch,
             \\const report = event => {
@@ -1856,21 +1850,38 @@ const Emitter = struct {
             \\globalThis.addEventListener("messageerror", hold);
             \\
         );
+    }
+
+    fn workerFinally(e: *Emitter, text: *std.ArrayList(u8)) !void {
+        try text.appendSlice(e.scratch,
+            \\} finally {
+            \\  globalThis.removeEventListener("message", hold);
+            \\  globalThis.removeEventListener("messageerror", hold);
+            \\}
+            \\for (const event of pending) globalThis.dispatchEvent(new MessageEvent(event.type, {
+            \\  data: event.data, origin: event.origin, lastEventId: event.lastEventId,
+            \\  source: event.source, ports: event.ports
+            \\}));
+            \\
+        );
+    }
+
+    fn workerBootstrap(e: *Emitter, entry: Entry) !void {
+        const runner = e.worker_runtime.?;
+        const runtime_path = try e.outputPath(runner.module);
+        const main_path = try e.outputPath(entry.module);
+        const run_name = try e.moduleSpelling(runner.module, e.runtimeRunName());
+        const main_name = e.entryName(entry) orelse try e.moduleSpelling(entry.module, e.session.interner.slice(e.bir(entry.module).symbol(e.bir(entry.module).decl(entry.decl).name)));
+        var text: std.ArrayList(u8) = .empty;
+        try e.workerPrelude(&text);
         try text.print(e.scratch,
             \\try {{
             \\  const runtime = await import("./{s}");
             \\  const program = await import("./{s}");
             \\  runtime.{s}(program.{s});
-            \\}} finally {{
-            \\  globalThis.removeEventListener("message", hold);
-            \\  globalThis.removeEventListener("messageerror", hold);
-            \\}}
-            \\for (const event of pending) globalThis.dispatchEvent(new MessageEvent(event.type, {{
-            \\  data: event.data, origin: event.origin, lastEventId: event.lastEventId,
-            \\  source: event.source, ports: event.ports
-            \\}}));
             \\
         , .{ runtime_path, main_path, run_name, main_name });
+        try e.workerFinally(&text);
         try e.produce(default_entry_file, text.items, e.session.store.path(e.graph().moduleFile(entry.module)));
     }
     fn workerProjection(e: *Emitter, descriptor: WorkerEntry.Descriptor) !Emitter {
@@ -1976,8 +1987,10 @@ const Emitter = struct {
                 try projection.openDebugContext();
                 try projection.emitModules(root);
                 if (!projection.hasErrors()) {
-                    try projection.copyAssets();
-                    try projection.workerBootstrap(root);
+                    if (!projection.hoisted) {
+                        try projection.copyAssets();
+                        try projection.workerBootstrap(root);
+                    }
                 }
             }
             try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
@@ -7187,7 +7200,7 @@ const Emitter = struct {
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,
                 .direct = if (e.direct) |*d| d else null,
-                .inline_once = e.options.release and e.worker_entries.len == 0,
+                .inline_once = e.options.release,
                 .unit_results = e.options.release,
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
@@ -7317,6 +7330,7 @@ const Emitter = struct {
                 .unobserved = slot.unobserved,
                 .rename = &renamer,
                 .compact = true,
+                .artifact_path = if (e.worker_entries.len != 0) try std.fmt.allocPrint(scratch, "{s}{s}", .{ e.output_prefix, if (e.hoisted) e.options.platform.entry else try e.outputPath(@fromBackingInt(@intCast(i))) }) else "",
                 .imported = if (e.options.library or e.hoisted) null else &e.imported,
                 .hand_written = &e.hand_written,
                 .hoisted = e.hoisted,
@@ -7359,9 +7373,7 @@ const Emitter = struct {
     /// whole-program. A whole-program name is identified by its text, so each
     /// is moved into the session's pool first, as `numberModule` does.
     fn specialise(e: *Emitter, slots: []ModuleSlot, todo: []const u32, entry_or_library: ?Entry, one_scope: bool) !void {
-        // #1627: cross-module copies would relocate import.meta.url while
-        // keeping its descriptor path. Local release optimization is safe.
-        if (e.worker_entries.len != 0) return;
+        // Worker target paths remain symbolic until final artifact printing (#1627).
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
@@ -8185,7 +8197,6 @@ const Emitter = struct {
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
     fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
-        if (e.worker_entries.len != 0) return null; // Descriptor URLs are module-relative.
         const scratch = e.scratch;
         var files: std.ArrayList(HandFile) = .empty;
 
@@ -8428,6 +8439,15 @@ const Emitter = struct {
             }
         }
 
+        if (e.worker_runtime != null) for (files.items) |f| {
+            if (f.declined or f.read.imports.len != 0) return null;
+            // The bootstrap lives outside the body's try scope. Its bindings
+            // must not shadow a hand-written file's free host names.
+            for ([_][]const u8{ "report", "pending", "hold" }) |name| {
+                if (f.read.free.contains(name)) return null;
+            }
+        };
+
         return .{
             .entry = entry,
             .files = files.items,
@@ -8647,6 +8667,11 @@ const Emitter = struct {
             .module => {},
         };
 
+        if (e.worker_runtime != null) {
+            try e.workerPrelude(&out);
+            try out.appendSlice(scratch, "try {\n");
+        }
+
         // §11.2, *The join*: each module's marks become a stretch of the
         // one file's map, and everything else the file holds is unmapped.
         var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
@@ -8712,6 +8737,11 @@ const Emitter = struct {
                     try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
                 }
             } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        }
+
+        if (e.worker_runtime != null) {
+            try out.appendSlice(scratch, "\n");
+            try e.workerFinally(&out);
         }
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
