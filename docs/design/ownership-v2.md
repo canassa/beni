@@ -1099,7 +1099,8 @@ eight and then by the index, which also lists each entry under every ancestor (`
 new entry meets the earlier ones below it. The root to expand is the greatest of a heap of the expandable roots,
 or of the groups that ask to be expanded (`must`), a stale one skipped. A vouched block keeps the first of two
 equal leaves in the inline order (its members compared by the expansions they came from). Each round charges a
-record, one per new entry and one per changed group, besides the work of its checks. Every outcome is the one the
+record and one per new entry (each changes one group at most; the changed groups are listed as they change,
+never found by a scan), besides the work of its checks. Every outcome is the one the
 regrouping check gave: a group's check reads its members only, and the conditions gathered are a set. This is
 the fixpoint's own working state, never a table of earlier answers. *Live sibling positions* at n = 10 / 20 / 40
 / 80: 4 090 / 11 883 / 38 608 / 136 538 records, now 3 134 / 6 370 / 12 923 / 26 191 (with the pending operands

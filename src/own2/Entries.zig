@@ -243,6 +243,8 @@ pub const Rounds = struct {
     atoms: Ids.FixedDict(3) = .{},
     nonempty: u32 = 0,
     params: u32 = 0,
+    /// The groups changed since the last round's checks.
+    dirty: std.ArrayList(u32) = .empty,
     /// The roots that may be expanded and the groups that ask to be, by
     /// root (max-heaps, stale entries skipped when read).
     expandable: std.ArrayList(u32) = .empty,
@@ -253,7 +255,7 @@ pub const Rounds = struct {
             gr.members.deinit(g);
             gr.within.deinit(g);
         }
-        inline for (.{ &r.ents, &r.alive, &r.par, &r.groups, &r.of_root, &r.expandable, &r.musts }) |l| l.deinit(g);
+        inline for (.{ &r.ents, &r.alive, &r.par, &r.groups, &r.of_root, &r.expandable, &r.musts, &r.dirty }) |l| l.deinit(g);
         r.atoms.deinit(g);
     }
 
@@ -297,7 +299,13 @@ pub const Rounds = struct {
             };
         }
         try gr.members.append(g, i);
-        gr.dirty = true;
+        try r.mark(g, gi);
+    }
+
+    pub fn mark(r: *Rounds, g: Allocator, gi: u32) Error!void {
+        if (r.groups.items[gi].dirty) return;
+        r.groups.items[gi].dirty = true;
+        try r.dirty.append(g, gi);
     }
 
     /// The greatest root of `heap` whose group `ok` says is still one.
