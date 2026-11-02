@@ -86,8 +86,12 @@ module Browser.Host.DOMException
   value create : String, String → DOMException  -- impure
 module Browser.Host.DOMRect
   type DOMRect
+  value height : DOMRect → Float  -- impure
   value left : DOMRect → Float  -- impure
   value top : DOMRect → Float  -- impure
+  value width : DOMRect → Float  -- impure
+  value x : DOMRect → Float  -- impure
+  value y : DOMRect → Float  -- impure
 module Browser.Host.Data
   value emptyObject : ⊤ → Value  -- impure
   value hasOwn : Value, String → Bool  -- impure
@@ -103,6 +107,10 @@ module Browser.Host.Document
   type QueryError
     SyntaxError
   value baseURI : ⊤ → String  -- impure
+  value byId : String → Maybe Element  -- impure
+  value exitFullscreen : ⊤ → Promise ⊤  -- impure
+  value fullscreenElementId : ⊤ → Maybe String  -- impure
+  value fullscreenEnabled : ⊤ → Bool  -- impure
   value listen : String, (Event → ⊤) → (⊤ → ⊤)  -- impure
   value querySelector : Document, String → Result QueryError (Maybe Element)  -- impure
   value setTitle : String → ⊤  -- impure
@@ -110,6 +118,13 @@ module Browser.Host.Document
   value visibilityState : ⊤ → String  -- impure
 module Browser.Host.Element
   type Element
+  value blur : Element → ⊤  -- impure
+  value box : Element → DOMRect  -- impure
+  value focus : Element → ⊤  -- impure
+  value fullscreenSupported : Element → Bool  -- impure
+  value requestFullscreen : Element → Promise ⊤  -- impure
+  value scrollIntoView : Element → ⊤  -- impure
+  value scrollTo : Element, Float, Float → ⊤  -- impure
   value toNode : Element → Node
 module Browser.Host.Event
   type Event
@@ -180,6 +195,9 @@ module Browser.Host.MessagePort
   type MessagePort
   value onMessage : MessagePort, (⊤ → ⊤) → ⊤  -- impure
   value postUnit : MessagePort → ⊤  -- impure
+module Browser.Host.Navigator
+  type Navigator
+  value activated : ⊤ → Bool  -- impure
 module Browser.Host.Node
   type Node
   value setTextContent : Node, String → ⊤  -- impure
@@ -222,6 +240,7 @@ module Browser.Host.Rejection
   value isTypeError : Rejection → Bool  -- impure
   value name : Rejection → String  -- impure
   value raise : Rejection → a  -- impure
+  value typeErrorMessage : Rejection → Maybe String  -- impure
 module Browser.Host.Response
   type Response
   value headers : Response → Headers  -- impure
@@ -291,6 +310,8 @@ module Browser.Host.Window
   value innerWidth : ⊤ → Int  -- impure
   value listen : String, (Event → ⊤) → (⊤ → ⊤)  -- impure
   value requestFrame : (⊤ → ⊤) → Frame  -- impure
+  value scrollX : ⊤ → Float  -- impure
+  value scrollY : ⊤ → Float  -- impure
 module Browser.Host.WorkerGlobalScope
   type WorkerGlobalScope
   value self : ⊤ → WorkerGlobalScope  -- impure
