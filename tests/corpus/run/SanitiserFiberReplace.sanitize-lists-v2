@@ -1,0 +1,3 @@
+The accepted twin of SanitiserFiberReader and SanitiserFiberBranch (ownership-v2.md §2.13.7): the other fiber replaces
+the cell's contents instead of editing them in place. Built again under --ownership=v2 and the list stale-read
+sanitiser. v2 accepts each, and the loans still read the old contents.
