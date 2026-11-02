@@ -1,0 +1,6 @@
+-- Native message inspection is implemented by the typed test platform.
+import Test
+
+
+main : Test.Program
+main = Test.program "native message data" Test.inspect

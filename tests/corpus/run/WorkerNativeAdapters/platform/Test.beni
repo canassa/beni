@@ -1,0 +1,80 @@
+import Browser.Host.Event as Event
+import Browser.Host.Events as Events
+import Browser.Host.Rejection as Rejection
+import Browser.Host.Worker as Native
+import Js
+import Js.Protocol as Protocol
+
+
+pub opaque type Program
+    = Program (Int → String) String
+
+
+pub program : String, sync (Int → String) → Program
+program name callback = Program callback name
+
+
+createError : Native.CreateError → String
+createError error =
+    case error of
+        Native.SyntaxError →
+            "syntax"
+        Native.SecurityError →
+            "security"
+        Native.TypeError →
+            "type"
+
+
+posted : Native.Endpoint → String
+posted endpoint =
+    case Native.post endpoint (Js.from { ping = True }) of
+        Ok ⊤ →
+            "posted"
+        Err Native.DataCloneError →
+            "clone"
+
+
+pub probe : Int → String
+probe phase =
+    if phase == -1 then
+        if Native.supported ⊤ then "supported" else "unsupported"
+    else
+        case Native.tryCreate "worker.js" "named" "same-origin" of
+            Err error →
+                createError error
+            Ok worker →
+                endpoint = Native.endpoint worker
+                if phase == 0 then
+                    "created"
+                else if phase == 1 then
+                    posted endpoint
+                else
+                    target = Native.toEventTarget endpoint
+                    if not (Js.same endpoint worker && Js.same target worker) then
+                        "identity changed"
+                    else
+                        calls = Js.ref 0
+                        remove =
+                            if phase == 2 then
+                                Events.listen target "message" λevent →
+                                    case Event.dataOnly event of
+                                        Nothing →
+                                            ⊤
+                                        Just _ →
+                                            Js.write calls (Js.read calls + 1)
+                            else
+                                Events.listen target "error" λevent →
+                                    case Event.error event of
+                                        Nothing →
+                                            ⊤
+                                        Just reason →
+                                            Rejection.setAbandoned reason (Js.from [ "gone" ])
+                                            Js.write calls (Js.read calls + 1)
+                        first = posted endpoint
+                        Protocol.call remove ⊤
+                        second = posted endpoint
+                        Native.terminate worker
+                        if first == "posted" && second == "posted" then
+                            String.fromInt (Js.read calls)
+                        else
+                            "post failed"

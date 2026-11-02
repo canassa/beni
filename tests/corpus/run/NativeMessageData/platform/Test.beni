@@ -1,0 +1,20 @@
+import Browser.Host.Event as Event
+import Js
+
+
+pub opaque type Program
+    = Program (Event.Event → String) String
+
+
+pub program : String, sync (Event.Event → String) → Program
+program name probe = Program probe name
+
+
+-- Only data crosses the native projection; no getter or callback is invoked.
+pub inspect : Event.Event → String
+inspect event =
+    case Event.dataOnly event of
+        Nothing →
+            "refused"
+        Just value →
+            if Js.typeIs value "number" then "number" else "accepted"

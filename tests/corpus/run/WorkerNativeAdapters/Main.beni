@@ -1,0 +1,6 @@
+-- The platform exercises native failure mapping and retained event callbacks.
+import Test
+
+
+main : Test.Program
+main = Test.program "worker native adapters" Test.probe

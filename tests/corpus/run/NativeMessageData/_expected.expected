@@ -1,0 +1,14 @@
+native message data
+number: number
+record: accepted
+array: accepted
+null prototype: accepted
+cycle: accepted
+callback: refused
+nested callback: refused
+native bytes: refused
+native date: refused
+accessor: refused
+symbol: refused
+bigint: refused
+calls: 0

@@ -1,0 +1,14 @@
+worker native adapters
+unsupported: unsupported
+syntax: syntax
+security: security
+type: type
+unknown constructor unchanged
+named security unchanged
+clone: clone
+unknown post unchanged
+named clone unchanged
+callbacks: 1
+native identity and options preserved
+error callbacks: 1
+native reason preserved
