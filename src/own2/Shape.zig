@@ -43,6 +43,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Counters = @import("Counters.zig");
 const Place = @import("Place.zig");
 const Cell = @import("Cell.zig");
 const stamped = @import("../stamped.zig");
@@ -143,6 +144,8 @@ pub const Table = struct {
     /// How many knots were tied: a memo of what a node reaches outside
     /// the record (`Cond.reachAgg`) is valid for the count it was made at.
     ties: u32 = 0,
+    /// `-Downership-v2-counters`: does `tie` change a kind (`Counters.zig`)?
+    census: Counters.Shapes = Counters.zero(Counters.Shapes),
     /// Stable images (§2.3, 4e): the graphs met by canonical form, and `map`'s trail.
     stable: Stable.Store = .{},
     /// `namedSteps`' memo: a node's list, `(start, len)` in `named_pool`.
@@ -275,6 +278,7 @@ pub const Table = struct {
         t.dag_members_ties.deinit(gpa);
         t.member_counts.deinit(gpa);
         t.counted.deinit(gpa);
+        Counters.shapesDeinit(&t.census, gpa);
         for (&t.reach_short) |*b| b.deinit(gpa);
         t.member_maps.deinit(gpa);
         t.member_sets.deinit(gpa);
@@ -288,10 +292,12 @@ pub const Table = struct {
     }
 
     pub fn get(t: *const Table, n: NodeId) Node {
+        Counters.kindRead(&t.census, n.int());
         return t.nodes.get(n.int());
     }
 
     pub fn kind(t: *const Table, n: NodeId) Kind {
+        Counters.kindRead(&t.census, n.int());
         return t.nodes.items(.kind)[n.int()];
     }
 
@@ -1498,6 +1504,7 @@ pub const Table = struct {
         try account.reserve(.shape, 1);
         const id: NodeId = .from(t.count());
         try t.nodes.append(gpa, .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
+        try Counters.knotMade(&t.census, gpa, .knot, id.int());
         return id;
     }
 
@@ -1508,6 +1515,7 @@ pub const Table = struct {
     /// so no other class meets it.
     pub fn rawCopy(t: *Table, gpa: Allocator, account: *Account, n: NodeId) Error!NodeId {
         const id = try t.knot(gpa, account);
+        if (Counters.enabled) Counters.kindWrite(&t.census, .raw_copy, id.int(), t.nodes.items(.kind)[id.int()], t.nodes.items(.kind)[n.int()]);
         t.nodes.set(id.int(), t.nodes.get(n.int()));
         const sb = &t.reach_short[0];
         if (sb.bit_length <= id.int()) try sb.resize(gpa, @max(t.nodes.len, 2 * sb.bit_length), false);
@@ -1518,6 +1526,7 @@ pub const Table = struct {
     /// Set a `knot`'s record: the caller's to make it one a constructor
     /// could have made but for the cycle.
     pub fn tie(t: *Table, id: NodeId, n: Node) void {
+        if (Counters.enabled) Counters.kindWrite(&t.census, .tie, id.int(), t.nodes.items(.kind)[id.int()], n.kind);
         t.nodes.set(id.int(), n);
         t.ties +%= 1;
     }
@@ -3011,6 +3020,7 @@ pub const Table = struct {
         const keyed: u32 = if (n.kind == .recast or n.kind == .delta) Ids.none_int else n.cells.int();
         const got = try t.intern.getOrPut(gpa, .{ @backingInt(n.kind), n.place.int(), keyed, n.a, n.b });
         if (got.found_existing) {
+            if (Counters.enabled) Counters.kindWrite(&t.census, .map_adopt, slot.int(), t.nodes.items(.kind)[slot.int()], Kind.leaf);
             t.nodes.set(slot.int(), .{ .kind = .leaf, .place = .none, .cells = .none, .a = 0, .b = 0, .reach = .none });
             return .from(got.value_ptr.*);
         }
@@ -3933,6 +3943,7 @@ pub const Table = struct {
                 try w.account.reserve(.shape, 1);
                 const id: NodeId = .from(w.t.count());
                 try w.t.nodes.append(w.gpa, .{ .kind = .node, .place = w.t.place(.from(rep)), .cells = .none, .a = over_none, .b = 0, .reach = .none });
+                try Counters.knotMade(&w.t.census, w.gpa, .widen, id.int());
                 try w.s.image.put(w.gpa, .from(rep), id);
                 try order.append(w.gpa, rep);
                 var e = w.uf(rep).edge_head;
@@ -3993,6 +4004,7 @@ pub const Table = struct {
                 if (!explicit and children == over_none and side != null) {
                     // Nothing explicit at all: the class IS its side. Parents
                     // name `id`, so `id`'s record becomes a copy of it.
+                    if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_copy, id.int(), w.t.nodes.items(.kind)[id.int()], w.t.nodes.items(.kind)[side.?.int()]);
                     w.t.nodes.set(id.int(), w.t.nodes.get(side.?.int()));
                     // The copy keeps the side's reach memo, so its `short` bit too (#1517).
                     const sb = &w.t.reach_short[0];
@@ -4000,6 +4012,7 @@ pub const Table = struct {
                     sb.setValue(id.int(), side.?.int() < sb.bit_length and sb.isSet(side.?.int()));
                     continue;
                 }
+                if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_keep, id.int(), w.t.nodes.items(.kind)[id.int()], w.t.nodes.items(.kind)[id.int()]);
                 w.t.nodes.items(.cells)[id.int()] = c;
                 w.t.nodes.items(.a)[id.int()] = children;
                 if (side) |s| {
@@ -4009,6 +4022,7 @@ pub const Table = struct {
                     // Every parent's map names `id`; the union is what the
                     // class means, so the two records swap places.
                     const img = w.t.nodes.get(id.int());
+                    if (Counters.enabled) Counters.kindWrite(&w.t.census, .widen_swap, id.int(), w.t.nodes.items(.kind)[id.int()], w.t.nodes.items(.kind)[u.int()]);
                     w.t.nodes.set(id.int(), w.t.nodes.get(u.int()));
                     w.t.nodes.set(u.int(), img);
                     w.t.nodes.items(.a)[id.int()] = u.int();

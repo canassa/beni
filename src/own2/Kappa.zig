@@ -9,6 +9,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Counters = @import("Counters.zig");
 const Shape = @import("Shape.zig");
 const CondId = Ids.CondId;
 const NodeId = Ids.NodeId;
@@ -49,9 +50,14 @@ pub fn Of(comptime Table: type) type {
         pub fn makeMap(t: *Table, gpa: Allocator, charge: Charge, n: MapNode) Error!u32 {
             try charge.reserve(gpa, .cond, 1);
             const got = try t.kmap_intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
-            if (got.found_existing) return got.value_ptr.*;
+            if (got.found_existing) {
+                Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
+                return got.value_ptr.*;
+            }
             got.value_ptr.* = @intCast(t.kmaps.len);
             try t.kmaps.append(gpa, n);
+            try Counters.setMade(&t.kmap_stats, gpa, n.mask == 0, n.left, n.right);
+            Counters.setMakeRequest(&t.kmap_stats, got.value_ptr.*);
             return got.value_ptr.*;
         }
 
@@ -70,6 +76,7 @@ pub fn Of(comptime Table: type) type {
 
         /// The value at `key`, or null. O(min(32, depth)) reads.
         pub fn mapGet(t: *const Table, root: u32, key: u32) ?u32 {
+            Counters.setRequest(&t.kmap_stats, .get, root);
             var at = root;
             while (at != Ids.none_int) {
                 const m = t.mapNode(at);
@@ -82,6 +89,7 @@ pub fn Of(comptime Table: type) type {
 
         /// `root` with `key ↦ v` (replacing), path-copied: ≤ 33 records.
         pub fn mapPut(t: *Table, gpa: Allocator, charge: Charge, root: u32, key: u32, v: u32) Error!u32 {
+            Counters.setRequest(&t.kmap_stats, .insert_in, root);
             if (root == Ids.none_int) return t.makeMap(gpa, charge, .{ .prefix = key, .mask = 0, .left = v, .right = Ids.none_int });
             const m = t.mapNode(root);
             if (m.mask == 0) {
@@ -117,6 +125,8 @@ pub fn Of(comptime Table: type) type {
         /// `a` when `b` adds nothing. Every node pair inspected is a record; the
         /// recursion is the key width, 33 frames.
         pub fn mapUnion(t: *Table, gpa: Allocator, charge: Charge, how: Combine, a: u32, b: u32) Error!u32 {
+            Counters.setRequest(&t.kmap_stats, .union_a, a);
+            Counters.setRequest(&t.kmap_stats, .union_b, b);
             if (a == Ids.none_int) return b;
             if (b == Ids.none_int or a == b) return a;
             // Memoised per pair of map nodes and `Combine` (*Argument 2*): the union

@@ -52,6 +52,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Counters = @import("Counters.zig");
 const Facts = @import("Facts.zig");
 const Cell = @import("Cell.zig");
 const Shape = @import("Shape.zig");
@@ -105,6 +106,7 @@ pub const Table = struct {
     /// The κ maps' nodes, hash-consed.
     kmaps: std.MultiArrayList(MapNode) = .empty,
     kmap_intern: Ids.FixedDict(4) = .{},
+    kmap_stats: Counters.Sets = Counters.zero(Counters.Sets),
     /// The snapshots' positions, hash-consed (`Kappas` indexes them).
     kpos: std.MultiArrayList(Position) = .empty,
     kpos_intern: Ids.FixedDict(3) = .{},
@@ -267,6 +269,7 @@ pub const Table = struct {
         t.intern.deinit(gpa);
         t.atoms.deinit(gpa);
         t.kmaps.deinit(gpa);
+        Counters.setDeinit(&t.kmap_stats, gpa);
         t.kmap_intern.deinit(gpa);
         t.kpos.deinit(gpa);
         t.kpos_intern.deinit(gpa);
