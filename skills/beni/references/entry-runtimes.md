@@ -14,8 +14,9 @@ handles and `Js.Value` cannot cross. The compiler reports
 concrete value before sending it. Worker-local state can contain functions and
 native handles. Generic functions retain the obligation until they are applied.
 
-Give each Program declaration a concrete wire message type.
-`worker_message_not_concrete` names a wire role and its unresolved type variable.
-This also applies to a variable inside a List or a tagged type.
+Generic Program declarations keep type-variable positions in their Wire plans.
+The runtime materializes nested Lists at those positions in both realms. It skips
+known stable branches. Unused roles can remain unfixed. Concrete functions and
+unsupported native values still report `worker_message_not_serializable`.
 
 Sources: `docs/design/workers.md` §3, §5; `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5.
