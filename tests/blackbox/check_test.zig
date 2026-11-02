@@ -1031,6 +1031,7 @@ test "ownership words: a flip that meets no word it takes away is not applicable
 
 test "ownership words: flipping core's Js words is noticed" {
     try expectFlips("ownership/core/JsWords.beni", &.{"--core"});
+    try expectFlips("ownership/core/RuntimeWords.beni", &.{"--core"});
 }
 
 test "ownership words: flipping the Words fixture's words is noticed" {

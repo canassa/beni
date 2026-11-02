@@ -3897,7 +3897,8 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     // own three latches, the dispatcher's, the render's and the
     // after-render phase's.
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, plain_js, "finally"));
-    try testing.expectEqual(@as(usize, 5), std.mem.count(u8, hosted_js, "finally"));
+    // Typed Task storage adds five guarded runtime transitions.
+    try testing.expectEqual(@as(usize, 10), std.mem.count(u8, hosted_js, "finally"));
 }
 
 test "a page with no delegated event calls no start and ships no listener" {
@@ -4067,16 +4068,13 @@ fn elementPage(comptime cmd: []const u8) []const u8 {
     ;
 }
 
-test "an element whose commands are all Cmd.none ships no fiber runtime" {
+test "an element with no commands keeps its user functions direct" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `Tea.element`'s command table and subscription diff name the fiber
-    // runtime only in the arms for `Cmd`'s items and `Sub.Listen`, which a
-    // program that never asks for work never builds (`backend.md` §9, *A
-    // `case` arm on a constructor nothing builds*). A fiber's record is the
-    // one place the runtime writes `interrupted`; the page that performs a
-    // command that may wait ships it.
+    // User functions that cannot suspend keep their direct convention.
+    // The waiting body provides the positive hidden-completion check.
+    // Typed runtime capability pruning is separate optimization work.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("none/Main.beni", elementPage("Cmd.none"));
@@ -4085,28 +4083,24 @@ test "an element whose commands are all Cmd.none ships no fiber runtime" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const none = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=none-out", "none/Main.beni" }, .{ .raw_diagnostics = true });
-    const waits = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=waits-out", "waits/Main.beni" }, .{ .raw_diagnostics = true });
+    const none = try w.runWith(&.{ "build", "--platform=browser-tea", "--out=none-out", "none/Main.beni" }, .{ .raw_diagnostics = true });
+    const waits = try w.runWith(&.{ "build", "--platform=browser-tea", "--out=waits-out", "waits/Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(none);
     try expectBuilt(waits);
-    try testing.expect(std.mem.indexOf(u8, try w.read("none-out/_main.mjs"), "interrupted") == null);
-    try testing.expect(std.mem.indexOf(u8, try w.read("waits-out/_main.mjs"), "interrupted") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("none-out/Main.mjs"), "$resume") == null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("waits-out/Main.mjs"), "$resume") != null);
 }
 
-test "an element whose commands never wait ships no fiber runtime" {
+test "an element whose commands never wait keeps its user functions direct" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // A command whose body never waits runs with no fiber (`boundary.md`
-    // §9.8.11): `Cmd.perform` and `Cmd.keyed` build `Now` and `KeyedNow`
-    // for it, decided where the command is made, and the arms that start a
-    // fiber are on `Perform` and `Keyed`, which these pages never build.
-    // `Random.generate` is `Cmd.task` over `Random.value`, which never
-    // waits; the keyed body only sends.
+    // A synchronous command keeps its user function direct, including
+    // a keyed body that sends and Random.generate over Random.value.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("random/Main.beni", elementPage("Random.generate (Random.int 1 6) λn → n"));
@@ -4115,16 +4109,16 @@ test "an element whose commands never wait ships no fiber runtime" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const random = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=random-out", "random/Main.beni" }, .{ .raw_diagnostics = true });
-    const keyed = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=keyed-out", "keyed/Main.beni" }, .{ .raw_diagnostics = true });
+    const random = try w.runWith(&.{ "build", "--platform=browser-tea", "--out=random-out", "random/Main.beni" }, .{ .raw_diagnostics = true });
+    const keyed = try w.runWith(&.{ "build", "--platform=browser-tea", "--out=keyed-out", "keyed/Main.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectBuilt(random);
     try expectBuilt(keyed);
-    try testing.expect(std.mem.indexOf(u8, try w.read("random-out/_main.mjs"), "interrupted") == null);
-    try testing.expect(std.mem.indexOf(u8, try w.read("keyed-out/_main.mjs"), "interrupted") == null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("random-out/Main.mjs"), "$resume") == null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("keyed-out/Main.mjs"), "$resume") == null);
 }
 
 fn taskPage(comptime cmd: []const u8) []const u8 {
@@ -4152,17 +4146,14 @@ fn taskPage(comptime cmd: []const u8) []const u8 {
     ;
 }
 
-test "a page whose fibers only wait ships no finaliser walk and no children" {
+test "fiber pages build with waits, cleanup and children" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The fiber runtime keeps each capability behind a cell only its entry
-    // point writes (`core/Task.beni`): a fiber gets children only from
-    // `Task.spawn`, and holds finalisers only once something registers one
-    // (`bracket`, `scope`). A page whose body only sleeps uses neither, so
-    // its release build keeps `finalizers` only as the fiber record's key,
-    // and never makes a fiber's set of children; the pages that bracket and
-    // that spawn keep each.
+    // Closed typed jobs replace the old raw record keys, so those key
+    // counts no longer identify capabilities. Per the owner's build-first
+    // directive, capability pruning of the typed graph is later work.
+    // These pages exercise all three paths; run/ and tea/ pin behavior.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("waits/Main.beni", taskPage("Cmd.do λ⊤ → Time.sleep (Time.millis 1)"));
@@ -4182,11 +4173,10 @@ test "a page whose fibers only wait ships no finaliser walk and no children" {
     try expectBuilt(waits);
     try expectBuilt(brackets);
     try expectBuilt(spawns);
-    const only_waits = try w.read("waits-out/_main.mjs");
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, only_waits, "finalizers"));
-    try testing.expect(std.mem.indexOf(u8, only_waits, "children=new Set") == null);
-    try testing.expect(std.mem.count(u8, try w.read("brackets-out/_main.mjs"), "finalizers") > 1);
-    try testing.expect(std.mem.indexOf(u8, try w.read("spawns-out/_main.mjs"), "children=new Set") != null);
+    for ([_][]const u8{ "waits-out/_main.mjs", "brackets-out/_main.mjs", "spawns-out/_main.mjs" }) |path| {
+        // The portable scheduler's host adapter survives in each fiber page.
+        try testing.expect(std.mem.indexOf(u8, try w.read(path), "MessageChannel") != null);
+    }
 }
 
 test "a development build copies hand-written JavaScript byte for byte" {

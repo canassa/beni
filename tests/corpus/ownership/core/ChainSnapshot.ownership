@@ -1,0 +1,8 @@
+module ChainSnapshot
+  11:18 call ChainSnapshot.collect <literal>: accepted fresh (ChainSnapshot.collect writes π2)
+  24:21 call ChainSnapshot.collect <construction>: accepted param (ChainSnapshot.collect writes π2)
+  24:52 construction values: accepted param
+  summary snapshot: π1 R; res [*] condition(fresh2) ⊤{lost}r{lost}, fresh1{lost}r{lost}
+  summary collect: π1 R, π1#Just.0#Link.0.after R, π1#Just.0#Link.0.value R, π2 RAW; res [*] condition(fresh1) ⊤{lost}r{lost}, π2{lost}r{lost}
+  demands 3: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
