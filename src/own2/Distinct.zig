@@ -597,9 +597,11 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     if (x.kind == .top or t.kind == .top) return .may;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
-    // An unknown label's answer may be anything its closure was handed.
-    if (x.kind == .answer or t.kind == .answer) return .may;
-    if ((xr and e.f.roots.items[x.root].kind == .cb) or (tr and e.f.roots.items[t.root].kind == .cb)) return .may;
+    // An unknown label's answer may be anything its closure was handed:
+    // written, anything; holding the target, what it was supplied or its
+    // label's function slot holds.
+    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return .may;
+    if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
     if (xr and tr and x.root == t.root) return positional(e, xi, ti, target);
     if (xr or tr) {
         const ex = xr and e.expandable(x);
@@ -629,6 +631,49 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     // Two atoms.
     if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
     return .no;
+}
+
+/// What the answer `x` of a label's direct call may hold of `t` (§2.9.2
+/// step 7): unknown code answers from what that call supplied it and
+/// from what its function holds, the label's parameter slot. A label the
+/// frame only passes on, or a target under that slot, answers anything.
+fn answerHolds(e: *Eval, x: Leaf, ti: u32, target: bool) Error!Ov {
+    const cb = e.f.cbs.items[if (x.kind == .answer) x.atom else e.f.roots.items[x.root].a];
+    if (cb.inst == none) return .may;
+    var sl: std.ArrayList(u32) = .empty;
+    defer sl.deinit(e.gpa());
+    for (cb.args) |sv| try e.leavesOf(sv, 0, &sl);
+    var acc: Ov = .no;
+    for (sl.items) |l| {
+        acc = try Ov.join(e.arena, e.account(), acc, try overlap(e, l, ti, target));
+        if (acc.kind == .may) return acc;
+    }
+    return Ov.join(e.arena, e.account(), acc, try heldBy(e, cb.j, cb.slot, ti));
+}
+
+/// What parameter `j`'s function at `slot` may hold of `t`: an object
+/// made in this activation, nothing; another parameter's, what the two
+/// selections keep apart.
+fn heldBy(e: *Eval, j: u32, slot: Slots.Rel, ti: u32) Error!Ov {
+    const t = e.f.leafAt(ti);
+    if (t.kind == .site or t.kind == .fresh) return .no;
+    if (t.kind != .ref) return .may;
+    const r = e.f.roots.items[t.root];
+    if (r.kind == .param and r.a != j) {
+        var occ = [_]u64{Contract.occApart(j, slot)};
+        const c = try Cond.conj(e.arena, e.account(), try Cond.of(e.account(), &occ), try sel(e, r.a, t.slots));
+        return if (c.no) .may else .{ .kind = .under, .cond = c };
+    }
+    if (!e.expandable(t)) return .may;
+    var list: std.ArrayList(u32) = .empty;
+    defer list.deinit(e.gpa());
+    try e.expand(ti, &list);
+    var acc: Ov = .no;
+    for (list.items) |l| {
+        acc = try Ov.join(e.arena, e.account(), acc, try heldBy(e, j, slot, l));
+        if (acc.kind == .may) return acc;
+    }
+    return acc;
 }
 
 fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {

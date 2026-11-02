@@ -552,13 +552,16 @@ const Resolver = struct {
     }
 
     /// A supplied leaf `t` judged as a write the callback may make, the
-    /// call's other arguments its operands (§2.11.3).
+    /// call's other arguments its operands (§2.11.3) but `skip`: a passed-on
+    /// label's own function value, which is no more an operand of its supply
+    /// than a direct label's callee is of its arguments (its captures are
+    /// asked apart by the label's condition).
     /// A supplied part `t` judged at a label's call. A part that comes
     /// partly from unknown code (a callback's answer: a fold's accumulator)
     /// is `unknown` whole, yet its known objects are still kept where they
     /// are held after the call: each is judged on its own (§2.11.3).
-    fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, pending: Ids.Range) Error!Line {
-        const l = try r.judgeSuppliedLeaf(t, point, inst, args, k, pending);
+    fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: Ids.Range) Error!Line {
+        const l = try r.judgeSuppliedLeaf(t, point, inst, args, k, skip, pending);
         if (l.outcome.verdict != .refused or l.outcome.cause != .unknown) return l;
         const fr = r.f();
         var stack: std.ArrayList(u32) = .empty;
@@ -581,18 +584,18 @@ const Resolver = struct {
                 },
                 else => {},
             }
-            const lb = try r.judgeSuppliedLeaf(x, point, inst, args, k, pending);
+            const lb = try r.judgeSuppliedLeaf(x, point, inst, args, k, skip, pending);
             if (lb.outcome.verdict == .refused and lb.outcome.cause != .unknown) return lb;
         }
         return l;
     }
 
-    fn judgeSuppliedLeaf(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, pending: Ids.Range) Error!Line {
+    fn judgeSuppliedLeaf(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: Ids.Range) Error!Line {
         const w = r.e.w;
         const start: u32 = @intCast(w.leaf_runs.items.len);
         try w.leaf_runs.append(w.f.gpa, t);
         const o_start: u32 = @intCast(w.value_runs.items.len);
-        for (args, 0..) |b, m| if (m != k) try w.value_runs.append(w.f.gpa, b);
+        for (args, 0..) |b, m| if (m != k and m != skip) try w.value_runs.append(w.f.gpa, b);
         return r.judge(.{ .point = point, .kind = .callsite, .token = 0, .base_inst = inst, .targets = .{ .start = start, .len = 1 }, .operands = .{ .start = o_start, .len = @intCast(w.value_runs.items.len - o_start) }, .pending = pending });
     }
 };
@@ -623,7 +626,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             defer ls.deinit(f.gpa);
             try e.ev.leavesOf(a, 0, &ls);
             for (ls.items) |t| {
-                const l = try r.judgeSupplied(t, cb.point, cb.inst, cb.args, k, cb.pending);
+                const l = try r.judgeSupplied(t, cb.point, cb.inst, cb.args, k, std.math.maxInt(usize), cb.pending);
                 switch (l.outcome.verdict) {
                     .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ @intCast(ci), @intCast(k), t }),
                     .accepted => conds[ci] = try Cond.conj(e.ev.arena, f.account, conds[ci], l.demand.relies),
@@ -649,7 +652,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             try e.ev.partsOf(v, f.slots.relWords(rs.slot), &ls);
             for (ls.items) |part| {
                 const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
-                const l = try r.judgeSupplied(part.leaf, call.point, call.inst, call.args, a.j, pending);
+                const l = try r.judgeSupplied(part.leaf, call.point, call.inst, call.args, a.j, lab.j, pending);
                 switch (l.outcome.verdict) {
                     .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ @intCast(pi), su.k, part.leaf, part.at }),
                     .accepted => pconds[pi] = try Cond.conj(e.ev.arena, f.account, pconds[pi], l.demand.relies),
