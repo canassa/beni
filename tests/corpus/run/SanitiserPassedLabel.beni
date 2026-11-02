@@ -22,13 +22,11 @@ apply f x = f x
 
 
 wrap : (Pair → List Int), List Int, List Int → List Int × List Int
-wrap f a0 a1 =
-    ( apply f { f0 = a0, f1 = a1 }, a1 )
+wrap f a0 a1 = ( apply f { f0 = a0, f1 = a1 }, a1 )
 
 
 show : List Int → String
-show l =
-    String.join (List.map l String.fromInt) ","
+show l = String.join (List.map l String.fromInt) ","
 
 
 main : Program
