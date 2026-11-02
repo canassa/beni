@@ -479,7 +479,7 @@ where §2.8 says:
 | `case`, `branch` | per arm: the pattern's locals bound to projections/materialisations of `A(scrutinee)` (§2.13.3); the arms' values joined | the scrutinee, kind `whole` | — |
 | `try` (`e?`) | the resolved success payload projected; the `failure`-marked payload (§2.13.6) joins the result of the definition `?` returns from (R-5.1.6) | `e` | — |
 | `markup` | a call of the markup row (§2.13.8) | its values | — |
-| `schema_*` references | a schema member or constructor: the schema row (§2.13.10) | — | — |
+| `schema_*` references | a schema member or constructor: the pessimistic contract (§2.11.5, amended 2026-11-02) | — | — |
 
 Arguments are consumed at the call, items before the base is written (R-4.1.3); every forwarded result is a use
 at that point (R-4.1.4).
@@ -940,8 +940,10 @@ A function value returned by a callee is unknown code at the caller (§2.11.3): 
 - **`markup`**: a `built` opaque value with a fresh site whose kids are every embedded value; each embedded
   value is used whole.
 - **`type_dispatch`**: `⊤`, every operand used and escaped (as a wordless `foreign`, O1).
-- **Schema members and constructors** (§2.13.10): the schema row's code — every argument read deep, the result
-  `fresh` with `res_cond yes`, no write, no escape.
+- **Schema members and constructors** (§2.13.10): the pessimistic contract. *Amended 2026-11-02 (#1685):* a
+  member answers what its `via` conversions answer, which may be a top-level list, and a tagged constructor
+  holds its arguments, so the former row (every argument read, the result `fresh`) let `List.push` write a
+  top-level list through `apply Fixed.parse input` (SchemaMemberHanded).
 - **A `method_call`**: the code `Dispatch` names, as a `call`; unresolved, the pessimistic contract.
 
 ### 2.12 Fixpoints and the pre-pass
