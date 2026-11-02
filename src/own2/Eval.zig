@@ -1444,6 +1444,13 @@ pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
         .call = q,
         .arg = x.j,
     };
+    // The other arguments are its operands (§2.11.2 item 4): a write must
+    // not reach what the call is also handed (`List.set b 0 (Node b)`).
+    if (!call.virtual) {
+        const o_start: u32 = @intCast(e.w.value_runs.items.len);
+        for (call.args, 0..) |a, k| if (k != x.j) try e.w.value_runs.append(gpa, a);
+        d.operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) };
+    }
     d.token = tokenOf(e, call.inst);
     if (call.virtual) {
         // A known code writes what a label supplies (§2.11.3): the
