@@ -883,6 +883,18 @@ same. An accepted demand visits every holder of its buckets, as before. Measured
 n = 25 → 100): `sites` 9 624 → 143 772 before, 1 871 → 7 968 now; `fields` 16 338 → 234 113, now 4 150 → 16 725;
 `opaque` (`--core`) 78 097 → 1 228 389, now 6 121 → 25 787 (with the worded table of §4.1).
 
+*Operands* (2026-11-03). Step 4 reads a call's other arguments the same way. A call's arguments' leaves are listed
+once a resolution with their base keys (`Holders.Operands`); a leaf whose keys are parameters' only is aggregated.
+A write of argument `j` at a parameter's untagged target judges one by one only the other arguments' leaves that
+are not aggregated and those of its target's parameter at related positions (by binary search over the call's
+`(parameter, position)` keys); `T(t)` joins when one aggregated leaf answers `under`, and at the end of the
+resolution each aggregated leaf adds its own selection once, through a write of another argument of its call that
+was accepted. A recursive call of `rot a1 … an k` handed `rot a2 … an a1 (k − 1)` made n writes of n − 1 operands
+a round for n + 2 rounds: `GroupRotate` at n = 16 / 32 / 64 cost 110 353 / limit / limit, now 28 921 / 106 762 /
+411 591 (growth 56 748 of 65 536: the rounds remain, each linear in n). An aggregated holder is also asked first
+whether its local has any use after the point compatible with it, one range query, before a liveness query per
+hold: in the `then` arm, the parameters the `else` arm's call reads are live by the sweep and never used.
+
 **The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
 every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
 tree of the least `rank₂` over each range of it. For an escape `x` before `p`, `x` is compatible with `p`
@@ -3491,7 +3503,7 @@ L0  Ids  Counters  Scratch
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
-| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index (§2.8) | Ids, Relation, Distinct, Contract, Slots, Walk, Regions |
+| `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Slots, Walk, Regions |
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder, buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Subtree, Value, Relation, Distinct |
 | `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
