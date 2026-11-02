@@ -1,4 +1,4 @@
-//! L11: the facade of the ownership checker v2 (`docs/design/ownership-v2.md`
+//! L12: the facade of the ownership checker v2 (`docs/design/ownership-v2.md`
 //! §5): check the modules it is handed (`Groups`), and say what each found
 //! as report lines (`Message`, `Report`). The caller — `Enforce`'s hook, the
 //! dump — prepares each module's inputs.
@@ -10,7 +10,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Counters = @import("Counters.zig");
-const Contract = @import("Contract.zig");
+const ContractText = @import("ContractText.zig");
 const Groups = @import("Groups.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
@@ -133,7 +133,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 var fn_names: FieldNames = .{ .names = in.names };
                 var buf: std.Io.Writer.Allocating = .init(arena);
                 buf.writer.print("summary {s}: ", .{name}) catch return error.OutOfMemory;
-                Contract.print(&mod.contracts, dr.contract, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &buf.writer) catch return error.OutOfMemory;
+                ContractText.print(&mod.contracts, dr.contract, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &buf.writer) catch return error.OutOfMemory;
                 try others.append(arena, buf.written());
             }
         }

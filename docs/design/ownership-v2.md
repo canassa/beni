@@ -2175,9 +2175,10 @@ Slots.Table (per module, beside Place.Table; outlives a walk)
   rel       : []u32 runs of relative step words; interned (`Rel` ids): a contract's slots
 ```
 
-Every fill is reserved on the asking account before work (§4.1); a hit is one record.
+Every fill is reserved on the asking account before work (§4.1); a hit is one record. The interned runs and the
+columns by path id are `Runs.zig`'s.
 
-### 3.3 The walk (`Eval.zig`)
+### 3.3 The walk (`Walk.zig`, `Eval.zig`)
 
 One evaluation of one code, in its own arena, reset after the code's read-off and resolution:
 
@@ -2198,7 +2199,7 @@ escapes   : (leaf, point) pairs
 ```
 
 No table holds a pointer; every reference is an index. The relation (§2.9.2) and the distinct check (§2.9.3)
-keep their per-walk results in `FixedDict`s keyed by leaf pairs and value ids, reserved before insertion.
+(`Distinct.zig`) keep their per-walk results in `FixedDict`s keyed by leaf pairs and value ids, reserved before insertion.
 
 ### 3.4 Conditions
 
@@ -2235,7 +2236,8 @@ Contract.Table (per module)
   supplies  : Columns { k: u32, res: Range, kept: Range, cond: Range }
 ```
 
-A contract is immutable once read off; a join makes a new one. The group solver keeps one candidate per member
+A contract is immutable once read off; a join makes a new one. Its text (the dump's `summary` line) is
+`ContractText.zig`'s. The group solver keeps one candidate per member
 and the delivery queue of §2.12.
 
 ### 3.6 Blocks (`Block.zig`): format v-next
@@ -2962,21 +2964,24 @@ not merely be renamed to this limit. Exhaustion is a compiler-resource error wit
 ## 5. Module structure
 
 *Amended 2026-11-02 (#1685): the slot domain replaced the shape files.* `src/own2/` while v1 exists; renamed
-`src/own/` at S10. Imports go to strictly lower layers; same-layer files never import each other.
+`src/own/` at S10. Imports go to strictly lower layers; same-layer files never import each other. *Amended
+2026-11-02 (#1685): `Runs`, `ContractText`, `Walk` and `Distinct` were split out of `Slots`, `Contract`, `Eval`
+and `Relation` along their seams, and the layers from `Distinct` up moved one place.*
 
 ```
-L12 Enforce
-L11 Ownership
-L10 Block  Message  Report  Hoists
-L9  Groups
-L8  Resolve  Deliver
-L7  Eval
+L13 Enforce
+L12 Ownership
+L11 Block  Message  Report  Hoists
+L10 Groups
+L9  Resolve  Deliver
+L8  Eval
+L7  Walk  Distinct
 L6  Relation
 L5  Value  Liveness
-L4  Rows  Regions
+L4  Rows  Regions  ContractText
 L3  Contract  Prepass
 L2  Slots  Facts
-L1  Place
+L1  Place  Runs
 L0  Ids  Counters  Scratch
      bir/Bir, check/{TypeStore,Types,Walk,Dispatch,Edges,SchemaPlan,EffectPlan,Scc}, resolve/{Interface,Graph}, parse/Ast, InternPool, stamped
 ```
@@ -2987,25 +2992,29 @@ L0  Ids  Counters  Scratch
 | `Counters.zig` | 0 | the data-oriented measurement behind `-Downership-v2-counters` | — |
 | `Scratch.zig` | 0 | a walk's sparse sets and maps | Counters |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, levels and their expansion | Ids |
+| `Runs.zig` | 1 | runs of words interned by content, a column by path id (§3.2) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
-| `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place |
-| `Contract.zig` | 3 | the contract table, join, `within`, canonical order, text (§2.10, §3.5) | Ids, Place, Slots |
+| `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
+| `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
+| `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags (§2.3, §3.3) | Ids, Place, Slots, Contract |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
-| `Relation.zig` | 6 | the one relation, the distinct check, instantiation and expansion (§2.9, §2.11.2) | Ids, Place, Slots, Contract, Value |
-| `Eval.zig` | 7 | one walk: a rule per BIR tag, uses, demands, calls, labels, closures, read-off (§2.6, §2.10, §2.11) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
-| `Resolve.zig` | 8 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Value, Relation, Eval, Liveness, Regions |
-| `Deliver.zig` | 8 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
-| `Groups.zig` | 9 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Eval, Resolve, Deliver |
-| `Block.zig` | 10 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
-| `Message.zig` | 10 | diagnostic text | Ids, Facts, Place, Eval, Resolve, Groups |
-| `Report.zig` | 10 | dump lines and totals | Facts |
-| `Hoists.zig` | 10 | the lowering channel | Facts |
-| `Ownership.zig` | 11 | facade | Ids, Facts, Contract, Groups, Block, Message, Report, Hoists, Counters |
-| `Enforce.zig` | 12 | the driver hook, inputs, the interface's block | Ids, Facts, Groups, Block, Ownership, Report, Hoists, Message |
+| `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Contract, Value |
+| `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
+| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Contract, Value, Relation |
+| `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Contract, Value, Relation, Distinct, Walk |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Value, Relation, Distinct, Walk, Eval, Liveness, Regions |
+| `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
+| `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver |
+| `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups |
+| `Report.zig` | 11 | dump lines and totals | Facts |
+| `Hoists.zig` | 11 | the lowering channel | Facts |
+| `Ownership.zig` | 12 | facade | Ids, Facts, ContractText, Groups, Block, Message, Report, Hoists, Counters |
+| `Enforce.zig` | 13 | the driver hook, inputs, the interface's block | Ids, Facts, Groups, Block, Ownership, Report, Hoists, Message |
 | `rules_test.zig` | — | the layering gate | — |
 
 **The layering gate** (`own2/rules_test.zig`, in `zig build test`) reads every file's `@import` lines against

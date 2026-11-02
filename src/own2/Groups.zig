@@ -1,4 +1,4 @@
-//! L9: the module (`docs/design/ownership-v2.md` §2.1, §2.11, §2.12, §5):
+//! L10: the module (`docs/design/ownership-v2.md` §2.1, §2.11, §2.12, §5):
 //! the source and signature adapters, the module's codes, each call's
 //! callee, and the solving of every declaration group.
 //!
@@ -47,6 +47,7 @@ const Regions = @import("Regions.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
+const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
 const Deliver = @import("Deliver.zig");
 const Bir = @import("../bir/Bir.zig");
@@ -630,7 +631,7 @@ pub const Code = struct {
     contract: u32 = none,
     /// Moves when the contract does (§2.12's read check).
     version: u32 = 0,
-    walk: ?*Eval.Walk = null,
+    walk: ?*Walk.Walk = null,
 };
 
 pub const Module = struct {
@@ -922,7 +923,7 @@ pub const Module = struct {
         return mod.code_of_inst.get(.{binding});
     }
 
-    fn callee(ctx: *anyopaque, inst: u32, args: []const u32) Error!Eval.Callee {
+    fn callee(ctx: *anyopaque, inst: u32, args: []const u32) Error!Walk.Callee {
         const mod = self(ctx);
         const bir = mod.in.bir;
         var target: ?[2]u32 = null;
@@ -1047,7 +1048,7 @@ pub const Module = struct {
         return c.contract;
     }
 
-    fn codeSig(ctx: *anyopaque, code: u32) Error!Eval.Sig {
+    fn codeSig(ctx: *anyopaque, code: u32) Error!Walk.Sig {
         const mod = self(ctx);
         const c = mod.codes.items[code];
         return .{ .params = mod.code_places.items[c.params.start..][0..c.params.len], .own = c.own, .result = c.result };
@@ -1068,7 +1069,7 @@ pub const Module = struct {
         return null;
     }
 
-    pub fn context(mod: *Module) Eval.Context {
+    pub fn context(mod: *Module) Walk.Context {
         return .{
             .ctx = mod,
             .placeOfInst = placeOfInst,
@@ -1307,7 +1308,7 @@ fn declCodes(mod: *Module, di: u32, out: *std.ArrayList(u32)) Error!void {
 }
 
 /// The code's walk input.
-fn walkCode(mod: *Module, id: u32) Eval.Code {
+fn walkCode(mod: *Module, id: u32) Walk.Code {
     const c = mod.codes.items[id];
     const bir = mod.in.bir;
     const d = bir.decls[c.decl];
@@ -1366,8 +1367,8 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         const r = &rs[owner.items[x]];
         charging(mod, &r.account);
         mod.cur_locals = in.bir.decls[r.decl].locals_start;
-        const w = try arena.create(Eval.Walk);
-        try Eval.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), walkCode(mod, id), &atoms[owner.items[x]], w);
+        const w = try arena.create(Walk.Walk);
+        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), walkCode(mod, id), &atoms[owner.items[x]], w);
         mod.codes.items[id].walk = w;
         r.walks += 1;
     }
