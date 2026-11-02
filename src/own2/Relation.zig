@@ -921,26 +921,33 @@ pub const Eval = struct {
             const at_base = base.int() | open_bit;
             e.cur_sub = .{ .kind = .forward_below, .a = ki, .b = at_base };
             try e.arrivalLeaves(k.call, none, a, suffix0, &acc);
+            // What holds below `base`: an arrival by structure (§2.10) is
+            // the argument's whole subtree there, not its slot's objects.
+            var below: std.ArrayList(u32) = .empty;
+            defer below.deinit(e.gpa());
+            var da = a;
+            da.deep = true;
+            if (a.kind == .param and !a.deep) try e.arrivalLeaves(k.call, none, da, suffix0, &below) else try below.appendSlice(e.gpa(), acc.items);
             var atoms: std.ArrayList(u32) = .empty;
             defer atoms.deinit(e.gpa());
             var uniform = true;
-            for (acc.items) |x| if (!try e.uniformAtoms(x, &atoms)) {
+            for (below.items) |x| if (!try e.uniformAtoms(x, &atoms)) {
                 uniform = false;
                 break;
             };
-            if (uniform or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
-                for (if (uniform) atoms.items else acc.items) |x| try e.addBelow(ki, x, at_base);
+            if ((uniform and below.items.len != 0) or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+                for (if (uniform) atoms.items else below.items) |x| try e.addBelow(ki, x, at_base);
                 return;
             }
             // A call's or a supply's result at `base` is open there: its
             // subtree is read through that call's own key below it.
             var calls = true;
-            for (acc.items) |x| {
+            for (below.items) |x| {
                 const xl = e.f.leafAt(x);
                 if (xl.kind != .ref or !e.expandable(xl)) calls = false;
             }
-            if (calls) {
-                for (acc.items) |x| try e.addBelow(ki, x, at_base);
+            if (calls and below.items.len != 0) {
+                for (below.items) |x| try e.addBelow(ki, x, at_base);
                 return;
             }
             // Each slot below through its own key: a whole subtree's slots
