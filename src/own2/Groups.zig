@@ -883,7 +883,8 @@ pub const Module = struct {
     }
 
     /// A worded declaration's contract over the given places.
-    fn wordedContract(mod: *Module, owner: u32, decl: Bir.Decl, params: []const PlaceId, result: PlaceId) Error!u32 {
+    fn wordedContract(mod: *Module, owner: u32, di: u32, params: []const PlaceId, result: PlaceId) Error!u32 {
+        const decl = mod.in.birs[owner].decls[di];
         var arena: std.heap.ArenaAllocator = .init(mod.gpa);
         defer arena.deinit();
         const words = mod.in.birs[owner].ownSlotsV2(decl);
@@ -900,7 +901,7 @@ pub const Module = struct {
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
         };
-        return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words });
+        return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words, .origin = .{ owner, di } });
     }
 
     /// The contract of declaration `t` (another module's, or this one's when
@@ -908,7 +909,7 @@ pub const Module = struct {
     fn declContract(mod: *Module, t: [2]u32, params: []const PlaceId, result: PlaceId) Error!?u32 {
         const owner = mod.in.birs[t[0]];
         const decl = owner.decls[t[1]];
-        if (owner.ownSlotsV2(decl).len != 0) return try mod.wordedContract(t[0], decl, params, result);
+        if (owner.ownSlotsV2(decl).len != 0) return try mod.wordedContract(t[0], t[1], params, result);
         if (t[0] == mod.in.module) {
             if (t[1] < mod.body_code.len and mod.body_code[t[1]] != none) return null;
             if (decl.kind == .foreign_value) return try mod.pessimisticOf(@intCast(params.len));
@@ -1597,7 +1598,7 @@ pub fn declaredContract(mod: *Module, di: u32) Error!?u32 {
     var ps: std.ArrayList(PlaceId) = .empty;
     defer ps.deinit(mod.gpa);
     const result = (try mod.fnPlaces(scheme, &ps)) orelse try mod.adapter.placeOfVar(scheme);
-    if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedContract(mod.in.module, d, ps.items, result);
+    if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedContract(mod.in.module, di, ps.items, result);
     if (d.kind == .foreign_value) return try mod.pessimisticOf(@intCast(ps.items.len));
     return null;
 }

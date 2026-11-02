@@ -58,6 +58,8 @@ const layers = [_]Entry{
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 7, .max_lines = 730 },
+    // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
+    .{ .file = "Cells.zig", .layer = 7, .max_lines = 150 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
     .{ .file = "Eval.zig", .layer = 8, .max_lines = 1330 },
@@ -362,7 +364,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 28), layers.len);
+    try testing.expectEqual(@as(usize, 29), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

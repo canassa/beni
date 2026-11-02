@@ -24,6 +24,7 @@ const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const Cells = @import("Cells.zig");
 const Contract = @import("Contract.zig");
 const Eval = @import("Eval.zig");
 const Walk = @import("Walk.zig");
@@ -517,6 +518,11 @@ const Resolver = struct {
                 defer hs.deinit(g);
                 try r.holds(h, t, &hs);
                 for (hs.items) |x| {
+                    // A cell holds its contents behind the barrier (§2.13.7):
+                    // only the worded operations reach them, and what they
+                    // hand out (a loan, a callback's supply) is a holder of
+                    // its own.
+                    if (Cells.behindCell(fr.places, x[0])) continue;
                     const u = (try r.liveAt(h, x[0], d.point)) orelse continue;
                     switch (x[1].kind) {
                         .no => {},

@@ -1026,8 +1026,13 @@ instead, `cell r◆` in the dump, so the enclosing code's contract still says `w
 captured record (`m.world◆`) names the `◆` of each cell slot it reaches, never the handle. Before this, such a
 closure was `once`, and the callees above refused it. An **in-place write of a captured list** still makes the code
 `once`, under the rules above, also beside cell operations in the same body. A list taken out of the cell under
-`cellupdate`/`cellmodify` and edited in place is a write of that row's callback parameter, not of the capture: it
-is judged at that callback, by the row's own rules (§2.13.7), however often the closure runs.
+`cellupdate`/`cellmodify` and edited in place is a write of that row's callback parameter: at that callback it is
+judged by the row's own rules (§2.13.7). *Amended 2026-11-02 (#1729):* for the closure around the operation, the
+edit is a write of the captured cell's contents (deep at its `◆`, `writes π◆*`), not a cell operation, so it makes
+the closure `once` as a captured list's write does. A run of the closure may leave a loan of the contents live
+when the next run edits them: the `Ref.get r` it answers to `List.map`, or a loan that another fiber holds across
+a suspension, which v2 does not check yet. Before #1729 the edit was refused at the callback (`unknown`), so the
+closure's contract did not have it.
 
 A function value returned by a callee is unknown code at the caller (§2.11.3): its answer is `⊤`. *Amended
 2026-11-02 (#1709):* so a closure that a callee **hands back** — an arrival of the callee's `res` (itself,
@@ -1421,6 +1426,34 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    beni code runs between two points that do not suspend. `Deferred` follows its explicit rows above. `Js.ref` is **worded**, but is not a `cell`-marked type:
    `ref : escaped a → fresh Ref a`, `read : borrowed Ref a → unknown a`, `write : borrowed Ref a, escaped a → ⊤`
    (`core/Js.beni:193–202`). Thus stored contents escape and reads are unknown, per R-5.12.4; a spawned fiber or queued body holds its captures as an escaped closure (R-5.12.1).
+   *Amended 2026-11-02 (#1729), the loan rule at a cell callback, as v2 builds it:* the rule "Dead requires every live
+   loan dead" is the rule of an **in-place edit of the contents**. Replacing the contents (`Ref.set`, the cell write of
+   `Ref.update`/`Ref.modify`) stales no loan, because the loan still names the old contents, which nothing changes; that
+   `writer` demand is behind the barrier. Before this amendment v2 checked no loan at all: the cell demand's targets are
+   the `◆` position, which no holder meets, and a `cellupdate`/`cellmodify` callback was unknown code, so every edit it
+   made in place was refused `unknown (approx)`, loan or not. Now:
+   - **The callback is a label** of the row (§2.11.3), called `once`, whose one supply is `π1◆` slot for slot and kept
+     by nothing (`Rows.fromWords`). It no longer escapes. Its in-place edit of what it is supplied is a `callsite`
+     demand on what the cell holds, judged as any other. A loan of the contents (a `Ref.get` or `Ref.modify` result,
+     or a value or closure built from one) that is live after the operation is a holder of them and refuses it:
+     `alias: v holds it`, `captured: g, a closure holding it`. With no loan live, the edit is accepted
+     `callback-param`. Loans are still `⊤` in v2 (`lent`), so a live loan of another cell refuses the edit too.
+   - **The edit is deep at `π1◆`** at the caller (`writes π1◆*`), never a cell operation (§2.11.4,
+     `Eval.cellWrite`), so a call of a function that makes it is judged against the caller's loans in the same way
+     (`bump r` with `v = Ref.get r` live is refused at the call).
+   - **The cell holds its contents behind the barrier.** A hold whose path steps through a `◆` is no holder of what
+     the cell holds: the handle's later uses and a record holding the `Ref` do not refuse the edit
+     (`Place.behindCell`). Only the worded operations reach the contents, and what they hand out is a holder of its
+     own. A cell operation's target is the `◆` position also where the projection names the cell by a slot below it
+     (`m.world◆` of a captured record), so an escape of the contents never refuses a cell operation.
+   - **What the callback answers is stored back** (`Ref.update`'s answer, `Ref.modify`'s `.1`). At a slot where
+     every object is one the callback was supplied or one it allocated, the contents stay the cell's own. At any other
+     slot (a capture, a top-level value, the answer of a callback or of unknown code, a code still being solved, a
+     callback the frame passes on), what the cell holds there may be held elsewhere: it escapes at the call
+     (`Eval.cellAnswer`), so a later in-place edit of it is refused `escaped`. Without this, `Ref.update r λ_ → ys`
+     followed by an edit in place would change `ys`, which v2 cannot see, as it keeps no slot state yet.
+   Fixtures: `run/SanitiserCellLoan` (each loan refused; the sanitised run of an acceptance shows the stale read) and
+   `run/SanitiserCellEdit` (the same edits with no loan live, accepted, the sanitised run prints the same).
    **Slot state and loans.** A versioned frame relation `contents(handle-origin, ◆)` supplies current stored
    origins/κ. `cellnew`/`cellempty` initialise it; set/update/modify write-back changes it after the callback,
    and complete joins the already-complete/no-op and empty/store alternatives. Strong update is allowed only
@@ -3117,7 +3150,7 @@ L11 Block  Message  Report  Hoists
 L10 Groups
 L9  Resolve  Deliver  Closures
 L8  Eval
-L7  Walk  Distinct
+L7  Walk  Distinct  Cells
 L6  Relation
 L5  Value  Liveness
 L4  Rows  Regions  ContractText
@@ -3148,8 +3181,9 @@ L0  Ids  Counters  Scratch
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation |
-| `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk |
-| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions |
+| `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, a cell callback's supply, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation |
+| `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
+| `Resolve.zig` | 9 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Cells |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
