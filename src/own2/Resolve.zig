@@ -555,7 +555,41 @@ const Resolver = struct {
 
     /// A supplied leaf `t` judged as a write the callback may make, the
     /// call's other arguments its operands (§2.11.3).
+    /// A supplied part `t` judged at a label's call. A part that comes
+    /// partly from unknown code (a callback's answer: a fold's accumulator)
+    /// is `unknown` whole, yet its known objects are still kept where they
+    /// are held after the call: each is judged on its own (§2.11.3).
     fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, pending: Ids.Range) Error!Line {
+        const l = try r.judgeSuppliedLeaf(t, point, inst, args, k, pending);
+        if (l.outcome.verdict != .refused or l.outcome.cause != .unknown) return l;
+        const fr = r.f();
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(r.gpa());
+        var seen: Ids.FixedDict(1) = .{};
+        defer seen.deinit(r.gpa());
+        try stack.append(r.gpa(), t);
+        while (stack.pop()) |x| {
+            if ((try seen.getOrPut(r.gpa(), .{x})).found_existing) continue;
+            const xl = fr.leafAt(x);
+            switch (xl.kind) {
+                .answer, .top => continue,
+                .ref => switch (fr.roots.items[xl.root].kind) {
+                    .cb => continue,
+                    .call, .supply => {
+                        try r.ev().expand(x, &stack);
+                        continue;
+                    },
+                    .param => {},
+                },
+                else => {},
+            }
+            const lb = try r.judgeSuppliedLeaf(x, point, inst, args, k, pending);
+            if (lb.outcome.verdict == .refused and lb.outcome.cause != .unknown) return lb;
+        }
+        return l;
+    }
+
+    fn judgeSuppliedLeaf(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, pending: Ids.Range) Error!Line {
         const w = r.e.w;
         const start: u32 = @intCast(w.leaf_runs.items.len);
         try w.leaf_runs.append(w.f.gpa, t);
