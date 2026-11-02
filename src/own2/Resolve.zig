@@ -31,6 +31,7 @@ const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
 const Holders = @import("Holders.zig");
+const Sweep = @import("Sweep.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -79,11 +80,14 @@ const Resolver = struct {
     regions: *const Regions.Tree,
     /// The holder index and its sweep (§2.8): locals by their values' base
     /// keys, live while the sweep's point is between their binding and last use.
-    live: Holders.Live = .{},
+    live: Sweep.Live = .{},
     ancestry: Liveness.Ancestry = .{},
     /// Each leaf's base keys and the escape index (§2.8).
     keys: Holders.Keys = .{},
     escapes: Holders.Escapes = .{},
+    /// Whether a judgement's aggregated holders add to the frame's `req`:
+    /// a demand's do, a label's supplied part's are judged one by one.
+    aggregate: bool = false,
 
     fn f(r: *Resolver) *Value.Frame {
         return &r.e.w.f;
@@ -105,18 +109,9 @@ const Resolver = struct {
         r.escapes.deinit(r.gpa());
     }
 
-    /// The base keys of `targets` (§2.8, *Base keys*): their runs, joined.
-    fn keysOf(r: *Resolver, targets: []const u32, out: *std.ArrayList([3]u32), unknown: *bool) Error!void {
-        for (targets) |t| {
-            const ks = try r.keys.of(r.ev(), t);
-            try out.appendSlice(r.gpa(), ks.keys);
-            unknown.* = unknown.* or ks.unknown;
-        }
-    }
-
     /// The holder index (§2.8): every bound local that is used after its
-    /// binding; keyed by its value's base keys only when a demand first
-    /// meets it live (`candidates`).
+    /// binding; keyed by its holds' base keys only when a demand first
+    /// meets it live (`keyLive`).
     fn index(r: *Resolver) Error!void {
         const w = r.e.w;
         for (w.bindings, 0..) |b, local| {
@@ -128,28 +123,40 @@ const Resolver = struct {
         try r.live.finish(r.ev());
     }
 
-    /// The live locals that may hold an object of `targets` (§2.8, *The
-    /// holder index and its sweep*): the live holders not keyed yet keyed
-    /// first, by their values' leaves' base keys.
-    fn candidates(r: *Resolver, targets: []const u32, out: *std.ArrayList(u32)) Error!void {
+    /// Key every unkeyed live holder (§2.8, *Holder entries judged by base
+    /// leaves*): its holds listed once, each hold's base keys, its uses.
+    fn keyLive(r: *Resolver) Error!void {
         if (!r.live.any()) return;
         const g = r.gpa();
+        const w = r.e.w;
+        const fr = r.f();
         var keys: std.ArrayList([3]u32) = .empty;
         defer keys.deinit(g);
+        var hds: std.ArrayList(Sweep.Hold) = .empty;
+        defer hds.deinit(g);
+        var points: std.ArrayList(u32) = .empty;
+        defer points.deinit(g);
         while (r.live.takeUnkeyed()) |hi| {
-            const b = r.e.w.bindings[r.live.holders.items[hi].local];
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(g);
-            try r.ev().leavesOf(b.value, 0, &ls);
+            const local = r.live.holders.items[hi].local;
+            hds.clearRetainingCapacity();
             keys.clearRetainingCapacity();
+            points.clearRetainingCapacity();
+            const root = try fr.places.rootPath(g, try r.e.ctx.placeOfLocal(r.e.ctx.ctx, local));
+            try Sweep.holdsOfValue(r.ev(), w.bindings[local].value, root, &hds);
             var unknown = false;
-            try r.keysOf(ls.items, &keys, &unknown);
-            try r.live.key(r.ev(), hi, try sortedKeys(&keys), unknown);
+            for (hds.items) |*hd| {
+                const ks = try r.keys.of(r.ev(), hd.leaf);
+                try keys.appendSlice(g, ks.keys);
+                unknown = unknown or ks.unknown;
+                var param = false;
+                for (ks.keys) |k| param = param or k[0] == 0;
+                hd.agg = param and !ks.unknown;
+            }
+            const run = if (local < w.index.by_local.len) w.index.by_local[local] else Ids.Range{};
+            var i: u32 = 0;
+            while (i < run.len) : (i += 1) try points.append(g, w.index.get(.from(run.start + i)).point);
+            try r.live.key(r.ev(), hi, hds.items, try sortedKeys(&keys), unknown, points.items);
         }
-        keys.clearRetainingCapacity();
-        var unknown = false;
-        try r.keysOf(targets, &keys, &unknown);
-        try r.live.candidates(r.ev(), try sortedKeys(&keys), out);
     }
 
     fn sortedKeys(keys: *std.ArrayList([3]u32)) Error![]const [3]u32 {
@@ -168,132 +175,100 @@ const Resolver = struct {
         return keys.items;
     }
 
-    /// The paths at which local `h`'s value holds an object `target` may
-    /// be, and the relation there: each `(path, ov)`.
-    fn holds(r: *Resolver, h: u32, target: u32, out: *std.ArrayList(struct { PathId, Relation.Ov })) Error!void {
+    /// Whether `l` is a parameter's untagged target, not a cell's `◆`
+    /// (§2.8, *Holder entries judged by base leaves*, step 2).
+    fn paramTarget(r: *Resolver, l: Value.Leaf) bool {
         const fr = r.f();
+        if (l.kind != .ref or l.tags != 0 or fr.roots.items[l.root].kind != .param) return false;
+        if (l.at_pos) {
+            const tp = fr.pos.items[l.pos];
+            if (tp.kind == .plain and Place.Step.fromWord(tp.a).kind == .contents) return false;
+        }
+        return true;
+    }
+
+    /// The buckets of the holders that may hold target `t` (§2.8): the
+    /// unknown one; for a parameter's untagged target judged with
+    /// aggregation, the buckets at related positions (true: every other
+    /// holder is an aggregated one); else its keys' buckets, and every
+    /// parameter's for a parameter's key.
+    fn bucketsOf(r: *Resolver, t: u32, out: *std.ArrayList(u32)) Error!bool {
         const g = r.gpa();
-        const b = r.e.w.bindings[h];
-        const root = try fr.places.rootPath(g, try r.e.ctx.placeOfLocal(r.e.ctx.ctx, h));
-        const Item = struct { v: u32, q: PathId, tags: u32 };
-        var stack: std.ArrayList(Item) = .empty;
-        defer stack.deinit(g);
-        try stack.append(g, .{ .v = b.value, .q = root, .tags = 0 });
-        while (stack.pop()) |it| {
-            try fr.charge(.inspection, 1);
-            const x = fr.val(it.v);
-            switch (x.kind) {
-                .scalar, .bot => {},
-                .alt => {
-                    const ks = fr.kidsOf(x);
-                    var i: usize = 0;
-                    while (i < ks.len) : (i += 2) {
-                        const t = (try fr.mergeTags(it.tags, try fr.internTags(&.{.{ x.head, try fr.armOf(ks[i]) }}))) orelse continue;
-                        try stack.append(g, .{ .v = ks[i + 1], .q = it.q, .tags = t });
-                    }
-                },
-                .built => {
-                    var own: std.ArrayList(u32) = .empty;
-                    defer own.deinit(g);
-                    try r.ev().storageOf(it.v, it.tags, &own);
-                    for (own.items) |l| {
-                        const o = try Distinct.overlap(r.ev(), l, target, true);
-                        if (o.kind != .no) try out.append(g, .{ it.q, o });
-                    }
-                    for (fr.kidsOf(x), 0..) |kv, n| {
-                        const st: ?Place.Step = switch (x.form) {
-                            .tuple => try Place.Step.index(fr.account, @intCast(n)),
-                            .ctor => try fr.places.ctorStep(g, fr.account, x.head, @intCast(n)),
-                            .list => Place.Step.elem,
-                            .record => try Place.Step.field(fr.account, fr.wordsOf(x.extra)[n]),
-                            .closure, .opaque_ => null,
-                        };
-                        const nq = if (st) |s| (try fr.places.extend(g, fr.gc(), it.q, s)) orelse it.q else it.q;
-                        try stack.append(g, .{ .v = kv, .q = nq, .tags = it.tags });
-                    }
-                },
-                .ref, .top, .shared => {
-                    var ls: std.ArrayList(u32) = .empty;
-                    defer ls.deinit(g);
-                    try r.ev().leavesOf(it.v, it.tags, &ls);
-                    for (ls.items) |l| {
-                        const o = try Distinct.overlap(r.ev(), l, target, true);
-                        if (o.kind == .no) continue;
-                        // The path of the hold: below `q` by the steps from the
-                        // leaf's position to the slots that meet the target's.
-                        const lf = fr.leafAt(l);
-                        // The target as leaves of the holder's root: itself,
-                        // or what a call's leaf comes from (its arrivals).
-                        var tls: std.ArrayList(u32) = .empty;
-                        defer tls.deinit(g);
-                        try r.sameRoot(lf, target, &tls);
-                        if (lf.kind == .ref and tls.items.len != 0 and x.family == Slots.empty) {
-                            const pslot = fr.pos.items[lf.pos].slot;
-                            var any = false;
-                            for (tls.items) |tli| for (fr.slots.elems(fr.leafAt(tli).slots)) |el| {
-                                if (Slots.isNot(el)) continue;
-                                const ts = Slots.pathOf(el).int();
-                                // A slot, or a whole subtree (`↓ts`, §2.3.1), the holder meets.
-                                if (!try Subtree.meetIn(fr.slots, g, fr.account, fr.places, lf.slots, try fr.slots.internSorted(g, fr.account, &.{el}))) continue;
-                                const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
-                                var ps: std.ArrayList(u32) = .empty;
-                                defer ps.deinit(g);
-                                try Slots.replay(g, fr.account, fr.places, it.q, fr.slots.relWords(rel), &ps);
-                                for (ps.items) |p| {
-                                    try out.append(g, .{ .from(p), o });
-                                    any = true;
-                                }
-                            };
-                            if (any) {
-                                // The holder's other objects are the target
-                                // only where its root is not separated: held
-                                // at the holder's path, under that condition.
-                                var minus: std.ArrayList(u32) = .empty;
-                                defer minus.deinit(g);
-                                for (tls.items) |tli| try minus.append(g, fr.leafAt(tli).slots);
-                                if (try Subtree.without(fr.slots, g, fr.account, fr.places, lf.slots, minus.items)) |rest| {
-                                    var rl = lf;
-                                    rl.slots = rest;
-                                    const o2 = try Distinct.overlap(r.ev(), try fr.leaf(rl), target, true);
-                                    if (o2.kind != .no) try out.append(g, .{ it.q, o2 });
-                                }
-                                continue;
-                            }
-                        }
-                        try out.append(g, .{ it.q, o });
-                    }
-                },
+        const l = r.f().leafAt(t);
+        if (r.live.unknownBucket()) |b| try out.append(g, b);
+        if (r.aggregate and r.paramTarget(l)) {
+            try r.live.related(r.ev(), l.pos, out);
+            return true;
+        }
+        const ks = try r.keys.of(r.ev(), t);
+        var params = false;
+        for (ks.keys) |k| {
+            if (k[0] == 0) {
+                params = true;
+                continue;
             }
+            if (r.live.bucketFor(k)) |b| try out.append(g, b);
+        }
+        if (params) try r.live.allParams(r.ev(), out);
+        return false;
+    }
+
+    /// The aggregated holders of a parameter's target `t` at `point` (§2.8,
+    /// *Holder entries judged by base leaves*, step 3): no visited holder,
+    /// each hold of which answers no or `under` an apart selection and the
+    /// target's. A pending holder's holds are judged against `t`; those used
+    /// after the point add their selections, and a holder all of whose
+    /// holds have is done (`dones`, once the demand is accepted). When no
+    /// pending one is used after the point, the first done holder that is
+    /// adds the target's selection with its own (which `req` has already).
+    fn aggregated(r: *Resolver, t: u32, point: u32, relied: *Holders.Gather, done_holds: *std.ArrayList(u32), dones: *std.ArrayList(u32)) Error!void {
+        const g = r.gpa();
+        const fr = r.f();
+        var found = false;
+        var it = r.live.aggFirst(0);
+        while (it) |hi| : (it = r.live.aggNext(hi)) {
+            try fr.charge(.inspection, 1);
+            if (r.live.visited(hi)) continue;
+            const h = r.live.holders.items[hi];
+            var all = true;
+            for (r.live.holdsOf(hi), 0..) |hd, k| {
+                if (!hd.agg or hd.done) continue;
+                const got = try r.aggHold(h.local, hd, t, point, relied);
+                found = found or got[0];
+                if (got[1]) try done_holds.append(g, h.h_start + @as(u32, @intCast(k))) else all = false;
+            }
+            if (all) try dones.append(g, hi);
+        }
+        if (found) return;
+        it = r.live.aggFirst(1);
+        while (it) |hi| : (it = r.live.aggNext(hi)) {
+            try fr.charge(.inspection, 1);
+            if (r.live.visited(hi)) continue;
+            const local = r.live.holders.items[hi].local;
+            for (r.live.holdsOf(hi)) |hd| if (hd.agg and (try r.aggHold(local, hd, t, point, relied))[0]) return;
         }
     }
 
-    /// The leaves of target `t` at the holder leaf `lf`'s root: `t`
-    /// itself when it is of that root, else, while it is a call's or a
-    /// supply's, what it comes from (§2.9.2 step 4), a few levels deep.
-    fn sameRoot(r: *Resolver, lf: Value.Leaf, t: u32, out: *std.ArrayList(u32)) Error!void {
-        const fr = r.f();
+    /// Hold `hd` of local `h` against `t`: whether some path of it is used
+    /// after `point`, each such `under` gathered; and whether every path
+    /// that answers `under` is.
+    fn aggHold(r: *Resolver, h: u32, hd: Sweep.Hold, t: u32, point: u32, relied: *Holders.Gather) Error![2]bool {
         const g = r.gpa();
-        if (lf.kind != .ref) return;
-        var cur: std.ArrayList(u32) = .empty;
-        defer cur.deinit(g);
-        try cur.append(g, t);
-        var depth: u32 = 0;
-        while (cur.items.len != 0 and depth < 4) : (depth += 1) {
-            var next: std.ArrayList(u32) = .empty;
-            defer next.deinit(g);
-            for (cur.items) |x| {
-                try fr.charge(.inspection, 1);
-                const xl = fr.leafAt(x);
-                if (xl.kind != .ref) continue;
-                if (xl.root == lf.root) {
-                    try out.append(g, x);
-                    continue;
-                }
-                const k = fr.roots.items[xl.root].kind;
-                if (k == .call or k == .supply) try r.ev().expand(x, &next);
+        var hs: std.ArrayList(Sweep.Held) = .empty;
+        defer hs.deinit(g);
+        try Sweep.holdsAt(r.ev(), hd, t, &hs);
+        var any = false;
+        var all = hs.items.len != 0;
+        for (hs.items) |x| {
+            if (x[1].kind != .under) continue;
+            if ((try r.liveAt(h, x[0], point)) == null) {
+                all = false;
+                continue;
             }
-            std.mem.swap(std.ArrayList(u32), &cur, &next);
+            try relied.add(g, r.account(), x[1].cond);
+            any = true;
         }
+        return .{ any, all };
     }
 
     /// The first use of local `h` after `point`, compatible with it, that
@@ -462,32 +437,43 @@ const Resolver = struct {
                 }
             };
         }
-        var cands: std.ArrayList(u32) = .empty;
-        defer cands.deinit(g);
-        try r.candidates(targets, &cands);
+        // The live locals (§2.8 step 5), a target's buckets in use order: once
+        // a hold is found, no holder used later can be the witness.
+        try r.keyLive();
         const base_local: u32 = if (w.bir.instTag(@fromBackingInt(d.base_inst)) == .local) w.bir.instData(@fromBackingInt(d.base_inst)).lhs else none;
         var best: ?struct { h: u32, use: Liveness.UseId, q: PathId, exact: bool } = null;
-        for (cands.items) |h| {
-            const b = w.bindings[h];
-            if (b.point == none or b.point >= d.point) continue;
-            if (w.index.lastUse(h) == none or w.index.lastUse(h) <= d.point) continue;
-            for (targets) |t| {
-                var hs: std.ArrayList(struct { PathId, Relation.Ov }) = .empty;
-                defer hs.deinit(g);
-                try r.holds(h, t, &hs);
-                for (hs.items) |x| {
-                    const u = (try r.liveAt(h, x[0], d.point)) orelse continue;
-                    switch (x[1].kind) {
-                        .no => {},
-                        .under => try relied.add(g, r.account(), x[1].cond),
-                        .may => {
-                            const up = w.index.get(u).point;
-                            if (best == null or up < w.index.get(best.?.use).point or (up == w.index.get(best.?.use).point and h < best.?.h)) best = .{ .h = h, .use = u, .q = x[0], .exact = true };
-                        },
+        var done_holds: std.ArrayList(u32) = .empty;
+        defer done_holds.deinit(g);
+        var dones: std.ArrayList(u32) = .empty;
+        defer dones.deinit(g);
+        var bs: std.ArrayList(u32) = .empty;
+        defer bs.deinit(g);
+        var hs: std.ArrayList(Sweep.Held) = .empty;
+        defer hs.deinit(g);
+        if (r.live.any()) for (targets) |t| {
+            bs.clearRetainingCapacity();
+            const aggregating = try r.bucketsOf(t, &bs);
+            try r.live.begin(r.ev(), bs.items);
+            while (try r.live.next(r.ev(), if (best) |bh| w.index.get(bh.use).point else std.math.maxInt(u32))) |hi| {
+                const h = r.live.holders.items[hi].local;
+                for (r.live.holdsOf(hi)) |hd| {
+                    hs.clearRetainingCapacity();
+                    try Sweep.holdsAt(r.ev(), hd, t, &hs);
+                    for (hs.items) |x| {
+                        const u = (try r.liveAt(h, x[0], d.point)) orelse continue;
+                        switch (x[1].kind) {
+                            .no => {},
+                            .under => try relied.add(g, r.account(), x[1].cond),
+                            .may => {
+                                const up = w.index.get(u).point;
+                                if (best == null or up < w.index.get(best.?.use).point or (up == w.index.get(best.?.use).point and h < best.?.h)) best = .{ .h = h, .use = u, .q = x[0], .exact = true };
+                            },
+                        }
                     }
                 }
             }
-        }
+            if (aggregating and best == null) try r.aggregated(t, d.point, &relied, &done_holds, &dones);
+        };
         if (best) |bh| {
             const clos = fr.val(w.bindings[bh.h].value);
             refuse(o, if (bh.h == base_local) .later_use else if (clos.kind == .built and clos.form == .closure) .captured else .alias);
@@ -505,6 +491,9 @@ const Resolver = struct {
             return line;
         }
         o.accepted = if (d.callback) .callback_param else ground;
+        // What the aggregated holders added is in `req` from now on.
+        for (done_holds.items) |k| r.live.holds.items[k].done = true;
+        for (dones.items) |hi| r.live.aggDone(hi);
         line.extra = try relied.cond(r.ev().arena, r.account());
         r.e.ev.f.account.in_demands = false;
         return line;
@@ -622,7 +611,9 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
         got[ji] = switch (j.kind) {
             .demand => blk: {
                 e.w.f.account.in_demands = true;
+                r.aggregate = true;
                 defer e.w.f.account.in_demands = false;
+                defer r.aggregate = false;
                 break :blk try r.judge(e.demands.items[j.i]);
             },
             .cb => blk: {

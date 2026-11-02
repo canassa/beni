@@ -59,6 +59,8 @@ const layers = [_]Entry{
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
     .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
+    // Worded contracts by declaration and places, one footprint a callee (#1714).
+    .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
     .{ .file = "Liveness.zig", .layer = 6, .max_lines = 1190 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
@@ -72,6 +74,9 @@ const layers = [_]Entry{
     .{ .file = "Eval.zig", .layer = 9, .max_lines = 600 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
     .{ .file = "Holders.zig", .layer = 9, .max_lines = 700 },
+    // The holder index and its sweep, split from `Holders` (#1714): holds
+    // listed once a holder, buckets by next use, the aggregated holders.
+    .{ .file = "Sweep.zig", .layer = 9, .max_lines = 720 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
@@ -375,7 +380,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 35), layers.len);
+    try testing.expectEqual(@as(usize, 37), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

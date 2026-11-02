@@ -1,6 +1,7 @@
 //! L8: what resolution reads of a frame's leaves, built once per
 //! resolution (`docs/design/ownership-v2.md` §2.8): each leaf's base keys
-//! (*Base keys*), and the escape index (*The escape index*).
+//! (*Base keys*), and the escape index (*The escape index*). The holder
+//! index is `Sweep`'s.
 //!
 //! Obligations kept here: O2's resolution half reads the escapes through
 //! the index, every escape a target can meet visited (none skipped).
@@ -19,8 +20,9 @@ pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
 const none: u32 = Ids.none_int;
 
-/// A base key: `(kind, root or atom, extra)`; kind 0 a parameter, 1 a
-/// site, 2 a call's fresh atom, 3 a shared value. Unknown is a flag.
+/// A base key: `(kind, root or atom, extra)`; kind 0 a parameter (`extra`
+/// its base leaf's position, §2.8 *Holder entries*), 1 a site, 2 a
+/// call's fresh atom, 3 a shared value. Unknown is a flag.
 pub const Key = [3]u32;
 
 /// What a leaf comes from, in a word: whether it reaches unknown objects
@@ -163,7 +165,7 @@ pub const Keys = struct {
                 .ref => switch (f.roots.items[l.root].kind) {
                     .param => {
                         fx.param = true;
-                        if (mode == .runs) try acc.append(g, .{ 0, f.roots.items[l.root].a, 0 });
+                        if (mode == .runs) try acc.append(g, .{ 0, f.roots.items[l.root].a, l.pos });
                     },
                     .cb => fx.unknown = true,
                     .call, .supply => {},
@@ -316,7 +318,9 @@ pub const Escapes = struct {
         for (escs, 0..) |e, i| {
             const ks = try keys.of(ev, e.leaf);
             const unknown_key: [1]Key = .{.{ 4, 0, 0 }};
-            for ([_][]const Key{ ks.keys, if (ks.unknown) &unknown_key else &.{} }) |part| for (part) |k| {
+            for ([_][]const Key{ ks.keys, if (ks.unknown) &unknown_key else &.{} }) |part| for (part) |k0| {
+                // A parameter's bucket is the parameter's, whatever the position.
+                const k: Key = if (k0[0] == 0) .{ 0, k0[1], 0 } else k0;
                 try ev.f.charge(.edge, 1);
                 const got = try x.bucket.getOrPut(g, k);
                 if (!got.found_existing) {
@@ -445,223 +449,6 @@ pub const Escapes = struct {
             return false;
         }
     };
-};
-
-/// The holder index and its sweep (§2.8, *The holder index and its
-/// sweep*): a holder is live while the sweep's point is past its binding
-/// and before its last use. A live holder is first on the unkeyed list;
-/// the first demand that meets it live keys it (`key`), linking it into
-/// its base keys' lists. Doubly linked lists in flat arrays: holders on
-/// the unkeyed list, `(bucket, holder)` entries on the buckets'.
-pub const Live = struct {
-    bucket: Ids.FixedDict(3) = .{},
-    /// The parameters' buckets, which a parameter's target meets.
-    params: std.ArrayList(u32) = .empty,
-    /// The bucket of holders whose values reach unknown objects.
-    unknown_bucket: u32 = none,
-    head: std.ArrayList(u32) = .empty,
-    /// Per entry: its list links, its holder and its bucket.
-    next: std.ArrayList(u32) = .empty,
-    prev: std.ArrayList(u32) = .empty,
-    holder: std.ArrayList(u32) = .empty,
-    bucket_of: std.ArrayList(u32) = .empty,
-    holders: std.ArrayList(Holder) = .empty,
-    /// The unkeyed live holders: a list by holder index.
-    unkeyed: u32 = none,
-    u_next: std.ArrayList(u32) = .empty,
-    u_prev: std.ArrayList(u32) = .empty,
-    /// Holder indices by binding point and by last use; the sweep's cursors.
-    by_bind: std.ArrayList(u32) = .empty,
-    by_last: std.ArrayList(u32) = .empty,
-    at_bind: usize = 0,
-    at_last: usize = 0,
-    /// The holders live now, keyed or not.
-    live: u32 = 0,
-
-    pub const Holder = struct { local: u32, point: u32, last: u32, start: u32 = 0, len: u32 = 0, state: enum(u8) { idle, unkeyed, keyed, gone } = .idle };
-
-    pub fn deinit(x: *Live, g: Allocator) void {
-        x.bucket.deinit(g);
-        inline for (.{ &x.params, &x.head, &x.next, &x.prev, &x.holder, &x.bucket_of, &x.u_next, &x.u_prev, &x.by_bind, &x.by_last }) |l| l.deinit(g);
-        x.holders.deinit(g);
-    }
-
-    /// Index local `l`, bound at `point` and last used at `last`.
-    pub fn add(x: *Live, ev: *Relation.Eval, l: u32, point: u32, last: u32) Error!void {
-        const g = ev.gpa();
-        try ev.f.charge(.inspection, 1);
-        try x.holders.append(g, .{ .local = l, .point = point, .last = last });
-        try x.u_next.append(g, none);
-        try x.u_prev.append(g, none);
-    }
-
-    /// Order the holders for the sweep: by binding point and by last use,
-    /// each a counting sort over the frame's points (source-sized, linear).
-    pub fn finish(x: *Live, ev: *Relation.Eval) Error!void {
-        const g = ev.gpa();
-        const hs = x.holders.items;
-        if (hs.len == 0) return;
-        // Points are the module's instruction numbers: the sort spans the
-        // holders' own points only, so its cost is the declaration's.
-        var lo: u32 = std.math.maxInt(u32);
-        var top: u32 = 0;
-        for (hs) |h| {
-            lo = @min(lo, h.point);
-            top = @max(top, @max(h.point, h.last));
-        }
-        try ev.f.charge(.inspection, @intCast(2 * hs.len + (top - lo) / 16 + 1));
-        try countingSort(g, hs, &x.by_bind, lo, top, struct {
-            fn key(h: Holder) u32 {
-                return h.point;
-            }
-        }.key);
-        try countingSort(g, hs, &x.by_last, lo, top, struct {
-            fn key(h: Holder) u32 {
-                return h.last;
-            }
-        }.key);
-    }
-
-    fn countingSort(g: Allocator, hs: []const Holder, out: *std.ArrayList(u32), lo: u32, top: u32, comptime keyOf: fn (Holder) u32) Allocator.Error!void {
-        const starts = try g.alloc(u32, top - lo + 2);
-        defer g.free(starts);
-        @memset(starts, 0);
-        for (hs) |h| starts[keyOf(h) - lo + 1] += 1;
-        for (1..starts.len) |i| starts[i] += starts[i - 1];
-        try out.resize(g, hs.len);
-        for (hs, 0..) |h, i| {
-            out.items[starts[keyOf(h) - lo]] = @intCast(i);
-            starts[keyOf(h) - lo] += 1;
-        }
-    }
-
-    /// Move the sweep to point `p` (never back): every holder bound before
-    /// it joins the unkeyed list, every holder last used at or before it
-    /// leaves its lists. O(1) a holder, or its entries once keyed.
-    pub fn advance(x: *Live, ev: *Relation.Eval, p: u32) Error!void {
-        const hs = x.holders.items;
-        while (x.at_bind < x.by_bind.items.len and hs[x.by_bind.items[x.at_bind]].point < p) : (x.at_bind += 1) {
-            const hi = x.by_bind.items[x.at_bind];
-            if (hs[hi].state != .idle or hs[hi].last <= p) continue;
-            try ev.f.charge(.inspection, 1);
-            hs[hi].state = .unkeyed;
-            x.live += 1;
-            x.u_prev.items[hi] = none;
-            x.u_next.items[hi] = x.unkeyed;
-            if (x.unkeyed != none) x.u_prev.items[x.unkeyed] = hi;
-            x.unkeyed = hi;
-        }
-        while (x.at_last < x.by_last.items.len and hs[x.by_last.items[x.at_last]].last <= p) : (x.at_last += 1) {
-            const hi = x.by_last.items[x.at_last];
-            const h = &hs[hi];
-            defer h.state = .gone;
-            if (h.state == .unkeyed or h.state == .keyed) x.live -= 1;
-            switch (h.state) {
-                .idle, .gone => {},
-                .unkeyed => {
-                    try ev.f.charge(.inspection, 1);
-                    x.unlinkUnkeyed(hi);
-                },
-                .keyed => {
-                    try ev.f.charge(.inspection, @max(1, h.len));
-                    for (h.start..h.start + h.len) |e| {
-                        const b = x.bucket_of.items[e];
-                        const nx = x.next.items[e];
-                        const pv = x.prev.items[e];
-                        if (pv != none) x.next.items[pv] = nx else x.head.items[b] = nx;
-                        if (nx != none) x.prev.items[nx] = pv;
-                    }
-                },
-            }
-        }
-    }
-
-    fn unlinkUnkeyed(x: *Live, hi: u32) void {
-        const nx = x.u_next.items[hi];
-        const pv = x.u_prev.items[hi];
-        if (pv != none) x.u_next.items[pv] = nx else x.unkeyed = nx;
-        if (nx != none) x.u_prev.items[nx] = pv;
-    }
-
-    /// Whether any holder is live.
-    pub fn any(x: *const Live) bool {
-        return x.live != 0;
-    }
-
-    /// An unkeyed live holder taken off its list for `key`: its index, or null.
-    pub fn takeUnkeyed(x: *Live) ?u32 {
-        const hi = x.unkeyed;
-        if (hi == none) return null;
-        x.unlinkUnkeyed(hi);
-        return hi;
-    }
-
-    fn bucketOf(x: *Live, g: Allocator, k: Key) Error!u32 {
-        const got = try x.bucket.getOrPut(g, k);
-        if (!got.found_existing) {
-            got.value_ptr.* = @intCast(x.head.items.len);
-            try x.head.append(g, none);
-            if (k[0] == 0) try x.params.append(g, got.value_ptr.*);
-            if (k[0] == 4) x.unknown_bucket = got.value_ptr.*;
-        }
-        return got.value_ptr.*;
-    }
-
-    /// Key holder `hi`, which `takeUnkeyed` gave: link it under `keys`
-    /// (sorted, once each), or the unknown key when `unknown`.
-    pub fn key(x: *Live, ev: *Relation.Eval, hi: u32, keys: []const Key, unknown: bool) Error!void {
-        const g = ev.gpa();
-        const start: u32 = @intCast(x.holder.items.len);
-        const unknown_key: [1]Key = .{.{ 4, 0, 0 }};
-        for (if (unknown) &unknown_key else keys) |k| {
-            try ev.f.charge(.edge, 1);
-            const b = try x.bucketOf(g, k);
-            const e: u32 = @intCast(x.holder.items.len);
-            try x.bucket_of.append(g, b);
-            try x.holder.append(g, hi);
-            try x.prev.append(g, none);
-            try x.next.append(g, x.head.items[b]);
-            if (x.head.items[b] != none) x.prev.items[x.head.items[b]] = e;
-            x.head.items[b] = e;
-        }
-        const h = &x.holders.items[hi];
-        h.start = start;
-        h.len = @intCast(x.holder.items.len - start);
-        h.state = .keyed;
-    }
-
-    /// The keyed live holders' locals that may hold an object of `keys`
-    /// (sorted, once each): their buckets', every parameter's for a
-    /// parameter's key, and the unknown bucket's.
-    pub fn candidates(x: *const Live, ev: *Relation.Eval, keys: []const Key, out: *std.ArrayList(u32)) Error!void {
-        var params = false;
-        if (x.unknown_bucket != none) try x.list(ev, x.unknown_bucket, out);
-        for (keys) |k| {
-            if (k[0] == 0) {
-                params = true;
-                continue;
-            }
-            if (x.bucket.get(k)) |b| try x.list(ev, b, out);
-        }
-        if (params) for (x.params.items) |b| try x.list(ev, b, out);
-        std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
-        var n: usize = 0;
-        for (out.items) |y| {
-            if (n != 0 and out.items[n - 1] == y) continue;
-            out.items[n] = y;
-            n += 1;
-        }
-        out.shrinkRetainingCapacity(n);
-    }
-
-    fn list(x: *const Live, ev: *Relation.Eval, b: u32, out: *std.ArrayList(u32)) Error!void {
-        try ev.f.charge(.inspection, 1);
-        var e = x.head.items[b];
-        while (e != none) : (e = x.next.items[e]) {
-            try ev.f.charge(.inspection, 1);
-            try out.append(ev.gpa(), x.holders.items[x.holder.items[e]].local);
-        }
-    }
 };
 
 /// Whether effect run `r` (sorted by parameter, then canonical key, §2.10)
