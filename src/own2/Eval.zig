@@ -34,6 +34,7 @@ const Regions = @import("Regions.zig");
 const Liveness = @import("Liveness.zig");
 const Prepass = @import("Prepass.zig");
 const Bir = @import("../bir/Bir.zig");
+const Dbg = @import("Dbg.zig");
 
 pub const Error = Ids.ChargeError;
 pub const PathId = Ids.PathId;
@@ -130,8 +131,13 @@ pub const Demand = struct {
     operands: Ids.Range = .{},
     /// The operands pending at the point: a run of `Walk.pending_runs`.
     pending: Ids.Range = .{},
-    /// What the callee's write relies on, instantiated on the arguments.
+    /// What the callee's write relies on, instantiated on the arguments
+    /// once the group's facts are delivered (`finishDemands`).
     relies: Cond = .{},
+    /// The call whose callee writes (`none` for the walk's own demands),
+    /// and the argument written.
+    call: u32 = none,
+    arg: u32 = none,
     /// The relied condition failed on the argument's own other paths.
     other_paths: bool = false,
     /// A callback's write (§2.11.3): accepted `callback-param`.
@@ -1154,6 +1160,13 @@ pub const Evaluation = struct {
     /// Per frame label: the calls whose callee's label passes on to it, as
     /// `(call, callee label)` pairs, for the read-off of its supplies.
     passes: std.ArrayList([3]u32) = .empty,
+    /// The group being solved, and this code's index in it (§2.12).
+    solver: ?*Solver = null,
+    x: u32 = none,
+    /// The read-off under way (`factsOff`): later demands and escapes go
+    /// into it as they are made.
+    sink: Sink = undefined,
+    facts_on: bool = false,
 
     pub fn deinit(e: *Evaluation) void {
         const g = e.w.f.gpa;
@@ -1161,6 +1174,10 @@ pub const Evaluation = struct {
         e.demands.deinit(g);
         e.escapes.deinit(g);
         e.passes.deinit(g);
+        if (e.facts_on) {
+            e.sink.label_at.deinit(g);
+            e.sink.described.deinit(g);
+        }
     }
 
     fn gpa(e: *Evaluation) Allocator {
@@ -1176,8 +1193,9 @@ pub const Evaluation = struct {
 
 /// Begin an evaluation of `w`: every call's contract read now, each
 /// callee's labels mapped or applied, the calls' demands and escapes made.
-pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, e: *Evaluation) Error!void {
-    e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena }, .contracts = contracts, .ctx = ctx };
+pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, solver: ?*Solver, x: u32, e: *Evaluation) Error!void {
+    e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
+    if (solver) |sv| e.ev.live = &sv.live;
     const f = &w.f;
     const gpa = f.gpa;
     try e.demands.appendSlice(gpa, w.demands.items);
@@ -1294,8 +1312,12 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
         for (e.contracts.suppliesOf(l.supplies)) |s| for (e.contracts.resOf(s.res)) |rs| {
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
+            const saved = e.ev.cur_sub;
+            e.ev.cur_sub = .{ .kind = .escape, .a = call.point };
+            defer e.ev.cur_sub = saved;
             for (e.contracts.arrivalsOf(rs.arrivals)) |a| try supplyLeaves(e, q, a, &ls);
-            for (ls.items) |lf| try e.escapes.append(gpa, .{ .leaf = lf, .point = call.point });
+            e.ev.cur_sub = saved;
+            for (ls.items) |lf| try addEscape(e, lf, call.point);
         };
     }
 }
@@ -1326,89 +1348,141 @@ fn argBase(e: *Evaluation, q: u32, j: u32) u32 {
 }
 
 /// Call `q`'s writes and escapes (§2.11.2 items 4, 5): demands and escapes.
+/// A member of the group being solved gives its draft's as they stand, and
+/// the rest as its draft gains them (§2.12 *Deliveries*).
 fn callEffects(e: *Evaluation, q: u32) Error!void {
+    const f = e.fr();
+    const call = f.calls.items[q];
+    if (call.contract == none) return;
+    if (e.solver) |sv| if (call.code != none) if (sv.memberOf(call.code)) |mx| {
+        try sv.watchEffects(mx, e.x, q);
+        var i: usize = 0;
+        while (i < sv.drafts[mx].escapes.items.len) : (i += 1) try callEscape(e, q, sv.drafts[mx].escapes.items[i]);
+        i = 0;
+        while (i < sv.drafts[mx].writes.items.len) : (i += 1) try callWrite(e, q, sv.drafts[mx].writes.items[i]);
+        return;
+    };
+    const h = e.contracts.head(call.contract);
+    for (e.contracts.effectsOf(h.escapes)) |x| try callEscape(e, q, x);
+    for (e.contracts.effectsOf(h.writes)) |x| try callWrite(e, q, x);
+}
+
+/// An escape of call `q`'s callee: its projections escape at the call.
+pub fn callEscape(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const call = f.calls.items[q];
-    if (call.contract == none) return;
-    const h = e.contracts.head(call.contract);
+    if (x.j >= call.args.len) return;
+    var ps: std.ArrayList(Relation.Proj) = .empty;
+    defer ps.deinit(gpa);
+    try e.ev.project(call.args[x.j], f.slots.relWords(x.slot), true, 0, 0, &ps);
+    for (ps.items) |p| try addEscape(e, p.leaf, call.point);
+}
+
+/// A write of call `q`'s callee: a demand at the call. What it relies on
+/// is instantiated once the group's facts are in (`finishDemands`).
+pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
+    const f = e.fr();
+    const gpa = e.gpa();
+    const call = f.calls.items[q];
     const site: ?CallSite = if (q < e.w.walk_calls) e.w.sites.items[q] else null;
-    for (e.contracts.effectsOf(h.escapes)) |x| {
-        if (x.j >= call.args.len) continue;
+    if (x.j >= call.args.len) return;
+    const arg = call.args[x.j];
+    const words = f.slots.relWords(x.slot);
+    const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
+    if (x.deep) {
         var ps: std.ArrayList(Relation.Proj) = .empty;
         defer ps.deinit(gpa);
-        try e.ev.project(call.args[x.j], f.slots.relWords(x.slot), true, 0, 0, &ps);
-        for (ps.items) |p| try e.escapes.append(gpa, .{ .leaf = p.leaf, .point = call.point });
+        try e.ev.project(arg, words, true, 0, 0, &ps);
+        for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
+    } else if (words.len == 0) {
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(gpa);
+        try e.ev.storageOf(arg, 0, &ls);
+        try e.w.leaf_runs.appendSlice(gpa, ls.items);
+    } else {
+        var ps: std.ArrayList(Relation.Proj) = .empty;
+        defer ps.deinit(gpa);
+        try e.ev.project(arg, words, false, 0, 0, &ps);
+        for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
     }
-    if (h.writes.len == 0) return;
-    const relies = try e.ev.instSel(try e.contracts.cond(e.ev.arena, h.req), q);
-    for (e.contracts.effectsOf(h.writes)) |x| {
-        if (x.j >= call.args.len) continue;
-        const arg = call.args[x.j];
-        const words = f.slots.relWords(x.slot);
-        const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
-        if (x.deep) {
-            var ps: std.ArrayList(Relation.Proj) = .empty;
-            defer ps.deinit(gpa);
-            try e.ev.project(arg, words, true, 0, 0, &ps);
-            for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
-        } else if (words.len == 0) {
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(gpa);
-            try e.ev.storageOf(arg, 0, &ls);
-            try e.w.leaf_runs.appendSlice(gpa, ls.items);
-        } else {
-            var ps: std.ArrayList(Relation.Proj) = .empty;
-            defer ps.deinit(gpa);
-            try e.ev.project(arg, words, false, 0, 0, &ps);
-            for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
-        }
-        // A write of nothing (a crossing value consumed) is no demand.
-        if (e.w.leaf_runs.items.len == t_start) continue;
-        const base = argBase(e, q, x.j);
-        var write_path: PathId = .none;
-        if (words.len != 0 and base != call.inst and q < e.w.walk_calls) {
-            const at = try e.ctx.placeOfInst(e.ctx.ctx, base);
-            var ps: std.ArrayList(u32) = .empty;
-            defer ps.deinit(gpa);
-            try Slots.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, at), words, &ps);
-            if (ps.items.len != 0) write_path = .from(ps.items[0]);
-        }
-        var d: Demand = .{
-            .point = call.point,
-            .kind = if (x.deep) .consumed else .writer,
-            .token = e.w.code.decl.inst_start.int(),
-            .base_inst = base,
-            .write_path = write_path,
-            .callee_inst = if (call.virtual) none else call.head,
-            .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
-            .deep = x.deep,
-            .pending = if (site) |s| s.pending else .{},
-            .relies = relies,
-        };
-        d.token = tokenOf(e, call.inst);
-        if (call.virtual) {
-            // A known code writes what a label supplies (§2.11.3): the
-            // supply's distinctness condition is relied on too; a kept slot
-            // refuses.
-            d.callback = true;
-            d.kind = .callsite;
-            const outer = virtualOuter(e, q);
-            if (outer) |o| {
-                d.pending = e.w.sites.items[o[0]].pending;
-                const oc = f.calls.items[o[0]];
-                const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
-                for (e.contracts.suppliesOf(lab.supplies)) |s| if (s.k == x.j) {
-                    d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try e.ev.instSel(try e.contracts.cond(e.ev.arena, s.cond), o[0]));
-                    for (e.contracts.effectsOf(s.kept)) |kp| if (std.mem.startsWith(u32, words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), words)) {
-                        d.kept = true;
-                    };
+    // A write of nothing (a crossing value consumed) is no demand.
+    if (e.w.leaf_runs.items.len == t_start) return;
+    const base = argBase(e, q, x.j);
+    var write_path: PathId = .none;
+    if (words.len != 0 and base != call.inst and q < e.w.walk_calls) {
+        const at = try e.ctx.placeOfInst(e.ctx.ctx, base);
+        var ps: std.ArrayList(u32) = .empty;
+        defer ps.deinit(gpa);
+        try Slots.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, at), words, &ps);
+        if (ps.items.len != 0) write_path = .from(ps.items[0]);
+    }
+    var d: Demand = .{
+        .point = call.point,
+        .kind = if (x.deep) .consumed else .writer,
+        .token = e.w.code.decl.inst_start.int(),
+        .base_inst = base,
+        .write_path = write_path,
+        .callee_inst = if (call.virtual) none else call.head,
+        .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
+        .deep = x.deep,
+        .pending = if (site) |st| st.pending else .{},
+        .call = q,
+        .arg = x.j,
+    };
+    d.token = tokenOf(e, call.inst);
+    if (call.virtual) {
+        // A known code writes what a label supplies (§2.11.3): the
+        // supply's distinctness condition is relied on too; a kept slot
+        // refuses.
+        d.callback = true;
+        d.kind = .callsite;
+        const outer = virtualOuter(e, q);
+        if (outer) |o| {
+            d.pending = e.w.sites.items[o[0]].pending;
+            const oc = f.calls.items[o[0]];
+            const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
+            for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) {
+                for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), words)) {
+                    d.kept = true;
                 };
-                d.base_inst = oc.inst;
-            }
+            };
+            d.base_inst = oc.inst;
         }
-        try e.demands.append(gpa, d);
     }
+    try addDemand(e, d);
+}
+
+/// What each callee write relies on (§2.11.2 item 4), instantiated on its
+/// call's arguments: after the group's facts are delivered, since the
+/// distinct check reads every expansion whole.
+pub fn finishDemands(e: *Evaluation) Error!void {
+    const f = e.fr();
+    for (0..e.demands.items.len) |di| {
+        const d = &e.demands.items[di];
+        if (d.call == none) continue;
+        const call = f.calls.items[d.call];
+        const h = e.contracts.head(call.contract);
+        d.relies = try e.ev.instSel(try e.contracts.cond(e.ev.arena, h.req), d.call);
+        if (!call.virtual) continue;
+        const outer = virtualOuter(e, d.call) orelse continue;
+        const oc = f.calls.items[outer[0]];
+        const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[outer[1]];
+        const j = d.arg;
+        for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == j) {
+            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try e.ev.instSel(try e.contracts.cond(e.ev.arena, su.cond), outer[0]));
+        };
+    }
+}
+
+fn addDemand(e: *Evaluation, d: Demand) Error!void {
+    try e.demands.append(e.gpa(), d);
+    if (e.facts_on) try demandFacts(e, e.demands.items.len - 1);
+}
+
+fn addEscape(e: *Evaluation, leaf: u32, point: u32) Error!void {
+    try e.escapes.append(e.gpa(), .{ .leaf = leaf, .point = point });
+    if (e.facts_on) try paramEffects(&e.sink, leaf, true, .escapes);
 }
 
 /// The walk's call a virtual call applies a label of: `(call, label)`.
@@ -1459,26 +1533,61 @@ fn onceDemands(e: *Evaluation) Error!void {
 
 // ---- read-off --------------------------------------------------------------
 
+/// Where the read-off puts arrivals: the result's, or label `label`'s
+/// supply `k` (an index into the draft's labels, never a pointer: the
+/// lists grow while the facts are delivered).
+const ResList = struct { label: u32 = none, k: u32 = 0 };
+/// Where a parameter effect goes.
+const EffList = enum(u8) { reads, writes, escapes };
+
 /// The read-off's sink: a draft and the frame's labels' indices in it.
 const Sink = struct {
     e: *Evaluation,
     d: *Contract.Draft,
     arena: Allocator,
     /// Per frame label (`cbs`): its index in the draft's labels.
-    label_at: []u32,
+    label_at: std.ArrayList(u32) = .empty,
+    /// `(leaf, slot, list label, list k)`: a call's leaf already described
+    /// there. Describing it again adds nothing, and a fold's answer that
+    /// feeds itself would describe it without end.
+    described: Ids.FixedDict(4) = .{},
 };
 
 fn labelIndex(s: *Sink, cb: u32) Error!u32 {
-    if (s.label_at[cb] != none) return s.label_at[cb];
+    const gpa = s.e.gpa();
+    while (s.label_at.items.len <= cb) try s.label_at.append(gpa, none);
+    if (s.label_at.items[cb] != none) return s.label_at.items[cb];
     const c = s.e.fr().cbs.items[cb];
     const at = try s.d.labelOf(s.arena, c.j, c.slot, c.origin);
-    s.label_at[cb] = at;
+    s.label_at.items[cb] = at;
     return at;
+}
+
+fn resList(s: *Sink, l: ResList) Error!*std.ArrayList(Contract.Draft.DraftSlot) {
+    if (l.label == none) return &s.d.res;
+    return &(try s.d.labels.items[l.label].supplyOf(s.arena, l.k)).res;
+}
+
+fn effList(s: *Sink, l: EffList) *std.ArrayList(Contract.Effect) {
+    return switch (l) {
+        .reads => &s.d.reads,
+        .writes => &s.d.writes,
+        .escapes => &s.d.escapes,
+    };
+}
+
+/// Run `expand` for consumer `sub`: it gets what the keys hold now (in
+/// `out`) and, while a group is solved, every leaf they gain later.
+fn expandFor(e: *Evaluation, li: u32, sub: Relation.Sub, out: *std.ArrayList(u32)) Error!void {
+    const saved = e.ev.cur_sub;
+    e.ev.cur_sub = if (e.solver != null) sub else null;
+    defer e.ev.cur_sub = saved;
+    try e.ev.expand(li, out);
 }
 
 /// Describe value `v` at result slot `q` of the result's root into `out`
 /// (§2.10 *Read-off*): what arrives at each object slot.
-fn describe(s: *Sink, v: u32, q: PathId, out: *std.ArrayList(Contract.Draft.DraftSlot)) Error!void {
+fn describe(s: *Sink, v: u32, q: PathId, out: ResList) Error!void {
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
@@ -1538,17 +1647,22 @@ fn describe(s: *Sink, v: u32, q: PathId, out: *std.ArrayList(Contract.Draft.Draf
     }
 }
 
-fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: *std.ArrayList(Contract.Draft.DraftSlot)) Error!void {
+fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
     const f = s.e.fr();
     const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
-    if (f.places.kind(f.places.pathPlace(q)) == .@"var") try Contract.Draft.markOpen(out, s.arena, r);
+    const list = try resList(s, out);
+    const open = f.places.kind(f.places.pathPlace(q)) == .@"var";
+    if (open) try Contract.Draft.markOpen(list, s.arena, r);
     try f.charge(.edge, 1);
-    _ = try Contract.Draft.addArrival(out, s.arena, r, a);
+    if (try Contract.Draft.addArrival(list, s.arena, r, a)) {
+        // A new fact of a member: delivered to what reads it (§2.12).
+        if (out.label == none) if (s.e.solver) |sv| try sv.resFact(s.e.x, r, open, a);
+    }
 }
 
 /// A leaf at result slot `q`: its arrivals at `q` and below it. `whole`:
 /// every object of it arrives at `q` itself.
-fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: *std.ArrayList(Contract.Draft.DraftSlot)) Error!void {
+fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!void {
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
@@ -1583,7 +1697,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: *std.ArrayList(C
     }
 }
 
-fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out: *std.ArrayList(Contract.Draft.DraftSlot)) Error!void {
+fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out: ResList) Error!void {
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
@@ -1598,9 +1712,10 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
         },
         .call, .supply => {
             const one = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{sl}), .tags = l.tags });
+            if ((try s.described.getOrPut(gpa, .{ one, at.int(), out.label, out.k })).found_existing) return;
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
-            try e.ev.expand(one, &ls);
+            try expandFor(e, one, .{ .kind = .describe, .a = out.label, .b = at.int(), .c = out.k, .tags = l.tags }, &ls);
             for (ls.items) |x| try describeLeaf(s, x, at, true, out);
         },
     }
@@ -1608,7 +1723,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
 
 /// The effects of leaf `li` on the frame's parameters: each parameter slot
 /// it names (expanded through calls), as `(j, slot)`.
-fn paramEffects(s: *Sink, li: u32, deep: bool, out: *std.ArrayList(Contract.Effect)) Error!void {
+fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
@@ -1624,12 +1739,15 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: *std.ArrayList(Contract.Effe
         const r = f.roots.items[l.root];
         switch (r.kind) {
             .param => for (f.slots.items(l.slots)) |sl| {
-                _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep });
+                const eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep };
+                if (try Contract.Draft.addEffect(effList(s, out), s.arena, eff)) {
+                    if (out != .reads) if (e.solver) |sv| try sv.effFact(e.x, out == .writes, eff);
+                }
             },
             .call, .supply => {
                 var ls: std.ArrayList(u32) = .empty;
                 defer ls.deinit(gpa);
-                try e.ev.expand(x, &ls);
+                try expandFor(e, x, .{ .kind = .effect, .a = @backingInt(out), .b = @intFromBool(deep), .tags = l.tags }, &ls);
                 try stack.appendSlice(gpa, ls.items);
             },
             .cb => {},
@@ -1647,24 +1765,30 @@ pub const Verdicts = struct {
     supply_cond: []const Cond = &.{},
 };
 
-/// Read the code's contract off the evaluation (§2.10 *Read-off*).
-pub fn readOff(e: *Evaluation, arena: Allocator, v: Verdicts, d: *Contract.Draft) Error!void {
+/// A demand's written parameter slots (whatever its verdict).
+fn demandFacts(e: *Evaluation, di: usize) Error!void {
+    const dm = e.demands.items[di];
+    for (e.w.leavesOfRun(dm.targets)) |t| try paramEffects(&e.sink, t, dm.deep, .writes);
+}
+
+/// The facts of the code's contract (§2.10 *Read-off*): its result's
+/// arrivals, reads, writes, escapes and labels. While a group is solved
+/// the read-off stays open: what the calls' keys gain later, and the
+/// demands and escapes made later, arrive in the draft as they come.
+pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void {
     const w = e.w;
     const f = e.fr();
     const gpa = e.gpa();
     const code = w.code;
     d.* = .{ .arity = @intCast(code.params.len + code.captures.len) };
-    const label_at = try arena.alloc(u32, f.cbs.items.len);
-    @memset(label_at, none);
-    var s: Sink = .{ .e = e, .d = d, .arena = arena, .label_at = label_at };
+    e.sink = .{ .e = e, .d = d, .arena = arena };
+    e.facts_on = true;
+    const s = &e.sink;
     const rpath = try f.places.rootPath(gpa, code.result_place);
     const rv = f.val(w.result);
     d.flags.returns = rv.kind != .bot;
     d.flags.cross = !Slots.holdsAny(f.places, rpath);
-    if (d.flags.returns and !d.flags.cross) {
-        try describe(&s, w.result, rpath, &d.res);
-        d.res_cond = try e.ev.sepOf(w.result);
-    }
+    if (d.flags.returns and !d.flags.cross) try describe(s, w.result, rpath, .{});
     // Reads: every use of a local whose value is a parameter's, at its path.
     for (w.uses.items) |u| {
         const b = w.bindings[u.local];
@@ -1674,56 +1798,98 @@ pub fn readOff(e: *Evaluation, arena: Allocator, v: Verdicts, d: *Contract.Draft
         const lroot = try f.places.rootPath(gpa, try e.ctx.placeOfLocal(e.ctx.ctx, u.local));
         const rel = (try f.slots.relBelow(gpa, f.account, f.places, lroot, u.path)) orelse Slots.root;
         try e.ev.project(b.value, f.slots.relWords(rel), true, 0, 0, &ps);
-        for (ps.items) |p| try paramEffects(&s, p.leaf, true, &d.reads);
+        for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
     }
-    // An arrival is read where the result is consumed.
-    for (d.res.items) |rs| for (rs.arrivals.items) |a| if (a.kind == .param) {
-        _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = true });
-    };
     // Writes: every demand's parameter targets, whatever its verdict.
-    for (e.demands.items) |dm| for (w.leavesOfRun(dm.targets)) |t| try paramEffects(&s, t, dm.deep, &d.writes);
-    d.req = v.req;
+    for (0..e.demands.items.len) |di| try demandFacts(e, di);
     // Escapes, deep.
-    for (e.escapes.items) |x| try paramEffects(&s, x.leaf, true, &d.escapes);
+    // By index: an escape made meanwhile is read off when it is made.
+    const n_esc = e.escapes.items.len;
+    for (0..n_esc) |i| try paramEffects(s, e.escapes.items[i].leaf, true, .escapes);
     // Labels: the direct ones with their arguments, the passed-on ones with
     // their callees' supplies.
     for (f.cbs.items, 0..) |cb, ci| {
-        const at = try labelIndex(&s, @intCast(ci));
-        const dl = &d.labels.items[at];
+        const at = try labelIndex(s, @intCast(ci));
         if (cb.inst != none) {
+            const dl = &d.labels.items[at];
             dl.calls = if (cb.calls > 1 or dl.calls == .many) .many else if (dl.calls == .none) .once else .many;
             for (cb.args, 0..) |a, k| {
-                const sup = try dl.supplyOf(arena, @intCast(k));
-                var ps: std.ArrayList(Contract.Draft.DraftSlot) = .empty;
-                _ = &ps;
+                _ = try d.labels.items[at].supplyOf(arena, @intCast(k));
                 const ap = f.val(a).place;
                 const root = if (ap != .none) try f.places.rootPath(gpa, ap) else rpath;
-                try describe(&s, a, root, &sup.res);
-                if (ci < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci]);
+                try describe(s, a, root, .{ .label = at, .k = @intCast(k) });
             }
-            for (v.kept) |kp| if (kp[0] == ci) {
-                const sup = try dl.supplyOf(arena, kp[1]);
-                try paramKept(&s, kp[2], &sup.kept);
-            };
         }
     }
     for (e.passes.items) |p| {
-        const at = try labelIndex(&s, p[0]);
-        const dl = &d.labels.items[at];
+        const at = try labelIndex(s, p[0]);
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
+        const dl = &d.labels.items[at];
         dl.calls = @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(lab.calls))));
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
-            const sup = try dl.supplyOf(arena, su.k);
+            _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (e.contracts.resOf(su.res)) |rs| {
                 for (e.contracts.arrivalsOf(rs.arrivals)) |a| {
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(gpa);
-                    try supplyLeaves(e, p[1], a, &ls);
-                    for (ls.items) |l| try supplyArrive(&s, l, rs.slot, &sup.res);
+                    {
+                        const saved = e.ev.cur_sub;
+                        e.ev.cur_sub = if (e.solver != null) .{ .kind = .supply, .a = at, .b = su.k, .c = rs.slot } else null;
+                        defer e.ev.cur_sub = saved;
+                        try supplyLeaves(e, p[1], a, &ls);
+                    }
+                    for (ls.items) |l| try supplyArrive(s, l, rs.slot, .{ .label = at, .k = su.k });
                 }
             }
+            const sup = try d.labels.items[at].supplyOf(arena, su.k);
             for (e.contracts.effectsOf(su.kept)) |kp| _ = try Contract.Draft.addEffect(&sup.kept, arena, kp);
+        }
+    }
+}
+
+/// A leaf delivered to a consumer of the read-off (§2.12 *Deliveries*).
+pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32) Error!void {
+    const f = e.fr();
+    const y = (try f.withTags(x, sub.tags)) orelse return;
+    switch (sub.kind) {
+        .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c }),
+        .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
+        .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b }),
+        .escape => try addEscape(e, y, sub.a),
+        .forward => unreachable,
+    }
+}
+
+/// The conditions of the code's contract, once its facts are in: its
+/// result's separation, what its writes rely on, its labels' supplies'
+/// conditions and kept slots, and `once` (§2.10 *Read-off*).
+pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
+    const w = e.w;
+    const f = e.fr();
+    const s = &e.sink;
+    const d = s.d;
+    const code = w.code;
+    if (d.flags.returns and !d.flags.cross) d.res_cond = try e.ev.sepOf(w.result);
+    d.req = v.req;
+    for (f.cbs.items, 0..) |cb, ci| {
+        if (cb.inst == none) continue;
+        const at = try labelIndex(s, @intCast(ci));
+        for (cb.args, 0..) |_, k| {
+            const sup = try d.labels.items[at].supplyOf(arena, @intCast(k));
+            if (ci < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci]);
+        }
+        for (v.kept) |kp| if (kp[0] == ci) {
+            const sup = try d.labels.items[at].supplyOf(arena, kp[1]);
+            try paramKept(s, kp[2], &sup.kept);
+        };
+    }
+    for (e.passes.items) |p| {
+        const at = try labelIndex(s, p[0]);
+        const call = f.calls.items[p[1]];
+        const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
+        for (e.contracts.suppliesOf(lab.supplies)) |su| {
+            const sup = try d.labels.items[at].supplyOf(arena, su.k);
             sup.cond = try Cond.conj(arena, f.account, sup.cond, try e.ev.instSel(try e.contracts.cond(arena, su.cond), p[1]));
         }
     }
@@ -1735,7 +1901,7 @@ pub fn readOff(e: *Evaluation, arena: Allocator, v: Verdicts, d: *Contract.Draft
 
 /// A leaf's arrivals, all at supply slot `rel`: a parameter's slots, an
 /// answer's label, what a call or a supply comes from.
-fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: *std.ArrayList(Contract.Draft.DraftSlot)) Error!void {
+fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: ResList) Error!void {
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
@@ -1756,23 +1922,23 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: *std.ArrayList(Contract.
                 const r = f.roots.items[l.root];
                 switch (r.kind) {
                     .param => for (f.slots.items(l.slots)) |sl| {
-                        _ = try Contract.Draft.addArrival(out, s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = f.places.kind(f.places.pathPlace(.from(sl))) == .@"var" });
+                        _ = try Contract.Draft.addArrival(try resList(s, out), s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = f.places.kind(f.places.pathPlace(.from(sl))) == .@"var" });
                     },
                     .cb => for (f.slots.items(l.slots)) |sl| {
                         const below = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
-                        _ = try Contract.Draft.addArrival(out, s.arena, rel, .{ .kind = .cb, .j = try labelIndex(s, r.a), .slot = below });
+                        _ = try Contract.Draft.addArrival(try resList(s, out), s.arena, rel, .{ .kind = .cb, .j = try labelIndex(s, r.a), .slot = below });
                     },
                     .call, .supply => {
                         var ls: std.ArrayList(u32) = .empty;
                         defer ls.deinit(gpa);
-                        try e.ev.expand(x, &ls);
+                        try expandFor(e, x, .{ .kind = .supply, .a = out.label, .b = out.k, .c = rel, .tags = l.tags }, &ls);
                         try stack.appendSlice(gpa, ls.items);
                     },
                 }
                 continue;
             },
         };
-        _ = try Contract.Draft.addArrival(out, s.arena, rel, a);
+        _ = try Contract.Draft.addArrival(try resList(s, out), s.arena, rel, a);
     }
 }
 
@@ -1790,3 +1956,181 @@ fn paramKept(s: *Sink, li: u32, out: *std.ArrayList(Contract.Effect)) Error!void
         _ = try Contract.Draft.addEffect(out, s.arena, .{ .j = 0, .slot = rel, .deep = false });
     }
 }
+
+// ===========================================================================
+// The group's deliveries (§2.12 step 2)
+// ===========================================================================
+
+/// The codes of a group being solved: their evaluations and drafts, who
+/// reads whose facts, and the queue of facts and keys still to deliver.
+/// Facts only grow (arrivals, writes, escapes), so each is delivered once
+/// per reader: semi-naive, never a walk or an evaluation again.
+pub const Solver = struct {
+    gpa: Allocator,
+    /// Group code → its index here.
+    member: Ids.FixedDict(1) = .{},
+    evals: []Evaluation,
+    drafts: []Contract.Draft,
+    /// `(member, result rel)` → a run of `res_lists`: the keys `(eval, key)`
+    /// reading that slot exactly; and per member every key reading it (an
+    /// open slot's arrivals reach the keys below it).
+    res_watch: Ids.FixedDict(2) = .{},
+    res_lists: std.ArrayList(std.ArrayList([2]u32)) = .empty,
+    all_watch: std.ArrayList(std.ArrayList([3]u32)) = .empty,
+    /// Per member: the calls `(eval, call)` of it whose effects it delivers.
+    eff_watch: std.ArrayList(std.ArrayList([2]u32)) = .empty,
+    queue: std.ArrayList(Item) = .empty,
+    draining: bool = false,
+    /// Some code read a member's draft or effects this round.
+    used: bool = false,
+    live: Relation.Live = undefined,
+
+    const Item = struct {
+        kind: enum(u8) { key, res, write, escape },
+        x: u32,
+        a: u32 = 0,
+        open: bool = false,
+        arrival: Contract.Arrival = .{ .kind = .top },
+        effect: Contract.Effect = .{ .j = 0, .slot = 0 },
+    };
+
+    pub fn init(s: *Solver, gpa: Allocator, codes: []const u32, evals: []Evaluation, drafts: []Contract.Draft) Error!void {
+        s.* = .{ .gpa = gpa, .evals = evals, .drafts = drafts };
+        s.live = .{ .ctx = s, .draftRes = draftRes, .watch = watch, .dirty = dirty, .deliver = deliverFn, .pump = pumpFn, .labelIn = labelIn };
+        for (codes, 0..) |c, x| {
+            try s.member.put(gpa, .{c}, @intCast(x));
+            try s.all_watch.append(gpa, .empty);
+            try s.eff_watch.append(gpa, .empty);
+        }
+    }
+
+    pub fn deinit(s: *Solver) void {
+        s.member.deinit(s.gpa);
+        s.res_watch.deinit(s.gpa);
+        for (s.res_lists.items) |*l| l.deinit(s.gpa);
+        s.res_lists.deinit(s.gpa);
+        for (s.all_watch.items) |*l| l.deinit(s.gpa);
+        s.all_watch.deinit(s.gpa);
+        for (s.eff_watch.items) |*l| l.deinit(s.gpa);
+        s.eff_watch.deinit(s.gpa);
+        s.queue.deinit(s.gpa);
+    }
+
+    pub fn memberOf(s: *const Solver, code: u32) ?u32 {
+        return s.member.get(.{code});
+    }
+
+    fn self(ctx: *anyopaque) *Solver {
+        return @ptrCast(@alignCast(ctx));
+    }
+
+    fn evalIndex(s: *Solver, ev: *Relation.Eval) u32 {
+        const e: *Evaluation = @fieldParentPtr("ev", ev);
+        return @intCast((@intFromPtr(e) - @intFromPtr(s.evals.ptr)) / @sizeOf(Evaluation));
+    }
+
+    fn draftRes(ctx: *anyopaque, code: u32) ?*std.ArrayList(Contract.Draft.DraftSlot) {
+        const s = self(ctx);
+        const x = s.memberOf(code) orelse return null;
+        return &s.drafts[x].res;
+    }
+
+    fn watch(ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Relation.Eval, key: u32) Error!void {
+        const s = self(ctx);
+        const x = s.memberOf(code).?;
+        const y = s.evalIndex(ev);
+        s.used = true;
+        const got = try s.res_watch.getOrPut(s.gpa, .{ x, rel });
+        if (!got.found_existing) {
+            got.value_ptr.* = @intCast(s.res_lists.items.len);
+            try s.res_lists.append(s.gpa, .empty);
+        }
+        try s.res_lists.items[got.value_ptr.*].append(s.gpa, .{ y, key });
+        try s.all_watch.items[x].append(s.gpa, .{ y, key, rel });
+    }
+
+    fn dirty(ctx: *anyopaque, ev: *Relation.Eval, key: u32) Error!void {
+        const s = self(ctx);
+        try s.queue.append(s.gpa, .{ .kind = .key, .x = s.evalIndex(ev), .a = key });
+    }
+
+    fn deliverFn(ctx: *anyopaque, ev: *Relation.Eval, sub: Relation.Sub, leaf: u32) Error!void {
+        _ = ctx;
+        const e: *Evaluation = @fieldParentPtr("ev", ev);
+        try deliver(e, sub, leaf);
+    }
+
+    fn labelIn(ctx: *anyopaque, code: u32, i: u32, c: Contract.Id) ?u32 {
+        const s = self(ctx);
+        const x = s.memberOf(code) orelse return null;
+        const dl = s.drafts[x].labels.items[i];
+        const t = s.evals[x].contracts;
+        for (t.labelsOf(t.head(c).labels), 0..) |l, k| {
+            if (l.j == dl.j and l.slot == dl.slot and std.mem.eql(u32, &l.origin, &dl.origin)) return @intCast(k);
+        }
+        return null;
+    }
+
+    fn pumpFn(ctx: *anyopaque) Error!void {
+        try self(ctx).pump();
+    }
+
+    pub fn resFact(s: *Solver, x: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void {
+        try s.queue.append(s.gpa, .{ .kind = .res, .x = x, .a = rel, .open = open, .arrival = a });
+    }
+
+    pub fn effFact(s: *Solver, x: u32, write: bool, eff: Contract.Effect) Error!void {
+        try s.queue.append(s.gpa, .{ .kind = if (write) .write else .escape, .x = x, .effect = eff });
+    }
+
+    pub fn watchEffects(s: *Solver, x: u32, y: u32, call: u32) Error!void {
+        s.used = true;
+        try s.eff_watch.items[x].append(s.gpa, .{ y, call });
+    }
+
+    /// Deliver until nothing is queued (§2.12 step 2).
+    pub fn pump(s: *Solver) Error!void {
+        if (s.draining) return;
+        s.draining = true;
+        defer s.draining = false;
+        var at: usize = 0;
+        while (at < s.queue.items.len) : (at += 1) {
+            const it = s.queue.items[at];
+            switch (it.kind) {
+                .key => try s.evals[it.x].ev.drainKey(it.a),
+                .res => {
+                    const e0 = &s.evals[it.x];
+                    const rw = e0.fr().slots.relWords(it.a);
+                    if (it.open) {
+                        // Every key at or below an open slot.
+                        var i: usize = 0;
+                        while (i < s.all_watch.items[it.x].items.len) : (i += 1) {
+                            const kw = s.all_watch.items[it.x].items[i];
+                            const e = &s.evals[kw[0]];
+                            try e.ev.f.charge(.edge, 1);
+                            const words = e.fr().slots.relWords(kw[2]);
+                            if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
+                            try e.ev.feedDraft(kw[1], it.arrival, @intCast(rw.len));
+                        }
+                    } else if (s.res_watch.get(.{ it.x, it.a })) |li| {
+                        var i: usize = 0;
+                        while (i < s.res_lists.items[li].items.len) : (i += 1) {
+                            const kw = s.res_lists.items[li].items[i];
+                            try s.evals[kw[0]].ev.feedDraft(kw[1], it.arrival, @intCast(rw.len));
+                        }
+                    }
+                },
+                .write, .escape => {
+                    var i: usize = 0;
+                    while (i < s.eff_watch.items[it.x].items.len) : (i += 1) {
+                        const cw = s.eff_watch.items[it.x].items[i];
+                        const e = &s.evals[cw[0]];
+                        try e.ev.f.charge(.edge, 1);
+                        if (it.kind == .write) try callWrite(e, cw[1], it.effect) else try callEscape(e, cw[1], it.effect);
+                    }
+                },
+            }
+        }
+        s.queue.clearRetainingCapacity();
+    }
+};
