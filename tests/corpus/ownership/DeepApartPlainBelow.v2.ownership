@@ -1,0 +1,21 @@
+module DeepApartPlainBelow
+  16:21 List.push l: accepted param
+  16:40 DeepApartPlainBelow.incLabels rest[*]#Rose.0: accepted param
+  25:5 DeepApartPlainBelow.incLabels <literal>[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  29:15 DeepApartPlainBelow.incLabels <literal>[*]#Rose.0: accepted fresh
+  33:14 DeepApartPlainBelow.incLabels <literal>[*]#Rose.0: rejected disjoint: another path of the same argument reaches it (approx)
+  37:18 DeepApartPlainBelow.incLabels <literal>[*]#Rose.0: accepted param
+  account incLabels: source 33, baseline 5251, growth 0 of 65536, total 5251, continuation 5236 of 33792, demands 1467, walks 1, rounds 4, liveness_index lanes 4, transfer_settlement lanes 3
+  summary incLabels: res ε fresh, [*]#0.0 π1[*]#0.0, [*]#0.1 π1[*]#0.1, [*]#0.1[*]#0.0 π1[*]#0.1[*]#0.0, [*]#0.1⟲ π1[*]#0.1 π1[*]#0.1⟲, [*]#0.1⟲[*]#0.0 π1[*]#0.1⟲[*]#0.0; nondup ⇐ sel π1{[*]#0.0,[*]#0.1,[*]#0.1[*]#0.0,[*]#0.1⟲,[*]#0.1⟲[*]#0.0}; reads π1ε*; writes π1[*]#0.0; req ⇐ sel π1{ε~,[*]#0.0,[*]#0.1~,[*]#0.1[*]#0.0~,[*]#0.1⟲~,[*]#0.1⟲[*]#0.0~}
+  account twiceDeep: source 25, baseline 650, growth 0 of 65536, total 650, continuation 644 of 25600, demands 5, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
+  summary twiceDeep: res ε fresh, [*]#0.0 fresh, [*]#0.1 fresh, [*]#0.1[*]#0.0 fresh, [*]#0.1⟲ fresh; nondup no
+  account apartDeep: source 23, baseline 669, growth 0 of 65536, total 669, continuation 668 of 23552, demands 44, walks 1, rounds 1, transfer_settlement lanes 1
+  summary apartDeep: res ε fresh, [*]#0.0 fresh, [*]#0.1 fresh, [*]#0.1[*]#0.0 fresh, [*]#0.1⟲ fresh; nondup yes
+  account viaParam: source 15, baseline 1092, growth 0 of 65536, total 1092, continuation 1087 of 15360, demands 5, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary viaParam: res ε fresh, [*]#0.0 π1#0.0 fresh, [*]#0.1 π1#0.1 fresh, [*]#0.1[*]#0.0 π1#0.0 π1#0.1[*]#0.0, [*]#0.1⟲ π1#0.1 π1#0.1[*]#0.1 π1#0.1[*]⟲#0.1 fresh, [*]#0.1⟲[*]#0.0 π1#0.1[*]#0.0 π1#0.1[*]⟲#0.0; nondup no; reads π1#0.0* π1#0.1*; writes π1#0.0; req yes
+  account viaParamOnce: source 14, baseline 950, growth 0 of 65536, total 950, continuation 948 of 14336, demands 33, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary viaParamOnce: res ε fresh, [*]#0.0 π1#0.0 fresh, [*]#0.1 π1#0.1 fresh, [*]#0.1[*]#0.0 π1#0.1[*]#0.0, [*]#0.1⟲ π1#0.1 π1#0.1[*]#0.1 π1#0.1[*]⟲#0.1 fresh, [*]#0.1⟲[*]#0.0 π1#0.1[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.1,#0.1[*]#0.0,#0.1[*]#0.1,#0.1[*]⟲#0.0,#0.1[*]⟲#0.1}; reads π1#0.0* π1#0.1*; writes π1#0.0; req ⇐ sel π1{#0.0,#0.1~,#0.1[*]#0.0~,#0.1[*]#0.1~,#0.1[*]⟲#0.0~,#0.1[*]⟲#0.1~}
+  block: 2560 bytes, hash 87befba9f733f597
+  demands 6: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 2
