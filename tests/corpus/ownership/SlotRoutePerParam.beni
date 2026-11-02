@@ -1,0 +1,14 @@
+-- ownership: each parameter has its own route to what it writes (#1685's
+-- requirement 3). `both` writes both of its lists; with one route for
+-- every parameter the prototype accepted `both t t`. One list given twice
+-- is refused (`twice`); two lists are accepted (`two`).
+both : List Int, List Int → List Int × List Int
+both a b = ( List.push a 1, List.push b 2 )
+
+
+pub twice : List Int → List Int × List Int
+twice t = both t t
+
+
+pub two : List Int, List Int → List Int × List Int
+two s t = both s t

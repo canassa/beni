@@ -1,0 +1,23 @@
+-- ownership: a join of contracts keeps every result slot (#1685's
+-- requirement 1, from the slot-domain experiment's controls). `appendAll`
+-- answers its accumulator on the empty arm and a pushed one on the other;
+-- the empty arm adds no write, and the prototype's join dropped its result
+-- slot, so the answer looked fresh. `keptAcc` writes the answer while it
+-- also returns `acc`, which the answer may be: refused. `freshAcc` starts
+-- from a literal: accepted.
+appendAll : List Int, List (List Int) → List (List Int)
+appendAll xs acc =
+    case xs of
+        [ x, …rest ] →
+            appendAll rest (List.push acc [ x ])
+
+        [] →
+            acc
+
+
+pub keptAcc : List (List Int) → List (List Int) × List (List Int)
+keptAcc acc = ( List.push (appendAll [] acc) [ 9 ], acc )
+
+
+pub freshAcc : List Int → List (List Int)
+freshAcc xs = List.push (appendAll xs [ [ 1 ] ]) [ 9 ]
