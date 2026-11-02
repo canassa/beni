@@ -25,6 +25,11 @@ const none: u32 = Ids.none_int;
 pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
     const f = e.fr();
     const gpa = e.gpa();
+    // What the code returns: a closure in it is called by code that cannot
+    // see it (a function value a callee returns is unknown, §2.11.3).
+    var out: std.ArrayList(u32) = .empty;
+    defer out.deinit(gpa);
+    if (e.w.result != none) try e.ev.leavesOf(e.w.result, 0, &out);
     for (e.w.closures.items) |cl| {
         const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
         const h = e.contracts.head(c);
@@ -39,6 +44,8 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         const at = for (e.escapes.items) |es| {
             const l = f.leafAt(es.leaf);
             if (l.kind == .site and l.atom == cl.inst) break es;
+        } else for (out.items) |l| {
+            if (f.leafAt(l).kind == .site and f.leafAt(l).atom == cl.inst) break Eval.Escape{ .leaf = l, .point = cl.point };
         } else by orelse continue;
         const caps = f.kidsOf(f.val(cl.value));
         for (writes) |wr| {
