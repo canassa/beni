@@ -16,9 +16,6 @@ const Range = Contract.Range;
 const Table = Contract.Table;
 const Id = Contract.Id;
 const StoredCond = Contract.StoredCond;
-const isApart = Contract.isApart;
-const occParam = Contract.occParam;
-const occRel = Contract.occRel;
 const none: u32 = Ids.none_int;
 
 /// How a contract's text names a step, a declaration and a field.
@@ -59,19 +56,20 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
     try w.writeAll("⇐ sel");
     var last: u32 = none;
     for (run) |o| {
-        if (occParam(o) != last) {
+        if (Contract.occParam(o) != last) {
             if (last != none) try w.writeAll("}");
-            try w.print(" π{d}{{", .{occParam(o) + 1});
-            last = occParam(o);
+            try w.print(" π{d}{{", .{Contract.occParam(o) + 1});
+            last = Contract.occParam(o);
         } else try w.writeAll(",");
-        try relText(slots, places, names, w, occRel(o));
+        try relText(slots, places, names, w, Contract.occRel(o));
         if (Contract.isDeep(o)) try w.writeAll("*");
-        if (isApart(o)) try w.writeAll("~");
+        if (Contract.isApart(o)) try w.writeAll("~");
     }
     try w.writeAll("}");
 }
 
-fn effectsText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, r: Range) std.Io.Writer.Error!void {
+fn effectsText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, field: []const u8, r: Range) std.Io.Writer.Error!void {
+    if (r.len != 0) try w.writeAll(field);
     for (t.effectsOf(r)) |e| {
         try w.print(" π{d}", .{e.j + 1});
         try relText(slots, places, names, w, e.slot);
@@ -79,31 +77,50 @@ fn effectsText(t: *const Table, slots: *const Slots.Table, places: *const Place.
     }
 }
 
-fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node) std.Io.Writer.Error!void {
-    var es: Forest.Entries = .{};
-    defer es.deinit(std.heap.smp_allocator);
-    es.of(&t.trees, std.heap.smp_allocator, places, root, &.{}) catch return error.WriteFailed;
-    for (es.items.items, 0..) |s, i| {
-        try w.writeAll(if (i == 0) " " else ", ");
-        try wordsText(places, names, w, es.wordsOf(s));
-        if (s.open) try w.writeAll("…");
-        for (s.arrivals) |a| switch (a.kind) {
+/// A result tree's entries in the canonical order; a kid equal to an
+/// earlier sibling prints as `.1 = .0` (§2.10 *Text*).
+const Res = struct {
+    t: *const Table,
+    c: Id,
+    slots: *const Slots.Table,
+    places: *const Place.Table,
+    names: Names,
+    w: *std.Io.Writer,
+    first: bool = true,
+
+    fn entry(ctx: *anyopaque, path: []const u32, open: bool, run: []const Contract.Arrival, as: ?[]const u32) std.Io.Writer.Error!void {
+        const r: *Res = @ptrCast(@alignCast(ctx));
+        const w = r.w;
+        try w.writeAll(if (r.first) " " else ", ");
+        r.first = false;
+        try wordsText(r.places, r.names, w, path);
+        if (as) |o| {
+            try w.writeAll(" = ");
+            return wordsText(r.places, r.names, w, o);
+        }
+        if (open) try w.writeAll("…");
+        for (run) |a| switch (a.kind) {
             .param => {
                 try w.print(" π{d}", .{a.j + 1});
-                try relText(slots, places, names, w, a.slot);
+                try relText(r.slots, r.places, r.names, w, a.slot);
                 if (a.deep) try w.writeAll("*");
             },
             .fresh => try w.writeAll(" fresh"),
             .shared => try w.writeAll(" shared"),
             .cb => {
-                const l = t.labelAt(c, a.j);
+                const l = r.t.labelAt(r.c, a.j);
                 try w.print(" cb(π{d}", .{l.j + 1});
-                try relText(slots, places, names, w, l.slot);
+                try relText(r.slots, r.places, r.names, w, l.slot);
                 try w.print("@{d})", .{l.origin[2]});
             },
             .top => try w.writeAll(" ⊤"),
         };
     }
+};
+
+fn arrivalsText(t: *const Table, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node) std.Io.Writer.Error!void {
+    var r: Res = .{ .t = t, .c = c, .slots = slots, .places = places, .names = names, .w = w };
+    try Forest.text(&t.trees, places, root, &r, Res.entry);
 }
 
 /// The contract's text, the dump's `summary` line after its name.
@@ -116,20 +133,11 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
     }
     try w.writeAll("; nondup ");
     try condText(t, slots, places, names, w, h.res_cond);
-    if (h.reads.len != 0) {
-        try w.writeAll("; reads");
-        try effectsText(t, slots, places, names, w, h.reads);
-    }
-    if (h.writes.len != 0) {
-        try w.writeAll("; writes");
-        try effectsText(t, slots, places, names, w, h.writes);
-        try w.writeAll("; req ");
-        try condText(t, slots, places, names, w, h.req);
-    }
-    if (h.escapes.len != 0) {
-        try w.writeAll("; escapes");
-        try effectsText(t, slots, places, names, w, h.escapes);
-    }
+    try effectsText(t, slots, places, names, w, "; reads", h.reads);
+    try effectsText(t, slots, places, names, w, "; writes", h.writes);
+    if (h.writes.len != 0) try w.writeAll("; req ");
+    if (h.writes.len != 0) try condText(t, slots, places, names, w, h.req);
+    try effectsText(t, slots, places, names, w, "; escapes", h.escapes);
     for (t.labelsOf(h.labels)) |l| {
         try w.print("; label π{d}", .{l.j + 1});
         try relText(slots, places, names, w, l.slot);
@@ -137,10 +145,7 @@ pub fn print(t: *const Table, c: Id, slots: *const Slots.Table, places: *const P
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}:", .{s.k + 1});
             try arrivalsText(t, c, slots, places, names, w, s.res_root);
-            if (s.kept.len != 0) {
-                try w.writeAll(" kept");
-                try effectsText(t, slots, places, names, w, s.kept);
-            }
+            try effectsText(t, slots, places, names, w, " kept", s.kept);
             try w.writeAll(" sep ");
             try condText(t, slots, places, names, w, s.cond);
             try w.writeAll("]");

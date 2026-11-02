@@ -71,6 +71,11 @@ pub fn below(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Ta
     // walked: the walk stops at the first slot past `Slots.below_min`, after
     // at most that many walked paths that hold one.
     var whole = try note(t, gpa, account, places, p, &found, &acc);
+    // Below a place no cycle reaches, each path is a slot of its own: they
+    // are counted over the place graph, never walked path by path.
+    var counts: Ids.FixedDict(1) = .{};
+    defer counts.deinit(gpa);
+    if (!whole) whole = try manyBelow(gpa, account, places, places.pathPlace(p), &counts) == Slots.below_min + 1;
     try queue.append(gpa, p);
     _ = try seen.getOrPut(gpa, .{p.int()});
     var qi: usize = 0;
@@ -91,6 +96,24 @@ pub fn below(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Ta
     const s = if (whole) try t.internSorted(gpa, account, &.{p.int() | Slots.sub_bit}) else try t.sorted(gpa, account, acc.items);
     try t.below_of.put(gpa, p, s);
     return s;
+}
+
+/// The object slots at and below place `p`, at most `Slots.below_min + 1`;
+/// `maxInt` when a place below it is on a cycle (its paths fold: not counted).
+fn manyBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.Table, p: PlaceId, memo: *Ids.FixedDict(1)) Error!u32 {
+    if (memo.get(.{p.int()})) |n| return n;
+    try account.reserve(.path, 1);
+    var n: u32 = @intFromBool(!Place.Kind.own(places.kind(p)).isEmpty());
+    if (places.cyclic(p)) n = std.math.maxInt(u32) else for (places.steps(p).children) |c| {
+        const m = try manyBelow(gpa, account, places, c, memo);
+        if (m == std.math.maxInt(u32)) {
+            n = m;
+            break;
+        }
+        n = @min(n + m, Slots.below_min + 1);
+    }
+    try memo.put(gpa, .{p.int()}, n);
+    return n;
 }
 
 /// Add path `at`'s object slots to `acc` (each once); whether there
