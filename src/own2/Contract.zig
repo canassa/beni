@@ -18,6 +18,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Trees = @import("Trees.zig");
 
 pub const Rel = Slots.Rel;
 pub const Range = Ids.Range;
@@ -25,6 +26,8 @@ pub const Error = Ids.ChargeError;
 const none: u32 = Ids.none_int;
 
 pub const Id = u32;
+pub const Node = Trees.Node;
+pub const Hit = Trees.Hit;
 
 /// A walk-time condition: `no`, or a selection in an arena, sorted by its
 /// words (`occ`).
@@ -164,22 +167,8 @@ pub fn occRel(o: u64) Rel {
     return @truncate(o);
 }
 
-pub const ArrivalKind = enum(u8) { param, fresh, shared, cb, top };
-
-/// One arrival (§2.10 `res`): `π_j·slot`, `fresh`, `shared (module, decl)`
-/// (`j`, `slot`), `cb label` (`j`: the label's index in its contract), `⊤`.
-pub const Arrival = struct {
-    kind: ArrivalKind,
-    /// `param`: the parameter's slot is a type variable's, so the arrival is
-    /// every object at and below it at the caller.
-    deep: bool = false,
-    j: u32 = 0,
-    slot: u32 = 0,
-
-    pub fn eql(a: Arrival, b: Arrival) bool {
-        return a.kind == b.kind and a.deep == b.deep and a.j == b.j and a.slot == b.slot;
-    }
-};
+pub const ArrivalKind = Trees.ArrivalKind;
+pub const Arrival = Trees.Arrival;
 
 /// A result (or supply) slot and its arrivals. `open`: the slot is a type
 /// variable's, so at a caller it stands for every slot at and below it.
@@ -214,6 +203,9 @@ pub const Calls = enum(u8) { none, once, many };
 pub const Supply = struct {
     k: u32,
     res: Range,
+    /// `res` as a result tree (§2.10, *a contract is a tree of shared
+    /// subtrees*): its root node.
+    res_root: Node = 0,
     kept: Range,
     cond: StoredCond,
 };
@@ -231,6 +223,8 @@ pub const Head = struct {
     arity: u32,
     flags: Flags,
     res: Range = .{},
+    /// `res` as a result tree: its root node.
+    res_root: Node = 0,
     res_cond: StoredCond = .{},
     reads: Range = .{},
     writes: Range = .{},
@@ -345,8 +339,11 @@ pub const Table = struct {
     occs: std.ArrayList(u64) = .empty,
     labels: std.ArrayList(Label) = .empty,
     supplies: std.ArrayList(Supply) = .empty,
+    /// `res` and supplies' `res` as result trees (§2.10), by node.
+    trees: Trees.Table = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
+        t.trees.deinit(gpa);
         t.heads.deinit(gpa);
         t.res.deinit(gpa);
         t.arrivals.deinit(gpa);
@@ -419,7 +416,14 @@ pub const Table = struct {
         return .{ .run = .{ .start = start, .len = @intCast(run.len) } };
     }
 
-    fn putSlots(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Draft.DraftSlot) Allocator.Error!Range {
+    const Put = struct { range: Range, root: Node };
+
+    fn putSlots(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Draft.DraftSlot) Ids.IndexError!Put {
+        const range = try t.putFlat(gpa, slots, list);
+        return .{ .range = range, .root = try t.treeOf(gpa, slots, t.resOf(range), 0) };
+    }
+
+    fn putFlat(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Draft.DraftSlot) Allocator.Error!Range {
         std.mem.sort(Draft.DraftSlot, list, slots, struct {
             fn lt(s: *const Slots.Table, a: Draft.DraftSlot, b: Draft.DraftSlot) bool {
                 const o = s.relOrder(a.slot, b.slot);
@@ -464,11 +468,38 @@ pub const Table = struct {
         return .{ .start = start, .len = @intCast(t.effects.items.len - start) };
     }
 
+    // ---- result trees (§2.10, *a contract is a tree of shared subtrees*) ---
+
+    /// The node of the committed entries `run` (sorted by their slots'
+    /// canonical keys, each `depth` steps or more): the entries of exactly
+    /// `depth` steps are its own, the others its kids', grouped by their
+    /// step at `depth` (a key's prefix of steps is a prefix of its words,
+    /// so a group is one run).
+    fn treeOf(t: *Table, gpa: Allocator, slots: *const Slots.Table, run: []const ResSlot, depth: usize) Ids.IndexError!Node {
+        var here: Range = .{};
+        var open: Range = .{};
+        var i: usize = 0;
+        while (i < run.len and slots.relWords(run[i].slot).len == depth) : (i += 1) {
+            if (run[i].open) open = run[i].arrivals else here = run[i].arrivals;
+        }
+        var kids: std.ArrayList([2]u32) = .empty;
+        defer kids.deinit(gpa);
+        while (i < run.len) {
+            const st = slots.relWords(run[i].slot)[depth];
+            var n = i + 1;
+            while (n < run.len and slots.relWords(run[n].slot)[depth] == st) n += 1;
+            try kids.append(gpa, .{ st, try t.treeOf(gpa, slots, run[i..n], depth + 1) });
+            i = n;
+        }
+        return t.trees.node(gpa, t.arrivalsOf(here), t.arrivalsOf(open), kids.items);
+    }
     /// Commit a draft: every list in its canonical order (§2.10).
     pub fn commit(t: *Table, gpa: Allocator, account: *Ids.Account, slots: *const Slots.Table, d: *Draft) Error!Id {
         try account.reserve(.class, 1);
         var h: Head = .{ .arity = d.arity, .flags = d.flags };
-        h.res = try t.putSlots(gpa, slots, d.res.items);
+        const res = try t.putSlots(gpa, slots, d.res.items);
+        h.res = res.range;
+        h.res_root = res.root;
         h.res_cond = try t.putCond(gpa, slots, d.res_cond);
         h.reads = try t.putEffects(gpa, slots, d.reads.items);
         h.writes = try t.putEffects(gpa, slots, d.writes.items);
@@ -505,7 +536,10 @@ pub const Table = struct {
             // The supplies' runs are made first; their records after.
             var made: std.ArrayList(Supply) = .empty;
             defer made.deinit(gpa);
-            for (l.supplies.items) |*s| try made.append(gpa, .{ .k = s.k, .res = try t.putSlots(gpa, slots, s.res.items), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond) });
+            for (l.supplies.items) |*s| {
+                const sres = try t.putSlots(gpa, slots, s.res.items);
+                try made.append(gpa, .{ .k = s.k, .res = sres.range, .res_root = sres.root, .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond) });
+            }
             try t.supplies.appendSlice(gpa, made.items);
             try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
         }
