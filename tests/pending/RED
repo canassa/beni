@@ -344,3 +344,7 @@ scenario/CK-314 grows
 # flag without a platform chain (#1509) exposed it. v2 checks it in 0.03 s
 # (check_test.zig), so this goes with v1.
 scenario/CK-316 exit=1 codes=ownership_limit×1
+scenario/TASK-NONE retained-runtime
+scenario/TASK-SYNC retained-runtime
+scenario/TASK-WAITS retained-runtime
+scenario/TASK-GUARDS retained-runtime

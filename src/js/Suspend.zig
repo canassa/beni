@@ -11,9 +11,9 @@
 //! the rest ends the function (tail position, or a join below). This pass
 //! then rewrites, list by list:
 //!
-//!   - **closure mode**: `return Task$chain(sink => call(..., sink),
-//!     temp => { rest }, completion)`. A tail call receives the enclosing
-//!     completion directly. The closures keep the value's actual type.
+//!   - **closure mode**: build `next = temp => { rest }` and a sink
+//!     that queues it, then `return Task$chain(call(..., sink), next,
+//!     completion)`. Tail calls receive the enclosing completion directly.
 //!   - **loop mode**: create a completion that queues the slow remainder,
 //!     call with it, compare the result with the sentinel once, and keep
 //!     the synchronous remainder in the loop. In the slow remainder each
@@ -47,7 +47,7 @@ const NameIndex = JsIr.NameIndex;
 /// ends, or inside a `try … catch` (`Js.catchIf`), which would not see what
 /// the code after the park throws. Its arguments are `sync`, so the checker refuses a suspending one
 /// before this pass could see it; lowering reports it as a compiler fault.
-pub const Error = error{ OutOfMemory, FallsThrough, InsideTry };
+pub const Error = error{ OutOfMemory, FallsThrough, InsideTry, InvalidSuspendCall };
 
 /// The names the pass recognises and writes.
 pub const Names = struct {
@@ -280,9 +280,9 @@ pub const Pass = struct {
     }
 
     /// The result destination is an additional argument only on calls that
-    /// may suspend. A direct value expression has no callee to forward to.
+    /// may suspend. Every marked suspension must still be a call.
     fn withSink(p: *Pass, n: Node.Index, sink: Node.Index) Error!Node.Index {
-        if (p.tag(n) != .call) return n;
+        if (p.tag(n) != .call) return error.InvalidSuspendCall;
         const d = p.data(n);
         const args = try p.nodesOf(p.rangeAt(d.rhs));
         const forwarded = try p.scratch.alloc(Node.Index, args.len + 1);
@@ -291,11 +291,6 @@ pub const Pass = struct {
         const called = try p.call(@fromBackingInt(@intCast(d.lhs)), forwarded, p.posOf(n));
         if (p.hostOf(n)) p.b.markHost(called);
         return called;
-    }
-
-    fn workThunk(p: *Pass, n: Node.Index, at: u32) Error!Node.Index {
-        const called = try p.withSink(n, try p.ident(p.sink_arg, at));
-        return p.arrow(&.{p.sink_arg}, &.{try p.ret(called, at)}, at);
     }
 
     // ---- The rewrite ------------------------------------------------------
@@ -322,7 +317,15 @@ pub const Pass = struct {
                         try p.liftFunctions(list[0..i], call_node, rest, &out);
                         const body = try p.rewrite(try p.withoutLifted(rest, out.items), .closure);
                         const k = try p.arrow(&.{temp}, body, at);
-                        const then = try p.call(try p.ident(p.names.and_then, at), &.{ try p.workThunk(call_node, at), k, try p.ident(p.completion, at) }, at);
+                        // Build the continuation before calling the work directly:
+                        // synchronous recursion consumes only the callee's frame.
+                        try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(p.sink_arg), k.int()));
+                        const next = try p.ident(p.sink_arg, at);
+                        const resume_call = try p.call(try p.ident(p.names.continue_with, at), &.{ next, try p.ident(temp, at), try p.ident(p.completion, at) }, at);
+                        const sink = try p.arrow(&.{temp}, &.{try p.ret(resume_call, at)}, at);
+                        const invoked = try p.withSink(call_node, sink);
+                        const then = try p.call(try p.ident(p.names.and_then, at), &.{ invoked, next, try p.ident(p.completion, at) }, at);
+
                         try out.append(p.scratch, try p.ret(then, at));
                         return out.items;
                     },
@@ -417,8 +420,11 @@ pub const Pass = struct {
                 // continuation, which runs once.
                 const closed = try p.call(try p.ident(lp.close, at), &.{ try p.ident(lp.root, at), try p.ident(lp.built, at) }, at);
                 const k = try p.arrow(&.{lp.built}, &.{try p.ret(closed, at)}, at);
-                const fresh = try p.call(try p.ident(lp.callee, at), args[0..lp.params.len], at);
-                return p.ret(try p.call(try p.ident(p.names.and_then, at), &.{ try p.workThunk(fresh, at), k, try p.ident(p.completion, at) }, at), at);
+                const resume_call = try p.call(try p.ident(p.names.continue_with, at), &.{ k, try p.ident(lp.built, at), try p.ident(p.completion, at) }, at);
+                const sink = try p.arrow(&.{lp.built}, &.{try p.ret(resume_call, at)}, at);
+                args[lp.params.len] = sink;
+                const fresh = try p.call(try p.ident(lp.callee, at), args, at);
+                return p.ret(try p.call(try p.ident(p.names.and_then, at), &.{ fresh, k, try p.ident(p.completion, at) }, at), at);
             },
             .if_stmt => {
                 const i = p.ifOf(d.rhs);

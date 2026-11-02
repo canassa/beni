@@ -1482,7 +1482,7 @@ pub const Lowerer = struct {
     suspendable: bool = false,
     completion: JsIr.NameIndex = .none,
     completion_next: u32 = 1,
-    protocol_forward: bool = false,
+    protocol_forward: Inst.OptionalIndex = .none,
     /// How many markers the function being lowered has written.
     markers: u32 = 0,
     /// The join a non-tail `case` of a suspendable function sends its leaves
@@ -4120,7 +4120,7 @@ pub const Lowerer = struct {
 
     // ---- The suspendable form (transparent-effects-proposal.md §16) -----
 
-    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex, completion: JsIr.NameIndex, protocol_forward: bool };
+    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex, completion: JsIr.NameIndex, protocol_forward: Inst.OptionalIndex };
 
     fn enterFunction(l: *Lowerer, suspendable: bool) FunctionState {
         const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join, .completion = l.completion, .protocol_forward = l.protocol_forward };
@@ -4128,7 +4128,8 @@ pub const Lowerer = struct {
         // names belong to the function that declares them.
         l.bound_out = null;
         l.suspendable = suspendable;
-        if (suspendable or !l.protocol_forward) l.completion = .none;
+        l.completion = .none;
+        l.protocol_forward = .none;
         l.markers = 0;
         l.function_depth += 1;
         l.join = .none;
@@ -4173,7 +4174,14 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         const temp = try l.fresh(l.well.temp);
         const marker = try l.ident(try l.fixedName("$$suspend"), p);
-        const node = try l.call(marker, &.{ value, try l.ident(temp, p) }, p);
+        // An in-place primitive may return a value rather than a host
+        // call. Keep its boundary as an invocation so every marker has
+        // a callee to receive the completion argument.
+        const invoked = if (l.b.tagOf(value) != .call and l.suspendingBody(inst) != null)
+            try l.call(try l.arrowOf(&.{}, &.{try l.add(.return_stmt, p, value.int(), Node.Data.unused)}, p), &.{}, p)
+        else
+            value;
+        const node = try l.call(marker, &.{ invoked, try l.ident(temp, p) }, p);
         try out.append(l.scratch, try l.add(.expr_stmt, p, node.int(), Node.Data.unused));
         l.markers += 1;
         return l.ident(temp, p);
@@ -4198,6 +4206,10 @@ pub const Lowerer = struct {
                 ,
                     .{},
                 );
+                return stmts;
+            },
+            error.InvalidSuspendCall => {
+                try l.report(.internal, l.region, "A marked suspension is not a call and cannot receive its completion callback.", .{});
                 return stmts;
             },
             error.InsideTry => {
@@ -5532,7 +5544,7 @@ pub const Lowerer = struct {
                 if (l.pureBody(inst)) |body| return l.tailStmts(out, body, loop);
                 if (l.suspendingBody(inst)) |body| {
                     const before = l.protocol_forward;
-                    l.protocol_forward = true;
+                    l.protocol_forward = body.toOptional();
                     defer l.protocol_forward = before;
                     return l.tailStmts(out, body, loop);
                 }
@@ -11299,6 +11311,32 @@ pub const Lowerer = struct {
         return l.nullNode(p);
     }
 
+    /// Only the host call producing a `Js.suspending` body's result gets
+    /// its completion; bindings, operands and nested lambdas do not.
+    fn protocolResultAt(l: *Lowerer, result: Inst.OptionalIndex, p: u32) bool {
+        const inst = result.unwrap() orelse return false;
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .let => return l.protocolResultAt(@fromBackingInt(@intCast(d.rhs)), p),
+            .case => {
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) == .branch and
+                        l.protocolResultAt(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), p)) return true;
+                }
+            },
+            .call => {
+                const which = l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
+                if (which == .apply) return l.pos(inst) == p;
+                if (which == .to or which == .from) {
+                    const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+                    if (args.len == 1) return l.protocolResultAt(args[0].toOptional(), p);
+                }
+            },
+            else => {},
+        }
+        return false;
+    }
+
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
@@ -11327,7 +11365,7 @@ pub const Lowerer = struct {
         if (which == .method and args.len == 1) return l.methodFunc(out, args[0], p);
         if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| {
             const before = l.protocol_forward;
-            if (which == .suspending) l.protocol_forward = true;
+            if (which == .suspending) l.protocol_forward = body.toOptional();
             defer l.protocol_forward = before;
             return l.expr(out, body);
         };
@@ -11420,7 +11458,7 @@ pub const Lowerer = struct {
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
             W.apply => blk: {
-                if (!l.protocol_forward or l.completion == .none) break :blk l.hostCall(v[0], rest, p);
+                if (l.completion == .none or !l.protocolResultAt(l.protocol_forward, p)) break :blk l.hostCall(v[0], rest, p);
                 const forwarded = try l.scratch.alloc(Node.Index, rest.len + 1);
                 @memcpy(forwarded[0..rest.len], rest);
                 forwarded[rest.len] = try l.ident(l.completion, p);

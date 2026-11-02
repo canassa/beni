@@ -443,6 +443,11 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("tests/skill_api.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "core_private", .module = b.createModule(.{
+                .root_source_file = b.path("src/resolve/CorePrivate.zig"),
+                .target = target,
+                .optimize = optimize,
+            }) }},
         }),
     });
     const gen_tests = b.addTest(.{
@@ -1263,6 +1268,11 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("tests/skill_api.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "core_private", .module = b.createModule(.{
+                .root_source_file = b.path("src/resolve/CorePrivate.zig"),
+                .target = target,
+                .optimize = optimize,
+            }) }},
         }),
     });
     const skill_api_step = b.step("skill-api", "Write skills/beni/references/api-*.md from `beni dump --stage=interface` on the gates' beni");

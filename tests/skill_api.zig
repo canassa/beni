@@ -117,20 +117,12 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
 
 // Core's fiber protocol is not an application or platform API.
 fn coreOnly(module: []const u8, line: []const u8) bool {
-    if (std.mem.eql(u8, module, "Js.Runtime")) return true;
-    const names: []const []const u8 = if (std.mem.eql(u8, module, "Js"))
-        &.{ "invoke", "completion" }
-    else if (std.mem.eql(u8, module, "Task"))
-        &.{ "VirtualClock", "currentClock", "withClock", "virtualClock", "adjustClock", "currentLogContext", "withLogContext" }
-    else
-        return false;
-    for (names) |name| {
-        for ([_][]const u8{ "  value ", "  foreign value ", "  type ", "  opaque type " }) |prefix| {
-            if (!std.mem.startsWith(u8, line, prefix)) continue;
-            const rest = line[prefix.len..];
-            if (std.mem.startsWith(u8, rest, name) and
-                (rest.len == name.len or rest[name.len] == ' ')) return true;
-        }
+    if (@import("core_private").access(module, "", true) != null) return true;
+    for ([_][]const u8{ "  value ", "  foreign value ", "  type ", "  opaque type " }) |prefix| {
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+        const rest = line[prefix.len..];
+        const end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
+        return @import("core_private").access(module, rest[0..end], std.mem.indexOf(u8, prefix, "value") != null) != null;
     }
     return false;
 }

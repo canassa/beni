@@ -1,0 +1,34 @@
+-- run: non-tail suspendable recursion keeps its native call direct. Both
+-- paths descend 5000 calls before parking; one yields only at the bottom,
+-- the other also yields in each continuation after the recursive call.
+import Io
+import Node exposing (Program)
+import Task
+
+
+bottom : Int → Int
+bottom n =
+    if n == 0 then
+        Task.yieldNow ⊤
+        0
+    else
+        r = bottom (n - 1)
+        r + 1
+
+
+after : Int → Int
+after n =
+    if n == 0 then
+        Task.yieldNow ⊤
+        0
+    else
+        r = after (n - 1)
+        Task.yieldNow ⊤
+        r + 1
+
+
+main : Program
+main = Io.run λ⊤ →
+    _ = Debug.log "bottom" (bottom 5000)
+    _ = Debug.log "after" (after 5000)
+    Node.print "done"

@@ -801,23 +801,11 @@ const Pass = struct {
                 (p.graph.modulePackage(m) == .app and p.core_app);
             const caller_task = caller_core and
                 std.mem.eql(u8, p.interner.slice(p.graph.moduleName(m)), "Task");
-            const raw = namespace == .value and std.mem.eql(u8, owner, "Js") and
-                std.mem.eql(u8, text, "invoke");
-            const completion = namespace == .value and std.mem.eql(u8, owner, "Js") and
-                std.mem.eql(u8, text, "completion");
-            const runtime = std.mem.eql(u8, owner, "Js.Runtime");
-            const internal_task = std.mem.eql(u8, owner, "Task") and
-                (std.mem.eql(u8, text, "VirtualClock") or
-                    std.mem.eql(u8, text, "currentClock") or
-                    std.mem.eql(u8, text, "withClock") or
-                    std.mem.eql(u8, text, "virtualClock") or
-                    std.mem.eql(u8, text, "adjustClock") or
-                    std.mem.eql(u8, text, "currentLogContext") or
-                    std.mem.eql(u8, text, "withLogContext"));
-            if (((raw or runtime or internal_task) and !caller_core) or
-                (completion and !caller_task) or
-                (runtime and std.mem.eql(u8, text, "parked") and !caller_task))
-            {
+            const access = @import("CorePrivate.zig").access(owner, text, namespace == .value);
+            if (if (access) |required| switch (required) {
+                .core => !caller_core,
+                .task => !caller_task,
+            } else false) {
                 try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
                 return .poison(.private_name);
             }

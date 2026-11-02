@@ -1,14 +1,18 @@
 import { Io$sleep } from "./_platform/Io.mjs";
 import { Task$chain, Task$continueWith, Task$isWaiting } from "./_core/Task.mjs";
 import { List$unsafeGet, List$view, List$close } from "./_core/List.mjs";
-const SuspendShapes$fetch = (n$1, $resume$1) => Task$chain(($resume$2) => Io$sleep(n$1, $resume$2), ($t$1) => n$1 + 1, $resume$1);
+const SuspendShapes$fetch = (n$1, $resume$1) => {
+  const $resume$2 = ($t$1) => n$1 + 1;
+  return Task$chain(Io$sleep(n$1, ($t$1) => Task$continueWith($resume$2, $t$1, $resume$1)), $resume$2, $resume$1);
+};
 const SuspendShapes$pick = (n$1, $resume$1) => {
   const $k$1 = ($t$2) => {
     const m$2 = $t$2;
     return m$2 * 2;
   };
   if (n$1 > 0) {
-    return Task$chain(($resume$2) => SuspendShapes$fetch(n$1, $resume$2), ($t$3) => $k$1($t$3), $resume$1);
+    const $resume$2 = ($t$3) => $k$1($t$3);
+    return Task$chain(SuspendShapes$fetch(n$1, ($t$3) => Task$continueWith($resume$2, $t$3, $resume$1)), $resume$2, $resume$1);
   } else {
     return $k$1(0);
   }
@@ -47,7 +51,7 @@ const SuspendShapes$fetchAll = ($in$0, $resume$1) => {
       const $t$1 = SuspendShapes$fetch(x$2, ($t$1) => Task$continueWith(($t$1) => {
         $root.push($t$1);
         $in$0 = rest$3;
-        return Task$chain(($resume$2) => SuspendShapes$fetchAll($in$0, $resume$2), ($built) => List$close($root, $built), $resume$1);
+        return Task$chain(SuspendShapes$fetchAll($in$0, ($built) => Task$continueWith(($built) => List$close($root, $built), $built, $resume$1)), ($built) => List$close($root, $built), $resume$1);
       }, $t$1, $resume$1));
       if (Task$isWaiting($t$1)) {
         return $t$1;
@@ -58,8 +62,14 @@ const SuspendShapes$fetchAll = ($in$0, $resume$1) => {
   }
 };
 const SuspendShapes$twice = (f$1, x$2) => f$1(f$1(x$2));
-const SuspendShapes$twice$s = (f$1, x$2, $resume$1) => Task$chain(($resume$2) => f$1(x$2, $resume$2), ($t$1) => f$1($t$1, $resume$1), $resume$1);
-const SuspendShapes$both = (n$1, $resume$1) => Task$chain(($resume$2) => SuspendShapes$twice$s(SuspendShapes$fetch, n$1, $resume$2), ($t$1) => $t$1 + SuspendShapes$twice((k$2) => k$2 + 1, n$1), $resume$1);
+const SuspendShapes$twice$s = (f$1, x$2, $resume$1) => {
+  const $resume$2 = ($t$1) => f$1($t$1, $resume$1);
+  return Task$chain(f$1(x$2, ($t$1) => Task$continueWith($resume$2, $t$1, $resume$1)), $resume$2, $resume$1);
+};
+const SuspendShapes$both = (n$1, $resume$1) => {
+  const $resume$2 = ($t$1) => $t$1 + SuspendShapes$twice((k$2) => k$2 + 1, n$1);
+  return Task$chain(SuspendShapes$twice$s(SuspendShapes$fetch, n$1, ($t$1) => Task$continueWith($resume$2, $t$1, $resume$1)), $resume$2, $resume$1);
+};
 const SuspendShapes$plain = (n$1) => n$1 <= 0 ? 0 : n$1 + SuspendShapes$plain(n$1 - 1);
 export { SuspendShapes$fetch, SuspendShapes$pick, SuspendShapes$total, SuspendShapes$fetchAll, SuspendShapes$both, SuspendShapes$plain };
 //# sourceMappingURL=SuspendShapes.mjs.map

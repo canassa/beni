@@ -222,16 +222,13 @@ isWaiting value = Js.same value sentinel
 -- can hand the sentinel to this compatibility operation.
 --| Used by the code the compiler emits for a function that may suspend, and
 --| by nothing else: `andThen value next` is `next value`. Calling it by hand
---| is allowed and does exactly that — which is why it is `impure`: it calls
---| `next` during the call, and `next` may be.
+--| is allowed and does exactly that. Its effects include those of `next`.
 pub andThen : a, sync (a → b) → b
 andThen value next = next value
 
 
-chain : ((a → ⊤) → a), (a → b), sync (b → ⊤) → b
-chain work next done =
-    value = Js.invoke work (λincoming → continueWith next incoming done) λ_ → ⊤
-    if isWaiting value then Runtime.parked ⊤ else Js.invoke next value done
+chain : a, (a → b), sync (b → ⊤) → b
+chain value next done = if isWaiting value then Runtime.parked ⊤ else Js.invoke next value done
 
 
 continueWith : (a → b), a, sync (b → ⊤) → ⊤

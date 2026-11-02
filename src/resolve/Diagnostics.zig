@@ -151,10 +151,9 @@ pub fn message(code: diagnostic.Code, cx: Context, w: *std.Io.Writer) std.Io.Wri
             \\
             \\Check the spelling, or check that the declaration in `{s}` is marked `pub`.
         , .{ cx.module, cx.name, cx.module }),
-        .private_name => if (std.mem.eql(u8, cx.module, "Js") and
-            (std.mem.eql(u8, cx.name, "invoke") or std.mem.eql(u8, cx.name, "completion")))
+        .private_name => if (std.mem.eql(u8, cx.module, "Js") and @import("CorePrivate.zig").access(cx.module, cx.name, true) != null)
             try w.writeAll("This primitive is private to core's typed fiber protocol. Platforms use `Task.callback` and `Task.resume`.")
-        else if (std.mem.eql(u8, cx.module, "Js.Runtime") or std.mem.eql(u8, cx.module, "Task"))
+        else if (@import("CorePrivate.zig").access(cx.module, cx.name, true) != null)
             try w.writeAll("This name is private to core runtime modules.")
         else
             try w.print(
