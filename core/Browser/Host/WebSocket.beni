@@ -1,0 +1,38 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type WebSocket
+
+
+pub foreign impure tryCreate : String, List String → Maybe WebSocket
+
+
+pub foreign impure arrayBuffer : borrowed WebSocket → ⊤
+
+
+pub foreign impure readyState : borrowed WebSocket → Int
+
+
+pub foreign impure bufferedAmount : borrowed WebSocket → Int
+
+
+pub foreign impure protocol : borrowed WebSocket → String
+
+
+pub foreign impure send : borrowed WebSocket, String → ⊤
+
+
+pub foreign impure close : borrowed WebSocket, Int, String → ⊤
+
+
+pub foreign impure closeWithoutCode : borrowed WebSocket → ⊤
+
+
+pub foreign impure onOpen : borrowed WebSocket, sync (⊤ → ⊤) → ⊤
+
+
+pub foreign impure onError : borrowed WebSocket, sync (⊤ → ⊤) → ⊤
+
+
+pub foreign impure onText : borrowed WebSocket, sync (Maybe String → ⊤) → ⊤
+
+
+pub foreign impure onClose : borrowed WebSocket, sync (Int, String → ⊤) → ⊤

@@ -39,6 +39,18 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .url_protocol => a.len == 1 and native(cx, a[0], "URL") and named(cx, r, "String", "String"),
+        .url_set_protocol => a.len == 2 and native(cx, a[0], "URL") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .ws_create => a.len == 2 and named(cx, a[0], "String", "String") and (if (argument(cx, a[1], "List", "List", 0)) |item| named(cx, item, "String", "String") else false) and (if (argument(cx, r, "Maybe", "Maybe", 0)) |socket| native(cx, socket, "WebSocket") else false),
+        .ws_binary, .ws_close_empty => a.len == 1 and native(cx, a[0], "WebSocket") and unit(cx, r),
+        .ws_state, .ws_buffered => a.len == 1 and native(cx, a[0], "WebSocket") and named(cx, r, "Basics", "Int"),
+        .ws_protocol => a.len == 1 and native(cx, a[0], "WebSocket") and named(cx, r, "String", "String"),
+        .ws_send => a.len == 2 and native(cx, a[0], "WebSocket") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .ws_close => a.len == 3 and native(cx, a[0], "WebSocket") and named(cx, a[1], "Basics", "Int") and named(cx, a[2], "String", "String") and unit(cx, r),
+        .ws_open, .ws_error => a.len == 2 and native(cx, a[0], "WebSocket") and unitCallback(cx, a[1]) and unit(cx, r),
+        .ws_message => a.len == 2 and native(cx, a[0], "WebSocket") and (if (Walk.function(cx.store, a[1])) |callback| callback.params.len == 1 and unit(cx, callback.result) and (if (argument(cx, callback.params[0], "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false) else false) and unit(cx, r),
+        .ws_closed => a.len == 2 and native(cx, a[0], "WebSocket") and (if (Walk.function(cx.store, a[1])) |callback| callback.params.len == 2 and named(cx, callback.params[0], "Basics", "Int") and named(cx, callback.params[1], "String", "String") and unit(cx, callback.result) else false) and unit(cx, r),
+        .console_warn => a.len == 1 and named(cx, a[0], "String", "String") and unit(cx, r),
         .storage_local, .storage_session => a.len == 1 and unit(cx, a[0]) and (if (argument(cx, r, "Maybe", "Maybe", 0)) |area| native(cx, area, "Storage") else false),
         .storage_get => a.len == 2 and native(cx, a[0], "Storage") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |value| named(cx, value, "String", "String") else false),
         .storage_set => blk: {

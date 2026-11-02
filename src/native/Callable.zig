@@ -102,6 +102,21 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .url_protocol => "(url) => { return url.protocol; }",
+            .url_set_protocol => "(url, protocol) => { url.protocol = protocol; return null; }",
+            .ws_create => "(url, protocols) => { try { return { $: \"Just\", a: new globalThis.WebSocket(url, Array.isArray(protocols) ? protocols : protocols.b.slice(protocols.o)) }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"SecurityError\") throw error; return { $: \"Nothing\", a: null }; } }",
+            .ws_binary => "(socket) => { socket.binaryType = \"arraybuffer\"; return null; }",
+            .ws_state => "(socket) => { return socket.readyState; }",
+            .ws_buffered => "(socket) => { return socket.bufferedAmount; }",
+            .ws_protocol => "(socket) => { return socket.protocol; }",
+            .ws_send => "(socket, text) => { socket.send(text); return null; }",
+            .ws_close => "(socket, code, reason) => { socket.close(code, reason); return null; }",
+            .ws_close_empty => "(socket) => { socket.close(); return null; }",
+            .ws_open => "(socket, callback) => { socket.addEventListener(\"open\", () => callback(null)); return null; }",
+            .ws_error => "(socket, callback) => { socket.addEventListener(\"error\", () => callback(null)); return null; }",
+            .ws_message => "(socket, callback) => { socket.addEventListener(\"message\", event => callback(typeof event.data === \"string\" ? { $: \"Just\", a: event.data } : { $: \"Nothing\", a: null })); return null; }",
+            .ws_closed => "(socket, callback) => { socket.addEventListener(\"close\", event => callback(event.code, event.reason)); return null; }",
+            .console_warn => "(text) => { globalThis.console.warn(text); return null; }",
             .storage_local => "(_) => { try { const area = globalThis.localStorage; return area == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: area }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"SecurityError\") throw error; return { $: \"Nothing\", a: null }; } }",
             .storage_session => "(_) => { try { const area = globalThis.sessionStorage; return area == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: area }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"SecurityError\") throw error; return { $: \"Nothing\", a: null }; } }",
             .storage_get => "(area, key) => { const value = area.getItem(key); return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",

@@ -2,6 +2,12 @@
 pub foreign type URL
 
 
+pub foreign impure protocol : borrowed URL → String
+
+
+pub foreign impure setProtocol : borrowed URL, String → ⊤
+
+
 pub foreign impure tryCreate : String, String → Maybe URL
 
 
