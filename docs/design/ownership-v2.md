@@ -827,6 +827,37 @@ no holder at all: `a(i-1)` was last used by the push being judged. The holder in
 built only for a frame that has something to judge (a demand or a label's supplied part): a tower of literals
 with no write pays for neither (`Rose [ r ]` at n = 160: 59 279 records, 7 115 without them).
 
+**Holder entries judged by base leaves** (#1714, *specified 2026-11-03, not built*). The sweep still visits every
+live candidate once per demand: k holders `oᵢ = Js.array [ Js.from (List.push zs i) ]` are candidates of each of
+k pushes on `xs` (a parameter's object may be held through another parameter), `[ p1 … pn ]` bound from one list
+and each pushed meets the n − i later `p`s, and `pᵢ = List.push r.fᵢ` meets every earlier `p`. Each pair costs a
+`holds` walk and a liveness query, and answers the same `under`. The design that removes the product:
+
+1. *Entries.* A holder's **entries** `(l, q)` are its value's leaves with the path at which it holds each, made
+   once, when the holder is keyed, by one walk of the value (the leaf sets of §2.3.4 give the leaves; the walk
+   gives the paths). `holds` stops walking the value per target.
+2. *The factorisation.* For a target `t` that is a parameter's untagged `ref` leaf (not a cell's `◆`), and an
+   entry whose leaf is not a `ref` of `t`'s own root (so §2.9.2 never refines its path by `t`'s slots),
+   `overlap(l, t)` is the join over `l`'s **base leaves** (its expansion closed, as `Keys` closes it) of
+   `overlap(b, t)`, since `t` is never expanded. A base leaf of another parameter answers `under H(b) ∪ T(t)`,
+   `H(b)` the apart selection of `b`'s slots and `T(t)` the selection of `t`'s; an atom answers `no`; `⊤`, an
+   answer or a label's root are judged as now. Neither selection is ever `no`.
+3. *What is aggregated.* Such an entry never refuses (`may` needs a base leaf of `t`'s own root or `t`'s atom), so
+   it only adds `H(l) = ∪ H(b)`, and `T(t)`, when it is live at the demand. The verdict needs none of it: only
+   the frame's `req` does, over its *accepted* demands (§2.9.4). So step 5 visits per demand only the entries
+   that can answer `may` or need a refined path: those of `t`'s own root, found by position ancestry and slot (as
+   §2.9.3's index), those of `t`'s atoms, and the unknown bucket. The rest are judged per entry, not per demand:
+   an entry's `H(l)` joins `req` when the first accepted demand inside its live range meets it live (one
+   liveness query, the sweep's order), and `T(t)` joins when the demand meets any such entry live, which a
+   per-key count of live entries answers.
+4. *Ties.* The witness of a refusal is found among the visited entries only, by the order of *Verdicts*; no
+   aggregated entry can be one.
+
+What this leaves: a demand's `relies` line (`Resolve.Line.extra`) no longer lists the aggregated `H(l)`; nothing
+reads it but `req`. A same-root holder whose position is unrelated to the target is still one visit a demand
+unless its root's position index answers it apart; `[ p1 … pn ]` needs that index (`ownership-v2.md` §2.9.3's
+`(position, slot)` index over the live entries of one root, joined and left by the sweep).
+
 **The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
 every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
 tree of the least `rank₂` over each range of it. For an escape `x` before `p`, `x` is compatible with `p`
