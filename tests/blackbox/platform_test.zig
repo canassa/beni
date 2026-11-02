@@ -1504,9 +1504,9 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
     try w.write("Main.beni",
         \\import Page
         \\import Worker
-        \\a : Worker.Program
+        \\a : Worker.Program String String ⊤
         \\a = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleA, stream = λ_ _ _ _ → ⊤ }
-        \\b : Worker.Program
+        \\b : Worker.Program String String ⊤
         \\b = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = handleB, stream = λ_ _ _ _ → ⊤ }
         \\handleA : String, ⊤, ⊤ → String
         \\handleA message _ _ =
@@ -1571,7 +1571,7 @@ test "worker runtime factories are diagnosed before writing any output" {
         \\import Page
         \\import Worker
         \\
-        \\factory : ⊤ → Worker.Program
+        \\factory : ⊤ → Worker.Program String String ⊤
         \\factory _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
         \\
         \\start : ⊤ → ⊤
@@ -1604,7 +1604,7 @@ test "worker launch URLs stay relative to their module under release specializat
     try writeWorkerPlatform(&w);
     try w.write("Nested/Open.beni",
         \\import Worker
-        \\worker : Worker.Program
+        \\worker : Worker.Program String String ⊤
         \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
         \\pub open : ⊤ → ⊤
         \\open _ =
@@ -1616,7 +1616,7 @@ test "worker launch URLs stay relative to their module under release specializat
         \\import Page
         \\import Worker
         \\import Nested.Open
-        \\worker : Worker.Program
+        \\worker : Worker.Program String String ⊤
         \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
         \\start : ⊤ → ⊤
         \\start _ =
@@ -1652,5 +1652,149 @@ test "worker launch URLs stay relative to their module under release specializat
         try testing.expectEqual(@as(u8, 0), result.exit_code);
         try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
         try w.expectProgram("probe.mjs", .{ .stdout = "launched 2 workers\n" });
+    }
+}
+
+test "worker Wire rejects function fields native values and unresolved protocols" {
+    const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20 }{
+        .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function" },
+        .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`" },
+        .{ .message = "a", .path = "message", .reason = "an unresolved type variable" },
+        .{ .message = "{ outer : { inner : { callback : (⊤ → ⊤) } } }", .path = "message.outer.inner.callback", .reason = "a function" },
+    };
+    for (cases) |scenario| {
+        // PREPARE
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        // Expose the native alias from the same platform as the transport.
+        const worker = try w.read("platform/Worker.beni");
+        try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n", .{worker}));
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\nmain : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open worker\n    ⊤)\n", .{scenario.message}));
+        for ([_][]const []const u8{
+            &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--release", "--out=out", "Main.beni" },
+        }) |args| {
+            // EXECUTE
+            const result = try w.run(args);
+            // VERIFY OUTPUT AND SIDE EFFECTS
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            const message = try std.fmt.allocPrint(w.arena.allocator(), "Message field `{s}` cannot cross a worker boundary:\n\nIt contains {s}.\n\nConvert it to a concrete Wire value before sending it.", .{ scenario.path, scenario.reason });
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+                .code = .worker_message_not_serializable,
+                .severity = .@"error",
+                .span = .{ .file = "Main.beni", .start = .{ .line = scenario.line, .col = scenario.col }, .end = .{ .line = scenario.line, .col = scenario.end_col } },
+                .title = "WORKER MESSAGE NOT SERIALIZABLE",
+                .message = message,
+            }}), result.diagnostics);
+            try testing.expect(!w.exists("out"));
+        }
+    }
+}
+
+test "worker Wire obligations survive generic helpers and warm interfaces" {
+    for ([_]bool{ false, true }) |field_role| {
+        // PREPARE
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        if (field_role) try w.write("platform/beni.json",
+            \\{"platform":true,"name":"wire-path-test","program":"Page.Program","runtime":"runtime.js","entryKinds":[{"programType":"Worker.Program","realm":"dedicatedWorker","runtime":"WorkerRuntime","constructors":[{"name":"Worker.program","parameter":0,"callbackProtocol":"handlers"}],"launches":[{"name":"Worker.open","parameter":0}],"parameters":[{"index":0,"path":["wire"],"role":"wire"},{"index":1,"role":"wire"},{"index":2,"role":"local"}]}]}
+        );
+        try w.write("Forward.beni",
+            \\import Worker
+            \\worker : Worker.Program a String ⊤
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+            \\pub forward : a → ⊤
+            \\forward value =
+            \\    case Worker.open worker of
+            \\        Ok handle → Worker.send handle value
+            \\        Err _ → ⊤
+            \\
+        );
+        try w.write("Main.beni", if (field_role)
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward { wire = \"ok\", local = λ_ → ⊤ })\n"
+        else
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
+        // EXECUTE: the second build reads the helper's cached interface.
+        for (0..2) |_| {
+            const good = try w.run(&.{ "build", "--allow-unchecked-workers", "--out=good", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            try testing.expectEqual(@as(u8, 0), good.exit_code);
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), good.diagnostics);
+        }
+        const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+        const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });
+        var warm = false;
+        for (trace.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+            try testing.expectEqual(@as(u64, 0), count);
+            warm = true;
+        };
+        try testing.expect(warm);
+        try w.write("Main.beni", if (field_role)
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward { wire = λ_ → ⊤, local = \"ok\" })\n"
+        else
+            "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward (λ_ → ⊤))\n");
+        const bad = try w.run(&.{ "build", "--allow-unchecked-workers", "--out=out", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        try testing.expectEqual(@as(u8, 1), bad.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+            .code = .worker_message_not_serializable,
+            .severity = .@"error",
+            .span = .{ .file = "Main.beni", .start = .{ .line = 4, .col = 27 }, .end = .{ .line = 4, .col = 42 } },
+            .title = "WORKER MESSAGE NOT SERIALIZABLE",
+            .message = if (field_role)
+                "Message field `message.wire` cannot cross a worker boundary:\n\nIt contains a function.\n\nConvert it to a concrete Wire value before sending it."
+            else
+                "Message field `message` cannot cross a worker boundary:\n\nIt contains a function.\n\nConvert it to a concrete Wire value before sending it.",
+        }}), bad.diagnostics);
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "worker Wire follows opaque payload layouts across warm caches" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\import Box
+        \\import String
+        \\worker : Worker.Program Box.Box Box.Box ⊤
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λmessage _ _ → message, stream = λ_ _ _ _ → ⊤ }
+        \\main : Page.Program
+        \\main = Page.program (λ_ →
+        \\    case Worker.open worker of
+        \\        Ok handle →
+        \\            suffix = case [ 0, 1, 2 ] of
+        \\                [ _, …tail ] → tail
+        \\                _ → []
+        \\            Worker.receive handle (λmessage → Page.text (String.fromInt (Box.sum message)))
+        \\            Worker.send handle (Box.make suffix)
+        \\        Err _ → Page.text "open failed")
+        \\
+    );
+    try w.write("probe.mjs",
+        \\globalThis.Worker = class {
+        \\  addEventListener(name, callback) { if (name === 'message') this.message = callback; }
+        \\  postMessage(value) { this.message({data: structuredClone(value)}); }
+        \\};
+        \\const output = {set textContent(value) { console.log(value); }};
+        \\globalThis.document = {querySelector() { return output; }};
+        \\await import('./out/_main.mjs');
+        \\
+    );
+    for ([_][]const u8{ "values", "renamed" }) |field| {
+        try w.write("platform/Box.beni", try std.fmt.allocPrint(w.arena.allocator(), "import List\npub opaque type Box = Box {{ {s} : List Int }}\npub make : List Int → Box\nmake values = Box {{ {s} = values }}\npub sum : Box → Int\nsum (Box record) = List.sum record.{s}\n", .{ field, field, field }));
+        // EXECUTE: the second build changes a private representation while
+        // retaining every public value signature and structural marker.
+        const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+        // VERIFY OUTPUT: the compiled plan must normalize the new payload
+        // path before the real native structured clone runs.
+        try w.expectProgram("probe.mjs", .{ .stdout = "3\n" });
     }
 }

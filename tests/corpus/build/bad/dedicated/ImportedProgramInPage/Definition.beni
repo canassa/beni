@@ -1,7 +1,7 @@
 import Worker
 
 
-pub worker : Worker.Program
+pub worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

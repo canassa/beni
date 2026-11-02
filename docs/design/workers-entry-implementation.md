@@ -111,3 +111,27 @@ paths remain in the original metadata as obligations for later instantiation.
 None of these shallow shape checks certifies Wire or native realm availability.
 The later source-entry, realm, wire and ownership v2 passes must consume the
 retained rows before a public worker launcher can ship.
+
+## Wire roles in the emitted test transport
+
+Wire obligations arise at metadata-declared launch operations. A generic
+quantifier retains either a whole-value obligation or a field-path obligation;
+ordinary instantiation discharges it. The immutable interface includes both,
+so a cached helper cannot lose a requirement. Local parameter roles do not
+acquire Wire obligations. Interface v19 adds these summaries; type-key artifact
+v3 retains concrete representation graphs for worker definitions.
+
+The compiler supplies a reserved `$wire` representation plan on an emitted
+worker descriptor and its worker-side Program value. It describes the manifest
+role indices and only the paths containing non-clone-stable representations.
+The test transport materializes List views before posting; received plain arrays
+are already valid local Lists. Stable subgraphs pass to structured clone directly.
+One release field palette is assigned before projecting entries; private fields
+reserve that palette and are shortened locally. Wire nominal tags use one
+source-tag assignment in every entry, including a type also exposed to JavaScript.
+
+In a build with Wire roles, dependency digests include the constructor payload
+layouts of exposed nominal types, opaque ones included, closed through their
+private type dependencies. A private payload field rename therefore invalidates
+cached Wire plans. Value-body edits with the same type layout keep the firewall;
+builds with no Wire roles retain the ordinary digest path.

@@ -1,0 +1,102 @@
+-- Both directions contain a nested rest view. Stable recursive branches and
+-- tagged payloads keep their normal representation across structured clone.
+-- The page-private fields compete with the wire palette in release output.
+import Int32
+import List
+import Page
+import Protocol exposing (Added, Choice, Empty, Leaf, Message, Node, Tree)
+import String
+import Worker
+
+
+rest : List a → List a
+rest values =
+    case values of
+        [ _, …tail ] →
+            tail
+        _ →
+            []
+
+
+worker : Worker.Program Message Message ((Int → Int))
+worker =
+    Worker.program
+        { init = λ_ _ → λvalue → value + 1
+        , start = λ_ _ → ⊤
+        , handle =
+            λmessage state _ →
+                requestCount =
+                    case message.choice of
+                        Added data →
+                            data.count + List.length data.data
+                        Empty →
+                            0
+                ( inputLabel, inputValues ) = message.pair
+                { message
+                    | longWireLabel = message.longWireLabel ++ "!"
+                    , choice =
+                        Added { count = state (requestCount + 4), data = rest [ "skip", "worker" ] }
+                    , tree = Node (Leaf (rest [ 0, 8, 9 ])) message.tree
+                    , items = [ rest [ 0, 4, 5 ], rest [ 0, 6 ], List.concat message.items ]
+                    , pair = ( inputLabel ++ ":tuple", rest [ 0, 6 + List.sum inputValues ] )
+                }
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+sum : Tree → Int
+sum tree =
+    case tree of
+        Leaf values →
+            List.sum values
+        Node left right →
+            sum left + sum right
+
+
+show : Message → ⊤
+show message =
+    private = { a = "private", choice = "page:" }
+    ( label, values ) = message.pair
+    payload =
+        case message.choice of
+            Added data →
+                String.fromInt data.count ++ String.join data.data ","
+            Empty →
+                "empty"
+    Page.text
+        (private.choice
+            ++ message.longWireLabel
+            ++ ":"
+            ++ payload
+            ++ ":"
+            ++ String.fromInt (sum message.tree)
+            ++ ":"
+            ++ String.fromInt (List.sum (List.concat message.items))
+            ++ ":"
+            ++ label
+            ++ String.fromInt (List.sum values)
+            ++ ":"
+            ++ String.fromInt (Int32.toInt message.hash)
+            ++ private.a
+        )
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle show
+            Worker.send handle
+                { longWireLabel = "ping"
+                , hash = Int32.fromInt 42
+                , choice = Added { count = 1, data = rest [ "skip", "page" ] }
+                , tree = Node (Leaf (rest [ 0, 1, 2 ])) (Leaf [ 3 ])
+                , items = [ rest [ 0, 1, 2 ] ]
+                , pair = ( "page", rest [ 0, 1 ] )
+                }
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

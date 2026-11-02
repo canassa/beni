@@ -12,11 +12,11 @@ workerOnly : String
 workerOnly = Worker.initializer "reply:"
 
 
-selected : Worker.Program
+selected : Worker.Program String String ⊤
 selected = worker
 
 
-worker : Worker.Program
+worker : Worker.Program String String ⊤
 worker =
     Worker.program
         { init = λ_ _ → ⊤

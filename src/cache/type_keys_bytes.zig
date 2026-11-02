@@ -40,7 +40,7 @@ const Symbol = InternPool.Symbol;
 const TypeKey = TypeKeys.TypeKey;
 
 pub const magic = "BENITKY\x00";
-pub const format_version: u32 = 2;
+pub const format_version: u32 = 3;
 
 const Column = enum(u32) {
     nodes,
@@ -53,6 +53,11 @@ const Column = enum(u32) {
     type_refs,
     records,
     record_labels,
+    wire_nodes,
+    wire_edges,
+    wire_roots,
+    wire_roles,
+    wire_types,
     strings,
 
     const count: u32 = @typeInfo(Column).@"enum".field_names.len;
@@ -62,6 +67,9 @@ const Column = enum(u32) {
             .nodes => 16,
             .args, .labels, .locals, .decls, .wild, .record_labels => 4,
             .insts, .type_refs, .records => 12,
+            .wire_nodes, .wire_roots => 12,
+            .wire_edges, .wire_roles => 8,
+            .wire_types => 4,
             .strings => 1,
         };
     }
@@ -165,7 +173,51 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         std.mem.writeInt(u32, row[4..8], k.key.int(), .little);
         std.mem.writeInt(u32, row[8..12], k.result.int(), .little);
     }
+    const wire_nodes = try gpa.alloc(u8, a.wire.nodes.len * 12);
+    defer gpa.free(wire_nodes);
+    for (a.wire.nodes, 0..) |n, i| {
+        const row = wire_nodes[i * 12 ..][0..12];
+        std.mem.writeInt(u32, row[0..4], @backingInt(n.kind), .little);
+        std.mem.writeInt(u32, row[4..8], n.edges.start, .little);
+        std.mem.writeInt(u32, row[8..12], n.edges.len, .little);
+    }
+    const wire_edges = try gpa.alloc(u8, a.wire.edges.len * 8);
+    defer gpa.free(wire_edges);
+    for (a.wire.edges, 0..) |edge, i| {
+        const row = wire_edges[i * 8 ..][0..8];
+        const label = if (edge.label.unwrap()) |l| try S.string(gpa, &strings, &seen, interner.slice(l)) else no_ref;
+        std.mem.writeInt(u32, row[0..4], label, .little);
+        std.mem.writeInt(u32, row[4..8], edge.child, .little);
+    }
+    const wire_roots = try gpa.alloc(u8, a.wire.roots.len * 12);
+    defer gpa.free(wire_roots);
+    for (a.wire.roots, 0..) |root, i| {
+        const row = wire_roots[i * 12 ..][0..12];
+        std.mem.writeInt(u32, row[0..4], root.decl, .little);
+        std.mem.writeInt(u32, row[4..8], root.roles.start, .little);
+        std.mem.writeInt(u32, row[8..12], root.roles.len, .little);
+    }
+    const wire_roles = try gpa.alloc(u8, a.wire.roles.len * 8);
+    defer gpa.free(wire_roles);
+    for (a.wire.roles, 0..) |role, i| {
+        const row = wire_roles[i * 8 ..][0..8];
+        std.mem.writeInt(u32, row[0..4], role.index, .little);
+        std.mem.writeInt(u32, row[4..8], role.node, .little);
+    }
+    const wire_types = try gpa.alloc(u8, a.wire.types.len * 4);
+    defer gpa.free(wire_types);
+    for (a.wire.types, 0..) |id, i| {
+        const named = types.named(id).?;
+        const key: [3]u32 = .{ @backingInt(named.package), try S.string(gpa, &strings, &seen, interner.slice(named.module)), try S.string(gpa, &strings, &seen, interner.slice(named.name)) };
+        const gop = try ref_index.getOrPut(gpa, key);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = @intCast(refs.items.len);
+            try refs.append(gpa, key);
+        }
+        std.mem.writeInt(u32, wire_types[i * 4 ..][0..4], gop.value_ptr.*, .little);
+    }
     const type_refs = try gpa.alloc(u8, refs.items.len * 12);
+
     defer gpa.free(type_refs);
     @memset(type_refs, 0);
     for (refs.items, 0..) |r, i| {
@@ -186,7 +238,7 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         std.mem.writeInt(u32, row[4..8], r.fields.len, .little);
         std.mem.writeInt(u32, row[8..12], @intFromBool(r.open), .little);
     }
-    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, records, record_labels, strings.items };
+    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, records, record_labels, wire_nodes, wire_edges, wire_roots, wire_roles, wire_types, strings.items };
 
     const lengths = [Column.count]u32{
         @intCast(a.nodes.len),
@@ -199,6 +251,11 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         @intCast(refs.items.len),
         @intCast(a.records.len),
         @intCast(a.record_labels.len),
+        @intCast(a.wire.nodes.len),
+        @intCast(a.wire.edges.len),
+        @intCast(a.wire.roots.len),
+        @intCast(a.wire.roles.len),
+        @intCast(a.wire.types.len),
         @intCast(strings.items.len),
     };
     var offsets: [Column.count]u32 = undefined;
@@ -360,6 +417,46 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             r.* = .{ .fields = .{ .start = std.mem.readInt(u32, row[0..4], .little), .len = std.mem.readInt(u32, row[4..8], .little) }, .open = open == 1 };
         }
     }
+    {
+        const Wire = @import("../check/Wire.zig");
+        const nodes = try gpa.alloc(Wire.Node, lengths[@backingInt(Column.wire_nodes)]);
+        out.artifact.wire.nodes = nodes;
+        const node_bytes = col(bytes, offsets, .wire_nodes);
+        for (nodes, 0..) |*n, i| {
+            const row = node_bytes[i * 12 ..][0..12];
+            n.* = .{ .kind = std.enums.fromInt(Wire.Kind, std.mem.readInt(u32, row[0..4], .little)) orelse return error.BadSection, .edges = .{ .start = std.mem.readInt(u32, row[4..8], .little), .len = std.mem.readInt(u32, row[8..12], .little) } };
+        }
+        const edges = try gpa.alloc(Wire.Edge, lengths[@backingInt(Column.wire_edges)]);
+        out.artifact.wire.edges = edges;
+        const edge_bytes = col(bytes, offsets, .wire_edges);
+        for (edges, 0..) |*edge, i| {
+            const row = edge_bytes[i * 8 ..][0..8];
+            const raw = std.mem.readInt(u32, row[0..4], .little);
+            edge.* = .{ .label = if (raw == no_ref) .none else (try symbolAt(blob, raw, in) orelse return error.BadSection).toOptional(), .child = std.mem.readInt(u32, row[4..8], .little) };
+        }
+        const roots = try gpa.alloc(Wire.Root, lengths[@backingInt(Column.wire_roots)]);
+        out.artifact.wire.roots = roots;
+        const root_bytes = col(bytes, offsets, .wire_roots);
+        for (roots, 0..) |*root, i| {
+            const row = root_bytes[i * 12 ..][0..12];
+            root.* = .{ .decl = std.mem.readInt(u32, row[0..4], .little), .roles = .{ .start = std.mem.readInt(u32, row[4..8], .little), .len = std.mem.readInt(u32, row[8..12], .little) } };
+        }
+        const roles = try gpa.alloc(Wire.Role, lengths[@backingInt(Column.wire_roles)]);
+        out.artifact.wire.roles = roles;
+        const role_bytes = col(bytes, offsets, .wire_roles);
+        for (roles, 0..) |*role, i| {
+            const row = role_bytes[i * 8 ..][0..8];
+            role.* = .{ .index = std.mem.readInt(u32, row[0..4], .little), .node = std.mem.readInt(u32, row[4..8], .little) };
+        }
+        const ids = try gpa.alloc(Types.TypeId, lengths[@backingInt(Column.wire_types)]);
+        out.artifact.wire.types = ids;
+        const id_bytes = col(bytes, offsets, .wire_types);
+        for (ids, 0..) |*id, i| {
+            const raw = std.mem.readInt(u32, id_bytes[i * 4 ..][0..4], .little);
+            if (raw >= out.type_refs.len) return error.BadSection;
+            id.* = @fromBackingInt(raw);
+        }
+    }
     if (!verify(&out.artifact)) return error.BadSection;
 
     return out;
@@ -382,7 +479,16 @@ fn symbolAt(blob: []const u8, at: u32, in: *Interning) ReadError!?Symbol {
 /// record's labels fit `labels`, `⊤` has no child, every key named is a node or `wild`,
 /// and the instruction rows and the wild set ascend.
 pub fn verify(a: *const TypeKeys.Artifact) bool {
-    for (a.records) |r| if (@as(u64, r.fields.start) + r.fields.len > a.record_labels.len) return false;
+    for (a.wire.nodes) |n| {
+        if (@as(u64, n.edges.start) + n.edges.len > a.wire.edges.len) return false;
+        if (n.kind == .list and n.edges.len != 1) return false;
+        if (n.kind == .stable and n.edges.len != 0) return false;
+    }
+    for (a.wire.edges) |edge| if (edge.child >= a.wire.nodes.len) return false;
+    for (a.wire.roots) |root| if (@as(u64, root.roles.start) + root.roles.len > a.wire.roles.len) return false;
+    for (a.wire.roles) |role| if (role.node >= a.wire.nodes.len) return false;
+    for (a.records) |r|
+        if (@as(u64, r.fields.start) + r.fields.len > a.record_labels.len) return false;
     for (a.nodes, 0..) |n, i| {
         if (@as(u64, n.args.start) + n.args.len > a.args.len) return false;
         for (a.args[n.args.start..][0..n.args.len]) |child| {
@@ -419,6 +525,11 @@ fn keyOk(a: *const TypeKeys.Artifact, k: TypeKey) bool {
 /// Every named node's `type_refs` index becomes this session's `TypeId`, in
 /// place; one that names no type of this build is `.none`.
 pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
+    for (@constCast(l.artifact.wire.types)) |*id| {
+        const r = l.type_refs[id.int()];
+        id.* = types.find(graph, r.package, r.module, r.name);
+    }
+
     for (@constCast(l.artifact.nodes)) |*n| {
         if (n.kind != .named) continue;
         n.value = if (n.value >= l.type_refs.len) Types.TypeId.none.int() else blk: {

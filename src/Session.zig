@@ -2545,6 +2545,8 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         .{
             .build_id = session.build_id_bytes,
             .entry_constructors = try session.entryConstructors(worker.arena.allocator()),
+            .entry_roles = try session.entryWireKey(worker.arena.allocator()),
+
             .informational = session.options.informational,
             .explain = session.options.explain,
             .pattern_budget = session.options.pattern_budget,
@@ -2597,6 +2599,51 @@ pub const check_stack_size = Check.stack_size;
 
 /// Raw constructor selectors are only an early cycle-analysis input. Their
 /// checked identities and signatures are validated by Emit's entry contract.
+/// Metadata roots alone do not activate Wire. An application's dependency
+/// graph must actually reach a kind's Program module before any module runs
+/// the Wire pass or hashes its additional representation ABI.
+fn wireKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifest.zig").EntryKind) Allocator.Error!bool {
+    if (kind.launches.len == 0) return false;
+    const has_wire = for (kind.parameters) |role| {
+        if (std.mem.eql(u8, role.role, "wire")) break true;
+    } else false;
+    if (!has_wire) return false;
+    const dot = std.mem.lastIndexOfScalar(u8, kind.programType, '.') orelse return false;
+    const name = session.interner.find(kind.programType[0..dot]) orelse return false;
+    const target = session.graph.lookup(.platform, name) orelse return false;
+    const seen = try a.alloc(bool, session.graph.count());
+    defer a.free(seen);
+    @memset(seen, false);
+    var queue: std.ArrayList(Graph.Index) = .empty;
+    defer queue.deinit(a);
+    for (0..session.graph.count()) |mi| {
+        const module: Graph.Index = @fromBackingInt(@intCast(mi));
+        if (session.graph.modulePackage(module) == .app) {
+            seen[mi] = true;
+            try queue.append(a, module);
+        }
+    }
+    while (queue.pop()) |module| {
+        if (module == target) return true;
+        for (session.graph.dependencies(module)) |dependency| {
+            if (seen[dependency.int()] or session.graph.modulePackage(dependency) == .core) continue;
+            seen[dependency.int()] = true;
+            try queue.append(a, dependency);
+        }
+    }
+    return false;
+}
+
+fn entryWireKey(session: *const Session, a: Allocator) Allocator.Error![]const u8 {
+    const chain = session.options.chain orelse return "";
+    var kinds: std.ArrayList(@import("js/Manifest.zig").EntryKind) = .empty;
+    for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (try session.wireKindUsed(a, kind)) try kinds.append(a, kind);
+    };
+    if (kinds.items.len == 0) return "";
+    return std.json.Stringify.valueAlloc(a, kinds.items, .{});
+}
+
 fn entryConstructors(session: *const Session, a: Allocator) Allocator.Error![]const []const u8 {
     const chain = session.options.chain orelse return &.{};
     var out: std.ArrayList([]const u8) = .empty;
@@ -2634,6 +2681,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         ownership: *const Enforce.Context,
         ownership2: *const Enforce2.Context,
         entry_constructors: []const []const u8,
+        entry_kinds: []const @import("js/Manifest.zig").EntryKind,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -2651,6 +2699,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
                     .entry_constructors = r.entry_constructors,
+                    .entry_kinds = r.entry_kinds,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,
@@ -2669,7 +2718,17 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     };
     const entry_constructors = try session.entryConstructors(session.gpa);
     defer session.gpa.free(entry_constructors);
-    var runner: Runner = .{ .session = session, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    var kinds: std.ArrayList(@import("js/Manifest.zig").EntryKind) = .empty;
+    defer kinds.deinit(session.gpa);
+    if (session.options.chain) |chain| for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (try session.wireKindUsed(session.gpa, kind)) {
+            for (kind.parameters) |role| for (role.path) |field| {
+                _ = try session.interner.getOrPut(session.gpa, field);
+            };
+            try kinds.append(session.gpa, kind);
+        }
+    };
+    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

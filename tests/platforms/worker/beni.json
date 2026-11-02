@@ -9,6 +9,6 @@
     "runtime": "WorkerRuntime",
     "constructors": [{"name": "Worker.program", "parameter": 0, "callbackProtocol": "handlers"}],
     "launches": [{"name": "Worker.open", "parameter": 0}],
-    "parameters": []
+    "parameters": [{"index": 0, "role": "wire"}, {"index": 1, "role": "wire"}, {"index": 2, "role": "local"}]
   }]
 }

@@ -226,6 +226,7 @@ pub fn publish(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void
     imports.shrinkRetainingCapacity(unique);
 
     cutoff.digest[m.int()] = try Digest.collect(scratch.allocator(), .{
+        .wire = d.options.entry_kinds.len != 0,
         .graph = d.graph,
         .artifacts = d.artifacts,
         .types = d.types,
