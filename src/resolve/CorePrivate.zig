@@ -1,7 +1,7 @@
 //! One name fence for resolution, diagnostics and generated API references.
 const std = @import("std");
 
-pub const Access = enum { core, task, worker };
+pub const Access = enum { core, task, worker, runtime };
 const Entry = struct {
     module: []const u8,
     name: ?[]const u8,
@@ -10,6 +10,15 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Js", .name = "Cell", .access = .runtime },
+    .{ .module = "Js", .name = "cell", .access = .runtime },
+    .{ .module = "Js", .name = "cellRead", .access = .runtime },
+    .{ .module = "Js", .name = "cellWrite", .access = .runtime },
+    .{ .module = "Js", .name = "Opt", .access = .runtime },
+    .{ .module = "Js", .name = "none", .access = .runtime },
+    .{ .module = "Js", .name = "some", .access = .runtime },
+    .{ .module = "Js", .name = "optMatch", .access = .runtime },
+    .{ .module = "Js", .name = "optWithDefault", .access = .runtime },
     .{ .module = "Browser.Worker", .name = "run", .access = .worker },
     .{ .module = "Browser.Worker", .name = "installHostStop", .access = .worker },
     .{ .module = "Browser.WorkerRuntime", .name = "run", .access = .worker },

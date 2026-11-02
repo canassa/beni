@@ -1,0 +1,46 @@
+-- Typed storage preserves aliases; Opt callbacks may retain their payloads.
+import Js
+
+
+heldByCell : List Int → Js.Cell { items : List Int } × List Int
+heldByCell xs =
+    cell = Js.cell { items = xs }
+    grown = [ …xs, 1 ]
+    ( cell, grown )
+
+
+presentAliases : List Int → Int
+presentAliases xs =
+    slot = Js.some xs
+    grown = [ …xs, 1 ]
+    List.length grown + List.length (Js.optWithDefault slot [])
+
+
+defaultAliases : List Int → Int
+defaultAliases xs =
+    value = Js.optWithDefault (Js.none ⊤) xs
+    grown = [ …value, 1 ]
+    List.length grown + List.length xs
+
+
+branchAliases : List Int → Int
+branchAliases xs =
+    value = Js.optMatch (Js.none ⊤) (λ⊤ → xs) λ_ → []
+    grown = [ …value, 1 ]
+    List.length grown + List.length xs
+
+
+retainedPayload : List Int → Int
+retainedPayload xs =
+    holder = Js.ref []
+    Js.optMatch (Js.some xs) (λ⊤ → ⊤) λitems → Js.write holder items
+    grown = [ …xs, 1 ]
+    List.length grown + List.length (Js.read holder)
+
+
+fieldLoan : ⊤ → Int
+fieldLoan ⊤ =
+    cell = Js.cell { items = [ 1 ], other = [ 2 ] }
+    before = Js.cellRead cell .items
+    Js.cellWrite cell [ 3 ] .other
+    List.length before

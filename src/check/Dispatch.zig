@@ -338,7 +338,7 @@ pub const Boundary = struct {
     /// `field`: a `Symbol`. `type`: a `TypeId`.
     value: u32,
 
-    pub const Kind = enum(u8) { field, type };
+    pub const Kind = enum(u8) { field, type, boxed };
 };
 
 /// A use of core's `Debug.toString` or `Debug.log` whose printed value has

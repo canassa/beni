@@ -1,0 +1,9 @@
+-- Typed runtime cells and slots cannot be named by an ordinary package.
+import Js
+
+
+pub type alias Hidden =
+    Js.Cell { state : Int }
+
+
+pub bad = Js.none ⊤

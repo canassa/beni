@@ -34,8 +34,10 @@ pub fn rows(
     interner: *const InternPool.Global,
     casts: []const Solve.Cast,
     copies: []const Instantiate.CastCopies,
+    defined: []const Instantiate.CrossingUse,
+    cx: *const @import("Context.zig"),
 ) Allocator.Error![]const Dispatch.Boundary {
-    if (casts.len == 0) return &.{};
+    if (casts.len == 0 and defined.len == 0) return &.{};
     var out: std.ArrayList(Dispatch.Boundary) = .empty;
     defer out.deinit(gpa);
     const stack = &stacks.vars;
@@ -78,6 +80,15 @@ pub fn rows(
             while (Walk.child(store, root, n, .payload)) |c| : (n += 1) try stack.append(gpa, c);
         }
     }
+    for (defined) |use| {
+        const decl = use.decl orelse continue;
+        const c = store.resolvedContent(use.v);
+        if (c != .structure or c.structure != .app) continue;
+        const app = c.structure.app;
+        if (app.type == .none or types.entry(app.type).kind != .adt) continue;
+        if (!try mayExposeUndefined(cx, use.v)) continue;
+        try out.append(gpa, .{ .decl = decl, .kind = .boxed, .value = app.type.int() });
+    }
     const Order = struct {
         types: *const Types,
         interner: *const InternPool.Global,
@@ -85,7 +96,7 @@ pub fn rows(
         fn key(o: @This(), r: Dispatch.Boundary) [3][]const u8 {
             return switch (r.kind) {
                 .field => .{ o.interner.slice(@fromBackingInt(@intCast(r.value))), "", "" },
-                .type => blk: {
+                .type, .boxed => blk: {
                     const named = o.types.named(@fromBackingInt(@intCast(r.value))) orelse break :blk .{ "", "", "" };
                     break :blk .{ @tagName(named.package), o.interner.slice(named.module), o.interner.slice(named.name) };
                 },
@@ -116,4 +127,43 @@ pub fn rows(
     }
     out.shrinkRetainingCapacity(kept);
     return out.toOwnedSlice(gpa);
+}
+
+/// Only wrappers whose erased payload might be undefined need a box.
+/// A recursive Link around a Cell is already a defined object and stays
+/// eligible for the ordinary one-constructor unboxing optimisation.
+fn mayExposeUndefined(cx: *const @import("Context.zig"), initial: Var) Allocator.Error!bool {
+    var value = initial;
+    var seen: std.ArrayList(Types.TypeId) = .empty;
+    defer seen.deinit(cx.scratch);
+    while (true) {
+        const content = cx.store.resolvedContent(value);
+        switch (content) {
+            .err => return true,
+            .flex, .rigid => |f| return f.kind == .any,
+            .alias => unreachable,
+            .structure => |st| {
+                if (st != .app or st.app.type == .none) return false;
+                const app = st.app;
+                if (cx.types.isJsSlot(app.type)) return true;
+                const entry = cx.types.entry(app.type);
+                if (entry.kind != .adt) return false;
+                if (std.mem.indexOfScalar(Types.TypeId, seen.items, app.type) != null) return true;
+                try seen.append(cx.scratch, app.type);
+                const bir = cx.artifacts.bir(cx.graph.moduleFile(entry.module));
+                const decl = bir.decl(entry.decl);
+                const ctors = bir.declCtors(decl);
+                if (ctors.len != 1) return false;
+                const fields = bir.extraSlice(.{ .start = ctors[0].args_start, .end = ctors[0].args_end }, @import("../bir/Bir.zig").Inst.Index);
+                if (fields.len != 1) return false;
+                const args = try cx.scratch.dupe(Var, Walk.positions(cx.store, value));
+                defer cx.scratch.free(args);
+                var builder = Types.Builder.init(cx.store, cx.types, cx.graph, cx.artifacts, entry.module, bir, .flex, 0, cx.scratch, cx.interner);
+                defer builder.deinit();
+                builder.interfaces = cx.interfaces;
+                for (bir.declTypeParams(decl), args) |name, arg| try builder.bind(name, arg);
+                value = try builder.read(fields[0]);
+            },
+        }
+    }
 }

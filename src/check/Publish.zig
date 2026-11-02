@@ -456,7 +456,7 @@ const Facts = struct {
     fn keyKinds(f: *Facts, id: Types.TypeId) Error!u32 {
         const kinds = f.cx.types.keyKinds(id);
         const needed = for (kinds) |kind| {
-            if (kind.isKey()) break true;
+            if (kind.isParameter()) break true;
         } else false;
         if (!needed) return Interface.no_terms;
         f.words.clearRetainingCapacity();

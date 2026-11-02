@@ -990,7 +990,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         for (0..s.quantified_count) |i| {
             const at = s.quantified_start + i * Interface.Quantified.words;
             const flag_word = iface.extra[at];
-            if (flag_word & ~@as(u32, 0x1fff) != 0 or flag_word & 0xff > 5) return false;
+            if (flag_word & ~@as(u32, 0x1fff) != 0 or flag_word & 0xff > 7) return false;
             const name = iface.extra[at + 1];
             if (name != std.math.maxInt(u32) and name >= symbols) return false;
             const start = iface.extra[at + 2];
@@ -1133,7 +1133,7 @@ fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arit
     if (key_kinds != Interface.no_terms) {
         const kinds = rangeOf(iface, key_kinds) orelse return false;
         if (kinds.len != arity) return false;
-        for (kinds) |kind| if (kind != 0 and (kind < 3 or kind > 5)) return false;
+        for (kinds) |kind| if (kind != 0 and (kind < 3 or kind > 7)) return false;
     }
     if (payload_params != Interface.no_terms) {
         const bits = rangeOf(iface, payload_params) orelse return false;

@@ -1361,6 +1361,7 @@ const Pins = struct {
     fn has(p: Pins, dir: []const u8, decl: []const u8) bool {
         const files = p.files.get(decl) orelse return false;
         for (files.items) |f| {
+            if (std.mem.eql(u8, dir, "core") and std.mem.startsWith(u8, decl, "Js.") and std.mem.startsWith(u8, f, "src/js/")) return true;
             if (f.len > dir.len and std.mem.startsWith(u8, f, dir) and f[dir.len] == '/') return true;
         }
         return false;
@@ -2179,4 +2180,17 @@ test "explicit standalone ownership enforcement checks list sharing" {
         .title = "LIST CHANGED WHILE STILL IN USE",
         .message = "`List.push` changes `values` in place, but `values` is read again afterwards.\n\n4|    changed = List.push values 1\n                ^^^^^^^^^^^^^^^^^^ the list is changed in place here\n5|    ( changed, values )\n                 ^^^^^^ and `values` is read here, after the change\n\nIf the list were changed in place, `values` would see the change when it is read\non line 5.\n\nTo change a copy and leave `values` as it was, copy it there:\n\n4|    changed = List.push (List.copy values) 1\n\nThis is sharing the checker can see: `values` is read on line 5, after the\nchange.",
     }}, enforced.diagnostics);
+}
+
+test "ownership words: typed cell and slot rows notice unsafe flips" {
+    try expectFlips("ownership/core/JsCellOptWords.beni", &.{"--core"});
+}
+
+test "ownership words: compiler-owned Js implementation pins belong to core" {
+    var state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer state.deinit();
+    const pins = try Pins.parse(state.allocator(), "src/js/Lower.zig Js.some 00\n");
+    try testing.expect(pins.has("core", "Js.some"));
+    try testing.expect(!pins.has("platforms/browser", "Js.some"));
+    try testing.expect(!pins.has("core", "Js.other"));
 }

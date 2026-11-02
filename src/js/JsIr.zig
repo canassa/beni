@@ -100,7 +100,9 @@ pub const Node = struct {
     /// (`backend.md`, *The name's value must be an emitted function too*).
     /// Printed the same; a copy of the node keeps it (`Spec`, and
     /// `Suspend`'s loop-mode copy of a tail-call loop's rest).
-    host: bool = false,
+    flags: Flags = .{},
+
+    pub const Flags = packed struct(u8) { host: bool = false, cell: bool = false, _pad: u6 = 0 };
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
     pub const Data = struct {
@@ -703,9 +705,14 @@ pub inline fn pos(ir: *const JsIr, node: Node.Index) u32 {
     return ir.nodes.items(.pos)[node.int()];
 }
 
-/// Whether `node` is a `call` lowered from a `Js.apply` (`Node.host`).
+/// Whether `node` is a `call` lowered from a `Js.apply` (`Node.flags.host`).
 pub inline fn host(ir: *const JsIr, node: Node.Index) bool {
-    return ir.nodes.items(.host)[node.int()];
+    return ir.nodes.items(.flags)[node.int()].host;
+}
+
+/// A fixed-shape typed Cell object literal.
+pub inline fn cell(ir: *const JsIr, node: Node.Index) bool {
+    return ir.nodes.items(.flags)[node.int()].cell;
 }
 
 pub inline fn name(ir: *const JsIr, index: NameIndex) Name {
@@ -1396,15 +1403,22 @@ pub const Builder = struct {
 
     pub fn addNode(b: *Builder, node: Node) Allocator.Error!Node.Index {
         const index = try b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
-        if (node.host) b.markHost(index);
+        if (node.flags.host) b.markHost(index);
+        if (node.flags.cell) b.markCell(index);
         return index;
     }
 
-    /// Mark a `call` as lowered from a `Js.apply` (`Node.host`).
+    /// Mark a `call` as lowered from a `Js.apply` (`Node.flags.host`).
     pub fn markHost(b: *Builder, node: Node.Index) void {
         std.debug.assert(b.tagOf(node) == .call);
-        const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
-        hosts[node.int()] = true;
+        const flags: [*]Node.Flags = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.flags)]);
+        flags[node.int()].host = true;
+    }
+
+    pub fn markCell(b: *Builder, node: Node.Index) void {
+        std.debug.assert(b.tagOf(node) == .object);
+        const flags: [*]Node.Flags = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.flags)]);
+        flags[node.int()].cell = true;
     }
 
     /// `addNode` from the node's fields, with no `Node` built on the way.
@@ -1419,11 +1433,11 @@ pub const Builder = struct {
         const tags: [*]Node.Tag = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.tag)]);
         const positions: [*]u32 = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.pos)]));
         const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.data)]));
-        const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
+        const flags: [*]Node.Flags = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.flags)]);
         tags[index] = node_tag;
         positions[index] = node_pos;
         datas[index] = .{ .lhs = lhs, .rhs = rhs };
-        hosts[index] = false;
+        flags[index] = .{};
         return @fromBackingInt(@intCast(index));
     }
 

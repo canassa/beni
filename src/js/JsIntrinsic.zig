@@ -82,6 +82,13 @@ pub const Which = enum {
     /// how the fiber runtime returns its sentinel from beni (`backend.md`
     /// §4, *`Js.suspending` is its body*).
     suspending,
+    cell,
+    cellRead,
+    cellWrite,
+    none,
+    some,
+    optMatch,
+    optWithDefault,
     ref,
     read,
     write,
@@ -250,4 +257,14 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
     return std.meta.stringToEnum(Which, interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
+}
+
+/// These typed operations have no JavaScript sibling export. Both saturated
+/// calls and first-class values are written by the compiler, so adding them
+/// does not change the sibling copied by an existing development program.
+pub fn compilerOnly(which: Which) bool {
+    return switch (which) {
+        .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        else => false,
+    };
 }

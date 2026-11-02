@@ -2344,6 +2344,12 @@ const Emitter = struct {
 
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
+    fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
+        if (e.graph().modulePackage(m) != .core or !std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js")) return false;
+        const which = std.meta.stringToEnum(@import("JsIntrinsic.zig").Which, e.session.interner.slice(e.bir(m).symbol(d.name))) orelse return false;
+        return @import("JsIntrinsic.zig").compilerOnly(which);
+    }
+
     fn checkSiblings(e: *Emitter) !void {
         e.forwarding_foreigns = try e.scratch.alloc([]Reach.ForeignProof, e.graph().count());
         @memset(e.forwarding_foreigns, &.{});
@@ -2356,6 +2362,7 @@ const Emitter = struct {
             var declared: std.ArrayList(Declared) = .empty;
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
+                if (e.compilerOwnedJs(m, d)) continue;
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
                 // so check 4 and the call sites cannot disagree: the arity is
@@ -8317,7 +8324,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const b = e.bir(m);
             var surviving = false;
-            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and e.live.decl(m, index));
+            for (b.decls, 0..) |d, index| surviving = surviving or (d.kind == .foreign_value and !e.compilerOwnedJs(m, d) and e.live.decl(m, index));
             if (!surviving) continue;
             const source = try e.siblingPath(e.session.store.path(e.graph().moduleFile(m)));
             const bytes = e.readAsset(source) orelse return null;
@@ -9338,7 +9345,7 @@ const Emitter = struct {
             // sibling is cut to: the module imports exactly those.
             var surviving: std.ArrayList([]const u8) = .empty;
             for (b.decls, 0..) |d, index| {
-                if (d.kind == .foreign_value and e.live.decl(m, index)) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
+                if (d.kind == .foreign_value and !e.compilerOwnedJs(m, d) and e.live.decl(m, index)) try surviving.append(e.scratch, e.session.interner.slice(b.symbol(d.name)));
             }
             if (surviving.items.len == 0) continue;
             const source_path = e.session.store.path(e.graph().moduleFile(m));

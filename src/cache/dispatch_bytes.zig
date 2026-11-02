@@ -371,7 +371,7 @@ pub fn write(
         row[4] = @backingInt(b.kind);
         const value = switch (b.kind) {
             .field => try w.string(@fromBackingInt(@intCast(b.value))),
-            .type => try w.typeRef(@fromBackingInt(@intCast(b.value))),
+            .type, .boxed => try w.typeRef(@fromBackingInt(@intCast(b.value))),
         };
         std.mem.writeInt(u32, row[8..12], value, .little);
     }
@@ -953,7 +953,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
                 .kind = kind,
                 .value = switch (kind) {
                     .field => @backingInt(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
-                    .type => if (raw != no_ref and raw >= type_ref_count) return error.BadSidecar else raw,
+                    .type, .boxed => if (raw != no_ref and raw >= type_ref_count) return error.BadSidecar else raw,
                 },
             };
         }
@@ -1223,7 +1223,7 @@ pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
         }
     }
     for (@constCast(l.table.boundary)) |*b| {
-        if (b.kind == .type) b.value = resolveType(l, graph, types, b.value, type_count).int();
+        if (b.kind == .type or b.kind == .boxed) b.value = resolveType(l, graph, types, b.value, type_count).int();
     }
     for (@constCast(l.table.debug_nodes)) |*n| {
         if (n.kind == .named) n.value = resolveType(l, graph, types, n.value, type_count).int();

@@ -8157,3 +8157,27 @@ callback, a replaced slot, a fiber, a record accumulator, `map`,
 `indexedMap` and a kept grandchild. `FoldKeepsInnerRefused` pins the
 twins. Its three writes after the traversal were accepted at `rows[*]`
 before this amendment. Summary blocks advance to version 38.
+
+### D1 amendment — cells with several fields (2026-11-02)
+
+`Js.Cell r` generalises Js.Ref's cell barrier to a typed record payload.
+`cellRead` borrows the cell and lends the selected field. `cellWrite` writes
+the selected field and stores its second parameter (`cellstored`); the
+literal selector is unused as a callable. Fields have distinct paths behind
+the same identity barrier, so aliases observe the store and a different
+field does not become the selected field's value. Callable stores retain
+their types and are charged to the writer for realm summaries, just like
+Js.Ref. Opt preserves its payload's ownership without a Just allocation.
+Wire refuses a Cell. The complete API is `workers-task-storage.md`.
+
+**Typed compiler-owned runtime storage (2026-11-02; §24.8 amendment).**
+`Js.cell` aliases the copied record's field values in a fresh identity;
+`cellRead` lends exactly the selected field and `cellWrite` stores its
+second parameter behind that field's barrier. The selector is unused at
+runtime. `some` returns its input; `none` is empty and reads no input.
+`optWithDefault` returns either input's payload and `optMatch` returns one
+callback's answer. Its slot is escaped because the present callback may
+retain that payload. Both callbacks run at most once, synchronously, and
+are not retained. `ownership/core/JsCellOptWords` pins the alias verdicts.
+Their implementation pins cover the code generator in `src/js/Lower.zig`;
+compiler-owned core Js operations have no sibling implementation to pin.

@@ -1,0 +1,8 @@
+-- D1: a store keeps the field's type through the literal accessor.
+import Js
+
+
+pub bad : ⊤ → ⊤
+bad ⊤ =
+    cell = Js.cell { state = 1 }
+    Js.cellWrite cell "wrong" .state

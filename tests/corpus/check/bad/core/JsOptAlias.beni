@@ -1,0 +1,14 @@
+-- D2: aliases and nominal parameter facts retain Opt's defined kind.
+import Js
+
+
+type alias Id a =
+    a
+
+
+type Wrapped a
+    = Wrapped (Js.Opt (Id a))
+
+
+pub bad : Wrapped Js.Value → Int
+bad _ = 0

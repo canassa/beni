@@ -13569,3 +13569,27 @@ test "the checker v2 counts K inside a recursive function, its read-off filter s
     try testing.expect(totals[1] <= 3 * totals[0]);
     try testing.expect(totals[0] <= 75_000);
 }
+
+test "typed Cell and Opt preserve release behavior through a warm cache" {
+    // PREPARE
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/run/JsCellOpt", "_expected.");
+    for (0..2) |round| {
+        // EXECUTE
+        const result = try w.run(&.{ "build", "--release", "--platform=platform", "--cache-dir=cache", "--self-profile=warm.json", "--out=out", "Main.beni" });
+        // VERIFY OUTPUT AND SIDE EFFECTS
+        try expectBuilt(result);
+        try w.expectProgram(world.entry_file, .{ .stdout = "7:second:11\n3,none,9\n5:8\npresent wrapper\n11,12,13\ndistinct\n1:2\n7\n4,5\nsame constructor\n0::unit\n" });
+        if (round == 1) {
+            const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
+            const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });
+            var warm = false;
+            for (trace.value.traceEvents) |event| if (event.args.modules_checked) |count| {
+                try testing.expectEqual(@as(u64, 0), count);
+                warm = true;
+            };
+            try testing.expect(warm);
+        }
+    }
+}

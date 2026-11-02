@@ -687,12 +687,29 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
 fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
     const bir = cx.bir;
     const tags = bir.insts.items(.tag);
+    var field_refs: std.ArrayList(Bir.Inst.Index) = .empty;
+    var field_calls: std.ArrayList(Bir.Inst.Index) = .empty;
     for (tags, 0..) |tag, i| {
+        if (tag == .ext_value) {
+            const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            const which = JsIntrinsic.of(cx.graph, cx.interfaces, bir, inst, cx.interner);
+            if (which == .cellRead or which == .cellWrite) try field_refs.append(cx.scratch, inst);
+        }
         if (tag != .call) continue;
         const d = bir.instData(@fromBackingInt(@intCast(i)));
         const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
         if (callee.int() >= tags.len or tags[callee.int()] != .ext_value) continue;
-        if (JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner) != .object) continue;
+        const which = JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner);
+        if (which == .cellRead or which == .cellWrite) {
+            try field_calls.append(cx.scratch, callee);
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+            const at: usize = if (which == .cellWrite) 2 else 1;
+            if (args.len > at and bir.fieldSelector(args[at]) == null)
+                try report.emitText(.invalid_cell_selector, args[at], null, "A cell field needs a literal single-field accessor, such as `.state` or\n`λr → r.state`. The selector is checked and compiled as a property name;\nit is never called.");
+            continue;
+        }
+        if (which != .object) continue;
+
         const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
         if (args.len != 1) continue;
         const fault = JsIntrinsic.objectFault(bir, args[0]) orelse continue;
@@ -707,6 +724,10 @@ fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
         };
         report.at(null);
         try report.emitText(.invalid_js_object, fault.at, null, text);
+    }
+    for (field_refs.items) |inst| {
+        if (std.mem.indexOfScalar(Bir.Inst.Index, field_calls.items, inst) != null) continue;
+        try report.emitText(.invalid_cell_selector, inst, null, "Call the cell field operation directly with a literal selector. To pass an\noperation as a value, wrap the saturated call in a function.");
     }
 }
 
@@ -816,7 +837,9 @@ fn reportKeyErrors(report: *Report, issues: []const KeyKinds.Issue, seen: *std.D
     for (issues) |issue| {
         if (seen.isSet(issue.region.int())) continue;
         seen.set(issue.region.int());
-        if (issue.incompatible) |kind| {
+        if (issue.required == .defined or issue.required == .record) {
+            try report.runtimeKind(issue.region, issue.required, issue.actual);
+        } else if (issue.incompatible) |kind| {
             try report.kindMismatch(issue.region, kind, issue.required);
         } else if (issue.required != .dict_key and KeyKinds.allows(report.env.store, report.env.types, .dict_key, issue.actual)) {
             try report.keyScalarMismatch(issue.region, issue.required, issue.actual);
@@ -1007,7 +1030,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     std.mem.sort(Bir.Inst.Index, appends.items, {}, instLessThan);
     // What JavaScript sees through each `Js.from` and `Js.to`, read here
     // for the same reason (checker-v2.md §28).
-    const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items);
+    const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items, solver.instantiate.defined.items, solver.cx);
     errdefer gpa.free(boundary);
     // The type each `Debug.toString` and `Debug.log` prints, read here for
     // the same reason (checker-v2.md §32).

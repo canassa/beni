@@ -1235,7 +1235,7 @@ const Crossing = struct {
         if (entry.kind == .foreign) {
             const wk = in.types.well_known;
             const ref = entry.package == .core and std.mem.eql(u8, in.interner.slice(entry.module_name), "Js") and
-                std.mem.eql(u8, in.interner.slice(entry.name), "Ref");
+                (std.mem.eql(u8, in.interner.slice(entry.name), "Ref") or std.mem.eql(u8, in.interner.slice(entry.name), "Cell") or std.mem.eql(u8, in.interner.slice(entry.name), "Opt"));
             if (id == wk.list or ref) return every_held;
             try c.held_words.appendNTimes(in.scratch, 0, len);
             return start;

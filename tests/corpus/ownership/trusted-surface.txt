@@ -92,3 +92,11 @@ core       Js.Runtime.defect     ownership/core/RuntimeWords.beni -
 core       Js.Runtime.parked     ownership/TaskWords.beni - Task.timeout
 # This private queue boundary retains runtime handles and closed drains; public Task storage already escapes their captures.
 core       Task.requeue          ownership/TaskWords.beni - Task.timeout
+# Typed compiler-owned runtime operations: cell fields alias their inputs;
+# Some/default/branch results preserve payload aliases. None is empty, so
+# its unused input and fresh result have no unsafer neighbour a verdict sees.
+core       Js.cell               ownership/core/JsCellOptWords.beni  1:aliased>borrowed
+core       Js.none               ownership/core/JsCellOptWords.beni  -
+core       Js.some               ownership/core/JsCellOptWords.beni  1:returned>-+res:->fresh
+core       Js.optMatch           ownership/core/JsCellOptWords.beni  2:returned>-+3:returned>-+res:->fresh
+core       Js.optWithDefault     ownership/core/JsCellOptWords.beni  1:returned>-+2:returned>-+res:->fresh

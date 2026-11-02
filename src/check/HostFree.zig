@@ -260,7 +260,7 @@ fn plainForeign(cx: Environment, entry: Types.Entry) bool {
     if (std.mem.eql(u8, module, "Char")) return std.mem.eql(u8, name, "Char");
     if (std.mem.eql(u8, module, "Int32")) return std.mem.eql(u8, name, "Int32");
     if (std.mem.eql(u8, module, "List")) return std.mem.eql(u8, name, "List");
-    if (std.mem.eql(u8, module, "Js")) return std.mem.eql(u8, name, "Value") or std.mem.eql(u8, name, "Ref");
+    if (std.mem.eql(u8, module, "Js")) return std.mem.eql(u8, name, "Value") or std.mem.eql(u8, name, "Ref") or std.mem.eql(u8, name, "Cell") or std.mem.eql(u8, name, "Opt");
     return false;
 }
 test "HostFree internal rollout retains imported generic obligations and rejects opaque native and callback payloads" {
@@ -273,6 +273,9 @@ test "HostFree internal rollout retains imported generic obligations and rejects
         .{ .body = "type Secret = Secret Element.Element\npub bad : Secret → Js.Value\nbad secret = Library.erase secret\n", .refused = true },
         .{ .body = "pub bad : Js.Value → Element.Element\nbad value = Library.read value\n", .refused = true },
         .{ .body = "pub safe : Library.Outer Element.Element → Js.Value\nsafe value = Library.eraseOuter value\n", .refused = false },
+        .{ .body = "pub bad : Js.Cell { callback : (⊤ → ⊤) } → Js.Value\nbad cell = Library.erase cell\n", .refused = true },
+        .{ .body = "pub bad : Js.Cell { native : Element.Element } → Js.Value\nbad cell = Library.erase cell\n", .refused = true },
+        .{ .body = "pub bad : Js.Opt Element.Element → Js.Value\nbad slot = Library.erase slot\n", .refused = true },
         .{ .body = "pub safe : Library.Nest Int → Js.Value\nsafe value = Library.erase value\n", .refused = false },
     }) |scenario| {
         var modules: std.ArrayList(TestProject.Module) = .empty;
@@ -280,7 +283,7 @@ test "HostFree internal rollout retains imported generic obligations and rejects
         try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
         try modules.appendSlice(testing.allocator, &.{
             .{ .path = "Browser/Host/Element.beni", .package = .core, .source = "pub foreign type Element\n" },
-            .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub foreign pure from : a → Value\npub foreign pure to : Value → a\n" },
+            .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub foreign type Cell r\npub foreign type Opt a\npub foreign pure from : a → Value\npub foreign pure to : Value → a\n" },
             .{ .path = "Library.beni", .package = .core, .source = "import Js\npub erase value = Js.from value\npub read value = Js.to value\npub type Phantom a = Phantom\npub type Outer a = Outer (Phantom a)\npub eraseOuter : Outer a → Js.Value\neraseOuter value = erase value\npub type Nest a = Leaf a | Branch (Nest (List a))\n" },
         });
         const text = try std.fmt.allocPrintSentinel(testing.allocator, "import Browser.Host.Element as Element\nimport Js\nimport Library\n{s}", .{scenario.body}, 0);

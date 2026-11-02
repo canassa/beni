@@ -1,0 +1,1 @@
+[{"code":"invalid_cell_selector","severity":"error","span":{"file":"tests/corpus/check/bad/core/JsCellFirstClass.beni","start":{"line":5,"col":11},"end":{"line":5,"col":23}},"title":"INVALID CELL FIELD","message":"Call the cell field operation directly with a literal selector. To pass an\noperation as a value, wrap the saturated call in a function."}]

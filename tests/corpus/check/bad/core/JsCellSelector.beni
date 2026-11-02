@@ -1,0 +1,8 @@
+-- D1: an arbitrary typed function cannot stand in for a field selector.
+import Js
+
+
+pub bad : ⊤ → Int
+bad ⊤ =
+    cell = Js.cell { state = 1 }
+    Js.cellRead cell λr → r.state + 1

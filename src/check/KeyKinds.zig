@@ -33,6 +33,14 @@ pub fn allows(store: *TypeStore, types: *const Types, kind: Kind, raw: Var) bool
     const v = root(store, raw);
     const content = store.content(v);
     if (content == .err) return true;
+    if (kind == .record) return content == .structure and (content.structure == .record or content.structure == .empty_record);
+    if (kind == .defined) {
+        if (content != .structure) return false;
+        const st = content.structure;
+        if (st != .app or st.app.type == .none) return true;
+        const e = types.entry(st.app.type);
+        return !(e.package == .core and types.isJsSlot(st.app.type));
+    }
     if (content != .structure or content.structure != .app) return false;
     const app = content.structure.app;
     if (app.args.len != 0) return false;
@@ -47,7 +55,7 @@ pub fn allows(store: *TypeStore, types: *const Types, kind: Kind, raw: Var) bool
 /// Add a key constraint to a written type's variable, or report its fixed
 /// unsupported head. The annotation reader has no live solver wanteds.
 pub fn constrain(store: *TypeStore, types: *const Types, actual: Var, required: Kind, region: Bir.Inst.Index) ?Issue {
-    std.debug.assert(required.isKey());
+    std.debug.assert(required.isParameter());
     const v = root(store, actual);
     switch (store.content(v)) {
         .err => return null,
@@ -99,8 +107,8 @@ pub const Preparation = struct {
 
     const none = std.math.maxInt(u32);
     const Use = struct { source: u32, required: Kind, actual: Var, region: Bir.Inst.Index, reported: bool = false };
-    const Projection = union(enum) { pending, active, parameter: u32, int, string, other, err };
-    const Head = union(enum) { variable: Var, int, string, other, err };
+    const Projection = union(enum) { pending, active, parameter: u32, int, string, record, defined, nullable, other, err };
+    const Head = union(enum) { variable: Var, int, string, record, defined, nullable, other, err };
     const AliasFrame = struct { id: TypeId, at: Var };
 
     pub fn init(a: Allocator, store: *TypeStore, types: *Types, graph: *const Graph, artifacts: *const Artifacts, interfaces: []const Interface, interner: *const InternPool.Global, module: Graph.Index, bir: *const Bir, schemas: *Schema.State, issues: *std.ArrayList(Issue)) Allocator.Error!Preparation {
@@ -147,7 +155,7 @@ pub const Preparation = struct {
                 }
                 try p.bind(v.*, e.key_start + @as(u32, @intCast(j)));
                 const required = types.key_kinds[e.key_start + j];
-                if (required.isKey()) if (constrain(store, types, v.*, required, @fromBackingInt(0))) |issue| try issues.append(a, issue);
+                if (required.isParameter()) if (constrain(store, types, v.*, required, @fromBackingInt(0))) |issue| try issues.append(a, issue);
             }
             p.params[i] = row;
         }
@@ -169,7 +177,7 @@ pub const Preparation = struct {
         const e = p.types.entry(id);
         for (args, 0..) |actual, j| {
             const required = p.types.keyKinds(id)[j];
-            if (e.module != p.module and !required.isKey()) continue;
+            if (e.module != p.module and !required.isParameter()) continue;
             try p.uses.append(p.a, .{
                 .source = if (e.module == p.module) e.key_start + @as(u32, @intCast(j)) - p.start else none,
                 .required = required,
@@ -244,7 +252,7 @@ pub const Preparation = struct {
             .flex, .rigid => |f| f.kind,
             else => return,
         };
-        if (!kind.isKey()) return;
+        if (!kind.isParameter()) return;
         if (v.int() >= p.bindings.items.len) return;
         const offsets = p.bindings.items[v.int()].items;
         for (offsets) |offset| {
@@ -259,13 +267,16 @@ pub const Preparation = struct {
     }
 
     fn propagate(p: *Preparation, index: u32, required: Kind) Allocator.Error!void {
-        if (!required.isKey()) return;
+        if (!required.isParameter()) return;
         const use = p.uses.items[index];
         const head_value = try p.head(use.actual);
         const issue: ?Issue = switch (head_value) {
             .variable => |v| constrain(p.store, p.types, v, required, use.region),
-            .int => if (required == .string_key) .{ .region = use.region, .actual = use.actual, .required = required } else null,
-            .string => if (required == .int_key) .{ .region = use.region, .actual = use.actual, .required = required } else null,
+            .int => if (required == .string_key or required == .record) .{ .region = use.region, .actual = use.actual, .required = required } else null,
+            .string => if (required == .int_key or required == .record) .{ .region = use.region, .actual = use.actual, .required = required } else null,
+            .record => if (required == .record or required == .defined) null else .{ .region = use.region, .actual = use.actual, .required = required },
+            .defined => if (required == .defined) null else .{ .region = use.region, .actual = use.actual, .required = required },
+            .nullable => .{ .region = use.region, .actual = use.actual, .required = required },
             .other => .{ .region = use.region, .actual = use.actual, .required = required },
             .err => null,
         };
@@ -341,7 +352,7 @@ pub const Preparation = struct {
                     if (answer == null) answer = .err;
                 },
                 .structure => |s| {
-                    answer = if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else .other;
+                    answer = if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else if (s == .record or s == .empty_record) .record else if (s == .app and p.types.isJsSlot(s.app.type)) .nullable else .defined;
                 },
                 .alias => |alias| switch (p.projections[alias.type.int()]) {
                     .pending => {
@@ -367,13 +378,16 @@ pub const Preparation = struct {
         while (true) switch (p.store.content(at)) {
             .flex, .rigid => return .{ .variable = at },
             .err => return .err,
-            .structure => |s| return if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else .other,
+            .structure => |s| return if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else if (s == .record or s == .empty_record) .record else if (s == .app and p.types.isJsSlot(s.app.type)) .nullable else .defined,
             .alias => |alias| {
                 try p.settleAlias(alias.type);
                 switch (p.projections[alias.type.int()]) {
                     .parameter => |j| at = p.store.find(Walk.nominal(p.store, at).?.args[j]),
                     .int => return .int,
                     .string => return .string,
+                    .record => return .record,
+                    .defined => return .defined,
+                    .nullable => return .nullable,
                     .other => return .other,
                     .err => return .err,
                     .pending, .active => unreachable,
@@ -404,7 +418,7 @@ pub fn validateFormations(a: Allocator, store: *TypeStore, types: *Types, bir: *
         seen.set(v.int());
         if (Walk.nominal(store, v)) |app| {
             for (types.keyKinds(app.type), app.args) |required, actual| {
-                if (!required.isKey()) continue;
+                if (!required.isParameter()) continue;
                 if (constrain(store, types, actual, required, at.region)) |issue| try issues.append(a, issue);
             }
         }

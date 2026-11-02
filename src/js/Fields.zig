@@ -103,6 +103,7 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
     var b: Boundary = .{};
     const n = in.types.entries.len;
     var observed = try std.DynamicBitSetUnmanaged.initEmpty(in.arena, n);
+    var boxed = try std.DynamicBitSetUnmanaged.initEmpty(in.arena, n);
     var walk: Walk = .{ .in = in, .boundary = &b, .observed = &observed };
     if (orderedReflectively(in)) {
         if (!try walk.comparedTypes()) return null;
@@ -123,6 +124,9 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
             switch (row.kind) {
                 .field => try walk.pin(in.interner.slice(@fromBackingInt(@intCast(row.value)))),
                 .type => try walk.observe(@fromBackingInt(@intCast(row.value))),
+                .boxed => if (row.value < n) {
+                    boxed.set(row.value);
+                },
             }
         }
     }
@@ -148,7 +152,7 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
     // `compare` and several siblings write.
     b.integer_tags = try std.DynamicBitSetUnmanaged.initEmpty(in.arena, n);
     for (in.types.entries, 0..) |e, i| {
-        if (e.kind != .adt or e.schema_endpoint or observed.isSet(i)) continue;
+        if (e.kind != .adt or e.schema_endpoint or observed.isSet(i) or boxed.isSet(i)) continue;
         const id: TypeId = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (id == in.types.well_known.bool or id == in.types.well_known.order) continue;
         b.integer_tags.set(i);

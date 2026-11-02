@@ -1,0 +1,21 @@
+-- A spare field stays initialised so later writes cannot add a hidden class.
+import Js
+
+
+make : Int → Js.Cell { state : Int, next : Js.Opt Int, spare : Js.Opt Int }
+make n = Js.cell { state = n, next = Js.none ⊤, spare = Js.none ⊤ }
+
+
+pub many : ⊤ → String
+many ⊤ =
+    cells = List.map [ 1, 2, 3 ] make
+    cells
+        ▷ List.map λcell →
+            other = cell
+            Js.cellWrite cell (Js.cellRead cell .state + 10) .state
+            Js.cellWrite cell (Js.some (Js.cellRead cell .state)) .next
+            if Js.same cell other then
+                String.fromInt (Js.optWithDefault (Js.cellRead other .next) 0)
+            else
+                "lost identity"
+        ▷ String.join ","

@@ -145,6 +145,21 @@ pub const Reporter = struct {
         actual: Var,
         rigid: ?Rigid,
     ) Error!void {
+        const actual_content = r.env.store.resolvedContent(actual);
+        const actual_id = if (actual_content == .structure and actual_content.structure == .app) actual_content.structure.app.type else .none;
+        if (actual_id != .none) {
+            const entry = r.env.types.entry(actual_id);
+            const wanted = r.env.store.resolvedContent(expected);
+            if (entry.package == .core and std.mem.eql(u8, r.env.interner.slice(entry.module_name), "Js") and
+                std.mem.eql(u8, r.env.interner.slice(entry.name), "Cell") and wanted == .structure and
+                (wanted.structure == .record or wanted.structure == .empty_record))
+            {
+                var text = r.writer();
+                defer text.deinit();
+                text.writer.writeAll("A Js.Cell has identity and writable fields. Record.copy and record update\napply to immutable records, so neither can consume a Cell.\n\nRead a field with Js.cellRead and write it with Js.cellWrite. To create a\nseparate cell, construct it from the field values explicitly.\n") catch return error.OutOfMemory;
+                return r.emit(.type_mismatch, region, &text);
+            }
+        }
         if (category.tag == .where_clause and rigid == null) {
             if (r.clause) |c| return DispatchTexts.whereClauseMismatch(r, region, c, expected, actual);
         }
@@ -767,6 +782,7 @@ pub const Reporter = struct {
 
     // ---- Kinds, cycles, obligations --------------------------------------
 
+    pub const runtimeKind = @import("KindTexts.zig").runtimeKind;
     pub const invalidDictKey = @import("KindTexts.zig").invalidDictKey;
     pub const keyScalarMismatch = @import("KindTexts.zig").keyScalarMismatch;
 
@@ -783,6 +799,7 @@ pub const Reporter = struct {
         actual: Var,
     ) Error!void {
         if (kind.isKey()) return r.invalidDictKey(region, actual);
+        if (kind == .defined or kind == .record) return r.runtimeKind(region, kind, actual);
         if (category.tag == .if_without_else) return StatementTexts.ifWithoutElse(r, region, actual);
         var out = r.writer();
         defer out.deinit();
@@ -799,7 +816,7 @@ pub const Reporter = struct {
         w.print("\n\n{s}\n\n    ", .{lines.wanted}) catch return error.OutOfMemory;
         Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
         switch (kind) {
-            .dict_key, .int_key, .string_key => unreachable,
+            .dict_key, .int_key, .string_key, .defined, .record => unreachable,
             // `Int32` is the one type a reader is likely to have reached
             // for ON PURPOSE and then found the operators missing, so it
             // gets the hint that says what to write instead. The general

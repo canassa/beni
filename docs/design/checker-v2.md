@@ -6480,3 +6480,21 @@ in place so the published schemes retain the domain. This is a formation check,
 not recursive membership in a key kind. Each membership check still inspects
 only the scalar head. A schema used with Bool outside a Dict remains valid when
 only a separate wrapper's use of that endpoint requires a scalar key.
+
+### D1/D2 amendment — typed runtime cells and defined optional payloads (2026-11-02)
+
+`Js.Cell r` is nominal identity storage over a record row `r`. The row keeps
+all writable field types; a literal accessor relates a read result or stored
+value to that exact field. Cell is not a record alias: structural record
+operations and structural equality cannot consume it. `Js.Opt a` retains a
+new defined parameter kind, disjoint from Js.Value and Opt; aliases preserve
+this constraint, generic schemes publish it, and every instantiation checks
+it. A record/list containing Opt is itself defined. Payload access occurs
+only inside the present branch of optMatch, or with a typed default. The API,
+access fence, emission and soundness argument are `workers-task-storage.md`.
+
+The existing interface kind byte now admits defined (6) and record (7),
+including parameter facts, without changing row widths. Cached boundary
+rows also preserve the boxed-wrapper fact's nominal type reference through
+remapping. A warm build retains both the payload constraint and its runtime
+representation.

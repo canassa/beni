@@ -1,0 +1,4 @@
+import Cells as Ref
+
+
+pub replace r x = Ref.set r x

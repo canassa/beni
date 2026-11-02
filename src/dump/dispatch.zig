@@ -157,6 +157,9 @@ pub fn write(
             .type => if (types.named(@fromBackingInt(@intCast(b.value)))) |named| {
                 try w.print("  boundary {s} type {s}.{s}\n", .{ decl, interner.slice(named.module), interner.slice(named.name) });
             } else try w.print("  boundary {s} type ?\n", .{decl}),
+            .boxed => if (types.named(@fromBackingInt(@intCast(b.value)))) |named| {
+                try w.print("  boundary {s} boxed {s}.{s}\n", .{ decl, interner.slice(named.module), interner.slice(named.name) });
+            },
         }
     }
     // The type each `Debug.toString` and `Debug.log` prints

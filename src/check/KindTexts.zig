@@ -39,3 +39,20 @@ pub fn kindMismatch(r: *Reporter, region: Bir.Inst.Index, left: TypeStore.Kind, 
     , .{ left.text(), right.text() }) catch return error.OutOfMemory;
     try r.emit(.kind_mismatch, region, &out);
 }
+
+pub fn runtimeKind(r: *Reporter, region: Bir.Inst.Index, kind: TypeStore.Kind, actual: Var) Error!void {
+    var out = r.writer();
+    defer out.deinit();
+    var namer: Render.Namer = .init(r.gpa);
+    defer namer.deinit();
+    out.writer.writeAll(if (kind == .record)
+        "A Js.Cell needs a record row. This payload has type:\n\n    "
+    else
+        "A Js.Opt payload cannot itself be undefined. This payload has type:\n\n    ") catch return error.OutOfMemory;
+    Render.writeVar(&out.writer, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
+    out.writer.writeAll(if (kind == .record)
+        "\n\nUse a record of typed fields. A Cell has identity; record copy, update and\nstructural comparison do not apply to it.\n"
+    else
+        "\n\nJs.Value and Js.Opt cannot be optional payloads, including through aliases\nor generic instantiation. Use a tagged type to distinguish those cases.\n") catch return error.OutOfMemory;
+    try r.emit(.kind_mismatch, region, &out);
+}

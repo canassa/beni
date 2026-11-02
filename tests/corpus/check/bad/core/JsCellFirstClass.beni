@@ -1,0 +1,5 @@
+-- A field operation's selector must be checked at a saturated call site.
+import Js
+
+
+pub bad = Js.cellWrite

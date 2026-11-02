@@ -1,0 +1,17 @@
+module JsCellOptWords
+  8:15 construction xs: rejected call: cell⋆ may hold it through the call at 7:12, and is read at 9:5 (approx)
+  15:15 construction xs: rejected alias: slot holds it and is read at 16:38
+  22:15 construction value: rejected call: xs may hold it through the call at 21:13, and is read at 23:25 (approx)
+  29:15 construction value: rejected call: xs may hold it through the call at 28:13, and is read at 30:25 (approx)
+  37:15 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  summary heldByCell: π1 RAW; res .0 fresh1{lost}r{lost}, .0⋆ ~condition(fresh3) ~fresh501◦ ~π1, .1 ~condition(fresh4) π1, condition(fresh2){lost}
+  summary presentAliases: π1 RW
+  summary defaultAliases: π1 Rw
+  summary branchAliases: π1 Rw
+  summary retainedPayload: π1 REW
+  summary fieldLoan: unused
+  demands 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause escaped 1
+cause alias 1
+cause call 3

@@ -1,0 +1,7 @@
+import Js
+
+
+pub wrap value = Js.some value
+
+
+pub constructor = Js.some

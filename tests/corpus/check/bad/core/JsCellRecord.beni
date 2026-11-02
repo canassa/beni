@@ -1,0 +1,11 @@
+-- D1: cells are identity storage, not records or equatable values.
+import Js
+import Record
+
+
+pub bad : ⊤ → Int
+bad ⊤ =
+    cell = Js.cell { state = 1 }
+    updated = { cell | state = 2 }
+    copied = Record.copy cell
+    if cell == cell then updated.state else copied.state

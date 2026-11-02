@@ -1,0 +1,13 @@
+-- D1/D2: one typed mutable object and unboxed optional fields.
+import Js
+
+
+pub make : Int → Js.Cell { state : Int, next : Js.Opt Int }
+make value = Js.cell { state = value, next = Js.none ⊤ }
+
+
+pub store : Js.Cell { state : Int, next : Js.Opt Int }, Int → Int
+store cell value =
+    Js.cellWrite cell value .state
+    Js.cellWrite cell (Js.some value) .next
+    Js.optWithDefault (Js.cellRead cell .next) (Js.cellRead cell .state)

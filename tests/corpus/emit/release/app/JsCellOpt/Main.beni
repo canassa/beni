@@ -1,0 +1,7 @@
+-- Application output proves that Cell fields receive release spellings.
+import Cells
+import Node
+
+
+main : Node.Program
+main = Node.print (Cells.many ⊤)

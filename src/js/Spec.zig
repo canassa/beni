@@ -1036,15 +1036,15 @@ const Mod = struct {
         m.changed();
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
-        m.ir.nodes.items(.host)[node.int()] = false;
+        m.ir.nodes.items(.flags)[node.int()] = .{};
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
     }
 
     /// Mark `node`, a `call`, as one lowered from a `Js.apply`
-    /// (`JsIr.Node.host`): what a copy of such a call keeps.
+    /// (`JsIr.Node.flags.host`): what a copy of such a call keeps.
     fn setHost(m: *Mod, node: Index) void {
         std.debug.assert(m.ir.tag(node) == .call);
-        m.ir.nodes.items(.host)[node.int()] = true;
+        m.ir.nodes.items(.flags)[node.int()].host = true;
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -1086,6 +1086,7 @@ const Mod = struct {
         };
         m.setNode(node, tag, d.lhs, d.rhs);
         if (m.ir.host(from)) m.setHost(node);
+        if (m.ir.cell(from)) m.ir.nodes.items(.flags)[node.int()].cell = true;
         if (key == .wild) return;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| {
             m.node_keys.items[at].key = key;
@@ -10365,6 +10366,7 @@ const Spec = struct {
             // a host call copied as itself is still one.
             if (tag == c.src.ir.tag(from)) switch (tag) {
                 .object, .array, .arrow => {
+                    if (c.src.ir.cell(from)) c.dst.ir.nodes.items(.flags)[to.int()].cell = true;
                     const k = c.src.ir.nodeKey(from);
                     if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
                 },
@@ -15182,7 +15184,7 @@ const Pts = struct {
         const key = p.closedKey(p.s.mods[mi].ir.nodeKey(node));
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
-        try p.sites.append(p.tmp.column(.sites), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
+        try p.sites.append(p.tmp.column(.sites), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .all_read = p.s.mods[mi].ir.cell(node), .any = try p.newVar() });
         p.links_of.items[p.sites.items[id].any].site_var = true;
         if (p.s.in.trace_largest) p.originAt(p.sites.items[id].any, .{ .kind = .site_any, .of = .site_any, .module = mi, .node = node.int() });
         // Keys written before anything can read them exist from the moment
