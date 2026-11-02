@@ -3,8 +3,8 @@
 Draft for #1295 and #1612, following the owner's 2026-11-01 directive:
 build first, optimize later. No generated union or measurement prerequisite.
 
-Task erases callbacks and runtime records into `Js.Value` to keep its manual
-suspension protocol out of effect inference. HostFree forbids that erasure.
+Task previously erased callbacks and runtime records into `Js.Value` to hide
+its manual suspension protocol from effect inference. HostFree forbids that erasure.
 Real callback types and summaries must survive, including DOM calls in bodies
 whose captures are plain data.
 
@@ -30,12 +30,15 @@ storage, Rt render/row/event/after-render storage, and Hosted/Browser commands,
 subscriptions, sends and messages. DOM handles stay page-only; portable Task,
 coordination and matching fetch/socket/timer shims are also worker paths.
 
-The first implementation uses a typed linked FIFO over existing `Js.Ref` for
-the program queue, shutdown work and MessageChannel jobs, and a typed optional
-scheduler-turn hook. Dequeue happens before invocation; reentrant enqueue
-preserves FIFO order. The compiler now passes typed hidden completions and
-imports private continuation adapters; its temporary driver still uses the old
-control records until the typed fiber/result-slot kernel replaces them. This is not yet a HostFree-complete Task.
+The implementation uses typed intrusive chains over `Js.Ref`, typed scheduler
+FIFOs and a common control graph. `Fiber a` owns a separate typed result slot;
+closed jobs connect it to its matching continuation. Scope releases, waiters,
+finalizers, observers, virtual-clock sleepers and log-context installers retain
+their types. A native timer returns a typed canceller; native timer and channel
+resources stay in the core-private `Js.Runtime` sibling. Dequeue precedes
+invocation, preserving FIFO under reentry. Task has no callback or native-value
+erasure: its only `Js.Value` is the plain parked sentinel's identity. Other
+core containers and renderer queues still need their own migration.
 
 **Owner decision, 2026-11-01:** the core-private typed protocol invocation
 intrinsic is approved as a rule-6 extension. It invokes a typed possibly
@@ -52,6 +55,10 @@ internal CPS convention. Functions that cannot suspend emit byte-identical
 output; no user syntax or API is added. The suspension contracts in
 `transparent-effects-proposal.md` §16 and `backend.md` record this decision.
 
-No Buffer is needed for the current FIFOs. Continue the full migration;
+No Buffer is needed. The core-only adapter signatures expose real callback
+types; their ownership words mark retained callbacks as escaped. A scheduler
+retains a closed drain with the same rule. Context record updates copy before
+changing an inherited snapshot. The returned wait canceller is explicitly
+`sync`, enforcing the existing contract (#1649). Continue correctness checks;
 correctness is the Task/effects and browser/tea corpus, then unfiltered gates.
 Performance belongs to a later slice.

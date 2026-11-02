@@ -85,8 +85,8 @@ module Clock
   opaque type Virtual
   value adjust : Virtual, Duration → ⊤  -- suspends
   value now : ⊤ → Int  -- impure
-  value run : Virtual, (⊤ → a) → a  -- impure
-  value virtual : Int → Virtual  -- impure
+  value run : (Virtual), (⊤ → a) → a  -- impure
+  value virtual : Int → Virtual
 module Debug
   value log : String, a → a  -- impure
   value logAs : Value, String, a → a  -- impure
@@ -205,7 +205,7 @@ module Js
   value ref : a → Ref a
   value regExp : pattern, flags → Value
   value rem : int, int → int
-  value same : a, a → bool
+  value same : a, b → bool
   value set : Value, name, Value → ⊤  -- impure
   value setAt : Value, index, Value → ⊤  -- impure
   value shiftLeft : int, int → int
@@ -614,40 +614,38 @@ module Task
   type Exit a
     Done
     Cancelled
-  type Fiber a
-  type Restore
+  opaque type Fiber a
+  opaque type Restore
   opaque type Resume a
-  type Scheduler
-  type Scope
-  type Soon
-  value adjustClock : Value, Value → ⊤  -- suspends
-  value andThen : a, (a → b) → b  -- impure
+  opaque type Scheduler
+  opaque type Scope
+  opaque type Soon
+  opaque type VirtualClock
+  value andThen : a, (a → b) → b
   value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure
   value callback : ((Resume a) → (⊤ → ⊤)) → a  -- suspends
-  value cancel : Fiber a → ⊤  -- suspends
+  value cancel : (Fiber a) → ⊤  -- suspends
   value cancelAll : List (Fiber a) → ⊤  -- suspends
   value cleansUp : ⊤ → Bool  -- impure
-  value closeRoot : Scope → ⊤  -- impure
-  value currentClock : ⊤ → Value  -- impure
-  value currentLogContext : ⊤ → Value  -- impure
-  value defer : Scope, (Exit ⊤ → ⊤) → ⊤  -- impure
+  value closeRoot : (Scope) → ⊤  -- impure
+  value defer : (Scope), (Exit ⊤ → ⊤) → ⊤  -- impure
   value forEach : List a, Int, (a → b) → List b  -- suspends
   value forEachOk : List a, Int, (a → Result e b) → Result e (List b)  -- suspends
   value forever : (⊤ → a) → b  -- suspends
   value fromHost : (⊤ → ⊤) → ⊤  -- impure
   value hasLogContext : ⊤ → Bool  -- impure
   value isWaiting : a → Bool
-  value join : Fiber a → a  -- suspends
+  value join : (Fiber a) → a  -- suspends
   value joinAll : List (Fiber a) → List a  -- suspends
   value keepLogContext : (a → b) → (a → b)  -- impure
   value never : ⊤ → a  -- suspends
   value onDefect : (⊤ → ⊤) → ⊤  -- impure
   value onExit : (⊤ → a), (Exit a → ⊤) → a  -- impure
-  value onSchedulerCount : Scheduler, (Int → ⊤) → ⊤  -- impure
-  value onSchedulerIdle : Scheduler, (⊤ → ⊤) → ⊤  -- impure
+  value onSchedulerCount : (Scheduler), (Int → ⊤) → ⊤  -- impure
+  value onSchedulerIdle : (Scheduler), (⊤ → ⊤) → ⊤  -- impure
   value onShutdown : (⊤ → ⊤) → ⊤  -- impure
   value onTurn : ((⊤ → ⊤) → ⊤) → ⊤  -- impure
-  value openRoot : ⊤ → Scope  -- impure
+  value openRoot : ⊤ → Scope
   value par : (⊤ → a), (⊤ → b) → a × b  -- suspends
   value par3 : (⊤ → a), (⊤ → b), (⊤ → c) → a × b × c  -- suspends
   value parOk : (⊤ → Result e a), (⊤ → Result e b) → Result e (a × b)  -- suspends
@@ -657,7 +655,7 @@ module Task
   value raceAll : (⊤ → a), List (⊤ → a) → a  -- suspends
   value raceOk : List (⊤ → Result e a) → Result (List e) a  -- suspends
   value repeat : (Schedule a), (⊤ → a) → a  -- suspends
-  value restore : Restore, (⊤ → b) → b  -- impure
+  value restore : Restore, (⊤ → a) → a  -- impure
   value resume : Resume a, a → ⊤  -- impure
   value retry : (Schedule e), (⊤ → Result e a) → Result e a  -- suspends
   value running : Fiber a → Bool  -- impure
@@ -666,23 +664,20 @@ module Task
   value schedulerFibers : Scheduler → Int  -- impure
   value schedulerWith : ((⊤ → ⊤) → ⊤), ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
   value schedulersListed : ⊤ → Int  -- impure
-  value scope : (Scope → a) → a  -- suspends
+  value scope : ((Scope) → a) → a  -- suspends
   value shutdown : Int, (Int → ⊤) → ⊤  -- impure
   value sleep : Duration → ⊤  -- suspends
   value soon : (⊤ → ⊤) → Soon  -- impure
   value spawn : (⊤ → a) → Fiber a  -- impure
   value spawnDetached : (⊤ → a) → Fiber a  -- impure
-  value spawnIn : Scope, (⊤ → a) → Fiber a  -- impure
+  value spawnIn : (Scope), (⊤ → a) → Fiber a  -- impure
   value start : (⊤ → a), (Exit a → ⊤) → ⊤  -- impure
-  value stopScheduler : Scheduler, Int, (Int → ⊤) → ⊤  -- impure
+  value stopScheduler : (Scheduler), Int, (Int → ⊤) → ⊤  -- impure
   value timeout : Duration, (⊤ → a) → Maybe a  -- suspends
   value uninterruptible : (⊤ → a) → a  -- impure
-  value uninterruptibleMask : (Restore → a) → a  -- impure
-  value virtualClock : Value → Value  -- impure
-  value wait : Fiber a → Exit a  -- suspends
-  value withClock : Value, (⊤ → a) → a  -- impure
-  value withLogContext : Value, (⊤ → a) → a  -- impure
-  value withScheduler : Scheduler, (⊤ → a) → a  -- suspends
+  value uninterruptibleMask : ((Restore) → a) → a  -- impure
+  value wait : (Fiber a) → Exit a  -- suspends
+  value withScheduler : (Scheduler), (⊤ → a) → a  -- suspends
   value withoutLogContext : (⊤ → a) → a  -- impure
   value yieldNow : ⊤ → ⊤  -- suspends
 module Url

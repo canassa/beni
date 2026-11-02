@@ -1,0 +1,12 @@
+import Js.Runtime as Runtime
+import Task
+
+
+pub bad : ⊤ → Int
+bad ⊤ = Runtime.now ⊤
+
+
+pub capture = Runtime.timer
+
+
+pub clock = Task.virtualClock 0

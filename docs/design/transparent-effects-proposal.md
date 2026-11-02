@@ -1945,7 +1945,7 @@ pub foreign type Fiber a
 pub foreign type Scope
 pub foreign type Resume a
 
-pub foreign suspends callback : sync (Resume a → (⊤ → ⊤)) → a  -- the suspension primitive
+pub foreign suspends callback : sync (Resume a → sync (⊤ → ⊤)) → a  -- the suspension primitive
 pub foreign impure spawn : (⊤ → a) → Fiber a                     -- a child of the current fiber
 pub foreign suspends join : Fiber a → a                            -- a cancelled child cancels the joiner
 pub foreign suspends wait : Fiber a → Exit a                       -- observes, never propagates (`await` is reserved in JavaScript)

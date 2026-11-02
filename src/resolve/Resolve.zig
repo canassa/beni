@@ -792,19 +792,31 @@ const Pass = struct {
     }
 
     fn resolveImported(p: *Pass, m: Graph.Index, target: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
-        // Typed raw invocation belongs to core's fiber protocol. In
-        // particular, a platform cannot turn a suspension into ordinary data.
-        if (namespace == .value and p.graph.modulePackage(target) == .core and
-            std.mem.eql(u8, p.interner.slice(p.graph.moduleName(target)), "Js"))
-        {
+        // These adapters belong to core's typed fiber protocol. Platforms
+        // enter it through Task.callback/resume, never through raw invocation.
+        if (p.graph.modulePackage(target) == .core) {
+            const owner = p.interner.slice(p.graph.moduleName(target));
             const text = p.interner.slice(name);
             const caller_core = p.graph.modulePackage(m) == .core or
                 (p.graph.modulePackage(m) == .app and p.core_app);
-            const invocation = std.mem.eql(u8, text, "invoke");
-            const completion = std.mem.eql(u8, text, "completion");
-            if ((invocation and !caller_core) or
-                (completion and (!caller_core or
-                    !std.mem.eql(u8, p.interner.slice(p.graph.moduleName(m)), "Task"))))
+            const caller_task = caller_core and
+                std.mem.eql(u8, p.interner.slice(p.graph.moduleName(m)), "Task");
+            const raw = namespace == .value and std.mem.eql(u8, owner, "Js") and
+                std.mem.eql(u8, text, "invoke");
+            const completion = namespace == .value and std.mem.eql(u8, owner, "Js") and
+                std.mem.eql(u8, text, "completion");
+            const runtime = std.mem.eql(u8, owner, "Js.Runtime");
+            const internal_task = std.mem.eql(u8, owner, "Task") and
+                (std.mem.eql(u8, text, "VirtualClock") or
+                    std.mem.eql(u8, text, "currentClock") or
+                    std.mem.eql(u8, text, "withClock") or
+                    std.mem.eql(u8, text, "virtualClock") or
+                    std.mem.eql(u8, text, "adjustClock") or
+                    std.mem.eql(u8, text, "currentLogContext") or
+                    std.mem.eql(u8, text, "withLogContext"));
+            if (((raw or runtime or internal_task) and !caller_core) or
+                (completion and !caller_task) or
+                (runtime and std.mem.eql(u8, text, "parked") and !caller_task))
             {
                 try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
                 return .poison(.private_name);

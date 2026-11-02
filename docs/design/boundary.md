@@ -648,6 +648,12 @@ conversion or an exemption from realm checking. Unlike ordinary invocation,
 it does not suspend the driver before the driver consumes the sentinel.
 This intrinsic is core-only like `Js.suspending`, adds no user surface or
 source syntax, and is specified further in `workers-task-storage.md`.
+The matching `Js.completion` accessor is restricted to core Task; the
+core-private `Js.Runtime.parked` accessor returns the same plain sentinel.
+`Js.Runtime` also narrows the existing native timer, microtask, macrotask,
+clock, random and defect operations to typed signatures. Native resources
+stay in its sibling; callbacks keep their types and summaries. Applications
+and platforms cannot import these adapters.
 
 **The operators core's arithmetic is written over** (2026-10-01): `bitOr`, `bitXor`, `shiftLeft`,
 `shiftRight`, `shiftRightZero` and `rem` — `|`, `^`, `<<`, `>>`, `>>>` and `%` on two `Int`s, as
