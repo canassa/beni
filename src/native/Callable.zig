@@ -34,7 +34,7 @@ pub fn validate(c: anytype) bool {
             return false;
         }
         // Mixin exposure belongs to the implementing native receiver.
-        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
+        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
         var exposure: u8 = 0;
         for (c.native_types) |t| {
             if (!std.mem.eql(u8, t.idl_name, receiver)) continue;
@@ -87,6 +87,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.TextDecoder")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Fetch")) try w.writeAll("pub foreign type Body\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.RegExp")) try w.writeAll("pub type CreateError\n    = SyntaxError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Storage")) try w.writeAll("pub type SetError\n    = QuotaExceeded\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -101,6 +102,13 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .storage_local => "(_) => { try { const area = globalThis.localStorage; return area == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: area }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"SecurityError\") throw error; return { $: \"Nothing\", a: null }; } }",
+            .storage_session => "(_) => { try { const area = globalThis.sessionStorage; return area == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: area }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"SecurityError\") throw error; return { $: \"Nothing\", a: null }; } }",
+            .storage_get => "(area, key) => { const value = area.getItem(key); return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .storage_set => "(area, key, value) => { try { area.setItem(key, value); return { $: \"Ok\", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"QuotaExceededError\") throw error; return { $: \"Err\", a: \"QuotaExceeded\" }; } }",
+            .storage_remove => "(area, key) => { area.removeItem(key); return null; }",
+            .storage_length => "(area) => { return area.length; }",
+            .storage_key => "(area, index) => { const key = area.key(index); return key === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: key }; }",
             .url_try_create => "(text, base) => { let value; if (globalThis.URL.parse === undefined) { try { value = new globalThis.URL(text, base); } catch (error) { if (!(error instanceof globalThis.TypeError)) throw error; return { $: \"Nothing\", a: null }; } } else { value = globalThis.URL.parse(text, base); } return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
             .url_href => "(url) => { return url.href; }",
             .url_username => "(url) => { return url.username; }",

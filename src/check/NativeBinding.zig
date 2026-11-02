@@ -39,6 +39,17 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .storage_local, .storage_session => a.len == 1 and unit(cx, a[0]) and (if (argument(cx, r, "Maybe", "Maybe", 0)) |area| native(cx, area, "Storage") else false),
+        .storage_get => a.len == 2 and native(cx, a[0], "Storage") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |value| named(cx, value, "String", "String") else false),
+        .storage_set => blk: {
+            if (a.len != 3 or !native(cx, a[0], "Storage") or !named(cx, a[1], "String", "String") or !named(cx, a[2], "String", "String")) break :blk false;
+            const failure = argument(cx, r, "Result", "Result", 0) orelse break :blk false;
+            const success = argument(cx, r, "Result", "Result", 1) orelse break :blk false;
+            break :blk named(cx, failure, "Browser.Host.Storage", "SetError") and unit(cx, success);
+        },
+        .storage_remove => a.len == 2 and native(cx, a[0], "Storage") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .storage_length => a.len == 1 and native(cx, a[0], "Storage") and named(cx, r, "Basics", "Int"),
+        .storage_key => a.len == 2 and native(cx, a[0], "Storage") and named(cx, a[1], "Basics", "Int") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |key| named(cx, key, "String", "String") else false),
         .url_try_create => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| native(cx, nested0, "URL") else false),
         .url_href => a.len == 1 and native(cx, a[0], "URL") and named(cx, r, "String", "String"),
         .url_username => a.len == 1 and native(cx, a[0], "URL") and named(cx, r, "String", "String"),

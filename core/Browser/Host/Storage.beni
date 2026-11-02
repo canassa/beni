@@ -1,0 +1,27 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub type SetError
+    = QuotaExceeded
+
+
+pub foreign type Storage
+
+
+pub foreign impure local : ⊤ → Maybe Storage
+
+
+pub foreign impure session : ⊤ → Maybe Storage
+
+
+pub foreign impure get : borrowed Storage, String → Maybe String
+
+
+pub foreign impure set : borrowed Storage, String, String → Result SetError ⊤
+
+
+pub foreign impure remove : borrowed Storage, String → ⊤
+
+
+pub foreign impure length : borrowed Storage → Int
+
+
+pub foreign impure key : borrowed Storage, Int → Maybe String
