@@ -458,9 +458,37 @@ const Walker = struct {
                         return fr.scalar();
                     },
                     .list => switch (kind) {
-                        .front => return if (a < ks.len) ks[a] else fr.bot(),
-                        .back => return if (a < ks.len) ks[ks.len - 1 - a] else fr.bot(),
+                        .front, .back => {
+                            // A spread kid has a length not known: the index
+                            // may land on it or on any kid after it.
+                            const flags = fr.wordsOf(x.extra);
+                            if (flags.len == 0) {
+                                if (a >= ks.len) return fr.bot();
+                                return if (kind == .front) ks[a] else ks[ks.len - 1 - a];
+                            }
+                            var cands: std.ArrayList(u32) = .empty;
+                            defer cands.deinit(k.gpa);
+                            var exact = true;
+                            var idx: u32 = 0;
+                            for (0..ks.len) |n0| {
+                                const n = if (kind == .front) n0 else ks.len - 1 - n0;
+                                if (flags[n] != 0) {
+                                    exact = false;
+                                    try cands.appendSlice(k.gpa, &.{ @intCast(n), ks[n] });
+                                } else if (!exact) {
+                                    try cands.appendSlice(k.gpa, &.{ @intCast(n), ks[n] });
+                                } else {
+                                    if (idx == a) return ks[n];
+                                    idx += 1;
+                                }
+                            }
+                            if (cands.items.len == 0) return fr.bot();
+                            if (cands.items.len == 2) return cands.items[1];
+                            return fr.mk(.{ .kind = .alt, .head = if (x.site != none) 0x8000_0000 | x.site else 0xC000_0000 | (x.head & 0x3fff_ffff), .kids = try fr.mkKids(cands.items) });
+                        },
                         .slice => {
+                            // With spreads the view may hold any kid.
+                            if (fr.wordsOf(x.extra).len != 0) return v;
                             const lo = @min(a, ks.len);
                             const hi = ks.len - @min(b, ks.len - lo);
                             // A view: the same storage, fewer elements.
@@ -882,7 +910,7 @@ const Walker = struct {
             try items.append(k.gpa, rhs);
             break;
         }
-        return k.construction(i, items.items, .append, items.items[0]);
+        return k.construction(i, items.items, .append, items.items[0], null);
     }
 
     /// A spread chain (§2.13.2): a prepend, or a construction over its base.
@@ -891,8 +919,10 @@ const Walker = struct {
         var items: std.ArrayList(u32) = .empty;
         defer items.deinit(k.gpa);
         var first_spread: ?usize = null;
+        const spread = try k.f().arena.alloc(bool, its.len);
         for (its, 0..) |it, n| {
             try items.append(k.gpa, it[0]);
+            spread[n] = it[1] != 0;
             if (it[1] != 0 and first_spread == null) first_spread = n;
         }
         const sp = first_spread orelse return k.literalOf(i, items.items);
@@ -900,7 +930,7 @@ const Walker = struct {
             // `[ x₁…xₖ, …xs ]`: a prepend — fresh storage, the fronts and xs's elements.
             return k.prepend(i, items.items[0..sp], items.items[sp]);
         }
-        return k.construction(i, items.items, .construction, items.items[sp]);
+        return k.construction(i, items.items, .construction, items.items[sp], spread);
     }
 
     fn literalOf(k: *Walker, i: u32, items: []const u32) Error!u32 {
@@ -925,12 +955,17 @@ const Walker = struct {
         try k.consume(rest, i);
         try ks.append(k.gpa, try k.project(xs, .plain, Step.elem.word(), 0));
         // The elements of `xs` are the last kid as a family, not a literal element.
-        return k.built(i, .list, 0, i, ks.items, &.{});
+        const flags = try k.f().arena.alloc(u32, ks.items.len);
+        @memset(flags, 0);
+        flags[flags.len - 1] = 1;
+        return k.built(i, .list, 0, i, ks.items, flags);
     }
 
     /// A construction over its base (R-2.3): the base's storage is written
     /// in place, the other items are its new elements.
-    fn construction(k: *Walker, i: u32, items: []const u32, kind: Facts.DemandKind, base: u32) Error!u32 {
+    /// `spread`: which items are lists whose elements go in (every one of a
+    /// `++` chain); the others are elements.
+    fn construction(k: *Walker, i: u32, items: []const u32, kind: Facts.DemandKind, base: u32, spread: ?[]const bool) Error!u32 {
         const fr = k.f();
         var ev: Relation.Eval = .{ .f = fr, .contracts = undefined, .arena = fr.arena };
         defer ev.deinit();
@@ -943,12 +978,14 @@ const Walker = struct {
         const o_start: u32 = @intCast(k.w.value_runs.items.len);
         var ks: std.ArrayList(u32) = .empty;
         defer ks.deinit(k.gpa);
-        for (items) |e| {
+        const flags = try fr.arena.alloc(u32, items.len);
+        for (items, 0..) |e, n| {
             const v = try k.valueOf(e);
-            if (e != base) {
-                try k.w.value_runs.append(k.gpa, v);
-                try ks.append(k.gpa, v);
-            } else try ks.append(k.gpa, try k.project(v, .plain, Step.elem.word(), 0));
+            const sp = if (spread) |sps| sps[n] else true;
+            flags[n] = @intFromBool(sp or e == base);
+            if (e != base) try k.w.value_runs.append(k.gpa, v);
+            // A spread item gives its elements, a family of unknown length.
+            try ks.append(k.gpa, if (sp or e == base) try k.project(v, .plain, Step.elem.word(), 0) else v);
             try k.consume(e, i);
         }
         const pend = try k.pendingRun(i);
@@ -962,7 +999,7 @@ const Walker = struct {
             .pending = pend,
         });
         // The result is the base's storage holding every item's elements.
-        return fr.mk(.{ .kind = .built, .form = .list, .site = none, .head = bv + 1, .place = try k.placeOf(i), .kids = try fr.mkKids(ks.items) });
+        return fr.mk(.{ .kind = .built, .form = .list, .site = none, .head = bv + 1, .place = try k.placeOf(i), .kids = try fr.mkKids(ks.items), .extra = flags });
     }
 };
 
