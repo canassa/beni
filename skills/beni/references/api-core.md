@@ -80,6 +80,14 @@ module Browser.Host.DOMRect
   type DOMRect
   value left : DOMRect → Float  -- impure
   value top : DOMRect → Float  -- impure
+module Browser.Host.Data
+  value emptyObject : ⊤ → Value  -- impure
+  value hasOwn : Value, String → Bool  -- impure
+  value isArray : Value → Bool  -- impure
+  value isFinite : Value → Bool  -- impure
+  value isInteger : Value → Bool  -- impure
+  value isSafeInteger : Value → Bool  -- impure
+  value keys : Value → List String  -- impure
 module Browser.Host.Date
   value now : ⊤ → Int  -- impure
 module Browser.Host.Document
@@ -128,6 +136,11 @@ module Browser.Host.HTMLAnchorElement
   value target : HTMLAnchorElement → String  -- impure
 module Browser.Host.Immediate
   value trySchedule : (⊤ → ⊤) → Bool  -- impure
+module Browser.Host.Json
+  type ParseError
+    SyntaxError
+  value parse : String → Result ParseError Value  -- impure
+  value stringify : Value → Value  -- impure
 module Browser.Host.Math
   value random : ⊤ → Float  -- impure
 module Browser.Host.MessageChannel
@@ -343,12 +356,12 @@ module Js
   value undefined : Value
   value write : Ref a, a → ⊤  -- impure
 module Json
-  value decode : String → Result (List Issue) a where a.codec : ⊤ → Codec a  -- impure
-  value decodeValue : Value → Result (List Issue) a where a.codec : ⊤ → Codec a  -- impure
-  value decodeWith : Options, String → Result (List Issue) a where a.codec : ⊤ → Codec a  -- impure
-  value encode : a → Result (List Issue) String where a.codec : ⊤ → Codec a  -- impure
-  value encodeValue : a → Result (List Issue) Value where a.codec : ⊤ → Codec a  -- impure
-  value encodeWith : Options, a → Result (List Issue) String where a.codec : ⊤ → Codec a  -- impure
+  value decode : String → Result (List Issue) a where a.codec : ⊤ → (Codec a)  -- impure
+  value decodeValue : Value → Result (List Issue) a where a.codec : ⊤ → (Codec a)  -- impure
+  value decodeWith : Options, String → Result (List Issue) a where a.codec : ⊤ → (Codec a)  -- impure
+  value encode : a → Result (List Issue) String where a.codec : ⊤ → (Codec a)  -- impure
+  value encodeValue : a → Result (List Issue) Value where a.codec : ⊤ → (Codec a)  -- impure
+  value encodeWith : Options, a → Result (List Issue) String where a.codec : ⊤ → (Codec a)  -- impure
 module Latch
   opaque type Latch
   value close : Latch → ⊤  -- impure
@@ -532,7 +545,7 @@ module Schema
   alias Codec a
   alias ConstructorShape
     ConstructorShape
-  type Conversion a b
+  opaque type Conversion a b
   alias Definition
     Definition
   alias Description
@@ -548,8 +561,8 @@ module Schema
     AllErrors
   alias FieldShape
     FieldShape
-  type Fields a b
-  type Injection a b
+  opaque type Fields a b
+  opaque type Injection a b
   alias Issue
     Issue
   type IssueCode
@@ -565,7 +578,7 @@ module Schema
     ParseFailed
     PrintFailed
     InvalidSchema
-  type Mapping a b
+  opaque type Mapping a b
   type Nullable a
     Null
     NonNull
@@ -588,7 +601,7 @@ module Schema
     CharKind
     Int32Kind
     NeverKind
-  type Schema a b
+  opaque type Schema a b
   type Shape
     Primitive
     ListOf
@@ -608,54 +621,54 @@ module Schema
     Ignore
     Reject
   type Value
-  type Variant a b
+  opaque type Variant a b
   alias VariantShape
     VariantShape
-  value bool : Schema Bool Bool
-  value conversion : (b → Result (List Issue) a), (a → Result (List Issue) b) → Conversion b a
-  value converted : Schema e b, Conversion b a → Schema e a  -- impure
-  value decode : Schema e a, e → Result (List Issue) a  -- impure
-  value decodeWith : Schema e a, Options, e → Result (List Issue) a  -- impure
+  value bool : Schema Bool Bool  -- impure
+  value conversion : (b → Result (List Issue) a), (a → Result (List Issue) b) → (Conversion b a)
+  value converted : (Schema e b), (Conversion b a) → (Schema e a)  -- impure
+  value decode : (Schema e a), e → Result (List Issue) a  -- impure
+  value decodeWith : (Schema e a), Options, e → Result (List Issue) a  -- impure
   value defaultOptions : ⊤ → Options
   value derived : ⊤ → Codec a where a.codec : ⊤ → Codec a
-  value describe : Schema e a → Description  -- impure
-  value encode : Schema e a, a → Result (List Issue) e  -- impure
-  value encodeWith : Schema e a, Options, a → Result (List Issue) e  -- impure
-  value encodedOnly : Schema e a → Schema e e  -- impure
-  value erased : Schema e a → Codec a  -- impure
-  value field : Fields pe pa, String, Schema e a → Fields (pe × e) (pa × a)
+  value describe : (Schema e a) → Description  -- impure
+  value encode : (Schema e a), a → Result (List Issue) e  -- impure
+  value encodeWith : (Schema e a), Options, a → Result (List Issue) e  -- impure
+  value encodedOnly : (Schema e a) → (Schema e e)
+  value erased : (Schema e a) → (Codec a)
+  value field : (Fields pe pa), String, (Schema e a) → (Fields (pe × e) (pa × a))  -- impure
   value fields : Fields ⊤ ⊤
-  value finiteFloat : Schema Float Float
-  value flip : Schema e a → Schema a e  -- impure
-  value float : Schema Float Float
-  value injection : (p → a), (a → Maybe p) → Injection p a
-  value int : Schema Int Int
+  value finiteFloat : Schema Float Float  -- impure
+  value flip : (Schema e a) → (Schema a e)  -- impure
+  value float : Schema Float Float  -- impure
+  value injection : (p → a), (a → Maybe p) → (Injection p a)
+  value int : Schema Int Int  -- impure
   value issue : String → Issue
   value issueAt : List PathSegment, String → Issue
   value key : Fields pe pa, String → Fields pe pa
-  value list : Schema e a → Schema (List e) (List a)  -- impure
-  value mapping : (p → r), (r → p) → Mapping p r
+  value list : (Schema e a) → (Schema (List e) (List a))  -- impure
+  value mapping : (p → r), (r → p) → (Mapping p r)
   value maxDepthCeiling : Int
-  value null : Schema (Nullable ⊥) (Nullable ⊥)
-  value nullable : Schema e a → Schema (Nullable e) (Nullable a)  -- impure
-  value nullary : String, String, Injection ⊤ e, Injection ⊤ a → Variant e a
-  value optional : Fields pe pa, String, Schema e a → Fields (pe × Presence e) (pa × Presence a)
-  value parse : Schema e a, String → Result (List Issue) a  -- impure
-  value parseWith : Schema e a, Options, String → Result (List Issue) a  -- impure
-  value print : Schema e a, a → Result (List Issue) String  -- impure
-  value printWith : Schema e a, Options, a → Result (List Issue) String  -- impure
-  value read : Schema e a, Value → Result (List Issue) a  -- impure
-  value readWith : Schema e a, Options, Value → Result (List Issue) a  -- impure
-  value record : Fields pe pa, Mapping pe e, Mapping pa a → Schema e a
-  value recursive : String, (Schema e a → Schema e a) → Schema e a  -- impure
-  value string : Schema String String
+  value null : Schema (Nullable ⊥) (Nullable ⊥)  -- impure
+  value nullable : (Schema e a) → (Schema (Nullable e) (Nullable a))  -- impure
+  value nullary : String, String, (Injection ⊤ e), (Injection ⊤ a) → (Variant e a)
+  value optional : (Fields pe pa), String, (Schema e a) → (Fields (pe × Presence e) (pa × Presence a))  -- impure
+  value parse : (Schema e a), String → Result (List Issue) a  -- impure
+  value parseWith : (Schema e a), Options, String → Result (List Issue) a  -- impure
+  value print : (Schema e a), a → Result (List Issue) String  -- impure
+  value printWith : (Schema e a), Options, a → Result (List Issue) String  -- impure
+  value read : (Schema e a), Value → Result (List Issue) a  -- impure
+  value readWith : (Schema e a), Options, Value → Result (List Issue) a  -- impure
+  value record : (Fields pe pa), (Mapping pe e), (Mapping pa a) → (Schema e a)
+  value recursive : String, ((Schema e a) → (Schema e a)) → (Schema e a)
+  value string : Schema String String  -- impure
   value structural : ⊤ → Codec a where a.codec : ⊤ → Codec a
-  value tagged : String, List (Variant e a) → Schema e a
-  value typeOnly : Schema e a → Schema a a  -- impure
-  value value : Schema Value Value
-  value variant : String, String, Schema pe pa, Injection pe e, Injection pa a → Variant e a  -- impure
-  value write : Schema e a, a → Result (List Issue) Value  -- impure
-  value writeWith : Schema e a, Options, a → Result (List Issue) Value  -- impure
+  value tagged : String, List (Variant e a) → (Schema e a)  -- impure
+  value typeOnly : (Schema e a) → (Schema a a)
+  value value : Schema Value Value  -- impure
+  value variant : String, String, (Schema pe pa), (Injection pe e), (Injection pa a) → (Variant e a)  -- impure
+  value write : (Schema e a), a → Result (List Issue) Value  -- impure
+  value writeWith : (Schema e a), Options, a → Result (List Issue) Value  -- impure
 module Semaphore
   opaque type Semaphore
   value acquire : (Semaphore), Int → ⊤  -- suspends

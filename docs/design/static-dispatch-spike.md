@@ -2165,6 +2165,12 @@ stored profile: its index is the byte length of a sequence of NUL-separated
 structural edges, packed into the remaining words. Ordinary type paths retain
 kinds 0–6. Modules with no Any profile allocate no such graph.
 
+Typed Schema values retain their two exact endpoint identities as private
+metadata. Source builders obtain them through ordinary Any identity propagation;
+generated producers use their checked plan type terms and supplied Schema
+metadata. Both use the same alias-expanded grammar, with combined record fields
+sorted by name text. This adds no public schema-member evidence parameters.
+
 
 *The owner's decision of 2026-10-02 on keys (`boundary.md` §9.8.3, amended): close the hole with a
 compiler-supplied type identity, directly.* Evidence says how to compare two values of a type, and

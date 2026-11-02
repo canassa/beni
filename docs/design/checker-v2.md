@@ -6008,6 +6008,14 @@ stored profile: its index is the byte length of a sequence of NUL-separated
 structural edges, packed into the remaining words. Ordinary type paths retain
 kinds 0–6. Modules with no Any profile allocate no such graph.
 
+Schema members publish their own checked type's solved effect classes,
+including callbacks in their result, through the same effect-block format.
+They have no ordinary value declaration summary to reuse. Importing a schema
+member applies that block just as importing a value does: a callback returned
+by an imported parser retains its effects and execution realms. Generated
+plain-data shape readers receive only their own arguments; implicit identity
+evidence of the replaced generic runner is not forwarded to them.
+
 
 *`static-dispatch-spike.md` §8.6 and `boundary.md` §9.8.3, specified the same day, before the
 code.* A declaration may take, after its evidence, one hidden **identity** per quantifier whose

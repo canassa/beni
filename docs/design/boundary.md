@@ -712,6 +712,18 @@ Hosted.Key, live Tap/Relay retagging and other heterogeneous runtime storage
 use this one envelope. Debug retains its read-only Raw; Schema retains its
 data-only checked conversion. `workers-task-storage.md` records the decision.
 
+Schema's internal heterogeneous values use Any with a typed, lazy data
+projection for reported failures. Description nodes, field/product adapters,
+constructor projections and conversions retain their real callback types.
+A node's recursive body is held in a typed reference, so ownership summaries
+do not expand callback paths without bound. Specialised workers store typed
+`Maybe` results; compiler-generated adapters alone translate their local failure
+marker. Validator plans are closed typed jobs over plain-data input/output,
+with typed child plans and constructor callbacks; no reader or constructor
+function is stored in a Js.Value table. Generated native Data/Json operations
+supply the host tests and JSON boundary; only JSON SyntaxError is translated,
+and other exceptions propagate.
+
 **Typed List arrays** (owner, 2026-11-02; #1295, #1612) are a core-only
 rule-6 extension. Allocation, indexed get/set, length, builder completion
 and List view wrap/unwrap retain the element type, including native handles

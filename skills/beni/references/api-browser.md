@@ -194,8 +194,8 @@ module Http
     BadStatus_
     GoodStatus_
   value emptyBody : Body
-  value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure
-  value expectSchema : Schema e a → (Expect Error a)
+  value expectJson : Expect Error a where a.codec : ⊤ → (Codec a)  -- impure
+  value expectSchema : (Schema e a) → (Expect Error a)
   value expectString : Expect Error String
   value expectStringResponse : (Response String → Result x a) → Expect x a
   value expectWhatever : Expect Error ⊤
@@ -203,7 +203,7 @@ module Http
   value fractionSent : { sent : Int, size : Int } → Float
   value get : { expect : Expect x a, url : String } → Result x a  -- suspends
   value header : String, String → Header
-  value jsonBody : Schema e a, a → Body  -- impure
+  value jsonBody : (Schema e a), a → Body  -- impure
   value multipartBody : List Part → Body
   value post : { body : Body, expect : Expect x a, url : String } → Result x a  -- suspends
   value request : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe (Progress → ⊤), url : String } → Result x a  -- suspends

@@ -21,8 +21,8 @@ module WebSocket
   type Socket
   type WriteError
     NotOpen
-  value attach : Socket, Schema e a, a → Result AttachError ⊤  -- impure
-  value attachment : Socket, Schema e a → Result (List Issue) (Maybe a)  -- impure
+  value attach : Socket, (Schema e a), a → Result AttachError ⊤  -- impure
+  value attachment : Socket, (Schema e a) → Result (List Issue) (Maybe a)  -- impure
   value close : Socket, Close → Result CloseError ⊤  -- impure
   value eq : Socket, Socket → Bool
   value id : Socket → String  -- impure
@@ -96,7 +96,7 @@ module Worker.Object
   value acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)  -- impure
   value alarmAt : Context msg, Int → ⊤  -- impure
   value alarmIn : Context msg, Duration → ⊤  -- impure
-  value ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a  -- suspends
+  value ask : Ref msg, (Schema e a), (Reply a → msg) → Result AskError a  -- suspends
   value autoReply : Context msg, String, String → Result AutoReplyError ⊤  -- impure
   value body : Request → String  -- impure
   value cancelAlarm : Context msg → ⊤  -- impure
@@ -107,7 +107,7 @@ module Worker.Object
   value none : Handlers state msg
   value post : Ref msg, msg → ⊤  -- impure
   value reply : Reply a, a → ⊤  -- impure
-  value replySchema : Schema e a → Schema String (Reply a)  -- impure
+  value replySchema : Schema e a → (Schema String (Reply a))  -- impure
   value self : Context msg → Ref msg  -- impure
   value sockets : Context msg → List Socket  -- impure
   value socketsTagged : Context msg, String → List Socket  -- impure
@@ -117,7 +117,7 @@ module Worker.Storage
     Full
     Unprintable
   value delete : Context msg, String → Bool  -- impure
-  value get : Context msg, Schema e a, String → Result (List Issue) (Maybe a)  -- impure
+  value get : Context msg, (Schema e a), String → Result (List Issue) (Maybe a)  -- impure
   value keys : Context msg, String → List String  -- impure
-  value put : Context msg, Schema e a, String, a → Result PutError ⊤  -- impure
+  value put : Context msg, (Schema e a), String, a → Result PutError ⊤  -- impure
 ```
