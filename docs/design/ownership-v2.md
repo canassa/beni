@@ -498,8 +498,15 @@ leaves by four a level (n = 8: 744 671 records; master's v2 5 431 at n = 5 and 1
 - **Why this is sound.** A leaf is read once per route, and a route holds exactly when one of the routes
   that reached it held: no *no* is answered that every route did not answer.
 - **What it costs.** A leaf has as many routes as distinct ways its arms reach it; the arms-alike rule and
-  the route join keep that at one for the families measured (K, else-if chains, wide updates). A leaf reached
-  through n nested choices under n unrelated routes keeps n.
+  the route join keep that at one for K and for wide updates. Tagging a set is one **wrap** node,
+  `wrap(tags, set)`, opened one level only where a join looks inside it, and a join of routes compares a new
+  route only with the ones it meets. A leaf that every `then` arm of an `else if` chain of D arms reaches
+  has D routes of up to D tags, which is what the chain then costs: D = 8 / 16 / 32 / 64: 3 468 / 14 998 /
+  87 023 / 598 764 records (the branch head: 2 547 / 9 116 / 46 909 / 306 878, which read the same leaves
+  as a tree). K is linear: n = 8 / 16: 1 097 / 2 486 (master's v2: 10 152 / 23 197).
+- **Walks over a value's structure.** The read-off's `describe` (§2.10) visits each `(value, result slot)`
+  once: it reads no tags and its arrivals are a set. A projection of a whole `alt` read deep is the alt's
+  leaf set. A holder's paths (§2.8, `Resolve.holds`) still walk the structure: that is the holder lane's.
 - *Rejected, measured.* The tags common to every route (an intersection, the #1714 report's proposal)
   changed no verdict over the 2 177 roots, but weakened the result separation of nested `case`s whose inner
   arm keeps the outer value to `no` (`dropWhile`, `SameVariant.update`). Two routes, intersected past two,

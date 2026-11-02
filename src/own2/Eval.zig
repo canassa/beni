@@ -551,13 +551,14 @@ fn expandFor(e: *Evaluation, li: u32, sub: Relation.Sub, out: *std.ArrayList(u32
 /// (§2.10 *Read-off*): what arrives at each object slot.
 fn describe(s: *Sink, v: u32, q: PathId, out: ResList) Error!void {
     const e = s.e;
-    const f = e.fr();
-    const gpa = e.gpa();
-    const Item = struct { v: u32, q: PathId };
-    var stack: std.ArrayList(Item) = .empty;
+    const f, const gpa = .{ e.fr(), e.gpa() };
+    var stack: std.ArrayList(struct { v: u32, q: PathId }) = .empty;
     defer stack.deinit(gpa);
+    var seen: Ids.FixedDict(2) = .{}; // each (value, slot) once (§2.3.5)
+    defer seen.deinit(gpa);
     try stack.append(gpa, .{ .v = v, .q = q });
     while (stack.pop()) |it| {
+        if ((try seen.getOrPut(gpa, .{ it.v, it.q.int() })).found_existing) continue;
         try f.charge(.inspection, 1);
         const x = f.val(it.v);
         switch (x.kind) {
