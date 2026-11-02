@@ -4182,6 +4182,10 @@ const Case = struct {
                 if (other) |o| {
                     if (side == 1 or o.refused == d.refused) continue;
                 } else if (y.unchecked(d.module, d.line)) continue;
+                // v1's record-update demands: v2 makes none, since an
+                // in-place record update is a later slice and the emitter
+                // copies (`ownership-v2.md` §2.11.5). By demand kind only.
+                if (other == null and side == 0 and std.mem.startsWith(u8, d.demand, "update ")) continue;
                 const v1_verdict = if (side == 0) d.verdict else if (other) |o| o.verdict else "absent";
                 const v2_verdict = if (side == 1) d.verdict else if (other) |o| o.verdict else "absent";
                 const key = try std.fmt.allocPrint(arena, "{s} {s} {s} #{d} :: {s} :: {s} :: {s}", .{ root, d.module, d.pos, d.k, d.demand, v1_verdict, v2_verdict });
