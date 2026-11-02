@@ -1,0 +1,18 @@
+module CallReadsNothingAfter
+  16:19 List.push kids: accepted param
+  37:7 CallReadsNothingAfter.incAll v#Rose.0: accepted fresh
+  47:7 CallReadsNothingAfter.incAll v#Rose.0: rejected later-use: v is read again at 47:17 (approx)
+  account incAll: source 18, baseline 777, growth 0 of 65536, total 777, continuation 771 of 18432, demands 23, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
+  summary incAll: res #0.0 π1#0.0, #0.0[*]#0.0 fresh, #0.0[*]⟲#0.0 π1#0.0[*]#0.0 π1#0.0[*]⟲#0.0; nondup ⇐ sel π1{#0.0,#0.0[*]#0.0,#0.0[*]⟲#0.0}; reads π1#0.0*; writes π1#0.0; req yes
+  account ignore: source 5, baseline 14, growth 0 of 65536, total 14, continuation 13 of 5120, demands 0, walks 1, rounds 1, transfer_settlement lanes 1
+  summary ignore: res crossing; nondup yes
+  account count: source 13, baseline 120, growth 0 of 65536, total 120, continuation 114 of 13312, demands 0, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
+  summary count: res crossing; nondup yes; reads π1#0.0*
+  account ignored: source 32, baseline 553, growth 0 of 65536, total 553, continuation 540 of 32768, demands 128, walks 1, rounds 1, liveness_index lanes 3, transfer_settlement lanes 4
+  summary ignored: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh; nondup yes
+  account counted: source 32, baseline 575, growth 0 of 65536, total 575, continuation 562 of 32768, demands 134, walks 1, rounds 1, liveness_index lanes 3, transfer_settlement lanes 4
+  summary counted: res .0#0.0 fresh, .0#0.0[*]#0.0 fresh, .0#0.0[*]⟲#0.0 fresh; nondup yes
+  block: 516 bytes, hash d6120f7d07af1a6d
+  demands 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1
