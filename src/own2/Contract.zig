@@ -56,6 +56,26 @@ pub const Cond = struct {
         return true;
     }
 
+    /// `weaker`, where a deep occurrence also asks every occurrence of its
+    /// parameter at a slot whose steps continue its own (§2.9.1, *A subtree
+    /// held whole*).
+    pub fn weakerIn(a: Cond, slots: *const Slots.Table, b: Cond) bool {
+        if (b.no) return true;
+        if (a.no) return false;
+        outer: for (a.sel) |x| {
+            if (std.sort.binarySearch(u64, b.sel, x, order) != null) continue;
+            if (isApart(x) and std.sort.binarySearch(u64, b.sel, x & ~apart_bit, order) != null) continue;
+            const xw = slots.relWords(occRel(x));
+            for (b.sel) |y| {
+                if (!isDeep(y) or occParam(y) != occParam(x) or (isApart(y) and !isApart(x))) continue;
+                const yw = slots.relWords(occRel(y));
+                if (xw.len >= yw.len and std.mem.eql(u32, yw, xw[0..yw.len])) continue :outer;
+            }
+            return false;
+        }
+        return true;
+    }
+
     fn order(x: u64, y: u64) std.math.Order {
         return std.math.order(x, y);
     }
@@ -380,7 +400,20 @@ pub const Table = struct {
     fn putCond(t: *Table, gpa: Allocator, slots: *const Slots.Table, c: Cond) Allocator.Error!StoredCond {
         if (c.no) return .{ .no = true };
         const start: u32 = @intCast(t.occs.items.len);
-        try t.occs.appendSlice(gpa, c.sel);
+        // An occurrence a deep one of its parameter asks already, at a slot
+        // whose steps continue the deep one's, says nothing more (§2.9.1):
+        // left out, so a join that adds it changes nothing.
+        outer: for (c.sel) |x| {
+            const xw = slots.relWords(occRel(x));
+            for (c.sel) |y| {
+                if (y == x or !isDeep(y) or occParam(y) != occParam(x) or (isApart(y) and !isApart(x))) continue;
+                const yw = slots.relWords(occRel(y));
+                if (xw.len < yw.len or !std.mem.eql(u32, yw, xw[0..yw.len])) continue;
+                if (xw.len == yw.len and isDeep(x) and (isApart(x) == isApart(y))) continue;
+                continue :outer;
+            }
+            try t.occs.append(gpa, x);
+        }
         const run = t.occs.items[start..];
         sortOccs(slots, run);
         return .{ .run = .{ .start = start, .len = @intCast(run.len) } };
@@ -608,9 +641,9 @@ pub const Table = struct {
         if (g.flags.returns and !c.flags.returns) return false;
         if (g.flags.once and !c.flags.once) return false;
         if (g.flags.returns and !c.res_cond.no) {
-            if (!(try t.cond(arena, g.res_cond)).weaker(try t.cond(arena, c.res_cond))) return false;
+            if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
         }
-        if (!(try t.cond(arena, g.req)).weaker(try t.cond(arena, c.req))) return false;
+        if (!(try t.cond(arena, g.req)).weakerIn(slots, try t.cond(arena, c.req))) return false;
         if (!t.effectsWithin(slots, g.reads, c.reads) or !t.effectsWithin(slots, g.writes, c.writes) or !t.effectsWithin(slots, g.escapes, c.escapes)) return false;
         // Labels by identity; `cb` arrivals compared through them.
         for (t.labelsOf(g.labels)) |l| {
@@ -622,7 +655,7 @@ pub const Table = struct {
                 } else return false;
                 if (!t.slotsWithin(slots, got, claim, s.res, u.res)) return false;
                 if (!t.effectsWithin(slots, s.kept, u.kept)) return false;
-                if (!u.cond.no and !(try t.cond(arena, s.cond)).weaker(try t.cond(arena, u.cond))) return false;
+                if (!u.cond.no and !(try t.cond(arena, s.cond)).weakerIn(slots, try t.cond(arena, u.cond))) return false;
             }
         }
         return t.slotsWithin(slots, got, claim, g.res, c.res);
