@@ -1178,7 +1178,11 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
 4. **Writes.** Each `(j, s, deep)` of `C.writes` is a demand at the call (`writer`, or `consumed` when deep,
    §2.8) whose targets are `a_j` projected by `s` (a shallow write's target is the position's own storage);
    the other operands are the other arguments and the other paths of `a_j` that `C.reads` names; it relies
-   on `C.req` instantiated on the arguments.
+   on `C.req` instantiated on the arguments. *Amended 2026-11-03 (#1714):* that instantiation is the call's, not
+   the demand's: it is made once a call and every write of the call relies on the one result, which the frame's
+   `req` gathers once (§2.9.4). A demand's own judgement adds to it apart. Before, each of n writes of one call
+   instantiated `C.req` (n occurrences) again and added it again: `caller w = wall w` with 256 written fields
+   reached the growth limit, and `fresh` cost 42 653 → 167 333 records at 64 → 128 fields (now 3 037 → 6 309).
 5. **Escapes.** The objects at `C.escapes`' projections are escaped at the call (§2.4), deep.
 6. **Labels.** Each of `C.labels` is instantiated (§2.11.3).
 
