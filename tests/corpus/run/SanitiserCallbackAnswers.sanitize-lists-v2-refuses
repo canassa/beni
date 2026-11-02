@@ -1,0 +1,6 @@
+# v2 refuses each push: the other part of the result may be the same list (§2.9.3).
+51:9 list_still_used List.push
+59:9 list_still_used List.push
+67:9 list_still_used List.push
+74:9 list_still_used List.push
+82:9 list_still_used List.push

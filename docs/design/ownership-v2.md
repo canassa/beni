@@ -684,6 +684,13 @@ A **selection** is a set of **occurrences** `(j, s)`, a parameter of the frame a
 the selected occurrences. It is the inductive predicate of a region (Astra's second review, §2): a family
 slot's objects are pairwise distinct, and distinct from every other selected occurrence's.
 
+**Deep occurrences** [#1710, #1711, 2026-11-02]. An occurrence at a slot no step below can name — a type
+variable's or an opaque place — is marked *deep*, printed `s*`: it selects every object at and below the slot in
+the value it is instantiated on (§2.11.2 item 3 projects it deep). Such a slot stands for whatever the caller
+passes, so the plain occurrence asked only the outer object to be once: `idd x = x` handed `( xs, xs )`, and a
+cast (`Js.to (Js.from [ xs, xs ])`, an identity at an opaque slot, §2.13.9), answered two parts the caller took
+for apart. The mark is bit 62 of the occurrence and bit 30 of its parameter word in a block (§3.6).
+
 A **condition** is `no` (unprovable) or a selection. Conjunction is the union of the selections: linear,
 never a table of pairs. `yes` is the empty selection. A condition `a` is **weaker** than `b` (asks no more)
 when `a`'s selection is a subset of `b`'s, or `b` is `no`. A selection is printed and encoded in a canonical
@@ -740,7 +747,18 @@ reached it, so one value placed twice is two entries):
   other entry (a group with list steps, whose relation is not ancestry, compares its pairs; such groups are as
   large as the literal list patterns of the source). A conflict makes the check `no`.
 - A group of two entries or more asks its root's separation on the union of their slots (a parameter's
-  selection; a call's instantiated `res_cond`). Two parameters' groups ask the selection of both.
+  selection; a call's instantiated `res_cond`). Two parameters' groups ask the selection of both. *Amended
+  2026-11-02 (#1711):* so does a group of **one entry that names more than one object** — two slots or more,
+  or a slot of a type variable's or an opaque place: `wrapDup x = dup x` answers `dup`'s call whole, one leaf
+  over `.0` and `.1`, and claimed `nondup yes` while `dup` is `no`. A call that does not vouch for such an entry
+  at a type variable's or opaque slot is `no` outright: the arrivals there are one set, so `xs` twice inside a
+  cast is one leaf and expansion cannot count it.
+- *Amended 2026-11-02 (#1711):* **a callback's answer** (a `cb` leaf, or a passed-on label's answer) is the
+  unknown code's: any object its caller reaches — what the label was supplied, the code's captures, the caller's
+  other arguments, another answer of the same code. It is apart from no other entry but an alternative to it or
+  one of its own block. Before this, two answers were two roots and so apart: `callTwice f = ( f ⊤, f ⊤ )`
+  claimed `nondup yes`, and `callTwice λ⊤ → xs` answered `xs` twice. A caller with the code to hand still reads
+  both answers precisely, through the call's expansion (the call vouches for nothing).
 - Two entries of one atom that coexist make the check `no`; an atom's single entry is distinct from every
   other root's.
 - When a call's group meets another root's, the latest call is expanded into its arguments' entries (one

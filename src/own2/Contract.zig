@@ -127,8 +127,18 @@ pub fn occApart(j: u32, r: Rel) u64 {
 pub fn isApart(o: u64) bool {
     return o & apart_bit != 0;
 }
+/// An occurrence at a slot no step below can name (a type variable's or an
+/// opaque place): it selects every object below it in the value it is
+/// instantiated on, which may be a tuple of one list twice (§2.9.1, #1711).
+pub const deep_bit: u64 = 1 << 62;
+pub fn occDeep(o: u64) u64 {
+    return o | deep_bit;
+}
+pub fn isDeep(o: u64) bool {
+    return o & deep_bit != 0;
+}
 pub fn occParam(o: u64) u32 {
-    return @intCast((o >> 32) & 0x7fff_ffff);
+    return @intCast((o >> 32) & 0x3fff_ffff);
 }
 pub fn occRel(o: u64) Rel {
     return @truncate(o);
@@ -716,7 +726,8 @@ pub fn sortOccs(slots: *const Slots.Table, run: []u64) void {
         fn lt(s: *const Slots.Table, x: u64, y: u64) bool {
             if (occParam(x) != occParam(y)) return occParam(x) < occParam(y);
             if (occRel(x) != occRel(y)) return s.relLess(occRel(x), occRel(y));
-            return !isApart(x) and isApart(y);
+            if (isApart(x) != isApart(y)) return !isApart(x);
+            return !isDeep(x) and isDeep(y);
         }
     }.lt);
 }
