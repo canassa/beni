@@ -141,16 +141,6 @@ pub fn comparison(env: Env, arity: u32) Error!Contract.Id {
     return env.commit(&d);
 }
 
-/// A schema member's contract (§2.11.5): every argument read deep, the
-/// result fresh and separated.
-pub fn schema(env: Env, sig: Signature) Error!Contract.Id {
-    var d: Draft = .{ .arity = @intCast(sig.params.len), .flags = .{ .returns = true } };
-    for (0..sig.params.len) |j| _ = try Draft.addEffect(&d.reads, env.arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
-    d.flags.cross = !Slots.holdsAny(env.places, try env.root(sig.result));
-    if (!d.flags.cross) try env.everySlot(&d, sig.result, .{ .kind = .fresh });
-    return env.commit(&d);
-}
-
 /// A constructor used as a function (§2.13.1): the result's `C#k` is
 /// argument `k`, slot for slot; a constructor duplicates nothing.
 pub fn ctor(env: Env, sig: Signature, ordinal: u32) Error!Contract.Id {
