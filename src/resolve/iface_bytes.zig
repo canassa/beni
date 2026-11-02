@@ -99,7 +99,8 @@ pub const magic = "BENIIFC\x00";
 /// a constructor row's byte 25 its `failure` mark (ownership-v2.md §2.13.6).
 /// 19: Wire obligations and projected paths.
 /// 20: native realm classes, evaluated realm masks and HostFree quantifiers.
-pub const format_version: u32 = 20;
+/// 21: realm-only dependencies may name unresolved scheme variables.
+pub const format_version: u32 = 21;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

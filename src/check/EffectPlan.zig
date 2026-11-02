@@ -210,6 +210,8 @@ fn bucket(p: *Plan) Error!void {
         const target = schemeDecl(e, r.scheme) orelse continue;
         const start: u32 = @intCast(p.choice_nodes.items.len);
         for (e.pairs.items[r.start..][0..r.len]) |pair| {
+            // Realm-only generic sources cannot select a suspendable body.
+            if (!e.carries(e.store.find(pair.a))) continue;
             const node = nodeOf(p, pair.b) orelse continue;
             try p.choice_nodes.append(scratch, node);
         }

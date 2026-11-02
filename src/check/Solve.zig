@@ -434,9 +434,6 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                         });
                         try s.noteCastImage(which, copy, decl);
                     }
-                    if (s.erasesCallable(node.region)) {
-                        if (s.cx.effects) |e| try e.erasures.append(s.cx.gpa, copy);
-                    }
                     if (s.debugUse(node.region)) |which| try s.debugs.append(s.cx.gpa, .{
                         .inst = node.region,
                         .copy = copy,
@@ -744,35 +741,6 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return null;
     return std.meta.stringToEnum(Which, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]));
-}
-
-/// Js.from, method and aggregate constructors can hide callable bodies while
-/// HostFree is off. Preserve their arguments' realm dependencies at each use.
-fn erasesCallable(s: *Solve, inst: Bir.Inst.Index) bool {
-    const bir = s.cx.bir;
-    if (bir.instTag(inst) != .ext_value) return false;
-    const d = bir.instData(inst);
-    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
-    if (module.int() >= s.cx.graph.count() or s.cx.graph.modulePackage(module) != .core) return false;
-    const module_name = s.cx.interner.slice(s.cx.graph.moduleName(module));
-    const iface = s.cx.iface(module);
-    if (d.rhs >= iface.values.len) return false;
-    const name = s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
-    // Mutable storage erases its element type internally. Attribute stored
-    // callable realms to the writer, without changing its effect rung.
-    if (std.mem.eql(u8, module_name, "Ref")) {
-        inline for (.{ "make", "set", "update", "modify" }) |writer| {
-            if (std.mem.eql(u8, name, writer)) return true;
-        }
-    }
-    if (std.mem.eql(u8, module_name, "Deferred") and std.mem.eql(u8, name, "complete")) return true;
-    if (std.mem.eql(u8, module_name, "Queue") and (std.mem.eql(u8, name, "offer") or std.mem.eql(u8, name, "offerAll"))) return true;
-    if (std.mem.eql(u8, module_name, "Js")) {
-        inline for (.{ "from", "method", "array", "object", "ref", "write" }) |erasure| {
-            if (std.mem.eql(u8, name, erasure)) return true;
-        }
-    }
-    return false;
 }
 
 /// Whether the reference at `inst` is core's `Debug.toString` or

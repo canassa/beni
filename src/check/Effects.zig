@@ -127,7 +127,6 @@ edges: std.ArrayList(Pair) = .empty,
 seeds: std.ArrayList(Seed) = .empty,
 realm_seeds: std.ArrayList(RealmSeed) = .empty,
 realm_edges: std.ArrayList(Pair) = .empty,
-erasures: std.ArrayList(Var) = .empty,
 has_realm_edges: bool = false,
 joins: std.ArrayList(Pair) = .empty,
 zips: std.ArrayList(Pair) = .empty,
@@ -226,7 +225,6 @@ pub fn deinit(e: *Effects) void {
     e.seeds.deinit(gpa);
     e.realm_seeds.deinit(gpa);
     e.realm_edges.deinit(gpa);
-    e.erasures.deinit(gpa);
     e.joins.deinit(gpa);
     e.zips.deinit(gpa);
     e.records.deinit(gpa);
@@ -322,7 +320,7 @@ pub fn carries(e: *const Effects, r: Var) bool {
 pub fn recordCopy(e: *Effects, owner: u32, scheme: Var, copied: []const Var, site: u32) Error!void {
     const start: u32 = @intCast(e.pairs.items.len);
     for (copied) |r| {
-        if (!e.carries(r)) continue;
+        if (!e.realmCarrier(r)) continue;
         const c = e.store.copy(r).unwrap() orelse continue;
         try e.pairs.append(e.gpa, .{ .a = r, .b = c });
     }
@@ -794,14 +792,16 @@ pub fn run(e: *Effects, in: Input) Error!void {
         if (rd.check_start == none) continue;
         for (0..rd.scheme_end - rd.scheme_start) |i| {
             const s_var: Var = @fromBackingInt(@intCast(rd.scheme_start + i));
-            if (!e.carries(e.store.find(s_var))) continue;
+            if (!e.realmCarrier(e.store.find(s_var))) continue;
             try e.unite(s_var, @fromBackingInt(@intCast(rd.check_start + i)));
         }
     }
     for (e.zips.items) |p| try e.zipped(p.a, p.b, scratch);
     for (e.records.items) |r| {
         if (scheme_decl.get(r.scheme) != null) continue;
-        for (e.pairs.items[r.start..][0..r.len]) |p| try e.unite(p.a, p.b);
+        for (e.pairs.items[r.start..][0..r.len]) |p| {
+            if (!try @import("Realms.zig").localCopy(e, p)) try e.unite(p.a, p.b);
+        }
     }
     // Every class is final now: flattened, so each later `find` is one read.
     // A root is always the smaller node (`unite`), so ascending order meets
@@ -925,7 +925,7 @@ fn zipped(e: *Effects, a: Var, b: Var, scratch: Allocator) Error!void {
         if (store.mark(x) == mark and store.mark(y) == mark) continue;
         store.setMark(x, mark);
         store.setMark(y, mark);
-        if (e.carries(x) and e.carries(y)) try e.unite(x, y);
+        if (e.realmCarrier(x) and e.realmCarrier(y)) try e.unite(x, y);
         // Two readings of one `where` clause carry its constraints in the
         // clause's order: their method types are one class too.
         const wx = Walk.constraints(store.flagsOf(x));
@@ -1148,6 +1148,7 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
             const from = reps[d & ~Interface.EffectBlock.realm_only];
             if (from == none) continue;
             const realm_only = d & Interface.EffectBlock.realm_only != 0;
+            if (realm_only) try @import("Realms.zig").applyCopy(e, r, classes[d & ~Interface.EffectBlock.realm_only].node, rep, work, scratch);
             try e.edgeNodes(from, rep, if (realm_only) realm_origin else none);
             if (!realm_only) try e.raise(rep, s.level.items[from], work, scratch);
             try e.raiseRealm(rep, e.realmOf(from), work, scratch);
@@ -1198,7 +1199,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
             // walk (see `readings`).
             for (rd.scheme_start..rd.scheme_end) |i| {
                 const r = e.store.find(@fromBackingInt(@intCast(i)));
-                if (!e.carries(r)) continue;
+                if (!e.realmCarrier(r)) continue;
                 const nd = try e.nodeFor(r);
                 if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) try nodes.append(e.gpa, nd);
             }
@@ -1336,10 +1337,7 @@ pub fn dependencies(e: *Effects, nodes: []const u32, scratch: Allocator, reach: 
 }
 
 /// The distinct nodes of `scheme`'s function types and function-holding
-/// applications, its `where` types included, in a depth-first order.
-/// The order is the walk's, deterministic and otherwise immaterial: a
-/// summary's classes are numbered again by site when published, and named
-/// by first print when dumped.
+/// applications and realm variables, including `where` types.
 fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32)) Error!void {
     const store = e.store;
     const stack = &e.solved.walk;
@@ -1354,11 +1352,10 @@ fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32)) Error!void {
             .flex, .rigid => |flags| {
                 const set = Walk.constraints(flags);
                 for (0..set.count(store)) |i| try stack.append(e.gpa, set.at(store, @intCast(i)).fn_var);
-                continue;
             },
             else => {},
         }
-        if (e.carries(r)) {
+        if (e.realmCarrier(r)) {
             const nd = try e.nodeFor(r);
             if (std.mem.indexOfScalar(u32, out.items, nd) == null) try out.append(e.gpa, nd);
         }
@@ -1399,18 +1396,20 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
     const mark = store.nextMark();
     while (stack.pop()) |item| {
         const r = store.find(item.v);
+        const unknown = @import("Realms.zig").unknown(store, r);
+        if (unknown and store.mark(r) == mark and !item.positive and !item.evidence and item.realm_caller != none)
+            try realm_calls.append(scratch, .{ .caller = item.realm_caller, .callback = try e.nodeFor(r) });
         if (store.mark(r) == mark) continue;
         store.setMark(r, mark);
         switch (store.content(r)) {
             .flex, .rigid => |flags| {
                 const set = Walk.constraints(flags);
                 for (0..set.count(store)) |i| try stack.append(scratch, .{ .v = set.at(store, @intCast(i)).fn_var, .positive = false, .evidence = true, .where_root = true });
-                continue;
             },
             else => {},
         }
         var realm_caller = item.realm_caller;
-        if (e.carries(r)) {
+        if (e.realmCarrier(r)) {
             const nd = try e.nodeFor(r);
             if (item.positive and switch (store.content(r)) {
                 .structure => |st| st == .func,
@@ -1422,7 +1421,7 @@ fn foreignSummary(e: *Effects, decl: u32, scheme: Var, rung: Rung, markup: bool,
             }
             if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) {
                 try nodes.append(scratch, nd);
-                try positive.append(scratch, item.positive);
+                try positive.append(scratch, item.positive and !unknown);
                 try evidence.append(scratch, item.evidence);
                 // `sync` (§15.2): a function type the platform marked; the
                 // evidence the sibling calls from JavaScript (item 2); a
@@ -1495,6 +1494,7 @@ pub const writeBlock = @import("EffectsBlock.zig").write;
 
 pub const View = @import("EffectsView.zig").View;
 
+pub const realmCarrier = @import("Realms.zig").carrier;
 pub const realmOf = @import("Realms.zig").realmOf;
 pub const evalRealms = @import("Realms.zig").evalRealms;
 const raiseRealm = @import("Realms.zig").raiseRealm;

@@ -28,29 +28,35 @@ pub fn seed(e: *Effects, cx: *const Context, schemes: []const TypeStore.Var.Opti
     }
 }
 
-/// Keep callable types visible at an erasing conversion until HostFree can be
-/// enabled. This changes realm availability, never purity or suspension.
-pub fn connect(e: *Effects, scratch: std.mem.Allocator) Effects.Error!void {
+/// Discharge a realm-only obligation at its instantiated type. An unknown
+/// variable remains a source in the scheme; an aggregate exposes all of its
+/// callable descendants. These edges never carry purity or suspension.
+pub fn connectValue(e: *Effects, value: Effects.Var, target: u32, scratch: std.mem.Allocator) Effects.Error!u8 {
     const Walk = @import("Walk.zig");
     const store = e.store;
     var stack: std.ArrayList(Effects.Var) = .empty;
     defer stack.deinit(scratch);
-    for (e.erasures.items) |copy| {
-        const func = Walk.function(store, copy) orelse continue;
-        try stack.appendSlice(scratch, func.params);
-        const mark = store.nextMark();
-        while (stack.pop()) |value| {
-            const root, _ = store.resolved(value);
-            if (store.mark(root) == mark) continue;
-            store.setMark(root, mark);
-            if (e.carries(root)) try e.realm_edges.append(e.gpa, .{ .a = root, .b = copy });
-            var k: u32 = 0;
-            while (Walk.stepped(store, root, k)) |child| : (k += 1) try stack.append(scratch, child.v);
+    try stack.append(scratch, value);
+    const mark = store.nextMark();
+    var bits: u8 = 0;
+    while (stack.pop()) |next| {
+        const root, _ = store.resolved(next);
+        if (store.mark(root) == mark) continue;
+        store.setMark(root, mark);
+        if (e.realmCarrier(root)) {
+            const source = try e.nodeFor(root);
+            try e.edgeNodes(source, target, Effects.realm_origin);
+            bits |= e.realmOf(source);
         }
+        var k: u32 = 0;
+        while (Walk.stepped(store, root, k)) |child| : (k += 1) try stack.append(scratch, child.v);
     }
-    for (e.realm_edges.items) |edge| {
-        try e.edgeNodes(try e.nodeFor(edge.a), try e.nodeFor(edge.b), Effects.realm_origin);
-    }
+    return bits;
+}
+
+pub fn connect(e: *Effects, scratch: std.mem.Allocator) Effects.Error!void {
+    for (e.realm_edges.items) |edge|
+        _ = try connectValue(e, edge.a, try e.nodeFor(edge.b), scratch);
 }
 
 /// Reuse the typed graph's dependency walk. The high bit marks paths which
@@ -94,12 +100,42 @@ pub fn evalRealms(e: *Effects, decl: u32) u8 {
 
 pub const ForeignCall = struct { caller: u32, callback: u32 };
 
-/// A foreign's returned callback receiver calls its own callbacks when it
-/// executes. The factory's arrow does not own those realm dependencies.
+/// Foreign input obligations belong to their nearest positive arrow. A
+/// returned callback receiver owns its inputs rather than the factory.
 pub fn foreignDependencies(e: *Effects, nodes: []const u32, calls: []const ForeignCall, caller: u32) Effects.Error!void {
     for (calls) |relation| {
         if (relation.caller != caller) continue;
         const index = std.mem.indexOfScalar(u32, nodes, relation.callback) orelse continue;
         try e.solved.deps.append(e.gpa, @as(u32, @intCast(index)) | @import("../resolve/Interface.zig").EffectBlock.realm_only);
     }
+}
+
+/// Unknown types have realm obligations, but never effect rungs of their own.
+pub fn carrier(e: *const Effects, r: Effects.Var) bool {
+    return e.carries(r) or unknown(e.store, r);
+}
+
+/// Discharge each image of the source class independently. A generic parameter
+/// can instantiate to a record or nominal aggregate, not just a function arrow.
+pub fn applyCopy(e: *Effects, record: Effects.Record, source_node: u32, target: u32, work: *std.ArrayList(u32), scratch: std.mem.Allocator) Effects.Error!void {
+    for (e.pairs.items[record.start..][0..record.len]) |p| {
+        if ((e.nodeOf(p.a) orelse continue) != source_node) continue;
+        const bits = try connectValue(e, p.b, target, scratch);
+        try raiseRealm(e, target, bits, work, scratch);
+    }
+}
+
+pub fn unknown(store: *TypeStore, root: Effects.Var) bool {
+    return switch (store.content(root)) {
+        .flex, .rigid => true,
+        else => false,
+    };
+}
+
+/// A local unknown's concrete copies must not join their effect classes.
+/// The generic source observes their callable realms, including aggregates.
+pub fn localCopy(e: *Effects, pair: Effects.Pair) Effects.Error!bool {
+    if (!unknown(e.store, e.store.find(pair.a))) return false;
+    try e.realm_edges.append(e.gpa, .{ .a = pair.b, .b = pair.a });
+    return true;
 }

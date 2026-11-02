@@ -1,0 +1,15 @@
+{
+  "platform": true,
+  "name": "worker-test",
+  "entryHost": "window",
+  "program": "Page.Program",
+  "runtime": "runtime.js",
+  "entryKinds": [{
+    "programType": "Worker.Program",
+    "realm": "dedicatedWorker",
+    "runtime": "WorkerRuntime",
+    "constructors": [{"name": "Worker.program", "parameter": 0, "callbackProtocol": "handlers"}],
+    "launches": [{"name": "Worker.open", "parameter": 0}],
+    "parameters": [{"index": 0, "role": "wire"}, {"index": 1, "role": "wire"}, {"index": 2, "role": "local"}]
+  }]
+}
