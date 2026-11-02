@@ -529,6 +529,7 @@ pub const ModuleTable = enum(u8) {
     anchors,
     below_all,
     import,
+    worded,
     pub const count = @typeInfo(ModuleTable).@"enum".field_names.len;
 };
 
