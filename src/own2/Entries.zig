@@ -87,7 +87,7 @@ pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
     if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
     const la = f.leafAt(a.leaf);
     const lb = f.leafAt(b.leaf);
-    if ((try f.mergeTags(la.tags, lb.tags)) == null) return false;
+    if (!try f.sets.tags.meet(f.account, la.tags, lb.tags)) return false;
     // Two distinct occurrences of a callee at one value by one route are
     // two distinct positions of it (§2.9.3's routed rule).
     if (routed and a.route == b.route and a.occ != b.occ and la.pos == lb.pos) return false;
@@ -107,7 +107,7 @@ pub fn answerMeets(f: *Frame, ents: []const Ent, alive: []const bool, fresh: usi
         for (ents[if (i >= fresh) 0 else fresh..], if (i >= fresh) 0 else fresh..) |o, k| {
             if (k == i or !alive[k]) continue;
             if (o.block != none and o.block == en.block) continue;
-            if ((try f.mergeTags(f.leafAt(en.leaf).tags, f.leafAt(o.leaf).tags)) != null) return true;
+            if (try f.sets.tags.meet(f.account, f.leafAt(en.leaf).tags, f.leafAt(o.leaf).tags)) return true;
         }
     }
     return false;

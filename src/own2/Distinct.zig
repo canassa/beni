@@ -508,7 +508,7 @@ pub fn overlap(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
 fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
-    if ((try e.f.mergeTags(x.tags, t.tags)) == null) return .no;
+    if (!try e.f.sets.tags.meet(e.f.account, x.tags, t.tags)) return .no;
     // A cell's `◆` is behind its barrier (§2.13.7): a write replaces
     // what the cell holds and changes no object anyone holds.
     if (t.kind == .ref and t.at_pos) {

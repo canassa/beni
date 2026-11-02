@@ -30,8 +30,10 @@ pub const none: u32 = Ids.none_int;
 
 /// A tag list's first pair, `(choice, arms)`, and the list after it
 /// (`tail`), of `len` pairs whose latest choice is `last`: a tag set
-/// sorted by choice, earliest first (§2.3.5).
-pub const Tag = struct { choice: u32, arms: u32, tail: u32, len: u32, last: u32 };
+/// sorted by choice, earliest first (§2.3.5). `jump`: a list further down
+/// the tail (Myers' skew-binary jump pointers), so a walk can pass a run of
+/// earlier choices in steps logarithmic in its length.
+pub const Tag = struct { choice: u32, arms: u32, tail: u32, len: u32, last: u32, jump: u32 = 0 };
 
 /// A set of routes (§2.3.5): `flat`, the routes of run `a`, normalised;
 /// `wrap`, every route of set `b` with tag list `a` merged in, every
@@ -69,6 +71,23 @@ pub const Table = struct {
         t.scratch.deinit(gpa);
     }
 
+    /// Tag list `x` after its first pair.
+    pub fn tailOf(t: *const Table, x: u32) u32 {
+        return t.tag(x).tail;
+    }
+
+    /// Tag list `x`'s first pair: its choice and its arms.
+    pub fn pairOf(t: *const Table, x: u32) struct { choice: u32, arms: []const u32 } {
+        return .{ .choice = t.tag(x).choice, .arms = t.armsOf(t.tag(x).arms) };
+    }
+
+    /// Whether two lists' first pairs part: one choice, no arm in common.
+    pub fn parts(t: *const Table, x: u32, y: u32) bool {
+        const p = t.tag(x);
+        const q = t.tag(y);
+        return p.choice == q.choice and !t.armsMeet(p.arms, q.arms);
+    }
+
     /// Whether every choice of tag list `x` comes before every one of `y`.
     pub fn before(t: *const Table, x: u32, y: u32) bool {
         return x == 0 or y == 0 or t.tag(x).last < t.tag(y).choice;
@@ -93,7 +112,11 @@ pub const Table = struct {
         const got = try t.tag_index.getOrPut(gpa, .{ choice, arms_, tail });
         if (got.found_existing) return got.value_ptr.*;
         const id: u32 = @intCast(t.tags.items.len);
-        try t.tags.append(gpa, .{ .choice = choice, .arms = arms_, .tail = tail, .len = t.lenOf(tail) + 1, .last = if (tail == 0) choice else t.tag(tail).last });
+        // Myers' rule: jump twice as far as the tail's jump when its two
+        // last jumps were of one length, else to the tail.
+        const tj = t.tag(tail).jump;
+        const jump = if (t.lenOf(tail) - t.lenOf(tj) == t.lenOf(tj) - t.lenOf(t.tag(tj).jump)) t.tag(tj).jump else tail;
+        try t.tags.append(gpa, .{ .choice = choice, .arms = arms_, .tail = tail, .len = t.lenOf(tail) + 1, .last = if (tail == 0) choice else t.tag(tail).last, .jump = jump });
         got.value_ptr.* = id;
         return id;
     }
@@ -171,20 +194,44 @@ pub const Table = struct {
     }
 
     /// Whether two tag sets never hold together: one choice, no arm in
-    /// common. The walk stops where the lists share their tail.
+    /// common. The walk stops where the lists share their tail, and passes
+    /// one list's choices the other does not name by its jumps (`seek`).
     pub fn conflict(t: *const Table, x: u32, y: u32) bool {
+        return t.conflictCounted(x, y, null) catch unreachable;
+    }
+
+    /// `conflict`, one inspection a step charged to `account`.
+    pub fn meet(t: *const Table, account: *Ids.Account, x: u32, y: u32) Error!bool {
+        return !try t.conflictCounted(x, y, account);
+    }
+
+    fn conflictCounted(t: *const Table, x: u32, y: u32, account: ?*Ids.Account) Error!bool {
         var a = x;
         var b = y;
         while (a != b and a != 0 and b != 0) {
+            if (account) |ac| try ac.reserve(.inspection, 1);
             const p = t.tag(a);
             const q = t.tag(b);
             if (p.choice == q.choice) {
                 if (!t.armsMeet(p.arms, q.arms)) return true;
                 a = p.tail;
                 b = q.tail;
-            } else if (first(p.choice, q.choice)) a = p.tail else b = q.tail;
+            } else if (first(p.choice, q.choice)) a = try t.seek(a, q.choice, account) else b = try t.seek(b, p.choice, account);
         }
         return false;
+    }
+
+    /// The first list down `a`'s tail whose choice is not before `c` (0
+    /// when none is): a list's choices come in order, so every pair a jump
+    /// passes is before `c` when the jump's is.
+    fn seek(t: *const Table, a0: u32, c: u32, account: ?*Ids.Account) Error!u32 {
+        var a = a0;
+        while (a != 0 and first(t.tag(a).choice, c)) {
+            if (account) |ac| try ac.reserve(.inspection, 1);
+            const j = t.tag(a).jump;
+            a = if (j != 0 and first(t.tag(j).choice, c)) j else t.tag(a).tail;
+        }
+        return a;
     }
 
     /// Both tag sets at once (a choice's arms met), or null when they
