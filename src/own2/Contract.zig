@@ -498,7 +498,7 @@ pub const Table = struct {
         for (t.resOf(r)) |s| {
             var arrs: std.ArrayList(Arrival) = .empty;
             try arrs.appendSlice(arena, t.arrivalsOf(s.arrivals));
-            try out.append(arena, .{ .slot = s.slot, .open = s.open, .wide = s.open, .arrivals = arrs });
+            try out.append(arena, .{ .slot = s.slot, .open = s.open, .arrivals = arrs });
         }
     }
 
@@ -547,7 +547,8 @@ pub const Table = struct {
         for (t.resOf(r)) |s| for (t.arrivalsOf(s.arrivals)) |a0| {
             var a = a0;
             if (a.kind == .cb) a.j = map[a.j];
-            _ = try Draft.addAt(out, arena, s.slot, s.open, a);
+            if (s.open) try Draft.markOpen(out, arena, s.slot);
+            _ = try Draft.addArrival(out, arena, s.slot, a);
         };
     }
 

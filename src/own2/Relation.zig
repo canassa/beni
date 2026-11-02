@@ -100,6 +100,10 @@ const Key = struct {
 };
 const SubAt = struct { sub: Sub, cursor: u32 };
 pub const open_bit: u32 = 1 << 31;
+/// A subtree of more slots than this is read through one key below its
+/// top; a smaller one through a key per slot, which costs less there.
+/// Both read the same leaves.
+pub const below_min: usize = 16;
 
 /// One projected object: its leaf and the literal route that reached it.
 pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
@@ -1104,7 +1108,7 @@ pub const Eval = struct {
         // one per slot (§2.10 *Read-off*).
         if (r.kind == .call or r.kind == .supply) {
             const pslot = e.f.pos.items[l.pos].slot;
-            if (e.f.slots.items(l.slots).len > 1 and l.slots == try e.f.slots.below(e.gpa(), e.account(), e.places(), pslot)) {
+            if (e.f.slots.items(l.slots).len > below_min and l.slots == try e.f.slots.below(e.gpa(), e.account(), e.places(), pslot)) {
                 const call: u32, const which: u32 = if (r.kind == .call) .{ r.a, none } else blk: {
                     const su = e.f.supplies.items[r.a];
                     break :blk .{ su.call, (su.label << 16) | su.k };
