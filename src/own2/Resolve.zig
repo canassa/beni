@@ -643,8 +643,9 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     const lines = try arena.alloc(Line, e.demands.items.len);
     // Each condition gathered over its judgements and made once (§2.9.4).
     var req: Holders.Gather = .{};
-    try r.ops.finish(&e.ev, &r.keys, &req);
-    try r.stack.finish(&e.ev, e.w, regions, &req);
+    // `req` lives in `arena`, as every later `add` to it does.
+    try r.ops.finish(&e.ev, &r.keys, &req, arena);
+    try r.stack.finish(&e.ev, e.w, regions, &req, arena);
     var kept: std.ArrayList([3]u32) = .empty;
     const conds = try arena.alloc(Holders.Gather, f.cbs.items.len);
     @memset(conds, .{});
