@@ -1139,7 +1139,9 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
         const at = try ctx.placeOfLocal(ctx.ctx, l);
         const root = try w.f.addRoot(.param, @intCast(code.params.len + c), at);
         const v = if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar();
-        w.bindings[l] = .{ .value = v, .point = code.body, .token = none };
+        // Bound where the parameters are, before every point of the
+        // body: a capture written and read again later is `later-use`.
+        w.bindings[l] = .{ .value = v, .point = if (code.params.len != 0) code.params[0].int() else code.body, .token = none };
     }
     // The instructions of this frame, in order.
     i = d.inst_start.int();
