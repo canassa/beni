@@ -2194,3 +2194,25 @@ test "ownership words: compiler-owned Js implementation pins belong to core" {
     try testing.expect(!pins.has("platforms/browser", "Js.some"));
     try testing.expect(!pins.has("core", "Js.other"));
 }
+
+test "core Js diagnoses nonliteral local cell selectors before lowering" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try writeJsCore(&w, "    Js.global \"safe\"\n");
+    const original = try w.read("jscore/Js.beni");
+    try w.write("jscore/Js.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub cell foreign type Cell record\n\n" ++
+        "pub foreign impure cellRead : Cell record, sync (record → a) → a\n\n" ++
+        "pub foreign impure cellWrite : Cell record, a, sync (record → a) → ⊤\n\n" ++
+        "pub badRead c selector = cellRead c selector\n\n" ++
+        "pub badWrite c value selector = cellWrite c value selector\n", .{original}));
+    for ([_][]const []const u8{
+        &.{ "check", "--core-root=jscore", "jscore" },
+        &.{ "build", "--library", "--platform=myplat", "--core-root=jscore", "--out=out", "jscore/Js.beni" },
+    }) |args| {
+        const result = try w.run(args);
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqual(@as(usize, 2), result.diagnostics.len);
+        for (result.diagnostics) |d| try testing.expectEqual(diagnostic.Code.invalid_cell_selector, d.code);
+    }
+}

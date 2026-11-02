@@ -8187,3 +8187,7 @@ pinned for typed cells and Opt now encodes closed worker property names.
 This changes key spelling, without changing allocation, stored payloads,
 aliases or branch callbacks. Record construction and literal cell selectors
 use the same mapping; the ownership words above remain justified.
+
+*2026-11-03, #1738:* the pinned lowering now reports an invalid selector
+instead of asserting. That path performs no field access; accepted selector
+allocations, payload aliases, stores and callbacks are unchanged.
