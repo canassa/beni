@@ -138,8 +138,9 @@ tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
 tests/pending/ownership/DictFocusGrow.beni exit=0 ownership-differs
 
 # CK-269 (#856): a deep tuple's summary lists 2^16 places; building them to the
-# `entries` limit (1 276 786) takes past the 20 s case timeout.
-tests/pending/ownership/DeepTupleDag.beni timeout
+# `entries` limit (1 276 786) took past the 20 s case timeout; it now prints
+# them all in about 12 s, so the golden (no summary line) differs.
+tests/pending/ownership/DeepTupleDag.beni exit=0 node+everywhere.ownership-differs
 
 # CK-270 (#474): one list in the tuple or record payloads at two dictionary
 # keys, edited in place at one; red until #294's representation.
@@ -186,10 +187,6 @@ tests/pending/ownership/PatternStoredBack.beni exit=0 ownership-differs
 
 # CK-279 (#395): with mutually recursive types, a List Int field is taken to
 # reach the other type; R-4.7.4.
-
-# CK-280 (#400): a write to one list under a marker needs the whole region
-# exclusive; R-4.7.8.
-tests/pending/ownership/WriteOneLevel.beni exit=0 ownership-differs
 
 # CK-281: a write in a type's `eq` is accepted as a write of its own
 # parameter; `comparison_changes_value` does not exist yet; R-5.13.1.
@@ -323,19 +320,10 @@ tests/pending/check/bad/inline/LogScopeUnknownLimit.beni exit=1 codes=record_sti
 # the stack of `dump --stage=ownership`; R-7.12.
 tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
 
-# CK-312 (#1225): a list pattern over a 1 000-item literal of fresh lists;
-# `Demands.resolve` inspects the push's alternatives on its own lane, so v2
-# reports an accounting invariant; ownership-v2.md §4.1.
-tests/pending/ownership/PatternWideFresh1000.beni OwnershipV2Limit
-
 # CK-315 (#1435): a local bound to `[]` inside a constructor, handed to a
 # writer of its elements' lists, is refused `disjoint` (approx) by v2; the
 # literal written inline is accepted; R-8.1.
 tests/pending/ownership/LocalEmptyInCtor.beni OwnershipV2Differs
-
-# CK-314 (#1097): a call costs its argument's width, the graft walking it;
-# the call view by reference makes it the callee's size; ownership-v2.md §2.11.
-scenario/CK-314 grows
 
 # CK-316, #856 (issue #1509, #1640): v1 summarises the repeated tuple paths of
 # tests/corpus/check/good/OwnershipAnnotationDag.beni as 1,276,786 entries, over
