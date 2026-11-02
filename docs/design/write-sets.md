@@ -724,6 +724,13 @@ its interface; it is not, in this slice (§6.3).
 
 ### 4.2 Instantiation
 
+*Amended 2026-11-02 (#1639):* a function term also retains the checker-selected
+direct or suspending body. A generic summary keeps that choice polymorphic;
+instantiation resolves it at the reference, and nested closures inherit it.
+The command reader tests a polymorphic suspension answer in that selected body,
+so a direct callback is accepted without weakening the refusal of one whose
+concrete arguments may suspend.
+
 `inst(S, [a₁ … aₙ], Γ)` replaces every `Same(πᵢ.s)` in the summary `S` by `proj(aᵢ, s)` — the
 argument projected through the suffix `s`, which is `Same(q.s)` for an old value, a part for a
 built one, `Fresh` for the rest — and every tag fact `tag(πᵢ.s) = C` in an `Alt` by

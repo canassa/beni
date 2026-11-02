@@ -154,7 +154,7 @@ keeps xs ys =
 invoked : List Int → Int
 invoked xs =
     ys : List Int
-    ys = Js.invoke (λitems → items) xs
+    ys = Js.invoke (λitems → items) xs λ_ → ⊤
     more = [ …xs, 1 ]
     List.length ys + List.length more
 
@@ -162,6 +162,6 @@ invoked xs =
 invokeResult : List Int → Int
 invokeResult xs =
     ys : List Int
-    ys = Js.invoke (λitems → items) xs
+    ys = Js.invoke (λitems → items) xs λ_ → ⊤
     more = [ …ys, 1 ]
     List.length more

@@ -140,7 +140,10 @@ job body = guest (host (Task.keepLogContext body))
 pub mapJob : Job a, sync (a → b) → Job b
 mapJob j tag =
     guest
-        (Js.from λs → Js.apply (host j) [ Js.from λm → Js.apply s [ host (tag (guest m)) ] ])
+        (Js.from λs →
+            Js.suspending λ⊤ →
+                Js.to (Js.apply (host j) [ Js.from λm → Js.apply s [ host (tag (guest m)) ] ])
+        )
 
 
 --| Run a job in the calling fiber, handed `send`, until it returns: the

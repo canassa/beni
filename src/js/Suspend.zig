@@ -11,20 +11,18 @@
 //! the rest ends the function (tail position, or a join below). This pass
 //! then rewrites, list by list:
 //!
-//!   - **closure mode**: `return Task$andThen(<call>, (<temp>) => { rest })`.
-//!     A rest that is `return <temp>` alone is the call returned as it is.
-//!   - **loop mode**, the top of a tail-call loop's body (`backend.md` §8):
-//!     `const <temp> = <call>; if (Task$isWaiting(<temp>)) return
-//!     Task$andThen(<temp>, (<temp>) => { rest' }); rest`, where `rest'` is a
-//!     copy of the rest in closure mode in which every `continue <label>` has
-//!     become `return <function>(<parameters>)` — the loop's state is its
-//!     parameter list (plan §2.2), and the copy reads only the iteration's
-//!     `const`s and the slots the jump just assigned. A loop that BUILDS
-//!     (`backend.md` §8, *Tail calls modulo cons, onto an array*) has a
-//!     destination too, so its `continue` becomes `return
-//!     Task$andThen(<function>(<parameters>), ($built) => List$close($root,
-//!     $built))`: the re-entry builds the rest in a list of its own, and the
-//!     continuation pushes it after what this call pushed.
+//!   - **closure mode**: `return Task$chain(sink => call(..., sink),
+//!     temp => { rest }, completion)`. A tail call receives the enclosing
+//!     completion directly. The closures keep the value's actual type.
+//!   - **loop mode**: create a completion that queues the slow remainder,
+//!     call with it, compare the result with the sentinel once, and keep
+//!     the synchronous remainder in the loop. In the slow remainder each
+//!     `continue` becomes a call with the loop state and completion. A
+//!     building loop chains its `List.close` after the re-entry.
+//!
+//! Completion callbacks only queue closed jobs. The driver invokes them
+//! iteratively, so a deeply suspended function does not rebuild its native
+//! stack. Functions that cannot suspend never pass through this rewrite.
 //!
 //! A **join** (`$$join($j)` … `$$joined($j, $t)`) closes a non-tail `case`
 //! whose branches may suspend: in closure mode the rest after it becomes
@@ -57,9 +55,10 @@ pub const Names = struct {
     marker: NameIndex,
     join: NameIndex,
     joined: NameIndex,
-    /// `Task$andThen` and `Task$isWaiting`, imported by `Lower`.
+    /// Private `Task.chain` and public `Task.isWaiting`, imported by `Lower`.
     and_then: NameIndex,
     is_waiting: NameIndex,
+    continue_with: NameIndex = .none,
 };
 
 /// A tail-call loop the body belongs to: its label, the function that
@@ -84,6 +83,8 @@ pub const Pass = struct {
     scratch: Allocator,
     names: Names,
     loop: ?Loop,
+    completion: NameIndex = .none,
+    sink_arg: NameIndex = .none,
     /// The bindings the release optimiser keeps (`Lower.effect_keep`): a
     /// copy of one is kept too.
     keep: ?*std.ArrayList(Node.Index) = null,
@@ -278,6 +279,25 @@ pub const Pass = struct {
         }
     }
 
+    /// The result destination is an additional argument only on calls that
+    /// may suspend. A direct value expression has no callee to forward to.
+    fn withSink(p: *Pass, n: Node.Index, sink: Node.Index) Error!Node.Index {
+        if (p.tag(n) != .call) return n;
+        const d = p.data(n);
+        const args = try p.nodesOf(p.rangeAt(d.rhs));
+        const forwarded = try p.scratch.alloc(Node.Index, args.len + 1);
+        @memcpy(forwarded[0..args.len], args);
+        forwarded[args.len] = sink;
+        const called = try p.call(@fromBackingInt(@intCast(d.lhs)), forwarded, p.posOf(n));
+        if (p.hostOf(n)) p.b.markHost(called);
+        return called;
+    }
+
+    fn workThunk(p: *Pass, n: Node.Index, at: u32) Error!Node.Index {
+        const called = try p.withSink(n, try p.ident(p.sink_arg, at));
+        return p.arrow(&.{p.sink_arg}, &.{try p.ret(called, at)}, at);
+    }
+
     // ---- The rewrite ------------------------------------------------------
 
     /// `list` rewritten in `mode`, with every marker in it and below it gone.
@@ -296,26 +316,28 @@ pub const Pass = struct {
                     .closure => {
                         // The call in tail position: `$Y` passes through.
                         if (rest.len == 1 and p.isReturnOf(rest[0], temp)) {
-                            try out.append(p.scratch, try p.ret(call_node, at));
+                            try out.append(p.scratch, try p.ret(try p.withSink(call_node, try p.ident(p.completion, at)), at));
                             return out.items;
                         }
                         try p.liftFunctions(list[0..i], call_node, rest, &out);
                         const body = try p.rewrite(try p.withoutLifted(rest, out.items), .closure);
                         const k = try p.arrow(&.{temp}, body, at);
-                        const then = try p.call(try p.ident(p.names.and_then, at), &.{ call_node, k }, at);
+                        const then = try p.call(try p.ident(p.names.and_then, at), &.{ try p.workThunk(call_node, at), k, try p.ident(p.completion, at) }, at);
                         try out.append(p.scratch, try p.ret(then, at));
                         return out.items;
                     },
                     .loop => {
                         // The fast path goes on in place; the slow path's
                         // continuation is a copy that re-enters the loop.
-                        try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(temp), call_node.int()));
                         const slow_rest = try p.cloneList(rest);
                         const slow = try p.rewrite(slow_rest, .closure);
                         const k = try p.arrow(&.{temp}, slow, at);
+                        const resume_call = try p.call(try p.ident(p.names.continue_with, at), &.{ k, try p.ident(temp, at), try p.ident(p.completion, at) }, at);
+                        const resume_sink = try p.arrow(&.{temp}, &.{try p.ret(resume_call, at)}, at);
+                        const invoked = try p.withSink(call_node, resume_sink);
+                        try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(temp), invoked.int()));
                         const parked = try p.call(try p.ident(p.names.is_waiting, at), &.{try p.ident(temp, at)}, at);
-                        const then = try p.call(try p.ident(p.names.and_then, at), &.{ try p.ident(temp, at), k }, at);
-                        const leave = try p.ret(then, at);
+                        const leave = try p.ret(try p.ident(temp, at), at);
                         const then_range = try p.b.addRange(&.{leave});
                         const else_range = try p.b.addRange(&.{});
                         const if_record = try p.b.addRecord(JsIr.If{
@@ -381,8 +403,9 @@ pub const Pass = struct {
         switch (p.tag(n)) {
             .continue_stmt => {
                 const lp = p.loop.?;
-                const args = try p.scratch.alloc(Node.Index, lp.params.len);
-                for (args, lp.params) |*a, param| a.* = try p.ident(param, at);
+                const args = try p.scratch.alloc(Node.Index, lp.params.len + 1);
+                for (args[0..lp.params.len], lp.params) |*a, param| a.* = try p.ident(param, at);
+                args[lp.params.len] = try p.ident(p.completion, at);
                 const reentry = try p.call(try p.ident(lp.callee, at), args, at);
                 if (lp.root == .none) return p.ret(reentry, at);
                 // A building loop: the re-entry builds the rest of the list
@@ -394,7 +417,8 @@ pub const Pass = struct {
                 // continuation, which runs once.
                 const closed = try p.call(try p.ident(lp.close, at), &.{ try p.ident(lp.root, at), try p.ident(lp.built, at) }, at);
                 const k = try p.arrow(&.{lp.built}, &.{try p.ret(closed, at)}, at);
-                return p.ret(try p.call(try p.ident(p.names.and_then, at), &.{ reentry, k }, at), at);
+                const fresh = try p.call(try p.ident(lp.callee, at), args[0..lp.params.len], at);
+                return p.ret(try p.call(try p.ident(p.names.and_then, at), &.{ try p.workThunk(fresh, at), k, try p.ident(p.completion, at) }, at), at);
             },
             .if_stmt => {
                 const i = p.ifOf(d.rhs);
