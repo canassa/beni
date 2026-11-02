@@ -25,6 +25,7 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
+const Forest = @import("Forest.zig");
 const Value = @import("Value.zig");
 
 pub const Error = Ids.ChargeError;
@@ -67,7 +68,7 @@ pub const Live = struct {
     ctx: *anyopaque,
     /// The draft result slots of code `code` when it is a member being
     /// solved now, else null.
-    draftRes: *const fn (ctx: *anyopaque, code: u32) ?*std.ArrayList(Contract.Draft.DraftSlot),
+    draftRes: *const fn (ctx: *anyopaque, code: u32) ?*Contract.Draft.Res,
     /// Key `key` of `ev` reads member `code`'s result at relative steps `rel`.
     watch: *const fn (ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Eval, key: u32) Error!void,
     /// Key `key` of `ev` has leaves a subscriber has not seen.
@@ -667,7 +668,7 @@ pub const Eval = struct {
     /// the key it fills pays for (§4.1); a test that reads a contract
     /// pays an inspection a node visited (`uniformAtoms`).
     pub fn hitsAt(e: *Eval, root: Contract.Node, words: []const u32, out: *std.ArrayList(Contract.Hit)) Error!void {
-        _ = try e.contracts.trees.atSlot(e.gpa(), root, words, out);
+        _ = try Forest.atSlot(&e.contracts.trees, e.gpa(), root, words, out);
     }
 
     pub fn contractOf(e: *Eval, call: u32) ?Contract.Id {
@@ -746,14 +747,22 @@ pub const Eval = struct {
             // A member: its draft now, and what it gains later (`feed`).
             try lv.watch(lv.ctx, code, try e.f.slots.relOf(e.gpa(), e.account(), e.places(), slot), e, ki);
             var si: usize = 0;
-            while (si < list.items.len) : (si += 1) {
-                const rs = list.items[si];
+            while (si < list.items.items.len) : (si += 1) {
+                const rs = list.items.items[si];
                 const rw = e.f.slots.relWords(rs.slot);
-                const exact = std.mem.eql(u32, rw, words);
-                const opened = rs.open and rw.len < words.len and std.mem.eql(u32, rw, words[0..rw.len]);
-                if (!exact and !opened) continue;
-                var ai: usize = 0;
-                while (ai < list.items[si].arrivals.items.len) : (ai += 1) try e.feedDraft(ki, list.items[si].arrivals.items[ai], @intCast(rw.len));
+                if (rw.len > words.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
+                if (rs.node == 0) {
+                    if (rw.len == words.len or list.isOpen(rs)) try e.feedDraft(ki, rs.a, @intCast(rw.len));
+                    continue;
+                }
+                // A subtree made whole: what it says at the slot's steps.
+                var hits: std.ArrayList(Contract.Hit) = .empty;
+                defer hits.deinit(e.gpa());
+                try e.hitsAt(rs.node, words[rw.len..], &hits);
+                var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32 }) = .empty;
+                defer arrs.deinit(e.gpa());
+                for (hits.items) |hit| for (hit.arrivals) |a| try arrs.append(e.gpa(), .{ .a = a, .n = @intCast(rw.len + hit.depth) });
+                for (arrs.items) |x| try e.feedDraft(ki, x.a, x.n);
             }
         } else if (e.contractOf(call)) |c| {
             var hits: std.ArrayList(Contract.Hit) = .empty;
@@ -795,54 +804,60 @@ pub const Eval = struct {
         try e.below_memo.put(e.gpa(), keyv, ki);
         e.inst_depth += 1;
         const code = e.f.calls.items[call].code;
-        const draft: ?*std.ArrayList(Contract.Draft.DraftSlot) = if (e.live) |lv| (if (which == none and code != none) lv.draftRes(lv.ctx, code) else null) else null;
+        const draft: ?*Contract.Draft.Res = if (e.live) |lv| (if (which == none and code != none) lv.draftRes(lv.ctx, code) else null) else null;
         const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), prefix));
         if (draft) |list| {
             const lv = e.live.?;
             try lv.watchBelow(lv.ctx, code, try e.f.slots.relOf(e.gpa(), e.account(), e.places(), prefix), e, ki);
             var si: usize = 0;
-            while (si < list.items.len) : (si += 1) {
-                var ai: usize = 0;
-                while (ai < list.items[si].arrivals.items.len) : (ai += 1) {
-                    const rs = list.items[si];
-                    try e.feedBelowDraft(ki, rs.slot, rs.open, rs.arrivals.items[ai]);
+            while (si < list.items.items.len) : (si += 1) {
+                const rs = list.items.items[si];
+                if (rs.node == 0) {
+                    try e.feedBelowDraft(ki, rs.slot, list.isOpen(rs), rs.a);
+                    continue;
                 }
+                try e.feedTree(ki, rs.node, e.f.slots.relWords(rs.slot), true);
             }
         } else if (e.contractOf(call)) |c| {
-            const h = e.contracts.head(c);
-            const res: Ids.Range = if (which == none) h.res else blk: {
-                const l = e.contracts.labelsOf(h.labels)[which >> 16];
-                for (e.contracts.suppliesOf(l.supplies)) |s| if (s.k == (which & 0xffff)) break :blk s.res;
-                break :blk .{};
-            };
-            // The entries at and below the prefix are one run of the sorted
-            // entries; an open one above it is one of its prefixes.
-            const run = e.contracts.resOf(res);
-            const pk = e.f.slots.relKey(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), prefix));
-            var lo: usize = 0;
-            var hi: usize = run.len;
-            while (lo < hi) {
-                const mid = (lo + hi) / 2;
-                if (std.mem.order(u32, e.f.slots.relKey(run[mid].slot), pk) == .lt) lo = mid + 1 else hi = mid;
-            }
-            try e.charge(.inspection, @intCast(1 + std.math.log2_int_ceil(usize, run.len + 1)));
-            var i = lo;
-            while (i < run.len and std.mem.startsWith(u32, e.f.slots.relKey(run[i].slot), pk)) : (i += 1) {
-                for (e.contracts.arrivalsOf(run[i].arrivals)) |a| try e.feedBelow(ki, run[i].slot, run[i].open, a);
-            }
-            for (run[0..lo]) |rs| {
-                if (!rs.open) continue;
-                if (!std.mem.startsWith(u32, pk, e.f.slots.relKey(rs.slot))) continue;
-                for (e.contracts.arrivalsOf(rs.arrivals)) |a| try e.feedBelow(ki, rs.slot, rs.open, a);
+            // The entries at and below the prefix, then the open ones above
+            // it: the prefix's steps walked from the root.
+            const root = e.resRoot(c, which);
+            try e.charge(.inspection, @intCast(1 + std.math.log2_int_ceil(usize, @as(usize, e.contracts.trees.count(root)) + 1)));
+            if (Forest.at(&e.contracts.trees, root, pw)) |n| try e.feedTree(ki, n, pw, false);
+            var n = root;
+            for (0..pw.len) |d| {
+                const opens = try e.gpa().dupe(Contract.Arrival, e.contracts.trees.open(n));
+                defer e.gpa().free(opens);
+                if (opens.len != 0) {
+                    const rel = e.f.slots.rels.find(pw[0..d]) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw[0..d]);
+                    for (opens) |a| try e.feedBelow(ki, rel, true, a);
+                }
+                n = e.contracts.trees.kidAt(n, pw[d]) orelse break;
             }
         } else try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
-        _ = pw;
         e.inst_depth -= 1;
         if (e.inst_depth == 0) if (e.live) |lv| try lv.pump(lv.ctx);
         if (sub) |s| if (e.live != null) {
             _ = try e.subscribe(ki, s);
         };
         return ki;
+    }
+
+    /// Every entry of tree `n`, its slots `prefix` and below, for below-key
+    /// `ki` (`draft`: a member's, its labels renamed).
+    fn feedTree(e: *Eval, ki: u32, n: Contract.Node, prefix: []const u32, draft: bool) Error!void {
+        var es: Forest.Entries = .{};
+        defer es.deinit(e.gpa());
+        try es.of(&e.contracts.trees, e.gpa(), e.places(), n, prefix);
+        var arrs: std.ArrayList(Contract.Arrival) = .empty;
+        defer arrs.deinit(e.gpa());
+        for (es.items.items) |x| {
+            // A slot the callee named is interned already: read, not made.
+            const rel = e.f.slots.rels.find(es.wordsOf(x)) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), es.wordsOf(x));
+            arrs.clearRetainingCapacity();
+            try arrs.appendSlice(e.gpa(), x.arrivals);
+            for (arrs.items) |a| if (draft) try e.feedBelowDraft(ki, rel, x.open, a) else try e.feedBelow(ki, rel, x.open, a);
+        }
     }
 
     /// An item of a key below a prefix as a plain leaf: an open one stands
@@ -972,10 +987,10 @@ pub const Eval = struct {
         const xw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sls[0])));
         const root = e.contracts.head(cl.contract).res_root;
         // Nothing may be said below the slot, nor plainly at it.
-        if (e.contracts.trees.at(root, xw)) |n| if (e.contracts.trees.kids(n).len != 0 or e.contracts.trees.here(n).len != 0) return false;
+        if (Forest.at(&e.contracts.trees, root, xw)) |n| if (e.contracts.trees.kids(n).len != 0 or e.contracts.trees.here(n).len != 0) return false;
         var hits: std.ArrayList(Contract.Hit) = .empty;
         defer hits.deinit(e.gpa());
-        try e.charge(.inspection, try e.contracts.trees.atSlot(e.gpa(), root, xw, &hits));
+        try e.charge(.inspection, try Forest.atSlot(&e.contracts.trees, e.gpa(), root, xw, &hits));
         var any = false;
         for (hits.items) |hit| {
             if (!hit.open) continue;
