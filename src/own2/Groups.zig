@@ -773,6 +773,15 @@ pub const Module = struct {
         };
     }
 
+    /// A function value declared with no parameters (`f = λx → …`): its
+    /// lambda's code, which a call runs (never the declaration's own code,
+    /// whose answer is the closure).
+    fn lambdaBody(mod: *const Module, di: u32) ?u32 {
+        const b = mod.in.bir.decls[di].body.unwrap() orelse return null;
+        if (mod.in.bir.instTag(b) != .lambda) return null;
+        return mod.code_of_inst.get(.{b.int()});
+    }
+
     pub fn aliasTarget(mod: *const Module, t: [2]u32) [2]u32 {
         return Prepass.aliasTarget(mod.in.birs, mod.in.provenance, t);
     }
@@ -955,6 +964,7 @@ pub const Module = struct {
         if (target) |t0| {
             const t = mod.aliasTarget(t0);
             if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) {
+                if (mod.in.bir.decls[t[1]].params == 0 and args.len != 0) return if (mod.lambdaBody(t[1])) |c| .{ .code = c } else .{ .contract = try mod.pessimisticOf(@intCast(args.len)) };
                 // A container's comparison in core is its components'.
                 if (!(mod.in.isCore(t[0]) and bir.instTag(@fromBackingInt(inst)) == .method_call and composedOrigin(bir, inst))) return .{ .code = mod.body_code[t[1]] };
             }
@@ -1013,10 +1023,11 @@ pub const Module = struct {
             },
             .top, .ext_value => {
                 const t = mod.aliasTarget(mod.declOf(inst) orelse return null);
-                if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) {
+                if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none and (ps.items.len == 0 or mod.in.bir.decls[t[1]].params != 0)) {
                     try mod.code_of_inst.put(mod.gpa, .{inst}, mod.body_code[t[1]]);
                     return mod.body_code[t[1]];
                 }
+                if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) if (mod.lambdaBody(t[1])) |c| return c;
                 contract = (try mod.declContract(t, ps.items, result)) orelse try mod.pessimisticOf(@intCast(ps.items.len));
             },
             else => return null,
