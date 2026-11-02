@@ -91,18 +91,20 @@ const layers = [_]Entry{
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
     .{ .file = "ReadOff.zig", .layer = 10, .max_lines = 1160 },
-    .{ .file = "Resolve.zig", .layer = 10, .max_lines = 680 },
+    // The best-hold descent over a holder DAG, below Resolve (#1714).
+    .{ .file = "Descent.zig", .layer = 10, .max_lines = 330 },
     .{ .file = "Deliver.zig", .layer = 10, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
     .{ .file = "Closures.zig", .layer = 10, .max_lines = 140 },
+    .{ .file = "Resolve.zig", .layer = 11, .max_lines = 680 },
     // Evidence terms as function values (#1708).
-    .{ .file = "Groups.zig", .layer = 11, .max_lines = 1900 },
-    .{ .file = "Block.zig", .layer = 12, .max_lines = 380 },
-    .{ .file = "Message.zig", .layer = 12, .max_lines = 280 },
-    .{ .file = "Report.zig", .layer = 12, .max_lines = 150 },
-    .{ .file = "Hoists.zig", .layer = 12, .max_lines = 170 },
-    .{ .file = "Ownership.zig", .layer = 13, .max_lines = 340 },
-    .{ .file = "Enforce.zig", .layer = 14, .max_lines = 510 },
+    .{ .file = "Groups.zig", .layer = 12, .max_lines = 1900 },
+    .{ .file = "Block.zig", .layer = 13, .max_lines = 380 },
+    .{ .file = "Message.zig", .layer = 13, .max_lines = 280 },
+    .{ .file = "Report.zig", .layer = 13, .max_lines = 150 },
+    .{ .file = "Hoists.zig", .layer = 13, .max_lines = 170 },
+    .{ .file = "Ownership.zig", .layer = 14, .max_lines = 340 },
+    .{ .file = "Enforce.zig", .layer = 15, .max_lines = 510 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -390,7 +392,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 42), layers.len);
+    try testing.expectEqual(@as(usize, 43), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

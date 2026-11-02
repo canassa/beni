@@ -23,8 +23,6 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
-const Subtree = @import("Subtree.zig");
-const Distinct = @import("Distinct.zig");
 
 pub const Error = Ids.ChargeError;
 const PathId = Ids.PathId;
@@ -43,25 +41,81 @@ const unknown_key: Key = .{ 4, 0, 0 };
 /// parameters' and none unknown, so for a parameter's target it answers no
 /// or `under` (§2.8, *the factorisation*); `done`: its selection is in the
 /// frame's `req` already.
-pub const Hold = struct { leaf: u32, q: PathId, refine: bool, agg: bool = false, done: bool = false };
+/// `node`: its node in the holder's DAG, when the holder has one.
+pub const Hold = struct { leaf: u32, q: PathId, refine: bool, agg: bool = false, done: bool = false, node: u32 = none };
+
+/// A holder's value as a DAG (§2.8 step 3 on slots), when a node of it is
+/// reached by two paths: each `(value, tags)` once, at its least path, with
+/// its holds and its kids in order, each by the step that reaches it (none:
+/// the same path).
+pub const DNode = struct { holds: Ids.Range = .{}, edges: Ids.Range = .{}, q: PathId };
+pub const DEdge = struct { node: u32 = none, step: ?Place.Step = null };
+pub const Dag = struct {
+    nodes: std.ArrayList(DNode) = .empty,
+    edges: std.ArrayList(DEdge) = .empty,
+    pub fn deinit(d: *Dag, g: Allocator) void {
+        d.nodes.deinit(g);
+        d.edges.deinit(g);
+    }
+};
 
 /// The holds of a value held at `root` (§2.8 step 5): the storage of every
 /// built node at its path, and every leaf of a `ref`, `⊤` or shared value at
 /// the path that reaches it. One walk of the value; a node met again at the
-/// same path and tags is not walked again.
-pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(Hold)) Error!void {
+/// same path and tags is not walked again. When one is met at a second
+/// path, the value is walked again as `dag` (true returned): each node
+/// once, kids in order, so a node's first visit is at its least path.
+pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(Hold), dag: *Dag) Error!bool {
+    const start = out.items.len;
+    if (try walkHolds(ev, value, root, out, null)) return false;
+    out.shrinkRetainingCapacity(start);
+    _ = try walkHolds(ev, value, root, out, dag);
+    return true;
+}
+
+fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(Hold), dag: ?*Dag) Error!bool {
     const fr = ev.f;
     const g = ev.gpa();
-    const Item = struct { v: u32, q: PathId, tags: u32 };
+    const base = out.items.len;
+    // `edge`: the parent's edge slot this item fills (a DAG's).
+    const Item = struct { v: u32, q: PathId, tags: u32, edge: u32 = none };
     var stack: std.ArrayList(Item) = .empty;
     defer stack.deinit(g);
     var seen: Ids.FixedDict(3) = .{};
     defer seen.deinit(g);
+    // Per `(value, tags)`: its first path, or its DAG node.
+    var first: Ids.FixedDict(2) = .{};
+    defer first.deinit(g);
     try stack.append(g, .{ .v = value, .q = root, .tags = 0 });
     while (stack.pop()) |it| {
+        const at = try first.getOrPut(g, .{ it.v, it.tags });
+        if (dag) |d| {
+            if (at.found_existing) {
+                d.edges.items[it.edge].node = at.value_ptr.*;
+                continue;
+            }
+            at.value_ptr.* = @intCast(d.nodes.items.len);
+            if (it.edge != none) d.edges.items[it.edge].node = at.value_ptr.*;
+            try d.nodes.append(g, .{ .q = it.q, .holds = .{ .start = @intCast(out.items.len - base) } });
+        } else if (at.found_existing) {
+            if (at.value_ptr.* != it.q.int()) return false;
+        } else at.value_ptr.* = it.q.int();
         if ((try seen.getOrPut(g, .{ it.v, it.q.int(), it.tags })).found_existing) continue;
         try fr.charge(.inspection, 1);
         const x = fr.val(it.v);
+        const ni: u32 = if (dag) |d| @intCast(d.nodes.items.len - 1) else none;
+        defer if (dag) |d| {
+            d.nodes.items[ni].holds.len = @intCast(out.items.len - base - d.nodes.items[ni].holds.start);
+        };
+        // A DAG's kids: their edge slots in order, pushed last first.
+        const e0: u32 = if (dag) |d| @intCast(d.edges.items.len) else none;
+        const s0 = stack.items.len;
+        defer if (dag) |d| {
+            const n: u32 = @intCast(stack.items.len - s0);
+            d.nodes.items[ni].edges = .{ .start = e0, .len = n };
+            for (stack.items[s0..], 0..) |*k, i| k.edge = e0 + @as(u32, @intCast(i));
+            std.mem.reverse(Item, stack.items[s0..]);
+        };
         switch (x.kind) {
             .scalar, .bot => {},
             .alt => {
@@ -69,6 +123,7 @@ pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.Arra
                 var i: usize = 0;
                 while (i < ks.len) : (i += 2) {
                     const t = (try fr.mergeTags(it.tags, try fr.internTags(&.{.{ x.head, try fr.armOf(ks[i]) }}))) orelse continue;
+                    if (dag) |d| try d.edges.append(g, .{});
                     try stack.append(g, .{ .v = ks[i + 1], .q = it.q, .tags = t });
                 }
             },
@@ -76,7 +131,7 @@ pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.Arra
                 var own: std.ArrayList(u32) = .empty;
                 defer own.deinit(g);
                 try ev.storageOf(it.v, it.tags, &own);
-                for (own.items) |l| try out.append(g, .{ .leaf = l, .q = it.q, .refine = false });
+                for (own.items) |l| try out.append(g, .{ .leaf = l, .q = it.q, .refine = false, .node = ni });
                 for (fr.kidsOf(x), 0..) |kv, n| {
                     const st: ?Place.Step = switch (x.form) {
                         .tuple => try Place.Step.index(fr.account, @intCast(n)),
@@ -86,6 +141,7 @@ pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.Arra
                         .closure, .opaque_ => null,
                     };
                     const nq = if (st) |s| (try fr.places.extend(g, fr.gc(), it.q, s)) orelse it.q else it.q;
+                    if (dag) |d| try d.edges.append(g, .{ .step = st });
                     try stack.append(g, .{ .v = kv, .q = nq, .tags = it.tags });
                 }
             },
@@ -93,94 +149,11 @@ pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.Arra
                 var ls: std.ArrayList(u32) = .empty;
                 defer ls.deinit(g);
                 try ev.leavesOf(it.v, it.tags, &ls);
-                for (ls.items) |l| try out.append(g, .{ .leaf = l, .q = it.q, .refine = x.family == Slots.empty });
+                for (ls.items) |l| try out.append(g, .{ .leaf = l, .q = it.q, .refine = x.family == Slots.empty, .node = ni });
             },
         }
     }
-}
-
-/// A path at which a hold holds a target's object, and the relation there.
-pub const Held = struct { PathId, Relation.Ov };
-
-/// The paths at which hold `hd` holds an object `target` may be, and
-/// the relation there: each `(path, ov)`.
-pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(Held)) Error!void {
-    const fr = ev.f;
-    const g = ev.gpa();
-    const o = try Distinct.overlap(ev, hd.leaf, target, true);
-    if (o.kind == .no) return;
-    if (!hd.refine) return out.append(g, .{ hd.q, o });
-    // The path of the hold: below `q` by the steps from the leaf's
-    // position to the slots that meet the target's.
-    const lf = fr.leafAt(hd.leaf);
-    // The target as leaves of the holder's root: itself, or what a
-    // call's leaf comes from (its arrivals).
-    var tls: std.ArrayList(u32) = .empty;
-    defer tls.deinit(g);
-    try sameRoot(ev, lf, target, &tls);
-    if (lf.kind == .ref and tls.items.len != 0) {
-        const pslot = fr.pos.items[lf.pos].slot;
-        var any = false;
-        for (tls.items) |tli| for (fr.slots.elems(fr.leafAt(tli).slots)) |el| {
-            if (Slots.isNot(el)) continue;
-            const ts = Slots.pathOf(el).int();
-            // A slot, or a whole subtree (`↓ts`, §2.3.1), the holder meets.
-            if (!try Subtree.meetIn(fr.slots, g, fr.account, fr.places, lf.slots, try fr.slots.internSorted(g, fr.account, &.{el}))) continue;
-            const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
-            var ps: std.ArrayList(u32) = .empty;
-            defer ps.deinit(g);
-            try Slots.replay(g, fr.account, fr.places, hd.q, fr.slots.relWords(rel), &ps);
-            for (ps.items) |p| {
-                try out.append(g, .{ .from(p), o });
-                any = true;
-            }
-        };
-        if (any) {
-            // The holder's other objects are the target only where its
-            // root is not separated: held at the holder's path, under
-            // that condition.
-            var minus: std.ArrayList(u32) = .empty;
-            defer minus.deinit(g);
-            for (tls.items) |tli| try minus.append(g, fr.leafAt(tli).slots);
-            if (try Subtree.without(fr.slots, g, fr.account, fr.places, lf.slots, minus.items)) |rest| {
-                var rl = lf;
-                rl.slots = rest;
-                const o2 = try Distinct.overlap(ev, try fr.leaf(rl), target, true);
-                if (o2.kind != .no) try out.append(g, .{ hd.q, o2 });
-            }
-            return;
-        }
-    }
-    try out.append(g, .{ hd.q, o });
-}
-
-/// The leaves of target `t` at the holder leaf `lf`'s root: `t`
-/// itself when it is of that root, else, while it is a call's or a
-/// supply's, what it comes from (§2.9.2 step 4), a few levels deep.
-fn sameRoot(ev: *Relation.Eval, lf: Value.Leaf, t: u32, out: *std.ArrayList(u32)) Error!void {
-    const fr = ev.f;
-    const g = ev.gpa();
-    if (lf.kind != .ref) return;
-    var cur: std.ArrayList(u32) = .empty;
-    defer cur.deinit(g);
-    try cur.append(g, t);
-    var depth: u32 = 0;
-    while (cur.items.len != 0 and depth < 4) : (depth += 1) {
-        var next: std.ArrayList(u32) = .empty;
-        defer next.deinit(g);
-        for (cur.items) |x| {
-            try fr.charge(.inspection, 1);
-            const xl = fr.leafAt(x);
-            if (xl.kind != .ref) continue;
-            if (xl.root == lf.root) {
-                try out.append(g, x);
-                continue;
-            }
-            const k = fr.roots.items[xl.root].kind;
-            if (k == .call or k == .supply) try ev.expand(x, &next);
-        }
-        std.mem.swap(std.ArrayList(u32), &cur, &next);
-    }
+    return true;
 }
 
 /// The holder index: buckets by base key, each a heap of `(bucket,
@@ -206,6 +179,9 @@ pub const Live = struct {
     e_at: std.ArrayList(u32) = .empty,
     holders: std.ArrayList(Holder) = .empty,
     holds: std.ArrayList(Hold) = .empty,
+    /// The keyed holders' DAGs (`Dag`), node and edge indices rebased.
+    dnodes: std.ArrayList(DNode) = .empty,
+    dedges: std.ArrayList(DEdge) = .empty,
     /// Per keyed holder, its uses' points, sorted.
     uses: std.ArrayList(u32) = .empty,
     /// The unkeyed live holders: a list by holder index.
@@ -250,6 +226,8 @@ pub const Live = struct {
         state: enum(u8) { idle, unkeyed, keyed, gone } = .idle,
         /// The aggregated list it is on: 0 pending, 1 done, `none` none.
         agg: u32 = none,
+        /// Its DAG's root node in `dnodes`, when it has one.
+        d_root: u32 = none,
     };
 
     pub fn deinit(x: *Live, g: Allocator) void {
@@ -261,6 +239,8 @@ pub const Live = struct {
         x.frontier.deinit(g);
         x.holders.deinit(g);
         x.holds.deinit(g);
+        x.dnodes.deinit(g);
+        x.dedges.deinit(g);
     }
 
     /// Index local `l`, bound at `point` and last used at `last`.
@@ -406,8 +386,16 @@ pub const Live = struct {
     /// Key holder `hi`, which `takeUnkeyed` gave: its `holds` (each `agg`
     /// set), its base keys (sorted, once each; the unknown key alone when
     /// `unknown`) and its uses' points.
-    pub fn key(x: *Live, ev: *Relation.Eval, hi: u32, holds: []const Hold, keys: []const Key, unknown: bool, points: []const u32) Error!void {
+    pub fn key(x: *Live, ev: *Relation.Eval, hi: u32, holds: []const Hold, dag: ?*const Dag, keys: []const Key, unknown: bool, points: []const u32) Error!void {
         const g = ev.gpa();
+        if (dag) |d| {
+            const nb: u32 = @intCast(x.dnodes.items.len);
+            const eb: u32 = @intCast(x.dedges.items.len);
+            try ev.f.charge(.inspection, @intCast(d.nodes.items.len + d.edges.items.len));
+            x.holders.items[hi].d_root = nb;
+            for (d.nodes.items) |n| try x.dnodes.append(g, .{ .q = n.q, .holds = n.holds, .edges = .{ .start = n.edges.start + eb, .len = n.edges.len } });
+            for (d.edges.items) |e| try x.dedges.append(g, .{ .node = e.node + nb, .step = e.step });
+        }
         const h = &x.holders.items[hi];
         h.h_start = @intCast(x.holds.items.len);
         h.h_len = @intCast(holds.len);
