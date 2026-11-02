@@ -95,7 +95,7 @@ pub const Solver = struct {
         return @intCast((@intFromPtr(e) - @intFromPtr(s.evals.ptr)) / @sizeOf(Evaluation));
     }
 
-    fn draftRes(ctx: *anyopaque, code: u32) ?*std.ArrayList(Contract.Draft.DraftSlot) {
+    fn draftRes(ctx: *anyopaque, code: u32) ?*Contract.Draft.Res {
         const s = self(ctx);
         const x = s.memberOf(code) orelse return null;
         return &s.drafts[x].res;
@@ -130,7 +130,7 @@ pub const Solver = struct {
     fn deliverFn(ctx: *anyopaque, ev: *Relation.Eval, sub: Relation.Sub, leaf: u32, at: u32) Error!void {
         _ = ctx;
         const e: *Evaluation = @fieldParentPtr("ev", ev);
-        try Eval.deliver(e, sub, leaf, at);
+        try e.hooks.deliver(e, sub, leaf, at);
     }
 
     fn labelIn(ctx: *anyopaque, code: u32, i: u32, c: Contract.Id) ?u32 {

@@ -47,6 +47,7 @@ const Regions = @import("Regions.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
+const ReadOff = @import("ReadOff.zig");
 const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
 const Deliver = @import("Deliver.zig");
@@ -1498,7 +1499,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const r = &rs[owner.items[x]];
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
-            try Eval.factsOff(&evals[i], ra, &drafts[i]);
+            try ReadOff.factsOff(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
         }
         for (order.items, 0..) |x, i| {
@@ -1520,7 +1521,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     l.outcome.cause = .comparison;
                 }
             };
-            try Eval.condsOff(e, ra, got.verdicts);
+            try ReadOff.condsOff(e, ra, got.verdicts);
             const c = try mod.contracts.commit(gpa, &r.account, &mod.slots, &drafts[i]);
             const code = &mod.codes.items[id];
             if (validating) {
