@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <button id="launch">"launch"</button>
+    <output>"idle"</output>
+    <p id="stage">"waiting"</p>
+  </main>
+</body>
+-- click-wait #launch output "interrupted"
+<body>
+  <main>
+    <button id="launch">"launch"</button>
+    <output>"interrupted"</output>
+    <p id="stage">"waiting"</p>
+  </main>
+</body>

@@ -4,6 +4,7 @@ import Browser
 import Browser.Worker as Worker
 import Browser.WorkerStream as Events
 import Hosted
+import Probe
 import Task
 
 
@@ -76,6 +77,7 @@ nextEvent stream =
 
 exercise : ⊤ → String
 exercise _ = Task.scope λowned →
+    Probe.install ⊤
     case Worker.open owned worker ⊤ Worker.options of
         Err _ →
             "open failed"
@@ -96,6 +98,7 @@ exercise _ = Task.scope λowned →
                         Worker.cancel ticket
                     Nothing →
                         Worker.Abandoned
+            ordered = Probe.trace ⊤ == "1,2"
             finalizer = nextEvent pushed
             echo = submit handle (Echo "won")
             won =
@@ -121,7 +124,8 @@ exercise _ = Task.scope λowned →
                     Nothing →
                         Worker.Abandoned
             if
-                first == Started 1
+                ordered
+                    && first == Started 1
                     && queuedCleanup == Worker.Confirmed
                     && activeCleanup == Worker.Confirmed
                     && finalizer == Cleaned 1

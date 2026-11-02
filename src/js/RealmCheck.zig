@@ -14,7 +14,10 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
     const forbidden = Operations.bit(realm);
     const root_mask = e.session.checked.dispatch[module.int()].effectDecl(decl);
     var roots: std.ArrayList(Reach.Node) = .empty;
-    if ((root_mask.realms | root_mask.eval_realms) & forbidden != 0) try roots.append(e.scratch, .{ .module = module, .index = decl, .kind = .decl });
+    if ((root_mask.realms | root_mask.eval_realms) & forbidden != 0) {
+        if (e.live.decl(module, decl)) try roots.append(e.scratch, .{ .module = module, .index = decl, .kind = .decl });
+        if (e.live.twin(module, decl)) try roots.append(e.scratch, .{ .module = module, .index = decl, .kind = .twin });
+    }
     if (e.worker_runtime orelse e.session.entry_plan.runtime()) |runtime| {
         const mask = e.session.checked.dispatch[runtime.module.int()].effectDecl(runtime.decl);
         if ((mask.realms | mask.eval_realms) & forbidden != 0) try roots.append(e.scratch, .{ .module = runtime.module, .index = runtime.decl, .kind = .decl });
@@ -23,7 +26,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
     for (e.session.checked.dispatch, 0..) |table, mi| {
         const m: Graph.Index = @fromBackingInt(@intCast(mi));
         for (table.effect_decls, 0..) |effect, di| {
-            if (effect.eval_realms & forbidden == 0 or !e.live.decl(m, di)) continue;
+            if (effect.eval_realms & forbidden == 0 or (!e.live.decl(m, di) and !e.live.twin(m, di))) continue;
             if (m == module and di == decl) continue;
             try roots.append(e.scratch, .{ .module = m, .index = @intCast(di), .kind = .decl });
         }
@@ -34,7 +37,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
         if (e.graph().modulePackage(m) != .core) continue;
         const b = e.bir(m);
         for (b.decls, 0..) |d, di| {
-            if (!e.live.decl(m, di)) continue;
+            if ((!e.live.decl(m, di) and !e.live.twin(m, di))) continue;
             const op = Operations.lookup(e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(d.name))) orelse continue;
             if (op.allowed & forbidden != forbidden) break;
         } else continue;
@@ -53,7 +56,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
     var cursor: u32 = 0;
     while (cursor < queue.items.len) : (cursor += 1) {
         const node = queue.items[cursor].node;
-        if (node.kind == .decl and e.graph().modulePackage(node.module) == .core) {
+        if ((node.kind == .decl or node.kind == .twin) and e.graph().modulePackage(node.module) == .core) {
             const b = e.bir(node.module);
             const name = e.session.interner.slice(b.symbol(b.decls[node.index].name));
             if (Operations.lookup(e.session.interner.slice(e.graph().moduleName(node.module)), name)) |operation| {
@@ -67,7 +70,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
                         i -= 1;
                         const step = queue.items[path.items[i]].node;
                         if (chain.items.len != 0) try chain.appendSlice(e.scratch, " → ");
-                        const step_name = if (step.kind == .decl) e.session.interner.slice(e.bir(step.module).symbol(e.bir(step.module).decls[step.index].name)) else "<evidence>";
+                        const step_name = if (step.kind == .decl or step.kind == .twin) e.session.interner.slice(e.bir(step.module).symbol(e.bir(step.module).decls[step.index].name)) else "<evidence>";
                         try chain.print(e.scratch, "{s}.{s}", .{ e.session.interner.slice(e.graph().moduleName(step.module)), step_name });
                     }
                     var allowed: std.ArrayList(u8) = .empty;
@@ -90,6 +93,7 @@ pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error
         for (e.edges[node.module.int()].targets(node)) |edge| {
             const target = edge.node;
             if (target.kind == .decl and !e.live.decl(target.module, target.index)) continue;
+            if (target.kind == .twin and !e.live.twin(target.module, target.index)) continue;
             const mark = try seen.getOrPut(e.scratch, target);
             if (mark.found_existing) continue;
             try queue.append(e.scratch, .{ .node = target, .parent = cursor });

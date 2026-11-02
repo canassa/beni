@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "typed:twin"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"typed:twin"</output>
+  </main>
+</body>

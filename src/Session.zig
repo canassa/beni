@@ -947,9 +947,16 @@ fn isPlatformRoot(session: *const Session, name: []const u8) bool {
     for (chain.layers) |layer| {
         const m = layer.manifest;
         for (m.entryKinds) |kind| {
-            if (std.mem.eql(u8, kind.runtime, name) or std.mem.eql(u8, moduleOf(kind.programType), name)) return true;
-            for (kind.constructors) |constructor| if (std.mem.eql(u8, moduleOf(constructor.name), name)) return true;
-            for (kind.launches) |launch| if (std.mem.eql(u8, moduleOf(launch.name), name)) return true;
+            if (m.program) |program| if (std.mem.eql(u8, program, kind.programType) and
+                (std.mem.eql(u8, kind.runtime, name) or std.mem.eql(u8, moduleOf(kind.programType), name))) return true;
+            if (std.mem.eql(u8, kind.runtime, name)) {
+                // nextWave reached the runtime together with an imported
+                // Program module; retain that implicit edge in Graph's prune.
+                for (session.lowered, 0..) |lowered, fi| {
+                    const file: SourceStore.Index = @fromBackingInt(@intCast(fi));
+                    if (lowered and session.store.package(file) == .platform and std.mem.eql(u8, session.store.moduleName(file), moduleOf(kind.programType))) return true;
+                }
+            }
         }
         if (m.program) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
         if (m.markup.type) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
@@ -999,6 +1006,14 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
                 !referencesModule(bir, bir.symbol(imp.module)))) continue;
             try session.lowerNext(waiting.items, local.slice(bir.symbol(imp.module)), out);
         }
+        // An imported worker Program reaches its entry runtime. Merely
+        // declaring a worker kind in the platform must not load that runtime
+        // (or perturb an ordinary build's module order and short names).
+        if (session.options.chain) |chain| for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+            if (session.store.package(file) == .platform and std.mem.eql(u8, session.store.moduleName(file), moduleOf(kind.programType))) {
+                try session.lowerNext(waiting.items, kind.runtime, out);
+            }
+        };
         // A minted type is an edge with no import (`Graph.mintedNames`).
         var buffer: [Graph.minted_count]InternPool.WellKnown = undefined;
         for (Graph.mintedNames(bir, &buffer)) |w| try session.lowerNext(waiting.items, @tagName(w), out);

@@ -101,7 +101,7 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
         // Unchecked worker APIs are deliberately absent from the installed skill.
         // Remove this exclusion when the realm/Wire gate is lifted (#1297).
         if (std.mem.startsWith(u8, line, "module ")) gated_worker = std.mem.startsWith(u8, line, "module Browser.Worker");
-        if (gated_worker or std.mem.startsWith(u8, line, "  value workerDefect :") or std.mem.startsWith(u8, line, "  value workerStop :")) continue;
+        if (gated_worker) continue;
         if (line.len == 0 and lines.peek() == null) break;
         if (std.mem.startsWith(u8, line, "module ")) module = line[7..];
         if (is_core and coreOnly(module, line)) continue;

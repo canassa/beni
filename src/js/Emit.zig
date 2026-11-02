@@ -770,6 +770,10 @@ pub fn run(
         try e.walk();
     }
     try e.planWorkers(entry);
+    if (e.workerHostModule() != null) {
+        e.extra_roots = try e.withFuzzRoots(try e.coarseRuntimeRoots());
+        try e.walk();
+    }
     if (entry) |root| try e.checkEntryRealm(root);
     if (e.hasErrors()) return e.nothingWritten(gpa);
     try e.shareValidators();
@@ -1553,15 +1557,56 @@ const Emitter = struct {
         return null;
     }
 
+    // Browser workers share the page's existing private fatal path. Keep the
+    // bridge in worker-bearing entries, so Rt's source (including source maps)
+    // and every ordinary page remain byte-for-byte unchanged.
+    fn workerHostModule(e: *const Emitter) ?Graph.Index {
+        if (e.worker_runtime != null or e.worker_entries.len == 0) return null;
+        if (!std.mem.eql(u8, e.options.platform.program orelse return null, "Browser.Program")) return null;
+        return e.runtime_module;
+    }
+
+    fn workerHostClient(e: *Emitter) ?Graph.Index {
+        if (e.workerHostModule() == null) return null;
+        return e.graph().find(.platform, e.session.interner.find("Browser.Worker") orelse return null);
+    }
+
+    fn workerHostRoots(e: *Emitter, out: *std.ArrayList(Reach.Node)) !void {
+        const module = e.workerHostModule() orelse return;
+        const b = e.bir(module);
+        for (b.decls, 0..) |d, di| {
+            const name = e.session.interner.slice(b.symbol(d.name));
+            if (std.mem.eql(u8, name, "stop") or std.mem.eql(u8, name, "stopped"))
+                try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(di) });
+        }
+        if (e.workerHostClient()) |client| for (e.bir(client).decls, 0..) |d, di| {
+            if (std.mem.eql(u8, e.session.interner.slice(e.bir(client).symbol(d.name)), "installHostStop"))
+                try out.append(e.scratch, .{ .module = client, .kind = .decl, .index = @intCast(di) });
+        };
+    }
+
+    fn workerHostBridge(e: *Emitter, text: *std.ArrayList(u8), hoisted: bool) !void {
+        const module = e.workerHostModule() orelse return;
+        const client = e.workerHostClient() orelse return;
+        const install = try e.moduleSpelling(client, "installHostStop");
+        const stop = try e.moduleSpelling(module, "stop");
+        const stopped = try e.moduleSpelling(module, "stopped");
+        if (hoisted) {
+            try text.print(e.scratch, "{s}({s},{s});", .{ install, stop, stopped });
+        } else {
+            try text.print(e.scratch, "import{{{s} as __beniWorkerStop,{s} as __beniWorkerStopped}}from\"./{s}\";\nimport{{{s} as __beniInstallWorkerStop}}from\"./{s}\";\n__beniInstallWorkerStop(__beniWorkerStop,__beniWorkerStopped);\n", .{ stop, stopped, try e.outputPath(module), install, try e.outputPath(client) });
+        }
+    }
+
     fn hasWorkerLaunch(e: *const Emitter) bool {
         const plan = &e.session.entry_plan;
         for (0..plan.constructors.len) |ci| {
             const value = plan.constructors.get(ci).value;
-            if (e.live.decl(value.module, value.decl)) return true;
+            if (e.live.decl(value.module, value.decl) or e.live.twin(value.module, value.decl)) return true;
         }
         for (0..plan.launches.len) |li| {
             const value = plan.launches.get(li).value;
-            if (e.live.decl(value.module, value.decl)) return true;
+            if (e.live.decl(value.module, value.decl) or e.live.twin(value.module, value.decl)) return true;
         }
         return false;
     }
@@ -1661,7 +1706,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
             const b = e.bir(m);
             for (b.decls, 0..) |decl, di| {
-                if (!e.live.decl(m, di)) continue;
+                if (!e.live.decl(m, di) and !e.live.twin(m, di)) continue;
                 if (e.isDeferred(m, di, selected)) continue;
                 for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
                     const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
@@ -1698,7 +1743,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
             const b = e.bir(m);
             for (b.decls, 0..) |decl, di| {
-                if (!e.live.decl(m, di)) continue;
+                if (!e.live.decl(m, di) and !e.live.twin(m, di)) continue;
                 if (e.isDeferred(m, di, selected)) continue;
                 for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
                     if (allowed[mi][ii]) continue;
@@ -1719,7 +1764,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
             const b = e.bir(m);
             for (b.decls, 0..) |decl, di| {
-                if (!e.live.decl(m, di) or e.isDeferred(m, di, selected)) continue;
+                if (!(e.live.decl(m, di) or e.live.twin(m, di)) or e.isDeferred(m, di, selected)) continue;
                 for (decl.inst_start.int()..decl.inst_end.int()) |ii| {
                     if (allowed[mi][ii]) continue;
                     const at: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
@@ -1763,7 +1808,7 @@ const Emitter = struct {
             \\const report = event => {
             \\  const cause = event.error ?? event.reason;
             \\  globalThis.postMessage({worker: 1, kind: "Defect", payload: {
-            \\    message: String(event.message ?? cause ?? "Worker defect").slice(0, 4096),
+            \\    message: String(cause?.message ?? event.message ?? cause ?? "Worker defect").replace(/^Uncaught (?:Error: )?/, "").slice(0, 4096),
             \\    stack: String(cause?.stack ?? "").slice(0, 16384)
             \\  }});
             \\};
@@ -1840,7 +1885,7 @@ const Emitter = struct {
         var found: std.ArrayList(u32) = .empty;
         try e.discoverWorkers(entry, &found);
         if (e.options.library) {
-            for (e.worker_candidates) |d| if (e.live.decl(d.module, d.decl)) {
+            for (e.worker_candidates) |d| if (e.live.decl(d.module, d.decl) or e.live.twin(d.module, d.decl)) {
                 try e.report(.not_implemented, e.graph().moduleFile(d.module), e.bir(d.module).decls[d.decl].name_token, "Worker Program exports in `--library` builds are not implemented yet.", .{});
             };
             return;
@@ -2923,6 +2968,21 @@ const Emitter = struct {
         plan.reset();
         if (e.options.platform.entry_kinds.len == 0) return;
         errdefer plan.reset();
+        var active: std.ArrayList(EntryKind) = .empty;
+        for (e.options.platform.entry_kinds) |kind| {
+            const name = platformModule(kind.definition.programType);
+            const symbol = try e.session.interner.getOrPut(e.gpa, name);
+            if (e.graph().find(.platform, symbol) == null) {
+                const waiting = for (0..e.session.store.count()) |fi| {
+                    const file: SourceStore.Index = @fromBackingInt(@intCast(fi));
+                    if (e.session.store.package(file) == .platform and e.session.store.isEmbedded(file) and
+                        std.mem.eql(u8, e.session.store.moduleName(file), name)) break true;
+                } else false;
+                if (waiting) continue;
+            }
+            try active.append(e.scratch, kind);
+        }
+        e.options.platform.entry_kinds = active.items;
         const Identity = struct { module: Graph.Index, type: Interface.TypeIndex };
         const identities = try e.scratch.alloc(?Identity, e.options.platform.entry_kinds.len);
         @memset(identities, null);
@@ -3262,6 +3322,7 @@ const Emitter = struct {
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
+        try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
         for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
@@ -3276,6 +3337,7 @@ const Emitter = struct {
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
+        try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
@@ -7046,7 +7108,7 @@ const Emitter = struct {
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (read_rows and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7058,6 +7120,8 @@ const Emitter = struct {
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .worker_host = e.workerHostModule() == m,
+                .worker_host_client = (e.workerHostClient()) == m,
                 .worker_kinds = e.options.platform.entry_kinds,
                 .worker_wire = &e.session.checked.type_keys[m.int()].wire,
                 .worker_descriptors = slot.worker_descriptors,
@@ -7346,6 +7410,7 @@ const Emitter = struct {
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
+            if (e.workerHostModule() == module) try names.appendSlice(e.scratch, &.{ "stop", "stopped" });
             for ([_][]const u8{ "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
@@ -7355,6 +7420,9 @@ const Emitter = struct {
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
         if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, e.runtimeRunName())));
+        if (e.workerHostClient()) |client| {
+            if (ids.get(Rename.Globals.key(try e.moduleName(client, "installHostStop")))) |g| try escaping.append(e.scratch, g);
+        }
         var main_id: ?u32 = null;
         if (entry_or_library) |entry| {
             const b = e.bir(entry.module);
@@ -8598,6 +8666,7 @@ const Emitter = struct {
             } else try e.moduleSpelling(e.runtime_module.?, "start");
             try out.print(scratch, "{s}({s});", .{ callee, s.data });
         }
+        try e.workerHostBridge(&out, true);
         if (e.options.prerender != .tree) {
             const run_name = if (e.entryRun()) |runner|
                 try e.moduleSpelling(runner.module, e.runtimeRunName())
@@ -8797,11 +8866,15 @@ const Emitter = struct {
         if (entry != null) if (e.selectedRuntime()) |runner| {
             if (e.globals.lookup(try e.moduleName(runner.module, e.runtimeRunName()))) |ordinal| e.imported.set(ordinal);
         };
+        if (e.workerHostClient()) |client| {
+            if (e.globals.lookup(try e.moduleName(client, "installHostStop"))) |ordinal| e.imported.set(ordinal);
+        }
         // What the markup runtime and the entry file import from the
         // runtime module (`backend.md` §15.1, *The runtime module*).
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
+            if (e.workerHostModule() == module) try names.appendSlice(e.scratch, &.{ "stop", "stopped" });
             if (entry != null) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             };
@@ -9407,6 +9480,7 @@ const Emitter = struct {
             try text.print(e.scratch, "import{{{s}}}from\"./{s}\";\n", .{ imported, try e.outputPath(entry.module) })
         else
             try text.print(e.scratch, "import {{ {s} }} from \"./{s}\";\n\n", .{ imported, try e.outputPath(entry.module) });
+        try e.workerHostBridge(&text, false);
         if (start) |s| try text.print(e.scratch, "start({s});\n", .{s.data});
         try text.print(e.scratch, "run({s});\n", .{imported});
         // The page's `flush` (§15.11), from the module the page loads when

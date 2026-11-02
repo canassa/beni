@@ -1,0 +1,1 @@
+[{"code":"worker_entry_not_static","severity":"error","span":{"file":"Main.beni","start":{"line":22,"col":10},"end":{"line":22,"col":21}},"title":"WORKER ENTRY NOT STATIC","message":"This launch needs a top-level Program declaration, or a finite choice between\nsuch references. A runtime factory cannot define a worker entry."}]

@@ -2355,17 +2355,3 @@ fuzzSend node msg = turn False λ⊤ →
                 Js.write ok True
             )
             λ⊤ → if Js.read ok then ⊤ else stop ⊤
-
-
--- A worker's native listener has the same fatal path as a page callback.
--- Kept only when a page owns workers; ordinary page output is unchanged.
-pub workerStop : ⊤ → ⊤
-workerStop ⊤ =
-    stop ⊤
-    Task.shutdown deadline stopped
-
-
-pub workerDefect : V → a
-workerDefect error =
-    workerStop ⊤
-    Js.throw error

@@ -246,6 +246,8 @@ const Convention = @import("../check/Convention.zig");
 pub const Input = struct {
     worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
     worker_definition: ?u32 = null,
+    worker_host: bool = false,
+    worker_host_client: bool = false,
     worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
     worker_wire: ?*const @import("../check/Wire.zig").Artifact = null,
     bir: *const Bir,
@@ -3862,6 +3864,11 @@ pub const Lowerer = struct {
     /// this one shows them: such a value is exported and its result read.
     fn emitterCalled(l: *Lowerer, index: u32) bool {
         const d = l.bir.decls[index];
+        if (l.in.worker_host_client and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "installHostStop")) return true;
+        if (l.in.worker_host) {
+            const spelling = l.text(l.bir.symbol(d.name));
+            if (std.mem.eql(u8, spelling, "stop") or std.mem.eql(u8, spelling, "stopped")) return true;
+        }
         if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
             const spelling = l.text(l.bir.symbol(d.name));
             return std.mem.eql(u8, spelling, "chain") or std.mem.eql(u8, spelling, "continueWith");
