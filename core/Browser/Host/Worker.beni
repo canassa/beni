@@ -1,0 +1,40 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+import Browser.Host.EventTarget as EventTarget
+
+
+pub foreign type Endpoint
+
+
+pub type CreateError
+    = SyntaxError
+    | SecurityError
+    | TypeError
+
+
+pub type PostError
+    = DataCloneError
+
+
+pub foreign type Worker
+
+
+pub foreign impure supported : ⊤ → Bool
+
+
+pub foreign impure tryCreate : String, String, String → Result CreateError Worker
+
+
+pub foreign pure endpoint : borrowed Worker → Endpoint
+
+
+pub foreign impure self : ⊤ → Endpoint
+
+
+pub foreign impure post : borrowed Endpoint, Js.Value → Result PostError ⊤
+
+
+pub foreign impure terminate : borrowed Worker → ⊤
+
+
+pub foreign pure toEventTarget : borrowed Endpoint → EventTarget.EventTarget

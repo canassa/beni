@@ -1,5 +1,11 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type Rejection
+
+
+pub foreign impure setAbandoned : borrowed Rejection, Js.Value → ⊤
 
 
 pub foreign impure typeErrorMessage : borrowed Rejection → Maybe String

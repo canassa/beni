@@ -2,6 +2,7 @@
 //! typed modules and their exact-error siblings. Unsupported members stay private.
 const std = @import("std");
 const Operations = @import("Operations.zig");
+const CheckedData = @import("CheckedData.zig");
 const Allocator = std.mem.Allocator;
 
 pub fn validate(c: anytype) bool {
@@ -34,10 +35,10 @@ pub fn validate(c: anytype) bool {
             return false;
         }
         // Mixin exposure belongs to the implementing native receiver.
-        const receiver = if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "HTMLOrSVGOrMathMLElement")) "HTMLElement" else if (std.mem.eql(u8, row.owner, "DocumentOrShadowRoot") or std.mem.eql(u8, row.owner, "NonElementParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
+        const receiver = if (row.recipe == .global_event_target) "Window" else if (row.recipe == .worker_event_target) "Worker" else if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "HTMLOrSVGOrMathMLElement")) "HTMLElement" else if (std.mem.eql(u8, row.owner, "DocumentOrShadowRoot") or std.mem.eql(u8, row.owner, "NonElementParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
         var exposure: u8 = 0;
         for (c.native_types) |t| {
-            if (!std.mem.eql(u8, t.idl_name, receiver)) continue;
+            if (!std.mem.eql(u8, t.idl_name, receiver) and !(row.recipe == .global_event_target and std.mem.eql(u8, t.idl_name, "WorkerGlobalScope"))) continue;
             for (t.exposed) |name| {
                 if (std.mem.eql(u8, name, "Window")) exposure |= Operations.window;
                 if (std.mem.eql(u8, name, "Worker")) exposure |= Operations.workers;
@@ -89,6 +90,9 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.RegExp")) try w.writeAll("pub type CreateError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Storage")) try w.writeAll("pub type SetError\n    = QuotaExceeded\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\nimport Browser.Host.Promise as Promise\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Worker")) try w.writeAll("import Js\nimport Browser.Host.EventTarget as EventTarget\n\n\npub foreign type Endpoint\n\n\npub type CreateError\n    = SyntaxError\n    | SecurityError\n    | TypeError\n\n\npub type PostError\n    = DataCloneError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Js\nimport Browser.Host.Rejection as Rejection\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Console") or std.mem.eql(u8, module, "Browser.Host.Rejection")) try w.writeAll("import Js\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -103,6 +107,18 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .worker_supported => "(ignored) => { return typeof globalThis.Worker === \"function\"; }",
+            .worker_create => "(url, name, credentials) => { try { return { $: \"Ok\", a: new globalThis.Worker(url, { type: \"module\", name, credentials }) }; } catch (error) { if (error instanceof globalThis.DOMException && (error.name === \"SyntaxError\" || error.name === \"SecurityError\")) return { $: \"Err\", a: error.name }; if (error instanceof globalThis.TypeError) return { $: \"Err\", a: \"TypeError\" }; throw error; } }",
+            .worker_endpoint => "(worker) => { return worker; }",
+            .worker_self_endpoint => "(ignored) => { return globalThis.self; }",
+            .worker_post => "(endpoint, payload) => { try { endpoint.postMessage(payload); return { $: \"Ok\", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"DataCloneError\") throw error; return { $: \"Err\", a: \"DataCloneError\" }; } }",
+            .worker_terminate => "(worker) => { worker.terminate(); return null; }",
+            .worker_event_target => "(endpoint) => { return endpoint; }",
+            .global_event_target => "(ignored) => { return globalThis; }",
+            .event_data_only => "(event) => { const value = event.data;\n" ++ CheckedData.body ++ "}",
+            .event_error => "(event) => { const error = event.error; return error == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: error }; }",
+            .console_error_data => "(label, data) => { globalThis.console.error(label, data); return null; }",
+            .rejection_abandoned => "(error, reports) => { error.abandonedWorkers = reports; return null; }",
             .data_same => "(a, b) => { return Object.is(a, b); }",
             .document_by_id => "(documentId) => { const element = globalThis.document.getElementById(documentId); return element === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: element }; }",
             .element_focus => "(element) => { element.focus(); return null; }",

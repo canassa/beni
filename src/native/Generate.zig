@@ -3,6 +3,7 @@
 const std = @import("std");
 const Idl = @import("Idl.zig");
 pub const Callable = @import("Callable.zig");
+pub const CheckedData = @import("CheckedData.zig");
 const Allocator = std.mem.Allocator;
 pub const source = .{
     .package = "@webref/idl",

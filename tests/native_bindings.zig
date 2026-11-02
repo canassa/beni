@@ -25,6 +25,8 @@ pub fn main(init: std.process.Init) !u8 {
     var out = try std.Io.Dir.cwd().openDir(init.io, args[2], .{});
     defer out.close(init.io);
     try out.writeFile(init.io, .{ .sub_path = "native-index.json", .data = bytes });
+    try out.createDirPath(init.io, "Js");
+    try out.writeFile(init.io, .{ .sub_path = "Js/Data.js", .data = Native.CheckedData.sibling });
     try out.createDirPath(init.io, "Browser/Host");
     for (c.native_types) |native| {
         const path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{native.name});
@@ -107,7 +109,9 @@ test "shipped native modules are exactly the pinned generator output" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope", "MessageChannel", "MessagePort", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "AbortController", "AbortSignal", "Event", "DOMRect", "EventTarget", "HTMLAnchorElement", "Storage", "DOMException", "FormData", "Headers", "ReadableStreamDefaultReader", "Response", "TextDecoder", "URL", "WebSocket", "Console", "Navigator" }) |name| {
+    const checked = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "core/Js/Data.js", a, .limited(64 * 1024));
+    try std.testing.expectEqualStrings(Native.CheckedData.sibling, checked);
+    for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope", "MessageChannel", "MessagePort", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "AbortController", "AbortSignal", "Event", "DOMRect", "EventTarget", "HTMLAnchorElement", "Storage", "DOMException", "FormData", "Headers", "ReadableStreamDefaultReader", "Response", "TextDecoder", "URL", "WebSocket", "Console", "Navigator", "Worker" }) |name| {
         const module = try std.fmt.allocPrint(a, "Browser.Host.{s}", .{name});
         const path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.beni", .{name});
         const actual = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024));

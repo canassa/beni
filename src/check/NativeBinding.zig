@@ -39,6 +39,18 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .worker_supported => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Bool"),
+        .worker_create => a.len == 3 and named(cx, a[0], "String", "String") and named(cx, a[1], "String", "String") and named(cx, a[2], "String", "String") and (if (argument(cx, r, "Result", "Result", 0)) |failure| named(cx, failure, "Browser.Host.Worker", "CreateError") else false) and (if (argument(cx, r, "Result", "Result", 1)) |worker| native(cx, worker, "Worker") else false),
+        .worker_endpoint => a.len == 1 and native(cx, a[0], "Worker") and named(cx, r, "Browser.Host.Worker", "Endpoint"),
+        .worker_self_endpoint => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Browser.Host.Worker", "Endpoint"),
+        .worker_post => a.len == 2 and named(cx, a[0], "Browser.Host.Worker", "Endpoint") and named(cx, a[1], "Js", "Value") and (if (argument(cx, r, "Result", "Result", 0)) |failure| named(cx, failure, "Browser.Host.Worker", "PostError") else false) and (if (argument(cx, r, "Result", "Result", 1)) |success| unit(cx, success) else false),
+        .worker_terminate => a.len == 1 and native(cx, a[0], "Worker") and unit(cx, r),
+        .worker_event_target => a.len == 1 and named(cx, a[0], "Browser.Host.Worker", "Endpoint") and native(cx, r, "EventTarget"),
+        .global_event_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
+        .event_data_only => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |data| named(cx, data, "Js", "Value") else false),
+        .event_error => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |reason| native(cx, reason, "Rejection") else false),
+        .console_error_data => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "Js", "Value") and unit(cx, r),
+        .rejection_abandoned => a.len == 2 and native(cx, a[0], "Rejection") and named(cx, a[1], "Js", "Value") and unit(cx, r),
         .data_same => a.len == 2 and named(cx, a[0], "Js", "Value") and named(cx, a[1], "Js", "Value") and named(cx, r, "Basics", "Bool"),
         .document_by_id => a.len == 1 and named(cx, a[0], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |nested0| native(cx, nested0, "Element") else false),
         .element_focus => a.len == 1 and native(cx, a[0], "Element") and unit(cx, r),

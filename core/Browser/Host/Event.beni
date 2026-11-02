@@ -5,7 +5,17 @@ import Browser.Host.EventTarget as EventTarget
 import Browser.Host.DOMRect as DOMRect
 
 
+import Js
+import Browser.Host.Rejection as Rejection
+
+
 pub foreign type Event
+
+
+pub foreign impure dataOnly : borrowed Event → Maybe Js.Value
+
+
+pub foreign impure error : borrowed Event → Maybe Rejection.Rejection
 
 
 pub foreign impure defaultPrevented : borrowed Event → Bool

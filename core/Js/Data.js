@@ -1,4 +1,4 @@
-// One checked boundary: no coercion, getter, callback or native method runs.
+// Generated checked graph conversion; native/CheckedData.zig owns the check.
 export const checked = (value) => {
   const pending = [value];
   const seen = new Set();

@@ -1,5 +1,11 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type Console
+
+
+pub foreign impure errorData : String, Js.Value → ⊤
 
 
 pub foreign impure warn : String → ⊤

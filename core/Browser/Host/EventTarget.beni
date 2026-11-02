@@ -5,4 +5,7 @@ import Browser.Host.HTMLAnchorElement as HTMLAnchorElement
 pub foreign type EventTarget
 
 
+pub foreign impure current : ⊤ → EventTarget
+
+
 pub foreign impure asAnchor : borrowed EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement
