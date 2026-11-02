@@ -133,7 +133,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 var fn_names: FieldNames = .{ .names = in.names };
                 var buf: std.Io.Writer.Allocating = .init(arena);
                 buf.writer.print("summary {s}: ", .{name}) catch return error.OutOfMemory;
-                ContractText.print(&mod.contracts, dr.contract, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &buf.writer) catch return error.OutOfMemory;
+                ContractText.print(&mod.contracts, gpa, dr.contract, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &buf.writer) catch return error.OutOfMemory;
                 try others.append(arena, buf.written());
             }
         }
