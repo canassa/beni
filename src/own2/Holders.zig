@@ -584,7 +584,7 @@ pub const Operands = struct {
     /// Each aggregated leaf's own selection, into `req`: through a write of
     /// another argument of its call that was accepted with aggregation and
     /// for whose target it was aggregated and answers `under`.
-    pub fn finish(x: *Operands, ev: *Relation.Eval, keys: *Keys, req: *Gather) Error!void {
+    pub fn finish(x: *Operands, ev: *Relation.Eval, keys: *Keys, req: *Gather, arena: Allocator) Error!void {
         const f = ev.f;
         std.mem.sort([3]u32, x.writes.items, {}, struct {
             fn lt(_: void, a: [3]u32, b: [3]u32) bool {
@@ -608,7 +608,7 @@ pub const Operands = struct {
                 if (near) continue;
                 const o = try Distinct.overlap(ev, it.leaf, wr[2], true);
                 if (o.kind != .under) continue;
-                try req.add(ev.gpa(), ev.account(), o.cond);
+                try req.add(arena, ev.account(), o.cond);
                 break;
             };
             w = end;
