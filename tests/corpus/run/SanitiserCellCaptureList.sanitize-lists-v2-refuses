@@ -1,0 +1,5 @@
+# v2 refuses a captured list's in-place write in a closure called many times, beside its cell operations (§2.11.4).
+30:5 list_still_used SanitiserCellCaptureList.each
+30:19 list_still_used once
+# and the in-place edit of a list taken out of a captured cell, at Ref.update's callback (§2.13.7).
+40:24 list_may_be_shared Ref.update

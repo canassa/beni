@@ -149,6 +149,8 @@ pub const Demand = struct {
     kept: bool = false,
     /// A `once` code's capture written where it may run again: refused `once`.
     many: bool = false,
+    /// A cell operation on a `◆` slot (`Eval.cellWrite`): never `once`.
+    cell: bool = false,
 };
 
 /// A local's binding.

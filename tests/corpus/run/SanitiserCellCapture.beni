@@ -1,0 +1,95 @@
+-- A runtime check for closures that a callee calls many times and that
+-- only operate on a captured `Ref` (`ownership-v2.md` §2.11.4, §2.13.7):
+-- `Task.retry` calls one that counts its attempts through a helper, a
+-- recursive walker calls one that updates, modifies and sets a `Ref` held
+-- in a captured record, and a walker that hands its callback on calls one
+-- that adds to a counter.
+-- Writing the cell again on each call stales no reader, so none of them
+-- is `once`. v2 refused each call, `once`, and left each closure's cell
+-- writes out of its declaration's summary.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Schedule
+import String
+import Task
+
+
+attempt : Ref Int → Result String Int
+attempt calls =
+    n = Ref.modify calls λk → ( k + 1, k + 1 )
+    if n < 3 then Err "unavailable ${String.fromInt n}" else Ok n
+
+
+retried : Ref Int → Result String Int
+retried calls = Task.retry (Schedule.recurs 4) λ⊤ → attempt calls
+
+
+type alias World =
+    balls : List Int
+    sized : Int
+    atOnce : Int
+
+
+type alias Machine =
+    world : Ref World
+    log : Ref (List String)
+
+
+frames : Int, (Int → ⊤) → ⊤
+frames n f =
+    if n ≤ 0 then
+        ⊤
+    else
+        f n
+        frames (n - 1) f
+
+
+step : World, Int → List Int × World
+step w ms = ( List.map w.balls λb → b + ms, { w | balls = List.map w.balls λb → b * 2 } )
+
+
+simulate : Machine → ⊤
+simulate m = frames 3 λms →
+    now = Ref.get m.world
+    if now.sized ≠ now.atOnce then
+        Ref.update m.world λw → { w | sized = w.atOnce }
+    signals = Ref.modify m.world λw → step w ms
+    Ref.set m.log [ ints signals ]
+
+
+walk : List Int, (Int → ⊤) → ⊤
+walk xs f =
+    case xs of
+        [] →
+            ⊤
+
+        [ x, …rest ] →
+            f x
+            walk rest f
+
+
+counted : List Int → Int
+counted xs =
+    seen = Ref.make 0
+    walk xs λx → Ref.update seen λn → n + x
+    Ref.get seen
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+main : Program
+main = Io.run λ⊤ →
+    calls = Ref.make 0
+    answer = retried calls
+    m = { world = Ref.make { balls = [ 1, 2 ], sized = 0, atOnce = 2 }, log = Ref.make [] }
+    simulate m
+    w = Ref.get m.world
+    last = String.concat (Ref.get m.log)
+    Node.print
+        "${Debug.toString answer} after ${String.fromInt (Ref.get calls)}; balls ${ints w.balls}, sized ${String.fromInt w.sized}, last ${last}; counted ${String.fromInt (counted [ 1, 2, 3 ])}"

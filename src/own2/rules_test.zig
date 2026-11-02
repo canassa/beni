@@ -74,12 +74,14 @@ const layers = [_]Entry{
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
-    .{ .file = "Walk.zig", .layer = 8, .max_lines = 1230 },
+    // A demand says whether it is a cell operation (#1727).
+    .{ .file = "Walk.zig", .layer = 8, .max_lines = 1240 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 8, .max_lines = 750 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
-    .{ .file = "Eval.zig", .layer = 9, .max_lines = 600 },
+    // A closure's cell operations on its captures, at its creation (#1727).
+    .{ .file = "Eval.zig", .layer = 9, .max_lines = 640 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
     .{ .file = "Holders.zig", .layer = 9, .max_lines = 700 },
     // The holder index and its sweep, split from `Holders` (#1714): holds
