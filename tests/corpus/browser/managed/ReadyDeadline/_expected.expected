@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="launch">"launch"</button>
+    <button id="release">"release"</button>
+    <output>"idle"</output>
+    <p id="stage">"waiting"</p>
+  </main>
+</body>
+-- click-wait #launch #stage "ready withheld"
+<body>
+  <main>
+    <button id="launch">"launch"</button>
+    <button id="release">"release"</button>
+    <output>"opening"</output>
+    <p id="stage">"ready withheld"</p>
+  </main>
+</body>
+-- advance 20
+(the DOM did not change)
+-- advance 20
+<body>
+  <main>
+    <button id="launch">"launch"</button>
+    <button id="release">"release"</button>
+    <output>"ready deadline unconfirmed"</output>
+    <p id="stage">"ready withheld"</p>
+  </main>
+</body>
+-- click #release
+(the DOM did not change)

@@ -1,0 +1,107 @@
+-- Init and handle park and resume on the worker's root/request fibers. Every
+-- message role normalizes List views using the compiler's shared Wire plan.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Events
+import Duration
+import Hosted
+import Task
+
+
+type Request
+    = Batch { values : List (Maybe (List Int)) }
+
+
+type Event
+    = Pushed (List Int)
+
+
+type alias Reply =
+    values : List Int
+    label : String
+
+
+type alias Protocol =
+    Worker.Protocol Request Reply ⊥ String Event ⊥
+
+
+worker : Worker.Program (List Int) (List Int) Protocol
+worker =
+    Worker.program
+        { init =
+            λcontext config →
+                _ = Task.spawn λ⊤ →
+                    Task.sleep (Duration.millis 5)
+                    _ = Worker.emit context (Pushed (List.drop config 3))
+                    ⊤
+                Task.sleep (Duration.millis 1)
+                Ok config
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ request →
+                Task.sleep (Duration.millis 1)
+                case request of
+                    Batch { values } →
+                        case values of
+                            [ Just numbers ] →
+                                Ok { values = List.drop numbers 2, label = "resumed" }
+                            _ →
+                                Err "wrong input"
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    config = List.drop (List.range 0 80) 1
+    case Worker.open owned worker config Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            requested = List.drop (List.range 0 80) 4
+            reply = Worker.call handle (Batch { values = [ Just requested ] })
+            pushed =
+                case Events.next (Worker.events handle) of
+                    Ok (Events.Item chunk) →
+                        case Events.take chunk of
+                            Pushed values →
+                                List.sum values
+                    _ →
+                        -1
+            _ = Worker.close handle
+            case reply of
+                Ok { values, label } →
+                    if
+                        label == "resumed"
+                            && List.sum values == List.sum (List.range 6 80)
+                            && pushed == List.sum (List.range 4 80)
+                    then
+                        "parked wire passed"
+                    else
+                        "wire failed"
+                Err _ →
+                    "call failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

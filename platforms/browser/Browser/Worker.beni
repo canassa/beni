@@ -1,5 +1,6 @@
 -- Dedicated workers. Launches remain behind --allow-unchecked-workers.
 import Browser.WorkerStream exposing (Sink, Stream)
+import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
 import Js
 import Schema exposing (Issue)
@@ -160,31 +161,36 @@ pub type alias Definition config state call reply streamRequest error event chun
 pub program :
       Definition config state call reply streamRequest error event chunk
     → Program config state (Protocol call reply streamRequest error event chunk)
-program callbacks =
+program definition =
+    callbacks = definition
     Js.to
         (Js.from
             { boot =
-                λgreeting greetingWake lifetime →
+                λpeer lifetime →
                     Task.spawnIn lifetime λ⊤ →
                         Task.scope λowned →
-                            config = Task.callback λresume →
-                                if Js.isNull (Js.read greeting) then
-                                    Js.write greetingWake (host resume)
+                            hello = Task.callback λresume →
+                                if Js.isNull (Js.get peer "greeting") then
+                                    Js.set peer "greetingWake" (host resume)
                                 else
-                                    Task.resume resume (guest (Js.read greeting))
-                                λ⊤ → Js.write greetingWake Js.null
-                            context = guest (Js.from { scope = owned })
-                            case callbacks.init context config of
+                                    Task.resume resume (Js.get peer "greeting")
+                                λ⊤ → Js.set peer "greetingWake" Js.null
+                            input = Js.get hello "payload"
+                            opts : Options
+                            opts = guest (Js.get input "options")
+                            Js.set peer "eventLimit" (host opts.queuedEvents)
+                            Js.set peer "byteLimit" (host opts.queuedBytes)
+                            context =
+                                guest (Js.from { scope = owned, peer = peer, request = False })
+                            case callbacks.init context (guest (Js.get input "config")) of
                                 Err error →
-                                    _ =
-                                        post
-                                            (Js.global "self")
-                                            (frame "InitializationFailed" (host error))
+                                    terminalReply peer 0 "InitializationFailed" (host error)
                                     ⊤
                                 Ok state →
                                     callbacks.start context state
-                                    _ = post (Js.global "self") (frame "Ready" Js.null)
-                                    Task.never ⊤
+                                    Js.set peer "phase" (host "Ready")
+                                    _ = sendFrame peer "Ready" 0 Js.null
+                                    serve peer owned callbacks state opts
             }
         )
 
@@ -258,6 +264,239 @@ frame : String, V → V
 frame kind payload = Js.from { worker = 1, kind = kind, payload = payload }
 
 
+pub foreign type Ticket error reply
+
+
+pub foreign type Prepared a
+
+
+instances : Js.Ref Int
+instances = Js.ref 0
+
+
+-- All native endpoints remain owned, including peers whose cleanup is unconfirmed.
+peers : V
+peers = Js.construct (Js.global "Map") []
+
+
+newPeer : V, V, Options → V
+newPeer native descriptor opts =
+    generation = Js.read instances + 1
+    Js.write instances generation
+    Js.from
+        { native = native
+        , entry = Js.get descriptor "id"
+        , fingerprint = Js.get descriptor "fingerprint"
+        , wire = Js.get descriptor "$wire"
+        , generation = generation
+        , phase = "Starting"
+        , options = opts
+        , nextId = 0
+        , startup = Js.null
+        , requests = Js.construct (Js.global "Map") []
+        , terminal = 0
+        , closedWaiters = Js.construct (Js.global "Set") []
+        , events = Browser.WorkerStream.make opts.queuedEvents
+        , listeners = Js.array []
+        , failure = Js.null
+        , alive = 0
+        , owned = False
+        , opening = True
+        , queuedBytes = 0
+        }
+
+
+sendFrame : V, String, Int, V → Result SendError ⊤
+sendFrame peer kind requestId payload =
+    encoded =
+        if kind == "Request" then
+            Wire.normalize (Js.get peer "wire") 2 "call" payload
+        else if kind == "Success" then
+            Wire.normalize (Js.get peer "wire") 2 "reply" payload
+        else if kind == "Failure" || kind == "InitializationFailed" then
+            Wire.normalize (Js.get peer "wire") 2 "error" payload
+        else if kind == "Event" then
+            Wire.normalize (Js.get peer "wire") 2 "event" payload
+        else
+            payload
+    post (Js.get peer "native")
+        (Js.from
+            { worker = 1
+            , entry = Js.get peer "entry"
+            , fingerprint = Js.get peer "fingerprint"
+            , generation = Js.get peer "generation"
+            , requestId = requestId
+            , kind = kind
+            , payload = encoded
+            }
+        )
+
+
+listen : V, String, (V → ⊤) → ⊤
+listen peer name callback =
+    guarded =
+        λevent →
+            done = Js.ref False
+            Js.finally
+                (λ⊤ →
+                    callback event
+                    Js.write done True
+                )
+                λ⊤ → if Js.read done then ⊤ else stopRealm ⊤
+    _ = Js.call (Js.get peer "listeners") "push" [ Js.array [ Js.from name, Js.from guarded ] ]
+    Js.to (Js.call (Js.get peer "native") "addEventListener" [ Js.from name, Js.from guarded ])
+
+
+unlisten : V → ⊤
+unlisten peer =
+    Js.each (Js.get peer "listeners") λlistener →
+        Js.to
+            (Js.call (Js.get peer "native") "removeEventListener"
+                [ Js.at listener 0, Js.at listener 1 ]
+            )
+    Js.set peer "listeners" (Js.array [])
+
+
+wakeStartup : V, Result (OpenReason error) ⊤ → ⊤
+wakeStartup peer result =
+    if Js.isNull (Js.get peer "startup") then
+        ⊤
+    else
+        wake = Js.get peer "startup"
+        Js.set peer "startup" Js.null
+        Task.resume (guest wake) result
+
+
+settle : V, V, String, V → ⊤
+settle peer slot kind payload =
+    if not (Js.isNull (Js.get slot "result")) then
+        ⊤
+    else
+        result = Js.from { kind = kind, payload = payload }
+        Js.set slot "result" result
+        Js.set
+            peer
+            "queuedBytes"
+            (host (Js.to (Js.get peer "queuedBytes") - Js.to (Js.get slot "bytes")))
+        if Js.isNull (Js.get slot "wake") then
+            ⊤
+        else
+            wake = Js.get slot "wake"
+            Js.set slot "wake" Js.null
+            Task.resume (guest wake) result
+
+
+transportFailed : V, TransportError → ⊤
+transportFailed peer failure =
+    Js.set peer "failure" (host failure)
+    Js.set peer "phase" (Js.from "Lost")
+    _ = sendFrame peer "Close" 0 Js.null
+    wakeStartup peer (Err (HandshakeFailed failure))
+    Js.each (Js.call (Js.get peer "requests") "values" []) λslot →
+        settle peer slot "Transport" (host failure)
+    Browser.WorkerStream.fail (guest (Js.get peer "events")) failure
+    Js.each (Js.get peer "closedWaiters") λwake →
+        Task.resume (guest wake) (Unconfirmed ConnectionLost)
+
+
+fatal : String → a
+fatal message =
+    cause = Js.construct (Js.global "Error") [ Js.from message ]
+    Js.throw cause
+
+
+received : V, V → ⊤
+received peer event =
+    incoming = Js.get event "data"
+    kind = Js.get incoming "kind"
+    if Js.same kind (Js.from "Defect") then
+        workerDefect peer (Js.get incoming "payload")
+    else if not (Js.same (Js.get incoming "worker") (Js.from 1)) then
+        fatal "Invalid managed worker frame"
+    else if
+        not (Js.same (Js.get incoming "entry") (Js.get peer "entry"))
+            || not (Js.same (Js.get incoming "fingerprint") (Js.get peer "fingerprint"))
+    then
+        transportFailed peer ProtocolVersionMismatch
+    else if not (Js.same (Js.get incoming "generation") (Js.get peer "generation")) then
+        ⊤
+    else if Js.same kind (Js.from "Ready") then
+        if Js.same (Js.get peer "phase") (Js.from "Starting") then
+            Js.set peer "phase" (Js.from "Ready")
+            wakeStartup peer (Ok ⊤)
+    else if Js.same kind (Js.from "InitializationFailed") then
+        wakeStartup peer (Err (InitializationFailed (guest (Js.get incoming "payload"))))
+    else if Js.same kind (Js.from "Closed") then
+        Js.set peer "phase" (Js.from "Closed")
+        wakeStartup peer (Err ClosedBeforeReady)
+        Js.each (Js.call (Js.get peer "requests") "values" []) λslot →
+            settle peer slot "Transport" (host PeerClosed)
+        Browser.WorkerStream.end (guest (Js.get peer "events"))
+        Js.each (Js.get peer "closedWaiters") λwake → Task.resume (guest wake) Confirmed
+        _ = Js.call peers "delete" [ Js.get peer "generation" ]
+        unlisten peer
+    else if Js.same kind (Js.from "Event") then
+        _ = Browser.WorkerStream.offer (guest (Js.get peer "events")) (Js.get incoming "payload")
+        ⊤
+    else if
+        Js.same kind (Js.from "Success")
+            || Js.same kind (Js.from "Failure")
+            || Js.same kind (Js.from "Interrupt")
+    then
+        requestId = Js.get incoming "requestId"
+        slot = Js.call (Js.get peer "requests") "get" [ requestId ]
+        if Js.isUndefined slot then
+            if Js.to requestId ≤ Js.to (Js.get peer "terminal") then
+                ⊤
+            else
+                fatal "Unknown worker request ID"
+        else
+            settle peer slot (guest kind) (Js.get incoming "payload")
+            _ = Js.call (Js.get peer "requests") "delete" [ requestId ]
+            Js.set
+                peer
+                "terminal"
+                (Js.call (Js.global "Math") "max" [ Js.get peer "terminal", requestId ])
+    else if Js.same kind (Js.from "TransportFailure") then
+        transportFailed peer (decodeTransport (Js.get incoming "payload"))
+    else if Js.same kind (Js.from "Pong") then
+        Js.set peer "alive" (Js.get incoming "payload")
+    else
+        fatal "Unknown managed worker control frame"
+
+
+validOptions : Options → Result ConfigError ⊤
+validOptions opts =
+    if opts.queuedRequests ≤ 0 then
+        Err (NonPositiveLimit "queuedRequests")
+    else if opts.queuedEvents ≤ 0 then
+        Err (NonPositiveLimit "queuedEvents")
+    else if opts.queuedBytes ≤ 0 then
+        Err (NonPositiveLimit "queuedBytes")
+    else if Duration.toMillis opts.readyWithin ≤ 0 then
+        Err (InvalidDuration "readyWithin")
+    else if Duration.toMillis opts.cleanupWithin ≤ 0 then
+        Err (InvalidDuration "cleanupWithin")
+    else if Duration.toMillis opts.heartbeatEvery ≤ 0 then
+        Err (InvalidDuration "heartbeatEvery")
+    else if Duration.toMillis opts.leaseWithin < Duration.toMillis opts.heartbeatEvery then
+        Err (InvalidDuration "leaseWithin")
+    else
+        Ok ⊤
+
+
+heartbeat : V, Options → ⊤
+heartbeat peer opts =
+    Task.sleep opts.heartbeatEvery
+    if Js.same (Js.get peer "phase") (host "Ready") then
+        now = Js.call (Js.global "Date") "now" []
+        if Js.to now - Js.to (Js.get peer "alive") > Duration.toMillis opts.leaseWithin then
+            transportFailed peer PeerUnresponsive
+        else
+            _ = sendFrame peer "Ping" 0 now
+            heartbeat peer opts
+
+
 pub open :
       Scope
     , Program config state (Protocol call reply streamRequest error event chunk)
@@ -265,101 +504,293 @@ pub open :
     , Options
     → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))
 open owner definition config opts =
-    case construct (host definition) opts of
-        Err reason →
-            Err { reason = reason, cleanup = Confirmed }
-        Ok native →
-            peer =
-                Js.from
-                    { native = native
-                    , closed = False
-                    , ready = False
-                    , wake = Js.null
-                    , cleanup = opts.cleanupWithin
-                    }
-            Task.defer owner λ_ →
-                status = close (guest peer)
-                if status == Confirmed || status == Abandoned then
-                    ⊤
-                else
-                    Js.throw
-                        (Js.construct (Js.global "Error")
-                            [ Js.from "Worker cleanup was not confirmed" ]
-                        )
-            result = Task.timeout opts.readyWithin λ⊤ →
-                Task.callback λresume →
-                    Js.set peer "wake" (host resume)
-                    message =
-                        λevent →
-                            incoming = Js.get event "data"
-                            kind = Js.get incoming "kind"
-                            if Js.same kind (Js.from "Ready") then
-                                Js.set peer "ready" (Js.from True)
-                                Task.resume resume (Ok (guest peer))
-                            else if Js.same kind (Js.from "InitializationFailed") then
-                                Task.resume
-                                    resume
-                                    (Err (InitializationFailed (guest (Js.get incoming "payload"))))
-                            else if Js.same kind (Js.from "Closed") then
-                                Js.set peer "closed" (Js.from True)
-                                Task.resume resume (Err ClosedBeforeReady)
-                            else
+    case validOptions opts of
+        Err problem →
+            Err { reason = InvalidOptions problem, cleanup = Confirmed }
+        Ok _ →
+            if Js.to (Js.get peers "size") ≥ 64 then
+                Err { reason = HandshakeFailed (SendFailed QueueFull), cleanup = Confirmed }
+            else
+                case construct (host definition) opts of
+                    Err reason →
+                        Err { reason = reason, cleanup = Confirmed }
+                    Ok native →
+                        peer = newPeer native (host definition) opts
+                        Js.set
+                            (Js.get peer "events")
+                            "taken"
+                            (host λitem →
+                                _ =
+                                    sendFrame
+                                        peer
+                                        "EventAck"
+                                        0
+                                        (host (wireBytes item opts.queuedBytes))
                                 ⊤
-                    failure =
-                        λevent →
-                            if Js.instanceOf event (Js.global "ErrorEvent") then
-                                Js.throw
-                                    (Js.construct (Js.global "Error") [ Js.get event "message" ])
+                            )
+                        _ = Js.call peers "set" [ Js.get peer "generation", peer ]
+                        listen peer "message" (received peer _)
+                        listen peer "messageerror" λ_ →
+                            transportFailed peer MessageDeserializationFailed
+                        listen peer "error" λevent →
+                            if
+                                Js.instanceOf event (Js.global "ErrorEvent")
+                                    || not (Js.same (Js.get peer "phase") (Js.from "Starting"))
+                            then
+                                fatal (guest (Js.get event "message"))
                             else
-                                Task.resume resume (Err WorkerLoadFailed)
-                    _ = Js.call native "addEventListener" [ Js.from "message", Js.from message ]
-                    _ = Js.call native "addEventListener" [ Js.from "error", Js.from failure ]
-                    _ = post native (frame "Hello" (host config))
-                    λ⊤ → ⊤
-            case result of
-                Just (Ok handle) →
-                    Ok handle
-                Just (Err reason) →
-                    Err { reason = reason, cleanup = close (guest peer) }
-                Nothing →
-                    Err { reason = ReadyDeadlineExceeded, cleanup = close (guest peer) }
+                                wakeStartup peer (Err WorkerLoadFailed)
+                        Task.defer owner λ_ →
+                            if Js.to (Js.get peer "owned") || Js.to (Js.get peer "opening") then
+                                status = close (guest peer)
+                                case status of
+                                    Unconfirmed _ →
+                                        fatal "Worker cleanup was not confirmed"
+                                    _ →
+                                        ⊤
+                        if Js.same (Js.get peer "phase") (host "Closed") then
+                            failedOpen peer ClosedBeforeReady
+                        else
+                            Task.onExit
+                                (λ⊤ →
+                                    result = Task.timeout opts.readyWithin λ⊤ →
+                                        Task.callback λresume →
+                                            Js.set peer "startup" (host resume)
+                                            case
+                                                sendFrame
+                                                    peer
+                                                    "Hello"
+                                                    0
+                                                    (Js.from
+                                                        { config =
+                                                            Wire.normalize
+                                                                (Js.get peer "wire")
+                                                                0
+                                                                ""
+                                                                (host config)
+                                                        , options = opts
+                                                        }
+                                                    )
+                                            of
+                                                Ok _ →
+                                                    ⊤
+                                                Err problem →
+                                                    wakeStartup
+                                                        peer
+                                                        (Err (HandshakeFailed (SendFailed problem)))
+                                            λ⊤ → Js.set peer "startup" Js.null
+                                    case result of
+                                        Just (Ok _) →
+                                            if Js.same (Js.get peer "phase") (host "Ready") then
+                                                Js.set peer "opening" (host False)
+                                                Js.set peer "owned" (host True)
+                                                Js.set
+                                                    peer
+                                                    "alive"
+                                                    (Js.call (Js.global "Date") "now" [])
+                                                _ = Task.spawnIn owner λ⊤ → heartbeat peer opts
+                                                Ok (guest peer)
+                                            else
+                                                failedOpen peer ClosedBeforeReady
+                                        Just (Err reason) →
+                                            failedOpen peer reason
+                                        Nothing →
+                                            failedOpen peer ReadyDeadlineExceeded
+                                )
+                                λexit →
+                                    case exit of
+                                        Task.Cancelled →
+                                            requireCleanup (close (guest peer))
+                                        _ →
+                                            ⊤
+
+
+pub prepare : a → Result PrepareError (Prepared a)
+prepare value = Ok (guest (Js.from { payload = value, live = True }))
+
+
+pub discard : Prepared a → ⊤
+discard prepared = Js.set (host prepared) "live" (Js.from False)
+
+
+pub send :
+      Handle (Protocol call reply streamRequest error event chunk)
+    , Prepared call
+    → Result SendError (Ticket error reply)
+send handle prepared =
+    peer = host handle
+    reservation = host prepared
+    if not (Js.to (Js.get reservation "live")) then
+        Err ChannelClosed
+    else
+        Js.set reservation "live" (Js.from False)
+        if not (Js.same (Js.get peer "phase") (Js.from "Ready")) then
+            Err ChannelClosed
+        else
+            opts : Options
+            opts = guest (Js.get peer "options")
+            bytes = wireBytes (Js.get reservation "payload") opts.queuedBytes
+            if
+                bytes + Js.to (Js.get peer "queuedBytes") > opts.queuedBytes
+                    || Js.to (Js.get (Js.get peer "requests") "size") ≥ opts.queuedRequests
+            then
+                Err QueueFull
+            else
+                requestId = Js.to (Js.get peer "nextId") + 1
+                Js.set peer "nextId" (host requestId)
+                slot =
+                    Js.from
+                        { peer = peer
+                        , id = requestId
+                        , result = Js.null
+                        , wake = Js.null
+                        , interrupted = False
+                        , bytes = bytes
+                        }
+                _ = Js.call (Js.get peer "requests") "set" [ host requestId, slot ]
+                Js.set peer "queuedBytes" (host (Js.to (Js.get peer "queuedBytes") + bytes))
+                case sendFrame peer "Request" requestId (Js.get reservation "payload") of
+                    Ok _ →
+                        Ok (guest slot)
+                    Err problem →
+                        _ = Js.call (Js.get peer "requests") "delete" [ host requestId ]
+                        Js.set peer "queuedBytes" (host (Js.to (Js.get peer "queuedBytes") - bytes))
+                        Err problem
+
+
+awaitSlot : V → V
+awaitSlot slot =
+    if not (Js.isNull (Js.get slot "result")) then
+        Js.get slot "result"
+    else
+        Task.callback λresume →
+            Js.set slot "wake" (host resume)
+            λ⊤ → Js.set slot "wake" Js.null
+
+
+pub await : Ticket error reply → Result (CallError error) reply
+await ticket =
+    slot = host ticket
+    Task.onExit
+        (λ⊤ →
+            outcome = awaitSlot slot
+            kind = Js.get outcome "kind"
+            if Js.same kind (host "Success") then
+                Ok (guest (Js.get outcome "payload"))
+            else if Js.same kind (host "Failure") then
+                Err (Application (guest (Js.get outcome "payload")))
+            else if Js.same kind (host "Transport") then
+                Err (Transport (guest (Js.get outcome "payload")))
+            else
+                _ = Task.cancel (Task.spawn λ⊤ → ⊤)
+                Task.never ⊤
+        )
+        λexit →
+            case exit of
+                Task.Cancelled →
+                    requireCleanup (cancel ticket)
+                _ →
+                    ⊤
+
+
+pub call :
+      Handle (Protocol call reply streamRequest error event chunk)
+    , call
+    → Result (CallError error) reply
+call handle request =
+    case prepare request of
+        Err problem →
+            Err (PreparationFailed problem)
+        Ok prepared →
+            case send handle prepared of
+                Err problem →
+                    Err (Transport (SendFailed problem))
+                Ok ticket →
+                    await ticket
+
+
+pub cancel : Ticket error reply → Cleanup
+cancel ticket = Task.uninterruptible λ⊤ →
+    slot = host ticket
+    peer = Js.get slot "peer"
+    if Js.isNull (Js.get slot "result") && not (Js.to (Js.get slot "interrupted")) then
+        Js.set slot "interrupted" (host True)
+        case sendFrame peer "Interrupt" (guest (Js.get slot "id")) Js.null of
+            Ok _ →
+                ⊤
+            Err problem →
+                transportFailed peer (SendFailed problem)
+    opts : Options
+    opts = guest (Js.get peer "options")
+    observed = Task.timeout opts.leaseWithin λ⊤ → awaitSlot slot
+    case observed of
+        Nothing →
+            transportFailed peer PeerUnresponsive
+            Unconfirmed LeaseExpired
+        Just result →
+            if Js.same (Js.get result "kind") (host "Transport") then
+                case guest (Js.get result "payload") of
+                    CleanupAbandoned →
+                        Abandoned
+                    PeerUnresponsive →
+                        Unconfirmed LeaseExpired
+                    PeerClosed →
+                        Confirmed
+                    _ →
+                        Unconfirmed ConnectionLost
+            else
+                Confirmed
+
+
+pub events :
+      Handle (Protocol call reply streamRequest error event chunk)
+    → Stream TransportError event
+events handle = guest (Js.get (host handle) "events")
 
 
 pub close : Handle protocol → Cleanup
-close handle =
+close handle = Task.uninterruptible λ⊤ →
     peer = host handle
-    if Js.to (Js.get peer "closed") then
+    phase = Js.get peer "phase"
+    if Js.same phase (host "Closed") then
         Confirmed
+    else if Js.same phase (host "Abandoned") then
+        Abandoned
     else
-        _ = post (Js.get peer "native") (frame "Close" Js.null)
-        result = Task.timeout (guest (Js.get peer "cleanup")) λ⊤ →
+        if not (Js.same phase (host "Closing")) then
+            Js.set peer "phase" (host "Closing")
+            case sendFrame peer "Close" 0 Js.null of
+                Ok _ →
+                    ⊤
+                Err problem →
+                    transportFailed peer (SendFailed problem)
+        opts : Options
+        opts = guest (Js.get peer "options")
+        result = Task.timeout opts.cleanupWithin λ⊤ →
             Task.callback λresume →
-                listener =
-                    λevent →
-                        if Js.same (Js.get (Js.get event "data") "kind") (Js.from "Closed") then
-                            Js.set peer "closed" (Js.from True)
-                            Task.resume resume Confirmed
-                _ =
-                    Js.call (Js.get peer "native") "addEventListener"
-                        [ Js.from "message", Js.from listener ]
-                λ⊤ →
-                    Js.to
-                        (Js.call (Js.get peer "native") "removeEventListener"
-                            [ Js.from "message", Js.from listener ]
-                        )
+                _ = Js.call (Js.get peer "closedWaiters") "add" [ host resume ]
+                if Js.same (Js.get peer "phase") (host "Closed") then Task.resume resume Confirmed
+                λ⊤ → Js.to (Js.call (Js.get peer "closedWaiters") "delete" [ host resume ])
         case result of
             Just cleanup →
                 cleanup
             Nothing →
+                Js.set peer "phase" (host "Lost")
                 Unconfirmed ConnectionLost
 
 
 pub abort : Handle protocol → Cleanup
 abort handle =
     peer = host handle
-    _ = Js.call (Js.get peer "native") "terminate" []
-    Js.set peer "closed" (Js.from True)
-    Abandoned
+    if Js.same (Js.get peer "phase") (host "Closed") then
+        Confirmed
+    else
+        _ = Js.call (Js.get peer "native") "terminate" []
+        transportFailed peer CleanupAbandoned
+        Js.set peer "phase" (host "Abandoned")
+        _ = Js.call peers "delete" [ Js.get peer "generation" ]
+        unlisten peer
+        Abandoned
 
 
 pub scope : Context event → Scope
@@ -367,42 +798,286 @@ scope context = guest (Js.get (host context) "scope")
 
 
 pub connection : Context event → Maybe ConnectionId
-connection _ = Nothing
+connection context =
+    if Js.to (Js.get (host context) "request") then Just (guest (host 1)) else Nothing
 
 
--- Entry runtime. run returns before initialization can suspend.
+pub emit : Context event, event → Result EmitError ⊤
+emit context value =
+    peer = Js.get (host context) "peer"
+    encoded = Wire.normalize (Js.get peer "wire") 2 "event" (host value)
+    bytes = wireBytes encoded (guest (Js.get peer "byteLimit"))
+    if Js.same (Js.get peer "phase") (host "Closed") then
+        Err EventChannelClosed
+    else if
+        Js.to (Js.get peer "eventCount") ≥ Js.to (Js.get peer "eventLimit")
+            || Js.to (Js.get peer "eventBytes") + bytes > Js.to (Js.get peer "byteLimit")
+    then
+        Err EventQueueFull
+    else
+        case sendFrame peer "Event" 0 encoded of
+            Ok _ →
+                Js.set peer "eventCount" (host (Js.to (Js.get peer "eventCount") + 1))
+                Js.set peer "eventBytes" (host (Js.to (Js.get peer "eventBytes") + bytes))
+                Ok ⊤
+            Err _ →
+                Err (EventCloneRejected NativeCloneRejected)
+
+
+-- Entry runtime: install transport before queuing the owned root.
 pub run : Program config state protocol → ⊤
 run definition = runDefinition (host definition)
 
 
 runDefinition : V → ⊤
 runDefinition definition =
-    greeting = Js.ref Js.null
-    greetingWake = Js.ref Js.null
+    peer =
+        Js.from
+            { native = Js.global "self"
+            , entry = Js.null
+            , fingerprint = Js.global "__beniWorkerFingerprint"
+            , wire = Js.get definition "$wire"
+            , generation = Js.null
+            , phase = "Starting"
+            , greeting = Js.null
+            , greetingWake = Js.null
+            , eventCount = 0
+            , eventBytes = 0
+            , byteLimit = 1048576
+            , eventLimit = 64
+            , requests = Js.construct (Js.global "Map") []
+            , queue = Js.array []
+            , next = Js.null
+            , terminal = 0
+            }
     lifetime = Task.openRoot ⊤
-    root = guest (Js.call definition "boot" [ host greeting, host greetingWake, host lifetime ])
+    root = guest (Js.call definition "boot" [ peer, host lifetime ])
     listener =
         λevent →
             incoming = Js.get event "data"
             kind = Js.get incoming "kind"
-            if Js.same kind (Js.from "Hello") then
-                Js.write greeting (Js.get incoming "payload")
-                if Js.isNull (Js.read greetingWake) then
+            if Js.same kind (host "Close") && Js.isNull (Js.get peer "greeting") then
+                Js.set peer "entry" (Js.get incoming "entry")
+                Js.set peer "generation" (Js.get incoming "generation")
+                Js.set peer "phase" (host "Closing")
+                Task.start (λ⊤ → Task.cancel root) λ_ → ⊤
+            else if Js.same kind (host "Hello") && Js.isNull (Js.get peer "greeting") then
+                Js.set peer "entry" (Js.get incoming "entry")
+                Js.set peer "generation" (Js.get incoming "generation")
+                if not (Js.same (Js.get incoming "fingerprint") (Js.get peer "fingerprint")) then
+                    _ =
+                        sendFrame
+                            peer
+                            "TransportFailure"
+                            0
+                            (Js.from { code = "ProtocolVersionMismatch" })
+                    Task.start (λ⊤ → Task.cancel root) λ_ → ⊤
+                else
+                    Js.set peer "greeting" incoming
+                    if Js.isNull (Js.get peer "greetingWake") then
+                        ⊤
+                    else
+                        Task.resume (guest (Js.get peer "greetingWake")) incoming
+            else if not (Js.same (Js.get incoming "generation") (Js.get peer "generation")) then
+                ⊤
+            else if Js.same kind (host "Close") then
+                Js.set peer "phase" (host "Closing")
+                Task.start (λ⊤ → Task.cancel root) λ_ → ⊤
+            else if Js.same kind (host "Request") then
+                if not (Js.same (Js.get peer "phase") (host "Ready")) then
                     ⊤
                 else
-                    Task.resume (guest (Js.read greetingWake)) (Js.read greeting)
-                    ⊤
-            else if Js.same kind (Js.from "Close") then
+                    requestId = Js.get incoming "requestId"
+                    if
+                        Js.to requestId ≤ Js.to (Js.get peer "terminal")
+                            || Js.to (Js.call (Js.get peer "requests") "has" [ requestId ])
+                    then
+                        fatal "Duplicate worker request ID"
+                    else
+                        job =
+                            Js.from
+                                { id = requestId
+                                , request = Js.get incoming "payload"
+                                , fiber = Js.null
+                                , interrupted = False
+                                }
+                        _ = Js.call (Js.get peer "requests") "set" [ requestId, job ]
+                        _ = Js.call (Js.get peer "queue") "push" [ job ]
+                        if Js.isNull (Js.get peer "next") then
+                            ⊤
+                        else
+                            Task.resume (guest (Js.get peer "next")) ⊤
+            else if Js.same kind (host "Interrupt") then
+                job = Js.call (Js.get peer "requests") "get" [ Js.get incoming "requestId" ]
+                if Js.isUndefined job then
+                    if Js.to (Js.get incoming "requestId") ≤ Js.to (Js.get peer "terminal") then
+                        ⊤
+                    else
+                        fatal "Unknown interrupt request ID"
+                else
+                    Js.set job "interrupted" (host True)
+                    if Js.isNull (Js.get job "fiber") then
+                        ⊤
+                    else
+                        Task.start (λ⊤ → Task.cancel (guest (Js.get job "fiber"))) λ_ → ⊤
+            else if Js.same kind (host "EventAck") then
+                Js.set peer "eventCount" (host (Js.to (Js.get peer "eventCount") - 1))
+                Js.set
+                    peer
+                    "eventBytes"
+                    (host (Js.to (Js.get peer "eventBytes") - Js.to (Js.get incoming "payload")))
+            else if Js.same kind (host "Ping") then
+                _ = sendFrame peer "Pong" 0 (Js.get incoming "payload")
+                ⊤
+            else
+                fatal "Unknown managed worker control frame"
+    _ = Js.call (Js.global "self") "addEventListener" [ host "message", host listener ]
+    _ =
+        Js.call (Js.global "self") "addEventListener"
+            [ host "messageerror"
+            , host λ_ →
+                _ =
+                    sendFrame
+                        peer
+                        "TransportFailure"
+                        0
+                        (Js.from { code = "MessageDeserializationFailed" })
                 Task.start (λ⊤ → Task.cancel root) λ_ → ⊤
-    _ = Js.call (Js.global "self") "addEventListener" [ Js.from "message", Js.from listener ]
+            ]
     Task.start
         (λ⊤ →
             _ = Task.wait root
             Task.closeRoot lifetime
-            _ = post (Js.global "self") (frame "Closed" Js.null)
-            _ =
-                Js.call (Js.global "self") "removeEventListener"
-                    [ Js.from "message", Js.from listener ]
+            _ = sendFrame peer "Closed" 0 Js.null
             Js.to (Js.call (Js.global "self") "close" [])
         )
         λ_ → ⊤
+
+
+serve :
+      V
+    , Scope
+    , Definition config state call reply streamRequest error event chunk
+    , state
+    , Options
+    → ⊤
+serve peer owned callbacks state opts =
+    if Js.to (Js.get (Js.get peer "queue") "length") == 0 then
+        Task.callback λresume →
+            Js.set peer "next" (host resume)
+            λ⊤ → Js.set peer "next" Js.null
+    job = Js.call (Js.get peer "queue") "shift" []
+    requestId = guest (Js.get job "id")
+    if Js.to (Js.get job "interrupted") then
+        _ = sendFrame peer "Interrupt" requestId Js.null
+        ⊤
+    else
+        fiber = Task.spawnIn owned λ⊤ →
+            Task.scope λrequestScope →
+                callbacks.handle
+                    (guest (Js.from { scope = requestScope, peer = peer, request = True }))
+                    state
+                    (guest (Js.get job "request"))
+        Js.set job "fiber" (host fiber)
+        result = Task.wait fiber
+        case result of
+            Task.Cancelled →
+                _ = sendFrame peer "Interrupt" requestId Js.null
+                ⊤
+            Task.Done (Ok reply) →
+                terminalReply peer requestId "Success" (host reply)
+            Task.Done (Err error) →
+                terminalReply peer requestId "Failure" (host error)
+    _ = Js.call (Js.get peer "requests") "delete" [ host requestId ]
+    Js.set
+        peer
+        "terminal"
+        (Js.call (Js.global "Math") "max" [ Js.get peer "terminal", host requestId ])
+    serve peer owned callbacks state opts
+
+
+-- A bounded walk over managed data; no JSON conversion or user codecs run.
+wireBytes : V, Int → Int
+wireBytes value limit = sizeLoop (Js.array [ value ]) 0 limit
+
+
+sizeLoop : V, Int, Int → Int
+sizeLoop pending size limit =
+    if size > limit || Js.to (Js.get pending "length") == 0 then
+        size
+    else
+        item = Js.call pending "pop" []
+        if Js.typeIs item "string" then
+            bytes = Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ item ]
+            sizeLoop pending (size + Js.to (Js.get bytes "length") + 8) limit
+        else if Js.isNullish item || not (Js.typeIs item "object") then
+            sizeLoop pending (size + 8) limit
+        else if
+            Js.instanceOf item (Js.global "ArrayBuffer")
+                || Js.to (Js.call (Js.global "ArrayBuffer") "isView" [ item ])
+        then
+            sizeLoop pending (size + Js.to (Js.get item "byteLength") + 8) limit
+        else
+            Js.each (Js.call (Js.global "Object") "values" [ item ]) λchild →
+                Js.to (Js.call pending "push" [ child ])
+            sizeLoop pending (size + 8) limit
+
+
+stopRealm : ⊤ → ⊤
+stopRealm ⊤ = Task.shutdown 1000 λ_ → ⊤
+
+
+terminalReply : V, Int, String, V → ⊤
+terminalReply peer requestId kind payload =
+    case sendFrame peer kind requestId payload of
+        Ok _ →
+            ⊤
+        Err _ →
+            _ = sendFrame peer "TransportFailure" 0 (Js.from { code = "WorkerCloneRejected" })
+            ⊤
+
+
+decodeTransport : V → TransportError
+decodeTransport payload =
+    code = Js.get payload "code"
+    if Js.same code (host "MessageDeserializationFailed") then
+        MessageDeserializationFailed
+    else if Js.same code (host "ProtocolVersionMismatch") then
+        ProtocolVersionMismatch
+    else if Js.same code (host "WorkerCloneRejected") then
+        SendFailed (WorkerCloneRejected NativeCloneRejected)
+    else
+        fatal "Unknown worker transport failure"
+
+
+failedOpen : V, OpenReason error → Result (OpenError error) (Handle protocol)
+failedOpen peer reason =
+    observed = close (guest peer)
+    Js.set peer "opening" (host False)
+    cleanup =
+        case ( reason, observed ) of
+            ( ReadyDeadlineExceeded, Unconfirmed _ ) →
+                Unconfirmed ReadyExpired
+            _ →
+                observed
+    Err { reason = reason, cleanup = cleanup }
+
+
+workerDefect : V, V → a
+workerDefect peer report =
+    cause = Js.construct (Js.global "Error") [ Js.get report "message" ]
+    stack = Js.get report "stack"
+    if Js.typeIs stack "string" && not (Js.same stack (host "")) then Js.set cause "stack" stack
+    Js.set cause "entryId" (Js.get peer "entry")
+    Js.set cause "instanceId" (Js.get peer "generation")
+    Js.set cause "realm" (host "dedicatedWorker")
+    Js.throw cause
+
+
+requireCleanup : Cleanup → ⊤
+requireCleanup cleanup =
+    case cleanup of
+        Unconfirmed _ →
+            fatal "Worker cleanup was not confirmed"
+        _ →
+            ⊤

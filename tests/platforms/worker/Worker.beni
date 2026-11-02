@@ -4,12 +4,7 @@ import Task
 
 
 pub type Program request reply state
-    = Program
-        { init : (⊤, ⊤ → state)
-        , start : (state, ⊤ → ⊤)
-        , handle : (request, state, ⊤ → reply)
-        , stream : (⊤, state, ⊤, ⊤ → ⊤)
-        }
+    = Program Js.Value
 
 
 pub type OpenError
@@ -27,7 +22,18 @@ pub program :
       , stream : (⊤, state, ⊤, ⊤ → ⊤)
       }
     → Program request reply state
-program callbacks = Program callbacks
+program callbacks =
+    Program
+        (Js.from λ⊤ →
+            Task.start
+                (λ⊤ →
+                    state = callbacks.init ⊤ ⊤
+                    listen λmessage →
+                        Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+                    callbacks.start state ⊤
+                )
+                λ_ → ⊤
+        )
 
 
 pub open : Program request reply state → Result OpenError (Handle request reply)
@@ -46,16 +52,9 @@ pub foreign impure receive : Handle request reply, sync (reply → ⊤) → ⊤
 pub run : Program request reply state → ⊤
 run definition =
     case definition of
-        Program callbacks →
+        Program boot →
             configure (Js.from definition)
-            Task.start
-                (λ⊤ →
-                    state = callbacks.init ⊤ ⊤
-                    listen λmessage →
-                        Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
-                    callbacks.start state ⊤
-                )
-                λ_ → ⊤
+            Js.to (Js.apply boot [ Js.null ])
 
 
 foreign impure configure : Js.Value → ⊤

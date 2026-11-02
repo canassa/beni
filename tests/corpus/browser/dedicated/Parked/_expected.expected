@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"idle"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "9:1"
+<body>
+  <output>"9:1"</output>
+  <button>"launch"</button>
+</body>
