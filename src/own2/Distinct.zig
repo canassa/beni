@@ -474,26 +474,19 @@ fn gather(e: *Eval, occs: *Occs, c: Cond) Error!bool {
     return false;
 }
 
-/// Whether two entries of one root may name one object: at related
-/// positions whose slots meet, found through each entry's ancestors (or
-/// pairwise in a group with list steps or of at most eight).
+/// Whether two entries of one root may name one object (§2.3.2): by index
+/// `(position, 4, slot)` and `(ancestor, list step kind, slot)`, checked at
+/// ancestors and the list steps that may meet (pairwise up to eight).
 fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!bool {
     if (idx.len < 2) return false;
     const g = e.gpa();
-    var listy = idx.len <= 8;
-    if (!listy) for (idx) |i| {
-        var p = e.f.leafAt(ents[i].leaf).pos;
-        while (p != none and e.f.pos.items[p].parent != none) : (p = e.f.pos.items[p].parent) {
-            if (e.f.pos.items[p].kind != .plain) listy = true;
-        }
-    };
-    if (listy) {
+    if (idx.len <= 8) {
         for (idx, 0..) |i, k| for (idx[k + 1 ..]) |j| {
             if (try pairMay(e, ents[i], ents[j], routed)) return true;
         };
         return false;
     }
-    var at: Ids.FixedDict(2) = .{};
+    var at: Ids.FixedDict(3) = .{};
     defer at.deinit(g);
     var lists: std.ArrayList(std.ArrayList(u32)) = .empty;
     defer {
@@ -509,29 +502,45 @@ fn mayWithin(e: *Eval, ents: []const Ent, idx: []const u32, routed: bool) Error!
             if (try pairMay(e, ents[i], ents[j], routed)) return true;
         }
     }
-    for (idx) |i| {
-        const l = e.f.leafAt(ents[i].leaf);
-        for (Subtree.explicit(e.f.slots, l.slots)) |s| {
+    const pos = e.f.pos.items;
+    for (idx) |i| for (Subtree.explicit(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) |s| {
+        var c = e.f.leafAt(ents[i].leaf).pos;
+        var key: [3]u32 = .{ c, 4, s };
+        while (true) {
             try e.charge(.inspection, 1);
-            const got = try at.getOrPut(g, .{ l.pos, s });
+            const got = try at.getOrPut(g, key);
             if (!got.found_existing) {
                 got.value_ptr.* = @intCast(lists.items.len);
                 try lists.append(g, .empty);
             }
             try lists.items[got.value_ptr.*].append(g, i);
+            while (pos[c].parent != none and pos[c].kind == .plain) c = pos[c].parent;
+            if (pos[c].parent == none) break;
+            key = .{ pos[c].parent, @backingInt(pos[c].kind), s };
+            c = pos[c].parent;
         }
-    }
+    };
     for (idx) |i| {
         const l = e.f.leafAt(ents[i].leaf);
-        var p = l.pos;
-        while (p != none) : (p = e.f.pos.items[p].parent) {
-            for (Subtree.explicit(e.f.slots, l.slots)) |s| {
+        for (Subtree.explicit(e.f.slots, l.slots)) |s| {
+            var p = l.pos;
+            while (p != none) : (p = pos[p].parent) {
                 try e.charge(.inspection, 1);
-                const here = at.get(.{ p, s }) orelse continue;
-                for (lists.items[here].items) |j| {
-                    if (j == i) continue;
-                    if (p == l.pos and j > i) continue;
+                if (at.get(.{ p, 4, s })) |here| for (lists.items[here].items) |j| {
+                    if (j == i or (p == l.pos and j > i)) continue;
                     if (try pairMay(e, ents[i], ents[j], routed)) return true;
+                };
+                if (pos[p].parent == none) continue;
+                const kinds: []const u32 = switch (pos[p].kind) {
+                    .plain => &.{},
+                    .front => &.{ 2, 3 },
+                    .back => &.{ 1, 3 },
+                    .slice => &.{ 1, 2, 3 },
+                };
+                for (kinds) |k| {
+                    try e.charge(.inspection, 1);
+                    const here = at.get(.{ pos[p].parent, k, s }) orelse continue;
+                    for (lists.items[here].items) |j| if (j != i and try pairMay(e, ents[i], ents[j], routed)) return true;
                 }
             }
         }
