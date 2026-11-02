@@ -5756,7 +5756,7 @@ const Emitter = struct {
                 for (parameter.path) |field| try wire_fields.put(e.scratch, field, {});
             }
             for (plan.nodes) |node| {
-                if (node.kind != .record) continue;
+                if (node.kind != .record and node.kind != .open_record) continue;
                 for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| {
                     const label = edge.label.unwrap() orelse continue;
                     try wire_fields.put(e.scratch, try e.scratch.dupe(u8, e.session.interner.slice(label)), {});

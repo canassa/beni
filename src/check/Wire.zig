@@ -318,8 +318,10 @@ const Builder = struct {
             .flex, .rigid => |flags| {
                 if (flags.kind == .number or flags.kind == .int_key or flags.kind == .string_key or flags.kind == .dict_key) return w.add(.stable, &.{});
                 if (w.defer_all) return w.add(.variable, &.{});
-                if (try w.require(original, &.{})) return w.add(.stable, &.{});
-                return w.bad(path, "an unresolved type variable");
+                // Keep quantified obligations, but an unfixed role has no
+                // concrete value that could violate Wire.
+                _ = try w.require(original, &.{});
+                return w.add(.stable, &.{});
             },
 
             .err => return w.bad(path, "an unresolved type"),
