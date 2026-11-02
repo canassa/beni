@@ -48,7 +48,7 @@ pub foreign pure to : returned Value → a
 
 
 --| `a === b`.
-pub foreign pure same : unused a, unused a → fresh bool
+pub foreign pure same : unused a, unused b → fresh bool
 
 
 --| `v === null`.
@@ -162,7 +162,7 @@ pub foreign impure apply : Value, args → Value
 --| driver to consume. Its real type and callback summary are retained.
 --| Core's fiber driver only; this does not turn suspension into a value
 --| an application can hold. Unlike a host callback, `work` is not `sync`.
-pub foreign impure invoke : once (a → b), aliased a, sync (b → ⊤) → unknown b
+pub foreign impure invoke : once returned (a → b), aliased a, sync (b → ⊤) → b
 
 
 --| The current typed result destination. Only Task.callback's compiler

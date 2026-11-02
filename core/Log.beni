@@ -99,7 +99,12 @@ error message = log Error message
 pub log : Level, String → ⊤
 log level message =
     here = context ⊤
-    least = if Js.isUndefined here.minimum then Js.read programMinimum else Js.to here.minimum
+    least =
+        case here.minimum of
+            Nothing →
+                Js.read programMinimum
+            Just threshold →
+                threshold
 
     if rank level ≥ rank least then
         now = Clock.now ⊤
@@ -134,8 +139,8 @@ rank level =
 
 -- The sink `setSink` installed: undefined until it is called, for the
 -- default.
-sink : Js.Ref Js.Value
-sink = Js.ref Js.undefined
+sink : Js.Ref (Maybe (Entry → ⊤))
+sink = Js.ref Nothing
 
 
 --| Make `f` the sink of every line the program writes from now on, outside
@@ -143,7 +148,7 @@ sink = Js.ref Js.undefined
 --| platform's `Io.run` makes it. The last call wins. A sink runs during
 --| the call that logs, so it must not suspend.
 pub setSink : sync (Entry → ⊤) → ⊤
-setSink f = Js.write sink (Js.from f)
+setSink f = Js.write sink (Just f)
 
 
 -- The program's minimum, which `setMinimum` sets.
@@ -165,14 +170,19 @@ setMinimum level = Js.write programMinimum level
 
 -- Hand `entry` to the sink: `withSink`'s, else `setSink`'s, else the
 -- console.
-emit : Js.Value, Entry → ⊤
+emit : Maybe (Entry → ⊤), Entry → ⊤
 emit scoped entry =
-    target = if Js.isUndefined scoped then Js.read sink else scoped
-
-    if Js.isUndefined target then
-        console entry
-    else
-        Js.to (Js.apply target [ Js.from entry ])
+    target =
+        case scoped of
+            Nothing →
+                Js.read sink
+            Just _ →
+                scoped
+    case target of
+        Nothing →
+            console entry
+        Just write →
+            write entry
 
 
 -- ---- The log context (§17.5) ----------------------------------------------
@@ -185,21 +195,27 @@ emit scoped entry =
 type alias Context =
     annotations : List (String × String)
     spans : List (String × Int)
-    minimum : Js.Value
-    sink : Js.Value
+    minimum : Maybe Level
+    sink : Maybe (Entry → ⊤)
 
 
 -- The context of a fiber that no `annotate`, `span`, `minimum` or
 -- `withSink` changed.
 initial : Context
-initial = { annotations = [], spans = [], minimum = Js.undefined, sink = Js.undefined }
+initial = { annotations = [], spans = [], minimum = Nothing, sink = Nothing }
 
 
 -- The calling fiber's log context.
 context : ⊤ → Context
 context ⊤ =
-    slot = Task.currentLogContext ⊤
-    if Js.isUndefined slot then initial else Js.to slot
+    case Task.currentLogContext ⊤ of
+        Nothing →
+            initial
+        Just install →
+            install ⊤
+            value = Js.read contextSlot
+            Js.write contextSlot initial
+            value
 
 
 -- Run `work` with the calling fiber's log context set to `next`. Each
@@ -207,7 +223,7 @@ context ⊤ =
 -- (`Record.copy here`): that context is the outer fiber's, or `initial`,
 -- and it must read as it was once `work` returns.
 within : Context, (⊤ → a) → a
-within next work = Task.withLogContext (Js.from next) work
+within next work = Task.withLogContext (λ⊤ → Js.write contextSlot next) work
 
 
 --| Run `work` with the annotation `key` = `value` on every line it writes,
@@ -253,7 +269,7 @@ span label work =
 pub minimum : Level, (⊤ → a) → a
 minimum level work =
     here = context ⊤
-    within { Record.copy here | minimum = Js.from level } work
+    within { Record.copy here | minimum = Just level } work
 
 
 --| Run `work` with `f` as the sink of every line it writes, and of every
@@ -263,7 +279,7 @@ minimum level work =
 pub withSink : sync (Entry → ⊤), (⊤ → a) → a
 withSink f work =
     here = context ⊤
-    within { Record.copy here | sink = Js.from f } work
+    within { Record.copy here | sink = Just f } work
 
 
 -- The default sink: the console method for the level, given the message
@@ -399,3 +415,8 @@ valueText value =
         value
     else
         Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from value ])
+
+
+-- Installation callbacks keep Context typed without a Task/Log import cycle.
+contextSlot : Js.Ref Context
+contextSlot = Js.ref initial
