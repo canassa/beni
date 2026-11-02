@@ -55,7 +55,8 @@ const layers = [_]Entry{
     .{ .file = "Distinct.zig", .layer = 7, .max_lines = 640 },
     .{ .file = "Eval.zig", .layer = 8, .max_lines = 1250 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
-    .{ .file = "Resolve.zig", .layer = 9, .max_lines = 640 },
+    // A supply part judged by its known objects too (#1712).
+    .{ .file = "Resolve.zig", .layer = 9, .max_lines = 680 },
     .{ .file = "Deliver.zig", .layer = 9, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
     .{ .file = "Closures.zig", .layer = 9, .max_lines = 140 },
