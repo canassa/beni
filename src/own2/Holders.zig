@@ -27,6 +27,33 @@ pub const Key = [3]u32;
 /// or a parameter's, and the least shared value it reaches (`none`).
 pub const Facts = struct { unknown: bool = false, param: bool = false, shared: [2]u32 = .{ none, none } };
 
+/// Conditions gathered (§2.9.3, §2.9.4): each met condition's occurrences
+/// appended (one record each), made one selection at the end by one sort.
+/// A conjunction per condition met merged the selection so far each time:
+/// a frame's `req` over n demands cost n².
+pub const Gather = struct {
+    no: bool = false,
+    occ: std.ArrayList(u64) = .empty,
+
+    pub fn deinit(x: *Gather, gpa: Allocator) void {
+        x.occ.deinit(gpa);
+    }
+
+    pub fn add(x: *Gather, gpa: Allocator, account: *Ids.Account, c: Cond) Error!void {
+        if (c.no) x.no = true;
+        if (x.no or c.sel.len == 0) return;
+        try account.reserve(.cond, @intCast(c.sel.len));
+        try x.occ.appendSlice(gpa, c.sel);
+    }
+
+    /// The selection gathered, in `arena`.
+    pub fn cond(x: *const Gather, arena: Allocator, account: *Ids.Account) Error!Cond {
+        if (x.no) return Cond.unprovable;
+        if (x.occ.items.len == 0) return Cond.yes;
+        return Cond.of(account, try arena.dupe(u64, x.occ.items));
+    }
+};
+
 /// Each leaf's base keys (§2.8, *Base keys*), two columns by leaf id: its
 /// `Facts`, made for every leaf a demand targets, and its run of `items`
 /// (sorted, once each), made only for a target or a holder that a demand
@@ -320,7 +347,7 @@ pub const Escapes = struct {
     /// Whether an escape at `point` or before it, compatibly, reaches
     /// target `t` (`may`); an `under` adds to `relied`. The buckets the
     /// target's keys meet only (§2.8, *The escape index*).
-    pub fn escaped(x: *Escapes, ev: *Relation.Eval, keys: *Keys, regions: *const Regions.Tree, escs: []const Walk.Escape, t: u32, point: u32, call: u32, relied: *Cond) Error!bool {
+    pub fn escaped(x: *Escapes, ev: *Relation.Eval, keys: *Keys, regions: *const Regions.Tree, escs: []const Walk.Escape, t: u32, point: u32, call: u32, relied: *Gather) Error!bool {
         if (x.runs.items.len == 0) return false;
         const ks = try keys.of(ev, t);
         x.query += 1;
@@ -350,7 +377,7 @@ pub const Escapes = struct {
         t: u32,
         point: u32,
         call: u32,
-        relied: *Cond,
+        relied: *Gather,
 
         /// Bucket `b`'s escapes at the point, and those before it whose
         /// rank₂ is below its own (§2.5), by descending the tree only into
@@ -405,7 +432,7 @@ pub const Escapes = struct {
             const o = try Distinct.overlap(q.ev, e.leaf, q.t, false);
             switch (o.kind) {
                 .no => {},
-                .under => q.relied.* = try Cond.conj(q.ev.arena, q.ev.account(), q.relied.*, o.cond),
+                .under => try q.relied.add(q.ev.gpa(), q.ev.account(), o.cond),
                 .may => return true,
             }
             return false;
