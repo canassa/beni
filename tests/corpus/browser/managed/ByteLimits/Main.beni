@@ -1,0 +1,85 @@
+-- A request's UTF-8 size and outstanding bytes both enforce the byte limit.
+-- Completing a ticket releases its reservation for the next request.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ request → Ok request
+        , stream = Worker.noStream
+        }
+
+
+full : Result (Worker.CallError String) String → Bool
+full result =
+    case result of
+        Err (Worker.Transport (Worker.SendFailed Worker.QueueFull)) →
+            True
+        _ →
+            False
+
+
+reply : String, Result (Worker.CallError String) String → Bool
+reply expected result =
+    case result of
+        Ok actual →
+            actual == expected
+        _ →
+            False
+
+
+exercise : ⊤ → String
+exercise ⊤ = Task.scope λowned →
+    case Worker.open owned worker ⊤ { Worker.options | queuedBytes = 10 } of
+        Err _ →
+            "open failed"
+        Ok handle →
+            reserved =
+                case Worker.prepare "é" of
+                    Err _ →
+                        False
+                    Ok prepared →
+                        case Worker.send handle prepared of
+                            Err _ →
+                                False
+                            Ok ticket →
+                                blocked = full (Worker.call handle "")
+                                completed = reply "é" (Worker.await ticket)
+                                blocked && completed
+            unicode = full (Worker.call handle "€") && full (Worker.call handle "🙂")
+            released = reply "ab" (Worker.call handle "ab") && reply "" (Worker.call handle "")
+            cleanup = Worker.close handle
+            if reserved && unicode && released && cleanup == Worker.Confirmed then
+                "byte limits passed"
+            else
+                "byte limits failed"
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

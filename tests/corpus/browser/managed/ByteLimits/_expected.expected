@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "byte limits passed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"byte limits passed"</output>
+  </main>
+</body>

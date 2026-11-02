@@ -1,8 +1,12 @@
 -- Dedicated workers. Launches remain behind --allow-unchecked-workers.
+import Browser.Host.Data as Data
+import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.Uint8Array as Uint8Array
 import Browser.WorkerStream exposing (Sink, Stream)
 import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
 import Js
+import Js.Chain as Chain
 import Js.Protocol as Protocol
 import Schema exposing (Issue)
 import Task exposing (Scope)
@@ -1143,31 +1147,44 @@ requireSyncStart : sync (Context event, state → ⊤) → (Context event, state
 requireSyncStart callback = callback
 
 
--- A bounded walk over managed data; no JSON conversion or user codecs run.
+-- A bounded walk over Wire data. Wire rejects native graphs before this
+-- helper; neither JSON conversion nor a user codec runs here.
 wireBytes : V, Int → Int
-wireBytes value limit = sizeLoop (Js.array [ value ]) 0 limit
+wireBytes value limit =
+    pending = Chain.make ⊤
+    _ = Chain.append pending value
+    sizeLoop pending 0 limit
 
 
-sizeLoop : V, Int, Int → Int
+sizeLoop : Chain.Chain V, Int, Int → Int
 sizeLoop pending size limit =
-    if size > limit || Js.to (Js.get pending "length") == 0 then
+    if size > limit then
         size
     else
-        item = Js.call pending "pop" []
-        if Js.typeIs item "string" then
-            bytes = Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ item ]
-            sizeLoop pending (size + Js.to (Js.get bytes "length") + 8) limit
-        else if Js.isNullish item || not (Js.typeIs item "object") then
-            sizeLoop pending (size + 8) limit
-        else if
-            Js.instanceOf item (Js.global "ArrayBuffer")
-                || Js.to (Js.call (Js.global "ArrayBuffer") "isView" [ item ])
-        then
-            sizeLoop pending (size + Js.to (Js.get item "byteLength") + 8) limit
-        else
-            Js.each (Js.call (Js.global "Object") "values" [ item ]) λchild →
-                Js.to (Js.call pending "push" [ child ])
-            sizeLoop pending (size + 8) limit
+        case Chain.pop pending of
+            Nothing →
+                size
+            Just item →
+                if Js.typeIs item "string" then
+                    text : String
+                    text = Js.to item
+                    bytes = TextEncoder.encode (TextEncoder.create ⊤) text
+                    sizeLoop pending (size + Uint8Array.byteLength bytes + 8) limit
+                else if Js.isNullish item || not (Js.typeIs item "object") then
+                    sizeLoop pending (size + 8) limit
+                else
+                    appendFields pending item (Data.keys item)
+                    sizeLoop pending (size + 8) limit
+
+
+appendFields : Chain.Chain V, V, List String → ⊤
+appendFields pending item fields =
+    case fields of
+        [] →
+            ⊤
+        [ field, …rest ] →
+            _ = Chain.append pending (Js.get item field)
+            appendFields pending item rest
 
 
 hostStop : Js.Ref (Maybe (⊤ → ⊤))
