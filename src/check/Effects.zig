@@ -591,7 +591,7 @@ pub const Summary = struct { start: u32 = 0, len: u32 = 0 };
 /// `sync`: a use must not let its copy suspend (§15.3).
 /// `sensitive`: the declaration's body reads the class, so the declaration has
 /// a second, suspendable body (§16.2; `EffectPlan`).
-pub const Class = struct { node: u32, rung: Rung, deps_start: u32 = 0, deps_len: u32 = 0, sync: bool = false, sensitive: bool = false };
+pub const Class = struct { node: u32, rung: Rung, deps_start: u32 = 0, deps_len: u32 = 0, sync: bool = false, sensitive: bool = false, holder: bool = false };
 
 /// What `run` leaves: the graph, every node's rung, and the summaries.
 ///
@@ -1222,6 +1222,8 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
     const scratch = in.scratch;
     var changed = false;
     const demands = s.sources.items.len != 0;
+    var holders: std.ArrayList(u32) = .empty;
+    defer holders.deinit(scratch);
     for (members) |d| {
         const kind = in.bir.decls[d].kind;
         if (!kind.isValue() or kind == .foreign_value or kind == .vocab_markup) continue;
@@ -1233,6 +1235,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
         };
         const nodes = &s.scheme_nodes;
         nodes.clearRetainingCapacity();
+        holders.clearRetainingCapacity();
         const rd = e.readings[d];
         if (rd.scheme_start != none and e.store.content(e.store.find(scheme)) != .err) {
             // An annotated scheme's variables are its reading's range: no
@@ -1242,8 +1245,9 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
                 if (!e.carries(r)) continue;
                 const nd = try e.nodeFor(r);
                 if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) try nodes.append(e.gpa, nd);
+                if (e.isHolder(r)) try holders.append(scratch, nd);
             }
-        } else try e.schemeNodes(scheme, nodes);
+        } else try e.schemeNodes(scheme, nodes, &holders, scratch);
         // One class, the common case, depends on no other: no bits to push.
         if (nodes.items.len <= 1) {
             const old = s.classesOf(d);
@@ -1254,11 +1258,12 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
                 continue;
             }
             const nd = nodes.items[0];
+            const holder = std.mem.indexOfScalar(u32, holders.items, nd) != null;
             const sync = demands and nd != root and s.level.items[nd] != .suspends and try e.reachesDemand(nd, scratch);
-            if (old.len == 1 and old[0].node == nd and old[0].rung == s.level.items[nd] and old[0].sync == sync) continue;
+            if (old.len == 1 and old[0].node == nd and old[0].rung == s.level.items[nd] and old[0].sync == sync and old[0].holder == holder) continue;
             changed = true;
             s.summaries[d] = .{ .start = @intCast(s.classes.items.len), .len = 1 };
-            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .sync = sync });
+            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .sync = sync, .holder = holder });
             continue;
         }
         const reach = try scratch.alloc(bool, nodes.items.len);
@@ -1275,7 +1280,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
         var same = old.len == nodes.items.len;
         if (same) {
             for (old, nodes.items, deps, reach) |c, nd, ds, sync| {
-                if (c.node != nd or c.rung != s.level.items[nd] or c.sync != sync or !std.mem.eql(u32, s.depsOf(c), ds)) same = false;
+                if (c.node != nd or c.rung != s.level.items[nd] or c.sync != sync or c.holder != (std.mem.indexOfScalar(u32, holders.items, nd) != null) or !std.mem.eql(u32, s.depsOf(c), ds)) same = false;
             }
         }
         if (same) continue;
@@ -1284,7 +1289,7 @@ fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
         for (nodes.items, deps, reach) |nd, ds, sync| {
             const deps_start: u32 = @intCast(s.deps.items.len);
             try s.deps.appendSlice(e.gpa, ds);
-            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .deps_start = deps_start, .deps_len = @intCast(ds.len), .sync = sync });
+            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .deps_start = deps_start, .deps_len = @intCast(ds.len), .sync = sync, .holder = std.mem.indexOfScalar(u32, holders.items, nd) != null });
         }
         s.summaries[d] = .{ .start = start, .len = @intCast(nodes.items.len) };
     }
@@ -1379,7 +1384,7 @@ fn dependencies(e: *Effects, nodes: []const u32, scratch: Allocator, reach: ?[]b
 /// The order is the walk's, deterministic and otherwise immaterial: a
 /// summary's classes are numbered again by site when published, and named
 /// by first print when dumped.
-fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32)) Error!void {
+fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32), holders: *std.ArrayList(u32), scratch: Allocator) Error!void {
     const store = e.store;
     const stack = &e.solved.walk;
     stack.clearRetainingCapacity();
@@ -1400,6 +1405,7 @@ fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32)) Error!void {
         if (e.carries(r)) {
             const nd = try e.nodeFor(r);
             if (std.mem.indexOfScalar(u32, out.items, nd) == null) try out.append(e.gpa, nd);
+            if (e.isHolder(r)) try holders.append(scratch, nd);
         }
         var k: u32 = 0;
         while (Walk.stepped(store, r, k)) |c| : (k += 1) try stack.append(e.gpa, c.v);

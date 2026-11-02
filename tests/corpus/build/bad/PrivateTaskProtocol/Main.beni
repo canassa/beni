@@ -1,0 +1,9 @@
+import Io
+import Node
+import Probe
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    Probe.run ⊤
+    Node.done

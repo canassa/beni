@@ -178,6 +178,7 @@ module Js
   value bitXor : int, int → int
   value call : Value, name, args → Value  -- impure
   value catchIf : (⊤ → a), (Value → bool), (Value → a) → a  -- impure
+  value completion : ⊤ → (a → ⊤)  -- impure
   value construct : Value, args → Value  -- impure
   value development : ⊤ → bool
   value each : Value, (Value → ⊤) → ⊤  -- impure
@@ -189,7 +190,7 @@ module Js
   value global : name → Value  -- impure
   value gt : a, a → bool
   value instanceOf : Value, Value → bool  -- impure
-  value invoke : (a → b), a → b  -- impure
+  value invoke : (a → b), a, (b → ⊤) → b  -- impure
   value isNull : Value → bool
   value isNullish : Value → bool
   value isUndefined : Value → bool
@@ -615,14 +616,14 @@ module Task
     Cancelled
   type Fiber a
   type Restore
-  type Resume a
+  opaque type Resume a
   type Scheduler
   type Scope
   type Soon
   value adjustClock : Value, Value → ⊤  -- suspends
   value andThen : a, (a → b) → b  -- impure
   value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure
-  value callback : (Resume a → (⊤ → ⊤)) → a  -- suspends
+  value callback : ((Resume a) → (⊤ → ⊤)) → a  -- suspends
   value cancel : Fiber a → ⊤  -- suspends
   value cancelAll : List (Fiber a) → ⊤  -- suspends
   value cleansUp : ⊤ → Bool  -- impure

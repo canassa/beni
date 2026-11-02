@@ -1478,6 +1478,9 @@ pub const Lowerer = struct {
     /// The function being lowered is in the suspendable form (§16.3): a
     /// call that may suspend is a marker for `Suspend` to split at.
     suspendable: bool = false,
+    completion: JsIr.NameIndex = .none,
+    completion_next: u32 = 1,
+    protocol_forward: bool = false,
     /// How many markers the function being lowered has written.
     markers: u32 = 0,
     /// The join a non-tail `case` of a suspendable function sends its leaves
@@ -1680,6 +1683,7 @@ pub const Lowerer = struct {
     /// declaration prints does not depend on which others survived.
     pub fn restartNames(l: *Lowerer) void {
         l.next_tag = 1;
+        l.completion_next = 1;
         // A hoisted read's temporary is named in this numbering, and so
         // belongs to the lowering it was bound in (§31.14).
         l.hoist_gen +%= 1;
@@ -3845,8 +3849,13 @@ pub const Lowerer = struct {
     /// The calls are written by the emitter in OTHER modules, so no BIR of
     /// this one shows them: such a value is exported and its result read.
     fn emitterCalled(l: *Lowerer, index: u32) bool {
-        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
         const d = l.bir.decls[index];
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
+            const spelling = l.text(l.bir.symbol(d.name));
+            return std.mem.eql(u8, spelling, "chain") or std.mem.eql(u8, spelling, "continueWith");
+        }
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
+
         if (!d.kind.isValue()) return false;
         return corePrivateSlot(l.bir.symbol(d.name)) != null;
     }
@@ -4016,7 +4025,7 @@ pub const Lowerer = struct {
         // never has any, and reads its enclosing binders' by capture.
         var k: u16 = 0;
         while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceNameOf(ev_let, k));
-        for (params[0..l.writtenParams(params)]) |param| {
+        for (params[0..if (suspendable) params.len else l.writtenParams(params)]) |param| {
             // A bare variable pattern IS the JavaScript parameter; anything
             // else (a tuple, a record, a constructor) needs a name of its
             // own and a destructuring statement at the top of the body.
@@ -4040,6 +4049,10 @@ pub const Lowerer = struct {
         // assigning a `let $t$n` and returning that. The position of the
         // `return` is the body's own, which `tailStmts` reads from the
         // instruction — so this no longer takes one.
+        if (suspendable) {
+            l.completion = try l.completionName();
+            try names.append(l.scratch, l.completion);
+        }
         try l.tailStmts(&stmts, body, null);
         const split = try l.splitSuspensions(stmts.items, null, .closure);
         return l.funcRecord(names.items, split);
@@ -4095,14 +4108,15 @@ pub const Lowerer = struct {
 
     // ---- The suspendable form (transparent-effects-proposal.md §16) -----
 
-    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex };
+    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex, completion: JsIr.NameIndex, protocol_forward: bool };
 
     fn enterFunction(l: *Lowerer, suspendable: bool) FunctionState {
-        const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join };
+        const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join, .completion = l.completion, .protocol_forward = l.protocol_forward };
         // A stack address can be reused by sibling functions. Evidence
         // names belong to the function that declares them.
         l.bound_out = null;
         l.suspendable = suspendable;
+        if (suspendable or !l.protocol_forward) l.completion = .none;
         l.markers = 0;
         l.function_depth += 1;
         l.join = .none;
@@ -4112,9 +4126,19 @@ pub const Lowerer = struct {
     fn leaveFunction(l: *Lowerer, outer: FunctionState) void {
         l.bound_out = null;
         l.suspendable = outer.suspendable;
+        l.completion = outer.completion;
+        l.protocol_forward = outer.protocol_forward;
         l.markers = outer.markers;
         l.join = outer.join;
         l.function_depth -= 1;
+    }
+
+    /// Keep protocol binders out of the ordinary temporary counter, so
+    /// non-suspending nested functions retain their existing names.
+    fn completionName(l: *Lowerer) !JsIr.NameIndex {
+        const tag = l.completion_next;
+        l.completion_next += 1;
+        return l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$resume"), .tag = tag });
     }
 
     /// Whether an answer of §16.2 is yes in the body being lowered.
@@ -4149,7 +4173,7 @@ pub const Lowerer = struct {
     fn splitSuspensions(l: *Lowerer, stmts: []const Node.Index, loop: ?Suspend.Loop, mode: Suspend.Mode) ![]const Node.Index {
         if (l.markers == 0) return stmts;
         const names = try l.fiberNames(mode == .loop);
-        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep };
+        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep, .completion = l.completion, .sink_arg = try l.completionName() };
         return pass.rewrite(stmts, mode) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.FallsThrough => {
@@ -4370,13 +4394,15 @@ pub const Lowerer = struct {
     /// from a unit that did not ask would leave the rebuilt head without its
     /// import, and the module would not load.
     fn fiberNames(l: *Lowerer, waiting: bool) !Suspend.Names {
-        const and_then = try l.coreValue(.Task, .andThen, Node.no_pos);
+        const and_then = try l.taskProtocol("chain", Node.no_pos);
+        _ = try l.taskProtocol("continueWith", Node.no_pos);
         var names = l.fiber_names orelse Suspend.Names{
             .marker = try l.fixedName("$$suspend"),
             .join = try l.fixedName("$$join"),
             .joined = try l.fixedName("$$joined"),
             .and_then = @fromBackingInt(@intCast(l.b.dataOf(and_then).lhs)),
             .is_waiting = .none,
+            .continue_with = @fromBackingInt(@intCast(l.b.dataOf(try l.taskProtocol("continueWith", Node.no_pos)).lhs)),
         };
         if (waiting) {
             const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
@@ -4576,7 +4602,7 @@ pub const Lowerer = struct {
     ) !JsIr.ExtraIndex {
         const slots = try l.scratch.alloc(Loop.Slot, @as(usize, evidence) + params.len);
         for (slots[0..evidence]) |*slot| slot.* = .{};
-        const written = l.writtenParams(params);
+        const written = if (suspendable) params.len else l.writtenParams(params);
         for (params, slots[evidence..], 0..) |param, *slot, i| {
             slot.* = .{ .pattern = param.toOptional(), .unwritten = i >= written };
             if (l.bir.instTag(param) == .pat_var) {
@@ -4602,8 +4628,13 @@ pub const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(suspendable);
         defer l.leaveFunction(outer);
+        if (suspendable) l.completion = try l.completionName();
         const built = try l.loopOf(&loop, body, p);
-        return l.funcRecord(built.names, built.stmts);
+        if (!suspendable) return l.funcRecord(built.names, built.stmts);
+        const names = try l.scratch.alloc(JsIr.NameIndex, built.names.len + 1);
+        @memcpy(names[0..built.names.len], built.names);
+        names[built.names.len] = l.completion;
+        return l.funcRecord(names, built.stmts);
     }
 
     /// A loop's parameter names and its statements (§8): `functionOrLoop`'s
@@ -5487,7 +5518,12 @@ pub const Lowerer = struct {
                 // `Js.suspending`'s: its value goes back as it is, whatever
                 // it is, the caller's comparison deciding.
                 if (l.pureBody(inst)) |body| return l.tailStmts(out, body, loop);
-                if (l.suspendingBody(inst)) |body| return l.tailStmts(out, body, loop);
+                if (l.suspendingBody(inst)) |body| {
+                    const before = l.protocol_forward;
+                    l.protocol_forward = true;
+                    defer l.protocol_forward = before;
+                    return l.tailStmts(out, body, loop);
+                }
             },
             else => {},
         }
@@ -5902,6 +5938,11 @@ pub const Lowerer = struct {
         {
             return .{ .boolean = l.bir.symbol(c.name) == InternPool.WellKnown.True.symbol() };
         }
+        // Resume retains a real callable field while keeping the native
+        // callback ABI in both modes; no application can construct one.
+        if (l.in.graph.modulePackage(l.in.module) == .core and
+            l.module_name == InternPool.WellKnown.Task.symbol() and
+            std.mem.eql(u8, l.text(l.bir.symbol(owner.name)), "Resume")) return .unboxed;
         if (owner.kind == .type_alias) return .{ .record = .{ .local = c.decl.int() } };
         const int: CtorRep.Tag = if (l.integerTags(l.in.types.ofDecl(l.in.module, c.decl))) ctor_index - owner.ctors_start else null;
         if (int != null and max == 1 and owner.ctors_end - owner.ctors_start == 1) return .unboxed;
@@ -7323,6 +7364,13 @@ pub const Lowerer = struct {
             .testHooks => {
                 l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
                 return l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            .completion => {
+                if (l.completion == .none) {
+                    try l.report(.internal, inst, "a completion callback was read outside the suspendable runtime protocol", .{});
+                    return l.nullNode(p);
+                }
+                return l.arrowOf(&.{}, &.{try l.add(.return_stmt, p, (try l.ident(l.completion, p)).int(), Node.Data.unused)}, p);
             },
             // A function passed as a value is the sibling's (`core/Js.js`).
             else => {},
@@ -10231,7 +10279,24 @@ pub const Lowerer = struct {
         return l.ident(try l.externalName(module, @backingInt(index)), p);
     }
 
-    /// A use of `Debug.toString` or `Debug.log` the checker gave a type
+    /// A compiler-only Task protocol function, absent from source interfaces.
+    fn taskProtocol(l: *Lowerer, spelling: []const u8, p: u32) !Node.Index {
+        const module = l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) orelse
+            return l.missingCoreValue(p, "Task", spelling, "there is no Task module");
+        const bir = l.in.birs[module.int()];
+        for (bir.decls, 0..) |d, i| {
+            const symbol = bir.symbol(d.name);
+            if (!std.mem.eql(u8, l.interner.slice(symbol), spelling)) continue;
+            if (module == l.in.module) return l.ident(try l.topName(@intCast(i)), p);
+            const entry: Needed = .{ .module = module, .base = symbol.toOptional() };
+            try l.needName(entry);
+            return l.ident(try l.neededName(entry), p);
+        }
+        return l.missingCoreValue(p, "Task", spelling, "the core-private protocol function is missing");
+    }
+
+    /// A use of `Debug.toString` or `Debug.log`
+    /// the checker gave a type
     /// (checker-v2.md §32), as the typed printer it calls: `Debug.toStringAs`
     /// or `Debug.logAs`, the descriptor (`DebugShape.text`) as a string
     /// literal, and how many arguments follow it (§4, *`Debug.toString`
@@ -10646,7 +10711,8 @@ pub const Lowerer = struct {
         const callee = values[0];
         // A trailing `()` the callee does not take is not passed (§6, *A
         // parameter of type `()`*): `f ()` is `f()`.
-        const written = values[1 .. values.len - l.unwrittenArgs(callee_inst, arg_insts)];
+        const omitted = if (l.suspendsHere(l.in.dispatch.effectAt(inst).own)) 0 else l.unwrittenArgs(callee_inst, arg_insts);
+        const written = values[1 .. values.len - omitted];
         // A list writer handed to the callee as a value writes wherever the
         // callee calls it (v1's `value` demand at this call).
         if (l.sanitizesWriterValues()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
@@ -11172,7 +11238,13 @@ pub const Lowerer = struct {
         if (which == .typeIs) return l.typeIsTest(out, args, p);
         if (which == .object and args.len == 1) return l.objectLiteral(out, args[0], p);
         if (which == .method and args.len == 1) return l.methodFunc(out, args[0], p);
-        if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| return l.expr(out, body);
+        if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| {
+            const before = l.protocol_forward;
+            if (which == .suspending) l.protocol_forward = true;
+            defer l.protocol_forward = before;
+            return l.expr(out, body);
+        };
+
         // Where the property name is, and where the list literal is.
         const name_at: ?usize = switch (which) {
             .global => 0,
@@ -11224,7 +11296,14 @@ pub const Lowerer = struct {
             W.null => l.nullNode(p),
             W.undefined => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.from, W.to => v[0],
-            W.invoke => l.hostCall(v[0], &.{v[1]}, p),
+            W.invoke => l.hostCall(v[0], &.{ v[1], v[2] }, p),
+            W.completion => if (l.completion != .none)
+                l.ident(l.completion, p)
+            else blk: {
+                try l.report(.internal, l.region, "a completion callback was read outside the suspendable runtime protocol", .{});
+                break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+
             W.same => l.binary(.strict_eq, v[0], v[1], p),
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
@@ -11253,7 +11332,14 @@ pub const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
-            W.apply => l.hostCall(v[0], rest, p),
+            W.apply => blk: {
+                if (!l.protocol_forward or l.completion == .none) break :blk l.hostCall(v[0], rest, p);
+                const forwarded = try l.scratch.alloc(Node.Index, rest.len + 1);
+                @memcpy(forwarded[0..rest.len], rest);
+                forwarded[rest.len] = try l.ident(l.completion, p);
+                break :blk l.hostCall(v[0], forwarded, p);
+            },
+
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
             // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`
@@ -12014,7 +12100,13 @@ pub const Lowerer = struct {
                 if (SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) named[i] = true;
             }
         }
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
+            for (decls, 0..) |_, i| if (l.emitterCalled(@intCast(i))) {
+                named[i] = true;
+            };
+        }
         const uses = try l.scratch.alloc(u32, decls.len);
+
         @memset(uses, 0);
         const self_uses = try l.scratch.alloc(u32, decls.len);
         @memset(self_uses, 0);

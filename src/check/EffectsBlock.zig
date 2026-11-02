@@ -42,7 +42,7 @@ pub fn write(
     defer gpa.free(worth);
     @memset(worth, false);
     for (classes, 0..) |c, i| {
-        if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive) worth[i] = true;
+        if (c.rung != .pure or c.deps_len != 0 or c.sync or c.sensitive or c.holder) worth[i] = true;
         for (s.depsOf(c)) |d| worth[d] = true;
     }
 
