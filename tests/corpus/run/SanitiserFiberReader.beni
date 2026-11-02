@@ -1,0 +1,73 @@
+-- A runtime catch for a loan across a suspension (`ownership-v2.md`
+-- §2.13.7): a helper spawns a fiber that holds a loan of a cell's contents
+-- across a sleep, and returns; its caller then edits the contents in place.
+-- The fiber's code is checked on its own, so the caller cannot see the loan.
+-- What makes the edit refused is the escape: the helper hands its closure to
+-- `Task.spawn`, which keeps it, and the escape reaches through the cell to
+-- its contents, so the caller's edit is refused `escaped`, also through a
+-- record that holds the cell. Were the escape to stop at the cell, the
+-- fiber would read the edited list. Each line shows the loan as it was
+-- before the edit.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias Model =
+    world : Ref (List Int)
+    seen : Ref String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+watch : Ref (List Int), Ref String → ⊤
+watch r out =
+    _ = Task.spawn λ⊤ →
+        v = Ref.get r
+        Io.sleep 10
+        Ref.set out (ints v)
+    ⊤
+
+
+watchModel : Model → ⊤
+watchModel m =
+    _ = Task.spawn λ⊤ →
+        v = Ref.get m.world
+        Io.sleep 10
+        Ref.set m.seen (ints v)
+    ⊤
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    out = Ref.make ""
+    watch r out
+    Io.sleep 1
+    Ref.update r λxs → List.push xs 1
+    Io.sleep 20
+    "direct ${Ref.get out}"
+
+
+field : ⊤ → String
+field ⊤ =
+    m = { world = Ref.make [ 0 ], seen = Ref.make "" }
+    watchModel m
+    Io.sleep 1
+    Ref.update m.world λxs → List.push xs 1
+    Io.sleep 20
+    "field ${Ref.get m.seen}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    a = direct ⊤
+    b = field ⊤
+    Node.printLines [ a, b ]

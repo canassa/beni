@@ -1,0 +1,4 @@
+# v2 refuses a branch that edits a captured cell's contents in place: it is once, and par hands it to a fiber (§2.11.4).
+41:9 list_still_used Task.par
+# and the same edit made by a callee of the branch.
+56:16 list_still_used Task.par
