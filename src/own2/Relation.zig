@@ -1082,12 +1082,23 @@ pub const Eval = struct {
                     defer all.deinit(e.gpa());
                     try Slots.replay(e.gpa(), e.account(), e.places(), r.path, words.items, &all);
                     if (all.items.len == 0) {
-                        // A slot the answer's place cannot name: all of it.
-                        var ls: std.ArrayList(u32) = .empty;
-                        defer ls.deinit(e.gpa());
-                        const whole = try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = try e.f.slots.below(e.gpa(), e.account(), e.places(), r.path) });
-                        try e.expand(whole, &ls);
-                        try out.appendSlice(e.gpa(), ls.items);
+                        // A slot the answer's place cannot name (a type
+                        // variable's, `a → a` answering at `.values`): the
+                        // code's contract read at those words, an open
+                        // entry above them projected down. Never the whole
+                        // answer, which is another object than its part.
+                        const start = out.items.len;
+                        if (e.contractOf(vc)) |vcc| {
+                            const h = e.contracts.head(vcc);
+                            for (e.contracts.resOf(h.res)) |rs| {
+                                const rw = e.f.slots.relWords(rs.slot);
+                                const exact = std.mem.eql(u32, rw, words.items);
+                                const opened = rs.open and rw.len < words.items.len and std.mem.eql(u32, rw, words.items[0..rw.len]);
+                                if (!exact and !opened) continue;
+                                for (e.contracts.arrivalsOf(rs.arrivals)) |va| try e.arrivalLeaves(vc, vcc, va, words.items[rw.len..], out);
+                            }
+                        }
+                        if (out.items.len == start) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                         return;
                     }
                     // The known code's call, read where its leaves are wanted.
