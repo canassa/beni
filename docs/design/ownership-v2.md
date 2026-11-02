@@ -2500,6 +2500,14 @@ node: u32 }`, hash-consed by content; `reads`, `writes`, `escapes` and `kept` on
 `effect_nodes : Columns { here: u8 (none | shallow | deep | fields), kids: Range }`. A call's instantiation
 (§2.11.2) is a column per call of the caller's node per callee node.
 
+*Built so far (#1714):* the result trees, in `Trees.zig`. A node is its plain arrivals (a run of arrivals interned
+by content), its open ones (at its slot and, by structure, below it: today's open and wide entries are one
+run) and its kids, sorted by the step word, which is module-local; a reader that writes words sorts kids by
+their canonical keys. Every reader that asks one slot walks its steps from the root, one inspection a node
+(`instAt`, a key's feed, `throughCall`, the uniform-atom test, a known label's answer at a slot no place
+names); before, each scanned every entry, uncharged. The flat entries are still kept beside the tree for the
+readers that need every slot, until each reads the tree.
+
 A contract is immutable once read off; a join makes a new one. Its text (the dump's `summary` line) is
 `ContractText.zig`'s. The group solver keeps one candidate per member
 and the delivery queue of §2.12.
@@ -3250,7 +3258,7 @@ L6  Relation
 L5  Value  Liveness
 L4  Rows  Regions  ContractText  Leaves
 L3  Contract  Subtree  Prepass
-L2  Slots  Facts
+L2  Slots  Facts  Trees
 L1  Place  Runs  Routes
 L0  Ids  Counters  Scratch
      bir/Bir, check/{TypeStore,Types,Walk,Dispatch,Edges,SchemaPlan,EffectPlan,Scc}, resolve/{Interface,Graph}, parse/Ast, InternPool, stamped
@@ -3266,6 +3274,7 @@ L0  Ids  Counters  Scratch
 | `Routes.zig` | 1 | tag lists with shared tails, route sets, the atom pairs a parting rules out (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
+| `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |

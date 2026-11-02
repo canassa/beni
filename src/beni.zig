@@ -190,6 +190,7 @@ pub const own2 = struct {
     pub const Place = @import("own2/Place.zig");
     pub const Facts = @import("own2/Facts.zig");
     pub const Slots = @import("own2/Slots.zig");
+    pub const Trees = @import("own2/Trees.zig");
     pub const Contract = @import("own2/Contract.zig");
     pub const Prepass = @import("own2/Prepass.zig");
     pub const Rows = @import("own2/Rows.zig");
