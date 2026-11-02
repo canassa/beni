@@ -32,6 +32,7 @@ const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
 const Holders = @import("Holders.zig");
 const Sweep = @import("Sweep.zig");
+const Stack = @import("Stack.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -86,6 +87,8 @@ const Resolver = struct {
     keys: Holders.Keys = .{},
     escapes: Holders.Escapes = .{},
     ops: Holders.Operands = .{},
+    /// The pending operands by clock and key (§2.8 step 5).
+    stack: Stack.Index = .{},
     /// Whether a judgement's aggregated holders add to the frame's `req`:
     /// a demand's do, a label's supplied part's are judged one by one.
     aggregate: bool = false,
@@ -109,6 +112,7 @@ const Resolver = struct {
         r.keys.deinit(r.gpa());
         r.escapes.deinit(r.gpa());
         r.ops.deinit(r.gpa());
+        r.stack.deinit(r.gpa());
     }
 
     /// The holder index (§2.8): every bound local that is used after its
@@ -426,25 +430,11 @@ const Resolver = struct {
             return line;
         }
         // Dead: the pending operands, then the live locals.
-        for (w.pendingOfRun(d.pending)) |p| {
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(g);
-            try r.ev().leavesOf(p.value, 0, &ls);
-            for (ls.items) |l| for (targets) |t| {
-                const ov = try Distinct.overlap(r.ev(), l, t, true);
-                switch (ov.kind) {
-                    .no => {},
-                    .under => {
-                        if (debug) std.debug.print("  pending {d} under {any}\n", .{ p.inst, ov.cond.sel });
-                        try relied.add(g, r.account(), ov.cond);
-                    },
-                    .may => {
-                        refuse(o, .held_operand);
-                        line.holder = .{ .kind = .pending, .who = p.inst, .token = w.bir.insts.items(.main_token)[p.inst] };
-                        return line;
-                    },
-                }
-            };
+        try r.stack.build(r.ev(), w, r.regions, &r.keys);
+        if (try r.stack.judge(r.ev(), w, r.regions, d.pending, d.point, targets, r.aggregate, Holders.paramTarget, &relied)) |p| {
+            refuse(o, .held_operand);
+            line.holder = .{ .kind = .pending, .who = p, .token = w.bir.insts.items(.main_token)[p] };
+            return line;
         }
         // The live locals (§2.8 step 5), a target's buckets in use order: once
         // a hold is found, no holder used later can be the witness.
@@ -504,6 +494,7 @@ const Resolver = struct {
         for (done_holds.items) |k| r.live.holds.items[k].done = true;
         for (dones.items) |hi| r.live.aggDone(hi);
         try r.ops.writes.appendSlice(g, writes.items);
+        if (r.aggregate) try r.stack.accept(r.ev(), d.pending, d.point, targets, Holders.paramTarget);
         line.extra = try relied.cond(r.ev().arena, r.account());
         r.e.ev.f.account.in_demands = false;
         return line;
@@ -518,7 +509,7 @@ const Resolver = struct {
     /// partly from unknown code (a callback's answer: a fold's accumulator)
     /// is `unknown` whole, yet its known objects are still kept where they
     /// are held after the call: each is judged on its own (§2.11.3).
-    fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: Ids.Range) Error!Line {
+    fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: u32) Error!Line {
         const l = try r.judgeSuppliedLeaf(t, point, inst, args, k, skip, pending);
         if (l.outcome.verdict != .refused or l.outcome.cause != .unknown) return l;
         const fr = r.f();
@@ -548,7 +539,7 @@ const Resolver = struct {
         return l;
     }
 
-    fn judgeSuppliedLeaf(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: Ids.Range) Error!Line {
+    fn judgeSuppliedLeaf(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: u32) Error!Line {
         const w = r.e.w;
         const start: u32 = @intCast(w.leaf_runs.items.len);
         try w.leaf_runs.append(w.f.gpa, t);
@@ -566,7 +557,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     const f = &e.w.f;
     // Every judgement, in the walk's order: the demands, the direct labels'
     // supplied parts, the passed-on labels' parts (§2.11.3).
-    const Job = struct { kind: enum { demand, cb, pass }, point: u32, i: u32, k: u32 = 0, t: u32 = none, at: u32 = 0, aj: u32 = 0, skip: usize = std.math.maxInt(usize), pending: Ids.Range = .{} };
+    const Job = struct { kind: enum { demand, cb, pass }, point: u32, i: u32, k: u32 = 0, t: u32 = none, at: u32 = 0, aj: u32 = 0, skip: usize = std.math.maxInt(usize), pending: u32 = none };
     var jobs: std.ArrayList(Job) = .empty;
     for (e.demands.items, 0..) |d, i| try jobs.append(arena, .{ .kind = .demand, .point = d.point, .i = @intCast(i) });
     for (f.cbs.items, 0..) |cb, ci| {
@@ -595,7 +586,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 var ls: std.ArrayList(Relation.Part) = .empty;
                 defer ls.deinit(f.gpa);
                 try e.ev.partsOf(v, es.wordsOf(rs), &ls);
-                const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else Ids.Range{};
+                const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else none;
                 for (ls.items) |part| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending });
             };
         }
@@ -640,6 +631,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     // Each condition gathered over its judgements and made once (§2.9.4).
     var req: Holders.Gather = .{};
     try r.ops.finish(&e.ev, &r.keys, &req);
+    try r.stack.finish(&e.ev, e.w, regions, &req);
     var kept: std.ArrayList([3]u32) = .empty;
     const conds = try arena.alloc(Holders.Gather, f.cbs.items.len);
     @memset(conds, .{});
