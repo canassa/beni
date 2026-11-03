@@ -673,7 +673,7 @@ pub const Module = struct {
     cmp_decl: []u32 = &.{},
     /// Codes read by the evaluation under way: `(code, version)`.
     reads: std.ArrayList([2]u32) = .empty,
-    /// The pessimistic contract by arity.
+    /// The pessimistic contract by arity at `2·arity`, a `foreign`'s at `+1`.
     pessimistic_of: std.ArrayList(u32) = .empty,
     /// Worded contracts by declaration and places (§4.1, #1714).
     worded: Worded.Worded = .{},
@@ -844,10 +844,10 @@ pub const Module = struct {
         const mod = self(ctx);
         const md = mod.declOf(ref) orelse return null;
         const decl = mod.in.birs[md[0]].decls[md[1]];
-        if (decl.kind != .value or decl.params != 0) return null;
+        if ((decl.kind != .value and decl.kind != .foreign_value) or decl.params != 0) return null;
         const at = placeOfInst(ctx, ref) catch return null;
         if (mod.places.kind(at) == .closure) return null;
-        return md;
+        return if (decl.kind == .foreign_value) .{ none, 0 } else md;
     }
 
     pub fn isListAppend(ctx: *anyopaque, inst: u32) bool {
@@ -864,18 +864,19 @@ pub const Module = struct {
         return mod.places.kind(at) == .ref and mod.places.child(at, Step.contents) != null;
     }
 
-    fn pessimisticOf(mod: *Module, arity: u32) Error!u32 {
-        while (mod.pessimistic_of.items.len <= arity) try mod.pessimistic_of.append(mod.gpa, none);
-        if (mod.pessimistic_of.items[arity] == none) {
+    fn pessimisticOf(mod: *Module, arity: u32, host: bool) Error!u32 {
+        const at = 2 * arity + @intFromBool(host);
+        while (mod.pessimistic_of.items.len <= at) try mod.pessimistic_of.append(mod.gpa, none);
+        if (mod.pessimistic_of.items[at] == none) {
             var arena: std.heap.ArenaAllocator = .init(mod.gpa);
             defer arena.deinit();
-            mod.pessimistic_of.items[arity] = try Rows.pessimistic(mod.rowsEnv(arena.allocator()), arity);
+            mod.pessimistic_of.items[at] = try Rows.pessimistic(mod.rowsEnv(arena.allocator()), arity, host);
         }
-        return mod.pessimistic_of.items[arity];
+        return mod.pessimistic_of.items[at];
     }
 
     fn pessimistic(ctx: *anyopaque, arity: u32) Error!Contract.Id {
-        return self(ctx).pessimisticOf(arity);
+        return self(ctx).pessimisticOf(arity, false);
     }
 
     /// The places of a function type: its parameters' and its result's.
@@ -925,20 +926,17 @@ pub const Module = struct {
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
         };
-        return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words, .origin = .{ owner, di } });
+        return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words, .origin = .{ owner, di }, .foreign = decl.kind == .foreign_value });
     }
 
-    /// The contract of declaration `t` (another module's, or this one's when
-    /// worded) over a use's places; null when it has none to apply.
+    /// The contract of declaration `t` (another module's, or this one's when worded) over a use's places, or null.
     fn declContract(mod: *Module, t: [2]u32, params: []const PlaceId, result: PlaceId) Error!?u32 {
         const owner = mod.in.birs[t[0]];
         const decl = owner.decls[t[1]];
         if (owner.ownSlotsV2(decl).len != 0) return try mod.wordedContract(t[0], t[1], params, result);
-        if (t[0] == mod.in.module) {
-            if (t[1] < mod.body_code.len and mod.body_code[t[1]] != none) return null;
-            if (decl.kind == .foreign_value) return try mod.pessimisticOf(@intCast(params.len));
-            return null;
-        }
+        // A `foreign` publishes nothing an importer applies: its words, or none (§2.10).
+        if (decl.kind == .foreign_value) return try mod.pessimisticOf(@intCast(params.len), true);
+        if (t[0] == mod.in.module) return null;
         if (try mod.importedContract(t[0], t[1])) |c| return c;
         return null;
     }
@@ -1001,7 +999,7 @@ pub const Module = struct {
         if (target) |t0| {
             const t = mod.aliasTarget(t0);
             if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) {
-                if (mod.in.bir.decls[t[1]].params == 0 and args.len != 0) return if (mod.lambdaBody(t[1])) |c| .{ .code = c } else .{ .contract = try mod.pessimisticOf(@intCast(args.len)) };
+                if (mod.in.bir.decls[t[1]].params == 0 and args.len != 0) return if (mod.lambdaBody(t[1])) |c| .{ .code = c } else .{ .contract = try mod.pessimisticOf(@intCast(args.len), false) };
                 // A container's comparison in core is its components'.
                 if (!(mod.in.isCore(t[0]) and bir.instTag(@fromBackingInt(inst)) == .method_call and composedOrigin(bir, inst))) return .{ .code = mod.body_code[t[1]] };
             }
@@ -1015,14 +1013,14 @@ pub const Module = struct {
                 n = Prepass.aliasStep(mod.in.birs, mod.in.provenance, n) orelse break;
             }
             if (bir.instTag(@fromBackingInt(inst)) == .method_call and mod.in.isCore(t[0]) and composedOrigin(bir, inst)) composed = true;
-            if (!composed) return .{ .contract = try mod.pessimisticOf(@intCast(args.len)) };
+            if (!composed) return .{ .contract = try mod.pessimisticOf(@intCast(args.len), false) };
         }
         if (composed) {
             var arena: std.heap.ArenaAllocator = .init(mod.gpa);
             defer arena.deinit();
             return .{ .contract = try Rows.comparison(mod.rowsEnv(arena.allocator()), @intCast(args.len)) };
         }
-        if (bir.instTag(@fromBackingInt(inst)) == .method_call) return .{ .contract = try mod.pessimisticOf(@intCast(args.len)) };
+        if (bir.instTag(@fromBackingInt(inst)) == .method_call) return .{ .contract = try mod.pessimisticOf(@intCast(args.len), false) };
         return .value;
     }
 
@@ -1055,7 +1053,7 @@ pub const Module = struct {
             // A member answers what its `via` conversions answer (a top-level
             // list, say), and a constructor holds its arguments: neither is
             // fresh, so neither has a row here (§2.13.10).
-            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => contract = try mod.pessimisticOf(@intCast(ps.items.len)),
+            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => contract = try mod.pessimisticOf(@intCast(ps.items.len), false),
             .top, .ext_value => {
                 const t = mod.aliasTarget(mod.declOf(inst) orelse return null);
                 if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none and (ps.items.len == 0 or mod.in.bir.decls[t[1]].params != 0)) {
@@ -1063,7 +1061,7 @@ pub const Module = struct {
                     return mod.body_code[t[1]];
                 }
                 if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) if (mod.lambdaBody(t[1])) |c| return c;
-                contract = (try mod.declContract(t, ps.items, result)) orelse try mod.pessimisticOf(@intCast(ps.items.len));
+                contract = (try mod.declContract(t, ps.items, result)) orelse try mod.pessimisticOf(@intCast(ps.items.len), false);
             },
             else => return null,
         }
@@ -1243,7 +1241,7 @@ pub fn checkModule(in: *const Input, mod: *Module) Allocator.Error!void {
                     r.contract = none;
                     const bc = mod.body_code[r.decl];
                     charging(mod, &mod.base_account);
-                    mod.codes.items[bc].contract = mod.pessimisticOf(in.bir.decls[r.decl].params) catch |e2| switch (e2) {
+                    mod.codes.items[bc].contract = mod.pessimisticOf(in.bir.decls[r.decl].params, false) catch |e2| switch (e2) {
                         error.OutOfMemory => return error.OutOfMemory,
                         else => none,
                     };
@@ -1622,7 +1620,7 @@ pub fn declaredContract(mod: *Module, di: u32) Error!?u32 {
     defer ps.deinit(mod.gpa);
     const result = (try mod.fnPlaces(scheme, &ps)) orelse try mod.adapter.placeOfVar(scheme);
     if (mod.in.bir.ownSlotsV2(d).len != 0) return try mod.wordedFill(mod.in.module, di, ps.items, result);
-    if (d.kind == .foreign_value) return try mod.pessimisticOf(@intCast(ps.items.len));
+    if (d.kind == .foreign_value) return try mod.pessimisticOf(@intCast(ps.items.len), true);
     return null;
 }
 

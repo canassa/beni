@@ -59,7 +59,7 @@ pub const Context = struct {
     fieldRank: *const fn (ctx: *anyopaque, s: Bir.SymbolIndex) u32,
     /// A constructor reference's `(ordinal, arity)`.
     ctorOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
-    /// A parameterless value's `(module, declaration)`.
+    /// A parameterless value's `(module, declaration)`; `none` for a `foreign`'s.
     sharedOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
     callee: *const fn (ctx: *anyopaque, inst: u32, args: []const u32) Error!Callee,
@@ -67,8 +67,7 @@ pub const Context = struct {
     /// constructor, a schema member): its code or fixed contract (with
     /// `fixed_bit`), or null when it is not a function.
     funcRef: *const fn (ctx: *anyopaque, inst: u32) Error!?u32,
-    /// The codes of the declarations a dispatch site at `inst` passes as
-    /// evidence (appended, each once).
+    /// The codes of the declarations a dispatch site at `inst` passes as evidence (appended, each once).
     evidenceCodes: *const fn (ctx: *anyopaque, inst: u32, out: *std.ArrayList(u32)) Error!void,
     /// The code of a lambda or a local function's `let_def`.
     codeOf: *const fn (ctx: *anyopaque, inst: u32) ?u32,
@@ -441,7 +440,7 @@ const Walker = struct {
         const fr = k.f();
         const x = fr.val(v);
         switch (x.kind) {
-            .scalar, .bot, .top, .shared => return v,
+            .scalar, .bot, .top, .shared, .host => return v,
             .ref => {
                 if (x.family != Slots.empty) {
                     const sw: Step = if (kind == .plain) Step.fromWord(a) else Step.elem;
@@ -592,6 +591,7 @@ const Walker = struct {
                 try k.evidence(i);
                 if (k.isCallee(i)) return .{};
                 if (k.ctx.sharedOf(k.ctx.ctx, i)) |md| {
+                    if (md[0] == none) return .{ .v = try fr.mk(.{ .kind = .host }) };
                     if (Slots.holdsAny(fr.places, try fr.places.rootPath(k.gpa, try k.placeOf(i)))) return .{ .v = try fr.mk(.{ .kind = .shared, .head = md[0], .site = md[1] }) };
                     return .{ .v = try fr.scalar() };
                 }

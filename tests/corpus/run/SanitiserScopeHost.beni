@@ -1,0 +1,27 @@
+-- A scope's handle holds only host objects (`ownership-v2.md` §2.10, *host
+-- objects*): `Task.scope` makes it with `Js` casts, a `Set` that
+-- `Js.construct` answers and a record that `Js.set` hands to JavaScript.
+-- Those results were `⊤`, which may be any list, so the callback's edit in
+-- place of `r`'s list was refused at `Task.scope`. They are `host` now, which
+-- no list that is still writable is, so the edit is accepted, and the
+-- sanitised run prints the same. A fiber that held the list would still
+-- refuse the edit, `escaped` (`Task.spawnIn` takes an escaped work).
+import Io
+import List
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main = Io.run λ⊤ →
+    r = Ref.make [ 0 ]
+    Task.scope λs →
+        _ = Task.spawnIn s λ⊤ → Io.sleep 1
+        Ref.update r λxs → List.push xs 1
+    Node.print (show (Ref.get r))

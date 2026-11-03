@@ -84,7 +84,7 @@ pub fn slotArrivals(ev: *Relation.Eval, call: u32, sl: Ids.PathId, out: *std.Arr
     for (hits.items) |hit| for (hit.arrivals) |a0| {
         var a = a0;
         const ok = switch (a.kind) {
-            .fresh, .top, .shared => true,
+            .fresh, .top, .shared, .host => true,
             .cb => false,
             .param => hit.depth == words.len and a.deep == var_slot and if (argParam(ev, call, sig.params, a.j)) |m| blk: {
                 a.j = m;
