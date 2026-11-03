@@ -1,5 +1,0 @@
-SanitiserNestedPassOn callee: lines 13-14 (not built: call)
-SanitiserNestedPassOn writer7: lines 21-22 (not built: call)
-SanitiserNestedPassOn test: lines 25-26 (not built: top)
-SanitiserNestedPassOn show: lines 29-30 (not built: ext_value)
-SanitiserNestedPassOn main: lines 33-37 (not built: lambda)
