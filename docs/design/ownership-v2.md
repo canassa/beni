@@ -1479,6 +1479,31 @@ than `claim`'s, and `got` does not return where `claim` does not.
   (`canon` of it, `below` of it when deep): the leaf the projection names, made without replaying the steps. The
   distinct check of `( deepN r, r )` expanded the call's leaf onto `r` at its two result slots, four records a
   step (1 565 at N = 256); it is now constant in N.
+  *Amended 2026-11-03 (#1756):* **a key reads the objects at its own slot.** A call's or a supply's key at caller
+  slot `s` (`instAt`, and `feed` while a group is solved) reads each arrival of the callee's tree that it meets.
+  An **open** arrival is the parameter's subtree by structure, so it gives the parameter's object at the
+  matching place only (`Subtree.readAt`); it is read deep only where `s` is a type variable's or an opaque place,
+  where no step below can name the objects. A **plain** arrival is read as it is: a deep one (`aliased`'s
+  `everySlot` row, a slot the result cannot name) says that any object of the parameter's subtree may be at `s`.
+  Before this, an open deep arrival was read deep at every slot, so a key at `s` also held every object below
+  `s`. Through a label, `grow g = { g | kids = List.push g.kids "new" }` asks `π1{ε~,.kids}`: the record's own
+  object apart from the written list. The supply's key at `ε` gave the record and both of its lists, so the
+  apart entry met the plain `.kids` entry, and the write was refused through any label (`apply1 f x = f x`,
+  `List.update`, a fold), while the tuple form, which has no `ε~`, was accepted. A known code's answer that an
+  arrival reads deep (`arrivalLeaves`' `cb` arm) is now its subtree's slots: before, it was its top slot, and
+  only the deep key read made it hold what is below.
+  *Why this is sound.* Every leaf names the places it stands for in its slot set: a deep projection writes
+  out `below(p)` or holds `↓p` (§2.3.1). So a reader that wants what is below a slot reads each slot below
+  through its own key, as the read-off and the deliveries already do. An open arrival holds by structure: the
+  result's object at `q·r` is the parameter's at `p·r`. At a type variable's place, parametric code cannot
+  answer a part of its argument for the whole, and a cast that can (§2.13.9) reaches the caller through an
+  opaque slot, which stays deep, or through a step its value cannot follow, which reads every object of it.
+  Measured: 14 positions refused before are accepted (the #1756 rows `ElementEdits` 20:19, `NestedFor` 42:28
+  and 48:21, `Differential` 92:16, `BesideRecordHelper` 24:5, and folds and recursions whose keys read too much,
+  `PolyRecBranch` 61:31 among them); 3 refusals move from the callee to the caller, where the fixture wants them
+  (`ElementEdits.repeated`, `Differential.t57Repeated`, `t57RepeatedRows`: v1 refuses them too);
+  `SubscriptionTapFold`'s `build` grows 31 872 records, not 65 512. The negative controls
+  (`run/SanitiserRecordCallbackShared`) trap when the apart occurrence is dropped.
 - `res_cond`: the distinct check of §2.9.3 over the result's leaves.
 - `reads`, `writes`, `escapes`: the frame's uses of its parameters' positions, its demands' targets that are
   parameter leaves (whatever their verdicts), and its escapes, each as `(j, slot)`. A call contributes its
