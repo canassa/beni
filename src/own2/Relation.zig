@@ -26,6 +26,7 @@ const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
+const KeySets = @import("KeySets.zig");
 const Value = @import("Value.zig");
 
 pub const Error = Ids.ChargeError;
@@ -144,6 +145,10 @@ pub const Eval = struct {
     expanding: Ids.FixedDict(1) = .{},
     /// `endOf`'s answers by `(leaf, grown)`; `grown` counts what keys gained.
     end_memo: Ids.FixedDict(2) = .{},
+    /// A call's leaf's atoms (`AtomSets`) by `(leaf, grown)`, sets of `atom_sets`.
+    atom_memo: Ids.FixedDict(2) = .{},
+    atom_sets: KeySets.Table = .{},
+    atom_count: std.ArrayList(u32) = .empty,
     grown: u32 = 0,
     scratch: std.ArrayList(u32) = .empty,
     /// Set while a group is solved (§2.12): a member's call reads its
@@ -185,6 +190,9 @@ pub const Eval = struct {
         e.routes.deinit(g);
         e.expanding.deinit(g);
         e.end_memo.deinit(g);
+        e.atom_memo.deinit(g);
+        e.atom_sets.deinit(g);
+        e.atom_count.deinit(g);
         e.scratch.deinit(g);
         for (e.keys.items) |*k| {
             k.leaves.deinit(g);

@@ -40,6 +40,8 @@ const layers = [_]Entry{
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1340 },
     .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
+    // A leaf's base keys as sets shared with its kids' (#1714).
+    .{ .file = "KeySets.zig", .layer = 1, .max_lines = 160 },
     // The tags and routes of a leaf set (#1714), split from `Leaves`.
     .{ .file = "Routes.zig", .layer = 1, .max_lines = 680 },
     // Whether route sets hold together, split from `Routes` (#1714).
@@ -98,6 +100,8 @@ const layers = [_]Entry{
     .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
     // A chain of calls handing one object on, split from `Relation` (#1714).
     .{ .file = "Ends.zig", .layer = 8, .max_lines = 40 },
+    // A call's leaf's atoms, for the distinct check (#1714).
+    .{ .file = "AtomSets.zig", .layer = 8, .max_lines = 240 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -430,7 +434,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 60), layers.len);
+    try testing.expectEqual(@as(usize, 62), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
