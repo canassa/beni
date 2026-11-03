@@ -4548,6 +4548,22 @@ tests/corpus/ownership/SiblingSubtrees.beni [node] SiblingSubtrees 80:5 #0 :: Si
 tests/corpus/ownership/SiblingSubtreesImported [node] Main 24:5 #0 :: Trees.pushKids <Node …>#Node.0#Node.1, <Node …>#Node.2#Node.1 :: absent :: rejected  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 tests/corpus/ownership/SiblingSubtreesMutual.beni [node] SiblingSubtreesMutual 73:5 #0 :: SiblingSubtreesMutual.pushKids <A …>#A.0#B.0#A.1, <A …>#A.2#B.0#A.1 :: absent :: rejected  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
 #
-# Known limits (#1774): v2 stops at its summary-size limit; the default is not raised.
+# A known limit (#1774): v2 stops at its summary-size limit; the default is not raised.
 tests/corpus/ownership/WideModelArms.beni WideModelArms limit update  #1774: 256 record-update arms in one declaration; master's v2 does not check it
-tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold limit build  #1774: a fold over a closure's captures, deep since #1772 (71 027 records of growth)
+#
+# SubscriptionTapFold, refused at 15:18 as before #1772 (the fold accumulator's other slots; #1713).
+#
+# ref-other: 1
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:18 #0 :: List.foldl Dict.empty#Dict.0#Node.2.1 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
+#
+# v2-only refusals: 4
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:18 #0 :: List.foldl Dict.empty#Dict.0#Node.3#Node.2.1 :: absent :: rejected  the same fold refused at more of the accumulator's slots (§2.2); its position is refused as v1's row above (#1713)
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:18 #0 :: List.foldl Dict.empty#Dict.0#Node.3⟨Tree⟩#Node.2.1 :: absent :: rejected  the same fold refused at more of the accumulator's slots (§2.2); its position is refused as v1's row above (#1713)
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:18 #0 :: List.foldl Dict.empty#Dict.0#Node.4#Node.2.1 :: absent :: rejected  the same fold refused at more of the accumulator's slots (§2.2); its position is refused as v1's row above (#1713)
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:18 #0 :: List.foldl Dict.empty#Dict.0#Node.4⟨Tree⟩#Node.2.1 :: absent :: rejected  the same fold refused at more of the accumulator's slots (§2.2); its position is refused as v1's row above (#1713)
+#
+# v2-other: 4
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:69 #0 :: SubscriptionTapFold.want d#Dict.0#Node.3#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:69 #0 :: SubscriptionTapFold.want d#Dict.0#Node.3⟨Tree⟩#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:69 #0 :: SubscriptionTapFold.want d#Dict.0#Node.4#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
+tests/corpus/browser/tea/SubscriptionTapFold.beni SubscriptionTapFold 15:69 #0 :: SubscriptionTapFold.want d#Dict.0#Node.4⟨Tree⟩#Node.2.1 :: absent :: accepted  a demand v2 makes and v1 does not: v2 checks calls past v1's caps and through labels v1 holds pending (§2.11)
