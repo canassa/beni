@@ -269,4 +269,16 @@ theorem described : Describes naming heap (entryAbstract [] ty abstract) (.ref 1
     exact .int _ _
   | _ + 2, index => simp at index
 
+/-- The witness is in the first flat fragment (slice 3 of #522), so the flat
+theorem gives its two runs the same trace through the typed relation. -/
+theorem program_flat : Ownership.FlatFragment.Support.FlatANF0 program.main :=
+  .letE (.literal .int .int .int) (.letE (.dictEmpty (.list .int) (.list .int .int .int) (.list _ .int))
+    (.letE .dictInsert .atom))
+
+theorem program_traces_agree (a : Accepted) (ok : check program = .ok a) (fuel : Nat) (t : Trace)
+    (run : ValueSemantics.run program fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run program fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  Ownership.FlatFragment.Preservation.accepted_flat_anf_traces_agree program a ok program_flat fuel t run
+
 end Ownership.DictEntryPaths
