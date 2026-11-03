@@ -17,6 +17,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Trees = @import("Trees.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
@@ -123,10 +124,16 @@ const Walk = struct {
         return w.ev.f.slots.relOfWords(g, w.ev.account(), w.ev.places(), w.words.items);
     }
 
-    fn target(w: *Walk, state: [3]u32, kind: u32, n: Node, deep: bool) Error!void {
+    fn target(w: *Walk, state: [3]u32, kind: u32, n: Node, deep: bool, path: Ids.PathId) Error!void {
         const gr = try w.groupOf(.{ state[0], state[1], state[2], kind }, n);
         const g = w.ev.gpa();
-        if (deep or w.words.items.len != 0) return w.ev.project(w.arg, w.words.items, deep, 0, 0, &gr.targets);
+        const f = w.ev.f;
+        // The parameter's objects at the walk's path (its projection, never replayed).
+        if (deep or w.words.items.len != 0) {
+            const set = if (deep) try Subtree.below(f.slots, g, f.account, f.places, path) else try f.slots.canon(g, f.account, f.places, path);
+            if (set != Slots.empty) try gr.targets.append(g, .{ .leaf = try f.leaf(.{ .kind = .ref, .root = f.val(w.arg).root, .pos = f.val(w.arg).pos, .slots = set }) });
+            return;
+        }
         var ls: std.ArrayList(u32) = .empty;
         defer ls.deinit(g);
         try w.ev.storageOf(w.arg, 0, &ls);
@@ -136,15 +143,15 @@ const Walk = struct {
     /// Node `n` at place `p`, `words` below the argument. `at`: the frame's
     /// position there while the frame names the slot (`none` past it);
     /// `state` the state's key.
-    fn node(w: *Walk, n: Node, p: PlaceId, at: u32, state: [3]u32) Error!void {
+    fn node(w: *Walk, n: Node, p: PlaceId, path: Ids.PathId, at: u32, state: [3]u32) Error!void {
         const pl = w.ev.places();
         const f = w.ev.f;
         if (pl.cyclic(p) and !w.root) w.cyclic = true;
         if (w.cyclic) return;
-        if (w.t().open(n).len != 0) return w.target(state, 1, n, true);
+        if (w.t().open(n).len != 0) return w.target(state, 1, n, true, path);
         // A slot the frame names is read step by step, past one whole.
-        if (at == none and try w.fullAt(n, p)) return w.target(state, 0, n, true);
-        if (w.t().here(n).len != 0) try w.target(state, 0, n, false);
+        if (at == none and try w.fullAt(n, p)) return w.target(state, 0, n, true, path);
+        if (w.t().here(n).len != 0) try w.target(state, 0, n, false, path);
         var ks: std.ArrayList([2]u32) = .empty;
         defer ks.deinit(w.ev.gpa());
         try Forest.sortedKids(w.t(), w.ev.gpa(), pl, n, &ks);
@@ -159,7 +166,7 @@ const Walk = struct {
             // A step to a slot the frame names keeps the route apart.
             const next = if (at == none) none else f.pos_index.get(.{ at, @backingInt(Value.PKind.plain), k[0], 0 }) orelse none;
             const st: [3]u32 = if (next != none) .{ next, none, 0 } else if (at != none) .{ at, c.int(), k[1] } else state;
-            try w.node(k[1], c, next, st);
+            try w.node(k[1], c, (try pl.extend(w.ev.gpa(), f.gc(), path, Place.Step.fromWord(k[0]))).?, next, st);
         }
     }
 };
@@ -273,11 +280,7 @@ pub fn literal(ev: *Relation.Eval, call: Value.Call, x: Contract.Effect, groups:
     if (!try exactSteps(ev, x.node)) return false;
     const g = ev.gpa();
     var l: Lit = .{ .ev = ev, .j = x.j, .groups = groups };
-    defer {
-        l.seen.deinit(g);
-        l.visits.deinit(g);
-        l.words.deinit(g);
-    }
+    defer inline for (.{ &l.seen, &l.visits, &l.words }) |m| m.deinit(g);
     try l.at(x.node, call.args[x.j]);
     return true;
 }
@@ -486,6 +489,7 @@ pub fn stop(ev: *Relation.Eval, call: Value.Call, x: Contract.Effect, groups: *s
     defer cw.deinit(g);
     try cw.appendSlice(g, b.words);
     var p = b.place;
+    var path = f.pos.items[v.pos].slot;
     for (f.slots.relWords(x.slot)) |s| {
         switch (Place.Step.fromWord(s).kind) {
             .field, .index, .ctor_arg => {},
@@ -493,20 +497,16 @@ pub fn stop(ev: *Relation.Eval, call: Value.Call, x: Contract.Effect, groups: *s
         }
         if (cw.items.len != 0 and ev.places().cyclic(p)) return null;
         p = ev.places().child(p, Place.Step.fromWord(s)) orelse return null;
+        path = (try ev.places().extend(g, f.gc(), path, Place.Step.fromWord(s))).?;
         try cw.append(g, s);
     }
     var w: Walk = .{ .ev = ev, .arg = call.args[x.j], .j = x.j, .groups = groups, .root = cw.items.len == 0 };
-    defer {
-        w.by_key.deinit(g);
-        w.full.deinit(g);
-        w.words.deinit(g);
-        w.ks.deinit(g);
-    }
+    defer inline for (.{ &w.by_key, &w.full, &w.words, &w.ks }) |m| m.deinit(g);
     try w.words.appendSlice(g, f.slots.relWords(x.slot));
     const start = groups.items.len;
     var at = v.pos;
     for (f.slots.relWords(x.slot)) |s| at = if (at == none) none else f.pos_index.get(.{ at, @backingInt(Value.PKind.plain), s, 0 }) orelse none;
-    try w.node(x.node, p, at, .{ at, none, 0 });
+    try w.node(x.node, p, path, at, .{ at, none, 0 });
     if (w.cyclic) {
         for (groups.items[start..]) |*gr| gr.targets.deinit(g);
         groups.shrinkRetainingCapacity(start);

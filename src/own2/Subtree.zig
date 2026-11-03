@@ -199,7 +199,7 @@ pub fn contains(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place
 /// Whether path `q` is in `below(p)`: an anchor of `p` is a prefix of it.
 pub fn inBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId, q: PathId) Error!bool {
     for (t.elems(try anchors(t, gpa, account, places, p))) |a| {
-        try account.reserve(.path, 1 + (places.pathDepth(q) -| places.pathDepth(.from(a))));
+        try account.reserve(.path, 1 + places.ancestorAt(q, places.pathDepth(.from(a)))[1]);
         if (places.isPrefix(.from(a), q)) return true;
     }
     return false;
@@ -214,9 +214,7 @@ fn subsMeet(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Tab
     for (t.elems(ap)) |a0| for (t.elems(ar)) |b0| {
         const a: PathId = .from(a0);
         const b: PathId = .from(b0);
-        const da = places.pathDepth(a);
-        const db = places.pathDepth(b);
-        try account.reserve(.path, 1 + @max(da, db) - @min(da, db));
+        try account.reserve(.path, 1 + places.ancestorAt(a, places.pathDepth(b))[1] + places.ancestorAt(b, places.pathDepth(a))[1]);
         if (places.isPrefix(a, b) and Slots.holdsAny(places, b)) return true;
         if (places.isPrefix(b, a) and Slots.holdsAny(places, a)) return true;
     };
