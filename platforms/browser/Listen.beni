@@ -23,8 +23,7 @@ import Task
 --| `"document"`) that calls `send (read event)` while the event is
 --| dispatched, and return what removes it.
 pub on : String, String, sync (HostEvent.Event → a), sync (a → ⊤) → (⊤ → ⊤)
-on target name read send =
-    listen target name λevent → send (read event)
+on target name read send = listen target name λevent → send (read event)
 
 
 listen : String, String, sync (HostEvent.Event → ⊤) → (⊤ → ⊤)
@@ -49,8 +48,7 @@ on2 target name other read send =
 --| removed however it ends. Values sent while `f` runs, or before the
 --| fiber takes them, are queued, so none is lost and none overtakes
 --| another.
-pub each : sync ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤
-each listener f = Task.bracket (λ⊤ → open listener) (λl _ → close l) λl → pump l f
+pub each listener f = Task.bracket (λ⊤ → open listener) (λl _ → close l) λl → pump l f
 
 
 type alias Inbox a =
@@ -63,14 +61,15 @@ open : sync ((a → ⊤) → (⊤ → ⊤)) → Inbox a
 open listener =
     queue = Chain.make ⊤
     waiting = Js.ref Nothing
-    handler = λvalue →
-        case Js.read waiting of
-            Nothing →
-                _ = Chain.append queue value
-                ⊤
-            Just resume →
-                Js.write waiting Nothing
-                Task.resume resume value
+    handler =
+        λvalue →
+            case Js.read waiting of
+                Nothing →
+                    _ = Chain.append queue value
+                    ⊤
+                Just resume →
+                    Js.write waiting Nothing
+                    Task.resume resume value
     { queue = queue, waiting = waiting, remove = listener handler }
 
 
