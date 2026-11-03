@@ -1,4 +1,5 @@
 //! Diagnostics for closed kind constraints, including Dict and Set keys.
+const std = @import("std");
 const Bir = @import("../bir/Bir.zig");
 const TypeStore = @import("TypeStore.zig");
 const Render = @import("Render.zig");
@@ -45,14 +46,9 @@ pub fn runtimeKind(r: *Reporter, region: Bir.Inst.Index, kind: TypeStore.Kind, a
     defer out.deinit();
     var namer: Render.Namer = .init(r.gpa);
     defer namer.deinit();
-    out.writer.writeAll(if (kind == .record)
-        "A Js.Cell needs a record row. This payload has type:\n\n    "
-    else
-        "A Js.Opt payload cannot itself be another Opt. This payload has type:\n\n    ") catch return error.OutOfMemory;
+    std.debug.assert(kind == .record);
+    out.writer.writeAll("A Js.Cell needs a record row. This payload has type:\n\n    ") catch return error.OutOfMemory;
     Render.writeVar(&out.writer, r.cx(), &namer, actual, .top) catch return error.OutOfMemory;
-    out.writer.writeAll(if (kind == .record)
-        "\n\nUse a record of typed fields. A Cell has identity; record copy, update and\nstructural comparison do not apply to it.\n"
-    else
-        "\n\nJs.Opt cannot be an optional payload, including through aliases\nor generic instantiation. Use a tagged type to distinguish those cases.\n") catch return error.OutOfMemory;
+    out.writer.writeAll("\n\nUse a record of typed fields. A Cell has identity; record copy, update and\nstructural comparison do not apply to it.\n") catch return error.OutOfMemory;
     try r.emit(.kind_mismatch, region, &out);
 }

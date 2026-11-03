@@ -88,6 +88,9 @@ pub const Which = enum {
     cellWrite,
     none,
     some,
+    arrayAllocate,
+    arraySet,
+    arrayDone,
     optMatch,
     optWithDefault,
     ref,
@@ -267,6 +270,13 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
         if (same(name, "fingerprint")) return .any_fingerprint;
         return null;
     }
+    if (same(module_name, "Js.Array")) {
+        const which = std.meta.stringToEnum(Which, name) orelse return null;
+        return switch (which) {
+            .arrayAllocate, .arraySet, .arrayDone => which,
+            else => null,
+        };
+    }
     if (!same(module_name, "Js")) return null;
     return std.meta.stringToEnum(Which, name);
 }
@@ -276,11 +286,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .arrayAllocate, .arraySet, .arrayDone, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }
 
 pub fn needsOptNone(which: Which) bool {
-    return which == .none or which == .optMatch or which == .optWithDefault;
+    return which == .none or which == .some or which == .optMatch or which == .optWithDefault;
 }

@@ -28,6 +28,7 @@
 --! `Task.resume`.
 
 import Js
+import Js.Array as Array
 import Js.Chain as Chain
 import Task
 
@@ -178,7 +179,7 @@ takeN (Queue q) n = if n ≤ 0 then [] else takeList q (if q.mode == 3 then n el
 takeList : State a, Int, Int → List a
 takeList q need most =
     if Chain.size q.takers == 0 && (count q ≥ need || finished q) then
-        values = popUpTo q most []
+        values = popUpTo q most
         refill q
         values
     else
@@ -231,27 +232,30 @@ full q = q.mode ≠ 3 && count q ≥ q.cap
 
 
 push : State a, a → ⊤
-push q value =
-    _ = Chain.append q.items value
-    ⊤
+push q value = Chain.push q.items value
 
 
-popUpTo : State a, Int, List a → List a
-popUpTo q most values =
-    if most ≤ 0 then
-        values
+popUpTo : State a, Int → List a
+popUpTo q most =
+    limit = min (max 0 most) (count q)
+    drainItems q (Array.arrayAllocate limit) 0 limit
+
+
+drainItems : State a, Js.Builder a, Int, Int → List a
+drainItems q values index limit =
+    if index == limit then
+        Array.arrayDone values index
     else
         case Chain.shift q.items of
             Nothing →
-                values
+                Array.arrayDone values index
             Just value →
-                popUpTo q (most - 1) [ …values, value ]
+                filled = Array.arraySet values index value
+                drainItems q filled (index + 1) limit
 
 
 unshift : State a, List a → ⊤
-unshift q values = List.foldr values ⊤ λvalue _ →
-    _ = Chain.prepend q.items value
-    ⊤
+unshift q values = List.foldr values ⊤ λvalue _ → Chain.unshift q.items value
 
 
 slide : State a → ⊤
@@ -329,7 +333,7 @@ serve q =
         Just w →
             if count q ≥ w.need || finished q then
                 _ = Chain.shift q.takers
-                values = popUpTo q w.most []
+                values = popUpTo q w.most
                 Js.write w.got (Just values)
                 if not (List.isEmpty values) then Js.write q.pending (Js.read q.pending + 1)
                 w.finish values

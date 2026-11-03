@@ -422,6 +422,8 @@ tries: []const Try = &.{},
 /// types: a `++` over `appendable`, which may be a `String`, keeps
 /// `Basics.append`.
 appends: []const Bir.Inst.Index = &.{},
+/// Intrinsic references whose element representation cannot be an Opt.
+opt_plain: []const Bir.Inst.Index = &.{},
 /// The names `Shape.record` ranges over.
 symbols: []const Symbol = &.{},
 /// One row per markup node the checker decided something about, markup
@@ -478,6 +480,7 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.derived);
     gpa.free(d.tries);
     gpa.free(d.appends);
+    gpa.free(d.opt_plain);
     gpa.free(d.symbols);
     gpa.free(d.markup);
     gpa.free(d.render_facts);
@@ -554,7 +557,7 @@ pub fn effectsIn(d: *const Dispatch, start: u32, end: u32) []const EffectSite {
 /// Whether the table holds anything at all. A module with no dispatch prints
 /// its `module` line and nothing else.
 pub fn isEmpty(d: *const Dispatch) bool {
-    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.markup.len == 0 and d.boundary.len == 0 and d.debug.len == 0;
+    return d.sites.len == 0 and d.derived.len == 0 and d.requirements.len == 0 and d.tries.len == 0 and d.appends.len == 0 and d.opt_plain.len == 0 and d.markup.len == 0 and d.boundary.len == 0 and d.debug.len == 0;
 }
 
 /// Whether the `++` at `inst` is on lists (`appends`). One binary search.
@@ -1340,4 +1343,14 @@ test "the evidence-count assert accepts a term shared by two owners and judges i
     try d.checkI7(&tb.bir, &.{}, &types, no_interner, testing.allocator, &bad);
     try testing.expectEqual(@as(usize, 1), bad.items.len);
     try testing.expectEqual(@as(u32, 2), bad.items[0].int());
+}
+
+pub fn optPlain(d: *const Dispatch, inst: Bir.Inst.Index) bool {
+    var lo: usize = 0;
+    var hi = d.opt_plain.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (d.opt_plain[mid].int() < inst.int()) lo = mid + 1 else hi = mid;
+    }
+    return lo < d.opt_plain.len and d.opt_plain[lo] == inst;
 }

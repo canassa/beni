@@ -855,7 +855,7 @@ fn reportKeyErrors(report: *Report, issues: []const KeyKinds.Issue, seen: *std.D
     for (issues) |issue| {
         if (seen.isSet(issue.region.int())) continue;
         seen.set(issue.region.int());
-        if (issue.required == .opt_payload or issue.required == .record) {
+        if (issue.required == .record) {
             try report.runtimeKind(issue.region, issue.required, issue.actual);
         } else if (issue.incompatible) |kind| {
             try report.kindMismatch(issue.region, kind, issue.required);
@@ -1055,7 +1055,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     std.mem.sort(Bir.Inst.Index, appends.items, {}, instLessThan);
     // What JavaScript sees through each `Js.from` and `Js.to`, read here
     // for the same reason (checker-v2.md §28).
-    const cast_boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items, solver.instantiate.opt_payload.items, solver.cx);
+    const cast_boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items);
     defer gpa.free(cast_boundary);
     defer gpa.free(identity.boundary);
     const boundary = try std.mem.concat(gpa, Dispatch.Boundary, &.{ cast_boundary, identity.boundary });
@@ -1072,6 +1072,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .decls = decls,
         .tries = sorted,
         .appends = try appends.toOwnedSlice(gpa),
+        .opt_plain = try optPlainRows(gpa, solver),
         .lets = lets,
         .requirements = try requirements.toOwnedSlice(gpa),
         .identities = identity.identities,
@@ -1259,4 +1260,24 @@ fn ownIndex(scratch: Allocator, bir: *const Bir) Error![]const Solve.OwnValue {
 fn ownLessThan(_: void, a: Solve.OwnValue, b: Solve.OwnValue) bool {
     if (a.name != b.name) return @backingInt(a.name) < @backingInt(b.name);
     return a.decl < b.decl;
+}
+
+/// Representation facts are settled after inference. A single-field wrapper
+/// can expose an Opt when release erases it, so inspect that payload too.
+fn optPlainRows(gpa: Allocator, solver: *Solve) Error![]const Bir.Inst.Index {
+    var plain: std.ArrayList(Bir.Inst.Index) = .empty;
+    defer plain.deinit(gpa);
+    for (solver.opt_uses.items) |use| {
+        const func = Walk.function(solver.cx.store, use.copy) orelse continue;
+        if (func.params.len == 0) continue;
+        var element = func.params[0];
+        if (!use.some) {
+            const app = Walk.nominal(solver.cx.store, element) orelse continue;
+            if (!solver.cx.types.isJsOptional(app.type) or app.args.len != 1) continue;
+            element = app.args[0];
+        }
+        if (!try Boundary.mayExposeEmptyOpt(solver.cx, element)) try plain.append(gpa, use.inst);
+    }
+    std.mem.sort(Bir.Inst.Index, plain.items, {}, instLessThan);
+    return plain.toOwnedSlice(gpa);
 }

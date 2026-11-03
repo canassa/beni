@@ -1,0 +1,15 @@
+module JsArrayWords
+  8:14 call Js.Array.arraySet builder: accepted call
+  9:14 call Js.Array.arrayDone filled: accepted call
+  10:15 construction xs: rejected call: values[*] may hold it through the call at 8:14, and is read at 11:38 (approx)
+  17:14 call Js.Array.arraySet builder: accepted call
+  18:14 call Js.Array.arrayDone filled: rejected later-use: filled is read again at 19:15
+  19:15 call Js.Array.arraySet filled: rejected alias: values holds it and is read at 20:5
+  20:39 call Js.Array.arrayDone changed: accepted call
+  summary storedElement: π1 RW, π1[*] R
+  summary finishedArray: unused
+  demands 7: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 7: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause later-use 1
+cause alias 1
+cause call 1

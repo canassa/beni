@@ -1,0 +1,17 @@
+none
+some(none)
+some(some(none))
+some(some(some(none)))
+some(none)
+some(some(none))
+some(some(some(none)))
+some(none)
+some(some(none))
+some(some(some(none)))
+some(none)
+some(none)
+none
+some(some(42))
+some(none)
+some(some(none))
+some(some(some(none)))

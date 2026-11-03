@@ -3038,6 +3038,7 @@ pub const Lowerer = struct {
             },
             .development => l.in.development,
             .test_hooks => l.in.test_hooks,
+            .opt_plain => l.in.dispatch.optPlain(@fromBackingInt(@intCast(fact.index))),
             .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
             .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
             // All three are asked with a constant `true` when the unit needs
@@ -3486,7 +3487,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
-        if (l.in.graph.modulePackage(l.in.module) != .core or !std.mem.eql(u8, l.text(l.module_name), "Js")) return null;
+        if (l.in.graph.modulePackage(l.in.module) != .core or (!std.mem.eql(u8, l.text(l.module_name), "Js") and !std.mem.eql(u8, l.text(l.module_name), "Js.Array"))) return null;
         const which = std.meta.stringToEnum(JsIntrinsic.Which, l.text(l.bir.symbol(decl.name))) orelse return null;
         return if (JsIntrinsic.compilerOnly(which)) which else null;
     }
@@ -3524,7 +3525,7 @@ pub const Lowerer = struct {
                 if (which == .cellRead or which == .cellWrite) return;
                 records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
                 l.restartNames();
-                try l.constDecl(out, try l.topName(index), if (which == .optNone) try l.object(&.{}, l.pos(d.inst_start)) else try l.jsTypedValue(which, l.pos(d.inst_start)), l.pos(d.inst_start));
+                try l.constDecl(out, try l.topName(index), if (which == .optNone) try l.optSentinel(l.pos(d.inst_start)) else try l.jsTypedValue(which, l.pos(d.inst_start)), l.pos(d.inst_start));
                 try l.recEnd(records.direct, index);
                 return;
             },
@@ -11075,8 +11076,8 @@ pub const Lowerer = struct {
             // `Js.suspending`'s body is a suspension point where it is not
             // in tail position (`backend.md` §4, *`Js.suspending` is its
             // body*); a tail returns it before this is reached.
-            if (which == .suspending) return l.suspension(out, inst, try l.jsIntrinsicCall(out, which, arg_insts, p));
-            return l.jsIntrinsicCall(out, which, arg_insts, p);
+            if (which == .suspending) return l.suspension(out, inst, try l.jsIntrinsicCall(out, which, arg_insts, callee_inst, p));
+            return l.jsIntrinsicCall(out, which, arg_insts, callee_inst, p);
         }
 
         // Arithmetic, `not` and `Int32`'s bit operations are the JavaScript
@@ -11700,12 +11701,16 @@ pub const Lowerer = struct {
     // ownership pin begin: optMatch
     // ownership pin begin: optWithDefault
     fn optNone(l: *Lowerer, p: u32) !Node.Index {
+        return l.optCoreValue("optNone", p);
+    }
+
+    fn optCoreValue(l: *Lowerer, spelling: []const u8, p: u32) !Node.Index {
         const module_name = l.interner.global.find("Js") orelse return l.missingCoreValue(p, "Js", "optNone", "the core module is missing");
         const module = l.in.graph.lookup(.core, module_name) orelse return l.missingCoreValue(p, "Js", "optNone", "the core module is missing");
         const bir = l.in.birs[module.int()];
         for (bir.decls, 0..) |d, i| {
             const symbol = bir.symbol(d.name);
-            if (!std.mem.eql(u8, l.text(symbol), "optNone")) continue;
+            if (!std.mem.eql(u8, l.text(symbol), spelling)) continue;
             if (module == l.in.module) return l.ident(try l.topName(@intCast(i)), p);
             const needed: Needed = .{ .module = module, .base = symbol.toOptional() };
             try l.needName(needed);
@@ -11714,11 +11719,90 @@ pub const Lowerer = struct {
         return l.missingCoreValue(p, "Js", "optNone", "the private constant is missing");
     }
 
+    // Escapes are private plain data. The sentinel is never cast out of Opt,
+    // so comparing the marker with that identity cannot be forged by a payload.
+    fn optField(l: *Lowerer, spelling: []const u8) !Symbol {
+        return l.interner.getOrPut(l.gpa, spelling);
+    }
+
+    fn optSentinel(l: *Lowerer, p: u32) !Node.Index {
+        const object_ = try l.object(&.{try l.property(try l.optField("$next"), try l.nullNode(p), p)}, p);
+        l.b.markCell(object_);
+        return object_;
+    }
+
+    fn optEscaped(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
+        return l.binary(.logical_and, value, try l.binary(.strict_eq, try l.member(value, try l.optField("$opt"), p), try l.optNone(p), p), p);
+    }
+
+    fn optPlainAt(l: *Lowerer, inst: Inst.Index) bool {
+        const answer = l.in.dispatch.optPlain(inst);
+        l.askSelf(.opt_plain, answer, 0, inst.int());
+        return answer;
+    }
+
+    fn optPayload(l: *Lowerer, slot: Node.Index, plain: bool, p: u32) !Node.Index {
+        if (plain) return slot;
+        return l.condOf(try l.optEscaped(slot, p), try l.member(slot, try l.optField("$previous"), p), slot, p);
+    }
+
+    fn optSomeArrow(l: *Lowerer, name_: JsIr.NameIndex, value: Node.Index, p: u32) !Node.Index {
+        var body: StmtList = .empty;
+        var escaped: StmtList = .empty;
+        const next = try l.member(value, try l.optField("$next"), p);
+        const escape_object = try l.object(&.{
+            try l.property(try l.optField("$opt"), try l.optNone(p), p),
+            try l.property(try l.optField("$previous"), value, p),
+            try l.property(try l.optField("$next"), try l.nullNode(p), p),
+        }, p);
+        l.b.markCell(escape_object);
+        try l.ifStatement(&escaped, try l.binary(.strict_eq, next, try l.nullNode(p), p), &.{try l.add(.assign_stmt, p, next.int(), escape_object.int())}, p);
+        try escaped.append(l.scratch, try l.returnStmt(next, p));
+        const test_ = try l.binary(.logical_or, try l.binary(.strict_eq, value, try l.optNone(p), p), try l.optEscaped(value, p), p);
+        try l.ifStatement(&body, test_, escaped.items, p);
+        try body.append(l.scratch, try l.returnStmt(value, p));
+        return l.arrowOf(&.{name_}, body.items, p);
+    }
+
+    /// The same array construction, slot store and completion as List's
+    /// private builder operations, without a dependency on List.mjs.
+    // ownership pin begin: arrayAllocate
+    // ownership pin begin: arraySet
+    // ownership pin begin: arrayDone
+    fn typedArrayOperation(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, values: []const Node.Index, p: u32) !Node.Index {
+        switch (which) {
+            .arrayAllocate => {
+                const ctor = try l.member(try l.add(.global_this, p, 0, 0), try l.interner.getOrPut(l.gpa, "Array"), p);
+                const n = try l.bindSubject(out, values[0], p);
+                const size = try l.condOf(try l.binary(.gt, n, try l.intNode(0, p), p), n, try l.intNode(0, p), p);
+                const range = try l.b.addRange(&.{size});
+                return l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(range)));
+            },
+            .arraySet => {
+                const builder = try l.bindSubject(out, values[0], p);
+                const slot = try l.add(.index_get, p, builder.int(), values[1].int());
+                try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), values[2].int()));
+                return builder;
+            },
+            .arrayDone => {
+                const builder = try l.bindSubject(out, values[0], p);
+                const size = try l.member(builder, try l.interner.getOrPut(l.gpa, "length"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), values[1].int()));
+                return builder;
+            },
+            else => unreachable,
+        }
+    }
+
+    // ownership pin end: arrayDone
+    // ownership pin end: arraySet
+    // ownership pin end: arrayAllocate
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
-            .optMatch => 3,
-            .optWithDefault => 2,
+            .optMatch, .arraySet => 3,
+            .optWithDefault, .arrayDone => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -11727,13 +11811,21 @@ pub const Lowerer = struct {
             names[i] = try l.fresh(l.well.temp);
             values[i] = try l.ident(names[i], p);
         }
+        if (which == .some) return l.optSomeArrow(names[0], values[0], p);
+        if (which == .arrayAllocate or which == .arraySet or which == .arrayDone) {
+            var body: StmtList = .empty;
+            const result = try l.typedArrayOperation(&body, which, values[0..arity], p);
+            try body.append(l.scratch, try l.returnStmt(result, p));
+            return l.arrowOf(names[0..arity], body.items, p);
+        }
         const result = switch (which) {
             .cell => try l.object(&.{try l.add(.spread_property, p, values[0].int(), Node.Data.unused)}, p),
             .some => values[0],
             .none => try l.optNone(p),
             .optMatch, .optWithDefault => blk: {
                 const test_ = try l.binary(.strict_ne, values[0], try l.optNone(p), p);
-                const yes = if (which == .optMatch) try l.call(values[2], &.{values[0]}, p) else values[0];
+                const payload = try l.optPayload(values[0], false, p);
+                const yes = if (which == .optMatch) try l.call(values[2], &.{payload}, p) else payload;
                 const no = if (which == .optMatch) try l.call(values[1], &.{try l.nullNode(p)}, p) else values[1];
                 const conditional = try l.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
                 break :blk try l.add(.cond, p, test_.int(), @backingInt(conditional));
@@ -11744,7 +11836,7 @@ pub const Lowerer = struct {
         return l.arrowOf(names[0..arity], &.{try l.add(.return_stmt, p, result.int(), Node.Data.unused)}, p);
     }
 
-    fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
+    fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, intrinsic: Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
         // escape is a `let`*): a read is its name, a write assigns it. The
@@ -11915,15 +12007,17 @@ pub const Lowerer = struct {
                 l.b.markCell(object_);
                 break :blk object_;
             },
+            W.arrayAllocate, W.arraySet, W.arrayDone => l.typedArrayOperation(out, which, v, p),
             W.optNone, W.cellRead, W.cellWrite => unreachable,
             W.none => l.optNone(p),
-            W.some => v[0],
+            W.some => if (l.optPlainAt(intrinsic)) v[0] else l.call(try l.optCoreValue("some", p), &.{v[0]}, p),
             W.optMatch, W.optWithDefault => blk: {
                 const slot = try l.bindSubject(out, v[0], p);
                 const missing = try l.bindSubject(out, v[1], p);
                 const present = if (which == .optMatch) try l.bindSubject(out, v[2], p) else slot;
                 const test_ = try l.binary(.strict_ne, slot, try l.optNone(p), p);
-                const yes = if (which == .optMatch) try l.call(present, &.{slot}, p) else slot;
+                const payload = try l.optPayload(slot, l.optPlainAt(intrinsic), p);
+                const yes = if (which == .optMatch) try l.call(present, &.{payload}, p) else payload;
                 const no = if (which == .optMatch) try l.call(missing, &.{try l.nullNode(p)}, p) else missing;
                 const conditional = try l.b.addRecord(JsIr.Cond{ .consequent = yes, .alternate = no });
                 break :blk l.add(.cond, p, test_.int(), @backingInt(conditional));

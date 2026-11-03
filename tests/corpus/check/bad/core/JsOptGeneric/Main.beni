@@ -1,6 +1,0 @@
--- D2: imported generic constraints reject nested Opt.
-import Generic
-import Js
-
-
-pub nested = Generic.wrap (Js.some 3)

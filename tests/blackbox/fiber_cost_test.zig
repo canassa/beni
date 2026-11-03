@@ -107,3 +107,34 @@ test "fiber budget reports include every failure slack and targets" {
     );
     try w.expectProgram("out/check.mjs", .{ .stdout = "all budget reports checked\n" });
 }
+
+test "shared chain library imports initialize before Task globals" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("QueueBench.beni", try source(&w, "tests/fixtures/fiber/QueueBench.beni"));
+    const built = try w.run(&.{ "build", "--platform=node", "--library", "--no-source-maps", "--out=out", "QueueBench.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try w.write("out/check.mjs",
+        \\import assert from 'node:assert/strict';
+        \\import {QueueBench$run} from './QueueBench.mjs';
+        \\const exit = await new Promise(resolve => QueueBench$run(4, resolve));
+        \\assert.deepEqual(exit, {$:'Done',a:10});
+        \\console.log('queue library imported and ran');
+        \\
+    );
+    try w.expectProgram("out/check.mjs", .{ .stdout = "queue library imported and ran\n" });
+}
+
+test "nested Opt representations survive warm dispatch round trips" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Slots.beni", try source(&w, "tests/corpus/run/core/JsOptNesting.beni"));
+    const expected = try source(&w, "tests/corpus/run/core/JsOptNesting.expected");
+    for (0..2) |_| {
+        const built = try w.run(&.{ "build", "--core", "--platform=node", "--roundtrip-dispatch", "--out=out", "Slots.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = expected });
+    }
+}

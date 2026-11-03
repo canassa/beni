@@ -106,6 +106,8 @@ pub const Which = enum { from, to, inspect, checked };
 
 /// A use of core's `Debug.toString` or `Debug.log` and the variable its
 /// copy was unified into (`debugs`, checker-v2.md §32).
+pub const OptUse = struct { inst: Bir.Inst.Index, copy: Var, some: bool };
+
 pub const DebugUse = struct { inst: Bir.Inst.Index, copy: Var, which: Dispatch.DebugSite.Which };
 
 cx: *const Context,
@@ -137,6 +139,7 @@ casts: std.ArrayList(Cast) = .empty,
 /// each prints into the dispatch table's `debug` rows, once every type is
 /// final (checker-v2.md §32).
 debugs: std.ArrayList(DebugUse) = .empty,
+opt_uses: std.ArrayList(OptUse) = .empty,
 /// What each markup obligation was decided as (checker-v2.md §25.7), by the
 /// record it is about: P9 builds the table's markup section from it.
 markup_decisions: std.ArrayList(MarkupDecide.Decision) = .empty,
@@ -257,6 +260,7 @@ pub fn deinit(s: *Solve) void {
     s.appends.deinit(gpa);
     s.casts.deinit(gpa);
     s.debugs.deinit(gpa);
+    s.opt_uses.deinit(gpa);
     s.markup_decisions.deinit(gpa);
     s.carriers.deinit(gpa);
     for (s.queues.items) |*q| q.deinit(gpa);
@@ -433,6 +437,10 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                             .which = which,
                         });
                         try s.noteCastImage(which, copy, decl);
+                    }
+                    if (@import("../js/JsIntrinsic.zig").of(s.cx.graph, s.cx.interfaces, s.cx.bir, node.region, s.cx.interner)) |which| {
+                        if (which == .some or which == .optMatch or which == .optWithDefault)
+                            try s.opt_uses.append(s.cx.gpa, .{ .inst = node.region, .copy = copy, .some = which == .some });
                     }
                     if (s.debugUse(node.region)) |which| try s.debugs.append(s.cx.gpa, .{
                         .inst = node.region,

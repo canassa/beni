@@ -1,124 +1,174 @@
--- Core-private typed intrusive storage. Removed links forget values and neighbours.
-
+-- Core-private typed intrusive storage. Removed tokens forget their entries.
 import Js
+import Js.Array as Array
+import Js.Protocol as Protocol
 
 
 pub opaque type Chain a
-    = Chain
-        { first : Js.Ref (Maybe (Link a))
-        , last : Js.Ref (Maybe (Link a))
-        , count : Js.Ref Int
-        }
+    = Chain (Js.Cell { first : Js.Opt (Entry a), last : Js.Opt (Entry a), count : Int })
 
 
 pub opaque type Link a
-    = Link
-        { value : Js.Ref (Maybe a)
-        , before : Js.Ref (Maybe (Link a))
-        , after : Js.Ref (Maybe (Link a))
-        }
+    = Link (Js.Cell { entry : Js.Opt (Entry a) })
+
+
+type Entry a
+    = Entry (Js.Cell (Fields a))
+
+
+type alias Fields a =
+    value : a
+    before : Js.Opt (Entry a)
+    after : Js.Opt (Entry a)
+    token : Js.Opt (Link a)
+
+
+cellOf : Entry a → Js.Cell (Fields a)
+cellOf (Entry cell) = cell
+
+
+absent : Js.Opt ⊤
+absent = Js.none ⊤
+
+
+empty : Js.Opt a → Bool
+empty slot = Js.same slot absent
+
+
+presentLink : Js.Opt (Link a) → Link a
+presentLink slot = Js.optMatch slot missing identity
+
+
+presentEntry : Js.Opt (Entry a) → Entry a
+presentEntry slot = Js.optMatch slot missing identity
+
+
+missing : ⊤ → a
+missing ⊤ = Protocol.defect "an absent chain slot was read"
 
 
 pub make : ⊤ → Chain a
-make ⊤ = Chain { first = Js.ref Nothing, last = Js.ref Nothing, count = Js.ref 0 }
+make ⊤ = Chain (Js.cell { first = Js.none ⊤, last = Js.none ⊤, count = 0 })
 
 
 pub size : Chain a → Int
-size (Chain q) = Js.read q.count
+size (Chain q) = Js.cellRead q .count
+
+
+appendEntry : Chain a, a → Entry a
+appendEntry (Chain q) value =
+    last = Js.cellRead q .last
+    entry = Entry (Js.cell { value = value, before = last, after = Js.none ⊤, token = Js.none ⊤ })
+    if empty last then
+        Js.cellWrite q (Js.some entry) .first
+    else
+        Js.cellWrite (cellOf (presentEntry last)) (Js.some entry) .after
+    Js.cellWrite q (Js.some entry) .last
+    Js.cellWrite q (Js.cellRead q .count + 1) .count
+    entry
+
+
+prependEntry : Chain a, a → Entry a
+prependEntry (Chain q) value =
+    firstSlot = Js.cellRead q .first
+    entry =
+        Entry (Js.cell { value = value, before = Js.none ⊤, after = firstSlot, token = Js.none ⊤ })
+    if empty firstSlot then
+        Js.cellWrite q (Js.some entry) .last
+    else
+        Js.cellWrite (cellOf (presentEntry firstSlot)) (Js.some entry) .before
+    Js.cellWrite q (Js.some entry) .first
+    Js.cellWrite q (Js.cellRead q .count + 1) .count
+    entry
+
+
+removalToken : Entry a → Link a
+removalToken entry =
+    token = Js.cellRead (cellOf entry) .token
+    if empty token then
+        link = Link (Js.cell { entry = Js.some entry })
+        Js.cellWrite (cellOf entry) (Js.some link) .token
+        link
+    else
+        presentLink token
 
 
 pub append : Chain a, a → Link a
-append (Chain q) value =
-    link =
-        Link
-            { value = Js.ref (Just value)
-            , before = Js.ref (Js.read q.last)
-            , after = Js.ref Nothing
-            }
-    case Js.read q.last of
-        Nothing →
-            Js.write q.first (Just link)
-        Just (Link previous) →
-            Js.write previous.after (Just link)
-    Js.write q.last (Just link)
-    Js.write q.count (Js.read q.count + 1)
-    link
+append chain value = removalToken (appendEntry chain value)
 
 
 pub prepend : Chain a, a → Link a
-prepend (Chain q) value =
-    link =
-        Link
-            { value = Js.ref (Just value)
-            , before = Js.ref Nothing
-            , after = Js.ref (Js.read q.first)
-            }
-    case Js.read q.first of
-        Nothing →
-            Js.write q.last (Just link)
-        Just (Link next) →
-            Js.write next.before (Just link)
-    Js.write q.first (Just link)
-    Js.write q.count (Js.read q.count + 1)
-    link
+prepend chain value = removalToken (prependEntry chain value)
+
+
+-- A queue or stack that keeps no removal handle pays for only the entry.
+pub push : Chain a, a → ⊤
+push chain value =
+    _ = appendEntry chain value
+    ⊤
+
+
+pub unshift : Chain a, a → ⊤
+unshift chain value =
+    _ = prependEntry chain value
+    ⊤
 
 
 pub remove : Chain a, Link a → Maybe a
-remove (Chain q) (Link link) =
-    case Js.read link.value of
-        Nothing →
-            Nothing
-        Just value →
-            case Js.read link.before of
-                Nothing →
-                    Js.write q.first (Js.read link.after)
-                Just (Link previous) →
-                    Js.write previous.after (Js.read link.after)
-            case Js.read link.after of
-                Nothing →
-                    Js.write q.last (Js.read link.before)
-                Just (Link next) →
-                    Js.write next.before (Js.read link.before)
-            Js.write link.value Nothing
-            Js.write link.before Nothing
-            Js.write link.after Nothing
-            Js.write q.count (Js.read q.count - 1)
-            Just value
+remove chain (Link token) =
+    slot = Js.cellRead token .entry
+    if empty slot then Nothing else removeEntry chain (presentEntry slot)
+
+
+removeEntry : Chain a, Entry a → Maybe a
+removeEntry (Chain q) entry =
+    before = Js.cellRead (cellOf entry) .before
+    after = Js.cellRead (cellOf entry) .after
+    if empty before then
+        Js.cellWrite q after .first
+    else
+        Js.cellWrite (cellOf (presentEntry before)) after .after
+    if empty after then
+        Js.cellWrite q before .last
+    else
+        Js.cellWrite (cellOf (presentEntry after)) before .before
+    token = Js.cellRead (cellOf entry) .token
+    if not (empty token) then
+        (Link handle) = presentLink token
+        Js.cellWrite handle (Js.none ⊤) .entry
+    Js.cellWrite (cellOf entry) (Js.none ⊤) .token
+    Js.cellWrite (cellOf entry) (Js.none ⊤) .before
+    Js.cellWrite (cellOf entry) (Js.none ⊤) .after
+    Js.cellWrite q (Js.cellRead q .count - 1) .count
+    Just (Js.cellRead (cellOf entry) .value)
 
 
 pub shift : Chain a → Maybe a
 shift ((Chain q) as deque) =
-    case Js.read q.first of
-        Nothing →
-            Nothing
-        Just link →
-            remove deque link
+    firstSlot = Js.cellRead q .first
+    if empty firstSlot then Nothing else removeEntry deque (presentEntry firstSlot)
 
 
 pub pop : Chain a → Maybe a
 pop ((Chain q) as deque) =
-    case Js.read q.last of
-        Nothing →
-            Nothing
-        Just link →
-            remove deque link
+    last = Js.cellRead q .last
+    if empty last then Nothing else removeEntry deque (presentEntry last)
 
 
 pub toList : Chain a → List a
-toList (Chain q) = linksList (Js.read q.first) []
+toList (Chain q) =
+    n = Js.cellRead q .count
+    snapshot (Js.cellRead q .first) (Array.arrayAllocate n) 0 n
 
 
-linksList : Maybe (Link a), List a → List a
-linksList next values =
-    case next of
-        Nothing →
-            values
-        Just (Link link) →
-            case Js.read link.value of
-                Nothing →
-                    values
-                Just value →
-                    linksList (Js.read link.after) [ …values, value ]
+snapshot : Js.Opt (Entry a), Js.Builder a, Int, Int → List a
+snapshot next values index count =
+    if empty next then
+        Array.arrayDone values count
+    else
+        entry = presentEntry next
+        filled = Array.arraySet values index (Js.cellRead (cellOf entry) .value)
+        snapshot (Js.cellRead (cellOf entry) .after) filled (index + 1) count
 
 
 pub clear : Chain a → ⊤
@@ -132,8 +182,42 @@ clear deque =
 
 pub first : Chain a → Maybe a
 first (Chain q) =
-    case Js.read q.first of
-        Nothing →
-            Nothing
-        Just (Link link) →
-            Js.read link.value
+    slot = Js.cellRead q .first
+    if empty slot then Nothing else Just (Js.cellRead (cellOf (presentEntry slot)) .value)
+
+
+pub peek : Link a → Maybe a
+peek (Link token) =
+    slot = Js.cellRead token .entry
+    if empty slot then Nothing else Just (Js.cellRead (cellOf (presentEntry slot)) .value)
+
+
+pub find : Chain a, sync (a → Bool) → Maybe (Link a)
+find (Chain q) predicate = matchingLink (Js.cellRead q .first) predicate
+
+
+matchingLink : Js.Opt (Entry a), sync (a → Bool) → Maybe (Link a)
+matchingLink next predicate =
+    if empty next then
+        Nothing
+    else
+        entry = presentEntry next
+        if predicate (Js.cellRead (cellOf entry) .value) then
+            Just (removalToken entry)
+        else
+            matchingLink (Js.cellRead (cellOf entry) .after) predicate
+
+
+pub insertBefore : Chain a, Link a, a → Link a
+insertBefore (Chain q) (Link handle) value =
+    next = presentEntry (Js.cellRead handle .entry)
+    before = Js.cellRead (cellOf next) .before
+    entry =
+        Entry (Js.cell { value = value, before = before, after = Js.some next, token = Js.none ⊤ })
+    if empty before then
+        Js.cellWrite q (Js.some entry) .first
+    else
+        Js.cellWrite (cellOf (presentEntry before)) (Js.some entry) .after
+    Js.cellWrite (cellOf next) (Js.some entry) .before
+    Js.cellWrite q (Js.cellRead q .count + 1) .count
+    removalToken entry

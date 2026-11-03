@@ -101,20 +101,40 @@ and API. Cells remain typed storage for ownership, effects and realms;
 a stored callable is charged to the writer. Wire rejects cells.
 
 `Js.Opt a` is an unboxed optional. `Js.none ⊤` is the one private core sentinel; `Js.some x`
-is `x`. `Js.optMatch slot missing present` calls `missing ⊤` when the
+is `x` except for the cached nested-none escapes described below. `Js.optMatch slot missing present` calls `missing ⊤` when the
 slot equals the sentinel and otherwise calls `present` with its value. Both callbacks
 are sync. `Js.optWithDefault slot fallback` returns the value or fallback.
 There is no unchecked extraction operation.
 
-Opt's parameter retains a non-nesting constraint. A direct Opt payload,
-including an alias or generic instantiation at one, is refused. Every other
-type is admitted, including ⊤ and Js.Value: a foreign host may return undefined
-for either, but it cannot forge the private sentinel. Records and lists
-containing Opt are accepted. A wrapper used as an Opt payload stays boxed
-when release unboxing could expose an empty inner Opt. The private absence
-object is emitted once from core; empty fields explicitly store it, and
-release hoists and shortens the constant. No Task, Chain, Hosted or Listen
-migration belongs to this primitive slice.
+**Nested optional amendment (manager, 2026-11-03; #1719).** None is the
+unique private NONE object. Present NONE values and escaped NONE values use
+cached private escape objects, one per nesting level. An escape records its
+predecessor; reading a present slot reverses exactly one level. Other payloads
+retain their identity and allocate nothing. The marker is compared with NONE
+itself, so a host object cannot forge an escape by matching a property name.
+
+A saturated operation whose checked element representation cannot be an Opt
+keeps the identity emission. Type variables and Opt payloads use escaping;
+some tests equality with NONE first, then the escape marker. Reading first
+tests for absence, then reverses a possible escape. Release-erased wrappers
+are classified by their payload representation too. First-class intrinsic
+values keep their shared function identity and use the generic operation.
+No Opt formation or payload-kind restriction remains: nested Opt and rigid
+annotated variables are valid. Js.Value, undefined and ⊤ remain valid payloads.
+
+The checker publishes static decisions as sorted intrinsic-reference indices
+in Dispatch.opt_plain. Dispatch sidecar v19 preserves them, and the emission
+funnel records each decision it reads. Cold, warm and dispatch-round-trip builds
+therefore use the same representation without backend type reconstruction.
+Record kind retains interface byte 7; the withdrawn non-Opt kind byte 6 is
+reserved and is not emitted.
+
+The shared Chain stores a generic payload as plain a in an entry. Only concrete
+entry and removal-token pointers use Opt, so Queue, Deferred and Task hand-offs
+perform no generic escape checks. A removal token is created only for a caller
+that retains one, or by find; removing the entry clears that token's pointer,
+so a retained removed token cannot keep the payload alive.
+
 
 The new intrinsics are compiler-owned in every position: a saturated call
 is written in place, and a first-class use (except the field-selector
@@ -141,7 +161,13 @@ builder, and wrap/unwrap a List view. Every signature retains the element
 type. They are fenced by `resolve/CorePrivate.zig`, add no user surface, and
 lower directly to native array operations. List's private builder, base,
 offset and view operations use these alongside its existing indexed reads
-and writes. No `Js.Buffer` is needed.
+and writes. The shared nominal builder identity is Js.Builder; List.Builder is its alias.
+The allocate/set/finish declarations are in core-private Js.Array, which may
+name Int and List without introducing a Js/Basics source cycle. They reuse
+List's existing ownership rows and lower directly to array allocation, indexed
+stores and prefix completion. Chain snapshots call them without importing
+List.mjs. No Js.Value conversion or extra storage representation is involved.
+No `Js.Buffer` is needed.
 
 List keeps its persistent radix tree and a claimable 32-element tail until
 the ownership-backed representation can replace both together. The tree and

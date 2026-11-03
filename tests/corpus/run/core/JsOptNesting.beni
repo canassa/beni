@@ -1,0 +1,67 @@
+-- Nested none values remain distinct through direct, generic and rigid calls.
+import Io
+import Js
+import Node
+import Queue
+
+
+slot : Js.Opt a, sync (a → String) → String
+slot value show = Js.optMatch value (λ⊤ → "none") λitem → "some(" ++ show item ++ ")"
+
+
+some : a → Js.Opt a
+some value = Js.some value
+
+
+inferredSome value = Js.some value
+
+
+read : Js.Opt a → Maybe a
+read value = Js.optMatch value (λ⊤ → Nothing) Just
+
+
+roundtrip : a → a
+roundtrip value =
+    queue = Queue.unbounded ⊤
+    _ = Queue.offer queue value
+    Maybe.withDefault (Queue.take queue) value
+
+
+type Wrapped
+    = Wrapped (Js.Opt Int)
+
+
+wrapped : Wrapped → String
+wrapped (Wrapped value) = slot value String.fromInt
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    a : Js.Opt Int
+    a = Js.none ⊤
+    b : Js.Opt (Js.Opt Int)
+    b = Js.some a
+    c : Js.Opt (Js.Opt (Js.Opt Int))
+    c = Js.some b
+    d : Js.Opt (Js.Opt (Js.Opt (Js.Opt Int)))
+    d = Js.some c
+    Node.printLines
+        [ slot a String.fromInt
+        , slot b λx → slot x String.fromInt
+        , slot c λx → slot x λy → slot y String.fromInt
+        , slot d λx → slot x λy → slot y λz → slot z String.fromInt
+        , slot (some a) λx → slot x String.fromInt
+        , slot (some (some a)) λx → slot x λy → slot y String.fromInt
+        , slot (some (some (some a))) λx → slot x λy → slot y λz → slot z String.fromInt
+        , slot (roundtrip b) λx → slot x String.fromInt
+        , slot (roundtrip c) λx → slot x λy → slot y String.fromInt
+        , slot (roundtrip d) λx → slot x λy → slot y λz → slot z String.fromInt
+        , slot (Js.some (Wrapped a)) wrapped
+        , slot (roundtrip (some (Wrapped a))) wrapped
+        , slot (Maybe.withDefault (read b) (Js.some 99)) String.fromInt
+        , slot (some (Js.some 42)) λx → slot x String.fromInt
+        , slot (inferredSome a) λx → slot x String.fromInt
+        , slot (inferredSome (inferredSome a)) λx → slot x λy → slot y String.fromInt
+        , slot (inferredSome (inferredSome (inferredSome a))) λx →
+            slot x λy → slot y λz → slot z String.fromInt
+        ]

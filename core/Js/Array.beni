@@ -1,0 +1,14 @@
+-- Core-private typed array construction. These operations emit in place.
+import Js
+
+
+--| Allocate private capacity; finish the initialized prefix before reading it.
+pub foreign pure arrayAllocate : unused Int → fresh exclusive Js.Builder a
+
+
+--| Set one initialized builder slot, retaining its element type.
+pub foreign pure arraySet : written returned Js.Builder a, borrowed Int, stored a → Js.Builder a
+
+
+--| Finish the initialized prefix as a plain List.
+pub foreign pure arrayDone : written returned Js.Builder a, borrowed Int → builderdone List a

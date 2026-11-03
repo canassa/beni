@@ -2345,7 +2345,7 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
-        if (e.graph().modulePackage(m) != .core or !std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js")) return false;
+        if (e.graph().modulePackage(m) != .core or (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js") and !std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js.Array"))) return false;
         const which = std.meta.stringToEnum(@import("JsIntrinsic.zig").Which, e.session.interner.slice(e.bir(m).symbol(d.name))) orelse return false;
         return @import("JsIntrinsic.zig").compilerOnly(which);
     }

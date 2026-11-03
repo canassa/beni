@@ -94,7 +94,8 @@ pub const magic = "BENIDSP\x00";
 /// 15: effect declaration byte 2 carries the totality proof.
 /// 16: effect rows grow to 8 bytes with call and initializer realm masks.
 /// 17: identity-only binders and tagged unconstrained quantifier slots.
-pub const format_version: u32 = 18;
+/// 19 adds static Opt representation decisions.
+pub const format_version: u32 = 19;
 
 pub const Column = enum(u32) {
     terms,
@@ -107,6 +108,7 @@ pub const Column = enum(u32) {
     derived,
     tries,
     appends,
+    opt_plain,
     markup,
     render_facts,
     render_links,
@@ -137,7 +139,7 @@ pub const Column = enum(u32) {
             .contexts => 8,
             .derived => 32,
             .tries => 8,
-            .appends => 4,
+            .appends, .opt_plain => 4,
             .markup => 20,
             .render_facts => 16,
             .render_links => 8,
@@ -304,6 +306,10 @@ pub fn write(
         row[4] = @backingInt(t.shape);
     }
 
+    const opt_plain = try gpa.alloc(u8, d.opt_plain.len * 4);
+    defer gpa.free(opt_plain);
+    for (d.opt_plain, 0..) |inst, i| std.mem.writeInt(u32, opt_plain[i * 4 ..][0..4], @backingInt(inst), .little);
+
     const appends = try gpa.alloc(u8, d.appends.len * Column.appends.width());
     defer gpa.free(appends);
     for (d.appends, 0..) |inst, i| std.mem.writeInt(u32, appends[i * 4 ..][0..4], @backingInt(inst), .little);
@@ -431,6 +437,7 @@ pub fn write(
         derived,
         tries,
         appends,
+        opt_plain,
         markup,
         render_facts,
         render_links,
@@ -457,6 +464,7 @@ pub fn write(
         @intCast(d.derived.len),
         @intCast(d.tries.len),
         @intCast(d.appends.len),
+        @intCast(d.opt_plain.len),
         @intCast(d.markup.len),
         @intCast(d.render_facts.len),
         @intCast(d.render_links.len),
@@ -862,6 +870,12 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
     {
+        const in_bytes = col(bytes, offsets, .opt_plain);
+        const plain = try gpa.alloc(Bir.Inst.Index, lengths[@backingInt(Column.opt_plain)]);
+        out.table.opt_plain = plain;
+        for (plain, 0..) |*inst, i| inst.* = @fromBackingInt(@intCast(std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little)));
+    }
+    {
         const in_bytes = col(bytes, offsets, .appends);
         const appends = try gpa.alloc(Bir.Inst.Index, lengths[@backingInt(Column.appends)]);
         out.table.appends = appends;
@@ -1207,6 +1221,9 @@ pub fn verify(l: *const Loaded) bool {
         }
         if (owed != 0) return false;
     }
+    for (d.opt_plain, 0..) |inst, i| {
+        if (i != 0 and d.opt_plain[i - 1].int() >= inst.int()) return false;
+    }
     return true;
 }
 
@@ -1365,6 +1382,7 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     for (a.symbols, b.symbols) |x, y| {
         try testing.expectEqualStrings(interner.slice(x), interner.slice(y));
     }
+    try testing.expectEqualSlices(Bir.Inst.Index, a.opt_plain, b.opt_plain);
     try testing.expectEqualSlices(Dispatch.DebugSite, a.debug, b.debug);
     try testing.expectEqual(a.debug_nodes.len, b.debug_nodes.len);
     for (a.debug_nodes, b.debug_nodes) |x, y| {

@@ -102,7 +102,6 @@ crossing: std.ArrayList(CrossingUse) = .empty,
 wire: std.ArrayList(@import("Wire.zig").Use) = .empty,
 host_free: std.ArrayList(CrossingUse) = .empty,
 // Opt payload instantiations keep wrappers boxed when erasure could expose none.
-opt_payload: std.ArrayList(CrossingUse) = .empty,
 // Only unconstrained identity imports allocate this column. Own copies
 // already live in Effects.records, so ordinary modules record nothing new.
 identity_uses: std.ArrayList(IdentityUse) = .empty,
@@ -140,7 +139,6 @@ pub fn deinit(in: *Instantiate) void {
     in.crossing.deinit(in.cx.gpa);
     in.wire.deinit(in.cx.gpa);
     in.host_free.deinit(in.cx.gpa);
-    in.opt_payload.deinit(in.cx.gpa);
     in.identity_uses.deinit(in.cx.gpa);
     in.copies.deinit(in.cx.gpa);
 }
@@ -479,9 +477,6 @@ fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
             // A reference's quantifier and its copy, for the crossing bits
             // (`copies`, checker-v2.md §36).
             if (in.copy_owner) |owner| try in.copies.append(in.cx.gpa, .{ .quantifier = r, .copy = store.copy(r).unwrap().?, .decl = owner });
-            if (flags.kind == .opt_payload) if (in.copy_owner) |owner| {
-                try in.opt_payload.append(in.cx.gpa, .{ .inst = in.origin, .decl = owner, .v = store.copy(r).unwrap().? });
-            };
             var copied = flags;
             copied.constraints = try in.mappedConstraints(flags);
             copied.obls = .none;
@@ -573,7 +568,6 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
         const s = iface.schemes[@backingInt(scheme)];
         for (in.quantified.items, 0..) |q, i| {
             if (i >= s.quantified_count) break;
-            if (cx.store.flagsOf(cx.store.find(q)).kind == .opt_payload) try in.opt_payload.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
             if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & Interface.Quantified.wire_bit != 0) try in.wire.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
             if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & (1 << 12) != 0) try in.host_free.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
             // The flag word alone: bit 10 is `crosses`.

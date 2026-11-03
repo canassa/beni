@@ -1289,7 +1289,8 @@ pub const Builder = struct {
                     marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // Any packing and unpacking call their shared sibling.
-                    marks[d.lhs] = which != .any_pack and which != .any_unpack;
+                    marks[d.lhs] = which != .any_pack and which != .any_unpack and
+                        (which != .some or dispatch.optPlain(@fromBackingInt(@intCast(d.lhs))));
                 } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
                     // A derived codec's own `parse` or `print` (schema.md
                     // §12.10): `Json`'s function is not called.

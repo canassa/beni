@@ -3906,9 +3906,13 @@ fn hitLimit(o: *Ownership, why: Limit, at: u32) Allocator.Error!void {
 fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Schema")) return o.schemaRunRow(m, d);
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Record")) return o.recordRow(m, d);
-    if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "List")) return null;
+    if (o.in.packages[m] != .core) return null;
+    const list = std.mem.eql(u8, o.in.module_names[m], "List");
+    const arrays = std.mem.eql(u8, o.in.module_names[m], "Js.Array");
+    if (!list and !arrays) return null;
     const bir = o.in.birs[m];
-    const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
+    const declared = o.in.interner.slice(bir.symbol(bir.decls[d].name));
+    const name = if (!arrays) declared else if (std.mem.eql(u8, declared, "arraySet")) "put" else if (std.mem.eql(u8, declared, "arrayDone")) "done" else return null;
     const R = bit_r;
     const A = bit_a;
     const W = bit_w | bit_x;
@@ -7236,14 +7240,14 @@ fn isVar(store: *TypeStore, v: Var) ?Var {
     };
 }
 
-/// `core/List`'s `Builder`, which `done` hands over as the list it is: the
+/// `core/Js`'s `Builder`, shared with List; completion hands over the list: the
 /// two types are one run-time object (§16.8's `done` row).
 fn builderId(o: *Ownership) TypeId {
     if (o.builder_id) |id| return id;
     var found: TypeId = .none;
     for (o.in.types.entries, 0..) |e, i| {
         if (e.package != .core or e.kind != .foreign) continue;
-        if (!std.mem.eql(u8, o.in.interner.slice(e.module_name), "List")) continue;
+        if (!std.mem.eql(u8, o.in.interner.slice(e.module_name), "Js")) continue;
         if (!std.mem.eql(u8, o.in.interner.slice(e.name), "Builder")) continue;
         found = @fromBackingInt(@intCast(i));
         break;

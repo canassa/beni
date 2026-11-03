@@ -148,6 +148,9 @@ fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #4 8
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #5 c13bed2c0dc507242f407b9d0952eae2109ef443b18fb99ba110883c79afca3e
 fiber_cost_test.test.fiber release bundle brotli sizes stay within ratchets #6 7bfa79e2838e5d193097d3c73324dcbb07ea9ad8abb8c701f6adfa9fc0920a85
 fiber_cost_test.test.fiber retained bytes and allocation deltas stay within ratchets #0 6d9b22fa0d3fe4aa06d46221d65777ca4ba321a8b0bc5421d4fb49b1670fce05
+fiber_cost_test.test.nested Opt representations survive warm dispatch round trips #0 87f38921cc51d5ddaddb61402b267a51a48732531cadc42bc78de0ecd0b4636a
+fiber_cost_test.test.nested Opt representations survive warm dispatch round trips #1 87f38921cc51d5ddaddb61402b267a51a48732531cadc42bc78de0ecd0b4636a
+fiber_cost_test.test.shared chain library imports initialize before Task globals #0 858cab84b786142e3444756326028a6b1c4629be8a88cb2c7ca0ef8d7e5d5753
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 76d318b5bad7f309f69bf4faf8a9e4feb76df0595817ece7c124baea7baa2a60
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 3d9305d46bb2bc4f4cc16d46497010be02749f323089c8b8d909e55caee428a3
 ordering_test.test.Json.decode inferred from use prints the same reversed #0 2e9c5e6700f3491a4fa792d61a41b815a443b73e1b3b241f2928b648c1bf5472

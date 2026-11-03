@@ -931,7 +931,7 @@ value holds closures or top-level functions, or of a function parameter — whos
    does not settle in four rounds adds `⊤`.
    **The type filter** (§6.1, thesis §3.8): an approximate entry at the result's ε whose provenance is
    an argument the result's type cannot be — by the argument's type, or by the cell's — is dropped, so
-   `List.map xs String.fromInt` is never `xs`. A `List` and `core/List`'s `Builder` are one run-time
+   `List.map xs String.fromInt` is never `xs`. A `List` and core's shared `Js.Builder` (`List.Builder` is an alias) are one run-time
    object (`done` hands the one over as the other), so the filter never separates them.
    *Amended 2026-10-12 (slice 3f, §25.3):* two closed record types are one object only when they name the
    same fields, each pair of which may be one object; `List.map explosions toObstacle` is never `explosions`.
@@ -8174,7 +8174,7 @@ Wire refuses a Cell. The complete API is `workers-task-storage.md`.
 `Js.cell` aliases the copied record's field values in a fresh identity;
 `cellRead` lends exactly the selected field and `cellWrite` stores its
 second parameter behind that field's barrier. The selector is unused at
-runtime. `some` returns its input; `none` is empty and reads no input.
+runtime. `some` returns ordinary data unchanged; `none` is empty and reads no input.
 `optWithDefault` returns either input's payload and `optMatch` returns one
 callback's answer. Its slot is escaped because the present callback may
 retain that payload. Both callbacks run at most once, synchronously, and
@@ -8191,6 +8191,13 @@ use the same mapping; the ownership words above remain justified.
 *2026-11-03, #1738:* the pinned lowering now reports an invalid selector
 instead of asserting. That path performs no field access; accepted selector
 allocations, payload aliases, stores and callbacks are unchanged.
+
+*Nested-none escapes (2026-11-03):* only the private absence identity or an
+escape of that identity is wrapped. Escape caches contain only private
+predecessors, never a program payload. Every mutable program datum remains the
+same object through some/read, so the existing payload-alias and callback words
+remain sound. The representation is in workers-task-storage.md; its static
+non-Opt path adds no runtime operation.
 
 ### Compiler-intrinsic body pins (owner, 2026-11-03)
 
@@ -8228,6 +8235,15 @@ tail is a typed Builder behind a Cell. Its claimed count must equal a header's
 own tail count before `writeArray` fills the next unused slot. Earlier headers
 cannot observe that slot. A fork from an earlier count copies at most 32 values.
 A full tail is never written again after becoming a leaf.
+
+The shared builder identity is Js.Builder; List.Builder is an alias. Core's
+Js.Array operations use the same asserted element-store and completion rows:
+arraySet returns the builder and retains its stored element; arrayDone returns
+the same physical array with its initialized prefix, including its elements'
+aliases. arrayAllocate creates fresh exclusive capacity. The fixture
+ownership/core/JsArrayWords observes both a stored element's later use and a
+builder's later write after completion. Finishing a builder does not make its
+pre-existing elements fresh.
 
 `put` and `done` retain their fresh-builder obligations. `peekArray` returns an
 alias without changing length; it is read only, and only a full immutable tail

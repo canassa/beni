@@ -1,0 +1,19 @@
+import Queue
+import Task
+
+
+pub run : Int, (Task.Exit Int → ⊤) → ⊤
+run n done = Task.start (λ⊤ → loop (Queue.unbounded ⊤) n 0) done
+
+
+loop : Queue.Queue Int, Int, Int → Int
+loop queue n acc =
+    if n == 0 then
+        acc
+    else
+        _ = Queue.offer queue n
+        case Queue.take queue of
+            Nothing →
+                -1
+            Just value →
+                loop queue (n - 1) (acc + value)

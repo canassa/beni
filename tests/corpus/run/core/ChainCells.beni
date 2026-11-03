@@ -1,0 +1,84 @@
+-- Intrusive tokens remain removable once, with ordering preserved at every end.
+import Js
+import Js.Chain as Chain
+import Node
+
+
+text : Chain.Chain Int → String
+text queue = String.join (List.map (Chain.toList queue) String.fromInt) ","
+
+
+number : Maybe Int → String
+number slot = String.fromInt (Maybe.withDefault slot (-1))
+
+
+main : Node.Program
+main =
+    queue = Chain.make ⊤
+    middle = Chain.append queue 2
+    last = Chain.append queue 4
+    first = Chain.prepend queue 1
+    _ = Chain.insertBefore queue last 3
+    before = text queue
+    count = String.fromInt (Chain.size queue)
+    removed = number (Chain.remove queue middle)
+    repeated = number (Chain.remove queue middle)
+    withoutMiddle = text queue
+    forgotten = number (Chain.peek middle)
+    found =
+        case Chain.find queue λn → n == 3 of
+            Nothing →
+                "missing"
+            Just token →
+                _ = Chain.remove queue token
+                text queue
+    _ = Chain.remove queue first
+    _ = Chain.remove queue last
+    emptied = String.fromInt (Chain.size queue)
+    _ = Chain.append queue 5
+    _ = Chain.prepend queue 6
+    popped = number (Chain.pop queue)
+    shifted = number (Chain.shift queue)
+    Chain.clear queue
+    cleared = String.fromInt (Chain.size queue)
+    callbacks = Chain.make ⊤
+    calls = Js.ref 0
+    _ = Chain.append callbacks λ⊤ → Js.write calls (Js.read calls + 1)
+    _ = Chain.append callbacks λ⊤ → Js.write calls (Js.read calls + 10)
+    beforeCall = String.fromInt (Js.read calls)
+    case Chain.shift callbacks of
+        Nothing →
+            Js.write calls (-1000)
+        Just call →
+            call ⊤
+    Chain.clear callbacks
+    direct = Chain.make ⊤
+    Chain.push direct 8
+    Chain.unshift direct 7
+    lazyToken = Chain.find direct λn → n == 8
+    lazyRemoved = number (Chain.pop direct)
+    lazyForgotten =
+        case lazyToken of
+            Nothing →
+                "missing"
+            Just token →
+                number (Chain.peek token)
+    directFirst = number (Chain.shift direct)
+    Node.printLines
+        [ before
+        , count
+        , removed
+        , repeated
+        , withoutMiddle
+        , forgotten
+        , found
+        , emptied
+        , popped
+        , shifted
+        , cleared
+        , beforeCall
+        , String.fromInt (Js.read calls)
+        , lazyRemoved
+        , lazyForgotten
+        , directFirst
+        ]

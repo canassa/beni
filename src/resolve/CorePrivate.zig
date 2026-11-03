@@ -10,6 +10,8 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Js", .name = "Builder" },
+    .{ .module = "Js.Array", .name = null },
     .{ .module = "Browser.Host.Map", .name = null, .access = .platform },
     .{ .module = "Worker.Object", .name = "replyIds", .access = .cloudflare, .value_only = true },
     .{ .module = "Js", .name = "Cell", .access = .runtime },

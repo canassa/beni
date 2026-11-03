@@ -1,8 +1,0 @@
--- D2: even inferred generic helpers retain the defined-payload constraint.
-import Js
-
-
-wrap value = Js.some value
-
-
-pub bad = wrap (Js.some 3)

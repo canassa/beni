@@ -6545,19 +6545,16 @@ only a separate wrapper's use of that endpoint requires a scalar key.
 `Js.Cell r` is nominal identity storage over a record row `r`. The row keeps
 all writable field types; a literal accessor relates a read result or stored
 value to that exact field. Cell is not a record alias: structural record
-operations and structural equality cannot consume it. `Js.Opt a` retains a
-non-Opt payload parameter constraint: aliases preserve it, generic schemes
-publish it, and every instantiation checks it. This excludes only direct Opt
-payloads; Js.Value, ⊤ and values containing Opt are admitted. The private
-sentinel makes undefined a safe present payload (owner, 2026-11-02). Payload access occurs
-only inside the present branch of optMatch, or with a typed default. The API,
-access fence, emission and soundness argument are `workers-task-storage.md`.
+operations and structural equality cannot consume it.
 
-The existing interface kind byte now admits non-Opt payload (6) and record (7),
-including parameter facts, without changing row widths. Cached boundary
-rows also preserve the boxed-wrapper fact's nominal type reference through
-remapping. A warm build retains both the payload constraint and its runtime
-representation.
+**Nested optional amendment (manager, 2026-11-03).** The non-Opt payload kind
+is withdrawn: nested Opt and rigid annotated variables are admitted. The
+checker publishes intrinsic references whose element representation cannot
+be Opt as sorted Dispatch.opt_plain indices. It follows aliases and possible
+release erasure through single-field wrappers. Dispatch sidecar v19 preserves
+the decision; emission records it as an opt_plain funnel fact. Interface kind
+byte 6 is reserved and no longer emitted; record kind stays at byte 7.
+`workers-task-storage.md` owns the runtime representation and soundness rule.
 
 ### Checked-data evidence (owner, 2026-11-02)
 

@@ -34,10 +34,8 @@ pub fn rows(
     interner: *const InternPool.Global,
     casts: []const Solve.Cast,
     copies: []const Instantiate.CastCopies,
-    opt_payload: []const Instantiate.CrossingUse,
-    cx: *const @import("Context.zig"),
 ) Allocator.Error![]const Dispatch.Boundary {
-    if (casts.len == 0 and opt_payload.len == 0) return &.{};
+    if (casts.len == 0) return &.{};
     var out: std.ArrayList(Dispatch.Boundary) = .empty;
     defer out.deinit(gpa);
     const stack = &stacks.vars;
@@ -80,15 +78,6 @@ pub fn rows(
             while (Walk.child(store, root, n, .payload)) |c| : (n += 1) try stack.append(gpa, c);
         }
     }
-    for (opt_payload) |use| {
-        const decl = use.decl orelse continue;
-        const c = store.resolvedContent(use.v);
-        if (c != .structure or c.structure != .app) continue;
-        const app = c.structure.app;
-        if (app.type == .none or types.entry(app.type).kind != .adt) continue;
-        if (!try mayExposeEmptyOpt(cx, use.v)) continue;
-        try out.append(gpa, .{ .decl = decl, .kind = .boxed, .value = app.type.int() });
-    }
     const Order = struct {
         types: *const Types,
         interner: *const InternPool.Global,
@@ -129,10 +118,10 @@ pub fn rows(
     return out.toOwnedSlice(gpa);
 }
 
-/// Only wrappers whose erased payload might be an empty Opt need a box.
-/// A recursive Link around a Cell is already a non-sentinel object and stays
-/// eligible for the ordinary one-constructor unboxing optimisation.
-fn mayExposeEmptyOpt(cx: *const @import("Context.zig"), initial: Var) Allocator.Error!bool {
+/// Whether release erasure can expose an Opt or an unconstrained value.
+/// A recursive Link around a Cell is already a non-sentinel object and needs
+/// no escape check; a one-field wrapper around Opt must retain that check.
+pub fn mayExposeEmptyOpt(cx: *const @import("Context.zig"), initial: Var) Allocator.Error!bool {
     var value = initial;
     var seen: std.ArrayList(Types.TypeId) = .empty;
     defer seen.deinit(cx.scratch);

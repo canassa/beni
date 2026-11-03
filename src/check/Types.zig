@@ -653,7 +653,6 @@ pub fn build(
     };
     for (types.entries) |e| {
         if (e.package != .core or e.arity != 1 or !std.mem.eql(u8, interner.slice(e.module_name), "Js")) continue;
-        if (std.mem.eql(u8, interner.slice(e.name), "Opt")) types.key_kinds[e.key_start] = .opt_payload;
         if (std.mem.eql(u8, interner.slice(e.name), "Cell")) types.key_kinds[e.key_start] = .record;
     }
     try TypeFacts.settle(&types, gpa, graph, artifacts);

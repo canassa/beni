@@ -35,6 +35,7 @@ import Browser.Host.MessagePort as MessagePort
 import Browser.Host.Timers as Timers
 import Duration exposing (Duration)
 import Js
+import Js.Chain as Chain exposing (Chain, Link)
 import Js.Runtime as Runtime
 import List
 import Record
@@ -203,11 +204,11 @@ soonRunning = Js.ref Nothing
 
 
 cleaning : Chain Control
-cleaning = newChain ⊤
+cleaning = Chain.make ⊤
 
 
 schedulers : Chain Scheduler
-schedulers = newChain ⊤
+schedulers = Chain.make ⊤
 
 
 fibered : Js.Ref Bool
@@ -264,10 +265,10 @@ newControl : Slots, sync (⊤ → ⊤) → Control
 newControl slots cancelled =
     Js.write fibered True
     Control
-        { stack = newChain ⊤
-        , finalizers = newChain ⊤
-        , observers = newChain ⊤
-        , children = newChain ⊤
+        { stack = Chain.make ⊤
+        , finalizers = Chain.make ⊤
+        , observers = Chain.make ⊤
+        , children = Chain.make ⊤
         , interrupted = Js.ref False
         , unwinding = Js.ref False
         , registered = Js.ref False
@@ -276,7 +277,7 @@ newControl slots cancelled =
         , parked = Js.ref Nothing
         , slots = Js.ref slots
         , member = Js.ref Nothing
-        , unlinks = newChain ⊤
+        , unlinks = Chain.make ⊤
         , cancelled = cancelled
         , cleaning = Js.ref Nothing
         }
@@ -429,7 +430,7 @@ runLoop ((Control c) as fiber) =
     if Js.read c.ended then
         ⊤
     else
-        case popChain c.stack of
+        case Chain.pop c.stack of
             Nothing →
                 ⊤
             Just Boundary →
@@ -459,7 +460,7 @@ unwind : Control → ⊤
 unwind ((Control c) as fiber) =
     Js.write c.unwinding True
     Js.write c.parked Nothing
-    clearChain c.stack
+    Chain.clear c.stack
     pushFrame
         fiber
         (Execute
@@ -482,7 +483,7 @@ driverJob work =
 
 cleanups : Control → ⊤
 cleanups ((Control c) as fiber) =
-    case shiftChain c.finalizers of
+    case Chain.shift c.finalizers of
         Nothing →
             ⊤
         Just fin →
@@ -501,7 +502,7 @@ enterCleanup : Control → ⊤
 enterCleanup ((Control c) as fiber) =
     case Js.read c.cleaning of
         Nothing →
-            Js.write c.cleaning (Just (appendLink cleaning fiber))
+            Js.write c.cleaning (Just (Chain.append cleaning fiber))
         Just _ →
             ⊤
 
@@ -512,7 +513,7 @@ leaveCleanup (Control c) =
         Nothing →
             ⊤
         Just token →
-            _ = removeLink cleaning token
+            _ = Chain.remove cleaning token
             Js.write c.cleaning Nothing
 
 
@@ -534,7 +535,7 @@ cutBack ((Control c) as fiber) =
 
 popBoundary : Chain Frame → ⊤
 popBoundary stack =
-    case popChain stack of
+    case Chain.pop stack of
         Nothing →
             ⊤
         Just Boundary →
@@ -563,7 +564,7 @@ halt ((Control c) as fiber) =
 complete : Control → ⊤
 complete ((Control c) as fiber) =
     Js.write c.ended True
-    clearChain c.stack
+    Chain.clear c.stack
     leaveCleanup fiber
     runJobs c.unlinks
     runJobs c.observers
@@ -578,7 +579,7 @@ complete ((Control c) as fiber) =
 
 runJobs : Chain (⊤ → ⊤) → ⊤
 runJobs jobs =
-    case shiftChain jobs of
+    case Chain.shift jobs of
         Nothing →
             ⊤
         Just job →
@@ -587,7 +588,7 @@ runJobs jobs =
 
 
 cancelChildren : Control → ⊤
-cancelChildren (Control c) = cancelControls (chainList c.children)
+cancelChildren (Control c) = cancelControls (Chain.toList c.children)
 
 
 cancelControls : List Control → ⊤
@@ -602,7 +603,7 @@ waitControls fibers =
         ⊤
     else
         callback λwake →
-            listeners = newChain ⊤
+            listeners = Chain.make ⊤
             remaining = Js.ref 0
             each fibers λfiber →
                 if endedControl fiber then
@@ -610,12 +611,12 @@ waitControls fibers =
                 else
                     (Control c) = fiber
                     Js.write remaining (Js.read remaining + 1)
-                    token = appendLink c.observers λ⊤ →
+                    token = Chain.append c.observers λ⊤ →
                         left = Js.read remaining - 1
                         Js.write remaining left
                         if left == 0 then resume wake ⊤
                     pushStep listeners λ⊤ →
-                        _ = removeLink c.observers token
+                        _ = Chain.remove c.observers token
                         ⊤
             λ⊤ → runJobs listeners
 
@@ -661,14 +662,14 @@ wait (Fiber (Control c) result) =
             value
         Nothing →
             callback λwake →
-                token = appendLink c.observers λ⊤ →
+                token = Chain.append c.observers λ⊤ →
                     case Js.read result of
                         Nothing →
                             ⊤
                         Just value →
                             resume wake value
                 λ⊤ →
-                    _ = removeLink c.observers token
+                    _ = Chain.remove c.observers token
                     ⊤
 
 
@@ -782,9 +783,9 @@ newScheduler runner more root =
         , more = more
         , hook = Js.ref Nothing
         , turn = Js.ref Nothing
-        , roots = newChain ⊤
-        , members = newChain ⊤
-        , loans = newChain ⊤
+        , roots = Chain.make ⊤
+        , members = Chain.make ⊤
+        , loans = Chain.make ⊤
         , live = Js.ref 0
         , idle = Js.ref Nothing
         , watch = Js.ref Nothing
@@ -795,7 +796,7 @@ newScheduler runner more root =
         , timer = Js.ref Nothing
         , expired = Js.ref False
         , abandoned = Js.ref 0
-        , sweeping = newChain ⊤
+        , sweeping = Chain.make ⊤
         , torn = Js.ref False
         , listed = Js.ref Nothing
         , program = root
@@ -815,7 +816,7 @@ macrotask task =
 
 
 macroQueue : Chain (⊤ → ⊤)
-macroQueue = newChain ⊤
+macroQueue = Chain.make ⊤
 
 
 macroPort : Js.Ref (Maybe MessagePort.MessagePort)
@@ -837,7 +838,7 @@ macroSender ⊤ =
 
 runMacro : ⊤ → ⊤
 runMacro ⊤ =
-    case shiftChain macroQueue of
+    case Chain.shift macroQueue of
         Nothing →
             ⊤
         Just work →
@@ -964,7 +965,7 @@ onDefect hook =
 
 
 releases : Chain (⊤ → ⊤)
-releases = newChain ⊤
+releases = Chain.make ⊤
 
 
 --| Call `f` once, when the runtime stops (`shutdown`): in a microtask
@@ -1067,7 +1068,7 @@ schedulerWith runner more hook =
     sched = newScheduler runner more False
     (Scheduler s) = sched
     Js.write s.hook (Just hook)
-    Js.write s.listed (Just (appendLink schedulers sched))
+    Js.write s.listed (Just (Chain.append schedulers sched))
     sched
 
 
@@ -1105,7 +1106,7 @@ schedulerFibers (Scheduler s) = Js.read s.live
 --| count that changes nothing is safe for any program to read; a build
 --| that does not call it keeps nothing of it.
 pub schedulersListed : ⊤ → Int
-schedulersListed ⊤ = chainSize schedulers
+schedulersListed ⊤ = Chain.size schedulers
 
 
 --| Call `f` once, the next time no fiber of the scheduler runs — at once,
@@ -1158,25 +1159,25 @@ attachFiber parent group (Fiber ((Control c) as fiber) _) =
     (Scheduler s) = sched
     (Scheduler p) = program
     Js.write p.live (Js.read p.live + 1)
-    globalToken = appendLink p.members fiber
+    globalToken = Chain.append p.members fiber
     pushStep c.unlinks λ⊤ →
-        _ = removeLink p.members globalToken
+        _ = Chain.remove p.members globalToken
         ⊤
     if not s.program && not (endedScheduler sched) then
         Js.write c.member (Just sched)
         Js.write s.live (Js.read s.live + 1)
-        token = appendLink s.members fiber
+        token = Chain.append s.members fiber
         pushStep c.unlinks λ⊤ →
-            _ = removeLink s.members token
+            _ = Chain.remove s.members token
             ⊤
     if stopped program || stopped sched then Js.write c.interrupted True
     case group of
         Just ((Scope sc) as attachedGroup) →
             listRoot attachedGroup sched
             if Js.read sc.closed then Js.write c.interrupted True
-            token = appendLink sc.children fiber
+            token = Chain.append sc.children fiber
             pushStep c.unlinks λ⊤ →
-                _ = removeLink sc.children token
+                _ = Chain.remove sc.children token
                 ⊤
         Nothing →
             case parent of
@@ -1184,9 +1185,9 @@ attachFiber parent group (Fiber ((Control c) as fiber) _) =
                     if Js.read owner.ended then
                         registerRoot fiber sched
                     else
-                        token = appendLink owner.children fiber
+                        token = Chain.append owner.children fiber
                         pushStep c.unlinks λ⊤ →
-                            _ = removeLink owner.children token
+                            _ = Chain.remove owner.children token
                             ⊤
                 Nothing →
                     registerRoot fiber sched
@@ -1194,9 +1195,9 @@ attachFiber parent group (Fiber ((Control c) as fiber) _) =
 
 registerRoot : Control, Scheduler → ⊤
 registerRoot (Control c) (Scheduler s) =
-    token = appendLink s.roots (RootFiber (Control c))
+    token = Chain.append s.roots (RootFiber (Control c))
     pushStep c.unlinks λ⊤ →
-        _ = removeLink s.roots token
+        _ = Chain.remove s.roots token
         ⊤
 
 
@@ -1274,7 +1275,7 @@ cleansUp ⊤ = Js.read fibered
 pub soon : sync (⊤ → ⊤) → Soon
 soon work =
     sched = schedulerHere ⊤
-    queuedWork = Soon { work = Js.ref (Just work), children = newChain ⊤, sched = sched }
+    queuedWork = Soon { work = Js.ref (Just work), children = Chain.make ⊤, sched = sched }
     scheduleOn sched λ⊤ → runSoon queuedWork
     queuedWork
 
@@ -1294,7 +1295,7 @@ runSoon ((Soon s) as queuedWork) =
                 Js.write soonRunning (Just queuedWork)
                 task ⊤
                 Js.write soonRunning outer
-                each (chainList s.children) halt
+                each (Chain.toList s.children) halt
                 True
 
 
@@ -1324,9 +1325,9 @@ scope body =
 newScope : Bool → Scope
 newScope root =
     Scope
-        { children = newChain ⊤
+        { children = Chain.make ⊤
         , closed = Js.ref False
-        , deferred = newChain ⊤
+        , deferred = Chain.make ⊤
         , finalizer = Js.ref Nothing
         , root = root
         , listed = Js.ref Nothing
@@ -1346,7 +1347,7 @@ openScope ⊤ =
     (Scope sc) = group
     owner = here ⊤
     (Control c) = owner
-    token = appendLink c.finalizers (unitJob λ⊤ → shutWith group Cancelled)
+    token = Chain.append c.finalizers (unitJob λ⊤ → shutWith group Cancelled)
     Js.write sc.finalizer (Just ( owner, token ))
     group
 
@@ -1356,7 +1357,7 @@ listRoot ((Scope sc) as group) ((Scheduler s) as sched) =
     if sc.root then
         case Js.read sc.listed of
             Nothing →
-                Js.write sc.listed (Just ( sched, appendLink s.roots (RootScope group) ))
+                Js.write sc.listed (Just ( sched, Chain.append s.roots (RootScope group) ))
             Just _ →
                 ⊤
 
@@ -1367,7 +1368,7 @@ unlistScope (Scope sc) =
         Nothing →
             program
         Just ( (Scheduler s) as sched, token ) →
-            _ = removeLink s.roots token
+            _ = Chain.remove s.roots token
             Js.write sc.listed Nothing
             sched
 
@@ -1375,10 +1376,10 @@ unlistScope (Scope sc) =
 shut : Scope → ⊤
 shut ((Scope sc) as group) =
     Js.write sc.closed True
-    if chainSize sc.children == 0 then
+    if Chain.size sc.children == 0 then
         ⊤
     else
-        cancelControls (chainList sc.children)
+        cancelControls (Chain.toList sc.children)
         shut group
 
 
@@ -1389,7 +1390,7 @@ closeScope ((Scope sc) as group) value =
         Nothing →
             ⊤
         Just ( Control c, token ) →
-            _ = removeLink c.finalizers token
+            _ = Chain.remove c.finalizers token
             Js.write sc.finalizer Nothing
     runDeferred group (Done ⊤)
     value
@@ -1403,7 +1404,7 @@ shutWith group exit =
 
 runDeferred : Scope, Exit ⊤ → ⊤
 runDeferred ((Scope sc) as group) exit =
-    case popChain sc.deferred of
+    case Chain.pop sc.deferred of
         Nothing →
             ⊤
         Just cleanup →
@@ -1445,13 +1446,13 @@ pub closeRoot : Scope → ⊤
 closeRoot ((Scope sc) as group) =
     owner = unlistScope group
     Js.write sc.closed True
-    each (chainList sc.children) halt
-    if chainSize sc.deferred > 0 then cleanupScope group (Done ⊤) owner
+    each (Chain.toList sc.children) halt
+    if Chain.size sc.deferred > 0 then cleanupScope group (Done ⊤) owner
 
 
 cleanupScope : Scope, Exit ⊤, Scheduler → ⊤
 cleanupScope group exit owner =
-    fins = newChain ⊤
+    fins = Chain.make ⊤
     pushStep fins (unitJob λ⊤ → shutWith group exit)
     cleanupFiber fins owner
 
@@ -1520,9 +1521,9 @@ pub bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a
 bracket acquire release use =
     resource = uninterruptible acquire
     (Control c) = here ⊤
-    token = appendLink c.finalizers (unitJob λ⊤ → release resource Cancelled)
+    token = Chain.append c.finalizers (unitJob λ⊤ → release resource Cancelled)
     value = use resource
-    _ = removeLink c.finalizers token
+    _ = Chain.remove c.finalizers token
     uninterruptible λ⊤ →
         release resource (Done value)
         value
@@ -1552,8 +1553,8 @@ pub shutdown : Int, sync (Int → ⊤) → ⊤
 shutdown ms done =
     (Scheduler s) = program
     if Js.read s.phase == 0 then Js.write s.phase 1
-    if chainSize releases > 0 then queueMicrotask λ⊤ → runJobs releases
-    each (chainList schedulers) λsched →
+    if Chain.size releases > 0 then queueMicrotask λ⊤ → runJobs releases
+    each (Chain.toList schedulers) λsched →
         stopScheduler sched ms λcut → Js.write s.abandoned (Js.read s.abandoned + cut)
     if Js.read fibered then stopScheduler program ms done
 
@@ -1609,15 +1610,15 @@ teardown ((Scheduler s) as sched) =
                 ⊤
             Just _ →
                 arm sched
-        roots = chainList s.roots
+        roots = Chain.toList s.roots
         each roots λroot →
             case root of
                 RootFiber _ →
                     ⊤
                 RootScope (Scope group) →
                     Js.write group.closed True
-        each (chainList s.members) λfiber → pushStep s.sweeping fiber
-        each (chainList s.loans) λ(Loan loan) → pushStep s.sweeping loan.fiber
+        each (Chain.toList s.members) λfiber → pushStep s.sweeping fiber
+        each (Chain.toList s.loans) λ(Loan loan) → pushStep s.sweeping loan.fiber
         cleanupRoots roots Cancelled sched
     ok = Js.ref False
     Js.finally
@@ -1639,8 +1640,8 @@ teardown ((Scheduler s) as sched) =
             Nothing →
                 ⊤
             Just ((Control holder) as outsideControl) →
-                if chainSize holder.finalizers > 0 then
-                    fins = newChain ⊤
+                if Chain.size holder.finalizers > 0 then
+                    fins = Chain.make ⊤
                     moveOutside outsideControl holder.finalizers fins
                     Js.write holder.masks 0
                     cleanupFiber fins program
@@ -1649,7 +1650,7 @@ teardown ((Scheduler s) as sched) =
 
 moveOutside : Control, Chain UnitJob, Chain UnitJob → ⊤
 moveOutside (Control owner) from into =
-    case shiftChain from of
+    case Chain.shift from of
         Nothing →
             ⊤
         Just fin →
@@ -1663,16 +1664,16 @@ moveOutside (Control owner) from into =
 
 cleanupRoots : List Root, Exit ⊤, Scheduler → ⊤
 cleanupRoots roots exit owner =
-    fins = newChain ⊤
+    fins = Chain.make ⊤
     each roots λroot →
         case root of
             RootFiber _ →
                 ⊤
             RootScope ((Scope sc) as group) →
-                if chainSize sc.deferred > 0 then
-                    _ = prependLink fins (unitJob λ⊤ → shutWith group exit)
+                if Chain.size sc.deferred > 0 then
+                    _ = Chain.prepend fins (unitJob λ⊤ → shutWith group exit)
                     ⊤
-    if chainSize fins > 0 then cleanupFiber fins owner
+    if Chain.size fins > 0 then cleanupFiber fins owner
 
 
 cleanupFiber : Chain UnitJob, Scheduler → ⊤
@@ -1687,7 +1688,7 @@ cleanupFiber fins sched =
 
 copyFinalizers : Chain UnitJob, Chain UnitJob → ⊤
 copyFinalizers from into =
-    case shiftChain from of
+    case Chain.shift from of
         Nothing →
             ⊤
         Just fin →
@@ -1697,7 +1698,7 @@ copyFinalizers from into =
 
 sweep : Scheduler → ⊤
 sweep ((Scheduler s) as sched) =
-    case shiftChain s.sweeping of
+    case Chain.shift s.sweeping of
         Nothing →
             ⊤
         Just fiber →
@@ -1715,7 +1716,7 @@ recover ((Control c) as fiber) =
     else if not (Js.read c.unwinding) then
         unwind fiber
     else
-        if chainSize c.stack == 0 then
+        if Chain.size c.stack == 0 then
             pushFrame
                 fiber
                 (Execute λ⊤ →
@@ -1739,7 +1740,7 @@ expire ((Scheduler s) as sched) =
     ok = Js.ref False
     Js.finally
         (λ⊤ →
-            each (chainList cleaning) λ((Control c) as fiber) →
+            each (Chain.toList cleaning) λ((Control c) as fiber) →
                 if s.program || Js.same (schedulerOf fiber) sched then
                     case Js.read c.parked of
                         Nothing →
@@ -1774,7 +1775,7 @@ allEnded (Scheduler s) =
             Nothing →
                 ⊤
             Just token →
-                _ = removeLink schedulers token
+                _ = Chain.remove schedulers token
                 Js.write s.listed Nothing
         case Js.read s.timer of
             Nothing →
@@ -1793,26 +1794,6 @@ type Loan
     = Loan { fiber : Control, depth : Js.Ref Int }
 
 
-findLink : Chain a, sync (a → Bool) → Maybe (Link a)
-findLink (Chain q) predicate = matchingLink (Js.read q.first) predicate
-
-
-matchingLink : Maybe (Link a), sync (a → Bool) → Maybe (Link a)
-matchingLink next predicate =
-    case next of
-        Nothing →
-            Nothing
-        Just ((Link link) as token) →
-            case Js.read link.value of
-                Nothing →
-                    Nothing
-                Just value →
-                    if predicate value then
-                        Just token
-                    else
-                        matchingLink (Js.read link.after) predicate
-
-
 lend : Control, Scheduler → Maybe (Link Loan)
 lend fiber ((Scheduler s) as sched) =
     (Control c) = fiber
@@ -1825,9 +1806,9 @@ lend fiber ((Scheduler s) as sched) =
     if owned then
         Nothing
     else
-        case findLink s.loans λ(Loan loan) → Js.same loan.fiber fiber of
-            Just ((Link link) as token) →
-                case Js.read link.value of
+        case Chain.find s.loans λ(Loan loan) → Js.same loan.fiber fiber of
+            Just token →
+                case Chain.peek token of
                     Nothing →
                         Nothing
                     Just (Loan loan) →
@@ -1835,7 +1816,7 @@ lend fiber ((Scheduler s) as sched) =
                         Just token
             Nothing →
                 Js.write s.live (Js.read s.live + 1)
-                Just (appendLink s.loans (Loan { fiber = fiber, depth = Js.ref 1 }))
+                Just (Chain.append s.loans (Loan { fiber = fiber, depth = Js.ref 1 }))
 
 
 unlend : Scheduler, Maybe (Link Loan) → ⊤
@@ -1843,15 +1824,15 @@ unlend ((Scheduler s) as sched) maybe =
     case maybe of
         Nothing →
             ⊤
-        Just ((Link link) as token) →
-            case Js.read link.value of
+        Just token →
+            case Chain.peek token of
                 Nothing →
                     ⊤
                 Just (Loan loan) →
                     if Js.read loan.depth > 1 then
                         Js.write loan.depth (Js.read loan.depth - 1)
                     else
-                        _ = removeLink s.loans token
+                        _ = Chain.remove s.loans token
                         countDown sched
 
 
@@ -1885,10 +1866,10 @@ withSlots slots work after =
         λ⊤ →
             Js.write c.slots old
             after ⊤
-    token = appendLink c.finalizers (unitJob putBack)
+    token = Chain.append c.finalizers (unitJob putBack)
     Js.write c.slots slots
     value = work ⊤
-    _ = removeLink c.finalizers token
+    _ = Chain.remove c.finalizers token
     putBack ⊤
     value
 
@@ -1953,7 +1934,7 @@ withoutLogContext work =
             work ⊤
         Just (Control c) →
             old = Js.read c.slots
-            token = appendLink c.finalizers (unitJob λ⊤ → Js.write c.slots old)
+            token = Chain.append c.finalizers (unitJob λ⊤ → Js.write c.slots old)
             Js.write c.slots { Record.copy old | log = Nothing }
             ok = Js.ref False
             Js.finally
@@ -1964,7 +1945,7 @@ withoutLogContext work =
                 )
                 λ⊤ →
                     if Js.read ok then
-                        _ = removeLink c.finalizers token
+                        _ = Chain.remove c.finalizers token
                         ⊤
                     else
                         thrown = Js.read c.slots
@@ -1984,7 +1965,7 @@ currentClock ⊤ =
 
 --| Core Clock's typed virtual clock with no sleepers.
 pub virtualClock : Int → VirtualClock
-virtualClock epoch = VirtualClock { now = Js.ref epoch, sleepers = newChain ⊤ }
+virtualClock epoch = VirtualClock { now = Js.ref epoch, sleepers = Chain.make ⊤ }
 
 
 --| Run with a typed virtual clock, restoring the old slot on return or
@@ -2029,30 +2010,17 @@ virtualSleep (VirtualClock clock) ms = callback λwake →
     at = Js.read clock.now + ms
     token = insertSleeper clock.sleepers at wake
     λ⊤ →
-        _ = removeLink clock.sleepers token
+        _ = Chain.remove clock.sleepers token
         ⊤
 
 
 insertSleeper : Chain Sleeper, Int, Resume ⊤ → Link Sleeper
-insertSleeper ((Chain q) as sleepers) at wake =
-    case findLink sleepers λ(Sleeper due _) → due > at of
+insertSleeper sleepers at wake =
+    case Chain.find sleepers λ(Sleeper due _) → due > at of
         Nothing →
-            appendLink sleepers (Sleeper at wake)
-        Just ((Link next) as following) →
-            token =
-                Link
-                    { value = Js.ref (Just (Sleeper at wake))
-                    , before = Js.ref (Js.read next.before)
-                    , after = Js.ref (Just following)
-                    }
-            case Js.read next.before of
-                Nothing →
-                    Js.write q.first (Just token)
-                Just (Link previous) →
-                    Js.write previous.after (Just token)
-            Js.write next.before (Just token)
-            Js.write q.count (Js.read q.count + 1)
-            token
+            Chain.append sleepers (Sleeper at wake)
+        Just following →
+            Chain.insertBefore sleepers following (Sleeper at wake)
 
 
 --| Move the virtual clock `clock` forward by `ms` milliseconds, and return once everything that woke has run as far as it
@@ -2072,7 +2040,7 @@ adjustClock ((VirtualClock clock) as virtual) ms =
 
 advance : VirtualClock, Int → ⊤
 advance ((VirtualClock clock) as virtual) target =
-    case chainList clock.sleepers of
+    case Chain.toList clock.sleepers of
         [] →
             Js.write clock.now target
         [ Sleeper at _, …_ ] →
@@ -2087,19 +2055,14 @@ advance ((VirtualClock clock) as virtual) target =
 
 wakeDue : Chain Sleeper, Int → ⊤
 wakeDue sleepers at =
-    (Chain q) = sleepers
-    case Js.read q.first of
+    case Chain.first sleepers of
         Nothing →
             ⊤
-        Just (Link link) →
-            case Js.read link.value of
-                Nothing →
-                    ⊤
-                Just (Sleeper due wake) →
-                    if due == at then
-                        _ = shiftChain sleepers
-                        resume wake ⊤
-                        wakeDue sleepers at
+        Just (Sleeper due wake) →
+            if due == at then
+                _ = Chain.shift sleepers
+                resume wake ⊤
+                wakeDue sleepers at
 
 
 settle : ⊤ → ⊤
@@ -2140,7 +2103,7 @@ startIn group work =
     ok = Js.ref False
     Js.finally
         (λ⊤ →
-            case popChain c.stack of
+            case Chain.pop c.stack of
                 Just (Execute job) →
                     Js.invoke job ⊤ λ_ → ⊤
                     ⊤
@@ -2216,14 +2179,14 @@ firstOf entries =
                 Nothing
             else
                 me = Js.read current
-                listeners = newChain ⊤
+                listeners = Chain.make ⊤
                 value = callback λwake →
                     each entries λ(Entry item) →
                         if endedControl item.fiber then
                             ⊤
                         else
                             (Control c) = item.fiber
-                            token = appendLink c.observers λ⊤ →
+                            token = Chain.append c.observers λ⊤ →
                                 if item.stop ⊤ then
                                     if item.kill ⊤ then haltAs me entries item.fiber
                                     resume wake (Just item.number)
@@ -2232,7 +2195,7 @@ firstOf entries =
                                 then
                                     resume wake Nothing
                             pushStep listeners λ⊤ →
-                                _ = removeLink c.observers token
+                                _ = Chain.remove c.observers token
                                 ⊤
                     λ⊤ → runJobs listeners
                 runJobs listeners
@@ -2778,138 +2741,8 @@ registerFiber parent group ((Fiber (Control c) _) as fiber) =
         attachFiber parent group fiber
 
 
--- Typed intrusive storage. Removed links forget their payload and neighbours.
-type Chain a
-    = Chain
-        { first : Js.Ref (Maybe (Link a))
-        , last : Js.Ref (Maybe (Link a))
-        , count : Js.Ref Int
-        }
-
-
-type Link a
-    = Link
-        { value : Js.Ref (Maybe a)
-        , before : Js.Ref (Maybe (Link a))
-        , after : Js.Ref (Maybe (Link a))
-        }
-
-
-newChain : ⊤ → Chain a
-newChain ⊤ = Chain { first = Js.ref Nothing, last = Js.ref Nothing, count = Js.ref 0 }
-
-
-chainSize : Chain a → Int
-chainSize (Chain q) = Js.read q.count
-
-
-appendLink : Chain a, a → Link a
-appendLink (Chain q) value =
-    link =
-        Link
-            { value = Js.ref (Just value)
-            , before = Js.ref (Js.read q.last)
-            , after = Js.ref Nothing
-            }
-    case Js.read q.last of
-        Nothing →
-            Js.write q.first (Just link)
-        Just (Link previous) →
-            Js.write previous.after (Just link)
-    Js.write q.last (Just link)
-    Js.write q.count (Js.read q.count + 1)
-    link
-
-
-prependLink : Chain a, a → Link a
-prependLink (Chain q) value =
-    link =
-        Link
-            { value = Js.ref (Just value)
-            , before = Js.ref Nothing
-            , after = Js.ref (Js.read q.first)
-            }
-    case Js.read q.first of
-        Nothing →
-            Js.write q.last (Just link)
-        Just (Link next) →
-            Js.write next.before (Just link)
-    Js.write q.first (Just link)
-    Js.write q.count (Js.read q.count + 1)
-    link
-
-
-removeLink : Chain a, Link a → Maybe a
-removeLink (Chain q) (Link link) =
-    case Js.read link.value of
-        Nothing →
-            Nothing
-        Just value →
-            case Js.read link.before of
-                Nothing →
-                    Js.write q.first (Js.read link.after)
-                Just (Link previous) →
-                    Js.write previous.after (Js.read link.after)
-            case Js.read link.after of
-                Nothing →
-                    Js.write q.last (Js.read link.before)
-                Just (Link next) →
-                    Js.write next.before (Js.read link.before)
-            Js.write link.value Nothing
-            Js.write link.before Nothing
-            Js.write link.after Nothing
-            Js.write q.count (Js.read q.count - 1)
-            Just value
-
-
-shiftChain : Chain a → Maybe a
-shiftChain ((Chain q) as deque) =
-    case Js.read q.first of
-        Nothing →
-            Nothing
-        Just link →
-            removeLink deque link
-
-
-popChain : Chain a → Maybe a
-popChain ((Chain q) as deque) =
-    case Js.read q.last of
-        Nothing →
-            Nothing
-        Just link →
-            removeLink deque link
-
-
-chainList : Chain a → List a
-chainList (Chain q) = linksList (Js.read q.first) []
-
-
-linksList : Maybe (Link a), List a → List a
-linksList next values =
-    case next of
-        Nothing →
-            values
-        Just (Link link) →
-            case Js.read link.value of
-                Nothing →
-                    values
-                Just value →
-                    linksList (Js.read link.after) [ …values, value ]
-
-
-clearChain : Chain a → ⊤
-clearChain deque =
-    case shiftChain deque of
-        Nothing →
-            ⊤
-        Just _ →
-            clearChain deque
-
-
 pushStep : Chain a, a → ⊤
-pushStep deque value =
-    _ = appendLink deque value
-    ⊤
+pushStep deque value = Chain.push deque value
 
 
 --| Add a synchronous defect hook before the current hook, preserving that

@@ -34,13 +34,6 @@ pub fn allows(store: *TypeStore, types: *const Types, kind: Kind, raw: Var) bool
     const content = store.content(v);
     if (content == .err) return true;
     if (kind == .record) return content == .structure and (content.structure == .record or content.structure == .empty_record);
-    if (kind == .opt_payload) {
-        if (content != .structure) return false;
-        const st = content.structure;
-        if (st != .app or st.app.type == .none) return true;
-        const e = types.entry(st.app.type);
-        return !(e.package == .core and types.isJsOptional(st.app.type));
-    }
     if (content != .structure or content.structure != .app) return false;
     const app = content.structure.app;
     if (app.args.len != 0) return false;
@@ -107,8 +100,8 @@ pub const Preparation = struct {
 
     const none = std.math.maxInt(u32);
     const Use = struct { source: u32, required: Kind, actual: Var, region: Bir.Inst.Index, reported: bool = false };
-    const Projection = union(enum) { pending, active, parameter: u32, int, string, record, opt_payload, nullable, other, err };
-    const Head = union(enum) { variable: Var, int, string, record, opt_payload, nullable, other, err };
+    const Projection = union(enum) { pending, active, parameter: u32, int, string, record, other, err };
+    const Head = union(enum) { variable: Var, int, string, record, other, err };
     const AliasFrame = struct { id: TypeId, at: Var };
 
     pub fn init(a: Allocator, store: *TypeStore, types: *Types, graph: *const Graph, artifacts: *const Artifacts, interfaces: []const Interface, interner: *const InternPool.Global, module: Graph.Index, bir: *const Bir, schemas: *Schema.State, issues: *std.ArrayList(Issue)) Allocator.Error!Preparation {
@@ -274,9 +267,7 @@ pub const Preparation = struct {
             .variable => |v| constrain(p.store, p.types, v, required, use.region),
             .int => if (required == .string_key or required == .record) .{ .region = use.region, .actual = use.actual, .required = required } else null,
             .string => if (required == .int_key or required == .record) .{ .region = use.region, .actual = use.actual, .required = required } else null,
-            .record => if (required == .record or required == .opt_payload) null else .{ .region = use.region, .actual = use.actual, .required = required },
-            .opt_payload => if (required == .opt_payload) null else .{ .region = use.region, .actual = use.actual, .required = required },
-            .nullable => .{ .region = use.region, .actual = use.actual, .required = required },
+            .record => if (required == .record) null else .{ .region = use.region, .actual = use.actual, .required = required },
             .other => .{ .region = use.region, .actual = use.actual, .required = required },
             .err => null,
         };
@@ -352,7 +343,7 @@ pub const Preparation = struct {
                     if (answer == null) answer = .err;
                 },
                 .structure => |s| {
-                    answer = if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else if (s == .record or s == .empty_record) .record else if (s == .app and p.types.isJsOptional(s.app.type)) .nullable else .opt_payload;
+                    answer = if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else if (s == .record or s == .empty_record) .record else .other;
                 },
                 .alias => |alias| switch (p.projections[alias.type.int()]) {
                     .pending => {
@@ -378,7 +369,7 @@ pub const Preparation = struct {
         while (true) switch (p.store.content(at)) {
             .flex, .rigid => return .{ .variable = at },
             .err => return .err,
-            .structure => |s| return if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else if (s == .record or s == .empty_record) .record else if (s == .app and p.types.isJsOptional(s.app.type)) .nullable else .opt_payload,
+            .structure => |s| return if (s == .app and s.app.type == p.types.well_known.int) .int else if (s == .app and s.app.type == p.types.well_known.string) .string else if (s == .record or s == .empty_record) .record else .other,
             .alias => |alias| {
                 try p.settleAlias(alias.type);
                 switch (p.projections[alias.type.int()]) {
@@ -386,8 +377,6 @@ pub const Preparation = struct {
                     .int => return .int,
                     .string => return .string,
                     .record => return .record,
-                    .opt_payload => return .opt_payload,
-                    .nullable => return .nullable,
                     .other => return .other,
                     .err => return .err,
                     .pending, .active => unreachable,

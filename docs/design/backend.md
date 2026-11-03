@@ -2889,6 +2889,15 @@ it. Every payload except a direct Opt is admitted, including host-returned ⊤
 and Js.Value. Wrappers that could erase to the sentinel remain boxed.
 Programs using neither primitive retain byte-identical output.
 
+**Nested optional amendment (manager, 2026-11-03).** Saturated some/read sites
+whose checked element representation cannot be Opt retain their identity
+emission. Other sites use the cached nested-none escapes specified in
+`workers-task-storage.md`; release-erased wrappers are classified by their
+payload too. Dispatch.opt_plain and its emission-funnel fact carry the static
+decision. First-class intrinsics retain one shared generic implementation.
+Chain snapshots use the core-private typed array operations in Js.Array,
+written in place, so the fiber kernel gains no runtime import of List.
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack

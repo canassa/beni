@@ -274,6 +274,8 @@ pub const Fact = struct {
         schema_shapes = 20,
         /// What `Js.testHooks` is (`Lower.Input.test_hooks`).
         test_hooks = 21,
+        /// Whether an intrinsic element representation cannot carry NONE.
+        opt_plain = 22,
     };
 
     fn lessThan(a: Fact, b: Fact) bool {

@@ -356,7 +356,7 @@ pub foreign type Opt payload
 pub foreign pure none : unused ⊤ → fresh Opt payload
 
 
---| A present slot. Only another Opt is excluded as the direct payload.
+--| A present slot. Nested empty slots retain their exact depth.
 pub foreign pure some : returned payload → Opt payload
 
 
@@ -374,3 +374,7 @@ pub foreign pure optWithDefault : returned Opt payload, returned payload → pay
 
 -- The compiler-owned absence identity, private to the runtime protocol.
 foreign pure optNone : Value
+
+
+--| Typed array capacity while core fills its elements.
+pub sequence foreign type Builder a

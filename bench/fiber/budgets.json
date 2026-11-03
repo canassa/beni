@@ -7,21 +7,21 @@
         2048,
         4096
       ],
-      "deltaBytes": 5668864
+      "deltaBytes": 3112960
     },
     "parked-deferred": {
       "counts": [
         2048,
         4096
       ],
-      "deltaBytes": 6922240
+      "deltaBytes": 4489216
     },
     "completed": {
       "counts": [
         2048,
         4096
       ],
-      "deltaBytes": 3157104
+      "deltaBytes": 2169024
     }
   },
   "allocated": {
@@ -30,7 +30,7 @@
         2048,
         4096
       ],
-      "deltaBytes": 20274648
+      "deltaBytes": 13490768
     },
     "fast-path": {
       "counts": [
@@ -44,16 +44,16 @@
         2048,
         4096
       ],
-      "deltaBytes": 5188784
+      "deltaBytes": 3943560
     }
   },
   "brotli": {
-    "S0Plain": 122,
-    "S1Start": 4073,
-    "S2SpawnJoin": 4281,
-    "S3ScopeFinalizer": 4460,
-    "S4Cancel": 4317,
-    "S5Queue": 5006
+    "S0Plain": 101,
+    "S1Start": 3565,
+    "S2SpawnJoin": 3809,
+    "S3ScopeFinalizer": 3967,
+    "S4Cancel": 3828,
+    "S5Queue": 4615
   },
   "targets": {
     "fast-path": 0

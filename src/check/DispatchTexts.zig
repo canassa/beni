@@ -198,7 +198,6 @@ pub fn undeterminedMethodReceiver(
             .dict_key => "`key` — either Int or String",
             .int_key => "an Int key",
             .string_key => "a String key",
-            .opt_payload => "a type whose value cannot be undefined",
             .record => "a record row",
             .any => "a type variable no use of this value determines",
         },

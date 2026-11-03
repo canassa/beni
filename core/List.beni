@@ -8,7 +8,8 @@ import Js
 pub equatable sequence foreign type List a
 
 
-sequence foreign type Builder a
+type alias Builder a =
+    Js.Builder a
 
 
 --| Add an element to the front. Rejoining a pattern's rest preserves identity.

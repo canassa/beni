@@ -1,0 +1,20 @@
+-- A builder retains stored elements, and finishing it preserves their aliases.
+import Js.Array as Array
+
+
+storedElement : List Int → Int
+storedElement xs =
+    builder = Array.arrayAllocate 1
+    filled = Array.arraySet builder 0 xs
+    values = Array.arrayDone filled 1
+    grown = [ …xs, 1 ]
+    List.length grown + List.length (List.concat values)
+
+
+finishedArray : ⊤ → Int
+finishedArray ⊤ =
+    builder = Array.arrayAllocate 1
+    filled = Array.arraySet builder 0 1
+    values = Array.arrayDone filled 1
+    changed = Array.arraySet filled 0 2
+    List.length values + List.length (Array.arrayDone changed 1)

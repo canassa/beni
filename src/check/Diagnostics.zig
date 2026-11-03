@@ -799,7 +799,7 @@ pub const Reporter = struct {
         actual: Var,
     ) Error!void {
         if (kind.isKey()) return r.invalidDictKey(region, actual);
-        if (kind == .opt_payload or kind == .record) return r.runtimeKind(region, kind, actual);
+        if (kind == .record) return r.runtimeKind(region, kind, actual);
         if (category.tag == .if_without_else) return StatementTexts.ifWithoutElse(r, region, actual);
         var out = r.writer();
         defer out.deinit();
@@ -816,7 +816,7 @@ pub const Reporter = struct {
         w.print("\n\n{s}\n\n    ", .{lines.wanted}) catch return error.OutOfMemory;
         Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
         switch (kind) {
-            .dict_key, .int_key, .string_key, .opt_payload, .record => unreachable,
+            .dict_key, .int_key, .string_key, .record => unreachable,
             // `Int32` is the one type a reader is likely to have reached
             // for ON PURPOSE and then found the operators missing, so it
             // gets the hint that says what to write instead. The general

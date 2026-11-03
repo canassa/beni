@@ -550,11 +550,17 @@ obligation at synchronous host boundaries. Schemas neither grant user packages
 ### 4.2 `Js`, JavaScript written from beni
 
 *Owner, 2026-11-02 (D1, D2):* the core-private typed primitives
+
+**Nested optional amendment (manager, 2026-11-03).** Every payload type is
+admitted, including nested Opt and rigid type variables. Private cached escapes
+distinguish present NONE from absence; only generic or Opt-valued operations
+need their check. `workers-task-storage.md` owns the representation and API.
+
 `Js.Cell`, `cell`, `cellRead`, `cellWrite`, `Js.Opt`, `none`, `some`,
 `optMatch` and `optWithDefault` are also available to platform runtimes.
 Applications cannot name them. Cell selectors retain the field type; Opt
 extraction branches before handing a typed payload to its callback. The exact
-signatures and non-nesting rule are in `workers-task-storage.md`. These
+signatures and nested-none representation are in `workers-task-storage.md`. These
 compiler-owned operations have no sibling export. First-class forms are emitted
 by the compiler except `cellRead` and `cellWrite`: those require direct, saturated
 calls with literal selectors; wrap such a call in a function to pass it around.
