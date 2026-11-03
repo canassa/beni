@@ -1195,7 +1195,9 @@ parameter group ask its occurrences, as before. A new member is compared with th
 eight and then by the index, which also lists each entry under every ancestor (`(ancestor, 5, slot)`) so that a
 new entry meets the earlier ones below it. The root to expand is the greatest of a heap of the expandable roots,
 or of the groups that ask to be expanded (`must`), a stale one skipped. A vouched block keeps the first of two
-equal leaves in the inline order (its members compared by the expansions they came from). An expansion's leaf
+equal leaves in the inline order (its members compared by the expansions they came from, below their common
+ancestor: each entry keeps a skew-binary jump pointer, whose depth is a function of its own depth alone, so the
+comparison takes O(log depth) steps, not the depth of the chain of expansions). An expansion's leaf
 that is the leaf of the entry it expands or of one that entry was expanded from is not made an entry: around a
 cycle of expansions (a fold's supply and its step's answer, #1714) it names that ancestor's objects, which the
 chain reads already, so a chain's leaves are distinct and the rounds end; a second chain still meets the cycle's

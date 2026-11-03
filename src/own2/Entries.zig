@@ -250,6 +250,11 @@ pub const Rounds = struct {
     /// Per entry, the expanded entry it came from (`none`: given), its
     /// place in that expansion, and its depth: the inline order.
     par: std.ArrayList([3]u32) = .empty,
+    /// Per entry, an ancestor on its chain of expansions (itself for a
+    /// given entry): the skew-binary jump pointer, whose depth is a function
+    /// of the entry's depth alone, so `before` meets the common ancestor in
+    /// a logarithmic number of steps, not the chain's depth.
+    jump: std.ArrayList(u32) = .empty,
     groups: std.ArrayList(Group) = .empty,
     of_root: std.ArrayList(u32) = .empty,
     atoms: Ids.FixedDict(3) = .{},
@@ -269,7 +274,7 @@ pub const Rounds = struct {
             gr.members.deinit(g);
             gr.within.deinit(g);
         }
-        inline for (.{ &r.ents, &r.alive, &r.par, &r.groups, &r.of_root, &r.expandable, &r.musts, &r.dirty }) |l| l.deinit(g);
+        inline for (.{ &r.ents, &r.alive, &r.par, &r.jump, &r.groups, &r.of_root, &r.expandable, &r.musts, &r.dirty }) |l| l.deinit(g);
         r.atoms.deinit(g);
         r.has_leaf.deinit(g);
     }
@@ -277,7 +282,16 @@ pub const Rounds = struct {
     pub fn add(r: *Rounds, g: Allocator, en: Ent, par: [3]u32) Error!void {
         try r.ents.append(g, en);
         try r.alive.append(g, true);
+        const i: u32 = @intCast(r.par.items.len);
         try r.par.append(g, par);
+        const u = par[0];
+        const j = if (u == none) i else blk: {
+            const p = r.par.items;
+            const ju = r.jump.items[u];
+            const jj = r.jump.items[ju];
+            break :blk if (p[u][2] - p[ju][2] == p[ju][2] - p[jj][2]) jj else u;
+        };
+        try r.jump.append(g, j);
         try r.has_leaf.put(g, .{en.leaf}, 0);
     }
 
@@ -367,20 +381,5 @@ pub const Rounds = struct {
         gr.occ_done = 0;
         gr.must = 0;
         r.nonempty -= 1;
-    }
-
-    /// Whether entry `a` comes before `b` in the inline order: by the
-    /// expansions they came from, a record a step.
-    pub fn before(r: *const Rounds, f: *Frame, a: u32, b: u32) Error!bool {
-        var x = a;
-        var y = b;
-        const p = r.par.items;
-        while (p[x][2] > p[y][2]) : (x = p[x][0]) try f.charge(.cond, 1);
-        while (p[y][2] > p[x][2]) : (y = p[y][0]) try f.charge(.cond, 1);
-        while (p[x][0] != p[y][0]) : ({
-            x = p[x][0];
-            y = p[y][0];
-        }) try f.charge(.cond, 1);
-        return p[x][1] < p[y][1];
     }
 };
