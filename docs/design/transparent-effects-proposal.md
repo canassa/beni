@@ -1995,7 +1995,8 @@ the same set the same way). The `AbortError` of the primitive's own `AbortSignal
 the fiber was cancelled and the rejection is dropped. **Any other rejection is re-thrown** from the
 handler, so it is a defect, below. *As built 2026-10-29:* the read's start, its rejection handler
 and `Io.run`'s `finish` are beni over `Js` (`plans/runtime-in-beni.md` step 10), and `Io.js` is
-gone.
+gone. *As built 2026-11-03:* so is `readDir`'s start, `startReadDir` (step 14): its rejection handler
+has the same three outcomes, with no abort, since `fs.promises.readdir` takes no signal.
 
 *Amended 2026-10-29: `Io.readDir`* (#1210; `CLAUDE.md` rules 7 and 9). `Io` lists a directory in the
 shape of `readFile`: a suspending read on the calling fiber, one constructor per failure Node

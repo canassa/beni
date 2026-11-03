@@ -1505,8 +1505,8 @@ same cache, built for `node` into `.<out>.data` in development mode with no sour
 are each a source root of their own, so a site built with `--root` (which names the site's modules)
 does not lend it its root. Its diagnostics are rendered in the site's one render
 (`Session.foreign`, `Session.exportLate`), a diagnostic the site says already at the same place
-with the same text dropped. `Prerender.pages` (`platforms/node/Prerender.beni`, one `impure`
-`foreign`, `writeRecords`) writes `{"route", "data"}` per page and `{"end": n}`; an `Err` is one
+with the same text dropped. `Prerender.pages` (`platforms/node/Prerender.beni`; its one `foreign`,
+`writeRecords`, is beni over `Js` since 2026-11-03, `plans/runtime-in-beni.md` step 14) writes `{"route", "data"}` per page and `{"end": n}`; an `Err` is one
 record `{"error": why}`, and a value its schema cannot encode ends the records at
 `{"route", "issues"}`, each issue a line `.path: message`; both exit 1 after a line on standard
 output. The build escapes each text as §8.6 says (`pageText`), refuses one with a control
