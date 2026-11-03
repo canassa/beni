@@ -88,7 +88,7 @@ pub fn of(e: *Eval, x0: u32) Error!u32 {
             }
             try e.atom_memo.put(g, .{ top.leaf, e.grown }, making);
             const start: u32 = @intCast(kids.items.len);
-            try e.expand(top.leaf, &kids);
+            try e.expandRouted(top.leaf, &kids);
             const t = &stack.items[stack.items.len - 1];
             t.kids = start;
             t.next = start;
