@@ -1,0 +1,40 @@
+-- ownership: a write below a record-update base holder of the written field
+-- (ownership-v2.md §2.8 step 3, #1742). `grow` writes the kids of `root`
+-- in place, and deep below them through the callback `mapT` calls;
+-- `update` replaces `.root` by that result, and the base `model` is read
+-- at the update only at its other fields. `model` holds `.root` as part of
+-- a whole subtree, so the rest of it, once the written subtree is taken
+-- out, is apart from the target under the parameter's selection. The rest
+-- kept the written subtree in its symbol, and the deep writes were refused
+-- `alias` by v2.
+type Tree
+    = Tree String (List Tree)
+
+
+type alias Model =
+    a : Int
+    root : Tree
+
+
+mapT : List Tree, (Tree → Tree) → List Tree
+mapT xs f =
+    case xs of
+        [] →
+            []
+
+        [ x, …rest ] →
+            [ f x, …mapT rest f ]
+
+
+grow : String, Tree → Tree
+grow at t =
+    case t of
+        Tree label kids →
+            if label == at then
+                Tree label [ …kids, Tree label [] ]
+            else
+                Tree label (mapT kids λk → grow at k)
+
+
+pub update : String, Model → Model
+update at model = { model | root = grow at model.root }

@@ -1,0 +1,16 @@
+module HolderRestApart
+  34:30 construction kids: accepted param
+  36:29 call HolderRestApart.mapT kids[*]#Tree.1: accepted param (<lambda> writes what HolderRestApart.mapT supplies it)
+  36:29 call HolderRestApart.mapT kids[*]⟨Tree⟩⁺#Tree.1: accepted param (<lambda> writes what HolderRestApart.mapT supplies it)
+  36:44 call HolderRestApart.grow k#Tree.1: accepted callback-param (HolderRestApart.mapT supplies it owned)
+  36:44 call HolderRestApart.grow k⟨Tree⟩⁺#Tree.1: accepted callback-param (HolderRestApart.mapT supplies it owned)
+  40:19 update model: accepted param
+  40:36 call HolderRestApart.grow model.root#Tree.1: accepted param (HolderRestApart.grow writes π2#Tree.1)
+  40:36 call HolderRestApart.grow model.root⟨Tree⟩⁺#Tree.1: accepted param (HolderRestApart.grow writes π2⟨Tree⟩⁺#Tree.1)
+  summary mapT: π1 R, π1[*] R, π2 R; res [*] fresh3{excl cb2}r{excl cb2} ~cb2{excl cb2}r{excl cb2} ~condition(fresh4) ~fresh4{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2} ~fresh5{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}, fresh1{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2} ~fresh2{excl cb2}r{excl cb2} ~fresh5{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}; π2 calls many, supply 1 π1[*] owned taken{excl π1}r{excl π1}
+  summary grow: π2 R, π2#Tree.1 RAW, π2#Tree.1[*] R, π2⟨Tree⟩⁺#Tree.1 AW; res #Tree.1 ~fresh2{excl π2#Tree.1, excl π2#Tree.1[*]⟨Tree⟩#Tree.1}r{excl π2#Tree.1, excl π2#Tree.1[*]⟨Tree⟩#Tree.1} ~fresh4{excl π2#Tree.1}r{excl π2#Tree.1} π2#Tree.1, #Tree.1[*] ~condition(fresh3) ~fresh3{excl π2#Tree.1, excl π2#Tree.1[*]⟨Tree⟩#Tree.1}r{excl π2#Tree.1, excl π2#Tree.1[*]⟨Tree⟩#Tree.1} ~fresh4{excl π2#Tree.1}r{excl π2#Tree.1}, ⟨Tree⟩⁺#Tree.1 fresh1 ~fresh5{excl π2#Tree.1[*]⟨Tree⟩#Tree.1}r{excl π2#Tree.1[*]⟨Tree⟩#Tree.1} ~π2⟨Tree⟩⁺#Tree.1, ⟨Tree⟩⁺#Tree.1[*] ~condition(fresh6) ~fresh5{excl π2#Tree.1[*]⟨Tree⟩#Tree.1}r{excl π2#Tree.1[*]⟨Tree⟩#Tree.1}; xreq excl π2#Tree.1
+  summary update: π2 W{root}, π2.root R, π2.root#Tree.1 RAW, π2.root#Tree.1[*] R, π2.root⟨Tree⟩⁺#Tree.1 RAW; res .root#Tree.1 ~fresh2{excl π2.root#Tree.1}r{excl π2.root#Tree.1} ~fresh4{excl π2.root#Tree.1}r{excl π2.root#Tree.1} ~π2.root#Tree.1, .root#Tree.1[*] ~condition(fresh3) ~fresh3{excl π2.root#Tree.1}r{excl π2.root#Tree.1} ~fresh4{excl π2.root#Tree.1}r{excl π2.root#Tree.1}, .root⟨Tree⟩⁺#Tree.1 ~fresh1 ~fresh5{excl π2.root#Tree.1[*]⟨Tree⟩#Tree.1}r{excl π2.root#Tree.1[*]⟨Tree⟩#Tree.1} ~π2.root⟨Tree⟩⁺#Tree.1, .root⟨Tree⟩⁺#Tree.1[*] ~condition(fresh6) ~fresh5{excl π2.root#Tree.1[*]⟨Tree⟩#Tree.1}r{excl π2.root#Tree.1[*]⟨Tree⟩#Tree.1}, π2◦; xreq excl π2.root
+  demands 7: accepted 7 (fresh 0, call 0, param 5, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 7: accepted 7 (fresh 0, call 0, param 5, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

@@ -930,6 +930,15 @@ witness at one use of one holder is the least path, an exact one before one at o
 (*Verdicts*). An aggregated holder reads its pending holds by the same descent. The doubling DAG
 `tₖ = ( tₖ₋₁, tₖ₋₁ )` over `xs`, `xs` pushed while `t_d` is read, cost d = 8: 40 478 demands' records and a limit
 at 10; now d = 8 / 10 / 12: 249 / 281 / 313, the witness `t_d.0.0…0`, as v1 names it.
+*Amended 2026-11-03 (#1742):* a hold that meets a target of its own root at some of its slots (`Descent.holdsAt`)
+holds it there, and its other objects are the target's only where the root is not separated: the rest of the
+holder is asked **apart** from the target (§2.9.2 step 3, under the selection of both), never related. The rest
+is the holder's slots less the target's, and a slot set that holds a whole subtree as a symbol (`↓ε`, §2.3.1) keeps
+an excluded subtree in it (an exclusion is read against explicit slots only), so the rest still met a deep
+target, and the hold at the holder's own path answered **may**. A record-update base `model`, read at the update
+at its other fields, refused `grow at model.root`'s deep writes (`browser/tea/ValuePath` 81:30, once `List.map`
+had a contract) although the top write was accepted. The relation is now under the selection, and the
+caller's `req` gains the deep occurrences (`ownership/HolderRestApart`).
 
 *Pending operands* (2026-11-03). The walk no longer copies its operand stack at every call: each operand on the
 stack is one entry, made once (its values, a record update's base by the fields its consumer keeps), with the
