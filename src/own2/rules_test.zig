@@ -40,6 +40,8 @@ const layers = [_]Entry{
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1340 },
     .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
+    // A leaf's base keys as sets shared with its kids' (#1714).
+    .{ .file = "KeySets.zig", .layer = 1, .max_lines = 160 },
     // The tags and routes of a leaf set (#1714), split from `Leaves`.
     .{ .file = "Routes.zig", .layer = 1, .max_lines = 680 },
     // Whether route sets hold together, split from `Routes` (#1714).
@@ -410,7 +412,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 50), layers.len);
+    try testing.expectEqual(@as(usize, 51), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

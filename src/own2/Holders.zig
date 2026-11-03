@@ -18,6 +18,7 @@ const Walk = @import("Walk.zig");
 const Regions = @import("Regions.zig");
 const Value = @import("Value.zig");
 const Place = @import("Place.zig");
+const KeySets = @import("KeySets.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -67,23 +68,33 @@ pub const Gather = struct {
 };
 
 /// Each leaf's base keys (§2.8, *Base keys*), two columns by leaf id: its
-/// `Facts`, made for every leaf a demand targets, and its run of `items`
-/// (sorted, once each), made only for a target or a holder that a demand
-/// meets live. Each made by one post-order walk over the expansions,
-/// strongly connected leaves sharing one entry, so each leaf is expanded
-/// once a column.
+/// `Facts`, made for every leaf a demand targets, and its keys, made only
+/// for a target or a holder that a demand meets live. Each made by one
+/// post-order walk over the expansions, strongly connected leaves sharing
+/// one entry, so each leaf is expanded once a column. A leaf's keys are a
+/// run of `items` (sorted, once each) while they are at most `flat_max`
+/// and come from runs only; past that they are a set of `sets`, which
+/// shares its kids' sets and is listed only when asked for, so a chain of
+/// k leaves each over the one before costs k sets, not Σk items.
 pub const Keys = struct {
     facts: std.ArrayList(?Facts) = .empty,
-    /// Per leaf: `items` run start and length, `none` while not made.
+    /// Per leaf: `items` run start and length, or `(shared, set)`; `none`
+    /// while not made.
     run: std.ArrayList([2]u32) = .empty,
     items: std.ArrayList(Key) = .empty,
+    sets: KeySets.Table = .{},
 
     pub const Mode = enum { facts, runs };
+    /// A run's first word when its keys are a set of `sets`.
+    const shared: u32 = none - 1;
+    /// The most keys a run copies from its kids' (§2.8, *Base keys*).
+    pub const flat_max: u32 = 32;
 
     pub fn deinit(k: *Keys, gpa: Allocator) void {
         k.facts.deinit(gpa);
         k.run.deinit(gpa);
         k.items.deinit(gpa);
+        k.sets.deinit(gpa);
     }
 
     fn made(k: *const Keys, li: u32, mode: Mode) bool {
@@ -103,7 +114,9 @@ pub const Keys = struct {
     pub fn of(k: *Keys, ev: *Relation.Eval, li: u32) Error!struct { keys: []const Key, unknown: bool } {
         if (!k.made(li, .runs)) try k.make(ev, li, .runs);
         const r = k.run.items[li];
-        return .{ .keys = k.items.items[r[0]..][0..r[1]], .unknown = k.facts.items[li].?.unknown };
+        const unknown = k.facts.items[li].?.unknown;
+        if (r[0] == shared) return .{ .keys = try k.sets.keys(ev.gpa(), ev.account(), r[1]), .unknown = unknown };
+        return .{ .keys = k.items.items[r[0]..][0..r[1]], .unknown = unknown };
     }
 
     fn grow(k: *Keys, gpa: Allocator, n: usize) Allocator.Error!void {
@@ -152,6 +165,9 @@ pub const Keys = struct {
         const f = ev.f;
         var acc: std.ArrayList(Key) = .empty;
         defer acc.deinit(g);
+        // The kids' keys that are sets, united as sets.
+        var big: std.ArrayList(u32) = .empty;
+        defer big.deinit(g);
         var fx: Facts = .{};
         var members: std.ArrayList(u32) = .empty;
         defer members.deinit(g);
@@ -192,7 +208,7 @@ pub const Keys = struct {
                 }
                 if (mode == .runs and k.made(c, .runs)) {
                     const r = k.run.items[c];
-                    try acc.appendSlice(g, k.items.items[r[0]..][0..r[1]]);
+                    if (r[0] == shared) try big.append(g, r[1]) else try acc.appendSlice(g, k.items.items[r[0]..][0..r[1]]);
                 }
             }
         }
@@ -210,17 +226,27 @@ pub const Keys = struct {
                 return std.mem.order(u32, &a, &b) == .lt;
             }
         }.lt);
-        const start: u32 = @intCast(k.items.items.len);
+        var n: usize = 0;
         for (acc.items) |x| {
-            const n = k.items.items.len;
-            if (n > start and std.mem.eql(u32, &k.items.items[n - 1], &x)) continue;
-            try k.items.append(g, x);
+            if (n != 0 and std.mem.eql(u32, &acc.items[n - 1], &x)) continue;
+            acc.items[n] = x;
+            n += 1;
         }
-        const len: u32 = @intCast(k.items.items.len - start);
-        try f.charge(.edge, @max(1, len));
+        acc.shrinkRetainingCapacity(n);
+        try f.charge(.edge, @max(1, @as(u32, @intCast(n))));
+        var run: [2]u32 = .{ @intCast(k.items.items.len), @intCast(n) };
+        if (big.items.len == 0 and n <= flat_max) {
+            try k.items.appendSlice(g, acc.items);
+        } else {
+            const a = ev.account();
+            var s: u32 = KeySets.empty;
+            for (acc.items) |x| s = try k.sets.unite(g, a, s, try k.sets.one(g, a, x));
+            for (big.items) |b| s = try k.sets.unite(g, a, s, b);
+            run = .{ shared, s };
+        }
         for (members.items) |at| {
             const m = w.leaf.items[at];
-            k.run.items[m] = .{ start, len };
+            k.run.items[m] = run;
             k.facts.items[m] = fx;
             w.closed.items[at] = true;
         }
