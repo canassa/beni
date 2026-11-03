@@ -270,14 +270,6 @@ pub fn supplyLeaves(e: *Evaluation, q: u32, a: Contract.Arrival, out: *std.Array
     }
 }
 
-/// The base text's instruction and the write path of argument `j` at call `q`.
-fn argBase(e: *Evaluation, q: u32, j: u32) u32 {
-    const f = e.fr();
-    const call = f.calls.items[q];
-    if (j < call.arg_insts.len and call.arg_insts[j] != none) return call.arg_insts[j];
-    return call.inst;
-}
-
 /// Call `q`'s writes and escapes (§2.11.2 items 4, 5): demands and escapes.
 /// A member of the group being solved gives its draft's as they stand, and
 /// the rest as its draft gains them (§2.12 *Deliveries*).
@@ -300,7 +292,7 @@ fn callEffects(e: *Evaluation, q: u32) Error!void {
     for (e.contracts.writesOf(h.writes)) |x| try callTree(e, q, .{ .j = x[0], .slot = Slots.root, .node = x[1] }, &flat);
     const pre = try Routed.ofWrites(&e.ev, call.args, flat.items);
     defer for (pre) |*p| if (p.*) |*l| l.deinit(e.gpa());
-    for (flat.items, pre) |x, p| try callWriteFrom(e, q, x, if (p) |l| l.items else null, .{});
+    for (flat.items, pre) |x, p| try callWriteFrom(e, q, x, if (p) |l| l.items else null, .{}, &.{});
 }
 
 /// Call `q`'s write tree `x`: grafted demands where it stops at a
@@ -312,7 +304,8 @@ fn callTree(e: *Evaluation, q: u32, x: Contract.Effect, flat: *std.ArrayList(Con
     const g = (try Graft.stop(&e.ev, call, x, &gs)) orelse if (try Graft.literal(&e.ev, call, x, &gs)) Graft.Graft{} else return e.contracts.effectFlat(e.gpa(), e.ev.arena, e.fr().account, e.fr().slots, e.fr().places, x, flat);
     for (gs.items) |*gr| {
         defer gr.targets.deinit(e.gpa());
-        try callWriteFrom(e, q, gr.x, gr.targets.items, g);
+        defer gr.also.deinit(e.gpa());
+        try callWriteFrom(e, q, gr.x, gr.targets.items, g, gr.also.items);
     }
 }
 
@@ -336,10 +329,10 @@ pub const cellWrite = Cells.cellWrite;
 pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
     var flat: std.ArrayList(Contract.Effect) = .empty;
     try callTree(e, q, x, &flat);
-    for (flat.items) |y| try callWriteFrom(e, q, y, null, .{});
+    for (flat.items) |y| try callWriteFrom(e, q, y, null, .{}, &.{});
 }
 
-fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relation.Proj, graft: Graft.Graft) Error!void {
+fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relation.Proj, graft: Graft.Graft, also_at: []const Slots.Rel) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const call = f.calls.items[q];
@@ -370,8 +363,11 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
     }
     // A write of nothing (a crossing value consumed) is no demand.
     if (e.w.leaf_runs.items.len == t_start) return;
-    const base = argBase(e, q, x.j);
+    const base = Graft.argInst(call, x.j);
     const write_path: PathId = if (base != call.inst and q < e.w.walk_calls) try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, base), words) else .none;
+    // The other routes a grouped demand covers, named in its line (the walk's arena: lines outlive the evaluation).
+    const also = try f.arena.alloc(PathId, if (write_path == .none) 0 else also_at.len);
+    for (also, 0..) |*p, i| p.* = try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, base), f.slots.relWords(also_at[i]));
     // A capture a known code writes is named by its local.
     const caps: []const u32 = if (!call.virtual and call.code != none and x.j >= call.arg_insts.len) e.ctx.capturesOf(e.ctx.ctx, call.code) else &.{};
     var d: Demand = .{
@@ -389,6 +385,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         .arg = x.j,
         .cell = cellWrite(f.slots, x),
         .graft = .{ graft.j, graft.slot, graft.node },
+        .also = also,
     };
     // The other arguments are its operands (§2.11.2 item 4): a write must
     // not reach what the call is also handed (`List.set b 0 (Node b)`).
