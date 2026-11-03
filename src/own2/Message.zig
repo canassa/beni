@@ -130,6 +130,10 @@ fn writtenText(f: Frame, a: Allocator, d: Walk.Demand) Allocator.Error![]const u
     var buf: std.Io.Writer.Allocating = .init(a);
     buf.writer.writeAll(base) catch return error.OutOfMemory;
     pathText(f, a, &buf.writer, d.write_path) catch return error.OutOfMemory;
+    for (d.also) |p| {
+        buf.writer.print(", {s}", .{base}) catch return error.OutOfMemory;
+        pathText(f, a, &buf.writer, p) catch return error.OutOfMemory;
+    }
     return buf.written();
 }
 fn isAppend(f: Frame, i: u32) bool {
