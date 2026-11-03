@@ -1161,6 +1161,9 @@ pub const Module = struct {
         const mod = self(ctx);
         const bir = mod.in.bir;
         if (origin[0] != mod.in.module or origin[1] >= bir.decls.len or origin[2] >= 1 << 30) return null;
+        // A worded row's labels (cells, `taken`, an `aliased` callback) name
+        // no instruction: only a walked declaration's origin is a call.
+        if (origin[1] >= mod.body_code.len or mod.body_code[origin[1]] == none) return null;
         const d = bir.decls[origin[1]];
         const i = d.inst_start.int() + origin[2];
         if (i >= d.inst_end.int() or bir.instTag(@fromBackingInt(i)) != .call) return null;

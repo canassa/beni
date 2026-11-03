@@ -26,6 +26,7 @@
 //! | `cellstored` | the value escapes behind the barrier |
 //! | `cellupdate`, `cellmodify` | a label called once, supplied `π1◆` |
 //! | callback `taken` | a label (`once`, else many) supplied `π1[*]`; `stored`: its answer at `[*]` |
+//! | callback `aliased` | escaped, and a label (`once`, else many) of no supply whose answer is at every result slot |
 //! | anything else (`lent`, callbacks' rows), `unknown` | the result `⊤` (a `foreign`'s not `lent`: `host`; a loan is beni's), not separated |
 //!
 //! Obligations kept here: O9 (rows state their bodies: a row is taken as
@@ -160,6 +161,20 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
             if (ws != 0 and !Env.has(ws, .unused)) {
                 _ = try Draft.addEffect(&d.escapes, env.arena, .{ .j = j, .slot = Slots.root, .deep = true });
                 exclusive = false;
+                // `aliased`: every result slot may hold what it answers,
+                // beside `fresh` (#1759). A label of no supply, called
+                // `once` (else many times): at a caller a known code's
+                // answer is read, and unknown code's is `⊤`. The escape
+                // above still refuses the code's own writes (§2.11.4).
+                if (Env.has(ws, .aliased) and !d.flags.cross) if (sig.origin) |o| {
+                    const li = try d.labelOf(env.arena, j, Slots.root, .{ o[0], o[1], 2 });
+                    d.labels.items[li].calls = if (Env.has(ws, .once)) .once else .many;
+                    try env.everySlot(&d, sig.result, .{ .kind = .cb, .j = li, .slot = Slots.root });
+                    known_result = true;
+                } else {
+                    try env.everySlot(&d, sig.result, .{ .kind = .top });
+                    known_result = true;
+                };
             }
             continue;
         }

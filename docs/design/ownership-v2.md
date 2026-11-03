@@ -2578,6 +2578,17 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    edit in place what the spawned work reaches, joined or not. And because `Task.spawn`'s result is `⊤` in core's
    inferred contract, `Task.join` escapes `⊤`, so after a join the frame edits nothing in place at all, not even a
    list made after the join (#1734's probe `C13MakeAfterJoin`).
+   *Amended 2026-11-03 (#1759), a work's answer in a `fresh` result:* `timeout : borrowed Duration, once aliased (⊤
+   → a) → fresh Maybe a` answers `Just` of what the work answers, and that may be any object the work reaches.
+   `fresh` names only what the row makes. Before this, a worded callback was only escaped, so the `Just`'s contents
+   were read as fresh, and `List.push` on the work's captured list ran in place while the list was still read
+   (`run/SanitiserTimeoutAnswer`; the sanitised run trapped). Now an `aliased` callback of a row is also a label
+   (origin offset 2, no supply, `once` else many), and its answer arrives at every result slot beside `fresh`. At a
+   caller, a known work's answer is read off its code: its capture is `escaped` with the closure, and a list it makes
+   is fresh (`run/SanitiserTimeoutAnswerFresh`, accepted in place). Unknown code's answer is `⊤`. The escape stays:
+   it refuses the code's own writes (§2.11.4) and keeps the fiber rule above. An `aliased` list of callbacks
+   (`raceOk`) already reached the result through its parameter arrival. A worded row's label names no instruction,
+   so §2.11.3's site type is never read from its origin.
    *Amended 2026-11-03 (#1736), the fiber rows:* `Fiber a` is a `cell foreign type`. Its `◆` is the fiber's
    `outcome`. Only `Task.complete` writes it, once: with `Done` of the work's answer itself (`finished`, the bottom
    of every fiber's stack), or with the shared `Cancelled` (`ended`), which `joined` never returns (it cancels the
