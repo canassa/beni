@@ -387,6 +387,8 @@ type alias Cell =
 type alias Box e a =
     encodedId : String
     typedId : String
+    encodedCheck : e → Maybe Js.Value
+    typedCheck : a → Maybe Js.Value
     node : ⊤ → Node
     analysis : Js.Ref (Maybe Analysis)
     engine : Engine e a
@@ -2672,7 +2674,9 @@ argument schema =
 
 
 declared :
-      String
+      (e → Maybe Js.Value)
+    , (a → Maybe Js.Value)
+    , String
     , String
     , (⊤ → Node)
     , Maybe (Worker Js.Value a)
@@ -2684,10 +2688,12 @@ declared :
     , Maybe (Worker a Js.Value)
     , Maybe (Worker Js.Value a)
     → Schema e a
-declared encodedId typedId description parsing printing args decoding encoding reading writing valid =
+declared checkEncoded checkTyped encodedId typedId description parsing printing args decoding encoding reading writing valid =
     Schema
         { encodedId = encodedId
         , typedId = typedId
+        , encodedCheck = checkEncoded
+        , typedCheck = checkTyped
         , node = description
         , analysis = Js.pure λ⊤ → Js.ref Nothing
         , engine =
@@ -2872,19 +2878,38 @@ resultIdentity witness = String.slice (Any.fingerprint (Any.pack witness)) 15 (-
 
 
 typedBox : Node, List e, List a → Schema e a
-typedBox node encoded typed = boxWithIds (resultIdentity encoded) (resultIdentity typed) node
+typedBox node encoded typed =
+    boxWithIds Data.checked Data.checked (resultIdentity encoded) (resultIdentity typed) node
 
 
 -- Generated schema producers already carry these exact endpoint identities.
-boxWithIds : String, String, Node → Schema e a
-boxWithIds encodedId typedId node =
+boxWithIds : (e → Maybe Js.Value), (a → Maybe Js.Value), String, String, Node → Schema e a
+boxWithIds checkEncoded checkTyped encodedId typedId node =
     Schema
         { encodedId = encodedId
         , typedId = typedId
+        , encodedCheck = checkEncoded
+        , typedCheck = checkTyped
         , node = λ⊤ → node
         , analysis = Js.pure λ⊤ → Js.ref Nothing
         , engine = Interpreted
         }
+
+
+-- Typed check capabilities are captured once when a schema is built. Generated
+-- adapters forward them as checked-data evidence, without inspecting a value.
+-- The generated path calls the same checked conversion with its compiler
+-- witness. This ordinary typed helper also builds stored endpoint checkers.
+checkedInput : a → Maybe Js.Value
+checkedInput datum = Data.checked datum
+
+
+encodedCheck : Schema e a → (e → Maybe Js.Value)
+encodedCheck (Schema state) = state.encodedCheck
+
+
+typedCheck : Schema e a → (a → Maybe Js.Value)
+typedCheck (Schema state) = state.typedCheck
 
 
 encodedIdentity : Schema e a → String
@@ -3560,7 +3585,7 @@ primitive kind = primitiveWith kind []
 primitiveWith : PrimitiveKind, List a → Schema a a
 primitiveWith kind witness =
     typeId = resultIdentity witness
-    declared typeId typeId (λ⊤ → nPrim kind)
+    declared Data.checked Data.checked typeId typeId (λ⊤ → nPrim kind)
         (Just (primitiveSlot kind))
         (Just (primitiveSlot kind))
         []
@@ -3721,7 +3746,7 @@ compiledBox node workers = compiledBoxWith node workers [] []
 
 compiledBoxWith : Node, Workers e a, List e, List a → Schema e a
 compiledBoxWith node workers encoded typed =
-    declared (resultIdentity encoded) (resultIdentity typed) (λ⊤ → node)
+    declared Data.checked Data.checked (resultIdentity encoded) (resultIdentity typed) (λ⊤ → node)
         workers.parse
         workers.print
         workers.args

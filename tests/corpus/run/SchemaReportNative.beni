@@ -1,0 +1,76 @@
+-- Native values can have a scalar representation. Reporting checks their real
+-- types through generic helpers while accepting inactive native alternatives.
+import Browser.Host.Fetch as Fetch
+import Node
+import Schema
+
+
+type Wrapped
+    = Wrapped Fetch.Body
+
+
+type alias NativeRecord =
+    payload : Fetch.Body
+    count : Int
+
+
+rejecting : (⊤ → a) → Schema.Schema String a
+rejecting make =
+    Schema.converted Schema.string
+        (Schema.conversion (λ_ → Ok (make ⊤)) λ_ → Err [ Schema.issue "failed" ])
+
+
+reported : Schema.Options
+reported = { Record.copy (Schema.defaultOptions ⊤) | reportInput = True }
+
+
+encode : Schema.Schema e a, a → Result (List Schema.Issue) e
+encode schema value = Schema.encodeWith schema reported value
+
+
+presence : String, Result (List Schema.Issue) a → String
+presence label result =
+    case result of
+        Err [ problem, …_ ] →
+            label
+                ++ (case problem.input of
+                       Nothing →
+                           ": no input"
+                       Just _ →
+                           ": data"
+                   )
+        _ →
+            "unexpected success"
+
+
+native : Schema.Schema String Fetch.Body
+native = rejecting λ⊤ → Fetch.textBody "body"
+
+
+optional : Schema.Schema String (Maybe Fetch.Body)
+optional = rejecting λ⊤ → Nothing
+
+
+many : Schema.Schema String (List Fetch.Body)
+many = rejecting λ⊤ → []
+
+
+wrapped : Schema.Schema String Wrapped
+wrapped = rejecting λ⊤ → Wrapped (Fetch.textBody "body")
+
+
+record : Schema.Schema String NativeRecord
+record = rejecting λ⊤ → { payload = Fetch.textBody "body", count = 1 }
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ presence "native scalar" (encode native (Fetch.textBody "body"))
+        , presence "empty native option" (encode optional Nothing)
+        , presence "present native option" (encode optional (Just (Fetch.textBody "body")))
+        , presence "empty native list" (encode many [])
+        , presence "native list" (encode many [ Fetch.textBody "body" ])
+        , presence "wrapped native" (encode wrapped (Wrapped (Fetch.textBody "body")))
+        , presence "native record" (encode record { payload = Fetch.textBody "body", count = 1 })
+        ]

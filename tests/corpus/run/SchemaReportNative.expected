@@ -1,0 +1,7 @@
+native scalar: no input
+empty native option: data
+present native option: no input
+empty native list: data
+native list: no input
+wrapped native: no input
+native record: no input

@@ -137,6 +137,11 @@ pub const Term = union(enum(u8)) {
     /// each a `codec` term. Its value is a function of `⊤` answering the
     /// codec's schema.
     codec: CodecUse,
+    // A checked-data representation shape. Variables are ordinary param terms;
+    // nominal bodies stay in the backend, outside the checking cache firewall.
+    checked: Checked,
+
+    pub const Checked = struct { kind: DebugNode.Kind, value: u32 = 0, args: Range = .empty };
 
     /// `k` is a `u32` since dispatch format 4: a derived row
     /// can have more than 65 535 context entries or positions.
@@ -160,6 +165,7 @@ pub const Term = union(enum(u8)) {
             .derived => |u| u.args,
             .ext_derived => |u| u.args,
             .codec => |u| u.args,
+            .checked => |u| u.args,
             .identity => |r| r,
             else => .empty,
         };
@@ -369,6 +375,9 @@ pub const DebugNode = struct {
     pub const Kind = enum(u8) {
         /// A type variable, a poisoned type, or a subtree past the cap.
         unknown,
+        // Intermediate checked-data shapes retain generic variables and row tails.
+        parameter,
+        row,
         function,
         unit,
         tuple,
@@ -666,6 +675,9 @@ pub fn extRequirementCount(interfaces: []const Interface, module: Graph.Index, v
 // A quantifier without a method requirement uses a tagged index.
 // Existing constrained identity slots keep their original numbering.
 pub const identity_quantifier: u32 = 1 << 31;
+// The same demand propagation carries an independent checked-data witness.
+pub const checked_evidence: u32 = 1 << 30;
+pub const evidence_index: u32 = ~(identity_quantifier | checked_evidence);
 
 pub fn extIdentities(interfaces: []const Interface, module: Graph.Index, value: u32, out: []u32) u32 {
     if (module.int() >= interfaces.len) return 0;
@@ -681,6 +693,10 @@ pub fn extIdentities(interfaces: []const Interface, module: Graph.Index, value: 
         const q = iface.quantified(s, i);
         if (q.identity) {
             if (n < out.len) out[n] = if (q.constraints_len != 0) at else identity_quantifier | i;
+            n += 1;
+        }
+        if (q.checked_data) {
+            if (n < out.len) out[n] = checked_evidence | identity_quantifier | i;
             n += 1;
         }
         at += q.constraints_len;
@@ -769,6 +785,7 @@ pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interfa
         // A derived codec's slots are its own arguments, one per
         // parameter of its plan definition (schema.md §12.10).
         .codec => |u| u.args.len,
+        .checked => |u| u.args.len,
         .param, .primitive, .undetermined, .field, .text => 0,
     };
 }
@@ -1010,7 +1027,7 @@ const I7 = struct {
                 },
                 .primitive, .field, .param => return site.evidence.len == 0,
                 // Never a callee: an `err` SITE becomes no term at all.
-                .undetermined, .identity, .text, .codec => return false,
+                .undetermined, .identity, .text, .codec, .checked => return false,
             }
         }
         if (wants_callee) return false;

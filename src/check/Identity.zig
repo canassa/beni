@@ -50,6 +50,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
 const Schemes = @import("Schemes.zig");
+const DebugShape = @import("DebugShape.zig");
 const Instantiate = @import("Instantiate.zig");
 
 const Var = TypeStore.Var;
@@ -84,6 +85,7 @@ pub const Input = struct {
 
 /// What the pass adds to the table: owned by `cx.gpa`.
 pub const Result = struct {
+    boundary: []const Dispatch.Boundary = &.{},
     identities: []const u32 = &.{},
     text: []const u8 = &.{},
 };
@@ -129,6 +131,7 @@ const Pass = struct {
     /// Per keyed slot, its parts: a run of `parts`.
     slot_parts: []Dispatch.Range,
     parts: std.ArrayList(Part) = .empty,
+    boundary: std.ArrayList(Dispatch.Boundary) = .empty,
     bytes: std.ArrayList(u8) = .empty,
     items: std.ArrayList(Item) = .empty,
     fields: std.ArrayList(TypeStore.Field) = .empty,
@@ -149,20 +152,23 @@ const Pass = struct {
         return p.in.lets[b - p.in.decls.len].requirements;
     }
 
-    fn markRow(p: *const Pass, b: u32, j: u32) ?u32 {
+    fn markRow(p: *const Pass, b: u32, tagged: u32) ?u32 {
+        const j = tagged & ~Dispatch.checked_evidence;
+        const offset: u32 = if (tagged & Dispatch.checked_evidence != 0) @intCast(p.marked.len / 2) else 0;
         if (j & Dispatch.identity_quantifier != 0) {
             if (b >= p.quantifier_ranges.len) return null;
             const r = p.quantifier_ranges[b];
-            const q = j & ~Dispatch.identity_quantifier;
+            const q = j & Dispatch.evidence_index;
             if (q >= r.len) return null;
-            return @as(u32, @intCast(p.in.requirements.len)) + r.start + q;
+            return offset + @as(u32, @intCast(p.in.requirements.len)) + r.start + q;
         }
         const r = p.reqRange(b);
-        return if (j < r.len) r.start + j else null;
+        return if (j < r.len) offset + r.start + j else null;
     }
 
-    fn quantifierOf(p: *const Pass, b: u32, j: u32) u32 {
-        if (j & Dispatch.identity_quantifier != 0) return j & ~Dispatch.identity_quantifier;
+    fn quantifierOf(p: *const Pass, b: u32, tagged: u32) u32 {
+        const j = tagged & ~Dispatch.checked_evidence;
+        if (j & Dispatch.identity_quantifier != 0) return j & Dispatch.evidence_index;
         return p.in.requirements[p.reqRange(b).start + j].quantified;
     }
 
@@ -186,9 +192,9 @@ const Pass = struct {
         const lets_base: u32 = @intCast(p.in.decls.len);
         var l = s.let;
         while (l != Elaborate.no_let and l < p.in.lets.len) : (l = if (l < p.in.out.let_parent.len) p.in.out.let_parent[l] else Elaborate.no_let) {
-            if (p.rowOf(lets_base + l, v)) |j| return .{ .binder = lets_base + l, .row = j };
+            if (p.rowOf(lets_base + l, v)) |j| return .{ .binder = lets_base + l, .row = if (s.root & Dispatch.checked_evidence != 0) Dispatch.checked_evidence | Dispatch.identity_quantifier | p.quantifierOf(lets_base + l, j) else j };
         }
-        if (s.decl < p.in.decls.len) if (p.rowOf(s.decl, v)) |j| return .{ .binder = s.decl, .row = j };
+        if (s.decl < p.in.decls.len) if (p.rowOf(s.decl, v)) |j| return .{ .binder = s.decl, .row = if (s.root & Dispatch.checked_evidence != 0) Dispatch.checked_evidence | Dispatch.identity_quantifier | p.quantifierOf(s.decl, j) else j };
         return null;
     }
 
@@ -347,6 +353,40 @@ const Pass = struct {
         };
     }
 
+    fn checkedTerm(p: *Pass, slot: Elaborate.Slot, position: []const u32, terms: *std.ArrayList(Dispatch.Term), args: *std.ArrayList(TermIndex)) Error!TermIndex {
+        const nodes = try DebugShape.shapeVariables(p.scratch, p.store, p.in.cx.interner, slot.type);
+        for (nodes) |node| switch (node.kind) {
+            .field => try p.boundary.append(p.gpa, .{ .decl = slot.decl, .kind = .field, .value = node.value }),
+            .named => try p.boundary.append(p.gpa, .{ .decl = slot.decl, .kind = .type, .value = node.value }),
+            else => {},
+        };
+        const start: u32 = @intCast(terms.items.len);
+        const Frame = struct { left: u32, next: u32 };
+        var stack: std.ArrayList(Frame) = .empty;
+        for (nodes, 0..) |node, k| {
+            const index: TermIndex = @fromBackingInt(@intCast(start + k));
+            if (stack.items.len != 0) {
+                const parent = &stack.items[stack.items.len - 1];
+                args.items[parent.next] = index;
+                parent.next += 1;
+                parent.left -= 1;
+            }
+            const range: Dispatch.Range = .{ .start = @intCast(args.items.len), .len = node.count };
+            try args.appendNTimes(p.gpa, @fromBackingInt(0), node.count);
+            const term: Dispatch.Term = if (node.kind == .parameter) variable: {
+                const v: Var = @fromBackingInt(@intCast(node.value));
+                if (p.holeOf(slot, p.store.find(v))) |h| break :variable holeTerm(p, h.binder, h.row, position);
+                if (std.mem.eql(u8, undeterminedText(p, v), "core:Basics.Int")) break :variable .{ .checked = .{ .kind = .named, .value = p.in.cx.types.well_known.int.int() } };
+                if (try unknownRefused(p, slot, v)) try p.refuse(slot.inst, try unknownText(p, v));
+                break :variable .{ .checked = .{ .kind = .unknown } };
+            } else .{ .checked = .{ .kind = node.kind, .value = node.value, .args = range } };
+            try terms.append(p.gpa, term);
+            if (node.count != 0) try stack.append(p.scratch, .{ .left = node.count, .next = range.start });
+            while (stack.items.len != 0 and stack.items[stack.items.len - 1].left == 0) _ = stack.pop();
+        }
+        return @fromBackingInt(@intCast(start));
+    }
+
     fn refuse(p: *Pass, inst: Bir.Inst.Index, text: []const u8) Error!void {
         try p.in.report.emitText(.type_identity_unknown, inst, null, text);
     }
@@ -381,7 +421,8 @@ fn identityPrimitive(cx: *const Context, name: []const u8) bool {
     if (cx.graph.modulePackage(cx.module) != .core) return false;
     const module = cx.interner.slice(cx.graph.moduleName(cx.module));
     return (std.mem.eql(u8, module, "Js") and std.mem.eql(u8, name, "fingerprint")) or
-        (std.mem.eql(u8, module, "Js.Any") and (std.mem.eql(u8, name, "pack") or std.mem.eql(u8, name, "unpack")));
+        ((std.mem.eql(u8, module, "Js.Any") and (std.mem.eql(u8, name, "pack") or std.mem.eql(u8, name, "unpack"))) or
+            (std.mem.eql(u8, module, "Js.Data") and std.mem.eql(u8, name, "checkedGraph")));
 }
 
 pub fn run(in: Input) Error!Result {
@@ -389,7 +430,7 @@ pub fn run(in: Input) Error!Result {
     const gpa = cx.gpa;
     const scratch = cx.scratch;
     const bir = cx.bir;
-    const general = in.uses.len != 0 or (cx.graph.modulePackage(cx.module) == .core and std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Any"));
+    const general = in.uses.len != 0 or (cx.graph.modulePackage(cx.module) == .core and (std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Any") or std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Data")));
     const quantifiers = if (general) try quantifiedBinders(in) else Quantified{};
     if (general) try prepareSlots(in, quantifiers);
     const slots = in.out.slots;
@@ -402,7 +443,7 @@ pub fn run(in: Input) Error!Result {
         .store = cx.store,
         .callee = try scratch.alloc(Callee, slots.len),
         .keyed = try scratch.alloc(bool, slots.len),
-        .marked = try scratch.alloc(bool, in.requirements.len + quantifiers.roots.len),
+        .marked = try scratch.alloc(bool, 2 * (in.requirements.len + quantifiers.roots.len)),
         .quantifier_ranges = quantifiers.ranges,
         .quantifiers = quantifiers.roots,
         .by_binder = &.{},
@@ -410,6 +451,7 @@ pub fn run(in: Input) Error!Result {
         .slot_parts = try scratch.alloc(Dispatch.Range, slots.len),
     };
     defer p.stacks.deinit(gpa);
+    errdefer p.boundary.deinit(gpa);
     defer p.fields.deinit(gpa);
     @memset(p.keyed, false);
     @memset(p.marked, false);
@@ -461,7 +503,10 @@ pub fn run(in: Input) Error!Result {
     }
 
     // Step 2: to the fixpoint.
-    for (seeded_decls.items) |d| try p.mark(d, if (in.decls[d].requirements.len != 0) 0 else Dispatch.identity_quantifier);
+    for (seeded_decls.items) |d| {
+        const checked = std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Data");
+        try p.mark(d, if (checked) Dispatch.checked_evidence | Dispatch.identity_quantifier else if (in.decls[d].requirements.len != 0) 0 else Dispatch.identity_quantifier);
+    }
     try p.work.appendSlice(scratch, seeds.items);
     while (p.work.pop()) |s| try p.visit(s);
     if (!p.any and seeds.items.len == 0) return .{};
@@ -485,12 +530,15 @@ pub fn run(in: Input) Error!Result {
             for (0..qs.len) |q| {
                 const j = Dispatch.identity_quantifier | @as(u32, @intCast(q));
                 if (p.marked[p.markRow(@intCast(b), j).?]) try identities.append(gpa, j);
+                if (p.marked[p.markRow(@intCast(b), j | Dispatch.checked_evidence).?]) try identities.append(gpa, j | Dispatch.checked_evidence);
             }
             const Sort = struct {
                 pass: *const Pass,
                 binder: u32,
                 fn lessThan(ctx: @This(), x: u32, y: u32) bool {
-                    return ctx.pass.quantifierOf(ctx.binder, x) < ctx.pass.quantifierOf(ctx.binder, y);
+                    const a = ctx.pass.quantifierOf(ctx.binder, x);
+                    const bq = ctx.pass.quantifierOf(ctx.binder, y);
+                    return if (a != bq) a < bq else (x & Dispatch.checked_evidence) < (y & Dispatch.checked_evidence);
                 }
             };
             std.mem.sort(u32, identities.items[start..], Sort{ .pass = &p, .binder = @intCast(b) }, Sort.lessThan);
@@ -545,6 +593,10 @@ pub fn run(in: Input) Error!Result {
                 // error (checker-v2.md §13.1).
                 continue;
             };
+            if (j & Dispatch.checked_evidence != 0) {
+                try ids.append(scratch, try p.checkedTerm(slots[s], position, &terms, &args));
+                continue;
+            }
             part_terms.clearRetainingCapacity();
             const id_index: u32 = @intCast(terms.items.len);
             try terms.append(gpa, .{ .identity = .empty });
@@ -600,7 +652,7 @@ pub fn run(in: Input) Error!Result {
     in.out.terms = try terms.toOwnedSlice(gpa);
     in.out.args = try args.toOwnedSlice(gpa);
     in.out.sites = sites;
-    return .{ .identities = try identities.toOwnedSlice(gpa), .text = try text.toOwnedSlice(gpa) };
+    return .{ .identities = try identities.toOwnedSlice(gpa), .text = try text.toOwnedSlice(gpa), .boundary = try p.boundary.toOwnedSlice(gpa) };
 }
 
 fn identitiesOf(p: *const Pass, all: []const u32, b: u32) []const u32 {
@@ -806,7 +858,7 @@ fn prepareSlots(in: Input, quantified: Quantified) Error!void {
     for (in.uses) |use| {
         if (use.inst.int() >= bir.insts.len) continue;
         const inst = call_of[use.inst.int()].unwrap() orelse use.inst;
-        try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | use.quantified, .type = use.v, .decl = use.decl, .let = scopes.of(use.inst) });
+        try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | use.quantified | (if (use.checked) Dispatch.checked_evidence else @as(u32, 0)), .type = use.v, .decl = use.decl, .let = scopes.of(use.inst) });
     }
     // Effects already retained every own instantiation's quantifier copies.
     // Index the records by source instruction, including method-call copies.
@@ -836,7 +888,6 @@ fn prepareSlots(in: Input, quantified: Quantified) Error!void {
             const r = quantified.ranges[b];
             const scheme = if (b < in.decls.len) in.decl_scheme[b].unwrap() else in.let_schemes[b - in.decls.len];
             for (quantified.headers[r.start..][0..r.len], 0..) |header, q| {
-                if (hasRequirement(in, b, @intCast(q))) continue;
                 var value = header;
                 if (effects) |e| {
                     var record_index = first[i];
@@ -851,7 +902,9 @@ fn prepareSlots(in: Input, quantified: Quantified) Error!void {
                         }
                     }
                 }
-                try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | @as(u32, @intCast(q)), .type = value, .decl = @intCast(owner), .let = scopes.of(original) });
+                if (!hasRequirement(in, b, @intCast(q)))
+                    try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | @as(u32, @intCast(q)), .type = value, .decl = @intCast(owner), .let = scopes.of(original) });
+                try slots.append(a, .{ .inst = inst, .root = Dispatch.checked_evidence | Dispatch.identity_quantifier | @as(u32, @intCast(q)), .type = value, .decl = @intCast(owner), .let = scopes.of(original) });
             }
         }
     }

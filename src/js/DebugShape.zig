@@ -44,6 +44,7 @@ pub const Context = struct {
     birs: []const *const Bir,
     types: *const Types,
     interner: *const InternPool.Global,
+    checked_data: bool = false,
 };
 
 /// How deep a written type (a constructor's argument, an alias body) is
@@ -97,8 +98,16 @@ const Writer = struct {
         if (e.package == .core) {
             const module = w.cx.interner.slice(e.module_name);
             const name = w.cx.interner.slice(e.name);
-            if (std.mem.eql(u8, module, "Dict") and std.mem.eql(u8, name, "Dict")) return .{ .builtin = "[\"D\"" };
-            if (std.mem.eql(u8, module, "Set") and std.mem.eql(u8, name, "Set")) return .{ .builtin = "[\"S\"" };
+            if (w.cx.checked_data) {
+                if ((std.mem.eql(u8, module, "Js") or std.mem.eql(u8, module, "Schema")) and std.mem.eql(u8, name, "Value")) return .{ .code = "\"v\"" };
+                if (std.mem.eql(u8, module, "Js")) {
+                    if (std.mem.eql(u8, name, "Ref")) return .{ .builtin = "[\"R\"" };
+                    if (std.mem.eql(u8, name, "Cell")) return .{ .builtin = "[\"C\"" };
+                    if (std.mem.eql(u8, name, "Opt")) return .{ .builtin = "[\"O\"" };
+                }
+            }
+            if (!w.cx.checked_data and std.mem.eql(u8, module, "Dict") and std.mem.eql(u8, name, "Dict")) return .{ .builtin = "[\"D\"" };
+            if (!w.cx.checked_data and std.mem.eql(u8, module, "Set") and std.mem.eql(u8, name, "Set")) return .{ .builtin = "[\"S\"" };
             // A number with no box (`backend.md` §4's `Int32` row).
             if (std.mem.eql(u8, module, "Int32") and std.mem.eql(u8, name, "Int32")) return .{ .code = "\"i\"" };
         }
@@ -142,6 +151,11 @@ const Writer = struct {
             var frame: ?Frame = null;
             if (skipping == 0) switch (n.kind) {
                 .unknown => try w.out.appendSlice(w.arena, "\"?\""),
+                .parameter => try w.print("[\"p\",{d}]", .{n.value}),
+                .row => {
+                    try w.out.appendSlice(w.arena, "\"$row\":");
+                    frame = .{ .close = "", .left = n.count, .first = true, .comma_first = false, .skip = false };
+                },
                 .function => try w.out.appendSlice(w.arena, "\"F\""),
                 .unit => try w.out.appendSlice(w.arena, "\"u\""),
                 .tuple => {
@@ -246,7 +260,16 @@ const Writer = struct {
                 try w.out.append(w.arena, ']');
             },
             .type_record => try w.fields(m, bir, bir.extraSlice(Bir.inlineRange(data), Bir.Field), env, depth),
-            .type_record_ext => try w.fields(m, bir, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field), env, depth),
+            .type_record_ext => {
+                if (w.cx.checked_data) {
+                    try w.out.appendSlice(w.arena, "[\"e\",");
+                    try w.written(m, bir, @fromBackingInt(@intCast(data.lhs)), env, depth + 1);
+                    try w.out.append(w.arena, ',');
+                }
+                try w.fields(m, bir, bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field), env, depth);
+                if (w.cx.checked_data) try w.out.append(w.arena, ']');
+            },
+
             .type_top, .ext_type, .schema_type_top, .ext_schema_type => try w.applied(m, bir, w.cx.types.headId(m, tag, data), &.{}, env, depth),
             .type_app => {
                 const h: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));

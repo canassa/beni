@@ -120,7 +120,7 @@ pub const CastCopies = struct {
     vars: std.ArrayList(Var) = .empty,
 };
 
-pub const IdentityUse = struct { inst: Bir.Inst.Index, decl: u32, module: Graph.Index, value: u32, quantified: u32, v: Var };
+pub const IdentityUse = struct { inst: Bir.Inst.Index, decl: u32, module: Graph.Index, value: u32, quantified: u32, v: Var, checked: bool = false };
 
 pub const CrossingUse = struct { inst: Bir.Inst.Index, decl: ?u32, v: Var };
 
@@ -566,6 +566,7 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
             if (i >= identity_scheme.quantified_count) break;
             const info = iface.quantified(identity_scheme, @intCast(i));
             if (info.identity and info.constraints_len == 0) try in.identity_uses.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl orelse std.math.maxInt(u32), .module = module, .value = index, .quantified = @intCast(i), .v = q });
+            if (info.checked_data) try in.identity_uses.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl orelse std.math.maxInt(u32), .module = module, .value = index, .quantified = @intCast(i), .v = q, .checked = true });
         }
     }
     if (which == .value and in.track_crossing) {

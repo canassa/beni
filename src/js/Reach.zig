@@ -1537,6 +1537,9 @@ pub const Builder = struct {
         if (member != .root) try b.codecEdges(m, ref, member, out);
         var names: std.ArrayList([]const u8) = .empty;
         try sg.coreNeeds(b.scratch, ref, member, b.in.schema_library, &names);
+        var evidence: std.ArrayList(Node) = .empty;
+        try b.checkedDependencies(&evidence);
+        for (evidence.items) |node| try out.append(b.scratch, .{ .node = node });
         const core = b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
         const core_bir = b.in.birOf(core);
         for (names.items) |name| {
@@ -1970,9 +1973,22 @@ pub const Builder = struct {
             },
             // `undetermined` is `===` in place (`Lower.partEq`): no edge.
             .undetermined => {},
+            .checked_data => try b.checkedDependencies(out),
             // A derived codec's value: its root member, as `S.schema`'s
             // (schema.md §12.10).
             .codec => |index| try out.append(b.scratch, schemaNode(.{ .module = m, .decl = @intCast(b.in.birOf(m).decls.len + index) }, .root)),
+        }
+    }
+
+    fn checkedDependencies(b: *Builder, out: *std.ArrayList(Node)) Allocator.Error!void {
+        if (b.opt_none) |sentinel| try out.append(b.scratch, sentinel);
+        const pool = b.in.interner orelse return;
+        const name = pool.find("Js.Any") orelse return;
+        const owner = b.in.graph.lookup(.core, name) orelse return;
+        const bir = b.in.birOf(owner);
+        for (bir.decls, 0..) |decl, index| {
+            if (std.mem.eql(u8, pool.slice(bir.symbol(decl.name)), "pack"))
+                try out.append(b.scratch, .{ .module = owner, .kind = .decl, .index = @intCast(index) });
         }
     }
 

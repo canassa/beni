@@ -97,15 +97,24 @@ pub fn fill(in: Input) Error!u32 {
         defer writer.effects = null;
         // Its identity parameters, as the quantifiers they are of.
         var quantifiers: []u16 = &.{};
+        var checked_quantifiers: std.ArrayList(u16) = .empty;
+        defer checked_quantifiers.deinit(gpa);
         defer gpa.free(quantifiers);
         if (decl) |d| if (in.dispatch) |table| {
             const reqs = table.declRequirements(d.int());
             const ids = table.declIdentities(d.int());
             quantifiers = try gpa.alloc(u16, ids.len);
-            for (ids, quantifiers) |j, *q| q.* = if (j & Dispatch.identity_quantifier != 0) @intCast(j & ~Dispatch.identity_quantifier) else if (j < reqs.len) reqs[j].quantified else std.math.maxInt(u16);
+            for (ids, quantifiers) |j, *q| {
+                const index = j & ~Dispatch.checked_evidence;
+                const ordinal: u16 = if (index & Dispatch.identity_quantifier != 0) @intCast(index & Dispatch.evidence_index) else if (index < reqs.len) reqs[index].quantified else std.math.maxInt(u16);
+                q.* = if (j & Dispatch.checked_evidence == 0) ordinal else std.math.maxInt(u16);
+                if (j & Dispatch.checked_evidence != 0) try checked_quantifiers.append(gpa, ordinal);
+            }
         };
         writer.identities = quantifiers;
         defer writer.identities = &.{};
+        writer.checked_data = checked_quantifiers.items;
+        defer writer.checked_data = &.{};
         v.scheme = try p.scheme(root, decl);
     }
     gpa.free(@constCast(iface.values));

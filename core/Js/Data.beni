@@ -1,5 +1,6 @@
 -- Core-only checked conversion of a value graph to plain host data.
 import Js
+import Js.Any
 import List
 
 
@@ -11,3 +12,8 @@ checked value = checkedGraph List.viewToken value
 
 
 foreign pure checkedGraph : borrowed Js.Cell { listProtocol : ⊤ }, returned a → Maybe Js.Value
+
+
+-- The compiler adds a checked representation witness to checkedGraph and
+-- propagates it through generic callers. It distinguishes native scalars and
+-- Any packets from ordinary data with the same runtime representation.

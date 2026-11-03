@@ -101,7 +101,7 @@ pub const magic = "BENIIFC\x00";
 /// 20: native realm classes, evaluated realm masks and HostFree quantifiers.
 /// 21: realm-only dependencies may name unresolved scheme variables.
 /// 22: effect paths may end with a length-prefixed Any key (kind 7).
-pub const format_version: u32 = 22;
+pub const format_version: u32 = 23;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -991,7 +991,7 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         for (0..s.quantified_count) |i| {
             const at = s.quantified_start + i * Interface.Quantified.words;
             const flag_word = iface.extra[at];
-            if (flag_word & ~@as(u32, 0x1fff) != 0 or flag_word & 0xff > 7) return false;
+            if (flag_word & ~@as(u32, 0x3fff) != 0 or flag_word & 0xff > 7) return false;
             const name = iface.extra[at + 1];
             if (name != std.math.maxInt(u32) and name >= symbols) return false;
             const start = iface.extra[at + 2];

@@ -196,6 +196,8 @@ fn writeDebugShape(
         }
         switch (n.kind) {
             .unknown => try w.writeAll("_"),
+            .parameter => try w.print("parameter {d}", .{n.value}),
+            .row => try w.writeAll("row "),
             .function => try w.writeAll("<function>"),
             .unit => try w.writeAll("⊤"),
             .tuple => try w.writeAll(if (n.count == 0) "( )" else "( "),
@@ -450,6 +452,7 @@ const Context = struct {
             .undetermined => try w.writeAll("undetermined"),
             .field => try w.writeAll("field"),
             .identity => try w.writeAll("identity"),
+            .checked => |shape| try w.print("checked {s}", .{@tagName(shape.kind)}),
             .text => |r| try w.print("text \"{s}\"", .{cx.dispatch.textOf(r)}),
             .codec => |c| try w.print("codec {d}", .{c.index}),
         }

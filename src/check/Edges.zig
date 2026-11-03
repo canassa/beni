@@ -90,6 +90,7 @@ pub const Edge = union(enum) {
     /// A derived codec of THIS module, by its index in the schema plan's
     /// `codecs` (schema.md §12.10).
     codec: u32,
+    checked_data,
 
     /// `Graph.Index` plus the raw `Interface.ValueIndex`, which only a
     /// consumer holding that module's provenance table can turn into a
@@ -372,6 +373,7 @@ pub fn termsEdges(
             .primitive => |prim| try out.append(scratch, .{ .primitive = prim }),
             .undetermined => try out.append(scratch, .undetermined),
             .codec => |use| try out.append(scratch, .{ .codec = use.index }),
+            .checked => try out.append(scratch, .checked_data),
             .param, .field, .identity, .text => {},
         }
         const args = dispatch.argsAt(t.argsOf());

@@ -368,6 +368,7 @@ pub const Quantified = struct {
     /// checker-v2.md §33): bit 9 of the flag word. A quantifier reached
     /// by Any has it even without a method constraint.
     identity: bool = false,
+    checked_data: bool = false,
     /// A `Js.from` in the value's body, or a crossing quantifier of a
     /// callee, is instantiated at a type mentioning this quantifier: what
     /// the value is applied at crosses into JavaScript (`backend.md` §9,
@@ -405,10 +406,11 @@ pub const Quantified = struct {
     pub const words = 4;
 
     pub fn flags(q: Quantified) u32 {
-        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10) | (@as(u32, @intFromBool(q.wire)) << 11) | (@as(u32, @intFromBool(q.host_free)) << 12);
+        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10) | (@as(u32, @intFromBool(q.wire)) << 11) | (@as(u32, @intFromBool(q.host_free)) << 12) | (@as(u32, @intFromBool(q.checked_data)) << 13);
     }
 
     pub const identity_bit: u32 = 1 << 9;
+    pub const checked_data_bit: u32 = 1 << 13;
     pub const crosses_bit: u32 = 1 << 10;
     pub const wire_bit: u32 = 1 << 11;
 
@@ -417,6 +419,7 @@ pub const Quantified = struct {
             .kind = @truncate(flag_word),
             .equatable = (flag_word >> 8) & 1 == 1,
             .identity = (flag_word >> 9) & 1 == 1,
+            .checked_data = (flag_word >> 13) & 1 == 1,
             .crosses = (flag_word >> 10) & 1 == 1,
             .wire = (flag_word >> 11) & 1 == 1,
             .host_free = (flag_word >> 12) & 1 == 1,

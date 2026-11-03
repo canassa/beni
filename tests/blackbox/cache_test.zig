@@ -5943,3 +5943,78 @@ test "headless ownership places never inspect an importing application" {
     try testing.expectEqualStrings("", result.stderr);
     try testing.expect(!w.exists(".beni-cache"));
 }
+
+test "checked data witnesses retain native and generic shapes through cached interfaces" {
+    // PREPARE: the empty object and string are native despite looking like data.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.write("Native.beni",
+        \\pub foreign type Handle
+        \\pub type Capsule row = Capsule { row | answer : Int }
+        \\pub foreign pure empty : ⊤ → Handle
+        \\pub foreign pure scalar : ⊤ → Handle
+        \\
+    );
+    try w.write("Native.js", "export const empty = (u) => ({});\nexport const scalar = (u) => 'native';\n");
+    try w.write("Report.beni",
+        \\import Js.Any as Any
+        \\import Js.Data as Data
+        \\pub classify : a → String
+        \\classify value =
+        \\    local = λitem → Data.checked item
+        \\    case local value of
+        \\        Just _ → "data"
+        \\        Nothing → "hidden"
+        \\pub both : a → String
+        \\both value =
+        \\    box = Any.pack value
+        \\    classify value ++ classify box
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Js
+        \\import Native
+        \\import Node
+        \\import Report
+        \\emptyOpt : ⊤ → Js.Opt Native.Handle
+        \\emptyOpt ⊤ = Js.none ⊤
+        \\main : Node.Program
+        \\main =
+        \\    Node.printLines
+        \\        [ Report.classify (Native.empty ⊤)
+        \\        , Report.classify (Native.scalar ⊤)
+        \\        , Report.classify { x = Native.empty ⊤ }
+        \\        , Report.classify { x = 3 }
+        \\        , Report.both "plain"
+        \\        , Report.classify (Native.Capsule { answer = 1, extra = Native.scalar ⊤ })
+        \\        , Report.classify (Native.Capsule { answer = 1, extra = "plain" })
+        \\        , Report.classify (Js.cell { native = Native.scalar ⊤ })
+        \\        , Report.classify (Js.ref (Native.scalar ⊤))
+        \\        , Report.classify (emptyOpt ⊤)
+        \\        , Report.classify (Js.some (Native.empty ⊤))
+        \\        ]
+        \\
+    );
+    // EXECUTE: read the same check and emit artifacts back under both printers.
+    for ([_]bool{ false, true }) |release| {
+        for ([_][]const u8{ "cold", "warm" }) |phase| {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(arena, &.{ "build", "--core", "--platform=node", "--cache-dir=cache", "--roundtrip-interfaces", "--out=out", "." });
+            if (release) try args.append(arena, "--release");
+            const trace = try std.fmt.allocPrint(arena, "{s}-{s}.json", .{ if (release) "release" else "dev", phase });
+            const run = try runCounted(&w, arena, args.items, trace);
+            // VERIFY: warm checks are real cache hits, and execution keeps types.
+            if (run.result.exit_code != 0) std.debug.print("{s}\n", .{run.result.stderr});
+            try testing.expectEqual(@as(u8, 0), run.result.exit_code);
+            if (std.mem.eql(u8, phase, "warm")) {
+                try testing.expect(run.counters.hits >= 3);
+                try testing.expectEqual(@as(u64, 0), run.counters.checked);
+            }
+            const executed = try w.node("out/_main.mjs");
+            try testing.expectEqual(@as(u8, 0), executed.exit_code);
+            try testing.expectEqualStrings("hidden\nhidden\nhidden\ndata\ndatahidden\nhidden\ndata\nhidden\nhidden\ndata\nhidden\n", executed.stdout);
+            try testing.expectEqualStrings("", executed.stderr);
+        }
+    }
+}

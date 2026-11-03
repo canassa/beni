@@ -143,6 +143,7 @@ pub const Writer = struct {
     /// identity it takes (checker-v2.md §33): their flag word gets the
     /// identity bit. Empty for everything else.
     identities: []const u16 = &.{},
+    checked_data: []const u16 = &.{},
     /// Per store variable, whether it is a quantifier whose instantiations
     /// cross into JavaScript (checker-v2.md §36): its flag word gets the
     /// `crosses` bit.
@@ -241,6 +242,10 @@ pub const Writer = struct {
         for (w.identities) |q| {
             const at = @as(usize, q) * Interface.Quantified.words;
             if (q < count and at < w.pending_flags.items.len) w.pending_flags.items[at] |= Interface.Quantified.identity_bit;
+        }
+        for (w.checked_data) |q| {
+            const at = @as(usize, q) * Interface.Quantified.words;
+            if (q < count and at < w.pending_flags.items.len) w.pending_flags.items[at] |= Interface.Quantified.checked_data_bit;
         }
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);

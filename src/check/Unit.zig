@@ -241,6 +241,7 @@ pub fn emit(
             .derived => |*x| x.args = range,
             .ext_derived => |*x| x.args = range,
             .codec => |*x| x.args = range,
+            .checked => |*x| x.args = range,
             else => {},
         }
         try lists.add(terms, gpa, t);

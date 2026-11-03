@@ -295,6 +295,8 @@ const Op = SchemaGraph.Op;
 
 const Gen = struct {
     in_description: bool = false,
+    worker_checks: ?[]const NameIndex = null,
+    checks_by_identity: ?*std.AutoHashMapUnmanaged(Node.Index, Node.Index) = null,
     l: *Lowerer,
     sg: *const SchemaGraph,
     plan: *const SchemaPlan,
@@ -531,9 +533,55 @@ const Gen = struct {
         return out;
     }
 
+    fn checkMap(g: *Gen) !*std.AutoHashMapUnmanaged(Node.Index, Node.Index) {
+        if (g.checks_by_identity) |map| return map;
+        const map = try g.l.scratch.create(std.AutoHashMapUnmanaged(Node.Index, Node.Index));
+        map.* = .empty;
+        g.checks_by_identity = map;
+        return map;
+    }
+
+    fn checkName(g: *Gen, i: usize) !NameIndex {
+        return g.local(try std.fmt.allocPrint(g.l.scratch, "$check{d}", .{i}));
+    }
+
+    fn checkParameters(g: *Gen, params: []const NameIndex) ![]const Node.Index {
+        const out = try g.l.scratch.alloc(Node.Index, 2 * params.len);
+        if (g.worker_checks) |checks| {
+            for (checks, out) |check, *value| value.* = try g.id(check);
+            return out;
+        }
+        for (params, 0..) |param, i| {
+            out[2 * i] = if (g.in_description) try g.id(try g.checkName(2 * i)) else try g.call(try g.core("encodedCheck"), &.{try g.id(param)});
+            out[2 * i + 1] = if (g.in_description) try g.id(try g.checkName(2 * i + 1)) else try g.call(try g.core("typedCheck"), &.{try g.id(param)});
+        }
+        return out;
+    }
+
+    fn checker(g: *Gen, witness: Node.Index) !Node.Index {
+        const input = try g.fresh("$input");
+        return g.arrowOf(&.{input}, try g.call(try g.core("checkedInput"), &.{ witness, try g.id(input) }));
+    }
+
+    fn hostCheck(g: *Gen) !Node.Index {
+        const type_id = g.l.in.types.find(g.l.in.graph, .core, (try g.sym("Js")), (try g.sym("Value")));
+        return g.l.checkedShape(&.{.{ .kind = .named, .value = type_id.int() }}, &.{}, g.p);
+    }
+
+    fn typeCheck(g: *Gen, n: PNode, encoded: bool, params: []const NameIndex) !Node.Index {
+        if (encoded and g.codec) return g.hostCheck();
+        const term = if (encoded) g.plan.nodes.items(.encoded_term)[@backingInt(n)] else g.plan.nodes.items(.program_term)[@backingInt(n)];
+        if (try @import("SchemaWitness.zig").expression(g.l, g.plan, term, try g.checkParameters(params), g.p)) |value| return value;
+        try g.l.reportSchemaIdentity(g.p);
+        return g.lit(.undefined_lit);
+    }
+
     fn typeIdentity(g: *Gen, n: PNode, encoded: bool, params: []const NameIndex) !Node.Index {
         const identity_root = if (encoded) g.plan.nodes.items(.encoded_term)[@backingInt(n)] else g.plan.nodes.items(.program_term)[@backingInt(n)];
-        if (try @import("SchemaIdentity.zig").expression(g.l, g.plan, identity_root, try g.identityParameters(params), g.p)) |value| return value;
+        if (try @import("SchemaIdentity.zig").expression(g.l, g.plan, identity_root, try g.identityParameters(params), g.p)) |value| {
+            try (try g.checkMap()).put(g.l.scratch, value, try g.typeCheck(n, encoded, params));
+            return value;
+        }
         try g.l.reportSchemaIdentity(g.p);
         return g.lit(.undefined_lit);
     }
@@ -545,8 +593,17 @@ const Gen = struct {
         };
     }
 
+    fn unitIdentity(g: *Gen) !Node.Index {
+        const identity = try g.str("()");
+        try (try g.checkMap()).put(g.l.scratch, identity, try g.l.checkedShape(&.{.{ .kind = .unit }}, &.{}, g.p));
+        return identity;
+    }
+
     fn packDatum(g: *Gen, identity: Node.Index, value: Node.Index) !Node.Index {
-        return g.call(try g.core("packed"), &.{ identity, value });
+        return g.call(try g.core("packed"), &.{ identity, (try g.checkMap()).get(identity) orelse {
+            try g.l.reportSchemaIdentity(g.p);
+            return g.lit(.undefined_lit);
+        }, value });
     }
 
     fn unpackDatum(g: *Gen, identity: Node.Index, value: Node.Index) !Node.Index {
@@ -602,7 +659,11 @@ const Gen = struct {
     }
 
     fn wrappedIdentity(g: *Gen, prefix: []const u8, inner: Node.Index) !Node.Index {
-        return g.bin(.add, try g.bin(.add, try g.str(prefix), inner), try g.str(")"));
+        const wrapped = try g.bin(.add, try g.bin(.add, try g.str(prefix), inner), try g.str(")"));
+        const type_id = g.l.in.types.find(g.l.in.graph, .core, try g.sym("Schema"), try g.sym("Presence"));
+        const check = try g.l.checkedShape(&.{ .{ .kind = .named, .count = 1, .value = type_id.int() }, .{ .kind = .parameter, .value = 0 } }, &.{(try g.checkMap()).get(inner).?}, g.p);
+        try (try g.checkMap()).put(g.l.scratch, wrapped, check);
+        return wrapped;
     }
 
     fn fieldIdentity(g: *Gen, field_info: SchemaPlan.Field, encoded: bool, params: []const NameIndex) !Node.Index {
@@ -672,7 +733,7 @@ const Gen = struct {
 
     fn taggedInjection(g: *Gen, n: PNode, payload_node: SchemaPlan.NodeIndex.Optional, info: Variants, order: u32, name: Symbol, encoded: bool, params: []const NameIndex) !Node.Index {
         const outer_id = try g.typeIdentity(n, encoded, params);
-        const payload_id = if (payload_node.unwrap()) |child| try g.typeIdentity(child, encoded, params) else try g.str("()");
+        const payload_id = if (payload_node.unwrap()) |child| try g.typeIdentity(child, encoded, params) else try g.unitIdentity();
         const datum = try g.fresh("$datum");
         const payload = if (payload_node != .none) try g.unpackDatum(payload_id, try g.id(datum)) else null;
         const inject = try g.arrowOf(&.{datum}, try g.packDatum(outer_id, try g.variantValue(info, order, name, payload)));
@@ -706,6 +767,7 @@ const Gen = struct {
         var formals: std.ArrayList(NameIndex) = .empty;
         try formals.appendSlice(g.l.scratch, params);
         for (0..2 * params.len) |i| try formals.append(g.l.scratch, try g.identityName(i));
+        for (0..2 * params.len) |i| try formals.append(g.l.scratch, try g.checkName(i));
         if (recursive and g.params != 0) {
             const members = try g.cycleMembers();
             if (members.len > 1) {
@@ -773,7 +835,12 @@ const Gen = struct {
     fn argumentSlot(g: *Gen, op: Op, schema_value: Node.Index) !Node.Index {
         var args: std.ArrayList(Node.Index) = .empty;
         if (op == .decode or op == .encode) try args.append(g.l.scratch, try g.call(try g.core("encodedIdentity"), &.{schema_value}));
+        if (op == .decode) try args.append(g.l.scratch, try g.call(try g.core("encodedCheck"), &.{schema_value}));
         try args.append(g.l.scratch, try g.call(try g.core("typedIdentity"), &.{schema_value}));
+        if (!op.hostIn() and op != .decode) {
+            const getter = if (op == .decode) "encodedCheck" else "typedCheck";
+            try args.append(g.l.scratch, try g.call(try g.core(getter), &.{schema_value}));
+        }
         try args.append(g.l.scratch, schema_value);
         return g.rawWorker(try g.call(try g.core(op.slot()), args.items));
     }
@@ -782,7 +849,7 @@ const Gen = struct {
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
         const ids = try g.schemaIdentities(params);
-        const value = if (g.l.schemaLibrary()) try g.call(try g.core("boxWithIds"), &.{ ids[0], ids[1], try g.described(params) }) else compiled: {
+        const value = if (g.l.schemaLibrary()) try g.call(try g.core("boxWithIds"), &.{ try g.checker(try g.typeCheck(g.def.root, true, params)), try g.checker(try g.typeCheck(g.def.root, false, params)), ids[0], ids[1], try g.described(params) }) else compiled: {
             var args: [11]Node.Index = undefined;
             args[0] = ids[0];
             args[1] = ids[1];
@@ -811,6 +878,7 @@ const Gen = struct {
                     var call_args: std.ArrayList(Node.Index) = .empty;
                     for (ps.list()) |param| try call_args.append(g.l.scratch, try g.id(param));
                     for (bound) |param| try call_args.append(g.l.scratch, try g.id(param));
+                    try call_args.appendSlice(g.l.scratch, try g.checkParameters(params));
                     const raw = try g.arrowOf(&ps.list(), try g.call(worker, call_args.items));
                     typed = try g.call(try g.arrowOf(bound, try g.typedWorker(raw)), made.items);
                 }
@@ -820,7 +888,7 @@ const Gen = struct {
             var checked: std.ArrayList(Node.Index) = .empty;
             for (try g.sg.reachedParams(g.l.scratch, g.ref)) |i| try checked.append(g.l.scratch, try g.call(try g.core("argument"), &.{try g.id(params[i])}));
             args[5] = try g.l.arrayNode(checked.items, g.p);
-            break :compiled try g.call(try g.core("declared"), &args);
+            break :compiled try g.call(try g.core("declared"), try g.l.scratch.dupe(Node.Index, &.{ try g.checker(try g.typeCheck(g.def.root, true, params)), try g.checker(try g.typeCheck(g.def.root, false, params)), args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10] }));
         };
         if (params.len == 0) {
             const constant = try g.own("declared");
@@ -839,6 +907,7 @@ const Gen = struct {
         var args: std.ArrayList(Node.Index) = .empty;
         for (params) |param| try args.append(g.l.scratch, try g.call(try g.core("describedOf"), &.{try g.id(param)}));
         try args.appendSlice(g.l.scratch, try g.identityParameters(params));
+        try args.appendSlice(g.l.scratch, try g.checkParameters(params));
         return g.call(desc, args.items);
     }
 
@@ -913,6 +982,11 @@ const Gen = struct {
             const child: PNode = @fromBackingInt(@intCast(word));
             try args.append(g.l.scratch, if (g.sg.codecIndex(t.module, t.decl) != null) try g.str("core:Schema.Value") else try g.typeIdentity(child, true, params));
             try args.append(g.l.scratch, try g.typeIdentity(child, false, params));
+        }
+        for (words) |word| {
+            const child: PNode = @fromBackingInt(@intCast(word));
+            try args.append(g.l.scratch, if (g.sg.codecIndex(t.module, t.decl) != null) try g.hostCheck() else try g.typeCheck(child, true, params));
+            try args.append(g.l.scratch, try g.typeCheck(child, false, params));
         }
         return g.call(named, args.items);
     }
@@ -1377,7 +1451,11 @@ const Gen = struct {
             for (params) |param| try args.append(g.l.scratch, try g.id(param));
             if (params.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
             const s = try g.call(try g.id(try g.own("schema")), args.items);
-            break :blk try g.call(try g.core(with_suffix), &.{ (try g.schemaIdentities(params))[1], s, try g.id(options), try g.id(input) });
+            var call_args: std.ArrayList(Node.Index) = .empty;
+            try call_args.append(g.l.scratch, (try g.schemaIdentities(params))[1]);
+            if (op == .print) try call_args.append(g.l.scratch, try g.typeCheck(g.def.root, false, params));
+            try call_args.appendSlice(g.l.scratch, &.{ s, try g.id(options), try g.id(input) });
+            break :blk try g.call(try g.core(with_suffix), call_args.items);
         } else blk: {
             const worker_name = try g.own(op.workerSuffix());
             // The arguments the value reaches, in the order it meets them
@@ -1390,6 +1468,7 @@ const Gen = struct {
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (ps.list()) |n| try args.append(g.l.scratch, try g.id(n));
                 for (params) |param| try args.append(g.l.scratch, try g.argumentSlot(op, try g.id(param)));
+                try args.appendSlice(g.l.scratch, try g.checkParameters(params));
                 break :wrapped try g.arrowOf(&ps.list(), try g.call(try g.id(worker_name), args.items));
             };
             break :blk try g.call(try g.core(if (op == .parse) "compiledParse" else "compiledPrint"), &.{
@@ -1549,10 +1628,16 @@ const Gen = struct {
     fn emitWorker(g: *Gen, out: *Stmts, op: Op, n: PNode, name: NameIndex) !void {
         const ps = try g.workerParams();
         const slots = try g.slotNames();
+        const checks = try g.l.scratch.alloc(NameIndex, 2 * slots.len);
+        for (checks, 0..) |*check, i| check.* = try g.checkName(i);
+        const previous_checks = g.worker_checks;
+        g.worker_checks = checks;
+        defer g.worker_checks = previous_checks;
         var params: std.ArrayList(NameIndex) = .empty;
         try params.appendSlice(g.l.scratch, &ps.list());
         try params.appendSlice(g.l.scratch, slots);
-        var w: Fn = .{ .g = g, .op = op, .ps = ps, .slots = slots, .c = ps.c };
+        try params.appendSlice(g.l.scratch, checks);
+        var w: Fn = .{ .g = g, .op = op, .ps = ps, .slots = slots, .data_checks = checks, .input_node = n, .c = ps.c };
         var body: Stmts = .empty;
         switch (SchemaGraph.tag(g.plan, n)) {
             .record => try w.recordWorker(&body, n),
@@ -1593,6 +1678,8 @@ const Fn = struct {
     op: Op,
     ps: Gen.Params,
     slots: []const NameIndex,
+    data_checks: []const NameIndex,
+    input_node: PNode,
     /// The context the code reads: the parameter, or below an encoding
     /// conversion the one `belowBackward` made.
     c: NameIndex,
@@ -1642,6 +1729,11 @@ const Fn = struct {
         w.here = here;
     }
 
+    fn inputCheck(w: *Fn) !Node.Index {
+        if (w.op.hostIn()) return w.g.hostCheck();
+        return w.g.typeCheck(w.input_node, w.op.decoding(), try w.g.slotNames());
+    }
+
     /// `compiledFail(c, …at, code, message, input, written)`.
     fn fail(w: *Fn, at: At, code: Code, message: Node.Index, input: Node.Index, written: bool) !Node.Index {
         const g = w.g;
@@ -1649,6 +1741,7 @@ const Fn = struct {
         if (w.op == .valid) return w.failMark();
         const path = try w.pathArgs(at);
         return g.call(try g.core("compiledFail"), &.{
+            try w.inputCheck(),
             try g.id(w.c),
             path[0],
             path[1],
@@ -1676,7 +1769,7 @@ const Fn = struct {
                 null;
             if (shared) |h| if (g.sg.share.on(h)) {
                 const path = try w.pathArgs(at);
-                return g.call(try g.core(h.coreName()), &.{ try g.id(w.c), path[0], path[1], path[2], input });
+                return g.call(try g.core(h.coreName()), &.{ try w.inputCheck(), try g.id(w.c), path[0], path[1], path[2], input });
             };
         }
         return w.fail(at, code, try g.str(message), input, written);
@@ -1765,6 +1858,9 @@ const Fn = struct {
     fn into(w: *Fn, out: *Stmts, n: PNode, x: NameIndex, offset: u32, at: At, target: NameIndex) Allocator.Error!void {
         const g = w.g;
         const plan = g.plan;
+        const previous_node = w.input_node;
+        w.input_node = n;
+        defer w.input_node = previous_node;
         const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)));
         switch (SchemaGraph.tag(plan, n)) {
             .primitive => if (w.op.hostIn())
@@ -1779,6 +1875,7 @@ const Fn = struct {
                 try w.into(out, child, x, offset, at, b);
                 const path = try w.pathArgs(at);
                 const forward = try g.call(try g.core("compiledForward"), &.{
+                    try g.typeCheck(child, false, try g.slotNames()),
                     try g.id(w.c),
                     path[0],
                     path[1],
@@ -1794,6 +1891,7 @@ const Fn = struct {
                 const b = try g.fresh("$b");
                 const path = try w.pathArgs(at);
                 try g.constDecl(out, b, try g.maybeToRaw(try g.call(try g.core("compiledBackward"), &.{
+                    try g.typeCheck(n, false, try g.slotNames()),
                     try g.id(w.c),
                     path[0],
                     path[1],
@@ -1917,6 +2015,11 @@ const Fn = struct {
                 const callee = try g.id(try schemaName(g.l, t, w.op.workerSuffix()));
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (SchemaGraph.args(plan, n)) |a| try args.append(g.l.scratch, try w.slotFor(@fromBackingInt(@intCast(a))));
+                const schemas = try g.slotNames();
+                for (SchemaGraph.args(plan, n)) |a| {
+                    try args.append(g.l.scratch, try g.typeCheck(@fromBackingInt(@intCast(a)), true, schemas));
+                    try args.append(g.l.scratch, try g.typeCheck(@fromBackingInt(@intCast(a)), false, schemas));
+                }
                 return .{ callee, args.items };
             },
             // A derived codec's (schema.md §12.10): another definition's
@@ -1926,6 +2029,11 @@ const Fn = struct {
                 const callee = try g.id(try schemaName(g.l, t, w.op.workerSuffix()));
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (SchemaGraph.args(plan, n)) |a| try args.append(g.l.scratch, try w.slotFor(@fromBackingInt(@intCast(a))));
+                const schemas = try g.slotNames();
+                for (SchemaGraph.args(plan, n)) |a| {
+                    try args.append(g.l.scratch, try g.typeCheck(@fromBackingInt(@intCast(a)), true, schemas));
+                    try args.append(g.l.scratch, try g.typeCheck(@fromBackingInt(@intCast(a)), false, schemas));
+                }
                 return .{ callee, args.items };
             },
             // A module's `codec`, through its own workers, as a schema
@@ -1937,6 +2045,7 @@ const Fn = struct {
             else => {
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (w.slots) |s| try args.append(g.l.scratch, try g.id(s));
+                for (w.data_checks) |check| try args.append(g.l.scratch, try g.id(check));
                 return .{ try g.id(try g.nodeWorkerName(w.op, n)), args.items };
             },
         }
@@ -1969,6 +2078,7 @@ const Fn = struct {
         var args: std.ArrayList(Node.Index) = .empty;
         for (ps.list()) |p| try args.append(g.l.scratch, try g.id(p));
         for (w.slots) |s| try args.append(g.l.scratch, try g.id(s));
+        for (w.data_checks) |check| try args.append(g.l.scratch, try g.id(check));
         return g.arrowOf(&ps.list(), try g.call(worker, args.items));
     }
 

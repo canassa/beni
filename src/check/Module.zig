@@ -1055,7 +1055,10 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     std.mem.sort(Bir.Inst.Index, appends.items, {}, instLessThan);
     // What JavaScript sees through each `Js.from` and `Js.to`, read here
     // for the same reason (checker-v2.md §28).
-    const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items, solver.instantiate.opt_payload.items, solver.cx);
+    const cast_boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items, solver.instantiate.opt_payload.items, solver.cx);
+    defer gpa.free(cast_boundary);
+    defer gpa.free(identity.boundary);
+    const boundary = try std.mem.concat(gpa, Dispatch.Boundary, &.{ cast_boundary, identity.boundary });
     errdefer gpa.free(boundary);
     // The type each `Debug.toString` and `Debug.log` prints, read here for
     // the same reason (checker-v2.md §32).

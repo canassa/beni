@@ -1,0 +1,68 @@
+-- Checked-data evidence crosses generic code independently of Any identity.
+import Browser.Host.Fetch as Fetch
+import Js.Any as Any
+import Js.Data as Data
+import Node
+
+
+type Recursive
+    = End
+    | More Int Recursive
+
+
+classify : a → String
+classify value =
+    case Data.checked value of
+        Just _ →
+            "data"
+        Nothing →
+            "hidden"
+
+
+comparable : a → String
+    where a.compare : a, a → Order
+comparable value = classify value
+
+
+row : { r | answer : Int } → String
+row value = classify value
+
+
+optional : Maybe Fetch.Body
+optional = Nothing
+
+
+empty : List Fetch.Body
+empty = []
+
+
+readRecord : Any.Any → Maybe { answer : Int }
+readRecord box = Any.unpack box
+
+
+unpacked : String
+unpacked =
+    case readRecord (Any.pack { answer = 42 }) of
+        Just value →
+            row value
+        Nothing →
+            "failed unpack"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ classify { answer = 42 }
+        , classify (Any.pack { answer = 42 })
+        , classify { nested = Just (Any.pack { answer = 42 }) }
+        , classify optional
+        , classify (Just (Fetch.textBody "native"))
+        , classify empty
+        , classify [ Fetch.textBody "native" ]
+        , classify (Fetch.textBody "native")
+        , classify (More 1 (More 2 End))
+        , comparable 42
+        , row { answer = 42, extra = "plain" }
+        , row { answer = 42, extra = Fetch.textBody "native" }
+        , unpacked
+        ]

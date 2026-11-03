@@ -483,6 +483,7 @@ pub const Markup = struct {
     /// A runtime export the module supplies: its name, its declaration in
     /// the module, and its row among the module's interface values.
     pub const IdentityArgument = struct {
+        kind: enum { identity, checked_data } = .identity,
         argument: u32,
         endpoint: enum { encoded, typed },
     };
@@ -8072,7 +8073,7 @@ pub const Lowerer = struct {
                             if (use.index >= n or rank[use.index] == infinite) break false;
                             deepest = @max(deepest, rank[use.index]);
                         },
-                        .param, .ext_derived, .field, .identity, .text, .codec => break false,
+                        .param, .ext_derived, .field, .identity, .text, .codec, .checked => break false,
                     }
                 } else true;
                 if (!ok or deepest + 1 > leaf_rank_limit) continue;
@@ -8167,6 +8168,7 @@ pub const Lowerer = struct {
             // A type's identity (`static-dispatch-spike.md` §8.6): its text,
             // a parameter's value joined in with `+`.
             .identity, .text => return l.identityValue(i, p),
+            .checked => return l.checkedWitness(i, p),
             // A derived codec (`schema.md` §12.10): a function of `⊤`
             // answering its schema — its `schema` binding itself, or, for a
             // codec of slots, an arrow that hands it each slot's schema.
@@ -8188,6 +8190,51 @@ pub const Lowerer = struct {
     /// text, else the parts joined left to right with `+`, a parameter
     /// read by its name (`backend.md` §4, *`Js.fingerprint` is its type's
     /// identity*).
+    fn checkedWitness(l: *Lowerer, root: Dispatch.TermIndex, p: u32) Allocator.Error!Node.Index {
+        const dispatch = l.in.dispatch;
+        var nodes: std.ArrayList(Dispatch.DebugNode) = .empty;
+        var parameters: std.ArrayList(Node.Index) = .empty;
+        var stack: std.ArrayList(Dispatch.TermIndex) = .empty;
+        try stack.append(l.scratch, root);
+        while (stack.pop()) |index| switch (dispatch.term(index)) {
+            .param => |parameter| {
+                try nodes.append(l.scratch, .{ .kind = .parameter, .value = @intCast(parameters.items.len) });
+                try parameters.append(l.scratch, try l.termName(.{ .param = parameter }, p));
+            },
+            .checked => |shape| {
+                const children = dispatch.argsAt(shape.args);
+                try nodes.append(l.scratch, .{ .kind = shape.kind, .value = shape.value, .count = @intCast(children.len) });
+                var n = children.len;
+                while (n > 0) {
+                    n -= 1;
+                    try stack.append(l.scratch, children[n]);
+                }
+            },
+            else => {
+                try l.reportEvidenceShape(l.region);
+                return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+        };
+        return l.checkedShape(nodes.items, parameters.items, p);
+    }
+
+    pub fn checkedShape(l: *Lowerer, nodes: []const Dispatch.DebugNode, parameters: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        if (nodes.len == 1 and nodes[0].kind == .parameter) return parameters[nodes[0].value];
+        const context: DebugShape.Context = .{ .birs = l.in.birs, .types = l.in.types, .interner = l.interner.global, .checked_data = true };
+        const descriptor = try DebugShape.text(l.scratch, &context, nodes);
+        // Scalar witnesses are immutable literals, including native refusals.
+        // Packing each scalar must not allocate a witness beside its Any box.
+        if (parameters.len == 0 and descriptor.len > 1 and descriptor[1] == '"')
+            return l.stringNode(descriptor, p);
+        const any_module = l.interner.global.find("Js.Any") orelse return l.missingCoreValue(p, "Js.Any", "pack", "there is no such module");
+        const owner = l.in.graph.lookup(.core, any_module) orelse return l.missingCoreValue(p, "Js.Any", "pack", "there is no such module");
+        const pack_name = l.interner.global.find("pack") orelse unreachable;
+        const pack = l.in.interfaces[owner.int()].findValue(l.interner.global, pack_name) orelse unreachable;
+        try l.need(owner, @backingInt(pack));
+        const packet_owner = try l.ident(try l.externalName(owner, @backingInt(pack)), p);
+        return l.arrayNode(&.{ try l.stringNode(descriptor, p), try l.arrayNode(parameters, p), packet_owner, try l.optNone(p) }, p);
+    }
+
     fn identityValue(l: *Lowerer, i: Dispatch.TermIndex, p: u32) Allocator.Error!Node.Index {
         const d = l.in.dispatch;
         const parts: []const Dispatch.TermIndex = switch (d.term(i)) {
@@ -9443,7 +9490,7 @@ pub const Lowerer = struct {
                 }
                 return try l.derivedPartCall(part, .eq, left, right, p);
             },
-            .field, .identity, .text, .codec => {
+            .field, .identity, .text, .codec, .checked => {
                 try l.reportDispatchBug(region, field_inside_derived);
                 return null;
             },
@@ -9505,7 +9552,7 @@ pub const Lowerer = struct {
                 }
                 return try l.derivedPartCall(part, .compare, left, right, p);
             },
-            .field, .identity, .text, .codec => {
+            .field, .identity, .text, .codec, .checked => {
                 try l.reportDispatchBug(region, field_inside_derived);
                 return null;
             },
@@ -10260,7 +10307,7 @@ pub const Lowerer = struct {
             },
             // Never a callee: an `err` site becomes no term at all, and an
             // identity is only ever a root.
-            .undetermined, .identity, .text, .codec => {
+            .undetermined, .identity, .text, .codec, .checked => {
                 try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
@@ -10460,7 +10507,7 @@ pub const Lowerer = struct {
                 try l.reportDispatchBug(inst, field_without_receiver);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            .undetermined, .identity, .text, .codec => {
+            .undetermined, .identity, .text, .codec, .checked => {
                 try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
@@ -20263,7 +20310,7 @@ pub const Lowerer = struct {
         var args: std.ArrayList(Node.Index) = .empty;
         for (params) |*param| param.* = try l.fresh(l.well.temp);
         for (supplied.identities) |identity| {
-            const getter = try l.coreSchemaValue(if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity", p);
+            const getter = try l.coreSchemaValue(if (identity.kind == .checked_data) (if (identity.endpoint == .encoded) "encodedCheck" else "typedCheck") else (if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity"), p);
             const schema = try l.ident(params[identity.argument], p);
             try args.append(l.scratch, try l.call(getter, &.{schema}, p));
         }

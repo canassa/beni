@@ -3361,7 +3361,7 @@ const Emitter = struct {
         while (q < scheme.quantified_count) : (q += 1) {
             const quantified = iface.quantified(scheme, q);
             if (quantified.constraints_len != 0) return null;
-            if (!quantified.identity) continue;
+            if (!quantified.identity and !quantified.checked_data) continue;
             const source: Lower.Markup.IdentityArgument = found: {
                 for (params, 0..) |param, argument| {
                     const view = try e.expandRuntimeType(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(param)), .bindings = root.bindings });
@@ -3380,7 +3380,12 @@ const Emitter = struct {
                 }
                 return null;
             };
-            try sources.append(e.scratch, source);
+            if (quantified.identity) try sources.append(e.scratch, source);
+            if (quantified.checked_data) {
+                var check = source;
+                check.kind = .checked_data;
+                try sources.append(e.scratch, check);
+            }
         }
         return try sources.toOwnedSlice(e.scratch);
     }
@@ -3505,7 +3510,7 @@ const Emitter = struct {
         const module = e.graph().lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
         const b = e.bir(module);
         for (supplied.identities) |identity| {
-            const name = if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity";
+            const name = if (identity.kind == .checked_data) (if (identity.endpoint == .encoded) "encodedCheck" else "typedCheck") else (if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity");
             for (b.decls, 0..) |decl, index| {
                 if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(decl.name)), name)) continue;
                 try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(index) });

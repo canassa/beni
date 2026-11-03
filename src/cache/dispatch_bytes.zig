@@ -94,7 +94,7 @@ pub const magic = "BENIDSP\x00";
 /// 15: effect declaration byte 2 carries the totality proof.
 /// 16: effect rows grow to 8 bytes with call and initializer realm masks.
 /// 17: identity-only binders and tagged unconstrained quantifier slots.
-pub const format_version: u32 = 17;
+pub const format_version: u32 = 18;
 
 pub const Column = enum(u32) {
     terms,
@@ -600,6 +600,15 @@ const Writer = struct {
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(u.module), .little);
                 std.mem.writeInt(u32, row[8..12], try w.typeRef(u.type), .little);
             },
+            .checked => |u| {
+                row[1] = @backingInt(u.kind);
+                const value = switch (u.kind) {
+                    .field => try w.string(@fromBackingInt(@intCast(u.value))),
+                    .named => try w.typeRef(@fromBackingInt(@intCast(u.value))),
+                    else => u.value,
+                };
+                std.mem.writeInt(u32, row[4..8], value, .little);
+            },
             .text => |r| writeRange(row[4..12], r),
             .undetermined, .field, .identity => {},
         }
@@ -739,6 +748,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         out.table.terms = terms;
         for (terms, 0..) |*t, i| {
             t.* = try readTerm(in_bytes[i * term_bytes ..][0..term_bytes], module_ref_count, type_ref_count);
+            if (t.* == .checked and t.checked.kind == .field) t.checked.value = @backingInt(try symbolAt(blob, t.checked.value, in) orelse return error.BadSidecar);
         }
     }
     {
@@ -1024,7 +1034,7 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
     // Only the four terms that name a function take arguments; any other
     // row with a non-empty range is not one this writer produced.
     switch (tag) {
-        .top, .ext, .derived, .ext_derived, .identity, .codec => {},
+        .top, .ext, .derived, .ext_derived, .identity, .codec, .checked => {},
         else => if (args.len != 0) return error.BadSidecar,
     }
     return switch (tag) {
@@ -1048,6 +1058,11 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
         },
         .derived => .{ .derived = .{ .index = a, .args = args } },
         .codec => .{ .codec = .{ .index = a, .args = args } },
+        .checked => blk: {
+            const kind = std.enums.fromInt(Dispatch.DebugNode.Kind, row[1]) orelse return error.BadSidecar;
+            if (kind == .parameter or (kind == .named and a != no_ref and a >= type_refs)) return error.BadSidecar;
+            break :blk .{ .checked = .{ .kind = kind, .value = a, .args = args } };
+        },
         .ext_derived => blk: {
             if (a != no_ref and a >= module_refs) return error.BadSidecar;
             if (b != no_ref and b >= type_refs) return error.BadSidecar;
@@ -1116,6 +1131,22 @@ pub fn verify(l: *const Loaded) bool {
                 .derived => |index| if (index >= d.derived.len) return false,
                 else => {},
             },
+            .checked => |shape| {
+                switch (shape.kind) {
+                    .parameter => return false,
+                    .field, .row => if (r.len != 1) return false,
+                    .unknown, .function, .unit => if (r.len != 0) return false,
+                    .record => for (d.argsAt(r)) |arg| {
+                        const child = d.terms[arg.int()];
+                        if (child != .checked or (child.checked.kind != .field and child.checked.kind != .row)) return false;
+                    },
+                    .named, .tuple => {},
+                }
+                for (d.argsAt(r)) |arg| switch (d.terms[arg.int()]) {
+                    .checked, .param => {},
+                    else => return false,
+                };
+            },
             .text => |x| if (!rangeOk(x, d.text.len)) return false,
             // An identity's parts are text or a parameter (checker-v2.md §33).
             .identity => for (d.argsAt(r)) |arg| switch (d.terms[arg.int()]) {
@@ -1170,6 +1201,7 @@ pub fn verify(l: *const Loaded) bool {
         var owed: u64 = 1;
         for (d.debugShape(s)) |n| {
             if (owed == 0) return false;
+            if (n.kind == .parameter or n.kind == .row) return false;
             owed = owed - 1 + n.count;
             if (n.kind == .field and n.count != 1) return false;
         }
@@ -1186,7 +1218,16 @@ fn identitiesOk(d: *const Dispatch, r: Dispatch.Range, requirements: Dispatch.Ra
     if (r.len == 0) return true;
     var last_requirement: ?u32 = null;
     var last_quantifier: ?u32 = null;
-    for (d.identities[r.start..][0..r.len]) |j| {
+    var last_checked: ?u32 = null;
+    for (d.identities[r.start..][0..r.len]) |tagged| {
+        const j = tagged & ~Dispatch.checked_evidence;
+        if (tagged & Dispatch.checked_evidence != 0) {
+            if (j & Dispatch.identity_quantifier == 0) return false;
+            const q = j & Dispatch.evidence_index;
+            if (last_checked) |previous| if (previous >= q) return false;
+            last_checked = q;
+            continue;
+        }
         if (j & Dispatch.identity_quantifier != 0) {
             const quantifier = j & ~Dispatch.identity_quantifier;
             if (last_quantifier) |previous| if (previous >= quantifier) return false;
@@ -1250,6 +1291,9 @@ fn resolveTerm(
     type_count: u32,
 ) void {
     switch (t.*) {
+        .checked => |u| {
+            if (u.kind == .named) t.checked.value = resolveType(l, graph, types, u.value, type_count).int();
+        },
         .ext => |e| t.* = .{ .ext = .{
             .module = resolveModule(l, graph, @backingInt(e.module), modules),
             .value = e.value,
@@ -1974,4 +2018,32 @@ test "identity-only and mixed identity binders round-trip without method placeho
     // Repeating the first unconstrained quantifier remains malformed.
     std.mem.writeInt(u32, corrupt[identities + 12 ..][0..4], Dispatch.identity_quantifier, .little);
     try testing.expectError(error.BadSidecar, read(gpa, corrupt, &global));
+}
+
+test "checked data evidence round-trips symbols and independent hidden demands" {
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const field = try global.getOrPut(gpa, "nativeOrData");
+    const table: Dispatch = .{
+        .terms = &.{
+            .{ .checked = .{ .kind = .record, .args = .{ .start = 0, .len = 1 } } },
+            .{ .checked = .{ .kind = .field, .value = @backingInt(field), .args = .{ .start = 1, .len = 1 } } },
+            .{ .param = .{ .binder = .decl, .k = 1 } },
+        },
+        .args = &.{ @fromBackingInt(1), @fromBackingInt(2) },
+        .decls = &.{.{ .identities = .{ .len = 2 }, .convention = .function, .value_arity = 1 }},
+        .identities = &.{ Dispatch.identity_quantifier, Dispatch.checked_evidence | Dispatch.identity_quantifier },
+    };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    defer loaded.deinit(gpa);
+    try testing.expectEqualSlices(Dispatch.Term, table.terms, loaded.table.terms);
+    try testing.expectEqualSlices(u32, table.identities, loaded.table.identities);
+    // A scalar with a child is corrupt evidence, not a partial shape to trust.
+    bytes[columnAt(bytes, .terms) + 1] = @backingInt(Dispatch.DebugNode.Kind.unit);
+    try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
 }

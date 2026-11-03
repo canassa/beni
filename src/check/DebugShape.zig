@@ -74,7 +74,7 @@ pub fn rows(
             .log => if (func.params.len == 2) func.params[1] else continue,
         };
         const start: u32 = @intCast(nodes.items.len);
-        try walk(gpa, store, interner, printed, &nodes, &stack, &fields);
+        try walk(gpa, store, interner, printed, &nodes, &stack, &fields, false);
         const len: u32 = @as(u32, @intCast(nodes.items.len)) - start;
         if (len == 1 and nodes.items[start].kind == .unknown) {
             nodes.shrinkRetainingCapacity(start);
@@ -92,13 +92,21 @@ pub fn rows(
 /// values of (`dump --stage=writes --msg-types`, browser-direct.md §8.3,
 /// amended 2026-10-09), read as `Debug.toString` reads a printed value's.
 pub fn shape(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var) Allocator.Error![]Dispatch.DebugNode {
+    return shapeInternal(gpa, store, interner, v, false);
+}
+
+pub fn shapeVariables(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var) Allocator.Error![]Dispatch.DebugNode {
+    return shapeInternal(gpa, store, interner, v, true);
+}
+
+fn shapeInternal(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var, variables: bool) Allocator.Error![]Dispatch.DebugNode {
     var nodes: std.ArrayList(Dispatch.DebugNode) = .empty;
     defer nodes.deinit(gpa);
     var stack: std.ArrayList(Item) = .empty;
     defer stack.deinit(gpa);
     var fields: std.ArrayList(TypeStore.Field) = .empty;
     defer fields.deinit(gpa);
-    try walk(gpa, store, interner, v, &nodes, &stack, &fields);
+    try walk(gpa, store, interner, v, &nodes, &stack, &fields, variables);
     return nodes.toOwnedSlice(gpa);
 }
 
@@ -112,6 +120,7 @@ fn walk(
     nodes: *std.ArrayList(Dispatch.DebugNode),
     stack: *std.ArrayList(Item),
     fields: *std.ArrayList(TypeStore.Field),
+    variables: bool,
 ) Allocator.Error!void {
     stack.clearRetainingCapacity();
     try stack.append(gpa, .{ .type = root });
@@ -119,6 +128,10 @@ fn walk(
     while (stack.pop()) |item| {
         written += 1;
         switch (item) {
+            .row => |v| {
+                try nodes.append(gpa, .{ .kind = .row, .count = 1 });
+                try stack.append(gpa, .{ .type = v });
+            },
             .field => |f| {
                 try nodes.append(gpa, .{ .kind = .field, .count = 1, .value = @backingInt(f.name) });
                 try stack.append(gpa, .{ .type = f.value });
@@ -128,7 +141,7 @@ fn walk(
                     try nodes.append(gpa, .{ .kind = .unknown });
                     continue;
                 }
-                try node(gpa, store, interner, t, nodes, stack, fields);
+                try node(gpa, store, interner, t, nodes, stack, fields, variables);
             },
         }
     }
@@ -139,6 +152,7 @@ fn walk(
 const Item = union(enum) {
     type: Var,
     field: TypeStore.Field,
+    row: Var,
 };
 
 /// `v`'s own node, its children pushed so that they pop in order.
@@ -150,11 +164,13 @@ fn node(
     nodes: *std.ArrayList(Dispatch.DebugNode),
     stack: *std.ArrayList(Item),
     fields: *std.ArrayList(TypeStore.Field),
+    variables: bool,
 ) Allocator.Error!void {
     switch (store.resolvedContent(v)) {
         // Which type a variable holds is not known here, and an `err` is a
         // hole a message already covers.
-        .flex, .rigid, .err, .alias => try nodes.append(gpa, .{ .kind = .unknown }),
+        .flex, .rigid => try nodes.append(gpa, if (variables) .{ .kind = .parameter, .value = store.find(v).int() } else .{ .kind = .unknown }),
+        .err, .alias => try nodes.append(gpa, .{ .kind = .unknown }),
         .structure => |flat| switch (flat) {
             .unit => try nodes.append(gpa, .{ .kind = .unit }),
             .func => try nodes.append(gpa, .{ .kind = .function }),
@@ -182,14 +198,16 @@ fn node(
                 // does not find here it reads by representation.
                 fields.clearRetainingCapacity();
                 var concatenated = false;
-                _ = try Walk.recordRow(store, r, fields, gpa, &concatenated);
+                const end = try Walk.recordRow(store, r, fields, gpa, &concatenated);
                 // By TEXT: a `Symbol` id depends on `--jobs` (§17).
                 std.mem.sort(TypeStore.Field, fields.items, interner, struct {
                     fn lessThan(pool: *const InternPool.Global, a: TypeStore.Field, b: TypeStore.Field) bool {
                         return std.mem.lessThan(u8, pool.slice(a.name), pool.slice(b.name));
                     }
                 }.lessThan);
-                try nodes.append(gpa, .{ .kind = .record, .count = @intCast(fields.items.len) });
+                const tail: ?Var = if (variables and end == .open) end.open else null;
+                try nodes.append(gpa, .{ .kind = .record, .count = @intCast(fields.items.len + @intFromBool(tail != null)) });
+                if (tail) |vrow| try stack.append(gpa, .{ .row = vrow });
                 var k = fields.items.len;
                 while (k > 0) {
                     k -= 1;
