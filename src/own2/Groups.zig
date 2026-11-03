@@ -605,8 +605,7 @@ pub const DeclResult = struct {
     decl: u32,
     /// Its body code's final contract, or `none` (a limit stopped it).
     contract: u32 = none,
-    /// Rounds of evaluations its group took (§2.12): 2 when nothing moved
-    /// after the first.
+    /// Rounds of evaluations its group took (§2.12): 2 when nothing moved after the first.
     rounds: u32 = 0,
     /// Walks of its codes: one each.
     walks: u32 = 0,
@@ -662,8 +661,7 @@ pub const Module = struct {
     body_code: []u32 = &.{},
     /// Lambdas', local functions' and references' codes by instruction.
     code_of_inst: Ids.FixedDict(1) = .{},
-    /// Imported declarations passed as evidence: their codes by
-    /// `(module, declaration)`.
+    /// Imported declarations passed as evidence: their codes by `(module, declaration)`.
     evidence_code: Ids.FixedDict(2) = .{},
     /// Per imported module read: its contracts by declaration.
     imported: stamped.Column(u32, ?[]u32) = .{},
@@ -678,9 +676,8 @@ pub const Module = struct {
     pessimistic_of: std.ArrayList(u32) = .empty,
     /// Worded contracts by declaration and places (§4.1, #1714).
     worded: Worded.Worded = .{},
-    /// The imports' blocks read and those that did not round-trip.
+    /// The imports' blocks read, and the modules whose block was missing or did not round-trip (§3.6).
     imports_read: u32 = 0,
-    /// The imported modules whose block was missing or unreadable (§3.6).
     imports_unknown: std.ArrayList(u32) = .empty,
 
     pub fn deinit(mod: *Module) void {
@@ -718,8 +715,7 @@ pub const Module = struct {
         return .{ .gpa = mod.gpa, .arena = arena, .account = mod.account, .places = &mod.places, .slots = &mod.slots, .contracts = &mod.contracts };
     }
 
-    /// The contract declaration `di` of module `m` publishes, read from
-    /// `m`'s block at the first need.
+    /// The contract declaration `di` of module `m` publishes, read from `m`'s block at the first need.
     fn importedContract(mod: *Module, m: u32, di: u32) Error!?u32 {
         const imports = mod.in.imports orelse return null;
         if (!mod.imported.contains(m)) {
@@ -1194,8 +1190,7 @@ pub const Module = struct {
         };
     }
 
-    /// The contract of declaration `di`'s body when it is done and within
-    /// its limits; null otherwise.
+    /// The contract of declaration `di`'s body when it is done and within its limits; null otherwise.
     pub fn walkedContract(mod: *const Module, di: u32) ?u32 {
         if (di >= mod.result_of.len) return null;
         if (mod.result_of[di] == none) {
