@@ -53,14 +53,12 @@ pub const Evaluation = struct {
     /// The walk's demands, then the calls' (this evaluation's).
     demands: std.ArrayList(Demand) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
-    /// Per frame label: the calls whose callee's label passes on to it, as
-    /// `(call, callee label)` pairs, for the read-off of its supplies.
+    /// Per frame label: the calls whose callee's label passes on to it, as `(call, callee label)` pairs, for the read-off of its supplies.
     passes: std.ArrayList([3]u32) = .empty,
     /// The group being solved, and this code's index in it (§2.12).
     solver: ?*const Group = null,
     x: u32 = none,
-    /// The read-off under way (`factsOff`): later demands and escapes go
-    /// into it as they are made.
+    /// The read-off under way (`factsOff`): later demands and escapes go into it as they are made.
     sink: Sink = undefined,
     facts_on: bool = false,
     hooks: Hooks = undefined,
@@ -402,7 +400,10 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         d.kind = .callsite;
         const outer = virtualOuter(e, q);
         if (outer) |o| {
-            d.pending = e.w.sites.items[o[0]].pending;
+            // The outer call may be virtual too (a label of a known code's own label): the operands pending are the walked call's.
+            var wq = o[0];
+            while (wq >= e.w.walk_calls) wq = (virtualOuter(e, wq) orelse break)[0];
+            d.pending = if (wq < e.w.walk_calls) e.w.sites.items[wq].pending else none;
             const oc = f.calls.items[o[0]];
             const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
             // A cell callback's write of the contents is deep at the cell's
@@ -416,7 +417,8 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
                     d.kept = true;
                 };
             };
-            d.callee_inst = oc.head;
+            // A virtual call's head is a code, never an instruction: the walked call names the demand.
+            d.callee_inst = if (wq < e.w.walk_calls) f.calls.items[wq].head else none;
             const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
             d.base_inst = sa.inst;
             d.write_path, d.write_rel = .{ sa.path, 0 };
