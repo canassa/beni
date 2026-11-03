@@ -13,6 +13,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Trees = @import("Trees.zig");
+const Normal = @import("Normal.zig");
 const Forest = @import("Forest.zig");
 
 pub const Rel = Slots.Rel;
@@ -224,6 +225,15 @@ pub const Table = struct {
     pub fn head(t: *const Table, c: Id) Head {
         return t.heads.items[c];
     }
+    /// The parameter whose whole subtree `c`'s result is, at its own path,
+    /// when `c` writes nothing of it (§2.11.2, *the identity control*).
+    pub fn identityOf(t: *const Table, c: Id) ?u32 {
+        const h = t.heads.items[c];
+        if (!h.flags.returns or h.flags.cross) return null;
+        const j = t.trees.identity(h.res_root) orelse return null;
+        for (t.writesOf(h.writes)) |x| if (x[0] == j) return null;
+        return j;
+    }
     pub fn effectsOf(t: *const Table, r: Range) []const Effect {
         return t.effects.items[r.start..][0..r.len];
     }
@@ -417,7 +427,13 @@ pub const Table = struct {
             flat.items[m] = x;
             m += 1;
         }
-        var root = try t.treeOf(gpa, slots, flat.items[0..m], 0);
+        // One normal form (§2.11.2): what an open arrival above says by structure is not said again.
+        var kept: usize = 0;
+        for (flat.items[0..m]) |x| if (!Normal.saidAbove(slots, flat.items[0..m], x)) {
+            flat.items[kept] = x;
+            kept += 1;
+        };
+        var root = try t.treeOf(gpa, slots, flat.items[0..kept], 0);
         var memo: Ids.FixedDict(2) = .{};
         defer memo.deinit(gpa);
         const less = lessOf(slots);

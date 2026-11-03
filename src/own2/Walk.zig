@@ -240,6 +240,7 @@ const Res = struct { v: u32 = none, local: u32 = none, path: PathId = .none };
 const Walker = struct {
     w: *Walk,
     ctx: Context,
+    contracts: *const Contract.Table,
     bir: *const Bir,
     prepass: *const Facts.Prepass,
     gpa: Allocator,
@@ -938,6 +939,9 @@ const Walker = struct {
         const head: u32 = if (k.tag(i) == .call) k.data(i).lhs else i;
         try fr.calls.append(k.gpa, .{ .inst = i, .head = head, .point = i, .args = try fr.mkKids(all.items), .arg_insts = try fr.mkWords(insts.items), .root = root, .code = code, .contract = if (fixed) |c| c else none });
         try k.w.sites.append(k.gpa, .{ .pending = try k.pendingRun(), .foot = .{} });
+        // A settled callee (a contract at the walk: never the group's own) whose result is argument j's whole
+        // subtree answers that value itself, read and written as usual (§2.11.2, *the identity control*).
+        if (fixed orelse k.ctx.contractOf(k.ctx.ctx, code)) |c| if (k.contracts.identityOf(c)) |j| if (j < vals.len and try k.placeOf(arg_insts[j]) == at) return vals[j];
         if (!Slots.holdsAny(fr.places, fr.roots.items[root].path)) return fr.scalar();
         return fr.refRoot(root);
     }
@@ -1065,7 +1069,7 @@ fn concat(gpa: Allocator, a: []const u32, b: []const u32) Allocator.Error![]u32 
 }
 
 /// Walk `code` once (§2.12): its residue, in `w`.
-pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Place.Table, slots: *Slots.Table, regions: *const Regions.Tree, prepass: *const Facts.Prepass, bir: *const Bir, module: u32, ctx: Context, code: Code, atom: *u32, w: *Walk) Error!void {
+pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Place.Table, slots: *Slots.Table, regions: *const Regions.Tree, prepass: *const Facts.Prepass, bir: *const Bir, module: u32, ctx: Context, contracts: *const Contract.Table, code: Code, atom: *u32, w: *Walk) Error!void {
     const d = code.decl;
     const n = d.inst_end.int() - d.inst_start.int();
     const nl = d.locals_end - d.locals_start;
@@ -1080,6 +1084,7 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     var k: Walker = .{
         .w = w,
         .ctx = ctx,
+        .contracts = contracts,
         .bir = bir,
         .prepass = prepass,
         .gpa = gpa,

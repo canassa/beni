@@ -17,11 +17,6 @@ const PathId = Ids.PathId;
 const PlaceId = Ids.PlaceId;
 const Error = Slots.Error;
 
-/// A parameter's subtree that a contract's result returns at its own
-/// path is said by structure, one open arrival, past this many slots
-/// written out (§2.10, *Arrivals by structure*; #1715).
-pub const written_max: usize = 256;
-
 /// Whether `below(p)` written out has more than `n` slots: `belowAll`'s
 /// walk, stopped at the first slot past `n` (never written out whole).
 pub fn moreBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId, n: usize) Error!bool {
