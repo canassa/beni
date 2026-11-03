@@ -10736,8 +10736,10 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     // selection spells a subtree of at most `below_min` slots written out
     // (§2.9.1, *One spelling of a subtree*): `π2{ε*}` is `Tree`'s five
     // lists and `#1.0⟲*` is `#1.0⟲#1.1`. The result, the point of this
-    // test, is unchanged.
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1ε* π2ε*\n") != null);
+    // test, is unchanged. `a` returns at its own path, so since the identity
+    // control (§2.11.2) its subtree is one open arrival, `#1.0⟲… π1#1.0⟲`,
+    // whatever its size: `#1.0⟲#1.1`'s `π1#1.0⟲#1.1` is said by it.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲… π1#1.0⟲, #1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1ε* π2ε*\n") != null);
 }
 
 test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {

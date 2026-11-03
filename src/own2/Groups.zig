@@ -1470,7 +1470,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         charging(mod, &r.account);
         mod.cur_locals = in.bir.decls[r.decl].locals_start;
         const w = try arena.create(Walk.Walk);
-        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), walkCode(mod, id), &atoms[owner.items[x]], w);
+        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), &mod.contracts, walkCode(mod, id), &atoms[owner.items[x]], w);
         mod.codes.items[id].walk = w;
         r.walks += 1;
     }
