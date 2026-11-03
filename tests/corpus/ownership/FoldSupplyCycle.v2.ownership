@@ -1,0 +1,9 @@
+module FoldSupplyCycle
+  26:30 List.push p.1: accepted fresh
+  account firsts: source 54, baseline 2426, growth 0 of 65536, total 2426, continuation 2370 of 55296, demands 0, walks 2, rounds 3, liveness_index lanes 13, transfer_settlement lanes 5
+  summary firsts: res .1 fresh; nondup yes; reads π1ε* π2ε*; label π2ε@26 once [1: ε π1[*]* sep ⇐ sel π1{[*]*}]
+  account main: source 24, baseline 451, growth 0 of 65536, total 451, continuation 442 of 24576, demands 75, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary main: res ε fresh; nondup no
+  block: 20 bytes, hash 702063d3aa2693a1
+  demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
