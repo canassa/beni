@@ -2124,7 +2124,9 @@ test "every hand-written file that ships in the box is compacted and cut" {
         }
     }
     // A zero would mean the embedding broke and this looked at nothing.
-    try testing.expect(seen >= 10);
+    // #877 moves these files to beni one by one (nine were left when
+    // `WebSocket.js` went), so no higher floor holds for long.
+    try testing.expect(seen > 0);
     // The derived-comparison engine a release build writes (`Emit`), which
     // is hand-written JavaScript too, minified already.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
