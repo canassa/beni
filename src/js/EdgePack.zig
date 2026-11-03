@@ -3,14 +3,9 @@
 //! §8, *The checked core, embedded*, amended 2026-10-15; `backend.md` §9,
 //! *Incrementality (M4) and chunking (§10)*).
 //!
-//! **An edge list is a function of its module's check and of two build
-//! options.** `Reach.Builder.module` reads the module's `Bir` and dispatch
-//! table, the interfaces, provenance and types of what it names, and of
-//! the options only `--release` (which arm of an `if Js.development` it
-//! drops) and `--schema-library` (what a schema member's workers call). It
-//! reads no root. The module key is the whole input of the check, so a
-//! row is keyed by that key and the two options, and a build whose module
-//! has that key reads the row instead of building the list.
+//! An edge list depends on its checked module and release mode. Release
+//! mode decides which development-only arms survive. The row key contains
+//! the checked module key and that mode; it reads no program root.
 //!
 //! **A node names its module by package and dotted name**, never by
 //! `Graph.Index`: an index depends on which modules a build holds, and the
@@ -73,20 +68,17 @@ const Reach = @import("Reach.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 
 const magic = "BENIEDGE";
-pub const version: u32 = 3;
+pub const version: u32 = 4;
 
 /// The build options an edge list depends on.
 pub const Options = struct {
     release: bool,
-    schema_library: bool,
 };
 
 /// Every combination of `Options`: the rows the maker writes per module.
 pub const every_options = [_]Options{
-    .{ .release = false, .schema_library = false },
-    .{ .release = true, .schema_library = false },
-    .{ .release = false, .schema_library = true },
-    .{ .release = true, .schema_library = true },
+    .{ .release = false },
+    .{ .release = true },
 };
 
 /// The key of the row that holds the edge lists of the module whose key is
@@ -96,7 +88,7 @@ pub fn key(module: Key.Key, options: Options) Key.Key {
     @memcpy(bytes[0..magic.len], magic);
     std.mem.writeInt(u32, bytes[magic.len..][0..4], version, .little);
     @memcpy(bytes[magic.len + 4 ..][0..16], &module);
-    bytes[magic.len + 20] = @as(u8, @intFromBool(options.release)) | (@as(u8, @intFromBool(options.schema_library)) << 1);
+    bytes[magic.len + 20] = @intFromBool(options.release);
     return iface_bytes.hash(&bytes);
 }
 
@@ -125,7 +117,6 @@ pub fn input(scratch: Allocator, session: *const Session, options: Options) Allo
         .release = options.release,
         .vocabulary = session.graph.markup.vocabulary,
         .plans = session.checked.plans,
-        .schema_library = options.schema_library,
     };
 }
 

@@ -1492,7 +1492,7 @@ specialiser, run for every module as they always did.
 **the emit phase's work on the embedded modules goes into the pack too**, made by the maker when
 beni is built, in two steps.* First, each embedded module's reachability edge lists (`backend.md`
 §9, *Incrementality (M4) and chunking (§10)*). They do not depend on what a program uses, so they
-are one row per module and per option that changes them (`--release`, `--schema-library`). On
+are one row per module and release mode (amended 2026-11-03, `schema.md` A.14). On
 `browser/tea/ApiItems` they are 62 million of a development build's 545 million instructions, and
 on `run/Dictionaries` 32 of 180 million. Second, the lowered output of each declaration, with a
 spec of its own first. Lowered output depends on the live set, so its unit is a declaration and not
@@ -1508,12 +1508,11 @@ lists** (`src/js/EdgePack.zig`; `backend.md` §9, *Incrementality (M4) and chunk
 rows are a third kind, `edges`, beside entries and front-end artifacts, and no cache directory
 holds them.
 
-- **The key.** An edge list is a function of the module's check and of two build options:
-  `--release` (which arm of an `if Js.development` its walk drops) and `--schema-library` (what a
-  schema member's workers call). The module key is the whole input of the check. So a row's key is
-  SipHash-1-3 over `"BENIEDGE"`, a format version, the module key and one byte of the two options.
-  The maker writes four rows per module, one per combination, and the pack stores the bytes of two
-  rows with the same content once.
+- **The key** (amended 2026-11-03, `schema.md` A.14). An edge list is a function of the
+  module's check and `--release` (which arm of an `if Js.development` its walk drops). The
+  module key is the whole input of the check. A row's key is SipHash-1-3 over `"BENIEDGE"`,
+  format version 4, the module key and one byte for release mode. The maker writes two rows per
+  module and stores equal contents once. The removed interpreter contributes no option or row.
 - **A node names its module by package and dotted name**, never by `Graph.Index`. An index depends on
   which modules a build holds: the maker's graph holds all of core, and a program's graph holds the
   modules it imports. A build resolves each name with `Graph.find`. A target in a module that the
@@ -1558,18 +1557,14 @@ embedded module.** The rows are a fourth kind, `emit`; a development build joins
 lowering and printing those modules, and the contract of a unit, the join, the funnel and the
 marks is `backend.md` §9, *The embedded modules' printed text, in the pack*.
 
-- **The key.** The printed text depends on the module's check and on one build option besides
-  `--release`: `--schema-library`, which decides whether a schema member's workers call the
-  `core/Schema` interpreter or the specialised code (`js/SchemaLower.zig`). So a row's key is
-  SipHash-1-3 over `"BENIEMIT"`, a format version, the module key and one byte of that option. The
-  maker writes one row per option, and the pack stores the bytes of two rows with the same content
-  once. No embedded module declares a schema today, so the two rows hold the same bytes and the
-  dedupe stores one copy; the option byte stays in the key for the day one does. **A release build
-  computes no emit key and reads no row** — `--release` rewrites the text
-  after lowering, so release caching is a later step with its own spec.
+- **The key** (amended 2026-11-03, `schema.md` A.14). The printed development text depends
+  on the module's check; the interpreter option is gone. A row's key is SipHash-1-3 over
+  `"BENIEMIT"`, format version 3 and the module key. The maker writes one row per module.
+  **A release build computes no emit key and reads no row**: `--release` rewrites the text
+  after lowering, so release caching remains a separate step with its own spec.
 - **The maker** lowers each embedded module once with every survivor set all live — the world where
   everything is used — under a development build, prints it once and records the units
-  (`backend.md` §9). It writes both options' rows and refuses a pack that does not have both rows of
+  (`backend.md` §9). It writes one row and refuses a pack that does not have a row for
   every core and platform module, as it does for edge lists — a module with a codec plan has no row
   to require (`backend.md` §9's no-row refusal), and no embedded module has one today. Its root
   now reaches `js/Lower.zig`,

@@ -172,7 +172,6 @@ pub fn sites(
     dispatch: ?*const Dispatch,
     module: Graph.Index,
     sg: ?*const SchemaGraph,
-    library: bool,
     /// Whether this program's shape runs take their shapes: false, and each
     /// keeps the validator worker a run with no shape keeps.
     shapes: bool,
@@ -206,8 +205,6 @@ pub fn sites(
         const call_args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(call).rhs))), Inst.Index);
         switch (run) {
             .json_read, .json_parse => {
-                // Under `--schema-library` every run is the library's.
-                if (library) continue;
                 const g = sg orelse continue;
                 const d = dispatch orelse continue;
                 if (call_args.len != 1) continue;
@@ -235,12 +232,7 @@ pub fn sites(
                 try consumer(graph, interfaces, interner, bir, scratch, inst, &defaults, &maybes, &consumer_callees);
             },
             .schema_read, .schema_parse => {
-                // The schema `S.schema ⊤` of a nongeneric declaration, read
-                // by its validator worker. Under `--schema-library` no worker
-                // is written: a `read` calls `readValid`, which runs the
-                // schema through the library, and a `parse` keeps its own.
                 const direct_ref: ?struct { u32, u32, SchemaGraph.Ref } = blk: {
-                    if (library) break :blk null;
                     const g = sg orelse break :blk null;
                     if (call_args.len != 2 or bir.instTag(call_args[0]) != .call) break :blk null;
                     const arg = call_args[0];

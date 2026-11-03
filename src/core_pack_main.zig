@@ -265,7 +265,7 @@ fn addEdges(
 const ProgramName = struct { module: []const u8, name: []const u8 };
 
 /// Every core and platform module's development text, split in the units a
-/// join splices, under both `--schema-library` answers (`js/EmitPack.zig`;
+/// join splices, with one row per checked module (js/EmitPack.zig).
 /// `backend.md` §9, *The embedded modules' printed text, in the pack*). One
 /// row per option, and no row at all for a module the maker refuses
 /// (`fast-compiler.md` §8, *a module with a codec plan has no row to

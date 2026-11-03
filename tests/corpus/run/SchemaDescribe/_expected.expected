@@ -1,8 +1,4 @@
 { id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) }
-Flipped ({ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) })
-{ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) }
-TypeOnly ({ id as "the-id" : Converted (String), tags : List (String), note optional : Nullable (FiniteFloat) })
-EncodedOnly (List (Bool))
 Nullable (Null)
 Value
 tagged "shape" [ Dot as "dot" | Circle as "circle" { a : Float } ]

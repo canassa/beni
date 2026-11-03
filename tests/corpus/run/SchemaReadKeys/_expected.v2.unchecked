@@ -1,3 +1,7 @@
 Main point: lines 24-31 (not built: schema_member_top)
 Main named: lines 44-51 (not built: schema_member_top)
-Main main: lines 54-63 (not built: call)
+Main runtimePoint: lines 81-92 (not built: call)
+Main runtimeTag: lines 99-107 (not built: lambda)
+Main compiledTag: lines 120-124 (not built: ctor)
+Main compiledPayload: lines 127-140 (not built: call)
+Main main: lines 54-71 (not built: call)

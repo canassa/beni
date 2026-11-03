@@ -221,8 +221,8 @@ const Kind = enum {
             .check_good, .check_bad, .check_args, .check_depth, .dispatch, .typekeys, .writes, .ownership => .check,
             .build_bad, .build_bad_release, .emit, .repkeys => .build,
             .run => switch (pass) {
-                .dev, .dev_library, .dev_fiber => .run_dev,
-                .release, .release_library => .run_release,
+                .dev, .dev_fiber => .run_dev,
+                .release => .run_release,
             },
             .browser => .browser,
             .workers => .workers,
@@ -232,11 +232,7 @@ const Kind = enum {
 
 /// `run/`'s two builds of one fixture. Every other kind has one pass,
 /// which `partOf` is asked about as `.dev`.
-/// A fixture that declares a `schema` gets two more: each build again with
-/// `--schema-library`, every schema root forced through the library
-/// interpreter, against the same golden (`schema.md` §10's differential
-/// corpus).
-const RunPass = enum { dev, release, dev_library, release_library, dev_fiber };
+const RunPass = enum { dev, release, dev_fiber };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -1723,17 +1719,13 @@ const Case = struct {
         }
     }
 
-    /// `schema.md` §6, *A statically known schema runs compiled*: a fixture
-    /// with a `.compiled-schemas` file (`_expected.compiled-schemas` in a
-    /// project) builds only schemas the program fixes at compile time, so
-    /// its development build `out_dir` must ship no library interpreter —
-    /// no `core/Schema` `run`, which every interpreting runner calls, and no
-    /// `box`, the one maker of an `Interpreted` schema. The file's text says
-    /// why the fixture qualifies; it is never blessed.
+    /// Every schema runs compiled, including runtime composition (schema.md A.14).
+    /// A compiled-schemas marker additionally requires a Schema module in
+    /// development output; its text explains the fixture and is not blessed.
     fn checkCompiledSchemas(c: Case, out_dir: []const u8) !void {
-        if (!c.goldenExists("compiled-schemas")) return;
         const path = try std.fmt.allocPrint(c.arena, "{s}/_core/Schema.mjs", .{out_dir});
         if (!c.w.exists(path)) {
+            if (!c.goldenExists("compiled-schemas")) return;
             detail("{s} [{s}]: a .compiled-schemas fixture ships no core/Schema at all\n", .{ c.fixture.name, out_dir });
             because("[{s}] no _core/Schema.mjs in the output", .{out_dir});
             return error.CompiledSchemasNoSchema;
@@ -1742,7 +1734,7 @@ const Case = struct {
         const banned = [_][]const u8{ "const Schema$run = ", "const Schema$box = " };
         for (banned) |b| {
             if (std.mem.indexOf(u8, text, b) == null) continue;
-            detail("{s} [{s}]: the program's schemas are all statically known, but its build ships the library interpreter: `{s}` is in _core/Schema.mjs\n", .{ c.fixture.name, out_dir, b });
+            detail("{s} [{s}]: every schema must run compiled, but this build ships the removed interpreter: `{s}` is in _core/Schema.mjs\n", .{ c.fixture.name, out_dir, b });
             because("[{s}] ships the schema interpreter ({s})", .{ out_dir, b });
             return error.ShipsSchemaInterpreter;
         }
@@ -2182,8 +2174,8 @@ const Case = struct {
         checker: []const u8,
     };
     const lists_passes = [_]ListsPass{
-        .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .refuses = "sanitize-lists-refuses", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 7, .checker = "v1" },
-        .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .refuses = "sanitize-lists-v2-refuses", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 8, .checker = "v2" },
+        .{ .golden = "sanitize-lists", .crash = "sanitize-lists-crash", .refuses = "sanitize-lists-refuses", .out = "out-lists", .flags = &.{"--ownership-everywhere"}, .mode = .lists, .slot = 5, .checker = "v1" },
+        .{ .golden = "sanitize-lists-v2", .crash = "sanitize-lists-v2-crash", .refuses = "sanitize-lists-v2-refuses", .out = "out-lists-v2", .flags = &.{ "--ownership=v2", "--ownership-everywhere" }, .mode = .lists_v2, .slot = 6, .checker = "v2" },
     };
 
     fn ownershipRefuses(c: Case, platform_arg: []const u8, flags: []const []const u8, sources: []const []const u8) !bool {
@@ -2530,14 +2522,10 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [9]?[]const u8 = @splat(null);
+        var verified: [7]?[]const u8 = @splat(null);
         // Recording runs both builds whatever the first did, so one failing
         // build does not cost the other its line.
         var first_error: ?anyerror = null;
-        // A fixture that declares a schema is built again with every schema
-        // root forced through the library (`schema.md` §10): the two paths
-        // must print the one golden, which is written by hand.
-        const differential = try declaresSchema(c, sources);
 
         // Each pass runs in the process of its part (`corpus_parts.zig`):
         // the two build to different `--out` directories and compare with
@@ -2575,13 +2563,13 @@ const Case = struct {
                 if (c.cfg.mode == .pending) try stores.append(c.arena, "--diagnostics=json");
                 try stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
                 // The sanitiser first: a stale read traps there, naming its field.
-                verified[5] = c.runOnce("out-in-place", .dev, in_place.items, "expected", false, in_place_record) catch |err| blk: {
+                verified[3] = c.runOnce("out-in-place", .dev, in_place.items, "expected", false, in_place_record) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
                     if (first_error == null) first_error = err;
                     break :blk null;
                 };
-                verified[4] = c.runOnce("out-stores", .dev, stores.items, "expected", false, in_place_record) catch |err| blk: {
+                verified[2] = c.runOnce("out-stores", .dev, stores.items, "expected", false, in_place_record) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
                     if (first_error == null) first_error = err;
@@ -2594,7 +2582,7 @@ const Case = struct {
                 try release_stores.appendSlice(c.arena, &.{ "build", platform_arg, "--records-in-place", "--release", "--allow-debug", "--check-call-graph", "--out=release-stores" });
                 if (c.cfg.mode == .pending) try release_stores.append(c.arena, "--diagnostics=json");
                 try release_stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
-                verified[6] = c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false, in_place_record) catch |err| blk: {
+                verified[4] = c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false, in_place_record) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
                     if (first_error == null) first_error = err;
@@ -2657,18 +2645,6 @@ const Case = struct {
                 if (!recording or verified[lp.slot] != null) try c.checkSanitisedSites(platform_arg, lp.flags, sources, lp.out, lp.checker);
             };
         }
-        if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
-            var forced: std.ArrayList([]const u8) = .empty;
-            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--schema-library", "--out=out-library" });
-            if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
-            try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            verified[2] = c.runOnce("out-library", .dev_library, forced.items, "expected", false, record) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :blk null;
-            };
-        }
         if (c.cfg.runs(Kind.run.partOf(.release))) release: {
             // The release pass never blesses `expected`: it is the DEV pass's
             // golden and a release build that disagrees with it is the finding
@@ -2693,48 +2669,11 @@ const Case = struct {
                 break :release;
             };
         }
-        if (differential and c.cfg.runs(Kind.run.partOf(.release_library))) {
-            const separate = c.goldenExists("release-expected");
-            var forced: std.ArrayList([]const u8) = .empty;
-            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--check-call-graph", "--schema-library", "--out=release-library" });
-            if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
-            try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            verified[3] = c.runOnce(
-                "release-library",
-                .release_library,
-                forced.items,
-                if (separate) "release-expected" else "expected",
-                false,
-                record,
-            ) catch |err| blk: {
-                if (!recording) return err;
-                RunCounts.add(&run_counts.refused);
-                if (first_error == null) first_error = err;
-                break :blk null;
-            };
-        }
         if (recording) {
             for (verified) |v| if (v != null) RunCounts.add(&run_counts.recorded);
             try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &verified));
         }
         if (first_error) |err| return err;
-    }
-
-    /// Whether a fixture's sources declare a `schema`: a line that begins
-    /// one, at column 1 where every top-level declaration begins.
-    fn declaresSchema(c: Case, sources: []const []const u8) !bool {
-        for (sources) |name| {
-            const text = try c.w.read(name);
-            var lines = std.mem.splitScalar(u8, text, '\n');
-            while (lines.next()) |line| {
-                if (std.mem.startsWith(u8, line, "schema ") or std.mem.startsWith(u8, line, "pub schema ")) return true;
-                // A schema derived from a type (`schema.md` §12.8): its
-                // fixtures run both paths, as a declaration's do.
-                if (std.mem.startsWith(u8, line, "import Json")) return true;
-                if (std.mem.indexOf(u8, line, "Schema.derived") != null or std.mem.indexOf(u8, line, "Schema.structural") != null) return true;
-            }
-        }
-        return false;
     }
 
     fn hasPlatformDir(dir_path: []const u8) bool {
@@ -4801,7 +4740,5 @@ fn passName(out_dir: []const u8) []const u8 {
     if (std.mem.eql(u8, out_dir, "out-in-place")) return "dev-in-place";
     if (std.mem.eql(u8, out_dir, "out-stores")) return "dev-stores";
     if (std.mem.eql(u8, out_dir, "release-stores")) return "release-stores";
-    if (std.mem.eql(u8, out_dir, "release-library")) return "release-library";
-    if (std.mem.eql(u8, out_dir, "out-library")) return "dev-library";
     return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";
 }

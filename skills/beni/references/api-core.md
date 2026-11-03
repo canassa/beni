@@ -780,12 +780,10 @@ module Schema
   value describe : (Schema e a) → Description  -- impure
   value encode : (Schema e a), a → Result (List Issue) e  -- impure
   value encodeWith : (Schema e a), Options, a → Result (List Issue) e  -- impure
-  value encodedOnly : (Schema e a) → (Schema e e)
-  value erased : (Schema e a) → (Codec a)
+  value erased : (Schema e a) → (Codec a)  -- impure
   value field : (Fields pe pa), String, (Schema e a) → (Fields (pe × e) (pa × a))  -- impure
   value fields : Fields ⊤ ⊤
   value finiteFloat : Schema Float Float  -- impure
-  value flip : (Schema e a) → (Schema a e)  -- impure
   value float : Schema Float Float  -- impure
   value injection : (p → a), (a → Maybe p) → (Injection p a)
   value int : Schema Int Int  -- impure
@@ -805,12 +803,11 @@ module Schema
   value printWith : (Schema e a), Options, a → Result (List Issue) String  -- impure
   value read : (Schema e a), Value → Result (List Issue) a  -- impure
   value readWith : (Schema e a), Options, Value → Result (List Issue) a  -- impure
-  value record : (Fields pe pa), (Mapping pe e), (Mapping pa a) → (Schema e a)
-  value recursive : String, ((Schema e a) → (Schema e a)) → (Schema e a)
+  value record : (Fields pe pa), (Mapping pe e), (Mapping pa a) → (Schema e a)  -- impure
+  value recursive : String, ((Schema e a) → (Schema e a)) → (Schema e a)  -- impure
   value string : Schema String String  -- impure
   value structural : ⊤ → Codec a where a.codec : ⊤ → Codec a
   value tagged : String, List (Variant e a) → (Schema e a)  -- impure
-  value typeOnly : (Schema e a) → (Schema a a)
   value value : Schema Value Value  -- impure
   value variant : String, String, (Schema pe pa), (Injection pe e), (Injection pa a) → (Variant e a)  -- impure
   value write : (Schema e a), a → Result (List Issue) Value  -- impure

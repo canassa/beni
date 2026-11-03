@@ -1,0 +1,6 @@
+-- This projection is withdrawn. A compiled implementation is future work.
+import Schema
+
+
+pub value : Schema.Schema Int Int
+value = Schema.encodedOnly Schema.int

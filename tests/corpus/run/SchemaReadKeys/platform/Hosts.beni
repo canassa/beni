@@ -17,13 +17,49 @@ inherited ⊤ =
 --| An instance whose `x` and `y` are getters of its class.
 pub getters : ⊤ → Value
 getters ⊤ =
+    x = Js.ref 2
+    y = Js.ref 3
+    kind = Js.ref 0
     proto = Js.object []
     _ =
         Js.call (Js.global "Object") "defineProperty"
-            [ proto, Js.from "x", Js.object [ ( "get", Js.from λ⊤ → 3 ) ] ]
+            [ proto
+            , Js.from "x"
+            , Js.object
+                [ ( "get"
+                  , Js.from λ⊤ →
+                      next = Js.read x + 1
+                      Js.write x next
+                      next
+                  )
+                ]
+            ]
     _ =
         Js.call (Js.global "Object") "defineProperty"
-            [ proto, Js.from "y", Js.object [ ( "get", Js.from λ⊤ → 4 ) ] ]
+            [ proto
+            , Js.from "y"
+            , Js.object
+                [ ( "get"
+                  , Js.from λ⊤ →
+                      next = Js.read y + 1
+                      Js.write y next
+                      next
+                  )
+                ]
+            ]
+    _ =
+        Js.call (Js.global "Object") "defineProperty"
+            [ proto
+            , Js.from "kind"
+            , Js.object
+                [ ( "get"
+                  , Js.from λ⊤ →
+                      next = Js.read kind + 1
+                      Js.write kind next
+                      if next == 1 then "own" else "changed"
+                  )
+                ]
+            ]
     Js.to (Js.call (Js.global "Object") "create" [ proto ])
 
 

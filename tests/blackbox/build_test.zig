@@ -2631,18 +2631,6 @@ test "--library needs no main, writes no entry file, and roots at the exported s
 }
 
 test "a --library --release build keeps every core/Schema value it exports, even one called once" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // `core/Schema` exports each core-private value the specialised path
-    // calls from other modules (`schema.md` §6) when it survives. Under
-    // `--schema-library` no worker calls them, and inside `core/Schema` one
-    // of them may be called from one place: a compiled maker's worker calls
-    // `belowBackward` once. A release build writes a function called from
-    // one place where it is called (`backend.md` §9), and it did that to
-    // such a value too, so no declaration was left. A `--library` build,
-    // whose modules are files of their own, then exported a name its file
-    // never declared, and Node refused to load the module at all.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Lib.beni",
@@ -2673,7 +2661,7 @@ test "a --library --release build keeps every core/Schema value it exports, even
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--schema-library", "--out=out", "Lib.beni" });
+    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--out=out", "Lib.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -6480,20 +6468,6 @@ test "a release page build lowers each module once" {
 }
 
 test "a program builds the same with the edge lists the binary carries as with lists it builds" {
-    // ┌─────────────────────────────────────────┐
-    // │ PREPARE                                 │
-    // └─────────────────────────────────────────┘
-    // A build reads the edge lists of the modules the binary carries from
-    // the checked core, keyed by the module key and `--release` and
-    // `--schema-library` (`fast-compiler.md` §8, *The checked core,
-    // embedded*, amended 2026-10-15). A core read through `--core-root`
-    // installs nothing from it, so the same program then builds every
-    // module's lists. The two trees must be the same, in development and
-    // under `--release`: a row that differs from the list a build would
-    // make is an input its key does not cover. `run/ReleaseEverything`
-    // reaches `Dict`, `List` and `String` and their patterns and derived
-    // comparisons. Source maps name the core's path, which `--core-root`
-    // moves, so neither build writes them.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.copyTreeInto("core", "mycore", "_");
@@ -13641,7 +13615,7 @@ test "Cloudflare workers corpus builds without test hooks" {
     try testing.expect(count > 0);
 }
 
-test "Schema endpoint identities agree across imports and warm compiled and library builds" {
+test "Schema endpoint identities agree across imports and warm compiled builds" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     for ([_][]const u8{ "Main.beni", "Types.beni", "Factory.beni" }) |name| {
@@ -13649,7 +13623,7 @@ test "Schema endpoint identities agree across imports and warm compiled and libr
         const contents = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, w.arena.allocator(), .limited(world.max_stream_bytes));
         try w.write(name, contents);
     }
-    for ([_][]const []const u8{ &.{}, &.{"--release"}, &.{"--schema-library"}, &.{ "--schema-library", "--release" } }) |mode| {
+    for ([_][]const []const u8{ &.{}, &.{"--release"} }) |mode| {
         for (0..2) |pass| {
             var args: std.ArrayList([]const u8) = .empty;
             defer args.deinit(w.arena.allocator());
@@ -13659,7 +13633,7 @@ test "Schema endpoint identities agree across imports and warm compiled and libr
             const built = try w.run(args.items);
             try expectBuilt(built);
             try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
-            try w.expectProgram("out/_main.mjs", .{ .stdout = "42/43\n42/43\n3/3,4\n3/3,4\n" });
+            try w.expectProgram("out/_main.mjs", .{ .stdout = "42/43\n3/3,4\n" });
         }
     }
 }
@@ -13674,9 +13648,9 @@ test "decoded records retain freshness with checked Schema evidence" {
         const contents = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, w.arena.allocator(), .limited(world.max_stream_bytes));
         try w.write(name, contents);
     }
-    for ([_][]const []const u8{ &.{}, &.{"--release"}, &.{"--schema-library"}, &.{ "--schema-library", "--release" } }) |mode| {
+    for ([_][]const []const u8{ &.{}, &.{"--release"} }) |mode| {
         for (0..2) |pass| {
-            // EXECUTE: both the ordinary and library paths under ownership,
+            // EXECUTE: development and release builds under ownership,
             // then a warm checker cache with a different worker count.
             var args: std.ArrayList([]const u8) = .empty;
             defer args.deinit(w.arena.allocator());
