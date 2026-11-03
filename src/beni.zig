@@ -195,6 +195,7 @@ pub const own2 = struct {
     pub const Prepass = @import("own2/Prepass.zig");
     pub const Rows = @import("own2/Rows.zig");
     pub const Regions = @import("own2/Regions.zig");
+    pub const KeySets = @import("own2/KeySets.zig");
     pub const Leaves = @import("own2/Leaves.zig");
     pub const Value = @import("own2/Value.zig");
     pub const Liveness = @import("own2/Liveness.zig");
