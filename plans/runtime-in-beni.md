@@ -1050,7 +1050,11 @@ end in `Js.throw`; `Handle` stays a `foreign type` with no sibling. The host is 
 **What changes shape.** `Request` and `Response` crossed the boundary through the `foreign`
 annotations of `requestOf` and `write`, which pinned `method`, `path`, `headers`, `body` and
 `status` in every release build of a program that serves; they cross nothing now, so those
-fields get short names. The upgrade record keeps its eight names (`Js.object`, never renamed).
+fields get short names. For that the upgrade record carries no `Request`: its eighth key is
+`body`, the raw string, where the sibling's was `request`, and `Server.beni` builds the `Request`
+from `req` and `body` in `requestOf`, once per request (a beni record stored through `Js.from`
+keeps its field names, `boundary.md` §4). The other seven keys are the sibling's, as a
+`Js.object`, never renamed (§9.11 item 26, amended).
 
 **The bar** (`core-in-beni.md` R47-3): release brotli no larger on the 24 `run/` programs that
 import `Http.Server` (`bench/size.mjs`, both compilers), the sibling's shape side by side in

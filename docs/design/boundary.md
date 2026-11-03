@@ -6635,7 +6635,9 @@ A defect in `upgrade` or in a session stops the process, as a defect in a handle
 as (e)–(i) and the amendment's items 14–28 say, with these readings:
 
 - **The two siblings meet by value** (item 26; since the move, `Server.beni` makes it). `Server.js` makes the upgrade's record —
-  `{ handle, req, socket, head, waiting, goAway, request }` — when the `upgrade` event comes, adds
+  `{ handle, req, res, socket, head, waiting, goAway, body }` (item 26 as amended: `body` is the
+  raw string, and `Server.beni` builds the `Request` from `req` and `body` in `requestOf`) — when
+  the `upgrade` event comes, adds
   its `error` listener (`waiting`) and checks the handshake there, and queues it for the accept
   loop as it queues a request. `Server.beni` calls the program's `upgrade` in a fiber of the
   server's scope, and for an accept calls `WebSocket.upgraded`, a `pub` function that takes the
