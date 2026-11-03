@@ -406,7 +406,7 @@ pub const Options = struct {
     /// checker v2 formats what the dump prints and keeps each module's report
     /// (`ownership2_reports`), so the dump does not run it again (#1193).
     /// `summaries` false for `--ownership-totals`.
-    ownership_v2_dump: ?struct { summaries: bool } = null,
+    ownership_v2_dump: ?struct { summaries: bool, below: bool = false } = null,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and
