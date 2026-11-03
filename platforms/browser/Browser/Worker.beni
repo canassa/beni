@@ -1,9 +1,13 @@
 -- Dedicated workers. Launches remain behind --allow-unchecked-workers.
+import Browser.Host.Console as NativeConsole
 import Browser.Host.Data as Data
+import Browser.Host.Event as NativeEvent
 import Browser.Host.EventTarget as NativeTarget
+import Browser.Host.Events as NativeEvents
 import Browser.Host.RegExp as HostRegExp
 import Browser.Host.Rejection as Rejection
 import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.Timers as NativeTimers
 import Browser.Host.Uint8Array as Uint8Array
 import Browser.Host.Worker as NativeWorker
 import Browser.WorkerStream exposing (Sink, Stream)
@@ -547,16 +551,12 @@ installed : Js.Ref Bool
 installed = Js.ref False
 
 
-firstDefect : Js.Ref V
-firstDefect = Js.ref Js.null
+firstDefect : Js.Ref (Maybe Rejection.Rejection)
+firstDefect = Js.ref Nothing
 
 
 fatalStarted : Js.Ref Bool
 fatalStarted = Js.ref False
-
-
-fatalDeadline : Js.Ref V
-fatalDeadline = Js.ref Js.null
 
 
 abandoned : V
@@ -576,25 +576,24 @@ installFatal ⊤ =
         Js.write installed True
         Js.write childAbandon abandonUnfinished
         Task.chainDefect stopRealm
-        _ =
-            Js.call (Js.global "globalThis") "addEventListener"
-                [ host "error"
-                , host λevent →
-                    if Js.read fatalStarted && Js.isNull (Js.read firstDefect) then
-                        cause = Js.get event "error"
-                        if Js.isNullish cause then
-                            ⊤
-                        else
-                            Js.write firstDefect cause
-                            Js.set cause "abandonedWorkers" abandoned
-                ]
+        _ = NativeEvents.listen (NativeTarget.current ⊤) "error" λevent →
+            if Js.read fatalStarted then
+                case Js.read firstDefect of
+                    Just _ →
+                        ⊤
+                    Nothing →
+                        case NativeEvent.error event of
+                            Nothing →
+                                ⊤
+                            Just cause →
+                                Js.write firstDefect (Just cause)
+                                Rejection.setAbandoned cause abandoned
         Task.onShutdown λ⊤ →
             Js.each (Js.call peers "values" []) λpeer →
                 _ = sendFrame peer "Close" 0 Js.null
                 ⊤
-            Js.write
-                fatalDeadline
-                (Js.apply (Js.global "setTimeout") [ host abandonUnfinished, host 1000 ])
+            _ = NativeTimers.start abandonUnfinished 1000
+            ⊤
 
 
 abandonUnfinished : ⊤ → ⊤
@@ -617,7 +616,7 @@ abandonUnfinished ⊤ =
     if Js.to (Js.get abandoned "length") == 0 then
         ⊤
     else
-        Js.to (Js.call (Js.global "console") "error" [ host "abandonedWorkers", abandoned ])
+        NativeConsole.errorData "abandonedWorkers" abandoned
 
 
 heartbeat : V, Options → ⊤
@@ -1262,7 +1261,7 @@ failedOpen peer reason =
 
 
 finiteNumber : Int → Bool
-finiteNumber value = Js.to (Js.call (Js.global "Number") "isFinite" [ host value ])
+finiteNumber value = Data.isFinite (host value)
 
 
 workerDefect : V, V → ⊤

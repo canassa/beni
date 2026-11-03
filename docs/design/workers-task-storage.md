@@ -368,3 +368,10 @@ with no catch. Its native availability is dedicated workers only; the realm
 check rejects a page call. The shared CorePrivate fence reserves the operation
 for platform machinery. This replaces the worker runtime's raw global close
 without changing its cleanup order.
+
+Worker fatal hooks retain the first native rejection in `Js.Ref (Maybe
+Rejection.Rejection)` and register a typed native Event listener. The fatal
+deadline uses the typed native timer; its handle is not stored because the
+shutdown path never cancels it. The diagnostic reports remain one shared
+plain-data array, attached directly to that native rejection, so later abandoned
+worker appends remain visible without erasing the error or the listener.
