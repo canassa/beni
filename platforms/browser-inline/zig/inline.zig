@@ -71,12 +71,13 @@ pub const lowering: m.Lowering = .{
         // binding entry, `(bucket)` and `(buckets)` run a write pass, and
         // `(⊤)` the first pass.
         .{ .name = "entry", .arity = 2 },
+        .{ .name = "bucket", .arity = 1 },
         .{ .name = "pass", .arity = 1 },
         .{ .name = "passes", .arity = 1 },
         .{ .name = "first", .arity = 1 },
         // `(rows, elements, from, table, at)`: a run of roots mounted
         // through one table (§8.4, amended 2026-10-24).
-        .{ .name = "roots", .arity = 5 },
+        .{ .name = "roots", .arity = 1 },
         // The pushed-state loader (§8.4, amended 2026-10-22 and 2026-10-24):
         // `(model, table, key, raw)` a keyed route, `(model, rows, raws)`
         // routes in turn; the `…Planned` pair for rows with copy plans, and
@@ -1562,7 +1563,7 @@ const Page = struct {
             const row_exprs = try pg.a().alloc(m.Expr, rows.len);
             for (rows, row_exprs) |n, *re| {
                 const buckets = try pg.a().alloc(m.Expr, n);
-                for (buckets) |*b| b.* = try js.array(&.{});
+                for (buckets) |*b| b.* = try js.call(try js.name(try cx.runtime("bucket")), &.{try js.literal(.null)});
                 re.* = try js.array(buckets);
             }
             try js.constant(body, pg.table.?, try js.array(row_exprs));
@@ -1718,36 +1719,41 @@ const Page = struct {
         if (pg.pieces.items.len != 0) try cx.programViewEnter(body, try pg.modelRef());
         var next_run: usize = 0;
         for (pg.pieces.items, piece_keys, 0..) |u, ks, i| {
-            // A run is mounted where its first root stands: one row per
-            // root, `[factory, holder…]`, and one call of the runtime's
-            // `roots`, which calls each factory in turn with the root's
-            // elements, its holders, its own row and the table.
+            // A run is mounted where its first root stands. Each closed
+            // job retains its factory arguments; the runtime invokes the
+            // jobs in placement order without erasing their types.
             if (next_run < root_runs.len and root_runs[next_run].start <= i) {
                 const r = root_runs[next_run];
                 if (i + 1 == r.start + r.len) next_run += 1;
                 if (i != r.start) continue;
-                const run_rows = try pg.a().alloc(m.Expr, r.len);
+                const jobs = try pg.a().alloc(m.Expr, r.len);
                 const tops = try pg.a().alloc(m.Expr, r.len);
-                for (run_rows, tops, pg.pieces.items[r.start..][0..r.len]) |*rr, *top, w| {
+                const elements_name = try cx.fresh("elements");
+                for (jobs, tops, pg.pieces.items[r.start..][0..r.len], 0..) |*job, *top, w, offset| {
                     const hs = try cx.programRootArgs(body, w.node, pg.model, pg.cell);
                     std.debug.assert(hs.len == w.data.arity);
-                    const row_items = try pg.a().alloc(m.Expr, 1 + hs.len);
-                    row_items[0] = try js.name(try cx.programPieceName(w.node, w.data.root.?));
-                    @memcpy(row_items[1..], hs);
-                    rr.* = try js.array(row_items);
+                    var args: std.ArrayList(m.Expr) = .empty;
+                    const from = if (r.elements == .children) r.elements.children.from else 0;
+                    const root_element = try js.index(try js.name(elements_name), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from + offset})));
+                    try args.append(pg.a(), try js.call(try js.name(try cx.runtime("part")), &.{root_element}));
+                    for (hs) |holder| {
+                        const captured = try cx.fresh("holder");
+                        try js.constant(body, captured, holder);
+                        try args.append(pg.a(), try js.name(captured));
+                    }
+                    try args.append(pg.a(), try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{r.row + offset}))));
+                    try args.append(pg.a(), try js.name(pg.table.?));
+                    const job_body = try js.block();
+                    try js.expression(job_body, try js.call(try js.name(try cx.programPieceName(w.node, w.data.root.?)), args.items));
+                    job.* = try js.arrow(&.{}, job_body);
                     if (r.elements == .places) top.* = try pg.ref(w.target);
                 }
-                const elements, const from = switch (r.elements) {
-                    .children => |c| .{ try js.member(try pg.ref(c.parent), "children"), c.from },
-                    .places => .{ try js.array(tops), 0 },
+                const elements = switch (r.elements) {
+                    .children => |c| try js.member(try pg.ref(c.parent), "children"),
+                    .places => try js.array(tops),
                 };
-                try js.expression(body, try js.call(try js.name(try cx.runtime("roots")), &.{
-                    try js.array(run_rows),
-                    elements,
-                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from})),
-                    try js.name(pg.table.?),
-                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{r.row})),
-                }));
+                try js.constant(body, elements_name, elements);
+                try js.expression(body, try js.call(try js.name(try cx.runtime("roots")), &.{try js.array(jobs)}));
                 continue;
             }
             const factory = u.data.root orelse continue;
@@ -2576,8 +2582,8 @@ const Page = struct {
         const fbody = try js.block();
         try pg.writeFunction(fbody, f);
         const refs = try pg.functionBuckets(f);
-        // One bucket, or an array of the buckets: `entry` adds `f` to each.
-        const buckets = if (refs.len == 0) try js.array(&.{}) else if (refs.len == 1) try pg.bucketExpr(refs[0]) else array: {
+        // A typed list of buckets: `entry` adds its closed job to each.
+        const buckets = if (refs.len == 0) try js.array(&.{}) else array: {
             const list = try pg.a().alloc(m.Expr, refs.len);
             for (list, refs) |*x, b| x.* = try pg.bucketExpr(b);
             break :array try js.array(list);

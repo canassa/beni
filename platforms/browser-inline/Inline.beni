@@ -6,12 +6,18 @@
 --! beni over core's `Js`, and the platform's runtime module (`boundary.md`
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
+import Browser.Host.Document as HostDocument
+import Browser.Host.Element as HostElement
 import Browser.Host.Event as HostEvent
-import Browser.Host.Events as HostEvents
 import Browser.Host.EventTarget as EventTarget
+import Browser.Host.Events as HostEvents
+import Browser.Host.Map as NativeMap
+import Browser.Host.Node as HostNode
+import Browser.Host.Rejection as HostRejection
 import Cmd exposing (Cmd)
 import Js
 import Js.Dispatch as Dispatch
+import Js.Protocol as Protocol
 import Schema exposing (Field, Index, Issue, PathSegment, Schema)
 import Url exposing (Url)
 
@@ -27,10 +33,8 @@ type alias V =
 pub send : V, V, V → ⊤
 send callback value project =
     Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
-    Dispatch.read
-        (λread → Js.to (Js.apply callback [ read ]))
-        value
-        (λraw → if Js.isUndefined project then raw else Js.apply project [ raw ])
+    Dispatch.read (λread → Js.to (Js.apply callback [ read ])) value λraw →
+        if Js.isUndefined project then raw else Js.apply project [ raw ]
 
 
 -- An overlay above the page, which it leaves in place to inspect: the
@@ -38,42 +42,34 @@ send callback value project =
 -- the window after the guard's `finally`.
 crashScreen : ⊤ → ⊤
 crashScreen ⊤ =
-    document = Js.global "document"
-    screen = Js.call document "createElement" [ Js.from "div" ]
-
-    _ =
-        Js.call screen "setAttribute"
-            [ Js.from "style"
-            , Js.from
-                "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
-            ]
-
-    Js.set
-        screen
-        "textContent"
-        (Js.from
-            "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
-        )
-
-    _ = Js.call (Js.get document "body") "appendChild" [ screen ]
-
+    screen = HostDocument.div ⊤
+    native = HostElement.toNode screen
+    HostElement.styleText screen
+        "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
+    HostNode.setTextContent native
+        "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
+    case HostDocument.body ⊤ of
+        Nothing →
+            Protocol.defect "the page has no body for its crash screen"
+        Just body →
+            case HostNode.append (HostElement.toNode body) native of
+                Ok ⊤ →
+                    ⊤
+                Err _ →
+                    Protocol.defect "cannot append the crash screen to the page"
+    remove = Js.ref λ⊤ → ⊤
     report =
         λevent →
-            error = Js.get event "error"
-            message : String
+            Protocol.call (Js.read remove) ⊤
             message =
-                Js.to
-                    (Js.apply (Js.global "String")
-                        [ if Js.isNullish error then Js.get event "message" else error ]
-                    )
-            shown : String
-            shown = Js.to (Js.get screen "textContent")
-            Js.set screen "textContent" (Js.from (shown ++ message))
-
-    Js.to
-        (Js.call (Js.global "window") "addEventListener"
-            [ Js.from "error", Js.from report, Js.from { once = True } ]
-        )
+                case HostEvent.error event of
+                    Nothing →
+                        HostEvent.message event
+                    Just reason →
+                        HostRejection.display reason
+            shown = Maybe.withDefault (HostNode.textContent native) ""
+            HostNode.setTextContent native (shown ++ message)
+    Js.write remove (HostEvents.listen (EventTarget.current ⊤) "error" report)
 
 
 -- ---- Mounting -----------------------------------------------------------
@@ -121,9 +117,11 @@ fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
 --| dispatch that returned it — so each runs after its write pass, in the
 --| same dispatch — each message a body sends queued in turn and handed to
 --| `dispatch`, the program's.
-pub commands : Cmd V, V → ⊤
-commands cmd dispatch = List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
-    send (Js.from λ_ → body λmsg → send dispatch (Js.from msg) Js.undefined) Js.null Js.undefined
+pub commands : Cmd msg, sync (msg → ⊤) → ⊤
+commands cmd dispatch =
+    Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
+    List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
+        Dispatch.send (λ⊤ → body λmessage → Dispatch.send dispatch message) ⊤
 
 
 -- ---- Documents and applications (`browser-inline.md` §10) ---------------
@@ -452,7 +450,8 @@ on node callback kind project =
 --| arm ships neither it nor the arm walk (#874).
 pub onArm : EventTarget.EventTarget, sync (a → ⊤), String, V, sync (HostEvent.Event → a) → ⊤
 onArm node callback kind arms project =
-    _ = HostEvents.listen node kind λevent → if armsShown arms then Dispatch.read callback event project
+    _ = HostEvents.listen node kind λevent →
+        if armsShown arms then Dispatch.read callback event project
     ⊤
 
 
@@ -958,84 +957,58 @@ callNoted noted event i =
 -- mounted once, inside one dispatch, so no two mounts share it. Roots are set up in placement order and each
 -- makes its entries in document order, so the order made is the order a
 -- pass runs them in, and every bucket, filled as entries are made, is in it.
-entries : Js.Ref V
-entries = Js.ref (Js.array [])
+-- Every queued entry retains its closed write job. A bucket is a live
+-- ordered map: a write job may append another entry while it runs.
+pub opaque type Entry
+    = Entry { job : ⊤ → ⊤, ordinal : Int }
 
 
---| `(f, buckets)`: binding entry `f`, given its ordinal and added to the
---| buckets of what it reads — one bucket, or an array of them. A bucket
---| holds entries, functions, so an array whose first element is an array is
---| several; an empty bucket has no first element, and is one. Returns `f`.
-pub entry : V, V → V
-entry f buckets =
-    -- Its ordinal is the count of entries once it is in: one more than its
-    -- place, which orders the same.
-    Js.set f "$o" (Js.call (Js.read entries) "push" [ f ])
-    Js.each
-        (if Js.instanceOf (Js.at buckets 0) (Js.global "Array") then
-            buckets
-         else
-            Js.array [ buckets ]
-        )
-        λbucket → Js.to (Js.call bucket "push" [ f ])
-    f
+pub opaque type Bucket
+    = Bucket (NativeMap.Map Int Entry)
 
 
---| `(bucket)`: a write pass of one bucket, its entries in order.
-pub pass : V → ⊤
-pass bucket = Js.each bucket λf → Js.to (Js.apply f [])
+entries : Js.Ref (NativeMap.Map Int Entry)
+entries = Js.ref (NativeMap.make ⊤)
 
 
---| `(buckets)`: a write pass of several buckets: every entry of any of them,
---| once, in ordinal order — document order — synchronously.
-pub passes : V → ⊤
+pub bucket : ⊤ → Bucket
+bucket ⊤ = Bucket (NativeMap.make ⊤)
+
+
+pub entry : sync (⊤ → ⊤), List Bucket → Entry
+entry job buckets =
+    pending = Js.read entries
+    ordinal = NativeMap.size pending + 1
+    value = Entry { job = job, ordinal = ordinal }
+    NativeMap.set pending ordinal value
+    List.foldl buckets ⊤ λ(Bucket items) _ → NativeMap.set items (NativeMap.size items) value
+    value
+
+
+pub pass : Bucket → ⊤
+pass (Bucket items) = NativeMap.each items λ_ (Entry value) → Protocol.call value.job ⊤
+
+
+pub passes : List Bucket → ⊤
 passes buckets =
-    -- Every entry of the buckets once — a `Set` of them all — sorted by
-    -- ordinal.
-    pass
-        (Js.call
-            (Js.call (Js.global "Array") "from"
-                [ Js.construct (Js.global "Set") [ Js.call buckets "flat" [] ] ]
-            )
-            "sort"
-            [ Js.from ordinalOrder ]
-        )
+    unique = NativeMap.make ⊤
+    List.foldl buckets ⊤ λ(Bucket items) _ →
+        NativeMap.each items λ_ value → NativeMap.set unique value value
+    ordered = List.sortBy (List.copy (NativeMap.values unique)) λ(Entry value) → value.ordinal
+    List.foldl ordered ⊤ λ(Entry value) _ → Protocol.call value.job ⊤
 
 
-ordinalOrder : V, V → Int
-ordinalOrder x y = Js.to (Js.get x "$o") - Js.to (Js.get y "$o")
-
-
---| The first pass: every entry made at this mount, once, in order. Run when
---| every root has made and registered its entries, before subscriptions
---| start and `init`'s command runs.
 pub first : ⊤ → ⊤
 first ⊤ =
-    all = Js.read entries
-    Js.write entries (Js.array [])
-    pass all
+    pending = Js.read entries
+    Js.write entries (NativeMap.make ⊤)
+    NativeMap.each pending λ_ (Entry value) → Protocol.call value.job ⊤
 
 
---| `(rows, elements, from, table, at)`: a run of roots mounted in placement
---| order through one table (`browser-inline.md` §8.4, amended 2026-10-24).
---| Row `i` is `[factory, holder…]`: its factory is called with the elements
---| below `elements[from + i]`, the row's holders, the root's own row of the
---| program's table, `table[at + i]`, and the table. A factory takes only
---| what it uses, so one that fills no other root's row leaves the table.
-pub roots : V, V, Int, V, Int → ⊤
-roots rows elements from table at =
-    _ =
-        Js.call rows "forEach"
-            [ Js.from λrow i →
-                Js.call (Js.at row 0) "apply"
-                    [ Js.null
-                    , Js.call (Js.array [ part (Js.at elements (from + i)) ]) "concat"
-                        [ Js.call row "slice" [ Js.from 1 ]
-                        , Js.array [ Js.at table (at + i), table ]
-                        ]
-                    ]
-            ]
-    ⊤
+--| A run of roots mounted in placement order. Each closed job retains its
+--| factory, elements, holders and typed table row.
+pub roots : List (⊤ → ⊤) → ⊤
+roots jobs = List.foldl jobs ⊤ λjob _ → Protocol.call job ⊤
 
 
 -- ---- Pushed state (`browser-inline.md` §8.4, amended 2026-10-22, 2026-10-24)

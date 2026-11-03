@@ -21,6 +21,13 @@
 --! release build writes where the call is (`backend.md` §9, *A function
 --! called once is written where it is called*).
 
+import Browser.Host.Document as HostDocument
+import Browser.Host.Element as HostElement
+import Browser.Host.Event as HostEvent
+import Browser.Host.EventTarget as HostEventTarget
+import Browser.Host.Events as HostEvents
+import Browser.Host.Node as HostNode
+import Browser.Host.Rejection as HostRejection
 import Browser.Host.Timers as Timers
 import Js
 import Js.Chain as Chain
@@ -476,78 +483,65 @@ stopped cut =
         if cut == 0 then
             ⊤
         else
-            Js.to
-                (Js.apply (Js.read screenLine)
-                    [ Js.from
-                        ("\n\n${line} "
-                            ++ Js.to (Js.apply (Js.global "String") [ Js.from cut ])
-                        )
-                    ]
-                )
+            case Js.read screenLine of
+                Nothing →
+                    ⊤
+                Just append →
+                    Protocol.call append ("\n\n" ++ line ++ " " ++ String.fromInt cut)
 
-        Js.to
-            (Js.call (Js.global "window") "removeEventListener"
-                [ Js.from "error", Js.read screenReport ]
-            )
-
-
--- The crash screen's: what adds a line to it, and its `error` listener.
-screenLine : Js.Ref V
-screenLine = Js.ref Js.null
+        case Js.read screenReport of
+            Nothing →
+                ⊤
+            Just cancel →
+                Protocol.call cancel ⊤
+                Js.write screenReport Nothing
 
 
-screenReport : Js.Ref V
-screenReport = Js.ref Js.null
+-- The crash screen retains typed closed jobs and a native listener remover.
+screenLine : Js.Ref (Maybe (String → ⊤))
+screenLine = Js.ref Nothing
 
 
--- An overlay above the page, which it leaves in place to inspect. The
--- error's text arrives with the host's report of the throw, which reaches
--- the window after the cleanup that called `stop`. Each later throw — a
--- cleanup's, while the program's scope closes (`boundary.md` §9.8.14 (g))
--- — is listed beneath it, until the teardown ends; a page with no
--- teardown listens for the first throw only.
+screenReport : Js.Ref (Maybe (⊤ → ⊤))
+screenReport = Js.ref Nothing
+
+
 crashScreen : ⊤ → ⊤
 crashScreen ⊤ =
-    document = Js.global "document"
-    screen = Js.call document "createElement" [ Js.from "div" ]
-
-    _ =
-        Js.call screen "setAttribute"
-            [ Js.from "style"
-            , Js.from
-                "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
-            ]
-
-    Js.set
-        screen
-        "textContent"
-        (Js.from
-            "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
-        )
-
-    _ = Js.call (Js.get document "body") "appendChild" [ screen ]
+    screen = HostDocument.div ⊤
+    native = HostElement.toNode screen
+    HostElement.styleText screen
+        "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
+    HostNode.setTextContent native
+        "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
+    case HostDocument.body ⊤ of
+        Nothing →
+            Protocol.defect "the page has no body for its crash screen"
+        Just body →
+            case HostNode.append (HostElement.toNode body) native of
+                Ok ⊤ →
+                    ⊤
+                Err _ →
+                    Protocol.defect "cannot append the crash screen to the page"
 
     add =
         λmore →
-            shown : String
-            shown = Js.to (Js.get screen "textContent")
-            Js.set screen "textContent" (Js.from (shown ++ more))
-
+            shown = Maybe.withDefault (HostNode.textContent native) ""
+            HostNode.setTextContent native (shown ++ more)
     seen = Js.ref 0
-
+    cleanup = Task.cleansUp ⊤
+    remove = Js.ref λ⊤ → ⊤
     report =
         λevent →
-            error = Js.get event "error"
-            message : String
+            if cleanup then ⊤ else Protocol.call (Js.read remove) ⊤
             message =
-                Js.to
-                    (Js.apply (Js.global "String")
-                        [ if Js.isNullish error then Js.get event "message" else error ]
-                    )
-
+                case HostEvent.error event of
+                    Nothing →
+                        HostEvent.message event
+                    Just reason →
+                        HostRejection.display reason
             n = Js.read seen
             Js.write seen (n + 1)
-
             add
                 (if n == 0 then
                     message
@@ -556,16 +550,10 @@ crashScreen ⊤ =
                  else
                     "\n" ++ message
                 )
-
-    Js.write screenLine (Js.from add)
-    Js.write screenReport (Js.from report)
-    Js.to
-        (Js.call (Js.global "window") "addEventListener"
-            [ Js.from "error"
-            , Js.from report
-            , Js.from { once = not (Task.cleansUp ⊤) }
-            ]
-        )
+    cancel = HostEvents.listen (HostEventTarget.current ⊤) "error" report
+    Js.write remove cancel
+    Js.write screenLine (Just add)
+    Js.write screenReport (Just cancel)
 
 
 -- Render every program a message is waiting on, then run the after-render
