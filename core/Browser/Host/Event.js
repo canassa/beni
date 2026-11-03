@@ -1,3 +1,4 @@
+export const errorMessage = (event) => { return typeof globalThis.ErrorEvent === "function" && event instanceof globalThis.ErrorEvent ? { $: "Just", a: event.message } : { $: "Nothing", a: null }; };
 export const dataOnly = (event) => { const value = event.data; const listToken = undefined;
   const data = (object, key) => {
     if (object === null || typeof object !== "object") return undefined;

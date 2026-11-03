@@ -6,6 +6,9 @@ pub type CreateError
 pub foreign type RegExp
 
 
+pub foreign impure group : borrowed RegExp, String, Int → Maybe String
+
+
 pub foreign impure create : String, String → Result CreateError RegExp
 
 

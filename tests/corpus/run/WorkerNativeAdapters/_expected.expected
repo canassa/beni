@@ -12,3 +12,10 @@ callbacks: 1
 native identity and options preserved
 error callbacks: 1
 native reason preserved
+fixed groups: MyError2/$My$Error2/<absent>//<absent>/worker
+created metadata: MyError2
+created native reason raised
+ordinary event: <absent>
+empty error message: ""
+error message: MyError2: message
+page groups: MyError2/$My$Error2/<absent>//<absent>/page

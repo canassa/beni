@@ -5,6 +5,9 @@ import Browser.Host.HTMLAnchorElement as HTMLAnchorElement
 pub foreign type EventTarget
 
 
+pub foreign impure isPage : ⊤ → Bool
+
+
 pub foreign impure current : ⊤ → EventTarget
 
 

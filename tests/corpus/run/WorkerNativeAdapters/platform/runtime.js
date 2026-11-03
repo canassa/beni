@@ -63,6 +63,22 @@ export const run = (main) => {
     console.log(`error callbacks: ${main.a(3)}`);
     if (JSON.stringify(reason.abandonedWorkers) !== '["gone"]') throw new Error("native reason metadata missing");
     console.log("native reason preserved");
+    console.log("fixed groups: " + main.a(4));
+    console.log("created metadata: " + main.a(5));
+    let raised;
+    try { main.a(6); } catch (error) { raised = error; }
+    if (!(raised instanceof Error) || raised.name !== "MyError2" || raised.message !== "retained message" || raised.code !== "TEST") throw new Error("created error changed");
+    console.log("created native reason raised");
+    console.log("ordinary event: " + main.c(new globalThis.Event("other")));
+    const originalErrorEvent = globalThis.ErrorEvent;
+    try {
+      globalThis.ErrorEvent = class extends globalThis.Event { constructor(message) { super("error"); this.message = message; } };
+      console.log("empty error message: " + JSON.stringify(main.c(new globalThis.ErrorEvent(""))));
+      console.log("error message: " + main.c(new globalThis.ErrorEvent("MyError2: message")));
+    } finally { globalThis.ErrorEvent = originalErrorEvent; }
+    const originalWindow = globalThis.window;
+    try { globalThis.window = {}; console.log("page groups: " + main.a(4)); }
+    finally { if (originalWindow === undefined) delete globalThis.window; else globalThis.window = originalWindow; }
   } finally {
     globalThis.Worker = original;
   }

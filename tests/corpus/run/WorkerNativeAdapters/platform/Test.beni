@@ -1,5 +1,7 @@
 import Browser.Host.Event as Event
+import Browser.Host.EventTarget as Target
 import Browser.Host.Events as Events
+import Browser.Host.RegExp as RegExp
 import Browser.Host.Rejection as Rejection
 import Browser.Host.Worker as Native
 import Js
@@ -7,11 +9,11 @@ import Js.Protocol as Protocol
 
 
 pub opaque type Program
-    = Program (Int → String) String
+    = Program (Int → String) String (Event.Event → String)
 
 
 pub program : String, sync (Int → String) → Program
-program name callback = Program callback name
+program name callback = Program callback name messageOf
 
 
 createError : Native.CreateError → String
@@ -36,7 +38,9 @@ posted endpoint =
 
 pub probe : Int → String
 probe phase =
-    if phase == -1 then
+    if phase ≥ 4 then
+        additional phase
+    else if phase == -1 then
         if Native.supported ⊤ then "supported" else "unsupported"
     else
         case Native.tryCreate "worker.js" "named" "same-origin" of
@@ -78,3 +82,51 @@ probe phase =
                             String.fromInt (Js.read calls)
                         else
                             "post failed"
+
+
+-- Fixed non-stateful patterns; optional/empty groups pin explicit absence.
+namePattern : RegExp.RegExp
+namePattern =
+    case RegExp.create "^(?:Uncaught )?([A-Za-z_$][A-Za-z0-9_$]*): (.*)$" "s" of
+        Ok pattern →
+            pattern
+        Err _ →
+            Protocol.defect "invalid fixed name pattern"
+
+
+groupsPattern : RegExp.RegExp
+groupsPattern =
+    case RegExp.create "^(a)?(b*)$" "" of
+        Ok pattern →
+            pattern
+        Err _ →
+            Protocol.defect "invalid fixed groups pattern"
+
+
+capture : RegExp.RegExp, String, Int → String
+capture pattern text index = Maybe.withDefault (RegExp.group pattern text index) "<absent>"
+
+
+messageOf : Event.Event → String
+messageOf event = Maybe.withDefault (Event.errorMessage event) "<absent>"
+
+
+additional : Int → String
+additional phase =
+    if phase == 4 then
+        String.join
+            [ capture namePattern "Uncaught MyError2: message" 1
+            , capture namePattern "$My$Error2: message" 1
+            , capture groupsPattern "" 1
+            , capture groupsPattern "" 2
+            , capture groupsPattern "" 3
+            , if Target.isPage ⊤ then "page" else "worker"
+            ]
+            "/"
+    else
+        reason = Rejection.create "retained message"
+        Rejection.assign reason (Js.from { name = "MyError2", code = "TEST" })
+        if phase == 5 then
+            Rejection.name reason
+        else
+            Rejection.raise reason

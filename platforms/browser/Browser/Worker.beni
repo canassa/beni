@@ -1,5 +1,8 @@
 -- Dedicated workers. Launches remain behind --allow-unchecked-workers.
 import Browser.Host.Data as Data
+import Browser.Host.EventTarget as NativeTarget
+import Browser.Host.RegExp as HostRegExp
+import Browser.Host.Rejection as Rejection
 import Browser.Host.TextEncoder as TextEncoder
 import Browser.Host.Uint8Array as Uint8Array
 import Browser.WorkerStream exposing (Sink, Stream)
@@ -441,9 +444,9 @@ transportFailed peer failure =
 
 fatal : String → a
 fatal message =
-    cause = Js.construct (Js.global "Error") [ Js.from message ]
+    cause = Rejection.create message
     stopRealm ⊤
-    Js.throw cause
+    Rejection.raise cause
 
 
 received : V, V → ⊤
@@ -1205,7 +1208,7 @@ installHostStop stop stopped =
 stopRealm : ⊤ → ⊤
 stopRealm ⊤ =
     Js.write fatalStarted True
-    if Js.isUndefined (Js.global "window") then
+    if not (NativeTarget.isPage ⊤) then
         Task.shutdown 1000 λ_ → (Js.read childAbandon) ⊤
     else
         case Js.read hostStop of
@@ -1267,34 +1270,63 @@ workerDefect peer report =
         ⊤
     else
         Js.set peer "defected" (host True)
-        raw = Js.get report "message"
+        rawValue = Js.get report "message"
+        raw : String
+        raw =
+            if Js.typeIs rawValue "string" then
+                guest rawValue
+            else
+                fatal "Invalid worker defect report"
         named = Js.get report "name"
-        native = Js.call raw "match" [ Js.regExp "^(?:Uncaught )?([A-Za-z]*Error): (.*)$" "s" ]
+        pattern = workerNamePattern
+        matchedName = HostRegExp.group pattern raw 1
         message =
             if Js.typeIs named "string" then
                 raw
-            else if Js.isNull native then
-                Js.call raw "replace" [ Js.regExp "^Uncaught " "", host "" ]
             else
-                Js.at native 2
-        cause = Js.construct (Js.global "Error") [ message ]
-        Js.set
-            cause
-            "name"
-            (if Js.typeIs named "string" then
-                named
-             else if Js.isNull native then
-                host "Error"
-             else
-                Js.at native 1
+                case matchedName of
+                    Nothing →
+                        HostRegExp.replace workerUncaughtPattern raw ""
+                    Just _ →
+                        Maybe.withDefault (HostRegExp.group pattern raw 2) raw
+        name =
+            if Js.typeIs named "string" then
+                guest named
+            else
+                Maybe.withDefault matchedName "Error"
+        cause = Rejection.create message
+        Rejection.assign cause
+            (Js.from
+                { name = name
+                , entryId = Js.get peer "entry"
+                , instanceId = Js.get peer "generation"
+                , realm = "dedicatedWorker"
+                }
             )
         stack = Js.get report "stack"
-        if Js.typeIs stack "string" && not (Js.same stack (host "")) then Js.set cause "stack" stack
-        Js.set cause "entryId" (Js.get peer "entry")
-        Js.set cause "instanceId" (Js.get peer "generation")
-        Js.set cause "realm" (host "dedicatedWorker")
+        if Js.typeIs stack "string" && not (Js.same stack (host "")) then
+            Rejection.assign cause (Js.from { stack = stack })
         stopRealm ⊤
-        Js.throw cause
+        Rejection.raise cause
+
+
+-- Fixed source patterns, allocated once; neither has mutable lastIndex flags.
+workerNamePattern : HostRegExp.RegExp
+workerNamePattern =
+    case HostRegExp.create "^(?:Uncaught )?([A-Za-z_$][A-Za-z0-9_$]*): (.*)$" "s" of
+        Ok pattern →
+            pattern
+        Err _ →
+            fatal "Invalid worker error pattern"
+
+
+workerUncaughtPattern : HostRegExp.RegExp
+workerUncaughtPattern =
+    case HostRegExp.create "^Uncaught " "" of
+        Ok pattern →
+            pattern
+        Err _ →
+            fatal "Invalid worker prefix pattern"
 
 
 requireCleanup : Cleanup → ⊤

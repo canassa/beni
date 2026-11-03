@@ -12,6 +12,9 @@ import Browser.Host.Rejection as Rejection
 pub foreign type Event
 
 
+pub foreign impure errorMessage : borrowed Event → Maybe String
+
+
 pub foreign impure dataOnly : borrowed Event → Maybe Js.Value
 
 

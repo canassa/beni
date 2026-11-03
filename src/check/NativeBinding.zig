@@ -44,6 +44,11 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .global_is_page => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Bool"),
+        .event_error_message => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
+        .rejection_create => a.len == 1 and named(cx, a[0], "String", "String") and native(cx, r, "Rejection"),
+        .rejection_assign => a.len == 2 and native(cx, a[0], "Rejection") and named(cx, a[1], "Js", "Value") and unit(cx, r),
+        .regexp_group => a.len == 3 and native(cx, a[0], "RegExp") and named(cx, a[1], "String", "String") and named(cx, a[2], "Basics", "Int") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
         .map_make => a.len == 1 and unit(cx, a[0]) and mapItem(cx, r) != null,
         .map_get => blk: {
             if (a.len != 2 or !named(cx, a[1], "String", "String")) break :blk false;

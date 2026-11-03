@@ -35,10 +35,10 @@ pub fn validate(c: anytype) bool {
             return false;
         }
         // Mixin exposure belongs to the implementing native receiver.
-        const receiver = if (row.recipe == .global_event_target) "Window" else if (row.recipe == .worker_event_target) "Worker" else if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "HTMLOrSVGOrMathMLElement")) "HTMLElement" else if (std.mem.eql(u8, row.owner, "DocumentOrShadowRoot") or std.mem.eql(u8, row.owner, "NonElementParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
+        const receiver = if ((row.recipe == .global_event_target or row.recipe == .global_is_page)) "Window" else if (row.recipe == .worker_event_target) "Worker" else if (std.mem.eql(u8, row.owner, "AnimationFrameProvider")) "Window" else if (row.recipe == .as_anchor or std.mem.eql(u8, row.owner, "HTMLHyperlinkElementUtils") or std.mem.eql(u8, row.owner, "HyperlinkElementUtils")) "HTMLAnchorElement" else if (row.recipe == .listen_window or row.recipe == .listen_document) "Window" else if (row.recipe == .storage_local or row.recipe == .storage_session) "Window" else if (row.recipe == .response_text or row.recipe == .response_reader) "Response" else if (std.mem.eql(u8, row.owner, "HTMLOrSVGOrMathMLElement")) "HTMLElement" else if (std.mem.eql(u8, row.owner, "DocumentOrShadowRoot") or std.mem.eql(u8, row.owner, "NonElementParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "ParentNode")) "Document" else if (std.mem.eql(u8, row.owner, "WindowOrWorkerGlobalScope")) "Window" else if (std.mem.eql(u8, row.owner, "MessageEventTarget")) "MessagePort" else row.owner;
         var exposure: u8 = 0;
         for (c.native_types) |t| {
-            if (!std.mem.eql(u8, t.idl_name, receiver) and !(row.recipe == .global_event_target and std.mem.eql(u8, t.idl_name, "WorkerGlobalScope"))) continue;
+            if (!std.mem.eql(u8, t.idl_name, receiver) and !((row.recipe == .global_event_target or row.recipe == .global_is_page) and std.mem.eql(u8, t.idl_name, "WorkerGlobalScope"))) continue;
             for (t.exposed) |name| {
                 if (std.mem.eql(u8, name, "Window")) exposure |= Operations.window;
                 if (std.mem.eql(u8, name, "Worker")) exposure |= Operations.workers;
@@ -109,6 +109,12 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .global_is_page => "(ignored) => { return typeof globalThis.window !== \"undefined\"; }",
+            .event_error_message => "(event) => { return typeof globalThis.ErrorEvent === \"function\" && event instanceof globalThis.ErrorEvent ? { $: \"Just\", a: event.message } : { $: \"Nothing\", a: null }; }",
+            .rejection_create => "(message) => { return new globalThis.Error(message); }",
+            .rejection_assign => "(reason, fields) => { Object.assign(reason, fields); return null; }",
+            // RegExp handles are constructed once from fixed platform source literals.
+            .regexp_group => "(pattern, text, index) => { const match = pattern.exec(text); const group = match === null ? undefined : match[index]; return group !== null && group !== undefined ? { $: \"Just\", a: group } : { $: \"Nothing\", a: null }; }",
             .map_make => "(ignored) => { return new globalThis.Map(); }",
             .map_get => "(map, key) => { return map.has(key) ? { $: \"Just\", a: map.get(key) } : { $: \"Nothing\", a: null }; }",
             .map_set => "(map, key, value) => { map.set(key, value); return null; }",

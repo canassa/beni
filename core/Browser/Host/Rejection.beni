@@ -5,6 +5,12 @@ import Js
 pub foreign type Rejection
 
 
+pub foreign impure create : String → Rejection
+
+
+pub foreign impure assign : borrowed Rejection, Js.Value → ⊤
+
+
 pub foreign impure setAbandoned : borrowed Rejection, Js.Value → ⊤
 
 
