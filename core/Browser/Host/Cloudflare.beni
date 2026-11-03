@@ -47,55 +47,55 @@ pub foreign type Instance
 pub foreign type SocketPair
 
 
-pub foreign pure socketEq : borrowed Socket, borrowed Socket → Bool
+pub foreign pure socketEq : Socket, Socket → Bool
 
 
-pub foreign impure socketState : borrowed Socket → Int
+pub foreign impure socketState : Socket → Int
 
 
-pub foreign impure socketSend : borrowed Socket, borrowed String → ⊤
+pub foreign impure socketSend : Socket, String → ⊤
 
 
-pub foreign impure socketClose : borrowed Socket, borrowed Int, borrowed String → ⊤
+pub foreign impure socketClose : Socket, Int, String → ⊤
 
 
-pub foreign impure socketAttachment : borrowed Socket → Js.Value
+pub foreign impure socketAttachment : Socket → Js.Value
 
 
-pub foreign impure socketAttach : borrowed Socket, borrowed Js.Value → ⊤
+pub foreign impure socketAttach : Socket, Js.Value → ⊤
 
 
-pub foreign impure kv : borrowed ObjectState → Maybe KV
+pub foreign impure kv : ObjectState → Maybe KV
 
 
-pub foreign impure kvGet : borrowed KV, borrowed String → Maybe String
+pub foreign impure kvGet : KV, String → Maybe String
 
 
-pub foreign impure kvPut : borrowed KV, borrowed String, borrowed String → Bool
+pub foreign impure kvPut : KV, String, String → Bool
 
 
-pub foreign impure kvDelete : borrowed KV, borrowed String → Bool
+pub foreign impure kvDelete : KV, String → Bool
 
 
-pub foreign impure kvKeys : borrowed KV, borrowed String → List String
+pub foreign impure kvKeys : KV, String → List String
 
 
 pub foreign impure program :
-      escaped sync (Request.Request, Env, ExecutionContext → Promise.Promise Response.Response)
-    , borrowed List Definition
+      sync (Request.Request, Env, ExecutionContext → Promise.Promise Response.Response)
+    , List Definition
     → Program
 
 
-pub foreign impure definition : String, escaped sync (ObjectState, Env → Instance) → Definition
+pub foreign impure definition : String, sync (ObjectState, Env → Instance) → Definition
 
 
 pub foreign impure instance :
-      escaped sync (Request.Request → Promise.Promise Response.Response)
-    , escaped sync (⊤ → Promise.Promise ⊤)
-    , escaped sync (Maybe String, String, Maybe String, String → Promise.Promise Js.Value)
-    , escaped sync (Socket, Maybe String → Promise.Promise ⊤)
-    , escaped sync (Socket, Int, String, Bool → Promise.Promise ⊤)
-    , escaped sync (Socket, Rejection.Rejection → Promise.Promise ⊤)
+      sync (Request.Request → Promise.Promise Response.Response)
+    , sync (⊤ → Promise.Promise ⊤)
+    , sync (Maybe String, String, Maybe String, String → Promise.Promise Js.Value)
+    , sync (Socket, Maybe String → Promise.Promise ⊤)
+    , sync (Socket, Int, String, Bool → Promise.Promise ⊤)
+    , sync (Socket, Rejection.Rejection → Promise.Promise ⊤)
     → Instance
 
 
@@ -150,7 +150,7 @@ pub foreign impure requestCopy : Request.Request, Headers.Headers → Request.Re
 pub foreign impure requestSignal : Request.Request → Maybe AbortSignal.AbortSignal
 
 
-pub foreign impure onAbort : AbortSignal.AbortSignal, escaped sync (⊤ → ⊤) → ⊤
+pub foreign impure onAbort : AbortSignal.AbortSignal, sync (⊤ → ⊤) → ⊤
 
 
 pub foreign impure responseCreate : Int, Maybe String, List (String × String) → Response.Response
@@ -183,10 +183,10 @@ pub foreign impure errorText : Rejection.Rejection → String
 pub foreign impure randomUUID : ⊤ → String
 
 
-pub foreign impure waitUntil : ExecutionContext, borrowed Promise.Promise a → ⊤
+pub foreign impure waitUntil : ExecutionContext, Promise.Promise a → ⊤
 
 
-pub foreign impure objectWaitUntil : ObjectState, borrowed Promise.Promise a → ⊤
+pub foreign impure objectWaitUntil : ObjectState, Promise.Promise a → ⊤
 
 
 pub foreign impure objectId : ObjectState → Id
@@ -240,4 +240,4 @@ pub foreign impure consoleReason : String, Rejection.Rejection → ⊤
 pub foreign impure responseResolvers : ⊤ → Promise.Resolvers Response.Response
 
 
-pub foreign impure socketInitialize : borrowed Socket, String, String, borrowed List String → ⊤
+pub foreign impure socketInitialize : Socket, String, String, List String → ⊤
