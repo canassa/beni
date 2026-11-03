@@ -1160,3 +1160,20 @@ programs for `Io.js`, and the prerender data programs (`browser/prerender/Data*`
 the shape side by side in `emit/release/app/IoReadDir` (new) and the existing `dom`/`tea` release
 goldens that reach an extractor; and no slowdown to measure: each export runs once per event,
 once per listing or once per program, and does the same host calls in the same order.
+
+**Sizes** (2026-11-03, master `2b7214fb35` against the branch, both compilers on the same sources,
+release brotli 11). `bench/size.mjs`'s 665 node lines: 1 364 855 → 1 364 675 B (−180), raw −320;
+4 smaller, 661 equal, 0 larger — the four are `run/ReadDir` −35, `run/ReadDirDefect` −38,
+`run/ReadDirErrors` −59, `run/ReadDirFaults` −48. Its 19 page lines: −18; TodoMVC +9 at raw −12,
+conduit −22, steer −5. The `browser/` corpus's 442 pages: 1 329 314 → 1 329 306 (−8), raw −74;
+6 smaller, 433 equal, 3 larger (`tea/PointerInput` +5, `tea/TodoMVC` +9, `inline/LinkWidget` +1,
+each at fewer raw bytes, the compressor's block choices, accepted under R47-3's reading of
+2026-10-28). The seven prerender data programs with one, built from their two roots: in
+development, what the site build runs, −142 to −160 brotli each (the sibling file no longer
+copied); under `--release`, raw −14 each, brotli −5 (`DataBlog`) to +13 (`DataUnicode`), the
+same reading. Six `emit/release/inline/*` goldens moved: `targetValue`'s short name is drawn from
+the beni namespace, two letters swap, five byte counts are the same and `ArmSingle` is 4 bytes
+smaller (the listener helper's one call passed the extractor as an argument; a top-level name
+needs no parameter). The first cut of the listing used `List.sortBy` and `List.map` and made the
+four `ReadDir*` programs 264 to 444 bytes larger, then 22 to 78 with `List.map` alone; the host's
+loops put them below the sibling.
