@@ -5,9 +5,9 @@
 -- path `Dict.empty` does not have; it names no object now and is accepted,
 -- and the sanitised run prints the same. `bumped` of a dictionary built at
 -- the top level is still refused `top-level`.
-import Node exposing (Program)
 import Dict exposing (Dict)
 import List
+import Node exposing (Program)
 import String
 
 
@@ -30,4 +30,9 @@ show l = String.join (List.map l String.fromInt) ","
 
 
 main : Program
-main = Node.printLines [ show (bumped Dict.empty 3), show (bumped Dict.empty 4), String.fromInt (Dict.size Dict.empty) ]
+main =
+    Node.printLines
+        [ show (bumped Dict.empty 3)
+        , show (bumped Dict.empty 4)
+        , String.fromInt (Dict.size Dict.empty)
+        ]
