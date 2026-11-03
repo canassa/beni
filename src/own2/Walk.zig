@@ -151,6 +151,9 @@ pub const Demand = struct {
     many: bool = false,
     /// A cell operation on a `◆` slot (`Eval.cellWrite`): never `once`.
     cell: bool = false,
+    /// A write grafted at the frame's parameter (`Graft`, §2.11.2): its
+    /// `(j, slot, tree)`, what the read-off adds; `j` is `none` otherwise.
+    graft: [3]u32 = .{ none, 0, 0 },
 };
 
 /// A local's binding.

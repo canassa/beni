@@ -46,7 +46,8 @@ fn wordsText(places: *const Place.Table, names: Names, w: *std.Io.Writer, words:
     }
 }
 
-fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, c: Contract.StoredCond) std.Io.Writer.Error!void {
+fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, field: []const u8, c: Contract.StoredCond) std.Io.Writer.Error!void {
+    try w.writeAll(field);
     if (c.no) return w.writeAll("no");
     const run = t.occsOf(c);
     if (run.len == 0) return w.writeAll("yes");
@@ -122,9 +123,9 @@ const Res = struct {
     }
 };
 
-fn arrivalsText(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node, eff: ?u32) std.Io.Writer.Error!void {
+fn arrivalsText(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, root: Contract.Node, eff: ?u32, twins: bool) std.Io.Writer.Error!void {
     var r: Res = .{ .t = t, .c = c, .slots = slots, .places = places, .names = names, .w = w, .eff = eff };
-    try Forest.text(&t.trees, gpa, places, root, &r, Res.entry);
+    try Forest.text(&t.trees, gpa, places, root, &r, Res.entry, twins);
 }
 
 /// The contract's text, the dump's `summary` line after its name.
@@ -133,15 +134,15 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
     if (h.flags.pessimistic) try w.writeAll("pessimistic; ");
     if (h.flags.cross) try w.writeAll("res crossing") else if (!h.flags.returns) try w.writeAll("res ⊥") else {
         try w.writeAll("res");
-        try arrivalsText(t, gpa, c, slots, places, names, w, h.res_root, null);
+        try arrivalsText(t, gpa, c, slots, places, names, w, h.res_root, null, true);
     }
-    try w.writeAll("; nondup ");
-    try condText(t, slots, places, names, w, h.res_cond);
+    try condText(t, slots, places, names, w, "; nondup ", h.res_cond);
     if (h.reads.len != 0) try w.writeAll("; reads");
-    for (t.readsOf(h.reads)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0]);
-    try effectsText(t, slots, places, names, w, "; writes", h.writes);
-    if (h.writes.len != 0) try w.writeAll("; req ");
-    if (h.writes.len != 0) try condText(t, slots, places, names, w, h.req);
+    for (t.readsOf(h.reads)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0], true);
+    // The writes an entry a slot (§2.11.2, as the flat runs printed them).
+    if (h.writes.len != 0) try w.writeAll("; writes");
+    for (t.writesOf(h.writes)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0], false);
+    if (h.writes.len != 0) try condText(t, slots, places, names, w, "; req ", h.req);
     try effectsText(t, slots, places, names, w, "; escapes", h.escapes);
     for (t.labelsOf(h.labels)) |l| {
         try w.print("; label π{d}", .{l.j + 1});
@@ -149,10 +150,9 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
         try w.print("@{d} {t}", .{ l.origin[2], l.calls });
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}:", .{s.k + 1});
-            try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null);
+            try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null, true);
             try effectsText(t, slots, places, names, w, " kept", s.kept);
-            try w.writeAll(" sep ");
-            try condText(t, slots, places, names, w, s.cond);
+            try condText(t, slots, places, names, w, " sep ", s.cond);
             try w.writeAll("]");
         }
     }

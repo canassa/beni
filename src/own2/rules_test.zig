@@ -77,6 +77,9 @@ const layers = [_]Entry{
     // One walk of a value along several paths by route sets, below
     // `Distinct` (#1714, §2.11.2).
     .{ .file = "Routed.zig", .layer = 8, .max_lines = 370 },
+    // A write onto a caller's parameter stops there, its targets read off
+    // the callee's tree (#1714, §2.11.2).
+    .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -403,7 +406,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 47), layers.len);
+    try testing.expectEqual(@as(usize, 48), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
