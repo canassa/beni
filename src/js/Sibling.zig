@@ -1010,9 +1010,10 @@ test "every sibling that ships in the box passes checks 3 and 4" {
             scanned += 1;
         }
     }
-    // Core has five siblings and the Node platform two; a zero here would
-    // mean the embedding broke and the check passed by looking at nothing.
-    try testing.expect(scanned >= 7);
+    // A zero here would mean the embedding broke and the check passed by
+    // looking at nothing. #877 moves the siblings to beni one by one (six
+    // were left when `Io.js` went), so no higher floor holds for long.
+    try testing.expect(scanned > 0);
 }
 
 test "fuzz: the scanner never panics on arbitrary bytes" {
