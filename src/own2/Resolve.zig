@@ -24,6 +24,7 @@ const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const Routed = @import("Routed.zig");
 const Cells = @import("Cells.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -475,7 +476,11 @@ const Resolver = struct {
                 }
             }.each,
         };
-        if (r.live.any()) for (targets) |t| {
+        // The live holders by their tags: a target's routes one by one.
+        var outs: std.ArrayList(u32) = .empty;
+        defer outs.deinit(g);
+        if (r.live.any()) for (targets) |t0| try Routed.writtenOut(r.ev(), t0, &outs);
+        if (r.live.any()) for (outs.items) |t| {
             bs.clearRetainingCapacity();
             const aggregating = try r.bucketsOf(t, &bs);
             try r.live.begin(r.ev(), bs.items);
@@ -492,7 +497,7 @@ const Resolver = struct {
             o.holder_path = bh.q;
             line.holder = .{ .kind = .binding, .who = bh.h, .token = w.bindings[bh.h].token };
             line.use_token = w.bir.insts.items(.main_token)[w.index.get(bh.use).point];
-            if (targets.len > 1) o.exactness = .approximate;
+            if (outs.items.len > 1) o.exactness = .approximate;
             return line;
         }
         // Exclusive: what the write relied on is the frame's to ask of its

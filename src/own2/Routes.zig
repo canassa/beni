@@ -37,15 +37,18 @@ pub const Tag = struct { choice: u32, arms: u32, tail: u32, len: u32, last: u32,
 
 /// A set of routes (§2.3.5): `flat`, the routes of run `a`, normalised;
 /// `wrap`, every route of set `b` with tag list `a` merged in, every
-/// choice of `a` after the set's; `join`, the routes of the sets in run
-/// `a` (arms' sets, `unite`). `last`: the latest choice a route names,
-/// `none` for none. Set 0 is the one unconditional route; `none`, none.
+/// choice of `a` after the set's; `pre`, the same with every choice of
+/// `a` before the set's (a projection's arm, §2.11.2); `join`, the routes
+/// of the sets in run `a` (arms' sets, `unite`). `last`, `first`: the
+/// latest and earliest choice a route names, `none` for none. Set 0 is
+/// the one unconditional route; `none`, none.
 pub const Set = struct {
     kind: Kind,
     a: u32,
     b: u32,
     last: u32,
-    pub const Kind = enum(u8) { flat, wrap, join };
+    first: u32 = none,
+    pub const Kind = enum(u8) { flat, wrap, join, pre };
 };
 
 pub const Table = struct {
@@ -95,7 +98,7 @@ pub const Table = struct {
 
     // ---- tags ---------------------------------------------------------------
 
-    fn tag(t: *const Table, id: u32) Tag {
+    pub fn tag(t: *const Table, id: u32) Tag {
         return t.tags.items[id];
     }
 
@@ -224,7 +227,7 @@ pub const Table = struct {
     /// The first list down `a`'s tail whose choice is not before `c` (0
     /// when none is): a list's choices come in order, so every pair a jump
     /// passes is before `c` when the jump's is.
-    fn seek(t: *const Table, a0: u32, c: u32, account: ?*Ids.Account) Error!u32 {
+    pub fn seek(t: *const Table, a0: u32, c: u32, account: ?*Ids.Account) Error!u32 {
         var a = a0;
         while (a != 0 and first(t.tag(a).choice, c)) {
             if (account) |ac| try ac.reserve(.inspection, 1);
@@ -315,26 +318,35 @@ pub const Table = struct {
 
     // ---- routes ---------------------------------------------------------------
 
-    fn rset(t: *const Table, id: u32) Set {
+    pub fn rset(t: *const Table, id: u32) Set {
         return t.rsets.items[id];
     }
 
     /// The latest choice a route of set `rs` names, `none` for none.
-    fn lastOf(t: *const Table, rs: u32) u32 {
+    pub fn lastOf(t: *const Table, rs: u32) u32 {
         return if (rs == 0) none else t.rset(rs).last;
+    }
+
+    /// The earliest choice a route of set `rs` names, `none` for none.
+    pub fn firstOf(t: *const Table, rs: u32) u32 {
+        return if (rs == 0) none else t.rset(rs).first;
+    }
+
+    fn earliest(a: u32, b: u32) u32 {
+        return if (a == none) b else if (b == none) a else @min(a, b);
     }
 
     fn latest(a: u32, b: u32) u32 {
         return if (a == none) b else if (b == none) a else @max(a, b);
     }
 
-    fn makeSet(t: *Table, gpa: Allocator, account: *Ids.Account, kind: Set.Kind, a: u32, b: u32, last: u32) Error!u32 {
+    fn makeSet(t: *Table, gpa: Allocator, account: *Ids.Account, kind: Set.Kind, a: u32, b: u32, last: u32, fst: u32) Error!u32 {
         try account.reserve(.set, 1);
         if (t.rsets.items.len == 0) try t.rsets.append(gpa, .{ .kind = .flat, .a = 0, .b = 0, .last = none });
         const got = try t.rset_index.getOrPut(gpa, .{ @backingInt(kind), a, b });
         if (got.found_existing) return got.value_ptr.*;
         const id: u32 = @intCast(t.rsets.items.len);
-        try t.rsets.append(gpa, .{ .kind = kind, .a = a, .b = b, .last = last });
+        try t.rsets.append(gpa, .{ .kind = kind, .a = a, .b = b, .last = last, .first = fst });
         got.value_ptr.* = id;
         return id;
     }
@@ -373,8 +385,12 @@ pub const Table = struct {
         std.mem.sort(u32, xs.items, {}, std.sort.asc(u32));
         if (std.mem.indexOfScalar(u32, xs.items, 0) != null) return 0;
         var last: u32 = none;
-        for (xs.items) |x| last = latest(last, t.tag(x).last);
-        return t.makeSet(gpa, account, .flat, try t.runs.intern(gpa, account, xs.items), 0, last);
+        var fst: u32 = none;
+        for (xs.items) |x| {
+            last = latest(last, t.tag(x).last);
+            fst = earliest(fst, t.tag(x).choice);
+        }
+        return t.makeSet(gpa, account, .flat, try t.runs.intern(gpa, account, xs.items), 0, last, fst);
     }
 
     /// Every route of set `rs`, `seed` merged in (a route it conflicts
@@ -398,7 +414,7 @@ pub const Table = struct {
     pub fn wrapRoutes(t: *Table, gpa: Allocator, account: *Ids.Account, rs: u32, y: u32) Error!u32 {
         if (y == 0 or rs == none) return rs;
         const last = t.lastOf(rs);
-        if (last == none or last < t.tag(y).choice) return t.makeSet(gpa, account, .wrap, y, rs, t.tag(y).last);
+        if (last == none or last < t.tag(y).choice) return t.makeSet(gpa, account, .wrap, y, rs, t.tag(y).last, earliest(t.firstOf(rs), t.tag(y).choice));
         var xs: std.ArrayList(u32) = .empty;
         defer xs.deinit(gpa);
         try t.routesInto(gpa, account, rs, y, &xs);
@@ -442,8 +458,64 @@ pub const Table = struct {
         };
         if (n == 1) return ms.items[0];
         var last: u32 = none;
-        for (ms.items[0..n]) |m| last = latest(last, t.lastOf(m));
-        return t.makeSet(gpa, account, .join, try t.runs.intern(gpa, account, ms.items[0..n]), 0, last);
+        var fst: u32 = none;
+        for (ms.items[0..n]) |m| {
+            last = latest(last, t.lastOf(m));
+            fst = earliest(fst, t.firstOf(m));
+        }
+        return t.makeSet(gpa, account, .join, try t.runs.intern(gpa, account, ms.items[0..n]), 0, last, fst);
+    }
+
+    /// The routes of all of `sets` as one set: the unconditional route
+    /// implies every other, `none` adds none, and the members of a `join`
+    /// are taken in, each once (a `join` of all, one node).
+    pub fn uniteAll(t: *Table, gpa: Allocator, account: *Ids.Account, sets: []const u32) Error!u32 {
+        var ms: std.ArrayList(u32) = .empty;
+        defer ms.deinit(gpa);
+        for (sets) |s| {
+            if (s == 0) return 0;
+            if (s == none) continue;
+            try account.reserve(.inspection, 1);
+            try ms.appendSlice(gpa, t.membersOf(&s));
+        }
+        if (ms.items.len == 0) return none;
+        std.mem.sort(u32, ms.items, {}, std.sort.asc(u32));
+        var n: usize = 0;
+        for (ms.items) |m| if (n == 0 or ms.items[n - 1] != m) {
+            ms.items[n] = m;
+            n += 1;
+        };
+        if (n == 1) return ms.items[0];
+        var last: u32 = none;
+        var fst: u32 = none;
+        for (ms.items[0..n]) |m| {
+            last = latest(last, t.lastOf(m));
+            fst = earliest(fst, t.firstOf(m));
+        }
+        return t.makeSet(gpa, account, .join, try t.runs.intern(gpa, account, ms.items[0..n]), 0, last, fst);
+    }
+
+    /// Set `rs` with tags `y` put in front of every route (an arm of a
+    /// projection, §2.11.2): one `pre` node where every choice of `y`
+    /// comes before the set's, as an enclosing `case`'s arms do; else the
+    /// routes written out, `y` merged in (one it conflicts with dropped).
+    pub fn prefixRoutes(t: *Table, gpa: Allocator, account: *Ids.Account, rs: u32, y: u32) Error!u32 {
+        if (y == 0 or rs == none) return rs;
+        if (rs == 0) {
+            var one = [1]u32{y};
+            return t.internRoutes(gpa, account, &one, 0, 0);
+        }
+        const n = t.rset(rs);
+        // One route stays one route, a list: a reader takes it as its tags.
+        if (n.kind == .flat and t.runs.get(n.a).len == 1) {
+            var one = [1]u32{(try t.merge(gpa, account, y, t.runs.get(n.a)[0])) orelse return none};
+            return t.internRoutes(gpa, account, &one, 0, 0);
+        }
+        if (t.tag(y).last < n.first) return t.makeSet(gpa, account, .pre, y, rs, n.last, t.tag(y).choice);
+        var xs: std.ArrayList(u32) = .empty;
+        defer xs.deinit(gpa);
+        try t.routesInto(gpa, account, rs, y, &xs);
+        return t.internRoutes(gpa, account, xs.items, 0, 0);
     }
 
     /// The routes of two coexisting sets: the unconditional route implies
@@ -473,110 +545,6 @@ pub const Table = struct {
             if (!t.conflict(x, y)) return true;
         };
         return false;
-    }
-
-    /// One entry of `anyPair`: its tags, its block (`none` for none) and
-    /// whether it is an apart occurrence.
-    pub const Entry = struct { tags: u32, block: u32, apart: bool };
-
-    /// Whether two of the entries `es` may be one object twice: two that
-    /// share no block, are not both apart and whose tags hold together.
-    /// Lists that end alike share their tail, so the entries' lists form a
-    /// tree by tail. Two lists whose paths to their common tail start at
-    /// two pairs of one choice with no arm in common (they **part** there)
-    /// conflict, as do all the lists below those two pairs, so they are
-    /// never merged: an `else if` chain's D arms reach one atom by D lists
-    /// that part at each arm, and no pair of them is merged. One inspection
-    /// a list node, a pair of kids and a pair of entries.
-    pub fn anyPair(t: *Table, gpa: Allocator, account: *Ids.Account, es: []const Entry) Error!bool {
-        if (es.len < 2) return false;
-        // The tree: each node met, its parent (by index), its entries.
-        var at: Ids.FixedDict(1) = .{};
-        defer at.deinit(gpa);
-        var nodes: std.ArrayList(struct { id: u32, parent: u32, kids: std.ArrayList(u32) = .empty, ents: std.ArrayList(u32) = .empty }) = .empty;
-        defer {
-            for (nodes.items) |*n| {
-                n.kids.deinit(gpa);
-                n.ents.deinit(gpa);
-            }
-            nodes.deinit(gpa);
-        }
-        try nodes.append(gpa, .{ .id = 0, .parent = none });
-        for (es, 0..) |en, i| {
-            const x = en.tags;
-            var path: std.ArrayList(u32) = .empty;
-            defer path.deinit(gpa);
-            var n = x;
-            const top = while (n != 0) : (n = t.tag(n).tail) {
-                try account.reserve(.inspection, 1);
-                if (at.get(.{n})) |k| break k;
-                try path.append(gpa, n);
-            } else 0;
-            var parent = top;
-            var k = path.items.len;
-            while (k > 0) {
-                k -= 1;
-                const me: u32 = @intCast(nodes.items.len);
-                try at.put(gpa, .{path.items[k]}, me);
-                try nodes.append(gpa, .{ .id = path.items[k], .parent = parent });
-                try nodes.items[parent].kids.append(gpa, me);
-                parent = me;
-            }
-            try nodes.items[if (path.items.len > 0) parent else top].ents.append(gpa, @intCast(i));
-        }
-        var left: std.ArrayList(u32) = .empty;
-        defer left.deinit(gpa);
-        var right: std.ArrayList(u32) = .empty;
-        defer right.deinit(gpa);
-        for (nodes.items) |n| {
-            // Entries at one node: the same list twice.
-            for (n.ents.items, 0..) |a, k| for (n.ents.items[k + 1 ..]) |b| {
-                try account.reserve(.inspection, 1);
-                if (try t.mayPair(gpa, account, es[a], es[b])) return true;
-            };
-            // A node's entries and those below it: a list and a longer one.
-            if (n.ents.items.len > 0) for (n.kids.items) |c| {
-                left.clearRetainingCapacity();
-                try below(gpa, account, nodes.items, c, &left);
-                for (n.ents.items) |a| for (left.items) |b| {
-                    try account.reserve(.inspection, 1);
-                    if (try t.mayPair(gpa, account, es[a], es[b])) return true;
-                };
-            };
-            // Two kids' entries, unless the kids part.
-            for (n.kids.items, 0..) |c, k| for (n.kids.items[k + 1 ..]) |d| {
-                try account.reserve(.inspection, 1);
-                const p = t.tag(nodes.items[c].id);
-                const q = t.tag(nodes.items[d].id);
-                if (p.choice == q.choice and !t.armsMeet(p.arms, q.arms)) continue;
-                left.clearRetainingCapacity();
-                right.clearRetainingCapacity();
-                try below(gpa, account, nodes.items, c, &left);
-                try below(gpa, account, nodes.items, d, &right);
-                for (left.items) |a| for (right.items) |b| {
-                    try account.reserve(.inspection, 1);
-                    if (try t.mayPair(gpa, account, es[a], es[b])) return true;
-                };
-            };
-        }
-        return false;
-    }
-
-    fn mayPair(t: *Table, gpa: Allocator, account: *Ids.Account, a: Entry, b: Entry) Error!bool {
-        if ((a.block != none and a.block == b.block) or (a.apart and b.apart)) return false;
-        return (try t.merge(gpa, account, a.tags, b.tags)) != null;
-    }
-
-    /// The entries at node `n` of `anyPair`'s tree and below it.
-    fn below(gpa: Allocator, account: *Ids.Account, nodes: anytype, n: u32, out: *std.ArrayList(u32)) Error!void {
-        var stack: std.ArrayList(u32) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, n);
-        while (stack.pop()) |m| {
-            try account.reserve(.inspection, 1);
-            try out.appendSlice(gpa, nodes[m].ents.items);
-            try stack.appendSlice(gpa, nodes[m].kids.items);
-        }
     }
 
     /// The routes of set `rs`, each with `seed` merged in (one that
@@ -611,7 +579,7 @@ pub const Table = struct {
                         it.run = it.t.runs.get(n.a);
                         it.acc = acc;
                     },
-                    .wrap => try it.stack.append(gpa, .{ n.b, (try it.t.merge(gpa, account, n.a, acc)) orelse continue }),
+                    .wrap, .pre => try it.stack.append(gpa, .{ n.b, (try it.t.merge(gpa, account, n.a, acc)) orelse continue }),
                     .join => {
                         const ms = it.t.runs.get(n.a);
                         var i = ms.len;
@@ -649,7 +617,7 @@ fn RunTable(comptime T: type) type {
             r.next.deinit(gpa);
         }
 
-        fn get(r: *const Self, id: u32) []const T {
+        pub fn get(r: *const Self, id: u32) []const T {
             const x = r.runs.items[id];
             return r.words.items[x[0]..][0..x[1]];
         }
