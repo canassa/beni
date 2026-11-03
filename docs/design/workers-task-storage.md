@@ -299,3 +299,9 @@ The instance parameter preserves independent callback effect classes rather
 than merging synchronous host controls with suspendable handlers. Request jobs retain native Response resolvers; Ask entries retain native
 data resolvers. RPC, socket and alarm events keep their original pending
 promise until completion or the host abort, preserving the host Reset result.
+
+The new Cloudflare supplement and Promise helpers use unworded foreign
+ownership, which escapes every parameter and provides no edit permission
+(ownership-checker.md §24.5). Their real native types and sync callback
+requirements remain checked. More precise ownership contracts require the
+existing body pins and behavioral fixtures before they can be declared.

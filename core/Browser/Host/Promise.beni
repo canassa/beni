@@ -9,16 +9,16 @@ pub foreign type Resolvers a
 pub foreign type Promise a
 
 
-pub foreign impure promise : borrowed Resolvers a → Promise a
+pub foreign impure promise : Resolvers a → Promise a
 
 
-pub foreign impure resolve : borrowed Resolvers a, a → ⊤
+pub foreign impure resolve : Resolvers a, a → ⊤
 
 
-pub foreign impure reject : borrowed Resolvers a, borrowed Rejection.Rejection → ⊤
+pub foreign impure reject : Resolvers a, Rejection.Rejection → ⊤
 
 
-pub foreign impure after : borrowed Promise a, escaped sync (a → ⊤) → Promise ⊤
+pub foreign impure after : Promise a, sync (a → ⊤) → Promise ⊤
 
 
 pub foreign impure observe :
