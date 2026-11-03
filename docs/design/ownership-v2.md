@@ -1581,6 +1581,18 @@ none) the remaining steps on, one record a step, as `Slots.replay` takes them; b
 nowhere and better in 31 accounts, totals 8 431 down. `Schema.shapeOf` 258 000 → 220 738, `shapesOf` 24 348 → 22 195,
 `describedHost` 6 927 → 4 956, `Fields16` 136 119 → 132 529, `Dict.descend` 19 896 → 19 500; `variantList`'s growth
 183 → 0, `boxOf` 1 708 → 1 356, `asVariant` 1 810 → 937.
+*Amended 2026-11-03 (#1714):* a draft's join is pointwise (*Lattice*), as it was specified. `Forest.unite` had a
+second mode for a contract joined into a draft: at a node where the joined side brought an open arrival, every
+plain arrival of the node moved into the open run, so a plain `fresh` at a slot also stood at every slot below it.
+That made a draft that a round had read plain say more than the round did: `Codec.Decode.oneOfHelp`'s validation
+round read its own candidate's `π3[*]*` at every slot below `[*]`, 23 `cb` arrivals where the inference round had
+read one, and took a fifth round (an inference defect). The mode is gone. 22 roots' summaries change, each an
+arrival that the join had made open and that is now plain where it was said (`RecordTree.deepest`
+`#0.0.kids[*]#0.0.kids… fresh` → `#0.0.kids[*]#0.0.kids fresh`, `SplitArmsJoin.update` `ε… π2ε fresh` → `ε fresh,
+ε… π2ε`); no verdict moves and no limit line changes. Where a slot below loses `fresh` (11 summaries: `Conduit`'s
+and `BikeWars`' `update`, `ListPersistence.walk`), the parameter's arrival at it stays, so a caller decides the
+same; sanitised probes of the shape through callers that edit the result's lists in place, the argument live and
+dead, accept and refuse as before and run the same.
 
 ### 2.11 Calls
 
