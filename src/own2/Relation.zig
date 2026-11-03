@@ -1162,11 +1162,14 @@ pub const Eval = struct {
             .param => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 const arg = cl.args[a.j];
+                try e.routed(e, arg, words.items, a.deep, if (suffix.len == 0) a.path else none, out);
                 // A closure is what it captures: no place below it names a
-                // capture, so its arrival takes them, deep (#1772).
+                // capture, so its arrival takes them too, deep (#1772).
                 const x = e.f.val(try e.valueAt(arg, words.items));
-                const deep = a.deep or (x.kind == .built and x.form == .closure);
-                try e.routed(e, arg, words.items, deep, if (suffix.len == 0) a.path else none, out);
+                if (!a.deep and x.kind == .built and x.form == .closure) {
+                    const caps = try e.arena.dupe(u32, x.kids);
+                    for (caps) |c| try e.routed(e, c, &.{}, true, none, out);
+                }
             },
             .cb => {
                 if (e.known.get(.{ call, a.j })) |vc| {
