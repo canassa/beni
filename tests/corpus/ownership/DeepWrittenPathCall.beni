@@ -1,0 +1,48 @@
+-- ownership: DeepWrittenPath's writes as callee write paths (ownership-v2.md
+-- §2.8, §2.11.2, §4.4 *holder and callee path words*, #1225). `deepN` writes
+-- `π1.a…a` at N steps; `callN` passes its own parameter on, accepted as a
+-- parameter write; `sharedN` reads `r` after the call, refused as a later
+-- use. The caller's records per path step are pinned in build_test.
+deep32 r = List.push r.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a 1
+
+
+pub call32 r = deep32 r
+
+
+pub shared32 r = ( deep32 r, r )
+
+
+deep64 r =
+    List.push
+        r.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a
+        1
+
+
+pub call64 r = deep64 r
+
+
+pub shared64 r = ( deep64 r, r )
+
+
+deep128 r =
+    List.push
+        r.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a
+        1
+
+
+pub call128 r = deep128 r
+
+
+pub shared128 r = ( deep128 r, r )
+
+
+deep256 r =
+    List.push
+        r.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a
+        1
+
+
+pub call256 r = deep256 r
+
+
+pub shared256 r = ( deep256 r, r )
