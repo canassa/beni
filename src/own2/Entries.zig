@@ -19,12 +19,23 @@ const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
+const Coexist = @import("Coexist.zig");
 
 pub const Error = Ids.ChargeError;
 const Frame = Value.Frame;
 const none: u32 = Ids.none_int;
 
-pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32 };
+/// An entry: its leaf, its literal route, its occurrence, its block, and
+/// the route set it is reached under (§2.11.2; 0 for its leaf's tags alone).
+pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32, routes: u32 = 0 };
+
+/// Whether two entries' routes hold together (`Coexist.setsMeet`).
+pub fn routesMeet(f: *Frame, a: Ent, b: Ent) Error!bool {
+    const ta = f.leafAt(a.leaf).tags;
+    const tb = f.leafAt(b.leaf).tags;
+    if (a.routes == 0 and b.routes == 0) return f.sets.tags.meet(f.account, ta, tb);
+    return Coexist.setsMeet(&f.sets.tags, f.gpa, f.account, ta, a.routes, tb, b.routes);
+}
 
 /// The occurrences a check gathers, each once.
 pub const Occs = struct {
@@ -73,27 +84,28 @@ pub fn allApart(ents: []const Ent, idx: []const u32) bool {
 
 /// Whether two entries `idx` of one atom may hold together (`Routes.Table.anyPair`).
 pub fn atomTwice(f: *Frame, ents: []const Ent, idx: []const u32) Error!bool {
-    var es: std.ArrayList(@TypeOf(f.sets.tags).Entry) = .empty;
+    var es: std.ArrayList(Coexist.Entry) = .empty;
     defer es.deinit(f.gpa);
-    for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ) });
-    return f.sets.tags.anyPair(f.gpa, f.account, es.items);
+    for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ), .routes = ents[i].routes });
+    return Coexist.anyPair(&f.sets.tags, f.gpa, f.account, es.items);
 }
 
 pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
     try f.charge(.cond, 1);
     if (a.block != none and a.block == b.block) return false;
-    if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ) return false;
+    if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ and a.routes == b.routes) return false;
     // Apart occurrences need only be apart from the plain ones.
     if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
     const la = f.leafAt(a.leaf);
     const lb = f.leafAt(b.leaf);
-    if (!try f.sets.tags.meet(f.account, la.tags, lb.tags)) return false;
     // Two distinct occurrences of a callee at one value by one route are
     // two distinct positions of it (§2.9.3's routed rule).
     if (routed and a.route == b.route and a.occ != b.occ and la.pos == lb.pos) return false;
     if (la.at_pos and lb.at_pos and la.pos != lb.pos) return false;
     const r = try f.related(la.pos, lb.pos);
-    return r.rel == .related and try Subtree.meetIn(f.slots, f.gpa, f.account, f.places, la.slots, lb.slots);
+    if (r.rel != .related or !try Subtree.meetIn(f.slots, f.gpa, f.account, f.places, la.slots, lb.slots)) return false;
+    // Their routes last: a route set's meet costs its nodes.
+    return routesMeet(f, a, b);
 }
 
 /// Whether a callback's answer among `ents` may be another entry's object
@@ -107,7 +119,7 @@ pub fn answerMeets(f: *Frame, ents: []const Ent, alive: []const bool, fresh: usi
         for (ents[if (i >= fresh) 0 else fresh..], if (i >= fresh) 0 else fresh..) |o, k| {
             if (k == i or !alive[k]) continue;
             if (o.block != none and o.block == en.block) continue;
-            if (try f.sets.tags.meet(f.account, f.leafAt(en.leaf).tags, f.leafAt(o.leaf).tags)) return true;
+            if (try routesMeet(f, en, o)) return true;
         }
     }
     return false;

@@ -22,7 +22,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
-const Paths = @import("Paths.zig");
+const Routed = @import("Routed.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -315,9 +315,9 @@ fn callEffects(e: *Evaluation, q: u32) Error!void {
     };
     const h = e.contracts.head(call.contract);
     for (e.contracts.effectsOf(h.escapes)) |x| try callEscape(e, q, x);
-    // The writes of one argument by one walk of it (`Paths`).
+    // The writes of one argument by one walk of it (`Routed`).
     const ws = e.contracts.effectsOf(h.writes);
-    const pre = try Paths.ofWrites(&e.ev, call.args, ws);
+    const pre = try Routed.ofWrites(&e.ev, call.args, ws);
     defer for (pre) |*p| if (p.*) |*l| l.deinit(e.gpa());
     for (ws, pre) |x, p| try callWriteFrom(e, q, x, if (p) |l| l.items else null);
 }
