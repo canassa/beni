@@ -1,0 +1,36 @@
+-- The safe twin of `SanitiserTimeoutAnswer` (`ownership-v2.md` §2.13.6): the
+-- work answers a list it makes, a literal or a `List.map` of its capture,
+-- so the `Just` holds a fresh list. v2 accepts each edit in place, and the
+-- sanitised run prints the same.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import String
+import Task
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+answer : Maybe (List Int) → List Int
+answer m =
+    case m of
+        Just v →
+            v
+
+        Nothing →
+            []
+
+
+run : ⊤ → String
+run ⊤ =
+    k = [ 1 ]
+    a = answer (Task.timeout (Duration.seconds 5) λ⊤ → [ 7 ])
+    b = answer (Task.timeout (Duration.seconds 5) λ⊤ → List.map k λx → x + 1)
+    "${show (List.push a 4)} ${show (List.push b 5)} ${show k}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.print (run ⊤)
