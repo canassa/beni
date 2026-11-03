@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Trees = @import("Trees.zig");
 
 const Table = Slots.Table;
 const SetId = Slots.SetId;
@@ -20,6 +21,19 @@ const PathId = Ids.PathId;
 const PlaceId = Ids.PlaceId;
 const Error = Slots.Error;
 const empty = Slots.empty;
+
+/// Arrival `a` read for the objects at caller slot `slot` only (§2.10,
+/// *Read-off*). An open arrival is the parameter's subtree by structure:
+/// its object at `slot`, deep only where no step below `slot` can name
+/// them (a type variable's or an opaque place). A plain one is as it is.
+pub fn readAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId, open: bool) Trees.Arrival {
+    var x = a;
+    if (open) x.deep = a.deep and switch (places.kind(places.pathPlace(slot))) {
+        .@"var", .@"opaque" => true,
+        else => false,
+    };
+    return x;
+}
 
 /// Whether a set holds a symbol `↓p`.
 pub fn symbolic(t: *const Table, s: SetId) bool {
