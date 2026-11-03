@@ -697,18 +697,18 @@ fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         // A write of a position's own storage never meets what lies
         // inside it: no value holds itself.
         if (target and t.at_pos and r.second_prefix and x.pos != t.pos) {
-            if (!(try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots))) return apart(e, xi, ti, target);
+            if (!(try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots))) return apartOf(e, xi, ti, target);
             // The holder below the written position holds the slot only
             // where a level folds back onto it.
         }
         if (try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots)) return .may;
     }
-    return apart(e, xi, ti, target);
+    return apartOf(e, xi, ti, target);
 }
 
 /// Two leaves of one root at distinct places: apart under the root's
 /// separation.
-fn apart(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+pub fn apartOf(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
     const r0 = e.f.roots.items[x.root];
