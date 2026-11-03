@@ -1,0 +1,13 @@
+-- Growing a decoded list must keep amortised constant-time append.
+import Node
+import Schema
+
+
+main : Node.Program
+main =
+    input = List.range 1 200000
+    case Schema.decode (Schema.list Schema.int) input of
+        Ok output →
+            Node.print "${List.length output}:${List.sum output}:${List.length input}"
+        Err _ →
+            Node.print "decode failed"

@@ -8245,3 +8245,12 @@ token to inspect logical elements and project views to host arrays, without
 invoking the stored protocol callback. The native array and wrapper operations
 are pinned at their actual lowering regions with the defining core package;
 passed-as-value implementations and the View constructor are pinned too.
+
+Schema's private traversal accumulators carry their output List as a tail-loop
+parameter. The caller starts it empty; each successful element gives the current
+list up to `List.push`, and only the next iteration receives the result. No
+closure or reference retains an earlier output list. Record fields retain the
+same rule while host-output fields are written to their separate plain object.
+First-error traversal returns immediately; all-error traversal keeps collecting
+issues and discards a partial output when any issue was found. Typed workers and
+the interpreter use the same accumulation rule.

@@ -1698,8 +1698,7 @@ hostArray items = packed (toHost (List.map items hostDatum))
 
 
 walkItems : Context, Node, Int, Path, List Datum, Int → Maybe (List Datum)
-walkItems c child depth path items offset =
-    walkItemsFrom c child depth path items offset (Js.ref []) False
+walkItems c child depth path items offset = walkItemsFrom c child depth path items offset [] False
 
 
 walkItemsFrom :
@@ -1709,13 +1708,13 @@ walkItemsFrom :
     , Path
     , List Datum
     , Int
-    , Js.Ref (List Datum)
+    , List Datum
     , Bool
     → Maybe (List Datum)
 walkItemsFrom c child depth path items offset out failed =
     case items of
         [] →
-            if failed then Nothing else Just (Js.read out)
+            if failed then Nothing else Just out
         [ item, …rest ] →
             here = step path (toHost offset) (toHost offset)
             answer =
@@ -1730,8 +1729,7 @@ walkItemsFrom c child depth path items offset out failed =
                     else
                         Nothing
                 Just result →
-                    Js.write out [ …(List.copy (Js.read out)), result ]
-                    walkItemsFrom c child depth path rest (offset + 1) out failed
+                    walkItemsFrom c child depth path rest (offset + 1) (List.push out result) failed
 
 
 listOf : Context, Node, Ends, Int, Path, Datum → Maybe Datum
@@ -1994,13 +1992,13 @@ fieldsFrom :
     , Path
     , Datum
     , List Datum
-    , Js.Ref (List Datum)
+    , List Datum
     , Js.Value
-    → Bool
+    → Maybe (List Datum)
 fieldsFrom c fs depth path parent supplied out rawOut =
     case fs of
         [] →
-            False
+            Just out
         [ entry, …rest ] →
             ( input, remaining ) =
                 case supplied of
@@ -2010,20 +2008,25 @@ fieldsFrom c fs depth path parent supplied out rawOut =
                         ( Just item, tail )
             case runField c entry depth path parent input of
                 Nothing →
-                    if c.all then fieldsFrom c rest depth path parent remaining out rawOut else True
+                    if c.all then
+                        fieldsFrom c rest depth path parent remaining out rawOut
+                    else
+                        Nothing
                 Just answer →
-                    case answer of
-                        FieldValue result →
-                            if c.dh then
-                                Js.set
-                                    rawOut
-                                    (if c.dst == encodedSide then entry.key else entry.name)
-                                    (hostDatum result)
-                            else
-                                Js.write out [ …(List.copy (Js.read out)), result ]
-                        FieldOmitted missing →
-                            if not c.dh then Js.write out [ …(List.copy (Js.read out)), missing ]
-                    fieldsFrom c rest depth path parent remaining out rawOut
+                    next =
+                        case answer of
+                            FieldValue result →
+                                if c.dh then
+                                    Js.set
+                                        rawOut
+                                        (if c.dst == encodedSide then entry.key else entry.name)
+                                        (hostDatum result)
+                                    out
+                                else
+                                    List.push out result
+                            FieldOmitted missing →
+                                if c.dh then out else List.push out missing
+                    fieldsFrom c rest depth path parent remaining next rawOut
 
 
 recordOf : Context, List FieldNode, Maps, Maybe Owner, Int, Path, Datum → Maybe Datum
@@ -2041,19 +2044,22 @@ recordOf c fs maps owner depth path parent =
             Nothing
         else
             supplied = if c.sh then [] else (accessAt maps c.src).view parent
-            out = Js.ref []
             rawOut = if c.dh then newObject owner else Js.null
-            if fieldsFrom c fs depth path parent supplied out rawOut || issueCount c > before then
-                Nothing
-            else if c.dh then
-                Just (packedHost rawOut)
-            else
-                result = (accessAt maps c.dst).make (Js.read out)
-                case owner of
-                    Nothing →
-                        Just result
-                    Just selected →
-                        Just ((variantInjection selected.selected c.dst).inject result)
+            case fieldsFrom c fs depth path parent supplied [] rawOut of
+                Nothing →
+                    Nothing
+                Just out →
+                    if issueCount c > before then
+                        Nothing
+                    else if c.dh then
+                        Just (packedHost rawOut)
+                    else
+                        result = (accessAt maps c.dst).make out
+                        case owner of
+                            Nothing →
+                                Just result
+                            Just selected →
+                                Just ((variantInjection selected.selected c.dst).inject result)
 
 
 variantInjection : VariantNode, Int → InjectionBox
@@ -2152,8 +2158,7 @@ elementsMessage n = "expected an array of ${String.fromInt n} elements"
 
 
 walkNodes : Context, List Node, Int, Path, List Datum, Int → Maybe (List Datum)
-walkNodes c nodes depth path items offset =
-    walkNodesFrom c nodes depth path items offset (Js.ref []) False
+walkNodes c nodes depth path items offset = walkNodesFrom c nodes depth path items offset [] False
 
 
 walkNodesFrom :
@@ -2163,13 +2168,13 @@ walkNodesFrom :
     , Path
     , List Datum
     , Int
-    , Js.Ref (List Datum)
+    , List Datum
     , Bool
     → Maybe (List Datum)
 walkNodesFrom c nodes depth path items offset out failed =
     case nodes of
         [] →
-            if failed then Nothing else Just (Js.read out)
+            if failed then Nothing else Just out
         [ node, …rest ] →
             case items of
                 [] →
@@ -2188,8 +2193,15 @@ walkNodesFrom c nodes depth path items offset out failed =
                             else
                                 Nothing
                         Just result →
-                            Js.write out [ …(List.copy (Js.read out)), result ]
-                            walkNodesFrom c rest depth path remaining (offset + 1) out failed
+                            walkNodesFrom
+                                c
+                                rest
+                                depth
+                                path
+                                remaining
+                                (offset + 1)
+                                (List.push out result)
+                                failed
 
 
 tupleOf : Context, List Node, Access, Int, Path, Datum → Maybe Datum
@@ -3578,11 +3590,11 @@ listWorkers workers =
     }
 
 
-walkWorker : Context, Worker i o, Int, Path, List i, Int, Js.Ref (List o), Bool → Maybe (List o)
+walkWorker : Context, Worker i o, Int, Path, List i, Int, List o, Bool → Maybe (List o)
 walkWorker c child depth path items offset output failed =
     case items of
         [] →
-            if failed then Nothing else Just (Js.read output)
+            if failed then Nothing else Just output
         [ item, …rest ] →
             answer =
                 if depth ≥ c.max then
@@ -3597,14 +3609,13 @@ walkWorker c child depth path items offset output failed =
                     else
                         Nothing
                 Just result →
-                    Js.write output [ …(List.copy (Js.read output)), result ]
-                    walkWorker c child depth path rest (offset + 1) output failed
+                    walkWorker c child depth path rest (offset + 1) (List.push output result) failed
 
 
 listTypedWorker : Worker i o → Worker (List i) (List o)
 listTypedWorker child =
     λc depth parent input output items →
-        walkWorker c child depth (pathAt parent input output) items 0 (Js.ref []) False
+        walkWorker c child depth (pathAt parent input output) items 0 [] False
 
 
 listReadWorker : Worker Js.Value a → Worker Js.Value (List a)
@@ -3618,7 +3629,7 @@ listReadWorker child =
                 (pathAt parent input output)
                 (fromHost items)
                 0
-                (Js.ref [])
+                []
                 False
         else
             _ = compiledFail c parent input output 0 "expected an array" items False
@@ -3629,7 +3640,7 @@ listWriteWorker : Worker a Js.Value → Worker (List a) Js.Value
 listWriteWorker child =
     λc depth parent input output items →
         Maybe.map
-            (walkWorker c child depth (pathAt parent input output) items 0 (Js.ref []) False)
+            (walkWorker c child depth (pathAt parent input output) items 0 [] False)
             toHost
 
 
