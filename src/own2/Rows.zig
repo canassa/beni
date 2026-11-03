@@ -1,4 +1,4 @@
-//! L4: rows as contracts (`docs/design/ownership-v2.md` §2.10, §2.13.6): a
+//! L6: rows as contracts (`docs/design/ownership-v2.md` §2.10, §2.13.6): a
 //! worded declaration's words over its places, a constructor's contract, a
 //! derived or primitive comparison's, a schema member's, and the
 //! pessimistic contract of a callee with none. A worded code is never
@@ -25,7 +25,8 @@
 //! | `cellwrite`, `cellcomplete` | a storage write of the cell `π1` |
 //! | `cellstored` | the value escapes behind the barrier |
 //! | `cellupdate`, `cellmodify` | a label called once, supplied `π1◆` |
-//! | anything else (`taken`, `lent`, callbacks' rows), `unknown` | the result `⊤` (a `foreign`'s not `lent`: `host`; a loan is beni's), not separated |
+//! | callback `taken` | a label (`once`, else many) supplied `π1[*]`; `stored`: its answer at `[*]` |
+//! | anything else (`lent`, callbacks' rows), `unknown` | the result `⊤` (a `foreign`'s not `lent`: `host`; a loan is beni's), not separated |
 //!
 //! Obligations kept here: O9 (rows state their bodies: a row is taken as
 //! given, never inferred).
@@ -37,6 +38,7 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
+const RowEnv = @import("RowEnv.zig");
 const Ast = @import("../parse/Ast.zig");
 
 pub const Error = Ids.ChargeError;
@@ -56,93 +58,7 @@ pub const Signature = struct {
     foreign: bool = false,
 };
 
-pub const Env = struct {
-    gpa: Allocator,
-    arena: Allocator,
-    account: *Ids.Account,
-    places: *Place.Table,
-    slots: *Slots.Table,
-    contracts: *Contract.Table,
-
-    fn has(words: u32, w: W) bool {
-        return words & w.bit() != 0;
-    }
-
-    fn root(env: Env, p: PlaceId) Error!PathId {
-        return env.places.rootPath(env.gpa, p);
-    }
-
-    fn rel(env: Env, p: PathId) Error!Slots.Rel {
-        return env.slots.relOf(env.gpa, env.account, env.places, p);
-    }
-
-    fn isVar(env: Env, p: PathId) bool {
-        return env.places.kind(env.places.pathPlace(p)) == .@"var";
-    }
-
-    /// Every object slot at and below the result root, each with `a`.
-    fn everySlot(env: Env, d: *Draft, result: PlaceId, a: Contract.Arrival) Error!void {
-        const r = try env.root(result);
-        // A whole subtree (`↓r`, §2.3.1): an atom is the same at every slot,
-        // one wide entry at the root; anything else is named at each slot
-        // (`belowAll`, charged).
-        const set = try Subtree.below(env.slots, env.gpa, env.account, env.places, r);
-        if (Subtree.symbolic(env.slots, set) and (a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host)) {
-            _ = try Draft.addWide(&d.res, env.arena, Slots.root, a);
-            return;
-        }
-        for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, r))) |s| {
-            const sr = try env.rel(.from(s));
-            if (env.isVar(.from(s))) try Draft.markOpen(&d.res, env.arena, sr);
-            _ = try Draft.addArrival(&d.res, env.arena, sr, a);
-        }
-        if (Slots.isObject(env.places, r) and env.isVar(r)) try Draft.markOpen(&d.res, env.arena, Slots.root);
-    }
-
-    /// The result's slots below `prefix` (a result path) are parameter `j`'s
-    /// below `from` (a parameter path), slot for slot.
-    fn identity(env: Env, d: *Draft, prefix: PathId, j: u32, from: PathId) Error!void {
-        return env.identityInto(&d.res, prefix, j, from);
-    }
-
-    /// `identity` into the slots `list`: a result's or a supply's.
-    fn identityInto(env: Env, list: *Draft.Res, prefix: PathId, j: u32, from: PathId) Error!void {
-        // A contract names each result slot (§2.10): a whole subtree is
-        // written out (`belowAll`, §2.3.1, charged).
-        for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, from))) |s| {
-            const below = (try env.slots.relBelow(env.gpa, env.account, env.places, from, .from(s))) orelse continue;
-            var at: std.ArrayList(u32) = .empty;
-            defer at.deinit(env.gpa);
-            try Slots.replay(env.gpa, env.account, env.places, prefix, env.slots.relWords(below), &at);
-            // An opaque or a type variable's slot holds anything (a cast's
-            // inner, §2.13.9): every object of it, at every result slot
-            // below where it lands.
-            const wild = env.isVar(.from(s)) or env.places.kind(env.places.pathPlace(.from(s))) == .@"opaque";
-            const arrival: Contract.Arrival = .{ .kind = .param, .j = j, .slot = try env.rel(.from(s)), .deep = wild };
-            if (at.items.len == 0) {
-                // A slot the result cannot name: it arrives at the prefix.
-                const pr = try env.rel(prefix);
-                if (env.isVar(prefix)) try Draft.markOpen(list, env.arena, pr);
-                _ = try Draft.addArrival(list, env.arena, pr, .{ .kind = .param, .j = j, .slot = try env.rel(.from(s)), .deep = true });
-                continue;
-            }
-            for (at.items) |q| {
-                const qr = try env.rel(.from(q));
-                if (env.isVar(.from(q))) try Draft.markOpen(list, env.arena, qr);
-                _ = try Draft.addArrival(list, env.arena, qr, arrival);
-                // Below where it lands, each result slot is that slot's
-                // steps taken inside the parameter (a cast read back is the
-                // part it was built from, §2.13.9): the slot is open, so a
-                // caller's slot below it takes its own steps on from `s`.
-                if (wild) try Draft.markOpen(list, env.arena, qr);
-            }
-        }
-    }
-
-    fn commit(env: Env, d: *Draft) Error!Contract.Id {
-        return env.contracts.commit(env.gpa, env.account, env.slots, d);
-    }
-};
+pub const Env = RowEnv.Env;
 
 /// The pessimistic contract (§2.10): every argument read and escaped deep,
 /// the result `⊤` (a `foreign`'s `host`, §2.10), not separated.
@@ -218,6 +134,24 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
                 d.labels.items[li].calls = .once;
                 const su = try d.labels.items[li].supplyOf(env.arena, 0);
                 try env.identityInto(&su.res, try env.root(env.places.pathPlace(cs)), 0, cs);
+                exclusive = false;
+                continue;
+            };
+            // A `taken` callback (`List.update`'s `focus`, §2.13.6): called
+            // `once` (else many times) on an element taken out of `π1`, kept
+            // by nothing while it runs; `stored`: its answer is put back at
+            // the result's `[*]`. The supply is `π1[*]`, slot for slot.
+            if (Env.has(ws, .taken) and k > 0) if (sig.origin) |o| taken: {
+                const pe = (try env.places.extend(env.gpa, .growth(env.account), try env.root(sig.params[0].place), Place.Step.elem)) orelse break :taken;
+                const li = try d.labelOf(env.arena, j, Slots.root, .{ o[0], o[1], RowEnv.taken_origin });
+                d.labels.items[li].calls = if (Env.has(ws, .once)) .once else .many;
+                const su = try d.labels.items[li].supplyOf(env.arena, 0);
+                try env.identityInto(&su.res, try env.root(env.places.pathPlace(pe)), 0, pe);
+                // The container is exclusive: each write of it asks so at
+                // the caller (`Eval.takenOccs`), the origin marking it.
+                if (Env.has(ws, .stored)) if (try env.places.extend(env.gpa, .growth(env.account), r, Place.Step.elem)) |re| {
+                    _ = try Draft.addWide(&d.res, env.arena, try env.rel(re), .{ .kind = .cb, .j = li, .slot = Slots.root });
+                };
                 exclusive = false;
                 continue;
             };

@@ -107,8 +107,7 @@ pub const Code = struct {
     result_place: PlaceId,
 };
 
-/// A demand made by the walk or by an evaluation (§2.8): what `Resolve`
-/// judges and `Message` says.
+/// A demand made by the walk or by an evaluation (§2.8): what `Resolve` judges and `Message` says.
 pub const Demand = struct {
     point: u32,
     kind: Facts.DemandKind,
@@ -120,8 +119,7 @@ pub const Demand = struct {
     write_path: PathId = .none,
     write_rel: u32 = 0,
     callee_inst: u32 = none,
-    /// A `once` demand's written capture: the base is this local, not
-    /// `base_inst` (`none` otherwise).
+    /// A `once` demand's written capture: the base is this local, not `base_inst` (`none` otherwise).
     base_local: u32 = none,
     /// The written objects: a run of `Walk.leaf_runs`.
     targets: Ids.Range = .{},
@@ -137,6 +135,8 @@ pub const Demand = struct {
     /// and the argument written.
     call: u32 = none,
     arg: u32 = none,
+    /// A `taken` label's supply write: its container's occurrences at the label's caller (`Eval.finishDemands`).
+    taken_occs: ?[2]u64 = null,
     /// A construction's base value: its storage, the targets, is read again
     /// by each evaluation (a prepend's re-cons reads the calls' contracts).
     base_value: u32 = none,
