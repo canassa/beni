@@ -2583,7 +2583,6 @@ test "CorePrivate Cloudflare named and method fences use the loaded layer identi
     try testing.expectEqual(@as(u8, 1), spoof.exit_code);
     try testing.expectEqual(@as(usize, 1), spoof.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.private_name, spoof.diagnostics[0].code);
-
 }
 
 fn writeReplyScanProgram(w: *World) !void {
