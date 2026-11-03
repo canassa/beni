@@ -316,9 +316,9 @@ tests/pending/ownership/RecordCopyOpen.beni exit=0 ownership-differs
 # "sharing the checker can see"); it is a limit of the checker; R-6.3.
 tests/pending/check/bad/inline/LogScopeUnknownLimit.beni exit=1 codes=record_still_used×1 why=code
 
-# CK-311 (#954): a lambda applied directly to a function parameter overflows
-# the stack of `dump --stage=ownership`; R-7.12.
-tests/pending/ownership/AppliedLambdaRecursion.beni crash=ABRT
+# CK-311 (#954): a lambda applied directly to a function parameter overflowed
+# the stack of v1 (#1747, fixed); red now because v1 answers borrowed and unseen; R-7.12.
+tests/pending/ownership/AppliedLambdaRecursion.beni exit=0 ownership-differs
 
 # CK-315 (#1435): a local bound to `[]` inside a constructor, handed to a
 # writer of its elements' lists, is refused `disjoint` (approx) by v2; the
