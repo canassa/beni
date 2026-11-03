@@ -1,8 +1,12 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.DOMRect as DOMRect
 import Browser.Host.EventTarget as EventTarget
-import Browser.Host.Rejection as Rejection
+
+
+import Browser.Host.DOMRect as DOMRect
+
+
 import Js
+import Browser.Host.Rejection as Rejection
 
 
 pub foreign type Event

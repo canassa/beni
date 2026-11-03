@@ -1,6 +1,8 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.DOMRect as DOMRect
 import Browser.Host.Node as Node
+
+
+import Browser.Host.DOMRect as DOMRect
 import Browser.Host.Promise as Promise
 
 

@@ -1,10 +1,10 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
 import Browser.Host.AbortSignal as AbortSignal
-import Browser.Host.NodeDirent as NodeDirent
 import Browser.Host.Promise as Promise
+import Browser.Host.NodeDirent as NodeDirent
+
 
 
 pub foreign impure readUtf8 : String, escaped AbortSignal.AbortSignal → Promise.Promise String
-
 
 pub foreign impure readDir : String → Promise.Promise (List NodeDirent.NodeDirent)

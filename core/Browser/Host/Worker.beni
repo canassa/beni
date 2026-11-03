@@ -1,6 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.EventTarget as EventTarget
 import Js
+import Browser.Host.EventTarget as EventTarget
 
 
 pub foreign type Endpoint

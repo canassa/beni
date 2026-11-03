@@ -105,21 +105,34 @@ test "reviewed callable subset resolves against the pinned catalogue" {
     try std.testing.expect(Native.Callable.validate(result.success));
 }
 
+fn nativeSourceMatches(a: std.mem.Allocator, path: []const u8, expected: []const u8) !bool {
+    const actual = std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024)) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("native generator/source mismatch: {s} (missing)\n", .{path});
+            return false;
+        },
+        else => return err,
+    };
+    if (std.mem.eql(u8, expected, actual)) return true;
+    std.debug.print("native generator/source mismatch: {s}\n", .{path});
+    std.testing.expectEqualStrings(expected, actual) catch {};
+    return false;
+}
+
 test "shipped native modules are exactly the pinned generator output" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const checked = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "core/Js/Data.js", a, .limited(64 * 1024));
-    try std.testing.expectEqualStrings(Native.CheckedData.sibling, checked);
+    var mismatches: usize = 0;
+    if (!try nativeSourceMatches(a, "core/Js/Data.js", Native.CheckedData.sibling)) mismatches += 1;
     for ([_][]const u8{ "Window", "Document", "Node", "Element", "TextEncoder", "Uint8Array", "Timers", "WorkerGlobalScope", "MessageChannel", "MessagePort", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "AbortController", "AbortSignal", "Event", "DOMRect", "EventTarget", "HTMLAnchorElement", "Storage", "DOMException", "FormData", "Headers", "ReadableStreamDefaultReader", "Response", "TextDecoder", "URL", "WebSocket", "Console", "Navigator", "Worker", "Cloudflare" }) |name| {
         const module = try std.fmt.allocPrint(a, "Browser.Host.{s}", .{name});
         const path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.beni", .{name});
-        const actual = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024));
-        try std.testing.expectEqualStrings(try Native.Callable.source(a, module, if (std.mem.eql(u8, name, "Cloudflare") or std.mem.eql(u8, name, "Timers") or std.mem.eql(u8, name, "Immediate") or std.mem.eql(u8, name, "Date") or std.mem.eql(u8, name, "Math") or std.mem.eql(u8, name, "Events") or std.mem.eql(u8, name, "NodeProcess") or std.mem.eql(u8, name, "NodeFs") or std.mem.eql(u8, name, "Data") or std.mem.eql(u8, name, "Json")) null else if (std.mem.eql(u8, name, "Map")) "Map key value" else if (std.mem.eql(u8, name, "Promise")) "Promise a" else if (std.mem.eql(u8, name, "Fetch")) "Init" else name), actual);
+        if (!try nativeSourceMatches(a, path, try Native.Callable.source(a, module, if (std.mem.eql(u8, name, "Cloudflare") or std.mem.eql(u8, name, "Timers") or std.mem.eql(u8, name, "Immediate") or std.mem.eql(u8, name, "Date") or std.mem.eql(u8, name, "Math") or std.mem.eql(u8, name, "Events") or std.mem.eql(u8, name, "NodeProcess") or std.mem.eql(u8, name, "NodeFs") or std.mem.eql(u8, name, "Data") or std.mem.eql(u8, name, "Json")) null else if (std.mem.eql(u8, name, "Map")) "Map key value" else if (std.mem.eql(u8, name, "Promise")) "Promise a" else if (std.mem.eql(u8, name, "Fetch")) "Init" else name))) mismatches += 1;
         const js_path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.js", .{name});
-        const js = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, js_path, a, .limited(64 * 1024));
-        try std.testing.expectEqualStrings(try Native.Callable.sibling(a, module), js);
+        if (!try nativeSourceMatches(a, js_path, try Native.Callable.sibling(a, module))) mismatches += 1;
     }
+    try std.testing.expectEqual(@as(usize, 0), mismatches);
 }
 
 test "callable member spans match complete IDL identifiers regardless of member order" {

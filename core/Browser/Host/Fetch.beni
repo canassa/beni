@@ -1,9 +1,9 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.AbortSignal as AbortSignal
-import Browser.Host.FormData as FormData
 import Browser.Host.Headers as Headers
-import Browser.Host.Promise as Promise
+import Browser.Host.AbortSignal as AbortSignal
 import Browser.Host.Response as Response
+import Browser.Host.Promise as Promise
+import Browser.Host.FormData as FormData
 
 
 pub foreign type Body
@@ -18,13 +18,7 @@ pub foreign pure textBody : String → Body
 pub foreign pure formBody : returned FormData.FormData → Body
 
 
-pub foreign impure init :
-      String
-    , aliased Headers.Headers
-    , Maybe Body
-    , aliased AbortSignal.AbortSignal
-    , String
-    → Init
+pub foreign impure init : String, aliased Headers.Headers, Maybe Body, aliased AbortSignal.AbortSignal, String → Init
 
 
 pub foreign impure fetch : String, escaped Init → Promise.Promise Response.Response
