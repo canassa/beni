@@ -248,17 +248,12 @@ runs the program again (`tests/blackbox/serve.zig`).
 
 ### A program whose schemas are all compiled
 
-A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
-(`_expected.compiled-schemas` in a project) asserts `schema.md` §6's guarantee,
-*A statically known schema runs compiled*. Every schema it builds is fixed at
-compile time, so its development build must ship no library interpreter,
-whichever of the runners and `describe` it calls:
-`_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
-runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. The file's
-text says why the fixture qualifies. Like `.crash`, it is written by hand and
-never blessed. It costs no build of its own, because it reads the output of the
-development build the case already makes. Conduit's pages and the schema
-fixtures that build only compiled schemas carry one.
+Every `run/` fixture checks its development output for the removed Schema
+interpreter: if `_core/Schema.mjs` exists, it must declare neither `Schema$run`
+nor `Schema$box`. A `<name>.compiled-schemas` marker additionally requires that
+module to exist; browser fixtures use the marker to opt into the same assertion.
+The marker is written by hand and never blessed. The check reads the output of
+the existing development build and adds no build pass.
 
 ### The ownership differentials: records and lists in place
 

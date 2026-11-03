@@ -310,9 +310,6 @@ pub const Input = struct {
     /// The schema plans, one per module: what a schema member's edges are
     /// read from (`schema.md` §6).
     plans: []const SchemaPlan = &.{},
-    /// `--schema-library`: a schema's directions run its description
-    /// through the library and call no worker.
-    schema_library: bool = false,
     /// `--test-hooks`: what `Js.testHooks` is (`JsIntrinsic.droppedArm`).
     test_hooks: bool = false,
     worker_events_module: ?Graph.Index = null,
@@ -381,30 +378,6 @@ pub const Input = struct {
             return .{ .module = m, .kind = .decl, .index = @intCast(i) };
         }
         return null;
-    }
-
-    /// `core/Schema`'s two core-private types whose constructors no core
-    /// exemption covers (`schema.md` §6, *A statically known schema runs
-    /// compiled*; `backend.md` §9, amended 2026-10-15): `Engine`, whose
-    /// `Interpreted` only `box` builds — every interpreting builder calls
-    /// it — and whose `Compiled` only the compiled makers do; and `Made`,
-    /// what a compiled schema was made of. The compiler writes none of
-    /// them, no sibling or `foreign` names either type, and no schema's
-    /// endpoint can, so an arm on one survives only where `core/Schema`'s
-    /// own code that builds it does. Null without an interner or a
-    /// `core/Schema`, and then they are exempt like the rest of core.
-    pub fn schemaGuarded(in: Input) ?SchemaGuarded {
-        const interner = in.interner orelse return null;
-        const m = in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return null;
-        const bir = in.birOf(m);
-        var out: SchemaGuarded = .{ .module = m };
-        for (SchemaGuarded.types, &out.decls) |name, *slot| {
-            const symbol = interner.find(name) orelse continue;
-            for (bir.decls, 0..) |d, i| {
-                if (d.kind == .type and bir.symbol(d.name) == symbol) slot.* = @intCast(i);
-            }
-        }
-        return out;
     }
 
     /// §9's root set.
@@ -612,15 +585,6 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (all or in.store.package(in.graph.moduleFile(m)) == .core) live.ctors.setAll();
     }
-    // A library's callers may call any builder, so only an application
-    // build leaves `core/Schema`'s `Engine` and `Made` to the code that
-    // builds them.
-    if (!in.library) if (in.schemaGuarded()) |sg| {
-        const ctors = &modules[sg.module.int()].ctors;
-        for (0..ctors.bit_length) |c| {
-            if (sg.has(in, .{ .module = sg.module, .kind = .ctor, .index = @intCast(c) })) ctors.unset(c);
-        }
-    };
     if (all) return;
 
     // Type declarations whose constructors hand-written code may build: a
@@ -674,25 +638,6 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
 const TypeDecl = struct { module: Graph.Index, decl: u32 };
 
 pub const ForeignProof = struct { inert: bool = false, parameter: ?u32 = null };
-
-/// `Input.schemaGuarded`'s answer: `core/Schema`, and the declarations of
-/// the types `types` names in it, where it has them.
-pub const SchemaGuarded = struct {
-    module: Graph.Index,
-    decls: [types.len]?u32 = @splat(null),
-
-    pub const types = [_][]const u8{ "Engine", "Made" };
-
-    /// Whether `node` is a constructor of one of the two types.
-    pub fn has(sg: SchemaGuarded, in: Input, node: Node) bool {
-        if (node.kind != .ctor or node.module != sg.module) return false;
-        const ctors = in.birOf(sg.module).ctors;
-        if (node.index >= ctors.len) return false;
-        const owner = ctors[node.index].decl.int();
-        for (sg.decls) |d| if (d != null and d.? == owner) return true;
-        return false;
-    }
-};
 
 fn hasNominal(in: Input, scratch: Allocator, roots: []const TypeDecl) Allocator.Error!bool {
     var stack: std.ArrayList(TypeDecl) = .empty;
@@ -962,9 +907,6 @@ pub const Builder = struct {
     /// `List.append`, which a `++` on lists calls in place of
     /// `Basics.append` (`Dispatch.appends`).
     list_append: ?Node = null,
-    /// `core/Schema`'s `Engine` and `Made` (`Input.schemaGuarded`), the core
-    /// constructors that guard.
-    schema_guarded: ?SchemaGuarded = null,
     /// `core/Schema`'s `readValid`, which a validator run calls in place
     /// of `read` (`SchemaValid`).
     read_valid: ?Node = null,
@@ -1010,7 +952,6 @@ pub const Builder = struct {
             .list_close = in.coreDecl(.List, .close),
             .list_cons = in.coreDecl(.List, .cons),
             .list_append = in.coreDecl(.List, .append),
-            .schema_guarded = in.schemaGuarded(),
             .read_valid = in.coreDeclNamed(.Schema, "readValid"),
             .valid_context = in.coreDeclNamed(.Schema, "validContext"),
             .valid_shape = in.coreDeclNamed(.Schema, "validShape"),
@@ -1050,7 +991,7 @@ pub const Builder = struct {
         // its instruction adds no edge and the sibling is not imported.
         const in_place = try b.jsInPlace(bir, m);
         const sg_now = b.schemaGraph();
-        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_library, b.in.schema_shapes) else .{};
+        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_shapes) else .{};
         const reply_plan = if (b.in.graph.isCloudflare(m) and m.int() < b.in.type_keys.len) &b.in.type_keys[m.int()].wire else null;
         const reply_needs = if (reply_plan) |plan| try @import("../check/Wire.zig").replyNodes(b.scratch, plan) else &.{};
 
@@ -1495,10 +1436,7 @@ pub const Builder = struct {
     fn memberEdges(b: *Builder, m: Graph.Index, decl: u32, member: SchemaGraph.Member, guards: *Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
         const sg = b.schemaGraph() orelse return;
         const ref: SchemaGraph.Ref = .{ .module = m, .decl = decl };
-        if (member == .root and b.in.schema_library) {
-            // Under `--schema-library` `S.schema` is its description.
-            try out.append(b.scratch, .{ .node = schemaNode(ref, .description) });
-        } else if (member == .root) {
+        if (member == .root) {
             // `S.schema`'s compiled value (`schema.md` §6, *A statically
             // known schema runs compiled*): each other member behind the
             // `core/Schema` declarations that run it, one edge per guard,
@@ -1527,22 +1465,19 @@ pub const Builder = struct {
                 try out.append(b.scratch, .{ .node = target, .chain = chain });
             }
         }
-        // The `via`s: what the description and every worker set call, and
-        // under `--schema-library`, where no worker is written, only the
-        // description.
-        const calls_vias = member == .description or (member.op() != null and !b.in.schema_library);
+        const calls_vias = member == .description or (member.op() != null);
         if (calls_vias and try sg.hasVia(b.scratch, ref)) {
             try out.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = decl } });
         }
         var targets: std.ArrayList(struct { SchemaGraph.Ref, SchemaGraph.Member }) = .empty;
-        try sg.memberTargets(b.scratch, ref, member, b.in.schema_library, &targets);
+        try sg.memberTargets(b.scratch, ref, member, &targets);
         for (targets.items) |t| try out.append(b.scratch, .{ .node = schemaNode(t[0], t[1]) });
         // A derived codec's (schema.md §12.10): the constructors its
         // decoding worker and its description build, so a `case` on them
         // keeps its arms, and the module `codec` values it runs.
         if (member != .root) try b.codecEdges(m, ref, member, out);
         var names: std.ArrayList([]const u8) = .empty;
-        try sg.coreNeeds(b.scratch, ref, member, b.in.schema_library, &names);
+        try sg.coreNeeds(b.scratch, ref, member, &names);
         var evidence: std.ArrayList(Node) = .empty;
         try b.checkedDependencies(&evidence);
         for (evidence.items) |node| try out.append(b.scratch, .{ .node = node });
@@ -1577,9 +1512,7 @@ pub const Builder = struct {
         try SchemaGraph.subtree(plan, b.scratch, d.root, &nodes);
         for (nodes.items) |n| switch (SchemaGraph.tag(plan, n)) {
             .constructors => {
-                // Under `--schema-library` the directions run the
-                // description, whose injections build them.
-                if (!b.in.schema_library) if (member.op()) |op| if (!op.decoding()) continue;
+                if (member.op()) |op| if (!op.decoding()) continue;
                 const target = plan.type_targets[SchemaGraph.lhs(plan, n)];
                 for (SchemaGraph.ctors(plan, n)) |c| {
                     if (try b.codecCtorNode(sg, plan, target, plan.codec_ctors[c].order)) |node| try out.append(b.scratch, .{ .node = node });
@@ -1839,10 +1772,7 @@ pub const Builder = struct {
             };
             if (owner.int() >= in.graph.count()) return null;
             const node: Node = .{ .module = owner, .kind = .ctor, .index = index };
-            if (in.store.package(in.graph.moduleFile(owner)) == .core) {
-                const guarded = g.b.schema_guarded orelse return null;
-                return if (guarded.has(in, node)) node else null;
-            }
+            if (in.store.package(in.graph.moduleFile(owner)) == .core) return null;
             return node;
         }
 

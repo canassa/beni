@@ -4,13 +4,9 @@
 //! encoding worker behind `print` — each a separate reachability node
 //! (`SchemaGraph.Member`), so a program ships only the directions it calls.
 //!
-//! **The workers are the engine's `run`, specialised.** A worker takes the
-//! engine's own context and answers exactly what `run` answers for the same
-//! node: the result, or `c.fail` after pushing the issues `run` would have
-//! pushed, in the order it would have pushed them. Every branch below cites
-//! the engine function it mirrors in `core/Schema.beni`; the differential
-//! corpus (`--schema-library`, `schema.md` §10) is what holds the two to
-//! one answer.
+//! Both success and failure paths are compiled. Workers thread the engine
+//! context and return the typed result or its failure sentinel. Independent
+//! corpus goldens check complete values and ordered issues.
 //!
 //! The generator writes `JsIr` through `Lower`'s own builders, so a record
 //! field is a field name `--release` renames like any other, a constructor
@@ -160,18 +156,16 @@ pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
         try names.append(l.scratch, try schemaName(l, ref, "description"));
     }
     // The shape, which another module's shape and shape runs name.
-    if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
+    if (l.liveSchema(ref, .shape)) {
         try names.append(l.scratch, try schemaName(l, ref, "shape"));
     }
-    // The workers too, which another module's workers call; the forced
-    // library path writes none. Then the root wrappers.
-    const workers = !l.schemaLibrary();
+    // The workers too, which another module's workers call. Then the root wrappers.
     const sg = l.in.schemas.?;
     for (all_ops) |op| {
         // A derived codec's `decode` and `encode` are its `read` and
         // `write` workers (`SchemaGraph.hostAliased`): none of their own.
         const own = sg.hostAliased(ref, Member.worker(op)) == null;
-        if (workers and own and l.liveSchema(ref, Member.worker(op))) try names.append(l.scratch, try schemaName(l, ref, op.workerSuffix()));
+        if (own and l.liveSchema(ref, Member.worker(op))) try names.append(l.scratch, try schemaName(l, ref, op.workerSuffix()));
         const wrapper: Member, const suffixes: [2][]const u8 = switch (op) {
             .parse => .{ .parse, .{ "parse", "parseWith" } },
             .print => .{ .print, .{ "print", "printWith" } },
@@ -218,15 +212,6 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
         .p = if (def.token < l.in.token_starts.len) l.in.token_starts[def.token] else no_pos,
         .codec = codec,
     };
-    // Each part is a top-level declaration of its own, and its
-    // compiler-made names count from 1 (`backend.md` §4, *A compiler-made
-    // name is numbered within its top-level declaration*). A derived codec
-    // has no `via`.
-    //
-    // **Every gating question is asked INSIDE its part's record** (the
-    // `liveSchema` and `liveDecl` answers, and `schema_library`): the part's
-    // row unit has to carry the answer that decides it exists, or a build
-    // that would not write it could take the unit (issue #349, #432).
     if (!codec) {
         const at: u32 = @intCast(out.items.len);
         const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 0));
@@ -250,7 +235,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
     {
         const at: u32 = @intCast(out.items.len);
         const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 2));
-        if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
+        if (l.liveSchema(ref, .shape)) {
             l.restartNames();
             const shape = (try g.shapeOfRoutes(g.def.root)) orelse try g.shapeOf(g.def.root);
             try g.constDecl(out, try g.own("shape"), shape);
@@ -265,7 +250,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
         const at: u32 = @intCast(out.items.len);
         const record = try l.recBegin(Funnel.Selector.schemaPart(decl, @intCast(3 + op_i)));
         const own_set = sg.hostAliased(ref, Member.worker(op)) == null;
-        const worker = !l.schemaLibrary() and own_set and l.liveSchema(ref, Member.worker(op));
+        const worker = own_set and l.liveSchema(ref, Member.worker(op));
         const wrapper = switch (op) {
             .parse => l.liveSchema(ref, .parse),
             .print => l.liveSchema(ref, .print),
@@ -584,163 +569,6 @@ const Gen = struct {
         };
     }
 
-    fn unitIdentity(g: *Gen) !Node.Index {
-        const identity = try g.l.identityString("()", g.p);
-        try g.l.schema_checks.put(g.l.scratch, identity, try g.l.checkedShape(&.{.{ .kind = .unit }}, &.{}, g.p));
-        return identity;
-    }
-
-    fn packDatum(g: *Gen, identity: Node.Index, value: Node.Index) !Node.Index {
-        return g.call(try g.core("packed"), &.{ identity, g.l.schema_checks.get(identity) orelse {
-            try g.l.reportSchemaIdentity(g.p);
-            return g.lit(.undefined_lit);
-        }, value });
-    }
-
-    fn unpackDatum(g: *Gen, identity: Node.Index, value: Node.Index) !Node.Index {
-        return g.call(try g.core("unpacked"), &.{ identity, value });
-    }
-
-    fn access(g: *Gen, view: Node.Index, make: Node.Index) !Node.Index {
-        return g.recordValue(&.{ try g.sym("view"), try g.sym("make") }, &.{ view, make });
-    }
-
-    fn listAccess(g: *Gen, n: PNode, encoded: bool, params: []const NameIndex) !Node.Index {
-        const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, n)));
-        const outer_id = try g.typeIdentity(n, encoded, params);
-        const item_id = try g.typeIdentity(child, encoded, params);
-        const datum = try g.fresh("$datum");
-        const item = try g.fresh("$item");
-        const items = try g.fresh("$items");
-        const view = try g.arrowOf(&.{datum}, try g.call(try g.core("listItems"), &.{
-            try g.unpackDatum(outer_id, try g.id(datum)),
-            try g.arrowOf(&.{item}, try g.packDatum(item_id, try g.id(item))),
-        }));
-        const make = try g.arrowOf(&.{items}, try g.packDatum(outer_id, try g.call(try g.core("listMade"), &.{
-            try g.id(items),
-            try g.arrowOf(&.{datum}, try g.unpackDatum(item_id, try g.id(datum))),
-        })));
-        return g.access(view, make);
-    }
-
-    fn optionalAccess(g: *Gen, kind: []const u8, outer_id: Node.Index, inner_id: Node.Index) !Node.Index {
-        const module: []const u8 = if (std.mem.eql(u8, kind, "Maybe")) "Maybe" else "Schema";
-        const empty: []const u8 = if (std.mem.eql(u8, kind, "Maybe")) "Nothing" else if (std.mem.eql(u8, kind, "Presence")) "Missing" else "Null";
-        const full: []const u8 = if (std.mem.eql(u8, kind, "Maybe")) "Just" else if (std.mem.eql(u8, kind, "Presence")) "Present" else "NonNull";
-        const datum = try g.fresh("$datum");
-        const raw = try g.fresh("$raw");
-        var body: Stmts = .empty;
-        try g.constDecl(&body, raw, try g.unpackDatum(outer_id, try g.id(datum)));
-        try g.ret(&body, try g.l.condOf(
-            try g.coreCtorTest(module, empty, try g.id(raw)),
-            try g.coreCtor("Maybe", "Nothing", &.{}),
-            try g.coreCtor("Maybe", "Just", &.{try g.packDatum(inner_id, try g.l.member(try g.id(raw), try g.l.slotName(0), g.p))}),
-            g.p,
-        ));
-        const view = try g.arrow(&.{datum}, body.items);
-        const option = try g.fresh("$option");
-        const made = try g.l.condOf(
-            try g.coreCtorTest("Maybe", "Nothing", try g.id(option)),
-            try g.coreCtor(module, empty, &.{}),
-            try g.coreCtor(module, full, &.{try g.unpackDatum(inner_id, try g.l.member(try g.id(option), try g.l.slotName(0), g.p))}),
-            g.p,
-        );
-        const make = try g.arrowOf(&.{option}, try g.packDatum(outer_id, made));
-        return g.access(view, make);
-    }
-
-    fn wrappedIdentity(g: *Gen, prefix: []const u8, inner: Node.Index) !Node.Index {
-        const wrapped = try g.bin(.add, try g.bin(.add, try g.l.identityString(prefix, g.p), inner), try g.l.identityString(")", g.p));
-        const type_id = g.l.in.types.find(g.l.in.graph, .core, try g.sym("Schema"), try g.sym("Presence"));
-        const check = try g.l.checkedShape(&.{ .{ .kind = .named, .count = 1, .value = type_id.int() }, .{ .kind = .parameter, .value = 0 } }, &.{g.l.schema_checks.get(inner).?}, g.p);
-        try g.l.schema_checks.put(g.l.scratch, wrapped, check);
-        return wrapped;
-    }
-
-    fn fieldIdentity(g: *Gen, field_info: SchemaPlan.Field, encoded: bool, params: []const NameIndex) !Node.Index {
-        const child = try g.typeIdentity(field_info.child, encoded, params);
-        if (field_info.optional and !SchemaGraph.isMaybeField(g.plan, field_info)) return g.wrappedIdentity("core:Schema.Presence(", child);
-        return child;
-    }
-
-    fn recordAccess(g: *Gen, n: PNode, encoded: bool, params: []const NameIndex) !Node.Index {
-        const fields = SchemaGraph.fields(g.plan, n);
-        const outer_id = try g.typeIdentity(n, encoded, params);
-        const datum = try g.fresh("$datum");
-        const raw = try g.fresh("$raw");
-        var view_body: Stmts = .empty;
-        try g.constDecl(&view_body, raw, try g.unpackDatum(outer_id, try g.id(datum)));
-        var viewed: std.ArrayList(Node.Index) = .empty;
-        const names = try g.l.scratch.alloc(Symbol, fields.len);
-        for (fields, names) |field_info, *name| {
-            name.* = SchemaGraph.symbol(g.plan, field_info.name);
-            try viewed.append(g.l.scratch, try g.packDatum(try g.fieldIdentity(field_info, encoded, params), try g.field(try g.id(raw), name.*)));
-        }
-        try g.ret(&view_body, try g.l.arrayNode(viewed.items, g.p));
-        const items = try g.fresh("$items");
-        var made: std.ArrayList(Node.Index) = .empty;
-        for (fields, 0..) |field_info, i| {
-            const item = try g.call(try g.core("at"), &.{ try g.id(items), try g.num(@intCast(i)) });
-            try made.append(g.l.scratch, try g.unpackDatum(try g.fieldIdentity(field_info, encoded, params), item));
-        }
-        const make = try g.arrowOf(&.{items}, try g.packDatum(outer_id, try g.recordValue(names, made.items)));
-        return g.access(try g.arrow(&.{datum}, view_body.items), make);
-    }
-
-    fn conversionProjection(g: *Gen, n: PNode, forward: bool, params: []const NameIndex) !Node.Index {
-        const source: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, n)));
-        const before = try g.typeIdentity(if (forward) source else n, false, params);
-        const after = try g.typeIdentity(if (forward) n else source, false, params);
-        const callback = try g.call(try g.core(if (forward) "forwardOf" else "backwardOf"), &.{try g.id(try g.viaName(SchemaGraph.rhs(g.plan, n)))});
-        const datum = try g.fresh("$datum");
-        const raw = try g.fresh("$raw");
-        const project = try g.arrowOf(&.{raw}, try g.packDatum(after, try g.id(raw)));
-        return g.arrowOf(&.{datum}, try g.call(try g.core("mappedConversion"), &.{ callback, try g.unpackDatum(before, try g.id(datum)), project }));
-    }
-
-    fn tupleAccess(g: *Gen, n: PNode, params: []const NameIndex) !Node.Index {
-        const elems = SchemaGraph.elements(g.plan, n);
-        const outer_id = try g.typeIdentity(n, false, params);
-        const datum = try g.fresh("$datum");
-        const raw = try g.fresh("$raw");
-        var body: Stmts = .empty;
-        try g.constDecl(&body, raw, try g.unpackDatum(outer_id, try g.id(datum)));
-        var viewed: std.ArrayList(Node.Index) = .empty;
-        for (elems, 0..) |word, i| {
-            const child: PNode = @fromBackingInt(word);
-            try viewed.append(g.l.scratch, try g.packDatum(try g.typeIdentity(child, false, params), try g.l.member(try g.id(raw), try g.l.slotName(@intCast(i)), g.p)));
-        }
-        try g.ret(&body, try g.l.arrayNode(viewed.items, g.p));
-        const items = try g.fresh("$items");
-        var values: std.ArrayList(Node.Index) = .empty;
-        for (elems, 0..) |word, i| {
-            const child: PNode = @fromBackingInt(word);
-            const item = try g.call(try g.core("at"), &.{ try g.id(items), try g.num(@intCast(i)) });
-            try values.append(g.l.scratch, try g.unpackDatum(try g.typeIdentity(child, false, params), item));
-        }
-        const make = try g.arrowOf(&.{items}, try g.packDatum(outer_id, try g.tupleValue(values.items)));
-        return g.access(try g.arrow(&.{datum}, body.items), make);
-    }
-
-    fn taggedInjection(g: *Gen, n: PNode, payload_node: SchemaPlan.NodeIndex.Optional, info: Variants, order: u32, name: Symbol, encoded: bool, params: []const NameIndex) !Node.Index {
-        const outer_id = try g.typeIdentity(n, encoded, params);
-        const payload_id = if (payload_node.unwrap()) |child| try g.typeIdentity(child, encoded, params) else try g.unitIdentity();
-        const datum = try g.fresh("$datum");
-        const payload = if (payload_node != .none) try g.unpackDatum(payload_id, try g.id(datum)) else null;
-        const inject = try g.arrowOf(&.{datum}, try g.packDatum(outer_id, try g.variantValue(info, order, name, payload)));
-        const raw = try g.fresh("$raw");
-        var body: Stmts = .empty;
-        try g.constDecl(&body, raw, try g.unpackDatum(outer_id, try g.id(datum)));
-        const found = if (payload_node != .none) try g.l.member(try g.id(raw), try g.l.slotName(0), g.p) else try g.lit(.null_lit);
-        try g.ret(&body, try g.l.condOf(
-            try g.variantTest(info, name, try g.id(raw)),
-            try g.coreCtor("Maybe", "Just", &.{try g.packDatum(payload_id, found)}),
-            try g.coreCtor("Maybe", "Nothing", &.{}),
-            g.p,
-        ));
-        return g.recordValue(&.{ try g.sym("inject"), try g.sym("project") }, &.{ inject, try g.arrow(&.{datum}, body.items) });
-    }
-
     // ---- The description --------------------------------------------------
 
     /// `$$description`: the node §5's builders would make, made by
@@ -757,8 +585,6 @@ const Gen = struct {
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
         var formals: std.ArrayList(NameIndex) = .empty;
         try formals.appendSlice(g.l.scratch, params);
-        for (0..2 * params.len) |i| try formals.append(g.l.scratch, try g.identityName(i));
-        for (0..2 * params.len) |i| try formals.append(g.l.scratch, try g.checkName(i));
         if (recursive and g.params != 0) {
             const members = try g.cycleMembers();
             if (members.len > 1) {
@@ -785,25 +611,15 @@ const Gen = struct {
     }
 
     /// Stored and specialised workers share the typed Opt result ABI.
-    /// The forced library path retains the description without workers.
     fn argumentSlot(g: *Gen, op: Op, schema_value: Node.Index) !Node.Index {
-        var args: std.ArrayList(Node.Index) = .empty;
-        if (op == .decode or op == .encode) try args.append(g.l.scratch, try g.call(try g.core("encodedIdentity"), &.{schema_value}));
-        if (op == .decode) try args.append(g.l.scratch, try g.call(try g.core("encodedCheck"), &.{schema_value}));
-        try args.append(g.l.scratch, try g.call(try g.core("typedIdentity"), &.{schema_value}));
-        if (!op.hostIn() and op != .decode) {
-            const getter = if (op == .decode) "encodedCheck" else "typedCheck";
-            try args.append(g.l.scratch, try g.call(try g.core(getter), &.{schema_value}));
-        }
-        try args.append(g.l.scratch, schema_value);
-        return g.call(try g.core(op.slot()), args.items);
+        return g.call(try g.core(op.slot()), &.{schema_value});
     }
 
     fn root(g: *Gen, out: *Stmts) !void {
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
         const ids = try g.schemaIdentities(params);
-        const value = if (g.l.schemaLibrary()) try g.call(try g.core("boxWithIds"), &.{ try g.checker(try g.typeCheck(g.def.root, true, params)), try g.checker(try g.typeCheck(g.def.root, false, params)), ids[0], ids[1], try g.described(params) }) else compiled: {
+        const value = compiled: {
             var args: [11]Node.Index = undefined;
             args[0] = ids[0];
             args[1] = ids[1];
@@ -860,8 +676,6 @@ const Gen = struct {
         if (params.len == 0) return desc;
         var args: std.ArrayList(Node.Index) = .empty;
         for (params) |param| try args.append(g.l.scratch, try g.call(try g.core("describedOf"), &.{try g.id(param)}));
-        try args.appendSlice(g.l.scratch, try g.identityParameters(params));
-        try args.appendSlice(g.l.scratch, try g.checkParameters(params));
         return g.call(desc, args.items);
     }
 
@@ -888,14 +702,14 @@ const Gen = struct {
                 const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return g.lit(.undefined_lit);
                 return g.descRef(t, SchemaGraph.args(plan, n), params, scope);
             },
-            .list => return g.call(try g.core("describedList"), &.{ try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope), try g.listAccess(n, true, params), try g.listAccess(n, false, params) }),
+            .list => return g.call(try g.core("describedList"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope)}),
             .nullable => {
                 const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)));
-                return g.call(try g.core("describedNullable"), &.{ try g.descNode(child, params, scope), try g.optionalAccess("Nullable", try g.typeIdentity(n, true, params), try g.typeIdentity(child, true, params)), try g.optionalAccess("Nullable", try g.typeIdentity(n, false, params), try g.typeIdentity(child, false, params)) });
+                return g.call(try g.core("describedNullable"), &.{try g.descNode(child, params, scope)});
             },
             .conversion => {
                 const source = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope);
-                return g.call(try g.core("describedConverted"), &.{ source, try g.conversionProjection(n, true, params), try g.conversionProjection(n, false, params) });
+                return g.call(try g.core("describedConverted"), &.{source});
             },
             .check, .annotation => return g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope),
             .record => return g.descRecord(n, params, scope),
@@ -906,14 +720,12 @@ const Gen = struct {
             .maybe => return g.call(try g.core("describedMaybe"), &.{
                 try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope),
                 try g.num(SchemaGraph.rhs(plan, n)),
-                try g.optionalAccess("Maybe", try g.typeIdentity(n, true, params), try g.typeIdentity(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), true, params)),
-                try g.optionalAccess("Maybe", try g.typeIdentity(n, false, params), try g.typeIdentity(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), false, params)),
             }),
             .tuple => {
                 const elems = SchemaGraph.elements(plan, n);
                 var items: std.ArrayList(Node.Index) = .empty;
                 for (elems) |e| try items.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(e)), params, scope));
-                return g.call(try g.core("describedTuple"), &.{ try g.l.arrayNode(items.items, g.p), try g.tupleAccess(n, params) });
+                return g.call(try g.core("describedTuple"), &.{try g.l.arrayNode(items.items, g.p)});
             },
             .constructors => return g.descCtors(n, params, scope),
         }
@@ -932,16 +744,6 @@ const Gen = struct {
         for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, scope));
         const named = try g.id(try schemaName(g.l, t, "description"));
         if (g.sg.paramCount(t) == 0) return named;
-        for (words) |word| {
-            const child: PNode = @fromBackingInt(@intCast(word));
-            try args.append(g.l.scratch, if (g.sg.codecIndex(t.module, t.decl) != null) try g.str("core:Schema.Value") else try g.typeIdentity(child, true, params));
-            try args.append(g.l.scratch, try g.typeIdentity(child, false, params));
-        }
-        for (words) |word| {
-            const child: PNode = @fromBackingInt(@intCast(word));
-            try args.append(g.l.scratch, if (g.sg.codecIndex(t.module, t.decl) != null) try g.hostCheck() else try g.typeCheck(child, true, params));
-            try args.append(g.l.scratch, try g.typeCheck(child, false, params));
-        }
         return g.call(named, args.items);
     }
 
@@ -968,39 +770,16 @@ const Gen = struct {
         return g.l.codecCtor(target.package, SchemaGraph.symbol(g.plan, target.module), SchemaGraph.symbol(g.plan, target.name), g.plan.codec_ctors[c].order);
     }
 
-    /// Typed constructor rows, with checked Datum projections at both ends.
+    /// Inspection retains constructor names and child descriptions only.
     fn descCtors(g: *Gen, n: PNode, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
         const plan = g.plan;
-        const outer_id = try g.typeIdentity(n, false, params);
         var rows: std.ArrayList(Node.Index) = .empty;
         for (SchemaGraph.ctors(plan, n)) |c| {
-            const cc = (try g.codecCtor(n, c)) orelse continue;
-            const arg_nodes = SchemaGraph.ctorArgs(plan, c);
             var descs: std.ArrayList(Node.Index) = .empty;
-            for (arg_nodes) |a| try descs.append(g.l.scratch, try g.descNode(@fromBackingInt(a), params, scope));
-            const xs = try g.fresh("$xs");
-            var built: std.ArrayList(Node.Index) = .empty;
-            for (arg_nodes, 0..) |a, i| {
-                const item = try g.call(try g.core("at"), &.{ try g.id(xs), try g.num(@intCast(i)) });
-                try built.append(g.l.scratch, try g.unpackDatum(try g.typeIdentity(@fromBackingInt(a), false, params), item));
-            }
-            const inject = try g.arrowOf(&.{xs}, try g.packDatum(outer_id, try g.l.codecCtorValue(cc, built.items, g.p)));
-            const datum = try g.fresh("$datum");
-            const raw = try g.fresh("$raw");
-            var body: Stmts = .empty;
-            try g.constDecl(&body, raw, try g.unpackDatum(outer_id, try g.id(datum)));
-            var read: std.ArrayList(Node.Index) = .empty;
-            for (arg_nodes, 0..) |a, i| try read.append(g.l.scratch, try g.packDatum(try g.typeIdentity(@fromBackingInt(a), false, params), try g.l.codecCtorArg(cc, try g.id(raw), @intCast(i), g.p)));
-            const taken = try g.coreCtor("Maybe", "Just", &.{try g.l.arrayNode(read.items, g.p)});
-            try g.ret(&body, if (try g.l.codecCtorTest(cc, try g.id(raw), g.p)) |matches|
-                try g.l.condOf(matches, taken, try g.coreCtor("Maybe", "Nothing", &.{}), g.p)
-            else
-                taken);
-            try rows.append(g.l.scratch, try g.recordValue(&.{ try g.sym("name"), try g.sym("nodes"), try g.sym("inject"), try g.sym("project") }, &.{
+            for (SchemaGraph.ctorArgs(plan, c)) |a| try descs.append(g.l.scratch, try g.descNode(@fromBackingInt(a), params, scope));
+            try rows.append(g.l.scratch, try g.recordValue(&.{ try g.sym("name"), try g.sym("nodes") }, &.{
                 try g.str(g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name))),
                 try g.l.arrayNode(descs.items, g.p),
-                inject,
-                try g.arrow(&.{datum}, body.items),
             }));
         }
         return g.call(try g.core("describedConstructors"), &.{try g.l.arrayNode(rows.items, g.p)});
@@ -1057,32 +836,24 @@ const Gen = struct {
         return g.call(try g.arrow(&.{}, stmts.items), &.{});
     }
 
-    /// `describedRecord([describedField(name, key, optional, node), …], to,
-    /// from)`: the mapping between the left-nested product and the record
-    /// written out once, for both endpoints.
+    /// Record descriptions retain field names, keys, presence and child nodes.
     fn descRecord(g: *Gen, n: PNode, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
-        const fields = SchemaGraph.fields(g.plan, n);
         var fs: std.ArrayList(Node.Index) = .empty;
-        for (fields) |f| {
+        for (SchemaGraph.fields(g.plan, n)) |f| {
             const name = SchemaGraph.symbol(g.plan, f.name);
-            // A derived record's `Maybe` field (schema.md §12.4): its key
-            // absent is `Nothing`, and its node the `maybe`'s inner one.
             if (SchemaGraph.isMaybeField(g.plan, f)) {
                 const inner = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, f.child))), params, scope);
-                try fs.append(g.l.scratch, try g.call(try g.core("describedMaybeField"), &.{ try g.str(g.l.text(name)), inner, try g.num(SchemaGraph.rhs(g.plan, f.child)), try g.optionalAccess("Maybe", try g.typeIdentity(f.child, true, params), try g.typeIdentity(@fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, f.child))), true, params)), try g.optionalAccess("Maybe", try g.typeIdentity(f.child, false, params), try g.typeIdentity(@fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, f.child))), false, params)) }));
+                try fs.append(g.l.scratch, try g.call(try g.core("describedMaybeField"), &.{ try g.str(g.l.text(name)), inner, try g.num(SchemaGraph.rhs(g.plan, f.child)) }));
                 continue;
             }
-            const child = try g.descNode(f.child, params, scope);
             try fs.append(g.l.scratch, try g.call(try g.core("describedField"), &.{
                 try g.str(g.l.text(name)),
                 try g.str(SchemaGraph.literal(g.plan, f.external)),
                 try g.lit(if (f.optional) .true_lit else .false_lit),
-                child,
-                try g.optionalAccess("Presence", try g.wrappedIdentity("core:Schema.Presence(", try g.typeIdentity(f.child, true, params)), try g.typeIdentity(f.child, true, params)),
-                try g.optionalAccess("Presence", try g.wrappedIdentity("core:Schema.Presence(", try g.typeIdentity(f.child, false, params)), try g.typeIdentity(f.child, false, params)),
+                try g.descNode(f.child, params, scope),
             }));
         }
-        return g.call(try g.core("describedRecord"), &.{ try g.l.arrayNode(fs.items, g.p), try g.recordAccess(n, true, params), try g.recordAccess(n, false, params) });
+        return g.call(try g.core("describedRecord"), &.{try g.l.arrayNode(fs.items, g.p)});
     }
 
     /// The two functions of a record's mapping, for a record whose fields
@@ -1128,8 +899,7 @@ const Gen = struct {
         const plan = g.plan;
         const discriminator = SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))));
         var variants: std.ArrayList(Node.Index) = .empty;
-        const info = g.variantsOf(n);
-        for (SchemaGraph.variants(plan, n), 0..) |vi, order| {
+        for (SchemaGraph.variants(plan, n)) |vi| {
             if (vi >= plan.variants.len) continue;
             const v = plan.variants[vi];
             const name = SchemaGraph.symbol(plan, v.name);
@@ -1139,8 +909,6 @@ const Gen = struct {
                 try g.str(g.l.text(name)),
                 try g.str(tag_text),
                 payload,
-                try g.taggedInjection(n, v.payload, info, @intCast(order), name, true, params),
-                try g.taggedInjection(n, v.payload, info, @intCast(order), name, false, params),
             }));
         }
         return g.call(try g.core("describedTagged"), &.{ try g.str(discriminator), try g.l.arrayNode(variants.items, g.p) });
@@ -1379,8 +1147,7 @@ const Gen = struct {
     // ---- The directions ---------------------------------------------------
 
     /// The two root wrappers of `parse` (`S.parse`, `S.parseWith`) or of
-    /// `print`, over the operation's worker; or, under `--schema-library`,
-    /// over the description.
+    /// print, over the operation worker.
     fn wrappers(g: *Gen, out: *Stmts, op: Op) !void {
         const root_suffix, const with_suffix = switch (op) {
             .parse => .{ "parse", "parseWith" },
@@ -1397,20 +1164,7 @@ const Gen = struct {
         try with_params.appendSlice(g.l.scratch, params);
         try with_params.append(g.l.scratch, options);
         try with_params.append(g.l.scratch, input);
-        const with_body = if (g.l.schemaLibrary()) blk: {
-            // The whole root through the interpreter (`schema.md` §10's
-            // forced library path): `S.schema`, which is the boxed
-            // description there.
-            var args: std.ArrayList(Node.Index) = .empty;
-            for (params) |param| try args.append(g.l.scratch, try g.id(param));
-            if (params.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
-            const s = try g.call(try g.id(try g.own("schema")), args.items);
-            var call_args: std.ArrayList(Node.Index) = .empty;
-            try call_args.append(g.l.scratch, (try g.schemaIdentities(params))[1]);
-            if (op == .print) try call_args.append(g.l.scratch, try g.typeCheck(g.def.root, false, params));
-            try call_args.appendSlice(g.l.scratch, &.{ s, try g.id(options), try g.id(input) });
-            break :blk try g.call(try g.core(with_suffix), call_args.items);
-        } else blk: {
+        const with_body = blk: {
             const worker_name = try g.own(op.workerSuffix());
             // The arguments the value reaches, in the order it meets them
             // (`compiledProblem`).
@@ -2150,7 +1904,7 @@ const Fn = struct {
         var claimed: std.ArrayList([]const u8) = .empty;
         if (owner) |o| try claimed.append(g.l.scratch, o.discriminator);
         for (fields) |f| try claimed.append(g.l.scratch, SchemaGraph.literal(g.plan, f.external));
-        try w.unknownKeys(out, v, claimed.items, false);
+        try w.unknownKeys(out, v, claimed.items, false, offset);
 
         const deep = try g.fresh("$deep");
         if (fields.len != 0) try g.constDecl(out, deep, try w.deepTest(offset));
@@ -2311,13 +2065,17 @@ const Fn = struct {
     /// is an issue at its own path. `wholeFails`: a nullary variant fails on
     /// any (`nullaryOf`), where a record goes on to its fields under
     /// `AllErrors`.
-    fn unknownKeys(w: *Fn, out: *Stmts, v: NameIndex, claimed: []const []const u8, whole_fails: bool) !void {
+    fn unknownKeys(w: *Fn, out: *Stmts, v: NameIndex, claimed: []const []const u8, whole_fails: bool, offset: u32) !void {
         const g = w.g;
         const key = try g.fresh("$key");
         var test_expr: ?Node.Index = null;
         for (claimed) |c| {
             const differs = try g.bin(.strict_ne, try g.id(key), try g.str(c));
             test_expr = if (test_expr) |t| try g.bin(.logical_and, t, differs) else differs;
+        }
+        if (g.l.coreSchemaAlive("compiledClaim")) {
+            const unclaimed = try g.not(try g.call(try g.core("compiledClaim"), &.{ try g.id(w.c), try w.depth(offset), try g.id(key) }));
+            test_expr = if (test_expr) |t| try g.bin(.logical_and, t, unclaimed) else unclaimed;
         }
         const found = try g.fresh("$found");
         var report: Stmts = .empty;
@@ -2471,7 +2229,7 @@ const Fn = struct {
                 try g.ifElse(&arm, try w.deepTest(0), stop.items, &.{});
                 try w.decodeRecord(&arm, payload, v, 1, owner);
             } else {
-                try w.unknownKeys(&arm, v, &.{discriminator}, true);
+                try w.unknownKeys(&arm, v, &.{discriminator}, true, 0);
                 try g.ret(&arm, try g.variantValue(info, @intCast(order), SchemaGraph.symbol(plan, variant.name), null));
             }
             try cases.append(g.l.scratch, try w.switchCase(try g.str(tag_text), arm.items));

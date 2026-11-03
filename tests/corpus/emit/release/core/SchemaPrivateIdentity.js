@@ -1,1 +1,0 @@
-import{a,b,c,d}from"./_core/Schema.mjs";import{e}from"./_core/Js/Any.mjs";import{f}from"./_core/Js.mjs";const g=a,h=a("c","[\"i\",[]]","c","[\"i\",[]]",b),i=g("h(k)",["[[\"l\",\"s\"],[]]",[],e,f],"h(k)",["[[\"l\",\"s\"],[]]",[],e,f],c("[\"s\",[]]","[\"s\",[]]",d));export{g,h,i};

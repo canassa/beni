@@ -1,4 +1,4 @@
--- Tagged unions through the library engine (`schema.md` §2's `Message`
+-- Tagged unions through the compiled workers (`schema.md` §2's `Message`
 -- and `Tree`, built). The discriminator is read first, then only the
 -- selected payload, whose fields sit beside it, in any key order; a
 -- payload adds no path segment. The program and encoded endpoints are two

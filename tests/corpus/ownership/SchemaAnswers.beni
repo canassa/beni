@@ -5,8 +5,7 @@
 -- conversion that builds from what it is handed, a derived codec — and,
 -- elsewhere, what returned it: a top-level value a conversion returns
 -- (rejected, `top-level`), a list a conversion captured (rejected while
--- the capture is read again), a schema an interpreting builder made
--- (`flip`: rejected, unknown), and, decoding a host value or encoding, the
+-- the capture is read again), and, decoding a host value or encoding, the
 -- program's own value where a `Value` or a `backward` hands it back. Each
 -- answer's list is written in place.
 import Json
@@ -116,17 +115,6 @@ captured held input =
             ( List.push ws "x", held )
         Err _ →
             ( [], held )
-
-
--- An interpreting builder's schema: its functions are not followed, so
--- its answer is unknown — rejected.
-pub interpreted : String → List Int
-interpreted input =
-    case Schema.parse (Schema.flip (Schema.list Schema.int)) input of
-        Ok xs →
-            List.push xs 1
-        Err _ →
-            []
 
 
 -- A derived codec, through `Json.decode`: accepted.

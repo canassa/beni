@@ -1,4 +1,4 @@
-// The beni rows' adapter (`adapters/beni.mjs`, `adapters/beni-library.mjs`):
+// The beni rows' adapter (`adapters/beni.mjs`):
 // `Bench.beni`'s exported runners, as built by `build.mjs`, behind the
 // harness's codec contract. A beni `Type` value differs from the harness's
 // program shape in two places — an optional field is `Present`/`Missing`,

@@ -40,8 +40,6 @@ import Browser.Host.Data as HostData
 import Browser.Host.Json as HostJson
 import Int32
 import Js
-import Js.Any as Any
-import Js.Array as Array
 import Js.Data as Data
 import Js.Protocol as Protocol
 
@@ -149,7 +147,7 @@ pub opaque type Conversion b a
 --| the fields' Encoded values and `pa` their Type values, each a tuple
 --| nested to the left, `( ( ( ⊤, first ), second ), third )`.
 pub opaque type Fields pe pa
-    = Fields FieldBundle
+    = Fields (FieldBundle pe pa)
 
 
 --| A product turned into a record, and back.
@@ -159,7 +157,7 @@ pub opaque type Mapping p r
 
 --| One variant of a tagged schema.
 pub opaque type Variant e a
-    = Variant VariantNode
+    = Variant (VariantBundle e a)
 
 
 --| A variant's constructor, and the test that takes it apart: `inject`
@@ -278,87 +276,23 @@ defaultOptions ⊤ =
     }
 
 
--- Every engine value retains its real type. Reporting is a separate checked
--- data projection, evaluated only when a failure asks to retain its input.
-type alias Datum =
-    box : Js.Opt Any.Any
-    data : Js.Opt (⊤ → Maybe Js.Value)
-    raw : Js.Value
-
-
-packed : a → Datum
-packed datum =
-    { box = Js.some (Any.pack datum)
-    , data = Js.some λ⊤ → Data.checked datum
-    , raw = Js.null
-    }
-
-
-unpacked : Datum → a
-unpacked datum =
-    storedBox = Js.optMatch datum.box (λ⊤ → Any.pack datum.raw) identity
-    unpackBox storedBox
-
-
-unpackBox : Any.Any → a
-unpackBox storedBox =
-    case Any.unpack storedBox of
-        Just found →
-            found
-        Nothing →
-            Protocol.defect "schema engine value has an unexpected type"
-
-
--- Structural adapters are closed over their actual endpoint types. The
--- traversal sees typed sequences of values and never a callable in Js.Value.
-type alias Access =
-    view : Datum → List Datum
-    make : List Datum → Datum
-
-
-type alias Ends =
-    encoded : Access
-    typed : Access
-
-
-type alias OptionalAccess =
-    view : Datum → Maybe Datum
-    make : Maybe Datum → Datum
-
-
-type alias OptionalEnds =
-    encoded : OptionalAccess
-    typed : OptionalAccess
-
-
-type alias Maps =
-    encoded : Access
-    typed : Access
-
-
-type alias InjectionBox =
-    inject : Datum → Datum
-    project : Datum → Maybe Datum
-
-
+-- Descriptions retain only structure. Typed workers own every value adapter.
 type Node
     = Node (Js.Ref NodeBody)
 
 
 type NodeBody
     = NPrim PrimitiveKind
-    | NList Node Ends
-    | NNullable Node OptionalEnds
-    | NRecord (List FieldNode) Maps
+    | NList Node
+    | NNullable Node
+    | NRecord (List FieldNode)
     | NTagged String (List VariantNode)
-    | NConverted Node (Datum → Result (List Issue) Datum) (Datum → Result (List Issue) Datum)
-    | NFlipped Node
-    | NProjected Int Node
+    | NConverted Node
     | NRef Cell
     | NBroken String
-    | NTuple (List Node) Access
+    | NTuple (List Node)
     | NCtors (List CtorNode)
-    | NMaybe Node Int OptionalEnds
+    | NMaybe Node Int
     | NHost Node
 
 
@@ -369,22 +303,17 @@ type alias FieldNode =
     optional : Bool
     lenient : Bool
     node : Node
-    presence : OptionalEnds
 
 
 type alias CtorNode =
     name : String
     nodes : List Node
-    inject : List Datum → Datum
-    project : Datum → Maybe (List Datum)
 
 
 type alias VariantNode =
     name : String
     tag : String
     payload : Maybe Node
-    encoded : InjectionBox
-    typed : InjectionBox
     problem : Maybe String
 
 
@@ -402,37 +331,26 @@ type alias Box e a =
     encodedCheck : e → Maybe Js.Value
     typedCheck : a → Maybe Js.Value
     node : ⊤ → Node
-    analysis : Js.Ref (Maybe Analysis)
     engine : Engine e a
 
 
-type alias Analysis =
-    problem : Maybe String
-    encodedOpaque : Bool
-    typeOpaque : Bool
-
-
-type alias FieldBundle =
+type alias FieldBundle pe pa =
+    build : List String → Product pe pa
+    args : List Argument
     fields : List FieldNode
-    encoded : Access
-    typed : Access
     problem : Maybe String
 
 
 type alias Context =
     all : Bool
     reject : Bool
+    scope : Traversal
     max : Int
     report : Bool
     dir : Direction
     json : Bool
-    src : Int
     sh : Bool
-    dst : Int
     dh : Bool
-    inE : Endpoint
-    outE : Endpoint
-    cv : Bool
     issues : Js.Value
     fail : Js.Value
 
@@ -447,105 +365,8 @@ type alias PathStep =
     output : Js.Value
 
 
-type Active
-    = NoneActive
-    | Entered Int Active
-
-
-encodedSide : Int
-encodedSide = 0
-
-
-typeSide : Int
-typeSide = 1
-
-
-box : Node → Schema e a
-box node = typedBox node [] []
-
-
 nodeOf : Schema e a → Node
 nodeOf (Schema state) = state.node ⊤
-
-
-encodedValue : Schema e a, e → Datum
-encodedValue _ datum = packed datum
-
-
-typedValue : Schema e a, a → Datum
-typedValue _ datum = packed datum
-
-
-encodedRead : Schema e a, Datum → e
-encodedRead _ datum = unpacked datum
-
-
-typedRead : Schema e a, Datum → a
-typedRead _ datum = unpacked datum
-
-
-encodedProduct : Fields pe pa, Datum → pe
-encodedProduct _ datum = unpacked datum
-
-
-typedProduct : Fields pe pa, Datum → pa
-typedProduct _ datum = unpacked datum
-
-
-listAccess : (a → Datum), (Datum → a) → Access
-listAccess put get =
-    { view = λinput → List.map (unpacked input) put
-    , make = λitems → packed (List.map items get)
-    }
-
-
-nullableAccess : (a → Datum), (Datum → a) → OptionalAccess
-nullableAccess put get =
-    { view =
-        λinput →
-            case unpacked input of
-                Null →
-                    Nothing
-                NonNull datum →
-                    Just (put datum)
-    , make =
-        λitem →
-            packed
-                (case item of
-                    Nothing →
-                        Null
-                    Just datum →
-                        NonNull (get datum)
-                )
-    }
-
-
-presenceAccess : (a → Datum), (Datum → a) → OptionalAccess
-presenceAccess put get =
-    { view =
-        λinput →
-            case unpacked input of
-                Missing →
-                    Nothing
-                Present datum →
-                    Just (put datum)
-    , make =
-        λitem →
-            packed
-                (case item of
-                    Nothing →
-                        Missing
-                    Just datum →
-                        Present (get datum)
-                )
-    }
-
-
-maybeAccess : (a → Datum), (Datum → a) → OptionalAccess
-maybeAccess put get =
-    { view = λinput → Maybe.map (unpacked input) put
-    , make = λitem → packed (Maybe.map item get)
-    }
 
 
 --| A string, both ways.
@@ -577,7 +398,7 @@ finiteFloat = primitive FiniteFloatKind
 
 --| JSON's `null`, whose one value is `Null`.
 pub null : Schema (Nullable ⊥) (Nullable ⊥)
-null = primitive NullKind
+null = scalarSchema NullKind (λ_ → Js.null) (λ_ → Null) []
 
 
 --| Any host value, unread: the Encoded value is the Type value.
@@ -588,33 +409,19 @@ value = primitive ValueKind
 --| A list of the child's values: an array outside, a `List` inside.
 pub list : Schema e a → Schema (List e) (List a)
 list child =
-    node =
-        (nList (nodeOf child)
-            { encoded = listAccess (encodedValue child _) (encodedRead child _)
-            , typed = listAccess (typedValue child _) (typedRead child _)
-            }
-        )
+    node = (nList (nodeOf child))
     case engineOf child of
         Compiled workers →
             compiledBox node (listWorkers workers)
-        Interpreted →
-            box node
 
 
 --| The child's values, or `null`, told apart.
 pub nullable : Schema e a → Schema (Nullable e) (Nullable a)
 nullable child =
-    node =
-        (nNullable (nodeOf child)
-            { encoded = nullableAccess (encodedValue child _) (encodedRead child _)
-            , typed = nullableAccess (typedValue child _) (typedRead child _)
-            }
-        )
+    node = (nNullable (nodeOf child))
     case engineOf child of
         Compiled workers →
             compiledBox node (nullableWorkers workers)
-        Interpreted →
-            box node
 
 
 --| How the products of `fields` become the records of each endpoint, and
@@ -633,55 +440,21 @@ pub conversion :
 conversion forward backward = Conversion forward backward
 
 
-conversionStep : (b → Result (List Issue) a), Datum → Result (List Issue) Datum
-conversionStep callback input = Result.map (callback (unpacked input)) packed
-
-
 --| The schema's values, converted: decoding reads `e` to `b` and converts
 --| it to `a`; encoding converts `a` back to `b` and writes `e`. The Type
 --| endpoint is the conversion's target, which has no external form of its
 --| own.
 pub converted : Schema e b, Conversion b a → Schema e a
-converted source ((Conversion forward backward) as conv) =
-    node = (nConverted (nodeOf source) (conversionStep forward _) (conversionStep backward _))
+converted source conv =
+    node = (nConverted (nodeOf source))
     case engineOf source of
         Compiled workers →
             compiledBox node (convertedWorkers workers conv)
-        Interpreted →
-            box node
 
 
 --| A constructor and its test, for one variant at one endpoint.
 pub injection : sync (p → a), sync (a → Maybe p) → Injection p a
 injection inject project = Injection inject project
-
-
-injectionBox : Injection p a → InjectionBox
-injectionBox (Injection inject project) =
-    { inject = λinput → packed (inject (unpacked input))
-    , project = λinput → Maybe.map (project (unpacked input)) packed
-    }
-
-
---| The same schema facing the other way: its Encoded endpoint is `a` and its
---| Type endpoint `e`, so decoding it encodes the original. Flipping twice is
---| the original.
-pub flip : Schema e a → Schema a e
-flip schema =
-    case nodeBody (nodeOf schema) of
-        NFlipped child →
-            box child
-        _ →
-            box (nFlipped (nodeOf schema))
-
-
-pub typeOnly : Schema e a → Schema a a
-typeOnly schema = box (nProjected typeSide (nodeOf schema))
-
-
---| The Encoded endpoint alone, at both ends.
-pub encodedOnly : Schema e a → Schema e e
-encodedOnly schema = box (nProjected encodedSide (nodeOf schema))
 
 
 --| A schema's Encoded endpoint forgotten: the same schema, as the `Codec`
@@ -694,8 +467,6 @@ erased schema =
     case engineOf schema of
         Compiled workers →
             compiledBox (nHost (nodeOf schema)) (erasedWorkers workers)
-        Interpreted →
-            box (nHost (nodeOf schema))
 
 
 --| The schema of a type, derived from its shape (`schema.md` §12.2): its
@@ -734,40 +505,15 @@ issueAt path message =
     }
 
 
-unitAccess : Access
-unitAccess = { view = λ_ → [], make = λ_ → packed ⊤ }
-
-
 --| No fields yet.
 pub fields : Fields ⊤ ⊤
-fields = Fields { fields = [], encoded = unitAccess, typed = unitAccess, problem = Nothing }
-
-
-parts : (Datum → pe), (Datum → e), Datum → pe × e
-parts _ _ item = unpacked item
-
-
-productAccess : (Datum → pe), (Datum → e), Access → Access
-productAccess leftRead rightRead previous =
-    { view =
-        λitem →
-            ( left, right ) = parts leftRead rightRead item
-            [ …(List.copy (previous.view (packed left))), packed right ]
-    , make =
-        λitems →
-            n = List.length items - 1
-            left = leftRead (previous.make (List.take items n))
-            right = rightRead (at items n)
-            packed ( left, right )
-    }
-
-
-encodedPresence : Schema e a, Datum → Presence e
-encodedPresence _ item = unpacked item
-
-
-typedPresence : Schema e a, Datum → Presence a
-typedPresence _ item = unpacked item
+fields =
+    Fields
+        { fields = []
+        , build = λ_ → emptyProduct
+        , args = []
+        , problem = Nothing
+        }
 
 
 fieldNode : String, Schema e a, Bool → FieldNode
@@ -778,10 +524,6 @@ fieldNode name child optionalField =
     , optional = optionalField
     , lenient = False
     , node = nodeOf child
-    , presence =
-        { encoded = presenceAccess (encodedValue child _) (encodedRead child _)
-        , typed = presenceAccess (typedValue child _) (typedRead child _)
-        }
     }
 
 
@@ -790,9 +532,19 @@ fieldNode name child optionalField =
 pub field : Fields pe pa, String, Schema e a → Fields (pe × e) (pa × a)
 field ((Fields bundle) as previous) name child =
     Fields
-        { fields = [ …(List.copy bundle.fields), fieldNode name child False ]
-        , encoded = productAccess (encodedProduct previous _) (encodedRead child _) bundle.encoded
-        , typed = productAccess (typedProduct previous _) (typedRead child _) bundle.typed
+        { build =
+            λkeys →
+                case engineOf child of
+                    Compiled workers →
+                        appendProduct
+                            (bundle.build keys)
+                            (requiredProduct
+                                name
+                                (Maybe.withDefault (List.get keys (List.length bundle.fields)) name)
+                                workers
+                            )
+        , args = [ …(List.copy bundle.args), argument child ]
+        , fields = [ …(List.copy bundle.fields), fieldNode name child False ]
         , problem = bundle.problem
         }
 
@@ -807,10 +559,19 @@ pub optional :
     → Fields (pe × Presence e) (pa × Presence a)
 optional ((Fields bundle) as previous) name child =
     Fields
-        { fields = [ …(List.copy bundle.fields), fieldNode name child True ]
-        , encoded =
-            productAccess (encodedProduct previous _) (encodedPresence child _) bundle.encoded
-        , typed = productAccess (typedProduct previous _) (typedPresence child _) bundle.typed
+        { build =
+            λkeys →
+                case engineOf child of
+                    Compiled workers →
+                        appendProduct
+                            (bundle.build keys)
+                            (optionalProduct
+                                name
+                                (Maybe.withDefault (List.get keys (List.length bundle.fields)) name)
+                                workers
+                            )
+        , args = [ …(List.copy bundle.args), argument child ]
+        , fields = [ …(List.copy bundle.fields), fieldNode name child True ]
         , problem = bundle.problem
         }
 
@@ -857,13 +618,6 @@ key (Fields bundle) external =
                     }
 
 
-mappedAccess : Access, Mapping p r → Access
-mappedAccess product (Mapping to from) =
-    { view = λitem → product.view (packed (from (unpacked item)))
-    , make = λitems → packed (to (unpacked (product.make items)))
-    }
-
-
 --| A record schema: the fields, then how each endpoint's product becomes
 --| its record. The two mappings are often one polymorphic pair of functions,
 --| since both records have the same field names.
@@ -880,16 +634,18 @@ record (Fields bundle) encoded typed =
                     Nothing →
                         Maybe.map (duplicate bundle.fields .key) λexternal →
                             "two fields read and write the key \"${external}\""
-    case problem of
-        Just found →
-            box (nBroken found)
-        Nothing →
-            box
-                (nRecord bundle.fields
-                    { encoded = mappedAccess bundle.encoded encoded
-                    , typed = mappedAccess bundle.typed typed
-                    }
-                )
+    node =
+        case problem of
+            Just found →
+                nBroken found
+            Nothing →
+                nRecord bundle.fields
+    keys = List.map bundle.fields .key
+    compiledBox
+        node
+        (recordWorkers keys (bundle.build keys) encoded typed
+            [ construction problem, …(List.copy bundle.args) ]
+        )
 
 
 duplicate : List a, (a → String) → Maybe String
@@ -915,17 +671,22 @@ pub variant :
 variant name tag payload injectE injectA =
     node = nodeOf payload
     Variant
-        { name = name
-        , tag = tag
-        , payload = Just node
-        , encoded = injectionBox injectE
-        , typed = injectionBox injectA
-        , problem =
-            case nodeBody node of
-                NRecord _ _ →
-                    Nothing
-                _ →
-                    Just "the payload of the variant ${name} is not a record schema"
+        { node =
+            { name = name
+            , tag = tag
+            , payload = Just node
+            , problem =
+                case nodeBody node of
+                    NRecord _ →
+                        Nothing
+                    _ →
+                        Just "the payload of the variant ${name} is not a record schema"
+            }
+        , workers =
+            case engineOf payload of
+                Compiled workers →
+                    variantWorkers workers injectE injectA
+        , args = [ argument payload ]
         }
 
 
@@ -933,12 +694,14 @@ variant name tag payload injectE injectA =
 pub nullary : String, String, Injection ⊤ e, Injection ⊤ a → Variant e a
 nullary name tag injectE injectA =
     Variant
-        { name = name
-        , tag = tag
-        , payload = Nothing
-        , encoded = injectionBox injectE
-        , typed = injectionBox injectA
-        , problem = Nothing
+        { node =
+            { name = name
+            , tag = tag
+            , payload = Nothing
+            , problem = Nothing
+            }
+        , workers = nullaryWorkers injectE injectA
+        , args = []
         }
 
 
@@ -947,30 +710,43 @@ nullary name tag injectE injectA =
 --| are that variant's payload.
 pub tagged : String, List (Variant e a) → Schema e a
 tagged discriminator variants =
-    nodes = List.map variants λ(Variant node) → node
+    nodes = List.map variants λ(Variant bundle) → bundle.node
+    bundles = List.map variants λ(Variant bundle) → bundle
+    args = List.concatMap variants λ(Variant bundle) → bundle.args
+    node = taggedNode discriminator nodes
+    problem =
+        case nodeBody node of
+            NBroken found →
+                Just found
+            _ →
+                Nothing
+    compiledBox node (taggedWorkers discriminator bundles [ construction problem, …args ])
+
+
+taggedNode : String, List VariantNode → Node
+taggedNode discriminator nodes =
     case firstVariantProblem nodes of
         Just problem →
-            box (nBroken problem)
+            (nBroken problem)
         Nothing →
             if List.isEmpty nodes then
-                box (nBroken "a tagged schema needs a variant")
+                (nBroken "a tagged schema needs a variant")
             else
                 case duplicate nodes .tag of
                     Just tag →
-                        box (nBroken "two variants have the tag \"${tag}\"")
+                        (nBroken "two variants have the tag \"${tag}\"")
                     Nothing →
                         case duplicate nodes .name of
                             Just name →
-                                box (nBroken "two variants are named ${name}")
+                                (nBroken "two variants are named ${name}")
                             Nothing →
                                 case find nodes (variantClashes discriminator _) of
                                     Just clash →
-                                        box
-                                            (nBroken
-                                                "the variant ${clash.name} has a field on the discriminator \"${discriminator}\""
-                                            )
+                                        (nBroken
+                                            "the variant ${clash.name} has a field on the discriminator \"${discriminator}\""
+                                        )
                                     Nothing →
-                                        box (nTagged discriminator nodes)
+                                        (nTagged discriminator nodes)
 
 
 firstVariantProblem : List VariantNode → Maybe String
@@ -989,7 +765,7 @@ firstVariantProblem variants =
 variantClashes : String, VariantNode → Bool
 variantClashes discriminator selected =
     case Maybe.map selected.payload nodeBody of
-        Just (NRecord fs _) →
+        Just (NRecord fs) →
             List.any fs λentry → entry.key == discriminator || entry.name == discriminator
         _ →
             False
@@ -1011,7 +787,7 @@ cellOf name build =
 --| reference to it is resolved by identity, never by name, so two schemas
 --| built with one name are still two.
 pub recursive : String, sync (Schema e a → Schema e a) → Schema e a
-recursive name build = box (nRef (Js.pure λ⊤ → cellOf name λself → nodeOf (build (box self))))
+recursive name build = recursiveWith name build (Js.ref Nothing) (Js.ref 0) (Js.ref Nothing)
 
 
 resolve : Cell → Maybe Node
@@ -1068,20 +844,12 @@ lengthOf xs = Js.to (Js.get xs "length")
 
 -- `x` pushed onto the host array `xs`.
 
-endpointOf : Int → Endpoint
-endpointOf side =
-    if side == encodedSide then
-        Encoded
-    else
-        Type
+inputEndpoint : Direction → Endpoint
+inputEndpoint dir = if dir == Decoding then Encoded else Type
 
 
-endpointName : Int → String
-endpointName side =
-    if side == encodedSide then
-        "Encoded"
-    else
-        "Type"
+outputEndpoint : Direction → Endpoint
+outputEndpoint dir = if dir == Decoding then Type else Encoded
 
 
 rootErr : Direction, Endpoint, IssueCode, String → Result (List Issue) b
@@ -1101,11 +869,10 @@ rootIssue dir endpoint code message =
 
 
 -- What ends a root operation before anything is read: bad options, a
--- construction failure, an endpoint with no external form read or written
--- outside.
+-- construction failure.
 
-optionsProblem : Options, Direction, Int → Maybe (List Issue)
-optionsProblem o dir src =
+optionsProblem : Options, Direction → Maybe (List Issue)
+optionsProblem o dir =
     if
         not
             (HostData.isInteger (Js.from o.maxDepth)
@@ -1116,7 +883,7 @@ optionsProblem o dir src =
         Just
             (rootIssue
                 dir
-                (endpointOf src)
+                (inputEndpoint dir)
                 InvalidOptions
                 "maxDepth must be from 0 to ${String.fromInt maxDepthCeiling}, not ${String.fromInt o.maxDepth}"
             )
@@ -1124,34 +891,21 @@ optionsProblem o dir src =
         Nothing
 
 
-opaqueIssue : Direction, Int → List Issue
-opaqueIssue dir side =
-    rootIssue
-        dir
-        (endpointOf side)
-        InvalidSchema
-        "the ${endpointName side} endpoint holds a conversion's target, which has no external form to read or write"
-
-
 -- The context of one root operation. A step that failed answers the
 -- operation's issue array, which no value it reads or makes can be.
 
-context : Options, Direction, Int, Bool, Int, Bool, Bool → Context
-context o dir src sh dst dh json =
+context : Options, Direction, Bool, Bool, Bool → Context
+context o dir sh dh json =
     issues = Js.array []
     { all = o.errors == AllErrors
+    , scope = Unclaimed
     , reject = o.unknownKeys == Reject
     , max = o.maxDepth
     , report = o.reportInput
     , dir = dir
     , json = json
-    , src = src
     , sh = sh
-    , dst = dst
     , dh = dh
-    , inE = endpointOf src
-    , outE = endpointOf dst
-    , cv = False
     , issues = issues
     , fail = toHost workerAbsent
     }
@@ -1295,6 +1049,17 @@ pathArray : Path, Bool → List PathSegment
 pathArray path output = collect path output []
 
 
+-- A reported leaf needs its segment, not an intermediate parent link.
+pathArrayAt : Path, Js.Value, Js.Value, Bool → List PathSegment
+pathArrayAt parent input output written =
+    if Js.isNull input then
+        pathArray parent written
+    else
+        item = if written then output else input
+        segment = if Js.typeIs item "number" then Index (intOf item) else Field (stringOf item)
+        collect parent written [ segment ]
+
+
 collect : Path, Bool, List PathSegment → List PathSegment
 collect path output segments =
     if Js.isNull path then
@@ -1307,1112 +1072,8 @@ collect path output segments =
         collect part.parent output [ segment, …segments ]
 
 
-reportedInput : Context, Datum → Maybe Value
-reportedInput c item =
-    if c.report then
-        Js.optMatch item.data (λ⊤ → Just (fromHost item.raw)) λproject →
-            Maybe.map (project ⊤) fromHost
-    else
-        Nothing
-
-
-failAt : Context, Path, IssueCode, String, Datum, Bool → Js.Opt Datum
-failAt c path code message item output =
-    entry : Issue
-    entry =
-        { path = pathArray path output
-        , direction = c.dir
-        , endpoint = if output || c.cv then c.outE else c.inE
-        , code = code
-        , message = message
-        , input = reportedInput c item
-        }
-    _ = Js.call c.issues "push" [ toHost entry ]
-    Js.none ⊤
-
-
 issueCount : Context → Int
 issueCount c = lengthOf c.issues
-
-
-finish : Context, Js.Opt Datum → Result (List Issue) a
-finish c answer =
-    if workerEmpty answer then
-        Err (fromHost c.issues)
-    else
-        Ok (unpacked (readDatum answer))
-
-
-moved : Context, Path, Datum, List Issue → ⊤
-moved c path item given =
-    prefix = pathArray path False
-    each (if List.isEmpty given then [ issue "the conversion failed without an issue" ] else given) λentry →
-        amended : Issue
-        amended =
-            { path = List.copy prefix ++ entry.path
-            , direction = c.dir
-            , endpoint = c.outE
-            , code = entry.code
-            , message = entry.message
-            , input = reportedInput c item
-            }
-        _ = Js.call c.issues "push" [ toHost amended ]
-        ⊤
-
-
-callConversion : Context, Path, (Datum → Result (List Issue) Datum), Datum → Js.Opt Datum
-callConversion c path callback item =
-    case callback item of
-        Ok result →
-            Js.some result
-        Err issues →
-            moved c path item issues
-            Js.none ⊤
-
-
-childNodes : Node → List Node
-childNodes node =
-    case nodeBody node of
-        NList child _ →
-            [ child ]
-        NNullable child _ →
-            [ child ]
-        NConverted child _ _ →
-            [ child ]
-        NFlipped child →
-            [ child ]
-        NProjected _ child →
-            [ child ]
-        NRecord fs _ →
-            List.map fs .node
-        NTagged _ variants →
-            List.filterMap variants .payload
-        NTuple items _ →
-            items
-        NCtors ctors →
-            List.concatMap ctors .nodes
-        NMaybe child _ _ →
-            [ child ]
-        NHost child →
-            [ child ]
-        _ →
-            []
-
-
-problemIn : Node, Js.Ref (List Int) → Maybe String
-problemIn node seen =
-    case nodeBody node of
-        NRef cell →
-            if List.member (Js.read seen) cell.id then
-                Nothing
-            else
-                Js.write seen [ …(List.copy (Js.read seen)), cell.id ]
-                case resolve cell of
-                    Nothing →
-                        Just (dangling cell)
-                    Just body →
-                        problemIn body seen
-        NBroken problem →
-            Just problem
-        _ →
-            firstNodeProblem (childNodes node) seen
-
-
-firstNodeProblem : List Node, Js.Ref (List Int) → Maybe String
-firstNodeProblem nodes seen =
-    case nodes of
-        [] →
-            Nothing
-        [ node, …rest ] →
-            case problemIn node seen of
-                Nothing →
-                    firstNodeProblem rest seen
-                found →
-                    found
-
-
-opaqueIn : Node, Int, Js.Ref (List (Int × Int)) → Bool
-opaqueIn node side seen =
-    case nodeBody node of
-        NRef cell →
-            if List.member (Js.read seen) ( cell.id, side ) then
-                False
-            else
-                Js.write seen [ …(List.copy (Js.read seen)), ( cell.id, side ) ]
-                case resolve cell of
-                    Nothing →
-                        False
-                    Just body →
-                        opaqueIn body side seen
-        NConverted child _ _ →
-            side == typeSide || opaqueIn child encodedSide seen
-        NFlipped child →
-            opaqueIn child (1 - side) seen
-        NProjected selected child →
-            opaqueIn child selected seen
-        _ →
-            List.any (childNodes node) λchild → opaqueIn child side seen
-
-
-analyse : Schema e a → Analysis
-analyse (Schema state) =
-    case Js.read state.analysis of
-        Just known →
-            known
-        Nothing →
-            problem = problemIn (state.node ⊤) (Js.ref [])
-            seen = Js.ref []
-            result =
-                { problem = problem
-                , encodedOpaque = opaqueIn (state.node ⊤) encodedSide seen
-                , typeOpaque = opaqueIn (state.node ⊤) typeSide seen
-                }
-            Js.write state.analysis (Just result)
-            result
-
-
-opaqueAt : Analysis, Int → Bool
-opaqueAt analysis side = if side == encodedSide then analysis.encodedOpaque else analysis.typeOpaque
-
-
-rootProblem : Schema e a, Options, Direction, Int, Bool, Int, Bool → Maybe (List Issue)
-rootProblem schema opts dir src sh dst dh =
-    case optionsProblem opts dir src of
-        Just issues →
-            Just issues
-        Nothing →
-            analysis = analyse schema
-            case analysis.problem of
-                Just problem →
-                    Just (rootIssue dir (endpointOf src) InvalidSchema problem)
-                Nothing →
-                    if sh && opaqueAt analysis src then
-                        Just (opaqueIssue dir src)
-                    else if dh && opaqueAt analysis dst then
-                        Just (opaqueIssue dir dst)
-                    else
-                        Nothing
-
-
-isActive : Int, Active → Bool
-isActive id active =
-    case active of
-        NoneActive →
-            False
-        Entered other rest →
-            other == id || isActive id rest
-
-
-hostEnds : Context → Context
-hostEnds c =
-    { Record.copy c | sh = c.sh || c.src == encodedSide, dh = c.dh || c.dst == encodedSide }
-
-
-accessAt : Maps, Int → Access
-accessAt maps side = if side == encodedSide then maps.encoded else maps.typed
-
-
-endsAt : Ends, Int → Access
-endsAt ends side = if side == encodedSide then ends.encoded else ends.typed
-
-
-optionalAt : OptionalEnds, Int → OptionalAccess
-optionalAt ends side = if side == encodedSide then ends.encoded else ends.typed
-
-
-scalarString : Datum → String
-scalarString item = unpacked item
-
-
-scalarBool : Datum → Bool
-scalarBool item = unpacked item
-
-
-scalarInt : Datum → Int
-scalarInt item = unpacked item
-
-
-scalarFloat : Datum → Float
-scalarFloat item = unpacked item
-
-
-scalarChar : Datum → Char
-scalarChar item = unpacked item
-
-
-scalarInt32 : Datum → Int32.Int32
-scalarInt32 item = unpacked item
-
-
-scalarValue : Datum → Value
-scalarValue item = unpacked item
-
-
-hostDatum : Datum → Js.Value
-hostDatum item = Js.optMatch item.box (λ⊤ → item.raw) unpackBox
-
-
-nullValue : Nullable ⊥
-nullValue = Null
-
-
-rawScalar : PrimitiveKind, Datum → Js.Value
-rawScalar kind item =
-    case kind of
-        StringKind →
-            toHost (scalarString item)
-        BoolKind →
-            toHost (scalarBool item)
-        IntKind →
-            toHost (scalarInt item)
-        FloatKind →
-            toHost (scalarFloat item)
-        FiniteFloatKind →
-            toHost (scalarFloat item)
-        CharKind →
-            toHost (scalarChar item)
-        Int32Kind →
-            toHost (scalarInt32 item)
-        NullKind →
-            Js.null
-        ValueKind →
-            toHost (scalarValue item)
-        NeverKind →
-            Protocol.defect "a value of the empty type reached a schema"
-
-
-typedFloat : Js.Value → Float
-typedFloat raw = fromHost raw
-
-
-typedBool : Js.Value → Bool
-typedBool raw = fromHost raw
-
-
-typedChar : Js.Value → Char
-typedChar raw = fromHost raw
-
-
-typedInt32 : Js.Value → Int32.Int32
-typedInt32 raw = fromHost raw
-
-
-typedHostValue : Js.Value → Value
-typedHostValue raw = fromHost raw
-
-
-scalarDatum : PrimitiveKind, Js.Value → Datum
-scalarDatum kind raw =
-    case kind of
-        StringKind →
-            packed (stringOf raw)
-        BoolKind →
-            packed (typedBool raw)
-        IntKind →
-            packed (intOf raw)
-        FloatKind →
-            packed (typedFloat raw)
-        FiniteFloatKind →
-            packed (typedFloat raw)
-        CharKind →
-            packed (typedChar raw)
-        Int32Kind →
-            packed (typedInt32 raw)
-        NullKind →
-            packed nullValue
-        ValueKind →
-            packed (typedHostValue raw)
-        NeverKind →
-            Protocol.defect "a schema constructed a value of the empty type"
-
-
-prim : Context, PrimitiveKind, Int, Path, Datum → Js.Opt Datum
-prim c kind depth path item =
-    raw = if c.sh then hostDatum item else rawScalar kind item
-    accepted = λ⊤ → Js.some (if c.dh then packedHost raw else scalarDatum kind raw)
-    wrong = λmessage → failAt c path WrongShape message item False
-    invalid = λmessage → failAt c path InvalidValue message item False
-    case kind of
-        StringKind →
-            if isType raw "string" then accepted ⊤ else wrong "expected a string"
-        BoolKind →
-            if isType raw "boolean" then accepted ⊤ else wrong "expected a boolean"
-        IntKind →
-            if not (isType raw "number") then
-                wrong "expected a number"
-            else if HostData.isSafeInteger (raw) then
-                accepted ⊤
-            else
-                invalid "expected a safe integer"
-        FloatKind →
-            if not (isType raw "number") then
-                wrong "expected a number"
-            else if c.json && c.dh && not (isFinite raw) then
-                failAt c path PrintFailed "JSON has no number for NaN or an infinity" item True
-            else
-                accepted ⊤
-        FiniteFloatKind →
-            if not (isType raw "number") then
-                wrong "expected a number"
-            else if isFinite raw then
-                accepted ⊤
-            else
-                invalid "expected a finite number"
-        NullKind →
-            if c.sh && not (Js.isNull raw) then wrong "expected null" else accepted ⊤
-        ValueKind →
-            if c.json && c.dh then
-                case printable raw (c.max - depth) of
-                    1 →
-                        failAt
-                            c
-                            path
-                            DepthExceeded
-                            "the value nests deeper than the depth limit"
-                            item
-                            True
-                    2 →
-                        failAt
-                            c
-                            path
-                            PrintFailed
-                            "the value holds NaN or an infinity, which JSON has no number for"
-                            item
-                            True
-                    _ →
-                        accepted ⊤
-            else
-                accepted ⊤
-        CharKind →
-            if not (isType raw "string") then
-                wrong "expected a string"
-            else if oneScalar raw then
-                accepted ⊤
-            else
-                invalid "expected one character"
-        Int32Kind →
-            if not (isType raw "number") then
-                wrong "expected a number"
-            else if Js.bitOr (intOf raw) 0 == intOf raw then
-                accepted ⊤
-            else
-                invalid "expected a 32-bit integer"
-        NeverKind →
-            wrong "expected nothing: ⊥ has no value"
-
-
--- Only host arrays are read through Js. Typed lists use their generated
--- structural adapter, which retains each element's compiler identity.
-hostItems : Js.Value → List Datum
-hostItems raw = List.map (fromHost raw) packedHost
-
-
-packedHost : Js.Value → Datum
-packedHost raw = { box = Js.none ⊤, data = Js.none ⊤, raw = raw }
-
-
-hostArray : List Datum → Datum
-hostArray items = packedHost (toHost (List.map items hostDatum))
-
-
-walkItems : Context, Node, Int, Path, List Datum, Int → Js.Opt (List Datum)
-walkItems c child depth path items offset = walkItemsFrom c child depth path items offset [] False
-
-
-walkItemsFrom :
-      Context
-    , Node
-    , Int
-    , Path
-    , List Datum
-    , Int
-    , List Datum
-    , Bool
-    → Js.Opt (List Datum)
-walkItemsFrom c child depth path items offset out failed =
-    case items of
-        [] →
-            if failed then Js.none ⊤ else Js.some out
-        [ item, …rest ] →
-            here = step path (toHost offset) (toHost offset)
-            answer =
-                if depth ≥ c.max then
-                    failAt c here DepthExceeded "the depth limit is reached" item False
-                else
-                    run c child (depth + 1) here NoneActive item
-            if workerEmpty answer then
-                if c.all then
-                    walkItemsFrom c child depth path rest (offset + 1) out True
-                else
-                    Js.none ⊤
-            else
-                walkItemsFrom
-                    c
-                    child
-                    depth
-                    path
-                    rest
-                    (offset + 1)
-                    (List.push out (readDatum answer))
-                    failed
-
-
-listOf : Context, Node, Ends, Int, Path, Datum → Js.Opt Datum
-listOf c child ends depth path item =
-    if c.sh && not (isArray (hostDatum item)) then
-        failAt c path WrongShape "expected an array" item False
-    else
-        items = if c.sh then hostItems (hostDatum item) else (endsAt ends c.src).view item
-        mapDatums (walkItems c child depth path items 0)
-            (if c.dh then hostArray else (endsAt ends c.dst).make)
-
-
-optionalOut : Context, OptionalEnds, Maybe Datum → Datum
-optionalOut c ends found =
-    if c.dh then
-        case found of
-            Nothing →
-                packedHost Js.null
-            Just item →
-                item
-    else
-        (optionalAt ends c.dst).make found
-
-
-nullableOf : Context, Node, OptionalEnds, Int, Path, Active, Datum → Js.Opt Datum
-nullableOf c child ends depth path active item =
-    found =
-        if c.sh then
-            if Js.isNull (hostDatum item) then Nothing else Just item
-        else
-            (optionalAt ends c.src).view item
-    case found of
-        Nothing →
-            Js.some (optionalOut c ends Nothing)
-        Just inner →
-            mapDatum (run c child depth path active inner) λresult →
-                optionalOut c ends (Just result)
-
-
-maybeOf : Context, Node, Int, OptionalEnds, Int, Path, Active, Datum → Js.Opt Datum
-maybeOf c child mode ends depth path active item =
-    found =
-        if c.sh then
-            if Js.isNull (hostDatum item) && Js.bitAnd mode 1 == 0 then Nothing else Just item
-        else
-            (optionalAt ends c.src).view item
-    case found of
-        Nothing →
-            Js.some (optionalOut c ends Nothing)
-        Just inner →
-            answer = run c child depth path active inner
-            if workerEmpty answer then
-                Js.none ⊤
-            else
-                result = readDatum answer
-                if c.dh && Js.bitAnd mode 2 ≠ 0 && Js.isNull (hostDatum result) then
-                    failAt
-                        c
-                        path
-                        InvalidValue
-                        "the value inside Just writes null, which reads back as Nothing"
-                        inner
-                        True
-                else
-                    Js.some (optionalOut c ends (Just result))
-
-
-run : Context, Node, Int, Path, Active, Datum → Js.Opt Datum
-run c node depth path active item =
-    case nodeBody node of
-        NPrim kind →
-            prim c kind depth path item
-        NList child ends →
-            listOf c child ends depth path item
-        NNullable child ends →
-            nullableOf c child ends depth path active item
-        NRecord fs maps →
-            recordOf c fs maps Nothing depth path item
-        NTagged discriminator variants →
-            taggedOf c discriminator variants depth path item
-        NConverted source forward backward →
-            if c.src == encodedSide && c.dst == typeSide then
-                answer = run c source depth path active item
-                if workerEmpty answer then
-                    Js.none ⊤
-                else
-                    callConversion c path forward (readDatum answer)
-            else if c.src == typeSide && c.dst == encodedSide then
-                answer = callConversion c path backward item
-                if workerEmpty answer then
-                    Js.none ⊤
-                else
-                    run { Record.copy c | cv = True } source depth path active (readDatum answer)
-            else if c.src == typeSide then
-                Js.some item
-            else
-                run c source depth path active item
-        NFlipped child →
-            run { Record.copy c | src = 1 - c.src, dst = 1 - c.dst } child depth path active item
-        NProjected side child →
-            run { Record.copy c | src = side, dst = side } child depth path active item
-        NRef cell →
-            if isActive cell.id active then
-                failAt
-                    c
-                    path
-                    InvalidSchema
-                    "the recursive schema ${cell.name} refers to itself without reading into the value"
-                    item
-                    False
-            else
-                case resolve cell of
-                    Nothing →
-                        failAt c path InvalidSchema (dangling cell) item False
-                    Just body →
-                        run c body depth path (Entered cell.id active) item
-        NBroken problem →
-            failAt c path InvalidSchema problem item False
-        NTuple items access →
-            tupleOf c items access depth path item
-        NCtors ctors →
-            constructorsOf c ctors depth path item
-        NMaybe child mode ends →
-            maybeOf c child mode ends depth path active item
-        NHost child →
-            run (hostEnds c) child depth path active item
-
-
-type alias Owner =
-    discriminator : String
-    selected : VariantNode
-
-
-type FieldAnswer
-    = FieldValue Datum
-    | FieldOmitted Datum
-
-
-newObject : Maybe Owner → Js.Value
-newObject owner =
-    raw = HostData.emptyObject ⊤
-    case owner of
-        Nothing →
-            ⊤
-        Just selected →
-            Js.set raw selected.discriminator (toHost selected.selected.tag)
-    raw
-
-
-unknownKeys : Context, List FieldNode, Maybe String, Path, Datum → Bool
-unknownKeys c fs claimed path parent =
-    raw = hostDatum parent
-    keys : List String
-    keys = fromHost (toHost (HostData.keys (raw)))
-    unknownKeysFrom c fs claimed path raw keys False
-
-
-unknownKeysFrom : Context, List FieldNode, Maybe String, Path, Js.Value, List String, Bool → Bool
-unknownKeysFrom c fs claimed path raw keys failed =
-    case keys of
-        [] →
-            failed
-        [ name, …rest ] →
-            if claimed == Just name || List.any fs (claims c name _) then
-                unknownKeysFrom c fs claimed path raw rest failed
-            else
-                _ =
-                    failAt
-                        c
-                        (step path (toHost name) (toHost name))
-                        UnknownKey
-                        "unexpected key \"${name}\""
-                        (packedHost (Js.get raw name))
-                        False
-                if c.all then unknownKeysFrom c fs claimed path raw rest True else True
-
-
-claims : Context, String, FieldNode → Bool
-claims c name entry = (if c.src == encodedSide then entry.key else entry.name) == name
-
-
-missingField : Context, FieldNode → FieldAnswer
-missingField c entry =
-    missing =
-        if entry.lenient then
-            case nodeBody entry.node of
-                NMaybe _ _ ends →
-                    (optionalAt ends c.dst).make Nothing
-                _ →
-                    Protocol.defect "a lenient schema field has no Maybe adapter"
-        else
-            (optionalAt entry.presence c.dst).make Nothing
-    FieldOmitted missing
-
-
-fieldMissing : FieldNode, Int, Datum → Bool
-fieldMissing entry side item =
-    if entry.lenient then
-        case nodeBody entry.node of
-            NMaybe _ _ ends →
-                isNothing ((optionalAt ends side).view item)
-            _ →
-                False
-    else
-        isNothing ((optionalAt entry.presence side).view item)
-
-
-descendField : Context, FieldNode, Int, Path, Datum → Js.Opt FieldAnswer
-descendField c entry depth path item =
-    answer =
-        if depth ≥ c.max then
-            failAt c path DepthExceeded "the depth limit is reached" item False
-        else
-            run c entry.node (depth + 1) path NoneActive item
-    if workerEmpty answer then
-        Js.none ⊤
-    else
-        result = readDatum answer
-        Js.some
-            (if entry.optional && not entry.lenient && not c.dh then
-                FieldValue ((optionalAt entry.presence c.dst).make (Just result))
-             else
-                FieldValue result
-            )
-
-
-runField : Context, FieldNode, Int, Path, Datum, Maybe Datum → Js.Opt FieldAnswer
-runField c entry depth path parent supplied =
-    inputName = if c.src == encodedSide then entry.key else entry.name
-    outputName = if c.dst == encodedSide then entry.key else entry.name
-    here = step path (toHost inputName) (toHost outputName)
-    if c.sh then
-        raw = hostDatum parent
-        own = prototypeKey inputName
-        heldOwn = own && hasOwn raw inputName
-        got = if own && not heldOwn then Js.undefined else Js.get raw inputName
-        held = if own then heldOwn else not (Js.isUndefined got)
-        if held then
-            descendField c entry depth here (packedHost got)
-        else if entry.optional then
-            Js.some (missingField c entry)
-        else
-            _ = failAt c here MissingKey "missing key \"${inputName}\"" parent False
-            Js.none ⊤
-    else
-        case supplied of
-            Nothing →
-                Protocol.defect "a schema record has too few typed fields"
-            Just item →
-                if entry.optional && fieldMissing entry c.src item then
-                    Js.some (missingField c entry)
-                else if entry.optional && not entry.lenient then
-                    case (optionalAt entry.presence c.src).view item of
-                        Nothing →
-                            Protocol.defect "a schema presence changed during its read"
-                        Just inner →
-                            descendField c entry depth here inner
-                else
-                    descendField c entry depth here item
-
-
-fieldsFrom :
-      Context
-    , List FieldNode
-    , Int
-    , Path
-    , Datum
-    , List Datum
-    , Int
-    , Js.Builder Datum
-    , Int
-    , Js.Value
-    → Js.Opt (List Datum)
-fieldsFrom c fs depth path parent supplied inputOffset out outputOffset rawOut =
-    case fs of
-        [] →
-            Js.some (Array.arrayDone out outputOffset)
-        [ entry, …rest ] →
-            input = if c.sh then Nothing else List.get supplied inputOffset
-            answer = runField c entry depth path parent input
-            if workerEmpty answer then
-                if c.all then
-                    fieldsFrom
-                        c
-                        rest
-                        depth
-                        path
-                        parent
-                        supplied
-                        (inputOffset + 1)
-                        out
-                        outputOffset
-                        rawOut
-                else
-                    Js.none ⊤
-            else if c.dh then
-                case readFieldAnswer answer of
-                    FieldValue result →
-                        Js.set
-                            rawOut
-                            (if c.dst == encodedSide then entry.key else entry.name)
-                            (hostDatum result)
-                    FieldOmitted _ →
-                        ⊤
-                fieldsFrom
-                    c
-                    rest
-                    depth
-                    path
-                    parent
-                    supplied
-                    (inputOffset + 1)
-                    out
-                    outputOffset
-                    rawOut
-            else
-                result =
-                    case readFieldAnswer answer of
-                        FieldValue fieldDatum →
-                            fieldDatum
-                        FieldOmitted missing →
-                            missing
-                next = Array.arraySet out outputOffset result
-                fieldsFrom
-                    c
-                    rest
-                    depth
-                    path
-                    parent
-                    supplied
-                    (inputOffset + 1)
-                    next
-                    (outputOffset + 1)
-                    rawOut
-
-
-recordOf : Context, List FieldNode, Maps, Maybe Owner, Int, Path, Datum → Js.Opt Datum
-recordOf c fs maps owner depth path parent =
-    if c.sh && not (isObject (hostDatum parent)) then
-        failAt c path WrongShape "expected an object" parent False
-    else
-        before = issueCount c
-        if
-            c.sh
-                && c.reject
-                && unknownKeys c fs (Maybe.map owner .discriminator) path parent
-                && not c.all
-        then
-            Js.none ⊤
-        else
-            supplied = if c.sh then [] else (accessAt maps c.src).view parent
-            rawOut = if c.dh then newObject owner else Js.null
-            outputBuilder = Array.arrayAllocate (if c.dh then 0 else List.length fs)
-            answer = fieldsFrom c fs depth path parent supplied 0 outputBuilder 0 rawOut
-            if workerEmpty answer || issueCount c > before then
-                Js.none ⊤
-            else if c.dh then
-                Js.some (packedHost rawOut)
-            else
-                result = (accessAt maps c.dst).make (readDatums answer)
-                case owner of
-                    Nothing →
-                        Js.some result
-                    Just selected →
-                        Js.some ((variantInjection selected.selected c.dst).inject result)
-
-
-variantInjection : VariantNode, Int → InjectionBox
-variantInjection selected side = if side == encodedSide then selected.encoded else selected.typed
-
-
-projected : Context, List VariantNode, Datum → Maybe (VariantNode × Datum)
-projected c variants item =
-    case variants of
-        [] →
-            Nothing
-        [ selected, …rest ] →
-            case (variantInjection selected c.src).project item of
-                Nothing →
-                    projected c rest item
-                Just payload →
-                    Just ( selected, payload )
-
-
-variantOf : Context, String, List VariantNode, Path, Datum → Maybe (VariantNode × Datum)
-variantOf c discriminator variants path item =
-    if c.sh then
-        raw = hostDatum item
-        if not (isObject raw) then
-            _ = failAt c path WrongShape "expected an object" item False
-            Nothing
-        else
-            here = step path (toHost discriminator) (toHost discriminator)
-            own = prototypeKey discriminator
-            heldOwn = own && hasOwn raw discriminator
-            tag = if own && not heldOwn then Js.undefined else Js.get raw discriminator
-            if not (if own then heldOwn else not (Js.isUndefined tag)) then
-                _ = failAt c here MissingKey "missing key \"${discriminator}\"" item False
-                Nothing
-            else
-                found =
-                    if isType tag "string" then
-                        find variants λselected → selected.tag == stringOf tag
-                    else
-                        Nothing
-                case found of
-                    Just selected →
-                        Just ( selected, item )
-                    Nothing →
-                        tags =
-                            String.join (List.map variants λselected → "\"${selected.tag}\"") ", "
-                        _ =
-                            failAt
-                                c
-                                here
-                                UnknownTag
-                                ("unknown tag; expected " ++ tags)
-                                (packedHost tag)
-                                False
-                        Nothing
-    else
-        case projected c variants item of
-            Nothing →
-                _ =
-                    failAt
-                        c
-                        path
-                        InvalidSchema
-                        "no variant of this tagged schema takes the value"
-                        item
-                        False
-                Nothing
-            found →
-                found
-
-
-taggedOf : Context, String, List VariantNode, Int, Path, Datum → Js.Opt Datum
-taggedOf c discriminator variants depth path item =
-    case variantOf c discriminator variants path item of
-        Nothing →
-            Js.none ⊤
-        Just ( selected, payload ) →
-            owner = Just { discriminator = discriminator, selected = selected }
-            case Maybe.map selected.payload nodeBody of
-                Just (NRecord fs maps) →
-                    if depth ≥ c.max then
-                        failAt c path DepthExceeded "the depth limit is reached" payload False
-                    else
-                        recordOf c fs maps owner (depth + 1) path payload
-                _ →
-                    if c.sh && c.reject && unknownKeys c [] (Just discriminator) path item then
-                        Js.none ⊤
-                    else if c.dh then
-                        Js.some (packedHost (newObject owner))
-                    else
-                        Js.some ((variantInjection selected c.dst).inject (packed ⊤))
-
-
-elementsMessage : Int → String
-elementsMessage n = "expected an array of ${String.fromInt n} elements"
-
-
-walkNodes : Context, List Node, Int, Path, List Datum, Int → Js.Opt (List Datum)
-walkNodes c nodes depth path items offset = walkNodesFrom c nodes depth path items offset [] False
-
-
-walkNodesFrom :
-      Context
-    , List Node
-    , Int
-    , Path
-    , List Datum
-    , Int
-    , List Datum
-    , Bool
-    → Js.Opt (List Datum)
-walkNodesFrom c nodes depth path items offset out failed =
-    case nodes of
-        [] →
-            if failed then Js.none ⊤ else Js.some out
-        [ node, …rest ] →
-            case items of
-                [] →
-                    Protocol.defect "a schema tuple has too few elements"
-                [ item, …remaining ] →
-                    here = step path (toHost offset) (toHost offset)
-                    answer =
-                        if depth ≥ c.max then
-                            failAt c here DepthExceeded "the depth limit is reached" item False
-                        else
-                            run c node (depth + 1) here NoneActive item
-                    if workerEmpty answer then
-                        if c.all then
-                            walkNodesFrom c rest depth path remaining (offset + 1) out True
-                        else
-                            Js.none ⊤
-                    else
-                        walkNodesFrom
-                            c
-                            rest
-                            depth
-                            path
-                            remaining
-                            (offset + 1)
-                            (List.push out (readDatum answer))
-                            failed
-
-
-tupleOf : Context, List Node, Access, Int, Path, Datum → Js.Opt Datum
-tupleOf c nodes access depth path item =
-    n = List.length nodes
-    if c.sh && not (isArray (hostDatum item) && lengthOf (hostDatum item) == n) then
-        failAt c path WrongShape (elementsMessage n) item False
-    else
-        items = if c.sh then hostItems (hostDatum item) else access.view item
-        mapDatums (walkNodes c nodes depth path items 0) (if c.dh then hostArray else access.make)
-
-
-ctorMessage : String
-ctorMessage = "expected a constructor: a string, or an object with one key"
-
-
-unknownCtor : List CtorNode, String → String
-unknownCtor ctors name =
-    names = String.join (List.map ctors λentry → "\"${entry.name}\"") ", "
-    "unknown constructor \"${name}\"; expected ${names}"
-
-
-ctorOut : Context, CtorNode, List Datum → Datum
-ctorOut c ctor items =
-    if c.dh then
-        n = List.length ctor.nodes
-        if n == 0 then
-            packedHost (toHost ctor.name)
-        else
-            raw = newObject Nothing
-            Js.set
-                raw
-                ctor.name
-                (if n == 1 then hostDatum (at items 0) else hostDatum (hostArray items))
-            packedHost raw
-    else
-        ctor.inject items
-
-
-ctorArgs : Context, CtorNode, Int, Path, List Datum, Datum → Js.Opt Datum
-ctorArgs c ctor depth path items input =
-    here = step path (toHost ctor.name) (toHost ctor.name)
-    if depth ≥ c.max then
-        failAt c here DepthExceeded "the depth limit is reached" input False
-    else if List.length ctor.nodes == 1 then
-        mapDatum (run c (at ctor.nodes 0) (depth + 1) here NoneActive (at items 0)) λresult →
-            ctorOut c ctor [ result ]
-    else
-        mapDatums (walkNodes c ctor.nodes (depth + 1) here items 0) (ctorOut c ctor _)
-
-
-ctorRawArgs : Context, CtorNode, Int, Path, Js.Value → Js.Opt Datum
-ctorRawArgs c ctor depth path payload =
-    here = step path (toHost ctor.name) (toHost ctor.name)
-    n = List.length ctor.nodes
-    input = packedHost payload
-    if depth ≥ c.max then
-        failAt c here DepthExceeded "the depth limit is reached" input False
-    else if n == 1 then
-        ctorArgs c ctor depth path [ input ] input
-    else if not (isArray payload && lengthOf payload == n) then
-        failAt c here WrongShape (elementsMessage n) input False
-    else
-        ctorArgs c ctor depth path (hostItems payload) input
-
-
-ctorFromHost : Context, List CtorNode, Int, Path, Datum → Js.Opt Datum
-ctorFromHost c ctors depth path item =
-    raw = hostDatum item
-    if isType raw "string" then
-        name = stringOf raw
-        case find ctors λentry → entry.name == name of
-            Nothing →
-                failAt c path UnknownTag (unknownCtor ctors name) item False
-            Just ctor →
-                if List.isEmpty ctor.nodes then
-                    Js.some (ctorOut c ctor [])
-                else
-                    failAt
-                        c
-                        path
-                        WrongShape
-                        "the constructor ${name} takes arguments, so it is an object with the key \"${name}\""
-                        item
-                        False
-    else if isObject raw then
-        keys : List String
-        keys = fromHost (toHost (HostData.keys (raw)))
-        if List.length keys ≠ 1 then
-            failAt c path WrongShape ctorMessage item False
-        else
-            name = at keys 0
-            case find ctors λentry → entry.name == name of
-                Nothing →
-                    failAt c path UnknownTag (unknownCtor ctors name) item False
-                Just ctor →
-                    if List.isEmpty ctor.nodes then
-                        failAt
-                            c
-                            path
-                            WrongShape
-                            "the constructor ${name} takes no arguments, so it is the string \"${name}\""
-                            item
-                            False
-                    else
-                        ctorRawArgs c ctor depth path (Js.get raw name)
-    else
-        failAt c path WrongShape ctorMessage item False
-
-
-ctorOf : List CtorNode, Datum → Maybe (CtorNode × List Datum)
-ctorOf ctors item =
-    case ctors of
-        [] →
-            Nothing
-        [ ctor, …rest ] →
-            case ctor.project item of
-                Nothing →
-                    ctorOf rest item
-                Just items →
-                    Just ( ctor, items )
-
-
-constructorsOf : Context, List CtorNode, Int, Path, Datum → Js.Opt Datum
-constructorsOf c ctors depth path item =
-    if c.sh then
-        ctorFromHost c ctors depth path item
-    else
-        case ctorOf ctors item of
-            Nothing →
-                failAt c path InvalidSchema "no constructor takes the value" item False
-            Just ( ctor, items ) →
-                if List.isEmpty ctor.nodes then
-                    Js.some (ctorOut c ctor items)
-                else
-                    ctorArgs
-                        c
-                        ctor
-                        depth
-                        path
-                        items
-                        (if List.length ctor.nodes == 1 then at items 0 else item)
-
-
-runRoot : Schema e a, Options, Direction, Int, Bool, Int, Bool, Datum → Result (List Issue) b
-runRoot schema opts dir src sh dst dh item =
-    case rootProblem schema opts dir src sh dst dh of
-        Just issues →
-            Err issues
-        Nothing →
-            c = context opts dir src sh dst dh False
-            finish c (run c (nodeOf schema) 0 atRoot NoneActive item)
 
 
 --| An Encoded value converted to the Type.
@@ -2430,13 +1091,9 @@ decodeWith schema opts input =
                 workers.args
                 (selectedWorker workers.decode)
                 Decoding
-                encodedSide
                 False
-                typeSide
                 False
                 input
-        Interpreted →
-            runRoot schema opts Decoding encodedSide False typeSide False (packed input)
 
 
 --| A Type value converted to the Encoded.
@@ -2454,13 +1111,9 @@ encodeWith schema opts input =
                 workers.args
                 (selectedWorker workers.encode)
                 Encoding
-                typeSide
                 False
-                encodedSide
                 False
                 input
-        Interpreted →
-            runRoot schema opts Encoding typeSide False encodedSide False (packed input)
 
 
 --| A host value read as the Encoded endpoint's external form, to the Type.
@@ -2478,13 +1131,9 @@ readWith schema opts input =
                 workers.args
                 (selectedWorker workers.read)
                 Decoding
-                encodedSide
                 True
-                typeSide
                 False
                 (toHost input)
-        Interpreted →
-            runRoot schema opts Decoding encodedSide True typeSide False (packedHost (toHost input))
 
 
 --| A Type value written as the Encoded endpoint's external form.
@@ -2503,16 +1152,10 @@ writeWith schema opts input =
                     workers.args
                     (selectedWorker workers.write)
                     Encoding
-                    typeSide
                     False
-                    encodedSide
                     True
                     input
                 )
-                typedHostValue
-        Interpreted →
-            Result.map
-                (runRoot schema opts Encoding typeSide False encodedSide True (packed input))
                 typedHostValue
 
 
@@ -2529,17 +1172,6 @@ parseWith schema opts text =
     case engineOf schema of
         Compiled workers →
             compiledParse opts workers.args (selectedWorker workers.parse) text
-        Interpreted →
-            case rootProblem schema opts Decoding encodedSide True typeSide False of
-                Just issues →
-                    Err issues
-                Nothing →
-                    case parseJson text of
-                        Nothing →
-                            rootErr Decoding Encoded ParseFailed "invalid JSON"
-                        Just raw →
-                            c = context opts Decoding encodedSide True typeSide False True
-                            finish c (run c (nodeOf schema) 0 atRoot NoneActive (packedHost raw))
 
 
 parseJson : String → Maybe Js.Value
@@ -2562,17 +1194,6 @@ printWith schema opts input =
     case engineOf schema of
         Compiled workers →
             compiledPrint opts workers.args (selectedWorker workers.print) input
-        Interpreted →
-            case rootProblem schema opts Encoding typeSide False encodedSide True of
-                Just issues →
-                    Err issues
-                Nothing →
-                    c = context opts Encoding typeSide False encodedSide True True
-                    answer = run c (nodeOf schema) 0 atRoot NoneActive (packed input)
-                    if workerEmpty answer then
-                        Err (fromHost c.issues)
-                    else
-                        Ok (stringOf (HostJson.stringify (hostDatum (readDatum answer))))
 
 
 --| The schema's graph, both endpoints, as plain data. It runs no
@@ -2590,11 +1211,11 @@ shapeOf ids definitions node =
     case nodeBody node of
         NPrim kind →
             Primitive kind
-        NList child _ →
+        NList child →
             ListOf (shapeOf ids definitions child)
-        NNullable child _ →
+        NNullable child →
             NullableOf (shapeOf ids definitions child)
-        NRecord fs _ →
+        NRecord fs →
             RecordOf
                 (List.map fs λentry →
                     { name = entry.name
@@ -2611,15 +1232,8 @@ shapeOf ids definitions node =
                     , payload = Maybe.map selected.payload (shapeOf ids definitions _)
                     }
                 )
-        NConverted child _ _ →
+        NConverted child →
             Converted (shapeOf ids definitions child)
-        NFlipped child →
-            Flipped (shapeOf ids definitions child)
-        NProjected side child →
-            if side == typeSide then
-                TypeOnly (shapeOf ids definitions child)
-            else
-                EncodedOnly (shapeOf ids definitions child)
         NRef cell →
             case find (Js.read ids) λ( entry, _ ) → entry == cell.id of
                 Just ( _, known ) →
@@ -2639,7 +1253,7 @@ shapeOf ids definitions node =
                     Reference id
         NBroken problem →
             Invalid problem
-        NTuple nodes _ →
+        NTuple nodes →
             TupleOf (List.map nodes (shapeOf ids definitions _))
         NCtors ctors →
             ConstructorsOf
@@ -2648,7 +1262,7 @@ shapeOf ids definitions node =
                     , arguments = List.map ctor.nodes (shapeOf ids definitions _)
                     }
                 )
-        NMaybe child _ _ →
+        NMaybe child _ →
             MaybeOf (shapeOf ids definitions child)
         NHost child →
             shapeOf ids definitions child
@@ -2713,45 +1327,6 @@ workerValue slot = Js.pure λ⊤ →
         identity
 
 
--- Interpreter payloads are concrete types; their optional reads keep the
--- statically known identity representation, including in traversal loops.
-readDatum : Js.Opt Datum → Datum
-readDatum slot =
-    Js.optMatch slot
-        (λ⊤ → Protocol.defect "an absent schema worker result was read")
-        identity
-
-
-readDatums : Js.Opt (List Datum) → List Datum
-readDatums slot =
-    Js.optMatch slot
-        (λ⊤ → Protocol.defect "an absent schema worker result was read")
-        identity
-
-
-readFieldAnswer : Js.Opt FieldAnswer → FieldAnswer
-readFieldAnswer slot =
-    Js.optMatch slot
-        (λ⊤ → Protocol.defect "an absent schema worker result was read")
-        identity
-
-
-mapDatum : Js.Opt Datum, (Datum → Datum) → Js.Opt Datum
-mapDatum slot callback =
-    if workerEmpty slot then
-        Js.none ⊤
-    else
-        Js.some (callback (readDatum slot))
-
-
-mapDatums : Js.Opt (List Datum), (List Datum → Datum) → Js.Opt Datum
-mapDatums slot callback =
-    if workerEmpty slot then
-        Js.none ⊤
-    else
-        Js.some (callback (readDatums slot))
-
-
 workerMap : Js.Opt a, (a → b) → Js.Opt b
 workerMap slot callback =
     if workerEmpty slot then
@@ -2773,8 +1348,7 @@ type alias Worker i o =
 
 
 type Engine e a
-    = Interpreted
-    | Compiled (Workers e a)
+    = Compiled (Workers e a)
 
 
 type alias Workers e a =
@@ -2789,19 +1363,14 @@ type alias Workers e a =
 
 
 type alias Argument =
-    analyse : ⊤ → Analysis
+    analyse : ⊤ → Maybe String
 
 
 argument : Schema e a → Argument
 argument schema =
-    { analyse =
-        λ⊤ →
-            case engineOf schema of
-                Compiled workers →
-                    argumentsAnalysis workers.args
-                Interpreted →
-                    analyse schema
-    }
+    case engineOf schema of
+        Compiled workers →
+            { analyse = λ⊤ → argumentsAnalysis workers.args }
 
 
 declared :
@@ -2826,12 +1395,11 @@ declared checkEncoded checkTyped encodedId typedId description parsing printing 
         , encodedCheck = checkEncoded
         , typedCheck = checkTyped
         , node = description
-        , analysis = Js.pure λ⊤ → Js.ref Nothing
         , engine =
             Compiled
                 { parse = parsing
                 , print = printing
-                , args = args
+                , args = compiledArguments args
                 , decode = decoding
                 , encode = encoding
                 , read = reading
@@ -2850,35 +1418,31 @@ selectedWorker option =
             Protocol.defect "an eliminated schema worker was reached"
 
 
-compiledProblem : Options, Direction, Int, Bool, List Argument → Maybe (List Issue)
-compiledProblem opts dir src host args =
-    case optionsProblem opts dir src of
+compiledProblem : Options, Direction, List Argument → Maybe (List Issue)
+compiledProblem opts dir args =
+    case optionsProblem opts dir of
         Just issues →
             Just issues
         Nothing →
-            argumentProblem args dir src host
+            argumentProblem args dir
 
 
-argumentProblem : List Argument, Direction, Int, Bool → Maybe (List Issue)
-argumentProblem args dir src host =
+argumentProblem : List Argument, Direction → Maybe (List Issue)
+argumentProblem args dir =
     case args of
         [] →
             Nothing
         [ supplied, …rest ] →
-            analysis = supplied.analyse ⊤
-            case analysis.problem of
+            case supplied.analyse ⊤ of
                 Just problem →
-                    Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+                    Just (rootIssue dir (inputEndpoint dir) InvalidSchema problem)
                 Nothing →
-                    if host && analysis.encodedOpaque then
-                        Just (opaqueIssue dir encodedSide)
-                    else
-                        argumentProblem rest dir src host
+                    argumentProblem rest dir
 
 
 compiledParse : Options, List Argument, Worker Js.Value a, String → Result (List Issue) a
 compiledParse opts args worker text =
-    case compiledProblem opts Decoding encodedSide True args of
+    case compiledProblem opts Decoding args of
         Just issues →
             Err issues
         Nothing →
@@ -2886,7 +1450,7 @@ compiledParse opts args worker text =
                 Nothing →
                     rootErr Decoding Encoded ParseFailed "invalid JSON"
                 Just raw →
-                    c = context opts Decoding encodedSide True typeSide False True
+                    c = context opts Decoding True False True
                     answer = worker c 0 atRoot Js.null Js.null raw
                     if workerEmpty answer then
                         Err (fromHost c.issues)
@@ -2896,11 +1460,11 @@ compiledParse opts args worker text =
 
 compiledPrint : Options, List Argument, Worker a Js.Value, a → Result (List Issue) String
 compiledPrint opts args worker input =
-    case compiledProblem opts Encoding typeSide True args of
+    case compiledProblem opts Encoding args of
         Just issues →
             Err issues
         Nothing →
-            c = context opts Encoding typeSide False encodedSide True True
+            c = context opts Encoding False True True
             answer = worker c 0 atRoot Js.null Js.null input
             if workerEmpty answer then
                 Err (fromHost c.issues)
@@ -2913,18 +1477,16 @@ compiledRun :
     , List Argument
     , Worker i o
     , Direction
-    , Int
     , Bool
-    , Int
     , Bool
     , i
     → Result (List Issue) o
-compiledRun opts args worker dir src sh dst dh input =
-    case compiledProblem opts dir src (sh || dh) args of
+compiledRun opts args worker dir sh dh input =
+    case compiledProblem opts dir args of
         Just issues →
             Err issues
         Nothing →
-            c = context opts dir src sh dst dh False
+            c = context opts dir sh dh False
             answer = worker c 0 atRoot Js.null Js.null input
             if workerEmpty answer then
                 Err (fromHost c.issues)
@@ -2932,20 +1494,11 @@ compiledRun opts args worker dir src sh dst dh input =
                 Ok (workerValue answer)
 
 
-interpretedSlot : Schema e a → Worker i o
-interpretedSlot schema =
-    λc depth parent input output item →
-        answer = run c (nodeOf schema) depth (pathAt parent input output) NoneActive (packed item)
-        workerMap answer unpacked
-
-
 readSlot : Schema e a → Worker Js.Value a
 readSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.parse
-        Interpreted →
-            interpretedSlot schema
 
 
 writeSlot : Schema e a → Worker a Js.Value
@@ -2953,8 +1506,6 @@ writeSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.print
-        Interpreted →
-            interpretedSlot schema
 
 
 decodeSlot : Schema e a → Worker e a
@@ -2962,8 +1513,6 @@ decodeSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.decode
-        Interpreted →
-            interpretedSlot schema
 
 
 encodeSlot : Schema e a → Worker a e
@@ -2971,8 +1520,6 @@ encodeSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.encode
-        Interpreted →
-            interpretedSlot schema
 
 
 readValueSlot : Schema e a → Worker Js.Value a
@@ -2980,8 +1527,6 @@ readValueSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.read
-        Interpreted →
-            interpretedSlot schema
 
 
 writeValueSlot : Schema e a → Worker a Js.Value
@@ -2989,8 +1534,6 @@ writeValueSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.write
-        Interpreted →
-            interpretedSlot schema
 
 
 readValidSlot : Schema e a → Worker Js.Value a
@@ -2998,8 +1541,6 @@ readValidSlot ((Schema state) as schema) =
     case state.engine of
         Compiled workers →
             selectedWorker workers.valid
-        Interpreted →
-            interpretedSlot schema
 
 
 -- The engine supplies this element type's checked identity as hidden evidence.
@@ -3007,24 +1548,7 @@ readValidSlot ((Schema state) as schema) =
 foreign pure endpointIdentity : List a → String
 
 
-typedBox : Node, List e, List a → Schema e a
-typedBox node encoded typed =
-    boxWithIds Data.checked Data.checked (endpointIdentity encoded) (endpointIdentity typed) node
-
-
 -- Generated schema producers already carry these exact endpoint identities.
-boxWithIds : (e → Maybe Js.Value), (a → Maybe Js.Value), String, String, Node → Schema e a
-boxWithIds checkEncoded checkTyped encodedId typedId node =
-    Schema
-        { encodedId = encodedId
-        , typedId = typedId
-        , encodedCheck = checkEncoded
-        , typedCheck = checkTyped
-        , node = λ⊤ → node
-        , analysis = Js.pure λ⊤ → Js.ref Nothing
-        , engine = Interpreted
-        }
-
 
 -- Typed check capabilities are captured once when a schema is built. Generated
 -- adapters forward them as checked-data evidence, without inspecting a value.
@@ -3050,41 +1574,30 @@ typedIdentity : Schema e a → String
 typedIdentity (Schema state) = state.typedId
 
 
--- Generated adapters use these typed beni loops; the callbacks are closed
--- synchronous projections, with their real element types preserved.
-listItems : List a, sync (a → Datum) → List Datum
-listItems items project = List.map items project
-
-
-listMade : List Datum, sync (Datum → a) → List a
-listMade items inject = List.map items inject
-
-
 describedOf : Schema e a → Node
 describedOf schema = nodeOf schema
 
 
-describedList : Node, Access, Access → Node
-describedList child encoded typed = nList child { encoded = encoded, typed = typed }
+describedList : Node → Node
+describedList child = nList child
 
 
-describedNullable : Node, OptionalAccess, OptionalAccess → Node
-describedNullable child encoded typed = nNullable child { encoded = encoded, typed = typed }
+describedNullable : Node → Node
+describedNullable child = nNullable child
 
 
-describedRecord : List FieldNode, Access, Access → Node
-describedRecord fs encoded typed = nRecord fs { encoded = encoded, typed = typed }
+describedRecord : List FieldNode → Node
+describedRecord fs = nRecord fs
 
 
-describedField : String, String, Bool, Node, OptionalAccess, OptionalAccess → FieldNode
-describedField name external optionalField node encoded typed =
+describedField : String, String, Bool, Node → FieldNode
+describedField name external optionalField node =
     { name = name
     , key = external
     , renamed = name ≠ external
     , optional = optionalField
     , lenient = False
     , node = node
-    , presence = { encoded = encoded, typed = typed }
     }
 
 
@@ -3092,15 +1605,8 @@ describedTagged : String, List VariantNode → Node
 describedTagged discriminator variants = nTagged discriminator variants
 
 
-describedVariant : String, String, Maybe Node, InjectionBox, InjectionBox → VariantNode
-describedVariant name tag payload encoded typed =
-    { name = name
-    , tag = tag
-    , payload = payload
-    , encoded = encoded
-    , typed = typed
-    , problem = Nothing
-    }
+describedVariant : String, String, Maybe Node → VariantNode
+describedVariant name tag payload = { name = name, tag = tag, payload = payload, problem = Nothing }
 
 
 describedRecursive : String, (Node → Node) → Node
@@ -3111,48 +1617,31 @@ describedHost : Node → Node
 describedHost child = nHost child
 
 
-describedTuple : List Node, Access → Node
-describedTuple nodes access = nTuple nodes access
+describedTuple : List Node → Node
+describedTuple nodes = nTuple nodes
 
 
 describedConstructors : List CtorNode → Node
 describedConstructors ctors = nCtors ctors
 
 
-describedMaybe : Node, Int, OptionalAccess, OptionalAccess → Node
-describedMaybe child mode encoded typed = nMaybe child mode { encoded = encoded, typed = typed }
+describedMaybe : Node, Int → Node
+describedMaybe child mode = nMaybe child mode
 
 
-describedMaybeField : String, Node, Int, OptionalAccess, OptionalAccess → FieldNode
-describedMaybeField name child mode encoded typed =
+describedMaybeField : String, Node, Int → FieldNode
+describedMaybeField name child mode =
     { name = name
     , key = name
     , renamed = False
     , optional = True
     , lenient = True
-    , node = nMaybe child mode { encoded = encoded, typed = typed }
-    , presence = { encoded = encoded, typed = typed }
+    , node = nMaybe child mode
     }
 
 
-describedConverted :
-      Node
-    , (Datum → Result (List Issue) Datum)
-    , (Datum → Result (List Issue) Datum)
-    → Node
-describedConverted child forward backward = nConverted child forward backward
-
-
-forwardOf : Conversion b a → (b → Result (List Issue) a)
-forwardOf (Conversion forward _) = forward
-
-
-backwardOf : Conversion b a → (a → Result (List Issue) b)
-backwardOf (Conversion _ backward) = backward
-
-
-mappedConversion : sync (b → Result (List Issue) a), b, sync (a → Datum) → Result (List Issue) Datum
-mappedConversion callback input project = Result.map (callback input) project
+describedConverted : Node → Node
+describedConverted child = nConverted child
 
 
 -- These failure helpers accept the real input type. Only the checked data
@@ -3161,9 +1650,10 @@ compiledFail : Context, Path, Js.Value, Js.Value, Int, String, a, Bool → Js.Va
 compiledFail c parent input output code message item written =
     entry : Issue
     entry =
-        { path = pathArray (pathAt parent input output) written
+        { path = pathArrayAt parent input output written
         , direction = c.dir
-        , endpoint = if written || c.cv then c.outE else c.inE
+        , endpoint =
+            if written || isBackward c.scope then (outputEndpoint c.dir) else (inputEndpoint c.dir)
         , code = fromHost (Js.at issueCodes code)
         , message = message
         , input = if c.report then Maybe.map (Data.checked item) fromHost else Nothing
@@ -3215,7 +1705,7 @@ conversionAnswer answer c path input =
                     amended =
                         { path = List.copy prefix ++ entry.path
                         , direction = c.dir
-                        , endpoint = c.outE
+                        , endpoint = (outputEndpoint c.dir)
                         , code = entry.code
                         , message = entry.message
                         , input =
@@ -3227,7 +1717,7 @@ conversionAnswer answer c path input =
 
 
 validContext : ⊤ → Context
-validContext ⊤ = context (defaultOptions ⊤) Decoding encodedSide True typeSide False False
+validContext ⊤ = context (defaultOptions ⊤) Decoding True False False
 
 
 validJson : Context, String → Js.Value
@@ -3369,12 +1859,28 @@ issueCodes =
         ]
 
 
+isBackward : Traversal → Bool
+isBackward scope =
+    case scope of
+        AfterBackward →
+            True
+        ClaimedAfterBackward _ _ →
+            True
+        _ →
+            False
+
+
 belowBackward : Context → Context
 belowBackward c =
-    if c.cv then
-        c
-    else
-        { Record.copy c | cv = True }
+    case c.scope of
+        AfterBackward →
+            c
+        ClaimedAfterBackward _ _ →
+            c
+        Claimed depth external →
+            { Record.copy c | scope = ClaimedAfterBackward depth external }
+        Unclaimed →
+            { Record.copy c | scope = AfterBackward }
 
 
 -- Whether a `Value` prints as JSON within the depth left: `printable`'s
@@ -3713,25 +2219,7 @@ primitive kind = primitiveWith kind []
 
 
 primitiveWith : PrimitiveKind, List a → Schema a a
-primitiveWith kind witness =
-    typeId = endpointIdentity witness
-    declared Data.checked Data.checked typeId typeId (λ⊤ → nPrim kind)
-        (Just (primitiveSlot kind))
-        (Just (primitiveSlot kind))
-        []
-        (Just (primitiveSlot kind))
-        (Just (primitiveSlot kind))
-        (Just (primitiveSlot kind))
-        (Just (primitiveSlot kind))
-        (Just (primitiveSlot kind))
-
-
-primitiveSlot : PrimitiveKind → Worker i o
-primitiveSlot kind =
-    λc depth parent input output item →
-        workerMap
-            (prim c kind depth (pathAt parent input output) (packed item))
-            unpacked
+primitiveWith kind witness = scalarSchema kind toHost fromHost witness
 
 
 listWorkers : Workers e a → Workers (List e) (List a)
@@ -3900,19 +2388,43 @@ compiledBoxWith node workers encoded typed =
         workers.valid
 
 
-argumentsAnalysis : List Argument → Analysis
+-- Construction facts are immutable once their compiled workers exist. Resolve
+-- recursive bodies lazily, then reuse this preflight without reading descriptions.
+-- Allocating this private cache is unobservable, like nodeRef's private reference.
+compiledArguments : List Argument → List Argument
+compiledArguments args =
+    if List.isEmpty args then
+        []
+    else
+        memoArguments args (Js.pure λ⊤ → Js.ref Nothing)
+
+
+memoArguments : List Argument, Js.Ref (Maybe (Maybe String)) → List Argument
+memoArguments args stored =
+    [ { analyse =
+          λ⊤ →
+              case Js.read stored of
+                  Just ready →
+                      ready
+                  Nothing →
+                      ready = argumentsAnalysis args
+                      Js.write stored (Just ready)
+                      ready
+      }
+    ]
+
+
+argumentsAnalysis : List Argument → Maybe String
 argumentsAnalysis args =
     case args of
         [] →
-            { problem = Nothing, encodedOpaque = False, typeOpaque = False }
+            Nothing
         [ supplied, …rest ] →
-            first = supplied.analyse ⊤
-            case first.problem of
-                Just _ →
-                    first
+            case supplied.analyse ⊤ of
+                Just problem →
+                    Just problem
                 Nothing →
-                    later = argumentsAnalysis rest
-                    { later | encodedOpaque = first.encodedOpaque || later.encodedOpaque }
+                    argumentsAnalysis rest
 
 
 erasedWorkers : Workers e a → Workers Value a
@@ -3951,32 +2463,24 @@ nPrim : PrimitiveKind → Node
 nPrim kind = nodeRef (NPrim kind)
 
 
-nList : Node, Ends → Node
-nList child ends = nodeRef (NList child ends)
+nList : Node → Node
+nList child = nodeRef (NList child)
 
 
-nNullable : Node, OptionalEnds → Node
-nNullable child ends = nodeRef (NNullable child ends)
+nNullable : Node → Node
+nNullable child = nodeRef (NNullable child)
 
 
-nRecord : List FieldNode, Maps → Node
-nRecord entries maps = nodeRef (NRecord entries maps)
+nRecord : List FieldNode → Node
+nRecord entries = nodeRef (NRecord entries)
 
 
 nTagged : String, List VariantNode → Node
 nTagged discriminator variants = nodeRef (NTagged discriminator variants)
 
 
-nConverted : Node, (Datum → Result (List Issue) Datum), (Datum → Result (List Issue) Datum) → Node
-nConverted child forward backward = nodeRef (NConverted child forward backward)
-
-
-nFlipped : Node → Node
-nFlipped child = nodeRef (NFlipped child)
-
-
-nProjected : Int, Node → Node
-nProjected side child = nodeRef (NProjected side child)
+nConverted : Node → Node
+nConverted child = nodeRef (NConverted child)
 
 
 nRef : Cell → Node
@@ -3987,17 +2491,836 @@ nBroken : String → Node
 nBroken problem = nodeRef (NBroken problem)
 
 
-nTuple : List Node, Access → Node
-nTuple nodes access = nodeRef (NTuple nodes access)
+nTuple : List Node → Node
+nTuple nodes = nodeRef (NTuple nodes)
 
 
 nCtors : List CtorNode → Node
 nCtors ctors = nodeRef (NCtors ctors)
 
 
-nMaybe : Node, Int, OptionalEnds → Node
-nMaybe child mode ends = nodeRef (NMaybe child mode ends)
+nMaybe : Node, Int → Node
+nMaybe child mode = nodeRef (NMaybe child mode)
 
 
 nHost : Node → Node
 nHost child = nodeRef (NHost child)
+
+
+-- Both independent traversal facts fit in one typed context slot.
+type Traversal
+    = Unclaimed
+    | AfterBackward
+    | Claimed Int String
+    | ClaimedAfterBackward Int String
+
+
+compiledClaim : Context, Int, String → Bool
+compiledClaim c depth external =
+    case c.scope of
+        Claimed level name →
+            level == depth && name == external
+        ClaimedAfterBackward level name →
+            level == depth && name == external
+        _ →
+            False
+
+
+claimContext : Context, Int, String → Context
+claimContext c depth external =
+    { Record.copy c
+        | scope =
+            if isBackward c.scope then
+                ClaimedAfterBackward depth external
+            else
+                Claimed depth external
+    }
+
+
+type alias VariantBundle e a =
+    node : VariantNode
+    workers : Workers e a
+    args : List Argument
+
+
+construction : Maybe String → Argument
+construction problem = { analyse = λ⊤ → problem }
+
+
+recursiveWith :
+      String
+    , (Schema e a → Schema e a)
+    , Js.Ref (Maybe (Schema e a))
+    , Js.Ref Int
+    , Js.Ref (Maybe ActiveRun)
+    → Schema e a
+recursiveWith name build stored state active =
+    cell = cellOf name λself →
+        case recursiveBody name build stored state active self of
+            Just body →
+                nodeOf body
+            Nothing →
+                nBroken "the recursive schema ${name} is used before its body is built"
+    node = nRef cell
+    later = λ⊤ → recursiveBody name build stored state active node
+    args =
+        [ { analyse =
+              λ⊤ →
+                  case later ⊤ of
+                      Just body →
+                          case engineOf body of
+                              Compiled workers →
+                                  argumentsAnalysis workers.args
+                      Nothing →
+                          Just "the recursive schema ${name} is used before its body is built"
+          }
+        ]
+    compiledBox node (recursiveWorkers name later active args)
+
+
+recursiveBody :
+      String
+    , (Schema e a → Schema e a)
+    , Js.Ref (Maybe (Schema e a))
+    , Js.Ref Int
+    , Js.Ref (Maybe ActiveRun)
+    , Node
+    → Maybe (Schema e a)
+recursiveBody name build stored state active node =
+    case Js.read state of
+        2 →
+            Js.read stored
+        1 →
+            Nothing
+        _ →
+            Js.write state 1
+            self =
+                compiledBox
+                    node
+                    (recursiveWorkers
+                        name
+                        (λ⊤ → recursiveBody name build stored state active node)
+                        active
+                        []
+                    )
+            body = build self
+            Js.write stored (Just body)
+            Js.write state 2
+            Just body
+
+
+hostEnds : Context → Context
+hostEnds c = { Record.copy c | sh = c.sh || c.dir == Decoding, dh = c.dh || c.dir == Encoding }
+
+
+typedHostValue : Js.Value → Value
+typedHostValue raw = fromHost raw
+
+
+-- Typed products are retained across every field and child worker.
+type alias Product pe pa =
+    parse : Worker Js.Value pa
+    print : FieldWriter pa
+    decode : Worker pe pa
+    encode : Worker pa pe
+    read : Worker Js.Value pa
+    write : FieldWriter pa
+
+
+type alias FieldWriter a =
+    Context, Int, Path, a, Js.Value → Bool
+
+
+emptyProduct : Product ⊤ ⊤
+emptyProduct =
+    { parse = λ_ _ _ _ _ _ → Js.some ⊤
+    , print = λ_ _ _ _ _ → True
+    , decode = λ_ _ _ _ _ _ → Js.some ⊤
+    , encode = λ_ _ _ _ _ _ → Js.some ⊤
+    , read = λ_ _ _ _ _ _ → Js.some ⊤
+    , write = λ_ _ _ _ _ → True
+    }
+
+
+pairWorkers : Worker i a, Worker i b → Worker i (a × b)
+pairWorkers left right =
+    λc depth parent input output item →
+        first = left c depth parent input output item
+        if workerEmpty first && not c.all then
+            Js.none ⊤
+        else
+            second = right c depth parent input output item
+            if workerEmpty first || workerEmpty second then
+                Js.none ⊤
+            else
+                Js.some ( workerValue first, workerValue second )
+
+
+productWorker : Worker a b, Worker c d → Worker (a × c) (b × d)
+productWorker left right =
+    λctx depth parent input output ( a, c ) →
+        first = left ctx depth parent input output a
+        if workerEmpty first && not ctx.all then
+            Js.none ⊤
+        else
+            second = right ctx depth parent input output c
+            if workerEmpty first || workerEmpty second then
+                Js.none ⊤
+            else
+                Js.some ( workerValue first, workerValue second )
+
+
+productWriter : FieldWriter a, FieldWriter b → FieldWriter (a × b)
+productWriter left right =
+    λc depth path ( a, b ) target →
+        first = left c depth path a target
+        if not first && not c.all then
+            False
+        else
+            second = right c depth path b target
+            first && second
+
+
+appendProduct : Product pe pa, Product e a → Product (pe × e) (pa × a)
+appendProduct previous child =
+    { parse = pairWorkers previous.parse child.parse
+    , print = productWriter previous.print child.print
+    , decode = productWorker previous.decode child.decode
+    , encode = productWorker previous.encode child.encode
+    , read = pairWorkers previous.read child.read
+    , write = productWriter previous.write child.write
+    }
+
+
+memberCall : String, String, Maybe (Worker i o), Context, Int, Path, i → Js.Opt o
+memberCall name external child c depth path item =
+    input = toHost (if c.dir == Decoding then external else name)
+    output = toHost (if c.dir == Encoding then external else name)
+    if depth ≥ c.max then
+        _ = compiledDeep c path input output item
+        Js.none ⊤
+    else
+        (selectedWorker child) c (depth + 1) path input output item
+
+
+memberTyped : String, String, Maybe (Worker i o) → Worker i o
+memberTyped name external child =
+    λc depth parent input output item →
+        memberCall name external child c depth (pathAt parent input output) item
+
+
+memberWrite : String, String, Maybe (Worker a Js.Value) → FieldWriter a
+memberWrite name external child =
+    λc depth path item target →
+        answer = memberCall name external child c depth path item
+        if workerEmpty answer then
+            False
+        else
+            Js.set target external (workerValue answer)
+            True
+
+
+requiredProduct : String, String, Workers e a → Product e a
+requiredProduct name external workers =
+    { parse = memberRead name external workers.parse
+    , print = memberWrite name external workers.print
+    , decode = memberTyped name external workers.decode
+    , encode = memberTyped name external workers.encode
+    , read = memberRead name external workers.read
+    , write = memberWrite name external workers.write
+    }
+
+
+optionalTyped : Worker i o → Worker (Presence i) (Presence o)
+optionalTyped child =
+    λc depth parent input output item →
+        case item of
+            Missing →
+                Js.some Missing
+            Present inner →
+                workerMap (child c depth parent input output inner) Present
+
+
+optionalWrite : FieldWriter a → FieldWriter (Presence a)
+optionalWrite child =
+    λc depth path item target →
+        case item of
+            Missing →
+                True
+            Present inner →
+                child c depth path inner target
+
+
+optionalProduct : String, String, Workers e a → Product (Presence e) (Presence a)
+optionalProduct name external workers =
+    child = requiredProduct name external workers
+    { parse = optionalRead name external workers.parse
+    , print = optionalWrite child.print
+    , decode = optionalTyped child.decode
+    , encode = optionalTyped child.encode
+    , read = optionalRead name external workers.read
+    , write = optionalWrite child.write
+    }
+
+
+recordRead : List String, Worker Js.Value p, (p → a) → Worker Js.Value a
+recordRead keys child make =
+    λc depth parent input output raw →
+        path = pathAt parent input output
+        if not (isObject raw) then
+            _ = compiledFail c parent input output 0 "expected an object" raw False
+            Js.none ⊤
+        else
+            before = issueCount c
+            rejected = c.reject && extraKeys c keys depth path raw
+            if rejected && not c.all then
+                Js.none ⊤
+            else
+                answer = child c depth parent input output raw
+                if workerEmpty answer || issueCount c > before then
+                    Js.none ⊤
+                else
+                    Js.some (make (workerValue answer))
+
+
+extraKeys : Context, List String, Int, Path, Js.Value → Bool
+extraKeys c keys depth path raw = extraKeysFrom c keys depth path raw (HostData.keys raw) False
+
+
+extraKeysFrom : Context, List String, Int, Path, Js.Value, List String, Bool → Bool
+extraKeysFrom c keys depth path raw names failed =
+    case names of
+        [] →
+            failed
+        [ external, …rest ] →
+            if List.member keys external || compiledClaim c depth external then
+                extraKeysFrom c keys depth path raw rest failed
+            else
+                quote = String.fromChar (Char.fromCode 34)
+                _ =
+                    compiledFail c path (toHost external) (toHost external)
+                        2
+                        ("unexpected key " ++ quote ++ external ++ quote)
+                        (Js.get raw external)
+                        False
+                if c.all then extraKeysFrom c keys depth path raw rest True else True
+
+
+recordWrite : FieldWriter p, (a → p) → Worker a Js.Value
+recordWrite child project =
+    λc depth parent input output item →
+        target = HostData.emptyObject ⊤
+        if child c depth (pathAt parent input output) (project item) target then
+            Js.some target
+        else
+            Js.none ⊤
+
+
+mappedWorker : Worker p q, (i → p), (q → o) → Worker i o
+mappedWorker child project make =
+    λc depth parent input output item →
+        workerMap (child c depth parent input output (project item)) make
+
+
+recordWorkers : List String, Product pe pa, Mapping pe e, Mapping pa a, List Argument → Workers e a
+recordWorkers keys products (Mapping makeE projectE) (Mapping makeA projectA) args =
+    { parse = Just (recordRead keys products.parse makeA)
+    , print = Just (recordWrite products.print projectA)
+    , decode = Just (mappedWorker products.decode projectE makeA)
+    , encode = Just (mappedWorker products.encode projectA makeE)
+    , read = Just (recordRead keys products.read makeA)
+    , write = Just (recordWrite products.write projectA)
+    , valid = Just (recordRead keys products.read makeA)
+    , args = args
+    }
+
+
+variantTyped : Maybe (Worker p q), Injection p i, Injection q o → Worker i o
+variantTyped child (Injection _ project) (Injection inject _) =
+    λc depth parent input output item →
+        case project item of
+            Nothing →
+                Js.none ⊤
+            Just payload →
+                if depth ≥ c.max then
+                    _ = compiledDeep c parent input output payload
+                    Js.none ⊤
+                else
+                    workerMap
+                        ((selectedWorker child) c (depth + 1) parent input output payload)
+                        inject
+
+
+variantRead : Maybe (Worker Js.Value a), Injection a o → Worker Js.Value o
+variantRead child (Injection inject _) =
+    λc depth parent input output raw →
+        if depth ≥ c.max then
+            _ = compiledDeep c parent input output raw
+            Js.none ⊤
+        else
+            workerMap
+                ((selectedWorker child) c (depth + 1) parent input output raw)
+                inject
+
+
+variantWrite : Maybe (Worker a Js.Value), Injection a i → Worker i Js.Value
+variantWrite child (Injection _ project) =
+    λc depth parent input output item →
+        case project item of
+            Nothing →
+                Js.none ⊤
+            Just payload →
+                if depth ≥ c.max then
+                    _ = compiledDeep c parent input output payload
+                    Js.none ⊤
+                else
+                    (selectedWorker child) c (depth + 1) parent input output payload
+
+
+variantWorkers : Workers pe pa, Injection pe e, Injection pa a → Workers e a
+variantWorkers workers injectE injectA =
+    { parse = Just (variantRead workers.parse injectA)
+    , print = Just (variantWrite workers.print injectA)
+    , decode = Just (variantTyped workers.decode injectE injectA)
+    , encode = Just (variantTyped workers.encode injectA injectE)
+    , read = Just (variantRead workers.read injectA)
+    , write = Just (variantWrite workers.write injectA)
+    , valid = Just (variantRead workers.read injectA)
+    , args = workers.args
+    }
+
+
+nullaryTyped : Injection ⊤ i, Injection ⊤ o → Worker i o
+nullaryTyped (Injection _ project) (Injection inject _) =
+    λ_ _ _ _ _ item →
+        case project item of
+            Nothing →
+                Js.none ⊤
+            Just _ →
+                Js.some (inject ⊤)
+
+
+nullaryWrite : Injection ⊤ i → Worker i Js.Value
+nullaryWrite (Injection _ project) =
+    λ_ _ _ _ _ item →
+        case project item of
+            Nothing →
+                Js.none ⊤
+            Just _ →
+                Js.some (HostData.emptyObject ⊤)
+
+
+nullaryWorkers : Injection ⊤ e, Injection ⊤ a → Workers e a
+nullaryWorkers ((Injection _ _) as injectE) ((Injection inject _) as injectA) =
+    { parse = Just λ_ _ _ _ _ _ → Js.some (inject ⊤)
+    , print = Just (nullaryWrite injectA)
+    , decode = Just (nullaryTyped injectE injectA)
+    , encode = Just (nullaryTyped injectA injectE)
+    , read = Just λ_ _ _ _ _ _ → Js.some (inject ⊤)
+    , write = Just (nullaryWrite injectA)
+    , valid = Just λ_ _ _ _ _ _ → Js.some (inject ⊤)
+    , args = []
+    }
+
+
+taggedRead :
+      String
+    , List (VariantBundle e a)
+    , (Workers e a → Maybe (Worker Js.Value a))
+    → Worker Js.Value a
+taggedRead discriminator variants pick =
+    λc depth parent input output raw →
+        path = pathAt parent input output
+        if not (isObject raw) then
+            _ = compiledFail c parent input output 0 "expected an object" raw False
+            Js.none ⊤
+        else
+            own = prototypeKey discriminator
+            heldOwn = own && hasOwn raw discriminator
+            literal = if own && not heldOwn then Js.undefined else Js.get raw discriminator
+            held = if own then heldOwn else not (Js.isUndefined literal)
+            if not held then
+                _ = compiledMissing c path (toHost discriminator) (toHost discriminator) raw
+                Js.none ⊤
+            else
+                found =
+                    if isType literal "string" then
+                        find variants λentry → entry.node.tag == stringOf literal
+                    else
+                        Nothing
+                case found of
+                    Nothing →
+                        quote = String.fromChar (Char.fromCode 34)
+                        tags =
+                            String.join
+                                (List.map variants λentry → quote ++ entry.node.tag ++ quote)
+                                ", "
+                        _ =
+                            compiledFail
+                                c
+                                path
+                                (toHost discriminator)
+                                (toHost discriminator)
+                                3
+                                ("unknown tag; expected " ++ tags)
+                                literal
+                                False
+                        Js.none ⊤
+                    Just selected →
+                        if
+                            isNothing selected.node.payload
+                                && c.reject
+                                && extraKeys c [ discriminator ] depth path raw
+                        then
+                            Js.none ⊤
+                        else
+                            (selectedWorker (pick selected.workers))
+                                (claimContext c (depth + 1) discriminator)
+                                depth
+                                parent
+                                input
+                                output
+                                raw
+
+
+taggedTyped : List (VariantBundle e a), (Workers e a → Maybe (Worker i o)), String → Worker i o
+taggedTyped variants pick message =
+    λc depth parent input output item →
+        typedVariants variants pick message c depth parent input output item
+
+
+typedVariants :
+      List (VariantBundle e a)
+    , (Workers e a → Maybe (Worker i o))
+    , String
+    , Context
+    , Int
+    , Path
+    , Js.Value
+    , Js.Value
+    , i
+    → Js.Opt o
+typedVariants variants pick message c depth parent input output item =
+    case variants of
+        [] →
+            _ = compiledFail c parent input output 11 message item False
+            Js.none ⊤
+        [ entry, …rest ] →
+            before = issueCount c
+            answer = (selectedWorker (pick entry.workers)) c depth parent input output item
+            if not (workerEmpty answer) || issueCount c > before then
+                answer
+            else
+                typedVariants rest pick message c depth parent input output item
+
+
+taggedWrite :
+      String
+    , List (VariantBundle e a)
+    , (Workers e a → Maybe (Worker a Js.Value))
+    → Worker a Js.Value
+taggedWrite discriminator variants pick =
+    λc depth parent input output item →
+        writeVariants discriminator variants pick c depth parent input output item
+
+
+writeVariants :
+      String
+    , List (VariantBundle e a)
+    , (Workers e a → Maybe (Worker a Js.Value))
+    , Context
+    , Int
+    , Path
+    , Js.Value
+    , Js.Value
+    , a
+    → Js.Opt Js.Value
+writeVariants discriminator variants pick c depth parent input output item =
+    case variants of
+        [] →
+            _ =
+                compiledFail
+                    c
+                    parent
+                    input
+                    output
+                    11
+                    "no variant of this tagged schema takes the value"
+                    item
+                    False
+            Js.none ⊤
+        [ entry, …rest ] →
+            before = issueCount c
+            answer = (selectedWorker (pick entry.workers)) c depth parent input output item
+            if workerEmpty answer then
+                if issueCount c > before then
+                    Js.none ⊤
+                else
+                    writeVariants discriminator rest pick c depth parent input output item
+            else
+                -- This is a fresh external record owned by this composition boundary.
+                target = HostData.emptyObject ⊤
+                Js.set target discriminator (toHost entry.node.tag)
+                source = workerValue answer
+                each (HostData.keys source) λexternal →
+                    Js.set target external (Js.get source external)
+                Js.some target
+
+
+taggedWorkers : String, List (VariantBundle e a), List Argument → Workers e a
+taggedWorkers discriminator variants args =
+    { parse = Just (taggedRead discriminator variants .parse)
+    , print = Just (taggedWrite discriminator variants .print)
+    , decode =
+        Just (taggedTyped variants .decode "no variant of this tagged schema takes the value")
+    , encode =
+        Just (taggedTyped variants .encode "no variant of this tagged schema takes the value")
+    , read = Just (taggedRead discriminator variants .read)
+    , write = Just (taggedWrite discriminator variants .write)
+    , valid = Just (taggedRead discriminator variants .read)
+    , args = args
+    }
+
+
+deferredWorker : String, (⊤ → Maybe (Worker i o)), Js.Ref (Maybe ActiveRun) → Worker i o
+deferredWorker name later active =
+    λc depth parent input output item →
+        previous = Js.read active
+        repeating =
+            case previous of
+                Nothing →
+                    False
+                Just entered →
+                    Js.same entered.scope c.issues && entered.depth == depth
+        if repeating then
+            _ =
+                compiledFail
+                    c
+                    parent
+                    input
+                    output
+                    11
+                    ("the recursive schema "
+                        ++ name
+                        ++ " refers to itself without reading into the value"
+                    )
+                    item
+                    False
+            Js.none ⊤
+        else
+            case later ⊤ of
+                Nothing →
+                    _ =
+                        compiledFail
+                            c
+                            parent
+                            input
+                            output
+                            11
+                            ("the recursive schema " ++ name ++ " is used before its body is built")
+                            item
+                            False
+                    Js.none ⊤
+                Just worker →
+                    Js.write active (Just { scope = c.issues, depth = depth })
+                    answer = worker c depth parent input output item
+                    Js.write active previous
+                    answer
+
+
+type alias ActiveRun =
+    scope : Js.Value
+    depth : Int
+
+
+laterWorker : (⊤ → Maybe (Schema e a)), (Workers e a → Maybe (Worker i o)), ⊤ → Maybe (Worker i o)
+laterWorker later pick ⊤ = Maybe.andThen (later ⊤) λschema →
+    case engineOf schema of
+        Compiled workers →
+            pick workers
+
+
+recursiveWorkers :
+      String
+    , (⊤ → Maybe (Schema e a))
+    , Js.Ref (Maybe ActiveRun)
+    , List Argument
+    → Workers e a
+recursiveWorkers name later active args =
+    { parse = Just (deferredWorker name (laterWorker later .parse _) active)
+    , print = Just (deferredWorker name (laterWorker later .print _) active)
+    , decode = Just (deferredWorker name (laterWorker later .decode _) active)
+    , encode = Just (deferredWorker name (laterWorker later .encode _) active)
+    , read = Just (deferredWorker name (laterWorker later .read _) active)
+    , write = Just (deferredWorker name (laterWorker later .write _) active)
+    , valid = Just (deferredWorker name (laterWorker later .read _) active)
+    , args = args
+    }
+
+
+scalarSchema : PrimitiveKind, (a → Js.Value), (Js.Value → a), List a → Schema a a
+scalarSchema kind view make witness =
+    typeId = endpointIdentity witness
+    typed = scalarTyped kind view
+    reading = scalarRead kind make
+    writing = scalarWrite kind view
+    declared Data.checked Data.checked typeId typeId (λ⊤ → nPrim kind)
+        (Just reading)
+        (Just writing)
+        []
+        (Just typed)
+        (Just typed)
+        (Just reading)
+        (Just writing)
+        (Just reading)
+
+
+-- Primitive workers report directly into the engine context on failure.
+-- No intermediate fault record is allocated for each rejected datum.
+scalarReject : Context, Path, Js.Value, Js.Value, Int, String, a, Bool → Bool
+scalarReject c parent input output code message item written =
+    _ = compiledFail c parent input output code message item written
+    False
+
+
+scalarRead : PrimitiveKind, (Js.Value → a) → Worker Js.Value a
+scalarRead kind make =
+    λc depth parent input output raw →
+        if scalarCheck kind c depth parent input output raw raw then
+            Js.some (make raw)
+        else
+            Js.none ⊤
+
+
+scalarTyped : PrimitiveKind, (a → Js.Value) → Worker a a
+scalarTyped kind view =
+    λc depth parent input output item →
+        if scalarCheck kind c depth parent input output (view item) item then
+            Js.some item
+        else
+            Js.none ⊤
+
+
+scalarWrite : PrimitiveKind, (a → Js.Value) → Worker a Js.Value
+scalarWrite kind view =
+    λc depth parent input output item →
+        raw = view item
+        if scalarCheck kind c depth parent input output raw item then
+            Js.some raw
+        else
+            Js.none ⊤
+
+
+scalarCheck : PrimitiveKind, Context, Int, Path, Js.Value, Js.Value, Js.Value, a → Bool
+scalarCheck kind c depth parent input output raw item =
+    case kind of
+        StringKind →
+            if isType raw "string" then
+                True
+            else
+                scalarReject c parent input output 0 "expected a string" item False
+        BoolKind →
+            if isType raw "boolean" then
+                True
+            else
+                scalarReject c parent input output 0 "expected a boolean" item False
+        IntKind →
+            if not (isType raw "number") then
+                scalarReject c parent input output 0 "expected a number" item False
+            else if HostData.isSafeInteger (raw) then
+                True
+            else
+                scalarReject c parent input output 4 "expected a safe integer" item False
+        FloatKind →
+            if not (isType raw "number") then
+                scalarReject c parent input output 0 "expected a number" item False
+            else if c.json && c.dh && not (isFinite raw) then
+                scalarReject
+                    c
+                    parent
+                    input
+                    output
+                    10
+                    "JSON has no number for NaN or an infinity"
+                    item
+                    True
+            else
+                True
+        FiniteFloatKind →
+            if not (isType raw "number") then
+                scalarReject c parent input output 0 "expected a number" item False
+            else if isFinite raw then
+                True
+            else
+                scalarReject c parent input output 4 "expected a finite number" item False
+        NullKind →
+            if c.sh && not (Js.isNull raw) then
+                scalarReject c parent input output 0 "expected null" item False
+            else
+                True
+        ValueKind →
+            if c.json && c.dh then
+                case printable raw (c.max - depth) of
+                    1 →
+                        scalarReject
+                            c
+                            parent
+                            input
+                            output
+                            5
+                            "the value nests deeper than the depth limit"
+                            item
+                            True
+                    2 →
+                        scalarReject c parent input output
+                            10
+                            "the value holds NaN or an infinity, which JSON has no number for"
+                            item
+                            True
+                    _ →
+                        True
+            else
+                True
+        CharKind →
+            if not (isType raw "string") then
+                scalarReject c parent input output 0 "expected a string" item False
+            else if oneScalar raw then
+                True
+            else
+                scalarReject c parent input output 4 "expected one character" item False
+        Int32Kind →
+            if not (isType raw "number") then
+                scalarReject c parent input output 0 "expected a number" item False
+            else if Js.bitOr (intOf raw) 0 == intOf raw then
+                True
+            else
+                scalarReject c parent input output 4 "expected a 32-bit integer" item False
+        NeverKind →
+            scalarReject c parent input output 0 "expected nothing: ⊥ has no value" item False
+
+
+memberReader : String, String, Maybe (Worker Js.Value a), (a → o), Maybe o → Worker Js.Value o
+memberReader name external child wrap missing =
+    λc depth parent input output raw →
+        path = pathAt parent input output
+        own = prototypeKey external
+        heldOwn = own && hasOwn raw external
+        gotValue = if own && not heldOwn then Js.undefined else Js.get raw external
+        held = if own then heldOwn else not (Js.isUndefined gotValue)
+        if held then
+            workerMap (memberCall name external child c depth path gotValue) wrap
+        else
+            case missing of
+                Just absent →
+                    Js.some absent
+                Nothing →
+                    _ = compiledMissing c path (toHost external) (toHost name) raw
+                    Js.none ⊤
+
+
+memberRead : String, String, Maybe (Worker Js.Value a) → Worker Js.Value a
+memberRead name external child = memberReader name external child identity Nothing
+
+
+optionalRead : String, String, Maybe (Worker Js.Value a) → Worker Js.Value (Presence a)
+optionalRead name external child = memberReader name external child Present (Just Missing)

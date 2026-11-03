@@ -44,7 +44,5 @@ main =
     generated = Types.Payload.schema Factory.decimal
     Node.printLines
         [ exercise generated
-        , exercise (Factory.interpreted generated)
         , exerciseList (Factory.repeated generated)
-        , exerciseList (Factory.interpreted (Factory.repeated generated))
         ]

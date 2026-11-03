@@ -75,7 +75,7 @@ changes whether a program checks or what it prints (`ordering_test.zig`).
 [`schema.md`](docs/design/schema.md) records the fork — an inspectable description
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
-`core/Schema` under the same engine-owned context contract and differential tests.
+`core/Schema` by compiled worker composition under the same engine-owned context contract.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
 The parser accepts both brace and aligned declaration bodies, the formatter
 emits nonempty record bodies and tagged variants as layout, and unresolved
@@ -83,11 +83,13 @@ schema plans survive in AST/BIR dumps and the frontend cache. The checker
 resolves schema namespaces and both endpoint types, publishes
 member/constructor schemes, and caches an immutable resolved plan.
 `core/Schema` supplies the public type surface and, since 2026-10-02, the
-library interpreter (builders, runners, `describe`; `schema.md` §5, §16 slice S3). **Since 2026-10-02 `build` compiles a `schema` declaration** to its own
+builders, compiled runners and `describe` (`schema.md` §5, §16 slice S3; the interpreter was withdrawn by A.14). **Since 2026-10-02 `build` compiles a `schema` declaration** to its own
 parse and print (`schema.md` §6 *The specialised path*, §16 *As built — S4*): faster than the
 library interpreter on every workload and ahead of Valibot, Zod and Effect, each direction
-reachable on its own; the corpus builds every schema `run/` fixture compiled and through the
-library (hidden `--schema-library`) against one golden. A.6 owns interface v2, frontend artifact v3 (now
+reachable on its own; the corpus builds every schema `run/` fixture compiled against its hand-checked golden.
+**Every schema runs compiled** (owner decision, 2026-11-03; `schema.md` A.14): runtime
+builders and endpoint projections compose workers; the interpreter and hidden
+`--schema-library` flag are withdrawn. A.6 owns interface v2, frontend artifact v3 (now
 v4: a new token and a wider exposed row), cache entry v2 (now v3) and the
 unhashed plan v1. Remaining decisions lead the document; H4 remains open. The
 incrementality-first schema work schema.md A.2–A.4 records has landed.

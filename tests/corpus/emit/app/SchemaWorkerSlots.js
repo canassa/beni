@@ -14,7 +14,7 @@ const SchemaWorkerSlots$Number$$decode = (c, d, p, k, n, v) => {
 const SchemaWorkerSlots$Number$$declared = Schema$declared(($input$1) => Schema$checkedInput("[\"i\",[]]", $input$1), ($input$2) => Schema$checkedInput("[\"i\",[]]", $input$2), "core:Basics.Int", "core:Basics.Int", () => undefined, SchemaWorkerSlots$Maybe$Nothing, SchemaWorkerSlots$Maybe$Nothing, [], { $: "Just", a: SchemaWorkerSlots$Number$$decode }, SchemaWorkerSlots$Maybe$Nothing, SchemaWorkerSlots$Maybe$Nothing, SchemaWorkerSlots$Maybe$Nothing, SchemaWorkerSlots$Maybe$Nothing);
 const SchemaWorkerSlots$Number$$schema = ($u$3) => SchemaWorkerSlots$Number$$declared;
 const SchemaWorkerSlots$main = (() => {
-  const $t$1 = Schema$decode("core:Basics.Int", "[\"i\",[]]", "core:Basics.Int", SchemaWorkerSlots$Number$$schema(null), 42);
+  const $t$1 = Schema$decode(SchemaWorkerSlots$Number$$schema(null), 42);
   let $t$2;
   if ($t$1.$ === "Ok") {
     const result$1 = $t$1.a;

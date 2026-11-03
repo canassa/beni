@@ -1,10 +1,10 @@
 -- A record declaration's `parse` and `print` (`schema.md` §6): every
 -- primitive operand, the four field forms of §4's table read missing, `null`
 -- and present, a renamed key, an inline nested record, a list of a primitive
--- and a list of a record, both directions. The corpus builds this program a
--- second time with every root forced through the library interpreter
--- (`--schema-library`, §10), against this one golden: the specialised code
--- and the library answer alike, success and failure, issue for issue.
+-- and a list of a record, both directions. The corpus builds this program
+-- in development and release modes against one independent golden. It
+-- checks complete values and ordered issues from specialised workers,
+-- including success and failure in each direction.
 --
 -- Under `FirstError` the first failing field ends the record; under
 -- `AllErrors` every independent field is visited, unknown keys first, in the

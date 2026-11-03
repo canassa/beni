@@ -1,6 +1,5 @@
 Factory decimal: lines 5-16 (not built: local)
-Factory interpreted: lines 20-21 (not built: call)
-Factory repeated: lines 24-25 (not built: call)
+Factory repeated: lines 20-21 (not built: call)
 Main exercise: lines 8-22 (not built: call)
 Main exerciseList: lines 25-39 (not built: call)
-Main main: lines 42-49 (not built: ext_schema_member)
+Main main: lines 42-47 (not built: ext_schema_member)

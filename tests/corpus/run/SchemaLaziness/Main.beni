@@ -1,4 +1,4 @@
--- What the library engine runs, and when (`schema.md` §5, *Traversal and
+-- What the compiled workers run, and when (`schema.md` §5, *Traversal and
 -- failure rules*), seen through `Debug.log`, the corpus's one instrument
 -- for evaluation order — kept apart from `SchemaFailures` and
 -- `SchemaDescribe` so that those two build as release programs do, with

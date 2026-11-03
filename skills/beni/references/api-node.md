@@ -69,7 +69,7 @@ module Node
 module NodeRuntime
   value run : Program → ⊤  -- impure
 module Prerender
-  value pages : (Schema e d), (⊤ → Result String (List (String × d))) → Program  -- impure
+  value pages : Schema e d, (⊤ → Result String (List (String × d))) → Program  -- impure
 module Random
   alias Generator a
   alias Seed

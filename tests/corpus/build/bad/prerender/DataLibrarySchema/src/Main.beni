@@ -33,5 +33,11 @@ view model =
 
 
 main : Tea.Program
-main = Browser.prerenderData (Schema.typeOnly (Start.schema ⊤)) λstart →
-    Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }
+main =
+    Browser.prerenderData
+        (Schema.record
+            (Schema.field Schema.fields "start" Schema.int)
+            (Schema.mapping (λ( ⊤, start ) → { start = start }) λvalue → ( ⊤, value.start ))
+            (Schema.mapping (λ( ⊤, start ) → { start = start }) λvalue → ( ⊤, value.start ))
+        )
+        λstart → Tea.sandbox { init = λ⊤ → { count = start.start }, update = update, view = view }
