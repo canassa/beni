@@ -305,3 +305,16 @@ ownership, which escapes every parameter and provides no edit permission
 (ownership-checker.md §24.5). Their real native types and sync callback
 requirements remain checked. More precise ownership contracts require the
 existing body pins and behavioral fixtures before they can be declared.
+
+**Private typed pending-ask Map (owner, 2026-11-03).** Cloudflare retains pending
+asks in `Browser.Host.Map.Map String a`, with the real element type and summary
+`a`; it does not erase a payload into `Js.Value`. This core/platform-private
+catalogue supplement follows [ECMA-262, 16th edition (June 2025), §24.1](https://262.ecma-international.org/16.0/#sec-map-objects),
+using the existing native binding mechanism. `make/get/set/remove/entries` (`remove` calls JavaScript’s `delete`) have
+no ordinary failure for their trusted receiver and String keys. They do not catch
+unknown exceptions. `get` checks `has` before reading, so a stored undefined is
+present. `entries` returns a plain typed List snapshot in insertion order;
+overwriting a key retains its place, deletion followed by insertion moves it to
+the end. Pair records are new, while element identities are retained. Later table
+mutations do not change that snapshot. Ownership is conservative: unworded
+`set` escapes its value and `get` grants no freshness or editing permission.

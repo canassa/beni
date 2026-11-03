@@ -750,7 +750,7 @@ the decision.
 **Core/platform-private bridge list** (2026-11-03). The checked package
 identity governs these names, for named access and static dispatch alike:
 
-- Core and platforms may use the whole `Browser.Host.Cloudflare` and
+- Core and platforms may use the whole `Browser.Host.Cloudflare`, `Browser.Host.Map` and
   `Js.Protocol` modules, `WebSocket.fromNative`, `WebSocket.toNative`,
   and `Worker.Object.hostState`.
 - The same authority protects Worker's bridge exports: `fromHost`,
