@@ -1,2 +1,4 @@
 {"path": "/relay"}
+{"path": "/relay-trie"}
+{"path": "/relay-view"}
 {"path": "/unrelated"}

@@ -1,6 +1,7 @@
 -- Typed native/callable state and nested generic Reply holders. The self-only
 -- variants refuse schema printing: collecting holders must not print them.
 import Duration
+import List
 import Schema exposing (Schema)
 import Task
 import Worker exposing (Context, Request, Response)
@@ -67,17 +68,36 @@ received : Object.Context Msg, State, Msg → State
 received ctx state message =
     case message of
         Start op channel →
-            if op == "relay" then
-                Object.post (Object.self ctx) (Relayed { items = Just [ ( 7, Box channel ) ] })
-            else
+            if op == "unrelated" then
                 Object.post (Object.self ctx) Unrelated
+            else
+                entries =
+                    if op == "relay" then
+                        [ ( 7, Box channel ) ]
+                    else
+                        List.foldl (List.range 1 48) [] λn collected →
+                            List.push collected ( n, Box channel )
+                items =
+                    if op == "relay-view" then
+                        case entries of
+                            [ _, …rest ] →
+                                rest
+                            _ →
+                                entries
+                    else
+                        entries
+                Object.post (Object.self ctx) (Relayed { items = Just items })
             state
         Relayed payload →
             case payload.items of
-                Just [ ( _, Box channel ) ] →
-                    prefix = Maybe.withDefault (Worker.var state.env "PREFIX") "missing"
-                    Object.reply channel (state.format prefix)
-                    state
+                Just entries →
+                    case List.head entries of
+                        Just ( _, Box channel ) →
+                            prefix = Maybe.withDefault (Worker.var state.env "PREFIX") "missing"
+                            Object.reply channel (state.format prefix)
+                            state
+                        Nothing →
+                            state
                 _ →
                     state
         Unrelated →
@@ -89,7 +109,16 @@ received ctx state message =
 
 route : Context, Request → Response
 route ctx request =
-    op = if Worker.path request == "/relay" then "relay" else "unrelated"
+    op =
+        case Worker.path request of
+            "/relay" →
+                "relay"
+            "/relay-trie" →
+                "relay-trie"
+            "/relay-view" →
+                "relay-view"
+            _ →
+                "unrelated"
     case Worker.objects (Worker.env ctx) "SCORERS" protocol of
         Nothing →
             Worker.text 500 "missing namespace"
