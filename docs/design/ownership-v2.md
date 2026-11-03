@@ -1332,7 +1332,15 @@ of a parameter's subtree of more than 16 objects takes the callee's read tree wh
 subtree of more than 16 objects, read at its own acyclic place, is **one open arrival**, and a caller
 describes the argument's value there; by-structure continuation is exact only where no cycle is below the
 place (with `⟲` the result's level paths fold otherwise than the parameter's), so a slot with a cycle below
-it is still written out. Where nothing the frame reads grows and no place below the slot is on a cycle, the
+it is still written out. *Amended 2026-11-03 (#1715):* a parameter's subtree that the result returns **at its own path** (`same t =
+t`, the result's slot and the parameter's slot one path) folds below it exactly as the result's slot does, so it
+is one open arrival there too, cycles below or not, once written out it would name more than
+`Subtree.written_max` (256) slots. Over five mutually recursive types with a list and a `Maybe` of each other
+(`K0 … K4`), `same : K0 → K0` named so many that it passed `ownership_summary_size` at any allowance; it is now
+`res ε… π1ε`, and a caller reads each slot of it as of any open arrival. Below that size the slots are still
+written out: their readers cost less than the open node's (`Dict.descend` 37 191 records written out, 66 105
+open), and they say the same. Not in a callback's supply: there the open node read back at a caller's argument
+names its top slot only, which says less than the slots written out (`Codec.Decode.decodeString`). Where nothing the frame reads grows and no place below the slot is on a cycle, the
 read-off **describes a value once per (value, place)** and a call once per (callee node, place). The text
 prints a kid equal to an earlier sibling as `.1 = .0`, for reads too (`π1#1.2 = π1#1.0`). A defect of the
 slot domain's base went with the trees: a result kept the draft's label numbers while the labels were
