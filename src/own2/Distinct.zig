@@ -539,6 +539,10 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             var list: std.ArrayList(u32) = .empty;
             defer list.deinit(g);
             try e.expand(en.leaf, &list);
+            // One entry of its root expanding to one leaf: a chain of calls
+            // that hand one object on is read to its end, each call's
+            // group one entry of one object (it asks nothing of its own).
+            if (taken.items.len == 1 and list.items.len == 1) list.items[0] = try e.endOf(list.items[0]);
             for (list.items, 0..) |x, nth| {
                 const xl = f.leafAt(x);
                 if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;

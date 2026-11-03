@@ -1196,7 +1196,15 @@ equal leaves in the inline order (its members compared by the expansions they ca
 that is the leaf of the entry it expands or of one that entry was expanded from is not made an entry: around a
 cycle of expansions (a fold's supply and its step's answer, #1714) it names that ancestor's objects, which the
 chain reads already, so a chain's leaves are distinct and the rounds end; a second chain still meets the cycle's
-exits (`FoldSupplyCycle`). Each round charges a
+exits (`FoldSupplyCycle`). That test is one lookup for a leaf no entry has (the chain is walked only for one
+that some entry has), never a walk a new entry: a chain of n calls walked it at every expansion, n², and
+`x_k = step x_{k-1} [ k ]` cost 143 / 443 records a call at 10 / 40 calls (#1714). *A chain of calls handing one
+object on* (#1714, 2026-11-03): where the expansion takes one entry of its root and gives one leaf, a call's
+leaf of one object slot (no family's, no type variable's) whose call has one leaf there is read on to its end
+(`Relation.Eval.endOf`, by `(leaf, keys' growth)`): each call on the way would be a group of one entry of one
+object, which asks nothing of its own, so the check reads the same leaves without a round a call. `step` is then
+113 / 104 records a call at 10 / 40 calls, `shared` 120 / 112; every summary and verdict is unchanged. Each
+round charges a
 record and one per new entry (each changes one group at most; the changed groups are listed as they change,
 never found by a scan), besides the work of its checks. Every outcome is the one the
 regrouping check gave: a group's check reads its members only, and the conditions gathered are a set. This is
