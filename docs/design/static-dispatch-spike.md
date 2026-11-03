@@ -4785,3 +4785,13 @@ still need its parameters. Fixture: `tests/blackbox/abuse_wide_test.zig`, "== on
 and runs at the widest positional evidence and at a width that threw, never a runtime exception"
 (65 530 fields, the wide form run under Node); `--release`'s walks over a chain that deep are the
 unit tests of `src/js/Opt.zig` and `src/js/Rename.zig`.
+
+### Private checked-data evidence (owner, 2026-11-02)
+
+`checker-v2.md`'s checked-data evidence amendment extends the existing implicit
+identity demand pass with an independent representation witness. It is not a
+method and adds no written `where` clause. Only generic code reaching
+`Js.Data.checked` receives it; for a quantifier needing both, its identity and
+then its checked-data witness follow the ordinary method arguments. Foreign
+arity checking counts both hidden arguments. Any still exposes only pack and
+checked unpack; Schema's reported input uses the checked-data witness instead.

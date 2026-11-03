@@ -6558,3 +6558,29 @@ including parameter facts, without changing row widths. Cached boundary
 rows also preserve the boxed-wrapper fact's nominal type reference through
 remapping. A warm build retains both the payload constraint and its runtime
 representation.
+
+### Checked-data evidence (owner, 2026-11-02)
+
+The same demand propagation that supplies Any's implicit type identities also
+carries a separate checked-data witness for `Js.Data.checked`. A quantifier's
+interface flag bit 13 records that demand. Dispatch hidden-parameter rows tag
+this kind with bit 30; bit 31 still marks a direct quantifier ordinal. For each
+quantifier its identity precedes its data witness, after ordinary method
+requirements. Generic declarations and promoting local functions forward only
+the evidence their reachable checked conversions demand. Ordinary declarations
+retain their calling convention and emitted bytes.
+
+A witness is a structural dispatch tree: fields, tuples, nominal applications
+and ordinary hidden-parameter leaves. Checking reads nominal headers only;
+backend lowering reads the declarations' representation bodies, as it does for
+Debug descriptors, after the cache firewall. Cache sidecar version 18 and
+interface version 23 preserve and validate these rows and flags. Unknown
+inhabited variables are refused rather than guessed. Numeric default leaves
+use the same proven Int default as identity evidence.
+
+The runtime checks the logical data graph and its active representation with
+explicit stacks. Nominal applications are interned within the conversion so
+recursive values terminate; inactive alternatives do not reject a value.
+Thus a native scalar, a nested Any or an active native field is refused, while
+`Nothing : Maybe Native` and an empty native List remain data. There is no
+reflection on type-identity text and no additional existential operation.

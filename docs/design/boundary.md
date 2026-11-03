@@ -696,6 +696,18 @@ Plain host data is retained unchanged. Internal List views and trie headers are
 projected to plain arrays after checking their logical elements, without calling
 their protocol callbacks. A private typed Cell token supplied by List identifies
 these wrappers; unrelated objects never receive that treatment.
+The compiler also supplies a private representation witness through generic
+callers, only where checked conversion is reached. It is independent of the
+identity used by Any and has no written constraint or user API. The witness
+refuses an active native or Any even when its representation is a string or
+plain record. It follows the actual constructor: `Nothing` and an empty List
+remain data when their element type is native. An unpacked Any payload is
+checked at its recovered real type. Compiler capture packets' exact private
+Symbol metadata is omitted from the checked projection; unrelated Symbol
+properties are refused. Both type and graph checks read data descriptors and
+never invoke a found callback. This completes the owner’s data-only decision
+of 2026-11-02, including native values with scalar representations.
+
 Schema calls it only on the failure path with reportInput enabled. Otherwise
 Issue.input is Nothing. Schema.Value remains plain host data and Issues remain
 Wire-safe; Any is not used for Schema's reported input.
