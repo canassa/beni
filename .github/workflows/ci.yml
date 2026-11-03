@@ -549,6 +549,82 @@ jobs:
             ~/.cache/zig
           key: zig-browser-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
+  # The `workers/` corpus (docs/design/boundary.md §9.12 (k)): Workers
+  # built for the `cloudflare` platform, run under Miniflare's `workerd` by
+  # tests/workers/driver.mjs, on 127.0.0.1, with nothing deployed and no
+  # account used: `zig build test-workers`. Its shell, `.#workers`, adds
+  # nixpkgs' wrangler to the default shell (a closure of 3.05 GB, against
+  # 1.0 GB), so its Nix store has a key and a bound of its own and the
+  # `tests` job's store stays under 2 GiB. It runs on every pull request,
+  # because a change to `core/`, the emitter or the platform can break a
+  # Worker, and `check` needs it. It uses no run-hash cache: an empty
+  # BENI_RUN_HASH_DIR, which the shell keeps, so every program runs every
+  # time, 34 s for the corpus locally. It builds the beni the `tests` job
+  # builds, so it restores that job's Zig caches and saves none.
+  workers:
+    name: workers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+      # Wrangler enlarges the closure, so its cache has its own key and
+      # profile root; fall back to the store that the tests job saves,
+      # which holds Zig.
+      - name: restore the Nix store
+        id: nix-cache
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-workers-${{ runner.os }}-${{ runner.arch }}-
+            nix-${{ runner.os }}-${{ runner.arch }}-
+      - name: workers dev shell
+        id: dev-shell
+        run: nix develop .#workers --profile "$RUNNER_TEMP/workers-shell" --command true
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop .#workers --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+      # Empty: no run-hash cache (build.zig, `runHashDir`). If the shell
+      # stops keeping the value, this step fails.
+      - name: no run-hash cache
+        run: |
+          echo "BENI_RUN_HASH_DIR=" >> "$GITHUB_ENV"
+          BENI_RUN_HASH_DIR='' nix develop .#workers --command sh -c 'test -z "$BENI_RUN_HASH_DIR" && test -n "$BENI_MINIFLARE"'
+      # The tests job's Zig caches, from master's newest build. This job
+      # saves none, so it cannot grow them.
+      - name: restore the Zig caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+      - name: zig build test-workers
+        run: nix develop .#workers --command zig build test-workers --summary all
+      # Only a push to master saves, as the tests job does: every pull
+      # request starts from master's store, and its own run writes none.
+      - name: save the Nix store
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          gc-max-store-size-linux: 4G
+
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes
   # only when every job in `needs:` succeeded, except that Chrome may be
@@ -569,7 +645,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests, playground, lean, browser-plan, browser]
+    needs: [tests, playground, lean, browser-plan, browser, workers]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

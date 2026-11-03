@@ -683,8 +683,8 @@ pub fn build(b: *std.Build) void {
     // `workers/`: the `cloudflare` platform's fixtures, each build run under
     // Miniflare (docs/design/boundary.md §9.12 (k); tests/blackbox/workers.zig).
     // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
-    // `-Dminiflare=`; with neither the step fails and says so. Not a gate
-    // (no CI job runs it yet, #697); a case starts Miniflare once
+    // `-Dminiflare=`; with neither the step fails and says so. Not a gate:
+    // CI's `workers` job runs it (.github/workflows/ci.yml); a case starts Miniflare once
     // (§9.12 (k)). Takes `-Dcorpus`. Its digests go to the same run-hash
     // cache as the gates'.
     const workers_step = b.step("test-workers", "Run the workers/ corpus under Miniflare (nix develop .#workers)");

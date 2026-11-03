@@ -8430,7 +8430,8 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   spawns gets an empty environment; it maps `compatibility_date`, `compatibility_flags`, `vars`
   and `durable_objects` with `migrations` to Miniflare's options, passes `cf: false`, listens on
   127.0.0.1 and disposes at the end. `zig build test-workers` runs the kind; it is not a gate, and
-  no CI job runs it yet (#697). The transcript prints each request, its answer with the headers
+  no CI job runs it yet (#697; *2026-11-03: CI's `workers` job runs it on every pull request, and
+  `check` needs it*). The transcript prints each request, its answer with the headers
   sorted as the host keeps them, and the Worker's console lines after each step. The script's
   steps in this slice: a request, `detach`/`answer`, and `abort`. **Two facts measured under
   Miniflare 4.20260518.0**: a client that leaves — through `dispatchFetch`'s signal or a raw
