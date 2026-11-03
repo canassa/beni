@@ -166,6 +166,8 @@ pub const Eval = struct {
     /// A deep projection read part by part (`Distinct.instSel`): a literal
     /// below the slot gives each part's own objects at its own route.
     parts: bool = false,
+    /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place.
+    no_routes: bool = false,
 
     pub fn deinit(e: *Eval) void {
         const g = e.f.gpa;
@@ -557,7 +559,10 @@ pub const Eval = struct {
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(e.gpa());
         try stack.append(e.gpa(), .{ .v = v, .place = place, .route = route, .below = false });
+        var met: Ids.FixedDict(3) = .{};
+        defer met.deinit(e.gpa());
         while (stack.pop()) |it| {
+            if (e.no_routes and (try met.getOrPut(e.gpa(), .{ it.v, it.place.int(), @intFromBool(it.below) })).found_existing) continue;
             try e.charge(.inspection, 1);
             const x = e.f.val(it.v);
             switch (x.kind) {
@@ -674,25 +679,6 @@ pub const Eval = struct {
         if (keep) try e.inst_memo.put(e.gpa(), key, @intCast(e.inst_runs.items.len));
         try e.inst_runs.append(e.gpa(), .{ start, @intCast(acc.items.len) });
         return e.inst_leaves.items[start..][0..acc.items.len];
-    }
-
-    /// What leaf `x` of one object slot of a call's result ends at when each
-    /// call on the way has one leaf there: a chain of calls handing one object on
-    /// is one step for the distinct check (§2.9.3). Kept while no key grows.
-    pub fn endOf(e: *Eval, x: u32) Error!u32 {
-        const l = e.f.leafAt(x);
-        if (l.kind != .ref or l.tags != 0 or l.routes != 0 or e.f.roots.items[l.root].kind != .call) return x;
-        const sl = Subtree.explicit(e.f.slots, l.slots);
-        if (sl.len != 1 or Subtree.subs(e.f.slots, l.slots).len != 0) return x;
-        // One object: never a family's slot, nor one no step below names.
-        const pk = e.places().kind(e.places().pathPlace(.from(sl[0])));
-        if (e.f.places.isSummary(.from(sl[0])) or pk == .@"var" or pk == .@"opaque") return x;
-        if (e.end_memo.get(.{ x, e.grown })) |y| return y;
-        try e.end_memo.put(e.gpa(), .{ x, e.grown }, x); // met again: itself
-        const run = try e.instAt(e.f.roots.items[l.root].a, .from(sl[0]), none);
-        const y = if (run.len == 1 and run[0] != x) try e.endOf(run[0]) else x;
-        try e.end_memo.put(e.gpa(), .{ x, e.grown }, y);
-        return y;
     }
 
     /// `instAt` while a group is solved (§2.12 *Deliveries*): the key is
@@ -1171,6 +1157,9 @@ pub const Eval = struct {
                 try words.appendSlice(e.gpa(), suffix);
                 var ps: std.ArrayList(Proj) = .empty;
                 defer ps.deinit(e.gpa());
+                const was = e.no_routes;
+                e.no_routes = true;
+                defer e.no_routes = was;
                 try e.project(arg, words.items, a.deep, 0, 0, &ps);
                 for (ps.items) |p| try out.append(e.gpa(), p.leaf);
             },
