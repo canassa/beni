@@ -793,45 +793,8 @@ const Gen = struct {
         }
     }
 
-    /// A schema value retains exact endpoint identities and typed workers.
-    /// Each stored worker returns Maybe; generated adapters keep the local
-    /// specialised traversal on its failure-marker ABI. The forced library
-    /// path boxes the same typed description without compiled workers.
-    /// The specialised traversal uses its local failure marker; typed stored
-    /// workers use Maybe. Only generated adapters cross that boundary.
-    fn maybeToRaw(g: *Gen, expression: Node.Index, context: NameIndex) !Node.Index {
-        const answer = try g.fresh("$answer");
-        return g.call(try g.arrowOf(&.{answer}, try g.l.condOf(
-            try g.coreCtorTest("Maybe", "Nothing", try g.id(answer)),
-            try g.ctxField(context, "fail"),
-            try g.l.member(try g.id(answer), try g.l.slotName(0), g.p),
-            g.p,
-        )), &.{expression});
-    }
-
-    fn typedWorker(g: *Gen, raw: Node.Index) !Node.Index {
-        const ps = try g.freshParams();
-        var args: std.ArrayList(Node.Index) = .empty;
-        for (ps.list()) |param| try args.append(g.l.scratch, try g.id(param));
-        const answer = try g.fresh("$answer");
-        var body: Stmts = .empty;
-        try g.constDecl(&body, answer, try g.call(raw, args.items));
-        try g.ret(&body, try g.l.condOf(
-            try g.bin(.strict_eq, try g.id(answer), try g.ctxField(ps.c, "fail")),
-            try g.coreCtor("Maybe", "Nothing", &.{}),
-            try g.coreCtor("Maybe", "Just", &.{try g.id(answer)}),
-            g.p,
-        ));
-        return g.arrow(&ps.list(), body.items);
-    }
-
-    fn rawWorker(g: *Gen, typed: Node.Index) !Node.Index {
-        const ps = try g.freshParams();
-        var args: std.ArrayList(Node.Index) = .empty;
-        for (ps.list()) |param| try args.append(g.l.scratch, try g.id(param));
-        return g.arrowOf(&ps.list(), try g.maybeToRaw(try g.call(typed, args.items), ps.c));
-    }
-
+    /// Stored and specialised workers share the typed Opt result ABI.
+    /// The forced library path retains the description without workers.
     fn argumentSlot(g: *Gen, op: Op, schema_value: Node.Index) !Node.Index {
         var args: std.ArrayList(Node.Index) = .empty;
         if (op == .decode or op == .encode) try args.append(g.l.scratch, try g.call(try g.core("encodedIdentity"), &.{schema_value}));
@@ -842,7 +805,7 @@ const Gen = struct {
             try args.append(g.l.scratch, try g.call(try g.core(getter), &.{schema_value}));
         }
         try args.append(g.l.scratch, schema_value);
-        return g.rawWorker(try g.call(try g.core(op.slot()), args.items));
+        return g.call(try g.core(op.slot()), args.items);
     }
 
     fn root(g: *Gen, out: *Stmts) !void {
@@ -866,7 +829,7 @@ const Gen = struct {
                 const worker = try g.id(try g.own(runs.workerSuffix()));
                 var typed: Node.Index = undefined;
                 if (params.len == 0) {
-                    typed = try g.typedWorker(worker);
+                    typed = worker;
                 } else {
                     const bound = try g.l.scratch.alloc(NameIndex, params.len);
                     var made: std.ArrayList(Node.Index) = .empty;
@@ -880,7 +843,7 @@ const Gen = struct {
                     for (bound) |param| try call_args.append(g.l.scratch, try g.id(param));
                     try call_args.appendSlice(g.l.scratch, try g.checkParameters(params));
                     const raw = try g.arrowOf(&ps.list(), try g.call(worker, call_args.items));
-                    typed = try g.call(try g.arrowOf(bound, try g.typedWorker(raw)), made.items);
+                    typed = try g.call(try g.arrowOf(bound, raw), made.items);
                 }
                 if (aliased != null) typed = try g.call(try g.core("hostWorker"), &.{typed});
                 args[at] = try g.coreCtor("Maybe", "Just", &.{typed});
@@ -1474,7 +1437,7 @@ const Gen = struct {
             break :blk try g.call(try g.core(if (op == .parse) "compiledParse" else "compiledPrint"), &.{
                 try g.id(options),
                 try g.l.arrayNode(checked.items, g.p),
-                try g.typedWorker(worker),
+                worker,
                 try g.id(input),
             });
         };
@@ -1884,13 +1847,13 @@ const Fn = struct {
                     try g.id(b),
                 });
                 const failed = try g.bin(.strict_eq, try g.id(b), try w.failMark());
-                try g.assign(out, target, try g.l.condOf(failed, try w.failMark(), try g.maybeToRaw(forward, w.c), g.p));
+                try g.assign(out, target, try g.l.condOf(failed, try w.failMark(), forward, g.p));
             } else {
                 // `NConverted`, encoding: `backward`, then the source below
                 // it, where a failure is in what is written.
                 const b = try g.fresh("$b");
                 const path = try w.pathArgs(at);
-                try g.constDecl(out, b, try g.maybeToRaw(try g.call(try g.core("compiledBackward"), &.{
+                try g.constDecl(out, b, try g.call(try g.core("compiledBackward"), &.{
                     try g.typeCheck(n, false, try g.slotNames()),
                     try g.id(w.c),
                     path[0],
@@ -1898,7 +1861,7 @@ const Fn = struct {
                     path[2],
                     try g.id(try g.viaName(SchemaGraph.rhs(plan, n))),
                     try g.id(x),
-                }), w.c));
+                }));
                 var then: Stmts = .empty;
                 try g.assign(&then, target, try w.failMark());
                 var otherwise: Stmts = .empty;

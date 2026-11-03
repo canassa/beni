@@ -1141,7 +1141,7 @@ context o dir src sh dst dh json =
     , outE = endpointOf dst
     , cv = False
     , issues = issues
-    , fail = issues
+    , fail = toHost workerAbsent
     }
 
 
@@ -2637,8 +2637,52 @@ isNothing option =
             False
 
 
+-- One private absence identity is shared by typed workers and generated raw
+-- workers, so the generated path needs no Maybe adapter or per-call box.
+workerAbsent : Js.Opt ⊤
+workerAbsent = Js.none ⊤
+
+
+workerEmpty : Js.Opt a → Bool
+workerEmpty slot = Js.same slot workerAbsent
+
+
+-- Only the local identity branches run here; the payload is never invoked.
+-- Callers test absence before reading. A mismatch is a core protocol defect.
+workerValue : Js.Opt a → a
+workerValue slot = Js.pure λ⊤ →
+    Js.optMatch slot
+        (λ⊤ → Protocol.defect "an absent schema worker result was read")
+        identity
+
+
+workerFromMaybe : Maybe a → Js.Opt a
+workerFromMaybe option =
+    case option of
+        Nothing →
+            Js.none ⊤
+        Just item →
+            Js.some item
+
+
+workerMap : Js.Opt a, (a → b) → Js.Opt b
+workerMap slot callback =
+    if workerEmpty slot then
+        Js.none ⊤
+    else
+        Js.some (callback (workerValue slot))
+
+
+workerAndThen : Js.Opt a, (a → Js.Opt b) → Js.Opt b
+workerAndThen slot callback =
+    if workerEmpty slot then
+        Js.none ⊤
+    else
+        callback (workerValue slot)
+
+
 type alias Worker i o =
-    Context, Int, Path, Js.Value, Js.Value, i → Maybe o
+    Context, Int, Path, Js.Value, Js.Value, i → Js.Opt o
 
 
 type Engine e a
@@ -2756,11 +2800,11 @@ compiledParse opts args worker text =
                     rootErr Decoding Encoded ParseFailed "invalid JSON"
                 Just raw →
                     c = context opts Decoding encodedSide True typeSide False True
-                    case worker c 0 atRoot Js.null Js.null raw of
-                        Nothing →
-                            Err (fromHost c.issues)
-                        Just result →
-                            Ok result
+                    answer = worker c 0 atRoot Js.null Js.null raw
+                    if workerEmpty answer then
+                        Err (fromHost c.issues)
+                    else
+                        Ok (workerValue answer)
 
 
 compiledPrint : Options, List Argument, Worker a Js.Value, a → Result (List Issue) String
@@ -2770,11 +2814,11 @@ compiledPrint opts args worker input =
             Err issues
         Nothing →
             c = context opts Encoding typeSide False encodedSide True True
-            case worker c 0 atRoot Js.null Js.null input of
-                Nothing →
-                    Err (fromHost c.issues)
-                Just raw →
-                    Ok (stringOf (HostJson.stringify (raw)))
+            answer = worker c 0 atRoot Js.null Js.null input
+            if workerEmpty answer then
+                Err (fromHost c.issues)
+            else
+                Ok (stringOf (HostJson.stringify (workerValue answer)))
 
 
 compiledRun :
@@ -2794,18 +2838,18 @@ compiledRun opts args worker dir src sh dst dh input =
             Err issues
         Nothing →
             c = context opts dir src sh dst dh False
-            case worker c 0 atRoot Js.null Js.null input of
-                Nothing →
-                    Err (fromHost c.issues)
-                Just result →
-                    Ok result
+            answer = worker c 0 atRoot Js.null Js.null input
+            if workerEmpty answer then
+                Err (fromHost c.issues)
+            else
+                Ok (workerValue answer)
 
 
 interpretedSlot : Schema e a → Worker i o
 interpretedSlot schema =
     λc depth parent input output item →
         answer = run c (nodeOf schema) depth (pathAt parent input output) NoneActive (packed item)
-        Maybe.map answer unpacked
+        workerMap (workerFromMaybe answer) unpacked
 
 
 readSlot : Schema e a → Worker Js.Value a
@@ -3057,21 +3101,21 @@ hostWorker inner =
     λc depth parent input output item → inner (hostEnds c) depth parent input output item
 
 
-compiledForward : Context, Path, Js.Value, Js.Value, Conversion b a, b → Maybe a
+compiledForward : Context, Path, Js.Value, Js.Value, Conversion b a, b → Js.Opt a
 compiledForward c parent input output (Conversion forward _) item =
     conversionAnswer (forward item) c (pathAt parent input output) item
 
 
-compiledBackward : Context, Path, Js.Value, Js.Value, Conversion b a, a → Maybe b
+compiledBackward : Context, Path, Js.Value, Js.Value, Conversion b a, a → Js.Opt b
 compiledBackward c parent input output (Conversion _ backward) item =
     conversionAnswer (backward item) c (pathAt parent input output) item
 
 
-conversionAnswer : Result (List Issue) a, Context, Path, b → Maybe a
+conversionAnswer : Result (List Issue) a, Context, Path, b → Js.Opt a
 conversionAnswer answer c path input =
     case answer of
         Ok item →
-            Just item
+            Js.some item
         Err given →
             prefix = pathArray path False
             each
@@ -3093,7 +3137,7 @@ conversionAnswer answer c path input =
                         }
                     _ = Js.call c.issues "push" [ toHost amended ]
                     ⊤
-            Nothing
+            Js.none ⊤
 
 
 validContext : ⊤ → Context
@@ -3599,7 +3643,9 @@ primitiveWith kind witness =
 primitiveSlot : PrimitiveKind → Worker i o
 primitiveSlot kind =
     λc depth parent input output item →
-        Maybe.map (prim c kind depth (pathAt parent input output) (packed item)) unpacked
+        workerMap
+            (workerFromMaybe (prim c kind depth (pathAt parent input output) (packed item)))
+            unpacked
 
 
 listWorkers : Workers e a → Workers (List e) (List a)
@@ -3615,26 +3661,33 @@ listWorkers workers =
     }
 
 
-walkWorker : Context, Worker i o, Int, Path, List i, Int, List o, Bool → Maybe (List o)
+walkWorker : Context, Worker i o, Int, Path, List i, Int, List o, Bool → Js.Opt (List o)
 walkWorker c child depth path items offset output failed =
     case items of
         [] →
-            if failed then Nothing else Just output
+            if failed then Js.none ⊤ else Js.some output
         [ item, …rest ] →
             answer =
                 if depth ≥ c.max then
                     _ = compiledDeep c path (Js.from offset) (Js.from offset) item
-                    Nothing
+                    Js.none ⊤
                 else
                     child c (depth + 1) path (Js.from offset) (Js.from offset) item
-            case answer of
-                Nothing →
-                    if c.all then
-                        walkWorker c child depth path rest (offset + 1) output True
-                    else
-                        Nothing
-                Just result →
-                    walkWorker c child depth path rest (offset + 1) (List.push output result) failed
+            if workerEmpty answer then
+                if c.all then
+                    walkWorker c child depth path rest (offset + 1) output True
+                else
+                    Js.none ⊤
+            else
+                walkWorker
+                    c
+                    child
+                    depth
+                    path
+                    rest
+                    (offset + 1)
+                    (List.push output (workerValue answer))
+                    failed
 
 
 listTypedWorker : Worker i o → Worker (List i) (List o)
@@ -3658,13 +3711,13 @@ listReadWorker child =
                 False
         else
             _ = compiledFail c parent input output 0 "expected an array" items False
-            Nothing
+            Js.none ⊤
 
 
 listWriteWorker : Worker a Js.Value → Worker (List a) Js.Value
 listWriteWorker child =
     λc depth parent input output items →
-        Maybe.map
+        workerMap
             (walkWorker c child depth (pathAt parent input output) items 0 [] False)
             toHost
 
@@ -3686,9 +3739,9 @@ nullableReadWorker : Worker Js.Value a → Worker Js.Value (Nullable a)
 nullableReadWorker child =
     λc depth parent input output item →
         if Js.isNull item then
-            Just Null
+            Js.some Null
         else
-            Maybe.map (child c depth parent input output item) NonNull
+            workerMap (child c depth parent input output item) NonNull
 
 
 nullableWriteWorker : Worker a Js.Value → Worker (Nullable a) Js.Value
@@ -3696,7 +3749,7 @@ nullableWriteWorker child =
     λc depth parent input output item →
         case item of
             Null →
-                Just Js.null
+                Js.some Js.null
             NonNull datum →
                 child c depth parent input output datum
 
@@ -3706,9 +3759,9 @@ nullableTypedWorker child =
     λc depth parent input output item →
         case item of
             Null →
-                Just Null
+                Js.some Null
             NonNull datum →
-                Maybe.map (child c depth parent input output datum) NonNull
+                workerMap (child c depth parent input output datum) NonNull
 
 
 convertedWorkers : Workers e b, Conversion b a → Workers e a
@@ -3727,15 +3780,14 @@ convertedWorkers workers conv =
 forwardWorker : Conversion b a, Worker i b → Worker i a
 forwardWorker conv child =
     λc depth parent input output item →
-        Maybe.andThen
+        workerAndThen
             (child c depth parent input output item)
             (compiledForward c parent input output conv _)
 
 
-backwardWorker : Conversion b a, Worker b o → Worker a o
 backwardWorker conv child =
     λc depth parent input output item →
-        Maybe.andThen
+        workerAndThen
             (compiledBackward c parent input output conv item)
             (child (belowBackward c) depth parent input output _)
 
@@ -3793,7 +3845,7 @@ hostReadWorker child =
 hostWriteWorker : Worker a Js.Value → Worker a Value
 hostWriteWorker child =
     λc depth parent input output item →
-        Maybe.map (child (hostEnds c) depth parent input output item) typedHostValue
+        workerMap (child (hostEnds c) depth parent input output item) typedHostValue
 
 
 nodeBody : Node → NodeBody

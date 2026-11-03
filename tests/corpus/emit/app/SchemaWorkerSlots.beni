@@ -1,0 +1,17 @@
+-- Generated workers use the shared typed Opt absence identity. Register the
+-- worker itself: no per-call Just constructor or raw/typed adapter closure.
+import Node
+import Schema
+
+
+schema Number =
+    Int
+
+
+main : Node.Program
+main =
+    case Schema.decode (Number.schema ⊤) 42 of
+        Ok result →
+            Node.print (String.fromInt result)
+        Err _ →
+            Node.print "failed"
