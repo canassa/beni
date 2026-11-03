@@ -1669,6 +1669,15 @@ each path walked the argument again, and an `else if` chain of D arms made each 
 chain's and its demands) cost 626 / 1 042 / 1 833 at D = 8 / 16 / 32, now 246 / 278 / 301. Measured (Debug): `w₃ / w₅ / w₈ /
 w₁₀` 1 081 / 287 / 1 575 / 5 991, linear in the result's depth; `EvidenceDagBuildDepth32` has no limit line;
 `Schema.shapeOf` 256 826 (256 618 before); ledger: no verdict moves, 11 limit lines fewer, none new.
+*Amended 2026-11-03 (#1714):* the read-off names the result slot of a callee's slot **once per `(from, q,
+slot)`** (`ReadOff.destsOf`): the steps from a key's prefix (or a position's slot) down to an item's slot,
+replayed below the result slot `q`, are the same for every item at that slot, so the one result slot they reach
+is kept with the read-off, as a key's caller slot is once per entry (`Relation.Eval.feedBelow`). Before, each
+item of a key below a prefix walked up from its slot and replayed the steps again (one record a step, twice):
+`bench/corpus`'s `Codec.Decode.oneOfHelp`, whose recursive `Result Error a` reads 519 items at a few dozen
+slots a round, spent 69 000 of its 251 712 growth records there and now needs 182 461 (`path` 156 606 → 91 484).
+A slot the steps reach several of (a `⟲` that stands for several levels) is replayed each time. Every summary is
+the same; no account grows (`Dict.descend` 24 180 → 21 138, `Fields16` 149 250 → 137 922).
 
 ### 2.11 Calls
 
