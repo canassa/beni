@@ -1,0 +1,34 @@
+-- CK-318: a module-level callback cell retains the callback's suspension role.
+-- #1788: dev/release print [object Object]/0; expected the resumed result and write.
+-- Oracle twin: replace `answer = fire ⊤` with `answer = sleeping ⊤`.
+-- That one-line twin prints42/42 on origin/workers, twice in both build modes.
+import Io
+import Js
+import Node
+import Task
+
+
+slot : Js.Ref (⊤ → Int)
+slot = Js.ref λ⊤ → 0
+
+
+seen : Js.Ref Int
+seen = Js.ref 0
+
+
+sleeping : ⊤ → Int
+sleeping ⊤ =
+    Task.yieldNow ⊤
+    Js.write seen 42
+    42
+
+
+fire : ⊤ → Int
+fire ⊤ = (Js.read slot) ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    Js.write slot sleeping
+    answer = fire ⊤
+    Node.print "${answer}/${Js.read seen}"

@@ -6728,3 +6728,14 @@ opaque server-socket handle directly, in records/lists/unions and through a
 generic helper. The scratch HostFree compiler reports six `host_value_erasure`
 diagnostics and writes no output. The default compiler still builds it; promote
 the fixture when HostFree is enabled by default.
+
+## CK-318 — a callback in a module-level Js.Ref loses suspension (2026-11-03)
+
+**Issue:** #1788. **Fixture:** `tests/pending/run/core/ModuleRefSuspends.beni`.
+A module-level `Js.Ref (⊤ → Int)` starts with a synchronous callback, then
+receives a callback that yields, writes42 and returns42. Calling it through the
+cell returns the suspension token as an Int and skips the write: `[object Object]/0`
+in development and release, twice on both original workers b688a8ffd2 and the
+hostfree lane. The expected result is `42/42`. The one-line oracle twin invokes
+the same callback directly and prints `42/42` twice in both modes. The callback's
+role must survive storage and loads; the pending fixture preserves that contract.
