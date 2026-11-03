@@ -163,13 +163,16 @@ const Walk = struct {
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(g);
             try leavesOf(e, it.v, &ls);
-            for (ls.items) |id| {
+            for (ls.items, 0..) |id, k| {
+                // A leaf two coexisting routes reach is read twice; its second
+                // copy is at a route of its own (§2.9.3, #1748), as in `Eval.project`.
+                const route = if (k != 0 and ls.items[k - 1] == id) try e.routeStep(it.route, Ids.none_int - 1) else it.route;
                 var l = e.f.leafAt(id);
                 const rs = l.routes;
                 l.routes = 0;
                 l.tags = (try e.f.mergeTags(l.tags, it.tags)) orelse continue;
                 if (rs != 0 and !try Coexist.setsMeet(&e.f.sets.tags, g, e.account(), l.tags, rs, 0, 0)) continue;
-                try q.out.append(g, .{ .leaf = try e.f.leaf(l), .route = it.route, .routes = rs });
+                try q.out.append(g, .{ .leaf = try e.f.leaf(l), .route = route, .routes = rs });
             }
             return;
         }
