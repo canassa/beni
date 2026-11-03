@@ -1,0 +1,6 @@
+-- Native readers accept the array, typed trie and suffix-view List ABI.
+import Test
+
+
+main : Test.Program
+main = Test.program "cloudflare native lists"

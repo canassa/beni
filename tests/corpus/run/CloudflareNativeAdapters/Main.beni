@@ -1,0 +1,6 @@
+-- Typed adapters preserve documented failures and original unknown reasons.
+import Test
+
+
+main : Test.Program
+main = Test.program "cloudflare native adapters"

@@ -1,0 +1,243 @@
+-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.
+import Browser.Host.AbortSignal as AbortSignal
+import Browser.Host.Headers as Headers
+import Browser.Host.Promise as Promise
+import Browser.Host.Rejection as Rejection
+import Browser.Host.Request as Request
+import Browser.Host.Response as Response
+import Js
+
+
+pub foreign type Env
+
+
+pub foreign type ExecutionContext
+
+
+pub foreign type ObjectState
+
+
+pub foreign type Namespace
+
+
+pub foreign type Stub
+
+
+pub foreign type Service
+
+
+pub foreign type Id
+
+
+pub foreign type KV
+
+
+pub foreign type Socket
+
+
+pub foreign type Program
+
+
+pub foreign type Definition
+
+
+pub foreign type Instance
+
+
+pub foreign type SocketPair
+
+
+pub foreign pure socketEq : borrowed Socket, borrowed Socket → Bool
+
+
+pub foreign impure socketState : borrowed Socket → Int
+
+
+pub foreign impure socketSend : borrowed Socket, borrowed String → ⊤
+
+
+pub foreign impure socketClose : borrowed Socket, borrowed Int, borrowed String → ⊤
+
+
+pub foreign impure socketAttachment : borrowed Socket → Js.Value
+
+
+pub foreign impure socketAttach : borrowed Socket, borrowed Js.Value → ⊤
+
+
+pub foreign impure kv : borrowed ObjectState → Maybe KV
+
+
+pub foreign impure kvGet : borrowed KV, borrowed String → Maybe String
+
+
+pub foreign impure kvPut : borrowed KV, borrowed String, borrowed String → Bool
+
+
+pub foreign impure kvDelete : borrowed KV, borrowed String → Bool
+
+
+pub foreign impure kvKeys : borrowed KV, borrowed String → List String
+
+
+pub foreign impure program :
+      escaped sync (Request.Request, Env, ExecutionContext → Promise.Promise Response.Response)
+    , borrowed List Definition
+    → Program
+
+
+pub foreign impure definition : String, escaped sync (ObjectState, Env → Instance) → Definition
+
+
+pub foreign impure instance :
+      escaped sync (Request.Request → Promise.Promise Response.Response)
+    , escaped sync (⊤ → Promise.Promise ⊤)
+    , escaped sync (Maybe String, String, Maybe String, String → Promise.Promise Js.Value)
+    , escaped sync (Socket, Maybe String → Promise.Promise ⊤)
+    , escaped sync (Socket, Int, String, Bool → Promise.Promise ⊤)
+    , escaped sync (Socket, Rejection.Rejection → Promise.Promise ⊤)
+    → Instance
+
+
+pub foreign impure namespace : Env, String → Maybe Namespace
+
+
+pub foreign impure service : Env, String → Maybe Service
+
+
+pub foreign impure variable : Env, String → Maybe String
+
+
+pub foreign impure byName : Namespace, String → Stub
+
+
+pub foreign impure uniqueId : Namespace → Id
+
+
+pub foreign impure idFromString : Namespace, String → Maybe Id
+
+
+pub foreign impure getStub : Namespace, Id → Stub
+
+
+pub foreign impure stubId : Stub → Id
+
+
+pub foreign impure idText : Id → String
+
+
+pub foreign impure idName : Id → Maybe String
+
+
+pub foreign impure requestMethod : Request.Request → String
+
+
+pub foreign impure requestUrl : Request.Request → String
+
+
+pub foreign impure requestPath : Request.Request → String
+
+
+pub foreign impure requestHeaders : Request.Request → Headers.Headers
+
+
+pub foreign impure requestText : Request.Request → Promise.Promise String
+
+
+pub foreign impure requestCopy : Request.Request, Headers.Headers → Request.Request
+
+
+pub foreign impure requestSignal : Request.Request → Maybe AbortSignal.AbortSignal
+
+
+pub foreign impure onAbort : AbortSignal.AbortSignal, escaped sync (⊤ → ⊤) → ⊤
+
+
+pub foreign impure responseCreate : Int, Maybe String, List (String × String) → Response.Response
+
+
+pub foreign impure responseCopy : Response.Response → Response.Response
+
+
+pub foreign impure stubFetch : Stub, Request.Request → Promise.Promise Response.Response
+
+
+pub foreign impure serviceFetch : Service, Request.Request → Promise.Promise Response.Response
+
+
+pub foreign impure stubRpc : Stub, String, String, Maybe String, String → Promise.Promise Js.Value
+
+
+pub foreign impure overloaded : Rejection.Rejection → Bool
+
+
+pub foreign impure reset : Rejection.Rejection → Bool
+
+
+pub foreign impure retryable : Rejection.Rejection → Bool
+
+
+pub foreign impure errorText : Rejection.Rejection → String
+
+
+pub foreign impure randomUUID : ⊤ → String
+
+
+pub foreign impure waitUntil : ExecutionContext, borrowed Promise.Promise a → ⊤
+
+
+pub foreign impure objectWaitUntil : ObjectState, borrowed Promise.Promise a → ⊤
+
+
+pub foreign impure objectId : ObjectState → Id
+
+
+pub foreign impure objectAbort : ObjectState, String → ⊤
+
+
+pub foreign impure alarmSet : ObjectState, Int → ⊤
+
+
+pub foreign impure alarmDelete : ObjectState → ⊤
+
+
+pub foreign impure sockets : ObjectState → List Socket
+
+
+pub foreign impure socketsTagged : ObjectState, String → List Socket
+
+
+pub foreign impure acceptSocket : ObjectState, Socket, List String → ⊤
+
+
+pub foreign impure autoResponse : ObjectState, String, String → ⊤
+
+
+pub foreign impure socketPair : ⊤ → SocketPair
+
+
+pub foreign impure socketClient : SocketPair → Socket
+
+
+pub foreign impure socketServer : SocketPair → Socket
+
+
+pub foreign impure socketResponse : Socket, String → Response.Response
+
+
+pub foreign impure socketCloseEmpty : Socket → ⊤
+
+
+pub foreign impure consoleError : String → ⊤
+
+
+pub foreign impure consoleLog : String → ⊤
+
+
+pub foreign impure consoleReason : String, Rejection.Rejection → ⊤
+
+
+pub foreign impure responseResolvers : ⊤ → Promise.Resolvers Response.Response
+
+
+pub foreign impure socketInitialize : borrowed Socket, String, String, borrowed List String → ⊤

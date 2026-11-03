@@ -1,0 +1,43 @@
+import Browser.Host.Cloudflare as Native
+import Browser.Host.Promise as Promise
+import Browser.Host.Rejection as Rejection
+
+
+pub opaque type Program
+    = Program
+        (Native.KV → Bool)
+        (Native.Namespace → Bool)
+        (⊤ → Promise.Promise String)
+        (Rejection.Rejection → Promise.Promise String)
+        String
+
+
+pub program : String → Program
+program label = Program put parseId complete rejected label
+
+
+put : Native.KV → Bool
+put store = Native.kvPut store "key" "value"
+
+
+parseId : Native.Namespace → Bool
+parseId namespace =
+    case Native.idFromString namespace "invalid" of
+        Nothing →
+            False
+        Just parsed →
+            Native.idText parsed == "id"
+
+
+complete : ⊤ → Promise.Promise String
+complete ⊤ =
+    d = Promise.stringResolvers ⊤
+    Promise.resolve d "typed!"
+    Promise.promise d
+
+
+rejected : Rejection.Rejection → Promise.Promise String
+rejected reason =
+    d = Promise.stringResolvers ⊤
+    Promise.reject d reason
+    Promise.promise d
