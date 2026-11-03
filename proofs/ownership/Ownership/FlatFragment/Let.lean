@@ -33,10 +33,13 @@ structure Preserved (declarations : List Decl) (depth : Nat)
       (InPlaceSemantics.eval depth declarations none (heapEnv env) e).run hs = .ok (actual, hs') ∧
       FlatInvariant declarations vs' hs' env after aenv tenv escapes' gamma' ∧
       hs.heap.size ≤ hs'.heap.size ∧
-      Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+      Corresponds hs'.heap value actual ∧
+      Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
       obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-      Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual type ∧
-      ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual
+      Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual (entryType type) ∧
+      ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+      ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+      TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual
   failure : ∀ message,
     (ValueSemantics.eval depth declarations none (valueEnv env) e).run vs = .error message →
     ∃ actualMessage,
@@ -63,12 +66,13 @@ at typed field paths; every other use was live after the right-hand side. -/
 theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {live' : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin} {v : Var} {x : Observation} {w : Value} {a : Abstract} {ty : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (fresh : v ∉ env.map Prod.fst)
-    (paired : Corresponds hs.heap x w) (described : Describes gamma hs.heap a w)
+    (paired : Corresponds hs.heap x w) (described : Describes gamma hs.heap (entryAbstract declarations ty a) w)
     (flatType : FlatType ty) (flatAbstract : FlatAbstract ty a)
     (observed : obsTyped declarations x ty = true)
-    (shape : Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap w ty)
-    (tags : ResultTags ty a w) (chains : ChainTags ty a x)
-    (deep : TagsDeep hs.heap ty a w)
+    (shape : Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap w (entryType ty))
+    (tags : ResultTags (entryType ty) (entryAbstract declarations ty a) w)
+    (chains : ChainTags (entryType ty) (entryAbstract declarations ty a) x)
+    (deep : TagsDeep hs.heap (entryType ty) (entryAbstract declarations ty a) w)
     (liveSub : ∀ use ∈ live', use.1 = v ∨ use ∈ live)
     (liveTyped : ∀ p, (v, p) ∈ live' → ∃ t, tyAt ty p = some t) :
     FlatInvariant declarations vs hs ((v, x, w) :: env) live' ((v, a) :: aenv) ((v, ty) :: tenv)
@@ -102,7 +106,8 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
         cases Option.some.inj binding
         cases Option.some.inj declared
         cases Option.some.inj abstractBinding
-        exact tagsDeep_project deep flatAbstract at_p valuePath
+        have projected := tagsDeep_project deep (flatAbstract_entry flatAbstract) (tyAt_entryType at_p) valuePath
+        rwa [entryAbstract_atPath flatAbstract at_p] at projected
       · rw [lookup_cons_other _ _ _ same] at binding declared abstractBinding
         rcases liveSub _ use with equal | old
         · exact absurd equal same
@@ -120,7 +125,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       obtain ⟨t, at_p⟩ := liveTyped p use
       rw [lookup_cons_same] at binding
       cases Option.some.inj binding
-      obtain ⟨w', valuePath, _⟩ := projectVal_of_tyAt shape at_p
+      obtain ⟨w', valuePath, _⟩ := projectVal_of_tyAt shape (tyAt_entryType at_p)
       obtain ⟨x', obsPath, _⟩ := projectObs_of_tyAt observed at_p
       exact ⟨x', w', obsPath, valuePath, corresponds_project paired valuePath obsPath⟩
     · rw [lookup_cons_other _ _ _ same] at binding
@@ -135,8 +140,8 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
       cases Option.some.inj declared
-      rw [entryAbstract_atPath_flat flatAbstract at_p]
-      exact describes_project flatAbstract at_p described valuePath
+      rw [fieldType_of_tyAt at_p, ← entryAbstract_atPath flatAbstract at_p]
+      exact describes_project (flatAbstract_entry flatAbstract) (tyAt_entryType at_p) described valuePath
     · rw [lookup_cons_other _ _ _ same] at binding abstractBinding declared
       rcases liveSub _ use with equal | old
       · exact absurd equal same
@@ -147,7 +152,9 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       rw [lookup_cons_same] at binding abstractBinding
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
-      exact named_cellsAt_of_covers shape flatAbstract described.1.1 located immutable
+      obtain ⟨origin, member, address⟩ :=
+        named_cellsAt_of_covers shape (flatAbstract_entry flatAbstract) described.1.1 located immutable
+      exact ⟨origin, mem_cellsAt_entryAbstract_immutable flatAbstract immutable member, address⟩
     · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
       exact inv.named key o w' a' binding abstractBinding q c immutable located
   · intro key ty' declared
@@ -174,7 +181,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       rw [lookup_cons_same] at binding declared
       cases Option.some.inj binding
       cases Option.some.inj declared
-      obtain ⟨w'', valuePath, shape'⟩ := projectVal_of_tyAt shape at_p
+      obtain ⟨w'', valuePath, shape'⟩ := projectVal_of_tyAt shape (tyAt_entryType at_p)
       obtain ⟨x', obsPath, observed'⟩ := projectObs_of_tyAt observed at_p
       exact ⟨t, x', w'', at_p, obsPath, valuePath, observed', shape'⟩
     · rw [lookup_cons_other _ _ _ same] at binding declared

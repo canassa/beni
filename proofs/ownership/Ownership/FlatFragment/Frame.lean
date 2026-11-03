@@ -57,8 +57,8 @@ theorem described_flat_frame {next : Heap} {w w' : Value} {o : Observation} {gam
     (namingSame : ∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin))
     (use : (x, p) ∈ live)
     (binding : env.lookup x = some (o, w)) (abstractBinding : aenv.lookup x = some a)
-    (valuePath : projectVal w p = some w') (described : Describes gamma hs.heap (a.atPath p) w') :
-    Describes gamma' next (a.atPath p) w' := by
+    (valuePath : projectVal w p = some w') {b : Abstract} (described : Describes gamma hs.heap b w') :
+    Describes gamma' next b w' := by
   obtain ⟨ty, declared⟩ := lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
   obtain ⟨t, o', w'', _, _, valuePath', _, shape'⟩ := inv.bindingsTyped x p use o w ty binding declared
   rw [valuePath] at valuePath'
@@ -118,7 +118,7 @@ theorem flatInvariant_heap_frame {gamma : Naming}
   have bindingsTyped' : ∀ x p, (x, p) ∈ live' → ∀ o w ty, env.lookup x = some (o, w) →
       tenv.lookup x = some ty →
       ∃ t o' w', tyAt ty p = some t ∧ projectObs o p = some o' ∧ projectVal w p = some w' ∧
-        obsTyped declarations o' t = true ∧ AllocatedFlatValue hs'.heap w' t := by
+        obsTyped declarations o' t = true ∧ AllocatedFlatValue hs'.heap w' (entryType t) := by
     intro x p use o w ty binding declared
     obtain ⟨t, o', w', at_p, obsPath, valuePath, observed, shape⟩ :=
       inv.bindingsTyped x p (liveSub _ use) o w ty binding declared
@@ -184,11 +184,10 @@ theorem flatInvariant_heap_frame {gamma : Naming}
       inv.bindings x p (liveSub _ use) o w binding
     exact ⟨o', w', observationPath, valuePath,
       corresponds_of_agree (liveAgree x p use o w w' binding valuePath) paired⟩
-  · refine described_typed_of_flat inv.abstractShapes
-      (fun x p ty member declared => inv.liveTyped x p ty (liveSub _ member) declared) ?_
-    intro x p use o w a w' binding abstractBinding valuePath
+  · intro x p use o w a ty w' binding abstractBinding declared valuePath
     exact described_flat_frame inv (liveAgree x p use o w w' binding valuePath) namingSame (liveSub _ use)
-      binding abstractBinding valuePath (inv.described x p (liveSub _ use) o w a w' binding abstractBinding valuePath)
+      binding abstractBinding valuePath
+      (inv.toInvariant.described x p (liveSub _ use) o w a ty w' binding abstractBinding declared valuePath)
   · intro x o w a binding abstractBinding q c immutable located
     exact named_flat_frame inv namingSame binding abstractBinding immutable located
 

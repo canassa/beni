@@ -190,7 +190,7 @@ fixes the operand types to the element type, the live uses supply the values,
 the fresh array is described by the fold of the items' abstracts, and the
 checker's exclusivity and spine certificates hold for its footprint. -/
 theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {args : List Atom} {self : Decl} {type : Ty} {t : Ty}
-    (elemT : FlatType t)
+    (elemT : FlatType t) (elemFree : DictFree t)
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim (.literal t) args) = .ok type)
     (covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live)
@@ -231,7 +231,10 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
     obtain ⟨ty, types_i⟩ := index_of_same_length lenO os_i
     have facts := fields i o w a ty os_i ws_i as_i types_i
     rw [typesT ty (List.mem_of_getElem? types_i)] at facts
-    exact facts
+    obtain ⟨paired, described, observed, valueTyped, flat, shape, allocated, tags, chains, deep⟩ := facts
+    rw [entryType_of_dictFree elemFree] at allocated tags chains deep
+    rw [entryAbstract_of_dictFree elemFree shape] at described tags chains deep
+    exact ⟨paired, described, observed, valueTyped, flat, shape, allocated, tags, chains, deep⟩
   have witnesses : ∀ (i : Nat) w, ws[i]? = some w → ∃ o a, os[i]? = some o ∧ as[i]? = some a := by
     intro i w ws_i
     obtain ⟨o, os_i⟩ := index_of_same_length (lenW.trans lenO.symm) ws_i
@@ -255,7 +258,7 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
   obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
   have resultEq := first.symm
   have nextEscapes : next.facts.escapes = before.facts.escapes := by rw [← second]
-  refine ⟨.list t elemT, nextEscapes, by rw [resultEq]; exact .list _ _ _ _ (by simp) foldShape, ?_, ?_⟩
+  refine ⟨.list t elemT elemFree, nextEscapes, by rw [resultEq]; exact .list _ _ _ _ (by simp) foldShape, ?_, ?_⟩
   · intro value vs' run'
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
@@ -446,6 +449,7 @@ theorem primType_length_success {type : Ty} {ty : Ty} (flat : FlatType ty) (run 
   | int => simp [primType] at run
   | record _ _ => simp [primType] at run
   | result _ _ _ _ => simp [primType] at run
+  | dict _ _ _ => simp [primType] at run
   | chainInt => simp [primType] at run
   | list t _ =>
     simp [primType] at run
@@ -1077,10 +1081,13 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           (.prim .shared [atom])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .shared [atom])).run vs = .error message →
@@ -1089,7 +1096,7 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           (.prim .shared [atom])).run hs = .error actualMessage) := by
   have atomTyped := exprType_shared_success typed
   obtain ⟨x, v, a, valueAtom, heapAtom, abstractValue, paired, described, observed, valueTyped,
-    flatType, shape, allocated, tags, chains, deepTags⟩ := flat_atom_values inv atomTyped covered
+    flatType, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv atomTyped covered
   have abstractAtoms : [atom].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
     except_mapM_cons abstractValue rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
@@ -1103,8 +1110,14 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
     congrArg (fun s : St => s.facts.escapes) second
   have resultFlat : FlatAbstract type result := by
     rw [← first]; exact flatAbstract_mapOrigins sharedMark (fun path cs h => sharedMark_no_unknown path h) shape []
-  have resultDescribed : Describes gamma hs.heap result v := by
-    rw [← first]; exact describes_mapOrigins_shared allocated shape described []
+  have typedResult : entryAbstract declarations type result =
+      (entryAbstract declarations type a).mapOrigins
+        (fun _ cs => if cs.isEmpty then [] else union cs [Origin.shared]) [] := by
+    rw [← first]
+    exact entryAbstract_mapOrigins (fun _ cs => if cs.isEmpty then [] else union cs [Origin.shared])
+      (fun _ _ _ => rfl) shape [] []
+  have resultDescribed : Describes gamma hs.heap (entryAbstract declarations type result) v := by
+    rw [typedResult]; exact describes_mapOrigins_shared allocated (flatAbstract_entry shape) described []
   have mono : ∀ origin, Escaped before.facts.escapes origin → Escaped next.facts.escapes origin := by
     intro origin escaped
     rw [escapesEq]
@@ -1113,7 +1126,8 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
       Escaped next.facts.escapes origin := by
     intro c reachable origin member
     obtain ⟨q, located⟩ := arrayAt_of_reaches reachable
-    have names := named_cells_of_covers shape described.1.1 located
+    obtain ⟨o', typedMember, address⟩ := named_cells_of_covers (flatAbstract_entry shape) described.1.1 located
+    have names : named gamma a.cells c := ⟨o', mem_cells_entryAbstract typedMember, address⟩
     rw [escapesEq]
     exact named_cell_escaped inv.separating names member (fun o h => h)
   have valueAtoms : [atom].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
@@ -1153,9 +1167,9 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         · rw [heapSame]; exact resultDescribed
         · rw [heapSame]; exact valueTyped
         · rw [heapSame]; exact allocated
-        · rw [← first]; exact resultTags_mapOrigins _ tags []
-        · rw [← first]; exact chainTags_mapOrigins _ chains []
-        · rw [heapSame, ← first]; exact tagsDeep_mapOrigins _ deepTags []
+        · rw [typedResult]; exact resultTags_mapOrigins _ tags []
+        · rw [typedResult]; exact chainTags_mapOrigins _ chains []
+        · rw [heapSame, typedResult]; exact tagsDeep_mapOrigins _ deepTags []
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1433,8 +1447,11 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
   obtain ⟨root, ys, os, roots, element, certificate, lookup, receiverNamed, noUnk, elemT, elemTags, elemShape,
     elemsShaped, elemsDescribed, lenO, elemsTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
+  have elemFree : DictFree t := by
+    cases Ownership.FlatFragment.Length.flat_atom_type inv receiverTyped with
+    | list _ _ free => exact free
   obtain ⟨o, w, aN, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN,
-    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredI
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredI elemFree
   have abstractAtoms : [receiver, item].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots element certificate, aN] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractItem rfl)
@@ -1454,7 +1471,7 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
-  refine ⟨.list t elemT, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape shapeN),
+  refine ⟨.list t elemT elemFree, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape shapeN),
     ?_, ?_⟩
   · intro value vs' run'
     have valueAtoms : [receiver, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
@@ -1652,10 +1669,13 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           (.prim .record args)).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .record args)).run vs = .error message →
@@ -1715,11 +1735,13 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i
           exact (fields i o w a t os_i ws_i as_i types_i).1
         · rw [heapSame, resultEq]
-          refine describes_record_of_fields (lenA.trans lenW.symm) ?_
-          intro i a w as_i ws_i
-          obtain ⟨t, types_i⟩ := index_of_same_length lenA as_i
+          refine describes_record_of_fields (by rw [entryFields_length]; exact lenA.trans lenW.symm) ?_
+          intro i a' w as_i ws_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨t, types_i⟩ := index_of_same_length lenA as_i'
           obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.1
+          rw [types_i]
+          exact (fields i o w a t os_i ws_i as_i' types_i).2.1
         · refine obsTyped_record_of_fields lenO ?_
           intro i o t os_i types_i
           obtain ⟨w, ws_i⟩ := index_of_same_length lenW.symm types_i
@@ -1732,26 +1754,39 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i
           exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.1
         · rw [heapSame]
-          refine .record ws types lenW ?_
-          intro i w t ws_i types_i
-          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
-          obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.2.2.2.1
+          refine .record ws (entryTypes types) (by rw [entryTypes_length]; exact lenW) ?_
+          intro i w t' ws_i types_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i'
+          obtain ⟨a, as_i⟩ := index_of_same_length lenA.symm types_i'
+          exact (fields i o w a t os_i ws_i as_i types_i').2.2.2.2.2.2.1
         · rw [resultEq]
-          refine .record types as ws lenA.symm ?_
-          intro i t a w types_i as_i ws_i
-          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.2.2.2.2.1
+          refine .record (entryTypes types) (entryFields declarations types as) ws
+            (by rw [entryTypes_length, entryFields_length]; exact lenA.symm) ?_
+          intro i t' a' w types_i as_i ws_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i'
+          rw [types_i']
+          exact (fields i o w a t os_i ws_i as_i' types_i').2.2.2.2.2.2.2.1
         · rw [resultEq]
-          refine .record types as os lenA.symm ?_
-          intro i t a o types_i as_i os_i
-          obtain ⟨w, ws_i⟩ := index_of_same_length lenW.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.2.2.2.2.2.1
+          refine .record (entryTypes types) (entryFields declarations types as) os
+            (by rw [entryTypes_length, entryFields_length]; exact lenA.symm) ?_
+          intro i t' a' o types_i as_i os_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨w, ws_i⟩ := index_of_same_length lenW.symm types_i'
+          rw [types_i']
+          exact (fields i o w a t os_i ws_i as_i' types_i').2.2.2.2.2.2.2.2.1
         · rw [heapSame, resultEq]
-          refine .record types as ws lenA.symm ?_
-          intro i t a w types_i as_i ws_i
-          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i
-          exact (fields i o w a t os_i ws_i as_i types_i).2.2.2.2.2.2.2.2.2
+          refine .record (entryTypes types) (entryFields declarations types as) ws
+            (by rw [entryTypes_length, entryFields_length]; exact lenA.symm) ?_
+          intro i t' a' w types_i as_i ws_i
+          obtain ⟨t, types_i', rfl⟩ := entryTypes_index_inv types_i
+          obtain ⟨a, as_i', rfl⟩ := entryFields_index_inv as_i
+          obtain ⟨o, os_i⟩ := index_of_same_length lenO.symm types_i'
+          rw [types_i']
+          exact (fields i o w a t os_i ws_i as_i' types_i').2.2.2.2.2.2.2.2.2
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1839,7 +1874,7 @@ theorem result_runtime_success {declarations : List Decl} {vs : ValueSemantics.S
 
 /-- Both runtime directions of a result constructor from the operand's facts:
 the record of the tag, the payload and the dead integer. -/
-theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {op : Prim} {x : Atom} {o : Observation} {w : Value} {escapes : List Origin} {type : Ty} {result : Abstract}
+theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {op : Prim} {x : Atom} {o : Observation} {w : Value} {escapes : List Origin} {type shapeType : Ty} {result : Abstract}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (valueAtom : ValueSemantics.atom (valueEnv env) x = .ok o)
     (heapAtom : InPlaceSemantics.atom (heapEnv env) x = .ok w)
@@ -1848,9 +1883,9 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
     (paired : Corresponds hs.heap value actual) (described : Describes gamma hs.heap result actual)
     (observed : obsTyped declarations value type = true)
     (valueTyped : ValueTyped declarations hs.heap actual type)
-    (shaped : AllocatedFlatValue hs.heap actual type)
-    (tags : ResultTags type result actual) (chains : ChainTags type result value)
-    (deepTags : TagsDeep hs.heap type result actual) :
+    (shaped : AllocatedFlatValue hs.heap actual shapeType)
+    (tags : ResultTags shapeType result actual) (chains : ChainTags shapeType result value)
+    (deepTags : TagsDeep hs.heap shapeType result actual) :
     (∀ value' vs',
       (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [x])).run vs =
         .ok (value', vs') →
@@ -1861,8 +1896,9 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
         hs.heap.size ≤ hs'.heap.size ∧
         Corresponds hs'.heap value' actual' ∧ Describes gamma' hs'.heap result actual' ∧
         obsTyped declarations value' type = true ∧ ValueTyped declarations hs'.heap actual' type ∧
-        AllocatedFlatValue hs'.heap actual' type ∧
-        ResultTags type result actual' ∧ ChainTags type result value' ∧ TagsDeep hs'.heap type result actual') ∧
+        AllocatedFlatValue hs'.heap actual' shapeType ∧
+        ResultTags shapeType result actual' ∧ ChainTags shapeType result value' ∧
+        TagsDeep hs'.heap shapeType result actual') ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [x])).run vs =
         .error message →
@@ -1963,10 +1999,13 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
           (.prim (.ok error) [x])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.ok error) [x])).run vs = .error message →
@@ -1975,7 +2014,7 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
           (.prim (.ok error) [x])).run hs = .error actualMessage) := by
   obtain ⟨t, atomTyped, rfl⟩ := exprType_ok_success typed
   obtain ⟨o, w, a, valueAtom, heapAtom, abstractValue, paired, described, observed, valueTyped,
-    flatT, shape, allocated, tags, chains, deepTags⟩ := flat_atom_values inv atomTyped covered
+    flatT, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv atomTyped covered
   have abstractAtoms : [x].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
     except_mapM_cons abstractValue rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
@@ -1988,14 +2027,24 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
   refine ⟨rfl, .result error t flatError flatT, ?_, ?_⟩
   · rw [resultEq]
     exact .result error t .bottom a (.bottom _) shape
-  · rw [resultEq]
-    refine result_preserved_of_parts (value := .record [.int 1, .int 0, o])
+  · have typedResult : entryAbstract declarations (.result error t) (.record [.scalar, .bottom, a]) =
+        .record [.scalar, .bottom, entryAbstract declarations t a] := by
+      show Abstract.record [entryAbstract declarations .int .scalar, entryAbstract declarations error .bottom,
+        entryAbstract declarations t a] = _
+      rw [entryAbstract_bottom]
+      rfl
+    have observedOk : obsTyped declarations (.record [.int 1, .int 0, o]) (.result error t) = true := by
+      simpa [obsTyped] using observed
+    rw [resultEq, typedResult]
+    exact result_preserved_of_parts (value := .record [.int 1, .int 0, o])
       (actual := .record [.int 1, .int 0, w]) inv valueAtom heapAtom
       (fun s => value_ok_run error s o) (fun s => heap_ok_run error s w)
-      (corresponds_ok paired) (describes_ok described) ?_
-      (valueTyped_of_allocated (.ok error t w allocated)) (.ok error t w allocated)
-      (.ok error t _ _ _ w (resultTags_ne_bottom tags) tags) (.ok error t _ _ _ o chains) (.ok error t _ _ _ w deepTags)
-    simpa [obsTyped] using observed
+      (corresponds_ok paired) (describes_ok described) observedOk
+      (valueTyped_of_corresponds (corresponds_ok paired) observedOk)
+      (.ok (entryType error) (entryType t) w allocated)
+      (.ok (entryType error) (entryType t) _ _ _ w (resultTags_ne_bottom tags) tags)
+      (.ok (entryType error) (entryType t) _ _ _ o chains)
+      (.ok (entryType error) (entryType t) _ _ _ w deepTags)
 
 theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {success : Ty} {x : Atom} {self : Decl} {type : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
@@ -2014,10 +2063,13 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           (.prim (.err success) [x])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.err success) [x])).run vs = .error message →
@@ -2026,7 +2078,7 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           (.prim (.err success) [x])).run hs = .error actualMessage) := by
   obtain ⟨t, atomTyped, rfl⟩ := exprType_err_success typed
   obtain ⟨o, w, a, valueAtom, heapAtom, abstractValue, paired, described, observed, valueTyped,
-    flatT, shape, allocated, tags, chains, deepTags⟩ := flat_atom_values inv atomTyped covered
+    flatT, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv atomTyped covered
   have abstractAtoms : [x].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
     except_mapM_cons abstractValue rfl
   obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
@@ -2040,14 +2092,24 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
   refine ⟨rfl, .result t success flatT flatSuccess, ?_, ?_⟩
   · rw [resultEq]
     exact .result t success a .bottom shape (.bottom _)
-  · rw [resultEq]
-    refine result_preserved_of_parts (value := .record [.int 0, o, .int 0])
+  · have typedResult : entryAbstract declarations (.result t success) (.record [.scalar, a, .bottom]) =
+        .record [.scalar, entryAbstract declarations t a, .bottom] := by
+      show Abstract.record [entryAbstract declarations .int .scalar, entryAbstract declarations t a,
+        entryAbstract declarations success .bottom] = _
+      rw [entryAbstract_bottom]
+      rfl
+    have observedErr : obsTyped declarations (.record [.int 0, o, .int 0]) (.result t success) = true := by
+      simpa [obsTyped] using observed
+    rw [resultEq, typedResult]
+    exact result_preserved_of_parts (value := .record [.int 0, o, .int 0])
       (actual := .record [.int 0, w, .int 0]) inv valueAtom heapAtom
       (fun s => value_err_run success s o) (fun s => heap_err_run success s w)
-      (corresponds_err paired) (describes_err described) ?_
-      (valueTyped_of_allocated (.err t success w allocated)) (.err t success w allocated)
-      (.err t success _ _ _ w (resultTags_ne_bottom tags) tags) (.err t success _ _ _ o chains) (.err t success _ _ _ w deepTags)
-    simpa [obsTyped] using observed
+      (corresponds_err paired) (describes_err described) observedErr
+      (valueTyped_of_corresponds (corresponds_err paired) observedErr)
+      (.err (entryType t) (entryType success) w allocated)
+      (.err (entryType t) (entryType success) _ _ _ w (resultTags_ne_bottom tags) tags)
+      (.err (entryType t) (entryType success) _ _ _ o chains)
+      (.err (entryType t) (entryType success) _ _ _ w deepTags)
 
 end Ownership.FlatFragment.Result
 
@@ -2612,8 +2674,11 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
     elemsDescribed, lenO, elemsTyped, pointwise, _, _, valueReceiver, heapReceiver, abstractReceiver⟩ :=
     flat_atom_list_path inv receiverTyped coveredR
   obtain ⟨i, valueIndex, heapIndex, abstractIndex⟩ := flat_atom_integer inv indexTyped coveredI
+  have elemFree : DictFree t := by
+    cases Ownership.FlatFragment.Length.flat_atom_type inv receiverTyped with
+    | list _ _ free => exact free
   obtain ⟨d, w, aD, valueFallback, heapFallback, abstractFallback, pairedD, describedD, observedD, _, _,
-    shapeD, allocatedD, tagsD, chainsD, deepD⟩ := flat_atom_values inv fallbackTyped coveredD
+    shapeD, allocatedD, tagsD, chainsD, deepD⟩ := flat_atom_values inv fallbackTyped coveredD elemFree
   have abstractAtoms : [receiver, index, fallback].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots element certificate, .scalar, aD] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractIndex (except_mapM_cons abstractFallback rfl))
@@ -2888,8 +2953,11 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
     elemsShaped, elemsDescribed, lenO, elemsTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
   obtain ⟨i, valueIndex, heapIndex, abstractIndex⟩ := flat_atom_integer inv indexTyped coveredI
+  have elemFree : DictFree t := by
+    cases Ownership.FlatFragment.Length.flat_atom_type inv receiverTyped with
+    | list _ _ free => exact free
   obtain ⟨o, w, aN, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN,
-    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredV
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredV elemFree
   have abstractAtoms : [receiver, index, item].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots element certificate, .scalar, aN] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractIndex (except_mapM_cons abstractItem rfl))
@@ -2909,7 +2977,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
-  refine ⟨.list t elemT, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape shapeN),
+  refine ⟨.list t elemT elemFree, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape shapeN),
     ?_, ?_⟩
   · intro value vs' run'
     have valueAtoms : [receiver, index, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
@@ -3206,6 +3274,9 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           (.prim .copy [receiver])).run hs = .error actualMessage) := by
   obtain ⟨t, receiverTyped, listType⟩ := exprType_copy_success (fun _ _ h => flat_atom_type inv h) typed
   subst listType
+  have elemFree : DictFree t := by
+    cases Ownership.FlatFragment.Length.flat_atom_type inv receiverTyped with
+    | list _ _ free => exact free
   obtain ⟨root, ys, os, roots, element, certificate, lookup, _, _, elemT, elemTags, elemShape, elemsShaped,
     elemsDescribed, lenO, elemsTyped, pointwise, _, _, valueReceiver, heapReceiver, abstractReceiver⟩ :=
     flat_atom_list_path inv receiverTyped covered
@@ -3227,7 +3298,7 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
       .ok [.list os] := except_mapM_cons valueReceiver rfl
   have heapAtoms : [receiver].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root] := except_mapM_cons heapReceiver rfl
-  refine ⟨.list t elemT, nextEscapes, by rw [resultEq]; exact .list _ _ _ _ (by simp) elemShape, ?_, ?_⟩
+  refine ⟨.list t elemT elemFree, nextEscapes, by rw [resultEq]; exact .list _ _ _ _ (by simp) elemShape, ?_, ?_⟩
   · intro value vs' run
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
@@ -3434,8 +3505,11 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
   obtain ⟨t, itemTyped, receiverTyped, listType⟩ :=
     exprType_prepend_success (fun _ _ h => flat_atom_type inv h) typed
   subst listType
+  have elemFree : DictFree t := by
+    cases Ownership.FlatFragment.Length.flat_atom_type inv receiverTyped with
+    | list _ _ free => exact free
   obtain ⟨o, w, aN, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN,
-    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredI
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredI elemFree
   obtain ⟨root, ys, os, roots, element, certificate, lookup, receiverNamed, noUnk, elemT, elemTags, elemShape,
     elemsShaped, elemsDescribed, lenO, elemsTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
@@ -3458,7 +3532,7 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
     rcases mem_union_cases _ _ _ member with fresh | old
     · simp at fresh
     · exact noUnk old
-  refine ⟨.list t elemT, nextEscapes,
+  refine ⟨.list t elemT elemFree, nextEscapes,
     by rw [resultEq]; exact .list _ _ _ _ noUnkNew (flatAbstract_join shapeN elemShape), ?_, ?_⟩
   · intro value vs' run
     by_cases noDepth : depth = 0

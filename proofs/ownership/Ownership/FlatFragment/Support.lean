@@ -14,15 +14,47 @@ operation. They do not replace its test with an external permission oracle. -/
 
 namespace Ownership.FlatFragment.State
 
+/-- A type that holds no dictionary at any position. -/
+inductive DictFree : Ty → Prop where
+  | int : DictFree .int
+  | list (t : Ty) : DictFree t → DictFree (.list t)
+  | chain (t : Ty) : DictFree t → DictFree (.chain t)
+  | builder (t : Ty) : DictFree t → DictFree (.builder t)
+  | record (ts : List Ty) : (∀ t ∈ ts, DictFree t) → DictFree (.record ts)
+  | result (error success : Ty) : DictFree error → DictFree success →
+      DictFree (.result error success)
+  | fn (parameters : List Ty) (result : Ty) : DictFree (.fn parameters result)
+
 /-- The types of the flat fragment: integers, lists of flat types, integer
-chains, records and results. A list can hold results and chains. -/
+chains, records, results and dictionaries (#522). A list can hold results and
+chains. A list element and a dictionary's value hold no dictionary; a record
+or a result can hold one. -/
 inductive FlatType : Ty → Prop where
   | int : FlatType .int
-  | list (t : Ty) : FlatType t → FlatType (.list t)
+  | list (t : Ty) : FlatType t → DictFree t → FlatType (.list t)
   | chainInt : FlatType (.chain .int)
   | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
   | result (error success : Ty) : FlatType error → FlatType success →
       FlatType (.result error success)
+  | dict (t : Ty) : FlatType t → DictFree t → FlatType (.dict t)
+
+mutual
+/-- The type of a value's concrete representation: a dictionary of `t` is a
+    list of entry records `[Int, t]` (#1796). Every other type keeps its
+    shape. -/
+def entryType : Ty → Ty
+  | .dict t => .list (.record [.int, entryType t])
+  | .list t => .list (entryType t)
+  | .chain t => .chain (entryType t)
+  | .builder t => .builder (entryType t)
+  | .record ts => .record (entryTypes ts)
+  | .result e a => .result (entryType e) (entryType a)
+  | .int => .int
+  | .fn ps r => .fn ps r
+def entryTypes : List Ty → List Ty
+  | [] => []
+  | t :: ts => entryType t :: entryTypes ts
+end
 
 end Ownership.FlatFragment.State
 
@@ -93,7 +125,8 @@ Each branch or case arm is itself a fragment expression. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
-  | literal (t : Ty) : Ownership.FlatFragment.State.FlatType t → FlatANF0 (.prim (.literal t) args)
+  | literal (t : Ty) : Ownership.FlatFragment.State.FlatType t → Ownership.FlatFragment.State.DictFree t →
+      FlatANF0 (.prim (.literal t) args)
   | push : FlatANF0 (.prim .push [receiver, item])
   | length : FlatANF0 (.prim .length [receiver])
   | shared : FlatANF0 (.prim .shared [value])
@@ -585,6 +618,9 @@ inductive FlatAbstract : Ty → Abstract → Prop where
   | list (t : Ty) (roots : List Origin) (element : Abstract) (certificate : Certificate) :
       Origin.unknown ∉ roots → FlatAbstract t element →
       FlatAbstract (.list t) (.list roots element certificate)
+  | dict (t : Ty) (roots : List Origin) (value : Abstract) (certificate : Certificate) :
+      Origin.unknown ∉ roots → FlatAbstract t value →
+      FlatAbstract (.dict t) (.list roots value certificate)
   | chainBottom (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.chain .int) (.list roots .bottom certificate)
   | chainScalar (roots : List Origin) (certificate : Certificate) :
@@ -611,26 +647,240 @@ theorem entryFields_of_flat {ds : List Decl} :
   | [], _ :: _, lengths, _ => by simp at lengths
   | _ :: _, [], lengths, _ => by simp at lengths
 
-/-- A flat type has no dictionary and no function, so reading a flat abstract
-    through its type changes nothing (#1796). -/
-theorem entryAbstract_of_flatAbstract {ds : List Decl} {t : Ty} {a : Abstract}
-    (shape : FlatAbstract t a) : entryAbstract ds t a = a := by
+theorem entryAbstract_bottom (ds : List Decl) (t : Ty) : entryAbstract ds t .bottom = .bottom := by
+  cases t <;> rfl
+
+theorem entryAbstract_scalar (ds : List Decl) (t : Ty) : entryAbstract ds t .scalar = .scalar := by
+  cases t <;> rfl
+
+theorem entryAbstract_symbolic (ds : List Decl) (t : Ty) (slot : Nat) (ty : Ty) (cs es : List Origin) :
+    entryAbstract ds t (.symbolic slot ty cs es) = .symbolic slot ty cs es := by
+  cases t <;> rfl
+
+theorem entryAbstract_function (ds : List Decl) (t : Ty) (cs : List Origin)
+    (alts : List (Nat × List Abstract)) :
+    entryAbstract ds t (.function cs alts) = .function cs (entryAlternatives ds alts) := by
+  cases t <;> rfl
+
+theorem entryAbstract_list (ds : List Decl) (t : Ty) (cs : List Origin) (x : Abstract)
+    (ex : Certificate) : ∃ y, entryAbstract ds t (.list cs x ex) = .list cs y ex := by
+  cases t <;> exact ⟨_, rfl⟩
+
+theorem entryAbstract_record (ds : List Decl) (t : Ty) (xs : List Abstract) :
+    ∃ ys, entryAbstract ds t (.record xs) = .record ys := by
+  cases t <;> exact ⟨_, rfl⟩
+
+/-- Field `i` of fields read through their types is field `i` read through
+    type `i` (`Int` past the types). -/
+theorem entryFields_getElem? (ds : List Decl) :
+    ∀ (ts : List Ty) (xs : List Abstract) (i : Nat),
+      (entryFields ds ts xs)[i]? = xs[i]?.map (entryAbstract ds (ts[i]?.getD .int))
+  | ts, [], i => by cases ts <;> rfl
+  | [], x :: xs, 0 => rfl
+  | [], x :: xs, i + 1 => by
+    show (entryFields ds [] xs)[i]? = _
+    rw [entryFields_getElem? ds [] xs i]
+    rfl
+  | t :: ts, x :: xs, 0 => rfl
+  | t :: ts, x :: xs, i + 1 => by
+    show (entryFields ds ts xs)[i]? = _
+    rw [entryFields_getElem? ds ts xs i]
+    rfl
+
+theorem entryFields_length (ds : List Decl) :
+    ∀ (ts : List Ty) (xs : List Abstract), (entryFields ds ts xs).length = xs.length
+  | ts, [] => by cases ts <;> rfl
+  | [], _ :: xs => by
+    show (entryFields ds [] xs).length + 1 = xs.length + 1
+    rw [entryFields_length ds [] xs]
+  | _ :: ts, _ :: xs => by
+    show (entryFields ds ts xs).length + 1 = xs.length + 1
+    rw [entryFields_length ds ts xs]
+
+theorem entryTypes_getElem? : ∀ (ts : List Ty) (i : Nat), (entryTypes ts)[i]? = ts[i]?.map entryType
+  | [], _ => rfl
+  | _ :: _, 0 => rfl
+  | _ :: ts, i + 1 => by
+    show (entryTypes ts)[i]? = _
+    rw [entryTypes_getElem? ts i]
+    rfl
+
+theorem entryTypes_length : ∀ (ts : List Ty), (entryTypes ts).length = ts.length
+  | [] => rfl
+  | _ :: ts => by
+    show (entryTypes ts).length + 1 = ts.length + 1
+    rw [entryTypes_length ts]
+
+theorem entryTypes_index {ts : List Ty} {i : Nat} {t : Ty} (found : ts[i]? = some t) :
+    (entryTypes ts)[i]? = some (entryType t) := by
+  rw [entryTypes_getElem?, found]; rfl
+
+theorem entryTypes_index_inv {ts : List Ty} {i : Nat} {t' : Ty} (found : (entryTypes ts)[i]? = some t') :
+    ∃ t, ts[i]? = some t ∧ t' = entryType t := by
+  rw [entryTypes_getElem?] at found
+  cases original : ts[i]? with
+  | none => rw [original] at found; cases found
+  | some t => rw [original] at found; exact ⟨t, rfl, (Option.some.inj found).symm⟩
+
+theorem entryFields_index {ds : List Decl} {ts : List Ty} {as : List Abstract} {i : Nat} {t : Ty} {a : Abstract}
+    (typeAt : ts[i]? = some t) (found : as[i]? = some a) :
+    (entryFields ds ts as)[i]? = some (entryAbstract ds t a) := by
+  rw [entryFields_getElem?, found, typeAt]; rfl
+
+theorem entryFields_index_inv {ds : List Decl} {ts : List Ty} {as : List Abstract} {i : Nat} {a' : Abstract}
+    (found : (entryFields ds ts as)[i]? = some a') :
+    ∃ a, as[i]? = some a ∧ a' = entryAbstract ds (ts[i]?.getD .int) a := by
+  rw [entryFields_getElem?] at found
+  cases original : as[i]? with
+  | none => rw [original] at found; cases found
+  | some a => rw [original] at found; exact ⟨a, rfl, (Option.some.inj found).symm⟩
+
+/-- A type with no dictionary is its own representation. -/
+theorem entryType_of_dictFree {t : Ty} (free : DictFree t) : entryType t = t := by
+  induction free with
+  | int => rfl
+  | list t _ ih => show Ty.list (entryType t) = _; rw [ih]
+  | chain t _ ih => show Ty.chain (entryType t) = _; rw [ih]
+  | builder t _ ih => show Ty.builder (entryType t) = _; rw [ih]
+  | record ts _ ih =>
+    show Ty.record (entryTypes ts) = _
+    congr 1
+    apply List.ext_getElem?
+    intro i
+    rw [entryTypes_getElem?]
+    cases found : ts[i]? with
+    | none => rfl
+    | some t' => simp only [Option.map_some]; rw [ih t' (List.mem_of_getElem? found)]
+  | result e a _ _ ihE ihA => show Ty.result (entryType e) (entryType a) = _; rw [ihE, ihA]
+  | fn ps r => rfl
+
+/-- A representation holds no dictionary. -/
+theorem dictFree_entryType : ∀ (t : Ty), DictFree (entryType t)
+  | .dict t => .list _ (.record _ (by
+      intro t' member
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl
+      · exact .int
+      · exact dictFree_entryType t))
+  | .list t => .list _ (dictFree_entryType t)
+  | .chain t => .chain _ (dictFree_entryType t)
+  | .builder t => .builder _ (dictFree_entryType t)
+  | .record ts => .record _ (by
+      intro t' member
+      obtain ⟨i, found⟩ := List.mem_iff_getElem?.mp member
+      rw [entryTypes_getElem?] at found
+      cases original : ts[i]? with
+      | none => rw [original] at found; cases found
+      | some t0 =>
+        rw [original] at found
+        cases Option.some.inj found
+        have : sizeOf t0 < 1 + sizeOf ts := by
+          have := List.sizeOf_lt_of_mem (List.mem_of_getElem? original)
+          omega
+        exact dictFree_entryType t0)
+  | .result e a => .result _ _ (dictFree_entryType e) (dictFree_entryType a)
+  | .int => .int
+  | .fn ps r => .fn ps r
+termination_by t => sizeOf t
+decreasing_by
+  all_goals simp_wf
+  all_goals omega
+
+/-- A flat type's representation is flat. -/
+theorem flatType_entryType {t : Ty} (flat : FlatType t) : FlatType (entryType t) := by
+  induction flat with
+  | int => exact .int
+  | list t _ free ih => rw [entryType_of_dictFree (.list t free)]; exact .list t ‹_› free
+  | chainInt => exact .chainInt
+  | record ts _ ih =>
+    refine .record _ ?_
+    intro t' member
+    obtain ⟨i, found⟩ := List.mem_iff_getElem?.mp member
+    rw [entryTypes_getElem?] at found
+    cases original : ts[i]? with
+    | none => rw [original] at found; cases found
+    | some t0 =>
+      rw [original] at found
+      cases Option.some.inj found
+      exact ih t0 (List.mem_of_getElem? original)
+  | result e a _ _ ihE ihA => exact .result _ _ ihE ihA
+  | dict t _ free ih =>
+    refine .list _ (.record _ ?_) (dictFree_entryType (.dict t) |> fun d => by cases d; assumption)
+    intro t' member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with rfl | rfl
+    · exact .int
+    · exact ih
+
+/-- A flat abstract with no dictionary in its type is its own representation
+    (#1796). -/
+theorem entryAbstract_of_dictFree {ds : List Decl} {t : Ty} {a : Abstract}
+    (free : DictFree t) (shape : FlatAbstract t a) : entryAbstract ds t a = a := by
   induction shape with
-  | bottom ty => cases ty <;> rfl
+  | bottom ty => exact entryAbstract_bottom ds ty
   | int => rfl
   | list t roots element certificate _ _ ih =>
     show Abstract.list roots (entryAbstract ds t element) certificate = _
-    rw [ih]
+    cases free with
+    | list _ free' => rw [ih free']
+  | dict t roots value certificate _ _ _ => cases free
   | chainBottom roots certificate => rfl
   | chainScalar roots certificate => rfl
   | record ts as lengths _ ih =>
     show Abstract.record (entryFields ds ts as) = _
-    rw [entryFields_of_flat ts as lengths ih]
+    cases free with
+    | record _ fieldsFree =>
+      rw [entryFields_of_flat ts as lengths
+        (fun i t' a' ht ha => ih i t' a' ht ha (fieldsFree t' (List.mem_of_getElem? ht)))]
   | result error success ae aa _ _ ihError ihSuccess =>
-    show Abstract.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
-      entryAbstract ds success aa] = _
-    rw [ihError, ihSuccess]
-    rfl
+    cases free with
+    | result _ _ freeError freeSuccess =>
+      show Abstract.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
+        entryAbstract ds success aa] = _
+      rw [ihError freeError, ihSuccess freeSuccess]
+      rfl
+
+/-- The representation of a flat abstract is a flat abstract of the
+    representation type. -/
+theorem flatAbstract_entry {ds : List Decl} {t : Ty} {a : Abstract} (shape : FlatAbstract t a) :
+    FlatAbstract (entryType t) (entryAbstract ds t a) := by
+  induction shape with
+  | bottom ty => rw [entryAbstract_bottom]; exact .bottom _
+  | int => exact .int
+  | list t roots element certificate noUnk _ ih => exact .list _ roots _ certificate noUnk ih
+  | dict t roots value certificate noUnk _ ih =>
+    refine .list _ roots _ certificate noUnk (.record _ _ rfl ?_)
+    intro i t' a' ht ha
+    match i, ht, ha with
+    | 0, ht, ha =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at ht ha
+      subst ht; subst ha
+      exact .int
+    | 1, ht, ha =>
+      simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at ht ha
+      subst ht; subst ha
+      exact ih
+    | _ + 2, ht, _ => simp at ht
+  | chainBottom roots certificate => exact .chainBottom roots certificate
+  | chainScalar roots certificate => exact .chainScalar roots certificate
+  | record ts as lengths _ ih =>
+    refine .record _ _ (by rw [entryTypes_length, entryFields_length, lengths]) ?_
+    intro i t' a' ht ha
+    rw [entryTypes_getElem?] at ht
+    rw [entryFields_getElem?] at ha
+    cases foundT : ts[i]? with
+    | none => rw [foundT] at ht; cases ht
+    | some t0 =>
+      rw [foundT] at ht ha
+      cases Option.some.inj ht
+      cases foundA : as[i]? with
+      | none => rw [foundA] at ha; cases ha
+      | some a0 =>
+        rw [foundA] at ha
+        simp only [Option.map_some, Option.getD_some, Option.some.injEq] at ha
+        subst ha
+        exact ih i t0 a0 foundT foundA
+  | result error success ae aa _ _ ihError ihSuccess => exact .result _ _ _ _ ihError ihSuccess
 
 /-- The runtime shapes of a binding's abstract, and the tags of its result
 values. A binding that holds a value is live code, so its abstract is not
@@ -794,6 +1044,12 @@ bottom element is empty). The `deepTags` clause carries result and chain tags
 for array elements at each live path, through nested arrays and active result
 payloads. Every live use is a typed path of its binding,
 so a projection of a live use never enters a result.
+
+The heap clauses read a binding through its representation (#1796): its type
+`entryType t`, in which a dictionary is a list of entry records `[Int, t]`,
+and its abstract `entryAbstract declarations t a`, in which the value is field
+1 of the entry. A type with no dictionary is its own representation, so these
+clauses say for it what they said before.
 -/
 structure FlatInvariant (declarations : List Decl)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
@@ -814,20 +1070,23 @@ structure FlatInvariant (declarations : List Decl)
         Ownership.FlatFragment.Fields.tyAt ty p = some t ∧
         projectObs observation p = some observation' ∧ projectVal actual p = some actual' ∧
         obsTyped declarations observation' t = true ∧
-        Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap actual' t
+        Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap actual' (entryType t)
   deepTags : ∀ x p, (x, p) ∈ live → ∀ observation actual ty abstract t actual',
     env.lookup x = some (observation, actual) → tenv.lookup x = some ty →
     aenv.lookup x = some abstract → Ownership.FlatFragment.Fields.tyAt ty p = some t →
-    projectVal actual p = some actual' → TagsDeep hs.heap t (abstract.atPath p) actual'
+    projectVal actual p = some actual' →
+      TagsDeep hs.heap (entryType t) (entryAbstract declarations t (abstract.atPath p)) actual'
   bindingsBounded : ∀ x observation actual,
     env.lookup x = some (observation, actual) →
       ∀ c, Reaches hs.heap actual (.ref c) → c < hs.heap.size
   tags : ∀ x ty abstract observation actual,
     tenv.lookup x = some ty → aenv.lookup x = some abstract →
-      env.lookup x = some (observation, actual) → ResultTags ty abstract actual
+      env.lookup x = some (observation, actual) →
+        ResultTags (entryType ty) (entryAbstract declarations ty abstract) actual
   chains : ∀ x ty abstract observation actual,
     tenv.lookup x = some ty → aenv.lookup x = some abstract →
-      env.lookup x = some (observation, actual) → ChainTags ty abstract observation
+      env.lookup x = some (observation, actual) →
+        ChainTags (entryType ty) (entryAbstract declarations ty abstract) observation
   liveTyped : ∀ x p ty, (x, p) ∈ live → tenv.lookup x = some ty →
     ∃ t, Ownership.FlatFragment.Fields.tyAt ty p = some t
   namingBound : NamingBound gamma hs.heap.size
@@ -1542,43 +1801,130 @@ namespace Ownership.FlatFragment.State
 
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.Fields
 
-/-- At a typed path of a flat binding, the typed abstract is the abstract. -/
-theorem entryAbstract_atPath_flat {ds : List Decl} {ty t : Ty} {a : Abstract} {p : Path}
+/-- The representation of a typed path's type is at the same path of the
+    representation. -/
+theorem tyAt_entryType {ty t : Ty} {p : Path} (typed : tyAt ty p = some t) :
+    tyAt (entryType ty) p = some (entryType t) := by
+  induction p generalizing ty with
+  | nil =>
+    simp [tyAt] at typed
+    subst typed
+    rfl
+  | cons step rest ih =>
+    cases step <;> cases ty <;> simp [tyAt] at typed
+    rename_i i ts
+    cases found : ts[i]? with
+    | none => simp [found] at typed
+    | some t' =>
+      simp only [found] at typed
+      show (match (entryTypes ts)[i]? with
+        | some t => tyAt t rest
+        | none => none) = _
+      rw [entryTypes_getElem?, found]
+      exact ih typed
+
+/-- Reading through the type commutes with a typed field projection. -/
+theorem entryAbstract_atPath {ds : List Decl} {ty t : Ty} {a : Abstract} {p : Path}
     (shape : FlatAbstract ty a) (typed : tyAt ty p = some t) :
+    (entryAbstract ds ty a).atPath p = entryAbstract ds t (a.atPath p) := by
+  induction p generalizing ty a with
+  | nil =>
+    simp [tyAt] at typed
+    subst typed
+    rfl
+  | cons step rest ih =>
+    cases step <;> cases ty <;> simp [tyAt] at typed
+    rename_i i ts
+    cases found : ts[i]? with
+    | none => simp [found] at typed
+    | some t' =>
+      simp only [found] at typed
+      rcases flatAbstract_record shape with rfl | ⟨as, rfl, len, fields⟩
+      · rw [entryAbstract_bottom, atPath_bottom, entryAbstract_bottom]
+      · obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields found
+        show (Abstract.record (entryFields ds ts as)).atPath (.field i :: rest) = _
+        simp only [Abstract.atPath, at_i, Option.getD_some]
+        rw [entryFields_getElem?, at_i, found]
+        simp only [Option.map_some, Option.getD_some]
+        exact ih shape' typed
+
+/-- At a typed path whose type has no dictionary, the typed abstract is the
+    abstract. -/
+theorem entryAbstract_atPath_flat {ds : List Decl} {ty t : Ty} {a : Abstract} {p : Path}
+    (free : DictFree t) (shape : FlatAbstract ty a) (typed : tyAt ty p = some t) :
     entryAbstract ds (fieldType ty p) (a.atPath p) = a.atPath p := by
   rw [fieldType_of_tyAt typed]
-  exact entryAbstract_of_flatAbstract (flatAbstract_atPath shape typed)
+  exact entryAbstract_of_dictFree free (flatAbstract_atPath shape typed)
 
-/-- The typed live clause of `Invariant` from the untyped one, in a flat
-    environment. -/
-theorem described_typed_of_flat {ds : List Decl} {heap : Heap} {env : List (Var × Observation × Value)}
-    {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming}
-    (shapes : ∀ x ty abstract, tenv.lookup x = some ty → aenv.lookup x = some abstract →
-      FlatAbstract ty abstract)
-    (liveTyped : ∀ x p ty, (x, p) ∈ live → tenv.lookup x = some ty → ∃ t, tyAt ty p = some t)
-    (untyped : ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) →
-      aenv.lookup x = some a → projectVal w p = some w' → Describes gamma heap (a.atPath p) w') :
-    ∀ x p, (x, p) ∈ live → ∀ o w a t w', env.lookup x = some (o, w) → aenv.lookup x = some a →
-      tenv.lookup x = some t → projectVal w p = some w' →
-        Describes gamma heap (entryAbstract ds (fieldType t p) (a.atPath p)) w' := by
-  intro x p use o w a t w' binding found declared projected
-  obtain ⟨t', typed⟩ := liveTyped x p t use declared
-  rw [entryAbstract_atPath_flat (shapes x t a declared found) typed]
-  exact untyped x p use o w a w' binding found projected
-
-/-- The live clause of a flat invariant, untyped: a flat type has no
-    dictionary, so the typed abstract is the abstract (#1796). -/
+/-- The live clause of a flat invariant at a typed path: the projection read
+    through its type (#1796). -/
 theorem FlatInvariant.described {declarations : List Decl} {vs : ValueSemantics.State}
     {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live}
     {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
-    ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) → aenv.lookup x = some a →
-      projectVal w p = some w' → Describes gamma hs.heap (a.atPath p) w' := by
-  intro x p use o w a w' binding found projected
-  obtain ⟨t, declared⟩ :=
-    Ownership.FlatFragment.VariableFacts.lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
-  obtain ⟨t', typed⟩ := inv.liveTyped x p t use declared
-  have described := inv.toInvariant.described x p use o w a t w' binding found declared projected
-  rwa [entryAbstract_atPath_flat (inv.abstractShapes x t a declared found) typed] at described
+    ∀ x p, (x, p) ∈ live → ∀ o w a ty t w', env.lookup x = some (o, w) → aenv.lookup x = some a →
+      tenv.lookup x = some ty → tyAt ty p = some t → projectVal w p = some w' →
+        Describes gamma hs.heap (entryAbstract declarations t (a.atPath p)) w' := by
+  intro x p use o w a ty t w' binding found declared typed projected
+  have described := inv.toInvariant.described x p use o w a ty w' binding found declared projected
+  rwa [fieldType_of_tyAt typed] at described
+
+/-- The live clause of a flat invariant at a typed path whose type has no
+    dictionary: the projection is described by the abstract itself. -/
+theorem FlatInvariant.described_dictFree {declarations : List Decl} {vs : ValueSemantics.State}
+    {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live}
+    {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ x p, (x, p) ∈ live → ∀ o w a ty t w', env.lookup x = some (o, w) → aenv.lookup x = some a →
+      tenv.lookup x = some ty → tyAt ty p = some t → DictFree t → projectVal w p = some w' →
+        Describes gamma hs.heap (a.atPath p) w' := by
+  intro x p use o w a ty t w' binding found declared typed free projected
+  have described := inv.toInvariant.described x p use o w a ty w' binding found declared projected
+  rwa [entryAbstract_atPath_flat free (inv.abstractShapes x ty a declared found) typed] at described
+
+end Ownership.FlatFragment.State
+
+namespace Ownership.FlatFragment.State
+
+open InPlaceSemantics HeapProof Soundness
+
+/-- A result whose type has no dictionary is its own representation (#1796):
+    the success clause of an expression in its old form is the clause at the
+    representation. -/
+theorem success_of_dictFree {declarations : List Decl} {depth : Nat}
+    {env : List (Var × Observation × Value)} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State}
+    {e : Expr} {after : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes' : List Origin}
+    {result : Abstract} {type : Ty}
+    (free : DictFree type) (shape : FlatAbstract type result)
+    (success : ∀ value vs',
+      (ValueSemantics.eval depth declarations none (valueEnv env) e).run vs = .ok (value, vs') →
+      ∃ actual hs' gamma',
+        (InPlaceSemantics.eval depth declarations none (heapEnv env) e).run hs = .ok (actual, hs') ∧
+        FlatInvariant declarations vs' hs' env after aenv tenv escapes' gamma' ∧
+        hs.heap.size ≤ hs'.heap.size ∧
+        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
+        Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual type ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) :
+    ∀ value vs',
+      (ValueSemantics.eval depth declarations none (valueEnv env) e).run vs = .ok (value, vs') →
+      ∃ actual hs' gamma',
+        (InPlaceSemantics.eval depth declarations none (heapEnv env) e).run hs = .ok (actual, hs') ∧
+        FlatInvariant declarations vs' hs' env after aenv tenv escapes' gamma' ∧
+        hs.heap.size ≤ hs'.heap.size ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
+        obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
+        Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual := by
+  intro value vs' run
+  rw [entryType_of_dictFree free, entryAbstract_of_dictFree free shape]
+  exact success value vs' run
+
+theorem dictFree_of_flat_list {t : Ty} (flat : FlatType (.list t)) : DictFree (.list t) := by
+  cases flat with
+  | list _ _ free => exact .list _ free
 
 end Ownership.FlatFragment.State
