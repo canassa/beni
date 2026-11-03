@@ -23,13 +23,9 @@ pub program :
       }
     → Program request reply state
 program callbacks = Program λ⊤ →
-    Task.start
-        (λ⊤ →
-            state = callbacks.init ⊤ ⊤
-            listen λmessage → Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
-            callbacks.start state ⊤
-        )
-        λ_ → ⊤
+    state = callbacks.init ⊤ ⊤
+    listen λmessage → Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+    callbacks.start state ⊤
 
 
 pub open : Program request reply state → Result OpenError (Handle request reply)
@@ -50,7 +46,7 @@ run definition =
     case definition of
         Program boot →
             configure definition
-            boot ⊤
+            Task.start boot λ_ → ⊤
 
 
 foreign impure configure : Program request reply state → ⊤
