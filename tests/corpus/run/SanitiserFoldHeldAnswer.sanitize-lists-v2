@@ -1,0 +1,3 @@
+A runtime catch for a fold that holds the answer it hands back to its callback (ownership-v2.md §2.11.3, a label's
+answer handed back to it). Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses the edit;
+without judging the answer where it is handed back, the sanitised run would show the stale read.

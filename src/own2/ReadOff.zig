@@ -1033,7 +1033,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
-            sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSel(&e.ev, try e.contracts.cond(arena, su.cond), p[1]));
+            sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2] }));
             if (pi < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi]);
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }

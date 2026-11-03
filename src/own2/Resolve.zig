@@ -25,6 +25,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
+const Fed = @import("Fed.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const Eval = @import("Eval.zig");
@@ -570,7 +571,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     const f = &e.w.f;
     // Every judgement, in the walk's order: the demands, the direct labels'
     // supplied parts, the passed-on labels' parts (§2.11.3).
-    const Job = struct { kind: enum { demand, cb, pass }, point: u32, i: u32, k: u32 = 0, t: u32 = none, at: u32 = 0, aj: u32 = 0, skip: usize = std.math.maxInt(usize), pending: u32 = none };
+    const Job = struct { kind: enum { demand, cb, pass }, point: u32, i: u32, k: u32 = 0, t: u32 = none, at: u32 = 0, aj: u32 = 0, skip: usize = std.math.maxInt(usize), pending: u32 = none, judged: u32 = none };
     var jobs: std.ArrayList(Job) = .empty;
     for (e.demands.items, 0..) |d, i| try jobs.append(arena, .{ .kind = .demand, .point = d.point, .i = @intCast(i) });
     for (f.cbs.items, 0..) |cb, ci| {
@@ -600,7 +601,12 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 defer ls.deinit(f.gpa);
                 try e.ev.partsOf(v, es.wordsOf(rs), &ls);
                 const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else none;
-                for (ls.items) |part| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending });
+                for (ls.items) |part| {
+                    var ss: std.ArrayList(Relation.Proj) = .empty;
+                    defer ss.deinit(f.gpa);
+                    try Fed.judged(r.ev(), part.leaf, .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2] }, su.k, &ss);
+                    for (ss.items) |q| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending, .judged = q.leaf });
+                }
             };
         }
     }
@@ -636,7 +642,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             },
             .pass => blk: {
                 const call = f.calls.items[e.passes.items[j.i][1]];
-                break :blk try r.judgeSupplied(j.t, call.point, call.inst, call.args, j.aj, j.skip, j.pending);
+                break :blk try r.judgeSupplied(j.judged, call.point, call.inst, call.args, j.aj, j.skip, j.pending);
             },
         };
     }

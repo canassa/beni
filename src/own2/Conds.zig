@@ -146,8 +146,27 @@ pub fn occDeep(o: u64) u64 {
 pub fn isDeep(o: u64) bool {
     return o & deep_bit != 0;
 }
+/// An occurrence that asks no object apart (§2.11.3, *a label's answer
+/// handed back to it*, 2026-11-03): the function at `π_j·r` answers only
+/// its own argument `k` and objects it makes. A supply condition that read
+/// a label's answer, handed back as its argument `k`, as that argument
+/// asks it. `k` sits above `j`'s low 16 bits.
+pub const fed_bit: u64 = 1 << 61;
+pub fn occFed(j: u32, r: Rel, k: u32) u64 {
+    return occ(j | (k << 16), r) | fed_bit;
+}
+pub fn isFed(o: u64) bool {
+    return o & fed_bit != 0;
+}
+/// A `fed` occurrence's function slot's parameter, and the argument it answers.
+pub fn fedParam(o: u64) u32 {
+    return occParam(o) & 0xffff;
+}
+pub fn fedArg(o: u64) u32 {
+    return occParam(o) >> 16;
+}
 pub fn occParam(o: u64) u32 {
-    return @intCast((o >> 32) & 0x3fff_ffff);
+    return @intCast((o >> 32) & 0x1fff_ffff);
 }
 pub fn occRel(o: u64) Rel {
     return @truncate(o);
