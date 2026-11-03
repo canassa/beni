@@ -137,8 +137,8 @@ src/js/Lower.zig Js.optWithDefault 749550cd792dcd324f037b961628eddd82eb7d5962768
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
-src/js/Lower.zig Js.Any.pack 29f351afb29d3cce3a9b7278b3267f48141c82d327ab429064270c1e23f5617d intrinsic:core
-src/js/Lower.zig Js.Any.unpack e7a1067c7af19e24365e0d5929b589d408269cb6f6cc5ab5769c2eeebe268edd intrinsic:core
+src/js/Lower.zig Js.Any.pack 995288153a5adebbd64665889a6392424711a3b4c9e66bcd614b51e67e8ecf77 intrinsic:core
+src/js/Lower.zig Js.Any.unpack 9de83bc52bb0603e7bfd6d92c447ed89f170d6c83c2079122402fad1a930834f intrinsic:core
 core/Js/Inspect.js Js.Inspect.view ecbb30eedfbdc1c9bb9890c4b2a237960d2fb457f52f91dae8d4bffcf8195c54
 core/Js/Inspect.js Js.Inspect.data 3db872bf1c782633919cf66aeb2601670381471ac3439344f96aa594a4bb1590
 core/Js/Inspect.js Js.Inspect.list ff9e3ba1daee002a9b4ca2984def77da3731807ed1ebc33ed772c11d984e54ca
@@ -289,7 +289,10 @@ src/js/Lower.zig List.treeOf 174132d2c8180389cf7b1fe9ba1b42cfac6e3b1af4f81bbbe46
 src/js/Lower.zig List.isTree 2a652bf97d2043c13d562e013a97de58fa5b5d1807b584cb7c155a5086e8596a intrinsic:core
 core/Js/Any.js Js.Any.Box 7cbb50b054da40acfbe0fca4f4525192fffb9150468f1c6345c84aab6bfe7c53
 core/Js/Any.js Js.Any.pack 7e5109fb2c066bd589d93b37971a381c53799bb034761b0be721201db897dc35
-core/Js/Any.js Js.Any.unpack 6a43c64191a8c740770f79a1e9785d088ce84f56b7b78c3a6a695efec7fb7ed6
+core/Js/Any.js Js.Any.unpack 5c2bb25693fd943ce564d0f1c47ba0a617d921c67481d2c94813a1a39f1f2912
+core/Js/Any.js Js.Any.packet f49197ad50fcded12f973f23163a3269a1ec5ffa0791ff9d88c5edb928fda40d
+core/Js/Any.js Js.Any.packetKey 27c7b926dcde49d0390a09ab75a29314779e92b2ece94be8c34bcd7ff4b77a54
+core/Js/Any.js Js.Any.packetDescriptor 0475beda2d8c2ead7e13cdecb8ea9744811403a9e491e67a05595ec41a3330ac
 
 tests/platforms/reply-scan/Worker/Object.beni Worker.Object.scan 9d9c0630fd53b5199f39b00ce82a65f6f9f5ba612f15be0833a07a3c2bd60881
 src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9bfc7e729556a5dcc2dcac04f intrinsic:tests/platforms/reply-scan

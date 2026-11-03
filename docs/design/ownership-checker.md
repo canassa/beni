@@ -8260,3 +8260,17 @@ path and the iterative scanner. The private beni `scan` wrapper forwards that
 borrowed-input, fresh-result contract and is pinned normally. `List.isView`
 only tests the private View prototype, retaining nothing; its one borrowed
 argument has no later read for an unsafe unused flip to expose.
+
+**Allocation-neutral Any packets (2026-11-03; §24.8 implementation note).**
+A record or tuple literal allocated directly as Any.pack's argument has no
+pre-existing alias. Its hidden identity slot lets that same fresh object own
+the existential payload, so `escaped a → fresh Any` is unchanged. Other
+arguments retain the shared Box. The private packet helper mutates only that
+fresh packet and a shared descriptor whose identity value is copied by
+Object.defineProperty; it retains no payload. The slot is non-enumerable,
+non-writable and non-configurable. One sibling unpack checks the packet slot
+first, returns Nothing immediately for a mismatch, and otherwise returns that
+packet; only an ordinary Box uses the old type/value fields. Unpack retains no
+input and constructs its own Maybe result, with the same payload alias as
+before. These helper and lowering bodies are pinned with the existing body
+hash mechanism.

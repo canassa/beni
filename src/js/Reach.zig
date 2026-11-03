@@ -1288,8 +1288,8 @@ pub const Builder = struct {
                 } else if (replies and @import("../check/Wire.zig").replyIntrinsic(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
-                    // Any packing calls its shared sibling constructor.
-                    marks[d.lhs] = which != .any_pack;
+                    // Any packing and unpacking call their shared sibling.
+                    marks[d.lhs] = which != .any_pack and which != .any_unpack;
                 } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
                     // A derived codec's own `parse` or `print` (schema.md
                     // §12.10): `Json`'s function is not called.

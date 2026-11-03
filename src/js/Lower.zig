@@ -11024,16 +11024,19 @@ pub const Lowerer = struct {
                 }
                 const values = try l.orderedExprs(out, arg_insts, false);
                 const id = try l.identityValue(roots[roots.len - 1], p);
-                const type_key = try l.interner.getOrPut(l.gpa, "type");
-                const value_key = try l.interner.getOrPut(l.gpa, "value");
-                if (which == .any_pack) {
-                    // One sibling constructor owns the shared private prototype.
-                    // A fresh prototype per box makes heterogeneous data megamorphic.
-                    return l.call(try l.referenceName(callee_inst), &.{ id, values[0] }, p);
+                var target = try l.referenceName(callee_inst);
+                if (which == .any_pack and arg_insts.len == 1) {
+                    // Only these expressions allocate the packet at this call.
+                    // Aliases, updates and call results retain the ordinary Box,
+                    // including when later release inlining exposes a literal.
+                    switch (l.bir.instTag(arg_insts[0])) {
+                        .record, .tuple => target = try l.member(target, try l.interner.getOrPut(l.gpa, "$packet"), p),
+                        else => {},
+                    }
                 }
-                const boxed = try l.bindSubject(out, values[0], p);
-                const matches = try l.binary(.strict_eq, try l.member(boxed, type_key, p), id, p);
-                return l.condOf(matches, try l.coreCtorApplied("Maybe", "Just", &.{try l.member(boxed, value_key, p)}, p), try l.coreCtorApplied("Maybe", "Nothing", &.{}, p), p);
+                // Direct and first-class unpack use one sibling implementation,
+                // which understands both ordinary boxes and fresh packets.
+                return l.call(target, &.{ id, values[0] }, p);
             }
             // ownership pin end: unpack
             // ownership pin end: pack

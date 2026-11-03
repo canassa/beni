@@ -1,0 +1,15 @@
+-- A fresh capture packet is the Any; the Html-shaped node adds no Box.
+import Js.Any as Any
+
+
+pub packet : a, (a → msg) → { t : Int, v : Any.Any }
+packet value handler = { t = 0, v = Any.pack ( value, handler ) }
+
+
+-- A pre-existing object remains boxed, even if an optimizer later inlines it.
+pub existing : { a : Int, b : String } → Any.Any
+existing value = Any.pack value
+
+
+pub record : Int → Any.Any
+record value = Any.pack { a = value, b = "capture" }

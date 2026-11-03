@@ -1,0 +1,129 @@
+-- Fresh packets and ordinary boxes retain identical value semantics.
+import Js
+import Js.Any as Any
+import Js.Data as Data
+import Node
+
+
+record : Any.Any → { answer : Int, label : String }
+record packet =
+    case Any.unpack packet of
+        Just value →
+            value
+        Nothing →
+            { answer = -1, label = "wrong identity" }
+
+
+pair : Any.Any → Int × String
+pair packet = Maybe.withDefault (Any.unpack packet) ( -1, "wrong identity" )
+
+
+wrong : Any.Any → Maybe { answer : String, label : String }
+wrong packet = Any.unpack packet
+
+
+-- This value is already shared before pack. It must retain the ordinary Box.
+shared : { answer : Int, label : String } → Any.Any
+shared value = Any.pack value
+
+
+keys : { answer : Int, label : String } → String
+keys value =
+    host = Js.from value
+    fields = Js.call (Js.global "Object") "keys" [ host ]
+    Js.to (Js.call fields "join" [ Js.from "," ])
+
+
+json : { answer : Int, label : String } → String
+json value = Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from value ])
+
+
+-- A direct packet mismatch must never fall through to ordinary Box fields.
+spoofed : Any.Any → String
+spoofed packet =
+    value = Js.from (record packet)
+    Js.set value "type" (Js.from (Js.fingerprint 42 EQ))
+    Js.set value "value" (Js.from 42)
+    requested : Maybe Int
+    requested = Any.unpack packet
+    case requested of
+        Nothing →
+            "refused spoofed Box"
+        Just _ →
+            "accepted spoofed Box"
+
+
+-- Projection walks a List rest view inside an unpacked packet.
+projectTail : List Int → String
+projectTail values =
+    case values of
+        [ _, …tail ] →
+            packed = Any.pack { values = tail }
+            restored : Maybe { values : List Int }
+            restored = Any.unpack packed
+            case restored of
+                Just payload →
+                    case Data.checked payload of
+                        Just host →
+                            Js.to (Js.call (Js.global "JSON") "stringify" [ host ])
+                        Nothing →
+                            "packet projection refused"
+                Nothing →
+                    "packet identity changed"
+        [] →
+            "missing rest view"
+
+
+main : Node.Program
+main =
+    direct = Any.pack { answer = 42, label = "packet" }
+    boxed = shared { answer = 42, label = "packet" }
+    value = record direct
+    changed = { value | answer = 43 }
+    tuple = pair (Any.pack ( 42, "packet" ))
+    Node.printLines
+        [ if value == record boxed then "equal" else "different"
+        , if value < changed && not (changed < value) then "ordered" else "bad ordering"
+        , Debug.toString value
+        , Debug.toString tuple
+        , if Debug.toString direct == Debug.toString boxed then
+            "same opaque display"
+          else
+            "changed opaque display"
+        , keys value
+        , keys changed
+        , json value
+        , json changed
+        , if value.answer == 42 && changed.answer == 43 then
+            "update is independent"
+          else
+            "update changed original"
+        , case wrong direct of
+            Nothing →
+                "refused different type"
+            Just _ →
+                "accepted different type"
+        , if tuple == ( 42, "packet" ) then "tuple" else "wrong tuple"
+        , case Data.checked value of
+            Just _ →
+                "unpacked record is data"
+            Nothing →
+                "unpacked record lost data"
+        , case Data.checked changed of
+            Just _ →
+                "updated record is data"
+            Nothing →
+                "updated record lost data"
+        , case Data.checked direct of
+            Nothing →
+                "Any is not data"
+            Just _ →
+                "Any leaked as data"
+        , case Data.checked { packet = direct } of
+            Nothing →
+                "nested Any is not data"
+            Just _ →
+                "nested Any leaked as data"
+        , projectTail [ 1, 2, 3 ]
+        , spoofed direct
+        ]

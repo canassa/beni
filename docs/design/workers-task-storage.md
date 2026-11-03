@@ -169,6 +169,21 @@ generic imports, helpers and local functions, only where Any is reached.
 Existing constrained identities retain their ordering; quantifier-only slots
 use the canonical scheme quantifier order. No method requirement is invented.
 
+**Manager decision, 2026-11-03 — allocation-neutral packets.** If the argument
+of `Any.pack` is a record or tuple freshly allocated by the compiler at that
+call, and cannot already have an alias, the packet itself may be the Any. Its
+own hidden identity slot replaces the separate Box. Unpack checks the same
+compiler-supplied identity and returns the original packet on a match; ordinary
+values retain the shared Box representation. One unpack path accepts both.
+Record and tuple literals qualify; aliases, record updates and call results do
+not, even if later release inlining exposes a literal. The hidden slot is not
+an enumerable record field: derived equality and comparison, Debug, host data
+conversion and record update keep their ordinary behavior. Any remains refused
+by Wire and HostFree regardless of its storage representation. This is a private
+compiler representation detail of the existing Any, with no new primitive or
+public API. Markup captures can use it without another allocation per node;
+keyed row state still packs once per site, never per row.
+
 Stored-value effect edges retain callback purity, suspension and execution
 realms through pack/unpack and generic helpers, without invoking the payload.
 A storage type passes callback roles as type parameters: a generic carrier
