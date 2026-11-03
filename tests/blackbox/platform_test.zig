@@ -2539,3 +2539,45 @@ test "CorePrivate authoring checks run inside a platform package with platform a
     try testing.expectEqual(@as(u8, 0), result.exit_code);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), result.diagnostics);
 }
+
+test "CorePrivate Cloudflare named and method fences use the loaded layer identity" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePrivateDispatchPlatform(&w);
+    try w.write("platform/Worker/Object.beni",
+        \\pub type Token = Token
+        \\pub replyIds : Token → Int
+        \\replyIds _ = 31
+        \\
+    );
+    try w.write("platform/Probe.beni",
+        \\import Worker.Object as Object
+        \\pub token = Object.Token
+        \\pub allowed = Object.replyIds token
+        \\pub method = token.replyIds
+        \\
+    );
+    // Platform modules in the selected Cloudflare layer may use either route.
+    try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"cloudflare\",\"program\":\"Test.Program\",\"runtime\":\"runtime.js\"}\n");
+    try w.write("Main.beni", "import Probe\npub value = Probe.allowed + Probe.method\n");
+    const allowed = try w.run(&.{ "check", "--core-root=core", "--platform=platform", "--no-cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), allowed.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), allowed.diagnostics);
+    for ([_][]const u8{
+        "import Worker.Object as Object\npub value = Object.replyIds Object.Token\n",
+        "import Probe\npub value = Probe.token.replyIds\n",
+    }, [_]diagnostic.Code{ .private_name, .private_method }) |source, code| {
+        try w.write("Main.beni", source);
+        const refused = try w.run(&.{ "check", "--core-root=core", "--platform=platform", "--no-cache", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), refused.exit_code);
+        try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+        try testing.expectEqual(code, refused.diagnostics[0].code);
+    }
+    // Renaming the loaded platform removes authority even with identical modules.
+    try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"other\",\"program\":\"Test.Program\",\"runtime\":\"runtime.js\"}\n");
+    try w.write("Main.beni", "import Probe\npub value = Probe.allowed\n");
+    const spoof = try w.run(&.{ "check", "--core-root=core", "--platform=platform", "--no-cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), spoof.exit_code);
+    try testing.expectEqual(@as(usize, 1), spoof.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.private_name, spoof.diagnostics[0].code);
+}

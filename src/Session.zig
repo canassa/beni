@@ -2145,9 +2145,13 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
     const chain = session.options.chain orelse return .{ .file_layers = session.file_layers, .app_privileged = privileged };
     const sees = try scratch.alloc(u64, chain.layers.len);
     var reexports: std.ArrayList(Graph.Platforms.Reexport) = .empty;
+    var cloudflare_layer: ?u8 = null;
     const lowerings = try scratch.alloc(?[]const u8, chain.layers.len);
     for (chain.layers, sees, lowerings, 0..) |layer, *s, *l, i| {
         s.* = layer.sees;
+        if (layer.manifest.name) |name| if (std.mem.eql(u8, name, "cloudflare")) {
+            cloudflare_layer = @intCast(i);
+        };
         l.* = layer.manifest.markup.lowering;
         for (layer.manifest.reexports) |name| try reexports.append(scratch, .{ .module = name, .layer = @intCast(i) });
     }
@@ -2155,6 +2159,7 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         .file_layers = session.file_layers,
         .sees = sees,
         .reexports = reexports.items,
+        .cloudflare_layer = cloudflare_layer,
         .chain = true,
         .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
         .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,

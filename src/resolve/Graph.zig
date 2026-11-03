@@ -114,6 +114,7 @@ cycle_members: []const Index,
 /// Owned. Per chain index, the layers whose modules that layer's modules may
 /// import, as a bit set (`Platforms.sees`). Empty with no platform chain.
 sees: []const u64 = &.{},
+cloudflare_layer: ?u8 = null,
 /// The markup vocabulary the chain names (`boundary.md` §9.2), resolved.
 markup: Markup = .{},
 /// Set during the existing name-index build; no native pass on ordinary builds.
@@ -164,6 +165,7 @@ pub const Platforms = struct {
     /// Per chain index, the layers its modules may import: itself and every
     /// platform it depends on, transitively.
     sees: []const u64 = &.{},
+    cloudflare_layer: ?u8 = null,
     /// The `"reexports"` of every package of the chain.
     reexports: []const Reexport = &.{},
     /// Whether the run has a platform at all.
@@ -405,6 +407,7 @@ pub fn build(
     var g: Graph = .empty;
     errdefer g.deinit(gpa);
     g.sees = try gpa.dupe(u64, platforms.sees);
+    g.cloudflare_layer = platforms.cloudflare_layer;
     var modules: std.MultiArrayList(Module) = .empty;
     errdefer modules.deinit(gpa);
 
@@ -1384,4 +1387,10 @@ test "lookup searches the importing package first, then core" {
     // not got; a core module never looks in app.
     try testing.expect(p.graph().lookup(.app, other) != null);
     try testing.expect(p.graph().lookup(.core, other) != null);
+}
+
+/// A platform identity comes from the loaded chain, not a module spelling.
+pub fn isCloudflare(g: *const Graph, m: Index) bool {
+    const layer = g.cloudflare_layer orelse return false;
+    return g.modulePackage(m) == .platform and g.modules.items(.layer)[m.int()] == layer;
 }

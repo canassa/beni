@@ -318,6 +318,7 @@ fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, ent
         true,
         s.cx.authority,
         s.cx.interner.slice(s.cx.graph.moduleName(s.cx.module)),
+        .{ .owner_cloudflare = s.cx.graph.isCloudflare(entry.module), .caller_cloudflare = s.cx.graph.isCloudflare(s.cx.module) },
     )) {
         const wanted = s.evidence.get(id);
         try refusePrivate(s, id, type_id, wanted.method);

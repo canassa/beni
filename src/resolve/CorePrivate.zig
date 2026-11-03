@@ -1,7 +1,7 @@
 //! One name fence for resolution, diagnostics and generated API references.
 const std = @import("std");
 
-pub const Access = enum { core, task, worker, runtime, platform, debug };
+pub const Access = enum { core, task, worker, runtime, cloudflare, platform, debug };
 const Entry = struct {
     module: []const u8,
     name: ?[]const u8,
@@ -10,6 +10,7 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Worker.Object", .name = "replyIds", .access = .cloudflare, .value_only = true },
     .{ .module = "Js", .name = "Cell", .access = .runtime },
     .{ .module = "Js", .name = "cell", .access = .runtime },
     .{ .module = "Js", .name = "cellRead", .access = .runtime },
@@ -88,20 +89,27 @@ pub fn authority(package: anytype, core_app: bool, app_is_platform: bool) Author
     };
 }
 
+/// Platform identities established by the loaded chain, never a source name.
+pub const PlatformIdentity = struct {
+    owner_cloudflare: bool = false,
+    caller_cloudflare: bool = false,
+};
+
 /// The same name fence governs imported names and imported methods. An app
 /// module with a reserved spelling never acquires a trusted module's policy.
-pub fn denied(owner: Authority, module: []const u8, name: []const u8, is_value: bool, caller: Authority, caller_module: []const u8) bool {
+pub fn denied(owner: Authority, module: []const u8, name: []const u8, is_value: bool, caller: Authority, caller_module: []const u8, platform: PlatformIdentity) bool {
     const required = access(module, name, is_value) orelse return false;
-    return deniedAccess(required, owner, caller, caller_module);
+    return deniedAccess(required, owner, caller, caller_module, platform);
 }
 
 /// Apply a declaration’s access class after its trusted owner is known.
-pub fn deniedAccess(required: Access, owner: Authority, caller: Authority, caller_module: []const u8) bool {
+pub fn deniedAccess(required: Access, owner: Authority, caller: Authority, caller_module: []const u8, platform: PlatformIdentity) bool {
     if (owner == .app) return false;
     return switch (required) {
         .core => owner == .core and caller != .core,
         .task => owner == .core and !(caller == .core and std.mem.eql(u8, caller_module, "Task")),
         .worker => owner == .platform and !workerCaller(caller == .platform, caller_module),
+        .cloudflare => !platform.owner_cloudflare or !platform.caller_cloudflare,
         .runtime => owner == .core and caller == .app,
         .platform => caller == .app,
         .debug => caller != .core or !std.mem.eql(u8, caller_module, "Debug"),
@@ -112,6 +120,7 @@ pub fn explanation(module: []const u8, name: []const u8) ?[]const u8 {
     const required = access(module, name, true) orelse return null;
     return switch (required) {
         .worker => "This name is private to the platform’s worker entry machinery.",
+        .cloudflare => "This primitive is private to the Cloudflare Object runtime.",
         .runtime, .platform => "This name is private to core and platform runtimes.",
         .debug => "This name is private to core's Debug module.",
         .core, .task => if (std.mem.eql(u8, module, "Js"))
@@ -146,5 +155,18 @@ test "access classes use effective caller authority and trusted owner identity" 
         .{ .access = .debug, .owner = .core, .caller = .app, .module = "Debug", .denied = true },
         .{ .access = .debug, .owner = .core, .caller = .platform, .module = "Debug", .denied = true },
         .{ .access = .debug, .owner = .core, .caller = .core, .denied = true },
-    }) |c| try std.testing.expectEqual(c.denied, deniedAccess(c.access, c.owner, c.caller, c.module));
+    }) |c| try std.testing.expectEqual(c.denied, deniedAccess(c.access, c.owner, c.caller, c.module, .{}));
+}
+
+test "Cloudflare privacy requires both loaded platform identities" {
+    for ([_]bool{ false, true }) |owner| {
+        for ([_]bool{ false, true }) |caller| {
+            try std.testing.expectEqual(!(owner and caller), denied(.platform, "Worker.Object", "replyIds", true, .platform, "Worker.ObjectRuntime", .{
+                .owner_cloudflare = owner,
+                .caller_cloudflare = caller,
+            }));
+        }
+    }
+    // An application module with the same spelling does not acquire this fence.
+    try std.testing.expect(!denied(.app, "Worker.Object", "replyIds", true, .app, "Main", .{}));
 }

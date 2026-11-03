@@ -574,6 +574,10 @@ fn ownTermsOf(
     else
         base_options;
     const option_string = if (options.entry_roles.len != 0) try std.fmt.allocPrint(scratch, "{s};entry_roles={s}", .{ constructor_options, options.entry_roles }) else constructor_options;
+    const reply_context = if (graph.isCloudflare(m))
+        try std.fmt.allocPrint(scratch, "{s};cloudflare=1", .{option_string})
+    else
+        option_string;
     // The markup term (`frontend.md` §9.8):
     // a module that writes markup, and
     // the vocabulary module, are checked against the chain's markup
@@ -583,13 +587,13 @@ fn ownTermsOf(
     const markup = graph.markup;
     const markup_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m)
         try std.fmt.allocPrint(scratch, "{s};markup={t},{s}.{s}", .{
-            option_string,
+            reply_context,
             markup.status,
             if (markup.type_module.unwrap()) |s| interner.slice(s) else "",
             if (markup.type_name.unwrap()) |s| interner.slice(s) else "",
         })
     else
-        option_string;
+        reply_context;
     // A platform module's `foreign` values are refused when their type
     // mentions the markup type and the package's own lowering is not the
     // build's (`checker-v2.md` §25.2): both lowerings reach it through no
