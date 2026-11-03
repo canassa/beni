@@ -1146,6 +1146,15 @@ calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a 
 runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
 `list`, and a build that composes and describes schemas without running one ships no worker.
 
+Interpreter data keeps genuine host values in a concrete host slot. Program
+values retain their real type inside Any, with a lazy checked reporter. A
+concrete optional Any pointer distinguishes those cases; no generic payload
+is stored in an Opt slot, and a host value needs no Any box or reporter closure.
+If a host value reaches a generic unpack helper, it is first packed with its
+concrete host identity and still uses the shared checked unpack. It is never
+cast to an arbitrary program type. Reporting a program callback still refuses
+it as data and never invokes it.
+
 The interpreter's record traversal reads supplied typed fields by offset. It
 allocates a private typed array builder for the output's field count, fills only
 the successful prefix, and finishes that prefix once. Error accumulation still
@@ -3182,6 +3191,13 @@ that the code of a declaration's `S.schema` calls. `parserOf` and `printerOf` ma
 maker's worker from its `Made`. `Reach` exempts no constructor of `Engine` or `Made` in an
 application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `root`
 (`SchemaGraph.Member`), with guarded edges to the other three (`root_guards`).
+
+Interpreter traversal uses the same optional-result protocol, with concrete
+Datum, field-answer and Datum-list payloads. Success carries the payload directly;
+recursive list and field loops use direct tail calls after testing the marker.
+Public runners still construct Result once at their boundary. Maybe remains the
+schema's optional-value domain and the registration of an optional worker, not a
+per-node success shell.
 
 The stored worker result is a core-only `Js.Opt o`: success is the typed
 payload itself, and failure is the shared absence sentinel also held in the

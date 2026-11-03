@@ -281,17 +281,28 @@ defaultOptions ⊤ =
 -- Every engine value retains its real type. Reporting is a separate checked
 -- data projection, evaluated only when a failure asks to retain its input.
 type alias Datum =
-    box : Any.Any
-    data : ⊤ → Maybe Js.Value
+    box : Js.Opt Any.Any
+    data : Js.Opt (⊤ → Maybe Js.Value)
+    raw : Js.Value
 
 
 packed : a → Datum
-packed datum = { box = Any.pack datum, data = λ⊤ → Data.checked datum }
+packed datum =
+    { box = Js.some (Any.pack datum)
+    , data = Js.some λ⊤ → Data.checked datum
+    , raw = Js.null
+    }
 
 
 unpacked : Datum → a
 unpacked datum =
-    case Any.unpack datum.box of
+    storedBox = Js.optMatch datum.box (λ⊤ → Any.pack datum.raw) identity
+    unpackBox storedBox
+
+
+unpackBox : Any.Any → a
+unpackBox storedBox =
+    case Any.unpack storedBox of
         Just found →
             found
         Nothing →
@@ -1297,10 +1308,15 @@ collect path output segments =
 
 
 reportedInput : Context, Datum → Maybe Value
-reportedInput c item = if c.report then Maybe.map (item.data ⊤) fromHost else Nothing
+reportedInput c item =
+    if c.report then
+        Js.optMatch item.data (λ⊤ → Just (fromHost item.raw)) λproject →
+            Maybe.map (project ⊤) fromHost
+    else
+        Nothing
 
 
-failAt : Context, Path, IssueCode, String, Datum, Bool → Maybe Datum
+failAt : Context, Path, IssueCode, String, Datum, Bool → Js.Opt Datum
 failAt c path code message item output =
     entry : Issue
     entry =
@@ -1312,20 +1328,19 @@ failAt c path code message item output =
         , input = reportedInput c item
         }
     _ = Js.call c.issues "push" [ toHost entry ]
-    Nothing
+    Js.none ⊤
 
 
 issueCount : Context → Int
 issueCount c = lengthOf c.issues
 
 
-finish : Context, Maybe Datum → Result (List Issue) a
+finish : Context, Js.Opt Datum → Result (List Issue) a
 finish c answer =
-    case answer of
-        Nothing →
-            Err (fromHost c.issues)
-        Just item →
-            Ok (unpacked item)
+    if workerEmpty answer then
+        Err (fromHost c.issues)
+    else
+        Ok (unpacked (readDatum answer))
 
 
 moved : Context, Path, Datum, List Issue → ⊤
@@ -1345,14 +1360,14 @@ moved c path item given =
         ⊤
 
 
-callConversion : Context, Path, (Datum → Result (List Issue) Datum), Datum → Maybe Datum
+callConversion : Context, Path, (Datum → Result (List Issue) Datum), Datum → Js.Opt Datum
 callConversion c path callback item =
     case callback item of
         Ok result →
-            Just result
+            Js.some result
         Err issues →
             moved c path item issues
-            Nothing
+            Js.none ⊤
 
 
 childNodes : Node → List Node
@@ -1534,7 +1549,7 @@ scalarValue item = unpacked item
 
 
 hostDatum : Datum → Js.Value
-hostDatum item = unpacked item
+hostDatum item = Js.optMatch item.box (λ⊤ → item.raw) unpackBox
 
 
 nullValue : Nullable ⊥
@@ -1611,10 +1626,10 @@ scalarDatum kind raw =
             Protocol.defect "a schema constructed a value of the empty type"
 
 
-prim : Context, PrimitiveKind, Int, Path, Datum → Maybe Datum
+prim : Context, PrimitiveKind, Int, Path, Datum → Js.Opt Datum
 prim c kind depth path item =
     raw = if c.sh then hostDatum item else rawScalar kind item
-    accepted = λ⊤ → Just (if c.dh then packed raw else scalarDatum kind raw)
+    accepted = λ⊤ → Js.some (if c.dh then packedHost raw else scalarDatum kind raw)
     wrong = λmessage → failAt c path WrongShape message item False
     invalid = λmessage → failAt c path InvalidValue message item False
     case kind of
@@ -1693,14 +1708,14 @@ hostItems raw = List.map (fromHost raw) packedHost
 
 
 packedHost : Js.Value → Datum
-packedHost raw = packed raw
+packedHost raw = { box = Js.none ⊤, data = Js.none ⊤, raw = raw }
 
 
 hostArray : List Datum → Datum
-hostArray items = packed (toHost (List.map items hostDatum))
+hostArray items = packedHost (toHost (List.map items hostDatum))
 
 
-walkItems : Context, Node, Int, Path, List Datum, Int → Maybe (List Datum)
+walkItems : Context, Node, Int, Path, List Datum, Int → Js.Opt (List Datum)
 walkItems c child depth path items offset = walkItemsFrom c child depth path items offset [] False
 
 
@@ -1713,11 +1728,11 @@ walkItemsFrom :
     , Int
     , List Datum
     , Bool
-    → Maybe (List Datum)
+    → Js.Opt (List Datum)
 walkItemsFrom c child depth path items offset out failed =
     case items of
         [] →
-            if failed then Nothing else Just out
+            if failed then Js.none ⊤ else Js.some out
         [ item, …rest ] →
             here = step path (toHost offset) (toHost offset)
             answer =
@@ -1725,23 +1740,30 @@ walkItemsFrom c child depth path items offset out failed =
                     failAt c here DepthExceeded "the depth limit is reached" item False
                 else
                     run c child (depth + 1) here NoneActive item
-            case answer of
-                Nothing →
-                    if c.all then
-                        walkItemsFrom c child depth path rest (offset + 1) out True
-                    else
-                        Nothing
-                Just result →
-                    walkItemsFrom c child depth path rest (offset + 1) (List.push out result) failed
+            if workerEmpty answer then
+                if c.all then
+                    walkItemsFrom c child depth path rest (offset + 1) out True
+                else
+                    Js.none ⊤
+            else
+                walkItemsFrom
+                    c
+                    child
+                    depth
+                    path
+                    rest
+                    (offset + 1)
+                    (List.push out (readDatum answer))
+                    failed
 
 
-listOf : Context, Node, Ends, Int, Path, Datum → Maybe Datum
+listOf : Context, Node, Ends, Int, Path, Datum → Js.Opt Datum
 listOf c child ends depth path item =
     if c.sh && not (isArray (hostDatum item)) then
         failAt c path WrongShape "expected an array" item False
     else
         items = if c.sh then hostItems (hostDatum item) else (endsAt ends c.src).view item
-        Maybe.map (walkItems c child depth path items 0)
+        mapDatums (walkItems c child depth path items 0)
             (if c.dh then hostArray else (endsAt ends c.dst).make)
 
 
@@ -1750,14 +1772,14 @@ optionalOut c ends found =
     if c.dh then
         case found of
             Nothing →
-                packed Js.null
+                packedHost Js.null
             Just item →
                 item
     else
         (optionalAt ends c.dst).make found
 
 
-nullableOf : Context, Node, OptionalEnds, Int, Path, Active, Datum → Maybe Datum
+nullableOf : Context, Node, OptionalEnds, Int, Path, Active, Datum → Js.Opt Datum
 nullableOf c child ends depth path active item =
     found =
         if c.sh then
@@ -1766,13 +1788,13 @@ nullableOf c child ends depth path active item =
             (optionalAt ends c.src).view item
     case found of
         Nothing →
-            Just (optionalOut c ends Nothing)
+            Js.some (optionalOut c ends Nothing)
         Just inner →
-            Maybe.map (run c child depth path active inner) λresult →
+            mapDatum (run c child depth path active inner) λresult →
                 optionalOut c ends (Just result)
 
 
-maybeOf : Context, Node, Int, OptionalEnds, Int, Path, Active, Datum → Maybe Datum
+maybeOf : Context, Node, Int, OptionalEnds, Int, Path, Active, Datum → Js.Opt Datum
 maybeOf c child mode ends depth path active item =
     found =
         if c.sh then
@@ -1781,25 +1803,26 @@ maybeOf c child mode ends depth path active item =
             (optionalAt ends c.src).view item
     case found of
         Nothing →
-            Just (optionalOut c ends Nothing)
+            Js.some (optionalOut c ends Nothing)
         Just inner →
-            case run c child depth path active inner of
-                Nothing →
-                    Nothing
-                Just result →
-                    if c.dh && Js.bitAnd mode 2 ≠ 0 && Js.isNull (hostDatum result) then
-                        failAt
-                            c
-                            path
-                            InvalidValue
-                            "the value inside Just writes null, which reads back as Nothing"
-                            inner
-                            True
-                    else
-                        Just (optionalOut c ends (Just result))
+            answer = run c child depth path active inner
+            if workerEmpty answer then
+                Js.none ⊤
+            else
+                result = readDatum answer
+                if c.dh && Js.bitAnd mode 2 ≠ 0 && Js.isNull (hostDatum result) then
+                    failAt
+                        c
+                        path
+                        InvalidValue
+                        "the value inside Just writes null, which reads back as Nothing"
+                        inner
+                        True
+                else
+                    Js.some (optionalOut c ends (Just result))
 
 
-run : Context, Node, Int, Path, Active, Datum → Maybe Datum
+run : Context, Node, Int, Path, Active, Datum → Js.Opt Datum
 run c node depth path active item =
     case nodeBody node of
         NPrim kind →
@@ -1814,19 +1837,19 @@ run c node depth path active item =
             taggedOf c discriminator variants depth path item
         NConverted source forward backward →
             if c.src == encodedSide && c.dst == typeSide then
-                case run c source depth path active item of
-                    Nothing →
-                        Nothing
-                    Just intermediate →
-                        callConversion c path forward intermediate
+                answer = run c source depth path active item
+                if workerEmpty answer then
+                    Js.none ⊤
+                else
+                    callConversion c path forward (readDatum answer)
             else if c.src == typeSide && c.dst == encodedSide then
-                case callConversion c path backward item of
-                    Nothing →
-                        Nothing
-                    Just intermediate →
-                        run { Record.copy c | cv = True } source depth path active intermediate
+                answer = callConversion c path backward item
+                if workerEmpty answer then
+                    Js.none ⊤
+                else
+                    run { Record.copy c | cv = True } source depth path active (readDatum answer)
             else if c.src == typeSide then
-                Just item
+                Js.some item
             else
                 run c source depth path active item
         NFlipped child →
@@ -1939,21 +1962,26 @@ fieldMissing entry side item =
         isNothing ((optionalAt entry.presence side).view item)
 
 
-descendField : Context, FieldNode, Int, Path, Datum → Maybe FieldAnswer
+descendField : Context, FieldNode, Int, Path, Datum → Js.Opt FieldAnswer
 descendField c entry depth path item =
     answer =
         if depth ≥ c.max then
             failAt c path DepthExceeded "the depth limit is reached" item False
         else
             run c entry.node (depth + 1) path NoneActive item
-    Maybe.map answer λresult →
-        if entry.optional && not entry.lenient && not c.dh then
-            FieldValue ((optionalAt entry.presence c.dst).make (Just result))
-        else
-            FieldValue result
+    if workerEmpty answer then
+        Js.none ⊤
+    else
+        result = readDatum answer
+        Js.some
+            (if entry.optional && not entry.lenient && not c.dh then
+                FieldValue ((optionalAt entry.presence c.dst).make (Just result))
+             else
+                FieldValue result
+            )
 
 
-runField : Context, FieldNode, Int, Path, Datum, Maybe Datum → Maybe FieldAnswer
+runField : Context, FieldNode, Int, Path, Datum, Maybe Datum → Js.Opt FieldAnswer
 runField c entry depth path parent supplied =
     inputName = if c.src == encodedSide then entry.key else entry.name
     outputName = if c.dst == encodedSide then entry.key else entry.name
@@ -1967,17 +1995,17 @@ runField c entry depth path parent supplied =
         if held then
             descendField c entry depth here (packedHost got)
         else if entry.optional then
-            Just (missingField c entry)
+            Js.some (missingField c entry)
         else
             _ = failAt c here MissingKey "missing key \"${inputName}\"" parent False
-            Nothing
+            Js.none ⊤
     else
         case supplied of
             Nothing →
                 Protocol.defect "a schema record has too few typed fields"
             Just item →
                 if entry.optional && fieldMissing entry c.src item then
-                    Just (missingField c entry)
+                    Js.some (missingField c entry)
                 else if entry.optional && not entry.lenient then
                     case (optionalAt entry.presence c.src).view item of
                         Nothing →
@@ -1999,72 +2027,71 @@ fieldsFrom :
     , Js.Builder Datum
     , Int
     , Js.Value
-    → Maybe (List Datum)
+    → Js.Opt (List Datum)
 fieldsFrom c fs depth path parent supplied inputOffset out outputOffset rawOut =
     case fs of
         [] →
-            Just (Array.arrayDone out outputOffset)
+            Js.some (Array.arrayDone out outputOffset)
         [ entry, …rest ] →
             input = if c.sh then Nothing else List.get supplied inputOffset
-            case runField c entry depth path parent input of
-                Nothing →
-                    if c.all then
-                        fieldsFrom
-                            c
-                            rest
-                            depth
-                            path
-                            parent
-                            supplied
-                            (inputOffset + 1)
-                            out
-                            outputOffset
+            answer = runField c entry depth path parent input
+            if workerEmpty answer then
+                if c.all then
+                    fieldsFrom
+                        c
+                        rest
+                        depth
+                        path
+                        parent
+                        supplied
+                        (inputOffset + 1)
+                        out
+                        outputOffset
+                        rawOut
+                else
+                    Js.none ⊤
+            else if c.dh then
+                case readFieldAnswer answer of
+                    FieldValue result →
+                        Js.set
                             rawOut
-                    else
-                        Nothing
-                Just answer →
-                    if c.dh then
-                        case answer of
-                            FieldValue result →
-                                Js.set
-                                    rawOut
-                                    (if c.dst == encodedSide then entry.key else entry.name)
-                                    (hostDatum result)
-                            FieldOmitted _ →
-                                ⊤
-                        fieldsFrom
-                            c
-                            rest
-                            depth
-                            path
-                            parent
-                            supplied
-                            (inputOffset + 1)
-                            out
-                            outputOffset
-                            rawOut
-                    else
-                        result =
-                            case answer of
-                                FieldValue fieldDatum →
-                                    fieldDatum
-                                FieldOmitted missing →
-                                    missing
-                        next = Array.arraySet out outputOffset result
-                        fieldsFrom
-                            c
-                            rest
-                            depth
-                            path
-                            parent
-                            supplied
-                            (inputOffset + 1)
-                            next
-                            (outputOffset + 1)
-                            rawOut
+                            (if c.dst == encodedSide then entry.key else entry.name)
+                            (hostDatum result)
+                    FieldOmitted _ →
+                        ⊤
+                fieldsFrom
+                    c
+                    rest
+                    depth
+                    path
+                    parent
+                    supplied
+                    (inputOffset + 1)
+                    out
+                    outputOffset
+                    rawOut
+            else
+                result =
+                    case readFieldAnswer answer of
+                        FieldValue fieldDatum →
+                            fieldDatum
+                        FieldOmitted missing →
+                            missing
+                next = Array.arraySet out outputOffset result
+                fieldsFrom
+                    c
+                    rest
+                    depth
+                    path
+                    parent
+                    supplied
+                    (inputOffset + 1)
+                    next
+                    (outputOffset + 1)
+                    rawOut
 
 
-recordOf : Context, List FieldNode, Maps, Maybe Owner, Int, Path, Datum → Maybe Datum
+recordOf : Context, List FieldNode, Maps, Maybe Owner, Int, Path, Datum → Js.Opt Datum
 recordOf c fs maps owner depth path parent =
     if c.sh && not (isObject (hostDatum parent)) then
         failAt c path WrongShape "expected an object" parent False
@@ -2076,26 +2103,23 @@ recordOf c fs maps owner depth path parent =
                 && unknownKeys c fs (Maybe.map owner .discriminator) path parent
                 && not c.all
         then
-            Nothing
+            Js.none ⊤
         else
             supplied = if c.sh then [] else (accessAt maps c.src).view parent
             rawOut = if c.dh then newObject owner else Js.null
             outputBuilder = Array.arrayAllocate (if c.dh then 0 else List.length fs)
-            case fieldsFrom c fs depth path parent supplied 0 outputBuilder 0 rawOut of
-                Nothing →
-                    Nothing
-                Just out →
-                    if issueCount c > before then
-                        Nothing
-                    else if c.dh then
-                        Just (packedHost rawOut)
-                    else
-                        result = (accessAt maps c.dst).make out
-                        case owner of
-                            Nothing →
-                                Just result
-                            Just selected →
-                                Just ((variantInjection selected.selected c.dst).inject result)
+            answer = fieldsFrom c fs depth path parent supplied 0 outputBuilder 0 rawOut
+            if workerEmpty answer || issueCount c > before then
+                Js.none ⊤
+            else if c.dh then
+                Js.some (packedHost rawOut)
+            else
+                result = (accessAt maps c.dst).make (readDatums answer)
+                case owner of
+                    Nothing →
+                        Js.some result
+                    Just selected →
+                        Js.some ((variantInjection selected.selected c.dst).inject result)
 
 
 variantInjection : VariantNode, Int → InjectionBox
@@ -2167,11 +2191,11 @@ variantOf c discriminator variants path item =
                 found
 
 
-taggedOf : Context, String, List VariantNode, Int, Path, Datum → Maybe Datum
+taggedOf : Context, String, List VariantNode, Int, Path, Datum → Js.Opt Datum
 taggedOf c discriminator variants depth path item =
     case variantOf c discriminator variants path item of
         Nothing →
-            Nothing
+            Js.none ⊤
         Just ( selected, payload ) →
             owner = Just { discriminator = discriminator, selected = selected }
             case Maybe.map selected.payload nodeBody of
@@ -2182,18 +2206,18 @@ taggedOf c discriminator variants depth path item =
                         recordOf c fs maps owner (depth + 1) path payload
                 _ →
                     if c.sh && c.reject && unknownKeys c [] (Just discriminator) path item then
-                        Nothing
+                        Js.none ⊤
                     else if c.dh then
-                        Just (packedHost (newObject owner))
+                        Js.some (packedHost (newObject owner))
                     else
-                        Just ((variantInjection selected c.dst).inject (packed ⊤))
+                        Js.some ((variantInjection selected c.dst).inject (packed ⊤))
 
 
 elementsMessage : Int → String
 elementsMessage n = "expected an array of ${String.fromInt n} elements"
 
 
-walkNodes : Context, List Node, Int, Path, List Datum, Int → Maybe (List Datum)
+walkNodes : Context, List Node, Int, Path, List Datum, Int → Js.Opt (List Datum)
 walkNodes c nodes depth path items offset = walkNodesFrom c nodes depth path items offset [] False
 
 
@@ -2206,11 +2230,11 @@ walkNodesFrom :
     , Int
     , List Datum
     , Bool
-    → Maybe (List Datum)
+    → Js.Opt (List Datum)
 walkNodesFrom c nodes depth path items offset out failed =
     case nodes of
         [] →
-            if failed then Nothing else Just out
+            if failed then Js.none ⊤ else Js.some out
         [ node, …rest ] →
             case items of
                 [] →
@@ -2222,32 +2246,31 @@ walkNodesFrom c nodes depth path items offset out failed =
                             failAt c here DepthExceeded "the depth limit is reached" item False
                         else
                             run c node (depth + 1) here NoneActive item
-                    case answer of
-                        Nothing →
-                            if c.all then
-                                walkNodesFrom c rest depth path remaining (offset + 1) out True
-                            else
-                                Nothing
-                        Just result →
-                            walkNodesFrom
-                                c
-                                rest
-                                depth
-                                path
-                                remaining
-                                (offset + 1)
-                                (List.push out result)
-                                failed
+                    if workerEmpty answer then
+                        if c.all then
+                            walkNodesFrom c rest depth path remaining (offset + 1) out True
+                        else
+                            Js.none ⊤
+                    else
+                        walkNodesFrom
+                            c
+                            rest
+                            depth
+                            path
+                            remaining
+                            (offset + 1)
+                            (List.push out (readDatum answer))
+                            failed
 
 
-tupleOf : Context, List Node, Access, Int, Path, Datum → Maybe Datum
+tupleOf : Context, List Node, Access, Int, Path, Datum → Js.Opt Datum
 tupleOf c nodes access depth path item =
     n = List.length nodes
     if c.sh && not (isArray (hostDatum item) && lengthOf (hostDatum item) == n) then
         failAt c path WrongShape (elementsMessage n) item False
     else
         items = if c.sh then hostItems (hostDatum item) else access.view item
-        Maybe.map (walkNodes c nodes depth path items 0) (if c.dh then hostArray else access.make)
+        mapDatums (walkNodes c nodes depth path items 0) (if c.dh then hostArray else access.make)
 
 
 ctorMessage : String
@@ -2277,19 +2300,19 @@ ctorOut c ctor items =
         ctor.inject items
 
 
-ctorArgs : Context, CtorNode, Int, Path, List Datum, Datum → Maybe Datum
+ctorArgs : Context, CtorNode, Int, Path, List Datum, Datum → Js.Opt Datum
 ctorArgs c ctor depth path items input =
     here = step path (toHost ctor.name) (toHost ctor.name)
     if depth ≥ c.max then
         failAt c here DepthExceeded "the depth limit is reached" input False
     else if List.length ctor.nodes == 1 then
-        Maybe.map (run c (at ctor.nodes 0) (depth + 1) here NoneActive (at items 0)) λresult →
+        mapDatum (run c (at ctor.nodes 0) (depth + 1) here NoneActive (at items 0)) λresult →
             ctorOut c ctor [ result ]
     else
-        Maybe.map (walkNodes c ctor.nodes (depth + 1) here items 0) (ctorOut c ctor _)
+        mapDatums (walkNodes c ctor.nodes (depth + 1) here items 0) (ctorOut c ctor _)
 
 
-ctorRawArgs : Context, CtorNode, Int, Path, Js.Value → Maybe Datum
+ctorRawArgs : Context, CtorNode, Int, Path, Js.Value → Js.Opt Datum
 ctorRawArgs c ctor depth path payload =
     here = step path (toHost ctor.name) (toHost ctor.name)
     n = List.length ctor.nodes
@@ -2304,7 +2327,7 @@ ctorRawArgs c ctor depth path payload =
         ctorArgs c ctor depth path (hostItems payload) input
 
 
-ctorFromHost : Context, List CtorNode, Int, Path, Datum → Maybe Datum
+ctorFromHost : Context, List CtorNode, Int, Path, Datum → Js.Opt Datum
 ctorFromHost c ctors depth path item =
     raw = hostDatum item
     if isType raw "string" then
@@ -2314,7 +2337,7 @@ ctorFromHost c ctors depth path item =
                 failAt c path UnknownTag (unknownCtor ctors name) item False
             Just ctor →
                 if List.isEmpty ctor.nodes then
-                    Just (ctorOut c ctor [])
+                    Js.some (ctorOut c ctor [])
                 else
                     failAt
                         c
@@ -2361,7 +2384,7 @@ ctorOf ctors item =
                     Just ( ctor, items )
 
 
-constructorsOf : Context, List CtorNode, Int, Path, Datum → Maybe Datum
+constructorsOf : Context, List CtorNode, Int, Path, Datum → Js.Opt Datum
 constructorsOf c ctors depth path item =
     if c.sh then
         ctorFromHost c ctors depth path item
@@ -2371,7 +2394,7 @@ constructorsOf c ctors depth path item =
                 failAt c path InvalidSchema "no constructor takes the value" item False
             Just ( ctor, items ) →
                 if List.isEmpty ctor.nodes then
-                    Just (ctorOut c ctor items)
+                    Js.some (ctorOut c ctor items)
                 else
                     ctorArgs
                         c
@@ -2545,11 +2568,11 @@ printWith schema opts input =
                     Err issues
                 Nothing →
                     c = context opts Encoding typeSide False encodedSide True True
-                    case run c (nodeOf schema) 0 atRoot NoneActive (packed input) of
-                        Nothing →
-                            Err (fromHost c.issues)
-                        Just result →
-                            Ok (stringOf (HostJson.stringify (hostDatum result)))
+                    answer = run c (nodeOf schema) 0 atRoot NoneActive (packed input)
+                    if workerEmpty answer then
+                        Err (fromHost c.issues)
+                    else
+                        Ok (stringOf (HostJson.stringify (hostDatum (readDatum answer))))
 
 
 --| The schema's graph, both endpoints, as plain data. It runs no
@@ -2690,13 +2713,43 @@ workerValue slot = Js.pure λ⊤ →
         identity
 
 
-workerFromMaybe : Maybe a → Js.Opt a
-workerFromMaybe option =
-    case option of
-        Nothing →
-            Js.none ⊤
-        Just item →
-            Js.some item
+-- Interpreter payloads are concrete types; their optional reads keep the
+-- statically known identity representation, including in traversal loops.
+readDatum : Js.Opt Datum → Datum
+readDatum slot =
+    Js.optMatch slot
+        (λ⊤ → Protocol.defect "an absent schema worker result was read")
+        identity
+
+
+readDatums : Js.Opt (List Datum) → List Datum
+readDatums slot =
+    Js.optMatch slot
+        (λ⊤ → Protocol.defect "an absent schema worker result was read")
+        identity
+
+
+readFieldAnswer : Js.Opt FieldAnswer → FieldAnswer
+readFieldAnswer slot =
+    Js.optMatch slot
+        (λ⊤ → Protocol.defect "an absent schema worker result was read")
+        identity
+
+
+mapDatum : Js.Opt Datum, (Datum → Datum) → Js.Opt Datum
+mapDatum slot callback =
+    if workerEmpty slot then
+        Js.none ⊤
+    else
+        Js.some (callback (readDatum slot))
+
+
+mapDatums : Js.Opt (List Datum), (List Datum → Datum) → Js.Opt Datum
+mapDatums slot callback =
+    if workerEmpty slot then
+        Js.none ⊤
+    else
+        Js.some (callback (readDatums slot))
 
 
 workerMap : Js.Opt a, (a → b) → Js.Opt b
@@ -2883,7 +2936,7 @@ interpretedSlot : Schema e a → Worker i o
 interpretedSlot schema =
     λc depth parent input output item →
         answer = run c (nodeOf schema) depth (pathAt parent input output) NoneActive (packed item)
-        workerMap (workerFromMaybe answer) unpacked
+        workerMap answer unpacked
 
 
 readSlot : Schema e a → Worker Js.Value a
@@ -3677,7 +3730,7 @@ primitiveSlot : PrimitiveKind → Worker i o
 primitiveSlot kind =
     λc depth parent input output item →
         workerMap
-            (workerFromMaybe (prim c kind depth (pathAt parent input output) (packed item)))
+            (prim c kind depth (pathAt parent input output) (packed item))
             unpacked
 
 
