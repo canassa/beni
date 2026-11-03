@@ -152,6 +152,11 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := bindingsTyped'
+    deepTags := by
+      intro x p use o w ty a t w' binding declared abstractBinding at_p valuePath
+      exact tagsDeep_of_agree
+        (inv.deepTags x p (liveSub _ use) o w ty a t w' binding declared abstractBinding at_p valuePath)
+        (liveAgree x p use o w w' binding valuePath)
     bindingsBounded := bindingsBounded'
     tags := inv.tags
     chains := inv.chains

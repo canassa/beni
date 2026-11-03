@@ -186,6 +186,7 @@ theorem flatInvariant_state_frame
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    deepTags := by simpa only [heapSame] using inv.deepTags
     bindingsBounded := by simpa only [heapSame] using inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
@@ -239,6 +240,7 @@ theorem flatInvariant_restrict_live
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := fun x p member => inv.bindingsTyped x p (included _ member)
+    deepTags := fun x p member => inv.deepTags x p (included _ member)
     bindingsBounded := inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains

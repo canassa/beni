@@ -14,34 +14,15 @@ operation. They do not replace its test with an external permission oracle. -/
 
 namespace Ownership.FlatFragment.State
 
-/-- The element types of a list in the fragment: integers, records of element
-types and lists of element types, nested. A result or a chain is not one: the
-checker reads an element's result tag and chain emptiness from the list's
-element abstract, and the invariant has no clause for the tags of an array's
-elements yet (a slice of its own, #522). -/
-inductive ElementType : Ty → Prop where
-  | int : ElementType .int
-  | record (ts : List Ty) : (∀ t ∈ ts, ElementType t) → ElementType (.record ts)
-  | list (t : Ty) : ElementType t → ElementType (.list t)
-
-/-- The binding types of the flat fragment: integers, lists of element types
-(lists of lists included, since slice 2b of #522), integer chains, records of
-them and results over them, nested. A result's two types are flat, so a case
-on it binds a flat payload; a chain case binds an integer and a chain. -/
+/-- The types of the flat fragment: integers, lists of flat types, integer
+chains, records and results. A list can hold results and chains. -/
 inductive FlatType : Ty → Prop where
   | int : FlatType .int
-  | list (t : Ty) : ElementType t → FlatType (.list t)
+  | list (t : Ty) : FlatType t → FlatType (.list t)
   | chainInt : FlatType (.chain .int)
   | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
   | result (error success : Ty) : FlatType error → FlatType success →
       FlatType (.result error success)
-
-/-- An element type is a flat type. -/
-theorem elementType_flat {t : Ty} (element : ElementType t) : FlatType t := by
-  induction element with
-  | int => exact .int
-  | record ts _ ih => exact .record ts ih
-  | list t element _ => exact .list t element
 
 end Ownership.FlatFragment.State
 
@@ -83,26 +64,18 @@ theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (si
     (primitive ctx site op [x, y] later).run before = .ok (.scalar, before) := by
   cases sop <;> (unfold primitive; rfl)
 
-/-- The expression fragment. Every operand is any atom; accepted typing fixes
-each to an integer, a variable or a variable under a field path, the push item
-and the branch condition to `Int`, the length and push receivers to `List Int`.
-A literal builds a list of an element type (slice 2b of #522): its operands
-are typed at that element type, which may itself be a list or a record of
-element types. The push receiver may be a field path: a write
-through a field is in the fragment. A `branch` runs one of two fragment
-expressions on an integer condition. `ok` and `err` build a result whose
-other type is flat, and a `resultCase` binds the payload of a result to one
-of two fragment arms. `endChain` and `link` build an integer chain, which
-typing fixes to `Chain Int` (the link's head to `Int`), and a `chainCase`
-runs one fragment arm on an empty chain or binds the head and the tail of a
-nonempty one in the other. `at` reads an element of a list (an index and a
-fallback, both `Int`), `set` writes one in place, `copy` allocates a copy,
-and `prepend` allocates a copy with an item in front; typing fixes the
-receivers to `List Int` and the items to `Int`. -/
+/-- The expression fragment. Operands are atoms. Typing fixes the scalar
+operands, indexes, branch conditions and chain heads to integers. Lists hold
+any flat type, including records, results, chains and further lists. A literal
+names its flat element type. List reads, writes and copies use that type.
+Records and field projections preserve the type structure. Result constructors
+name a flat type for the unused slot; a result case binds the active payload.
+Integer chains support construction and a case that binds the head and tail.
+Each branch or case arm is itself a fragment expression. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
-  | literal (t : Ty) : Ownership.FlatFragment.State.ElementType t → FlatANF0 (.prim (.literal t) args)
+  | literal (t : Ty) : Ownership.FlatFragment.State.FlatType t → FlatANF0 (.prim (.literal t) args)
   | push : FlatANF0 (.prim .push [receiver, item])
   | length : FlatANF0 (.prim .length [receiver])
   | shared : FlatANF0 (.prim .shared [value])
@@ -579,8 +552,9 @@ of dead code: the checker binds it where it has no information (the head of
 a chain case whose chain is statically empty, the slot a result constructor
 leaves empty), and it flows through records, result slots and the joins of
 a skipped case; a runtime binding never holds one where its value is (the
-tags, `ResultTags`, say so). List descriptions retain bottom or scalar
-elements. Dead aliases keep their old element description after a write.
+tags, `ResultTags`, say so). List descriptions carry flat element abstracts,
+including bottom for empty lists. Dead aliases keep their old element description
+after a write.
 The relation does not require uniqueness of a root or prohibit sharing
 between runtime bindings. A list's roots hold no unknown origin (the join of
 mismatched shapes, which two abstracts of one flat type never make): what a
@@ -654,6 +628,32 @@ inductive ChainTags : Ty → Abstract → Observation → Prop where
   | err (error success : Ty) (tag ae aa : Abstract) (o : Observation) :
       ChainTags error ae o →
       ChainTags (.result error success) (.record [tag, ae, aa]) (.record [.int 0, o, .int 0])
+
+/-- Tags inside arrays, through records and the active payload of a result.
+Each array element has result tags and chain tags for every corresponding
+observation. The relation follows nested arrays as well. Integer chains have
+no nested arrays; their own emptiness tag stays in `ChainTags`. -/
+inductive TagsDeep (heap : Heap) : Ty → Abstract → Value → Prop where
+  | int (a : Abstract) (w : Value) : TagsDeep heap .int a w
+  | chain (a : Abstract) (w : Value) : TagsDeep heap (.chain .int) a w
+  | list (root : Nat) (ws : List Value) (t : Ty) (roots : List Origin)
+      (element : Abstract) (certificate : Certificate) :
+      heap[root]? = some ws →
+      (∀ w ∈ ws, ResultTags t element w) →
+      (∀ w ∈ ws, ∀ o, Corresponds heap o w → ChainTags t element o) →
+      (∀ w ∈ ws, TagsDeep heap t element w) →
+      TagsDeep heap (.list t) (.list roots element certificate) (.ref root)
+  | record (ts : List Ty) (as : List Abstract) (ws : List Value) :
+      ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract) (w : Value), ts[i]? = some t → as[i]? = some a → ws[i]? = some w →
+        TagsDeep heap t a w) →
+      TagsDeep heap (.record ts) (.record as) (.record ws)
+  | ok (error success : Ty) (tag ae aa : Abstract) (w : Value) :
+      TagsDeep heap success aa w →
+      TagsDeep heap (.result error success) (.record [tag, ae, aa]) (.record [.int 1, .int 0, w])
+  | err (error success : Ty) (tag ae aa : Abstract) (w : Value) :
+      TagsDeep heap error ae w →
+      TagsDeep heap (.result error success) (.record [tag, ae, aa]) (.record [.int 0, w, .int 0])
 
 /-- An integer primitive types only at two `Int` operands, and its result is `Int`. -/
 theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership.FlatFragment.Support.ScalarOp op)
@@ -736,7 +736,9 @@ observer witness covers the complete current observer list at the runtime's
 actual observation depth. Every binding's result tags agree with its
 abstract (`ResultTags`), which also excludes a bottom where a value is, its
 chain tags agree with its observation (`ChainTags`: a chain described with a
-bottom element is empty), and every live use is a typed path of its binding,
+bottom element is empty). The `deepTags` clause carries result and chain tags
+for array elements at each live path, through nested arrays and active result
+payloads. Every live use is a typed path of its binding,
 so a projection of a live use never enters a result.
 -/
 structure FlatInvariant (declarations : List Decl)
@@ -759,6 +761,10 @@ structure FlatInvariant (declarations : List Decl)
         projectObs observation p = some observation' ∧ projectVal actual p = some actual' ∧
         obsTyped declarations observation' t = true ∧
         Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap actual' t
+  deepTags : ∀ x p, (x, p) ∈ live → ∀ observation actual ty abstract t actual',
+    env.lookup x = some (observation, actual) → tenv.lookup x = some ty →
+    aenv.lookup x = some abstract → Ownership.FlatFragment.Fields.tyAt ty p = some t →
+    projectVal actual p = some actual' → TagsDeep hs.heap t (abstract.atPath p) actual'
   bindingsBounded : ∀ x observation actual,
     env.lookup x = some (observation, actual) →
       ∀ c, Reaches hs.heap actual (.ref c) → c < hs.heap.size
@@ -852,6 +858,7 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
     types := ?_
     abstractShapes := ?_
     bindingsTyped := ?_
+    deepTags := by intro x p use o w ty a t w' binding; simp at binding
     bindingsBounded := ?_
     tags := ?_
     chains := ?_

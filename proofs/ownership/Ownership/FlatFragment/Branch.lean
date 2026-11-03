@@ -98,7 +98,7 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          shaped2, tags2, chains2⟩ := armPreserved.success y s2 armValueRun
+          shaped2, tags2, chains2, deep2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -125,12 +125,16 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           rcases joined with rfl | rfl
           · exact resultTags_join tags2 shapeArm shapeOther
           · exact resultTags_join_right tags2 shapeOther shapeArm
+        have deepJoin : TagsDeep hs2.heap type result actual := by
+          rcases joined with rfl | rfl
+          · exact tagsDeep_join deep2 shapeArm shapeOther
+          · exact tagsDeep_join_right deep2 shapeOther shapeArm
         have chainsJoin : ChainTags type result value := by
           rcases joined with rfl | rfl
           · exact chainTags_join chains2 shapeArm shapeOther
           · exact chainTags_join_right chains2 shapeOther shapeArm
         refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_, ?_,
-          tagsJoin, chainsJoin⟩
+          tagsJoin, chainsJoin, by simpa only [heapObserved_heap] using deepJoin⟩
         · rw [heap_branch_eval_equation hs (heapEnv env) heapCond, taken]
           rw [if_neg noDepth, if_neg heapFuel]
           simp [armHeapRun, heapObserveRun, Except.bind, Except.pure, bind, pure]
