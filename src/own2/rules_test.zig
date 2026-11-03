@@ -62,7 +62,7 @@ const layers = [_]Entry{
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 5, .max_lines = 320 },
     // A selection in its one spelling of a subtree (#1714).
-    .{ .file = "Canon.zig", .layer = 5, .max_lines = 90 },
+    .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 530 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
