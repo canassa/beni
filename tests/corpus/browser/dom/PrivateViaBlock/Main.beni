@@ -1,0 +1,23 @@
+-- A handler typed as taking the extractor's `String`. The page shows
+-- that string. `probe` is a beni declaration with a block body, not
+-- `pub`, and no code calls it: a build that writes its block with no
+-- `return` (#1806) hands the handler `undefined`, and the page fails.
+import Browser
+import Html exposing (Html)
+
+
+view : String → Html String
+view text =
+    <main>
+        <button id="box" onProbe={λvalue → value}>send</button>
+        <p id="out">{text}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → "none"
+        , update = λnext _ → next
+        , view = view
+        }

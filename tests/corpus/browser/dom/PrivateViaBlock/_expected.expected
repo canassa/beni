@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="box">"send"</button>
+    <p id="out">"none"</p>
+  </main>
+</body>
+-- detail #box probe "probe-saw"
+<body>
+  <main>
+    <button id="box">"send"</button>
+    <p id="out">"probe-saw"</p>
+  </main>
+</body>

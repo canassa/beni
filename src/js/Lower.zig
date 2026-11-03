@@ -11819,6 +11819,18 @@ pub const Lowerer = struct {
         for (0..decls.len) |i| {
             if (l.emitterCalled(@intCast(i))) dispatched[i] = true;
         }
+        // And the vocabulary module's payload extractors that are not
+        // `pub`: a lowering's listener calls one while the event is
+        // dispatched (`extractor`, `boundary.md` §9.3), in no BIR, so a
+        // beni-bodied one with a block body would otherwise lose its
+        // `return` and hand the handler `undefined` (#1806).
+        if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
+            const iface = &l.in.interfaces[l.in.module.int()];
+            for (0..iface.events.len) |row| {
+                const decl = Reach.privateExtractor(iface, l.bir, @intCast(row)) orelse continue;
+                if (decl < decls.len) dispatched[decl] = true;
+            }
+        };
         for (decls, 0..) |d, i| {
             const index: u32 = @intCast(i);
             l.unobserved[i] = d.kind == .value and !d.is_pub and !dispatched[i] and

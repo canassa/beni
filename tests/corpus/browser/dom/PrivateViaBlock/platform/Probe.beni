@@ -1,0 +1,37 @@
+--! A payload extractor that is not `pub`, written in beni over `Js` with a
+--! block body (boundary.md §9.3, amended 2026-10-23; backend.md §4, *A
+--! result nothing reads*). No module's code calls it: the lowering's
+--! listener does. Before the fix of #1806 the block's tail was written
+--! as a statement with no `return`, and the handler was handed
+--! `undefined`. The event's `detail` is the string the page must show.
+
+import Html exposing (Html)
+import Js
+
+
+--| The event object the extractor is handed.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it.
+pub markup text : String → Html msg
+
+
+--| The same markup, its messages passed through the function.
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onProbe" name "probe" via probe : String
+
+
+probe : Event → String
+probe v =
+    ev = Js.from v
+    detail = Js.get ev "detail"
+    Js.to detail
