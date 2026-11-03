@@ -14,7 +14,13 @@ operation. They do not replace its test with an external permission oracle. -/
 
 namespace Ownership.FlatFragment.State
 
-/-- A type that holds no dictionary at any position. -/
+/-- A type that holds no dictionary at any position. The predicate reads the
+    type only. `Ty.fn` names no capture types, so `fn` says nothing about the
+    captures of a closure, which can hold a dictionary. The flat fragment
+    admits no function value (`FlatType` has no `fn` case, `FlatAbstract` no
+    function abstract), so no lemma here meets that case. A fragment that
+    admits closures must read their captures through their declarations'
+    types (`captureTypes`) first. -/
 inductive DictFree : Ty → Prop where
   | int : DictFree .int
   | list (t : Ty) : DictFree t → DictFree (.list t)
