@@ -1411,7 +1411,11 @@ string renderer sends nothing — and keeps `markup.js` beside `runtime.js`. *Am
 supplies `run` and the `ssr` lowering's seven exports and the two primitives, and the manifest
 says `"markup": { "lowering": "ssr", "module": "Rt" }` and no `"runtime"`, the shape
 `browser` has had since 2026-10-02 (§5.2, *`"runtime"` is optional when the runtime module is the
-whole runtime*). `markup.js` and `runtime.js` are deleted.
+whole runtime*). `markup.js` and `runtime.js` are deleted. The module name `Rt` is `node`'s now,
+as it is `browser`'s: a platform over either that names a runtime module of its own gives it
+another name, or the build is `duplicate_module` (`build/bad/RuntimeModule`'s is `Views`); and
+one that names `ssr` with a markup file of its own declares its program `"runtime"` too, since
+`node` has no file to lend it (the three `build/bad/MarkupRuntime*` fixtures).
 
 **A runtime module: the markup runtime written in beni** (*added 2026-10-02*, `plans/browser-
 decisions.md` R47-1; research 47 §6 item 1). A fifth field, `"module"`, names a module of the
