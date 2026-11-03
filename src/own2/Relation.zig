@@ -330,6 +330,17 @@ pub const Eval = struct {
         return v;
     }
 
+    /// A value's leaves (`deep`) or its own storage, projected at `route`.
+    /// A leaf two coexisting routes reach (`many`) is read twice; the second
+    /// copy is at a route of its own, so the check never takes it for the
+    /// first (§2.9.3: one object at two places is two entries).
+    fn readAt(e: *Eval, v: u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(e.gpa());
+        if (deep) try e.leavesOf(v, tags, &ls) else try e.storageOf(v, tags, &ls);
+        for (ls.items, 0..) |l, k| try out.append(e.gpa(), .{ .leaf = l, .route = if (k != 0 and ls.items[k - 1] == l) try e.routeStep(route, many_route) else route });
+    }
+
     /// The objects at value `v`'s own storage (a shallow write's target):
     /// a built list's or record's site, a reference's position itself.
     pub fn storageOf(e: *Eval, v: u32, tags: u32, out: *std.ArrayList(u32)) Error!void {
@@ -396,6 +407,9 @@ pub const Eval = struct {
 
     // ---- projection of an arrival onto a value -------------------------------
 
+    /// The kid of `routeStep` that a `many` leaf's second copy takes.
+    const many_route: u32 = none - 1;
+
     pub fn routeStep(e: *Eval, route: u32, kid: u32) Error!u32 {
         try e.charge(.path, 1);
         const g = try e.routes.getOrPut(e.gpa(), .{ route, kid });
@@ -424,10 +438,7 @@ pub const Eval = struct {
                 .alt => {
                     // Read deep whole: its leaf set, the leaves its arms give.
                     if (rest.len == 0 and deep and !e.parts) {
-                        var ls: std.ArrayList(u32) = .empty;
-                        defer ls.deinit(e.gpa());
-                        try e.leavesOf(it.v, it.tags, &ls);
-                        for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
+                        try e.readAt(it.v, true, it.tags, it.route, out);
                         continue;
                     }
                     const ks = e.f.kidsOf(x);
@@ -469,26 +480,13 @@ pub const Eval = struct {
                     if (rest.len == 0 and deep and e.parts) {
                         if (x.site != none) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .route = it.route });
                         if (x.form == .list and x.head != 0) {
-                            var ls: std.ArrayList(u32) = .empty;
-                            defer ls.deinit(e.gpa());
-                            try e.storageOf(x.head - 1, it.tags, &ls);
-                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
+                            try e.readAt(x.head - 1, false, it.tags, it.route, out);
                         }
                         for (e.f.kidsOf(x), 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = it.at, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
                         continue;
                     }
                     if (rest.len == 0) {
-                        if (deep) {
-                            var ls: std.ArrayList(u32) = .empty;
-                            defer ls.deinit(e.gpa());
-                            try e.leavesOf(it.v, it.tags, &ls);
-                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
-                        } else {
-                            var ls: std.ArrayList(u32) = .empty;
-                            defer ls.deinit(e.gpa());
-                            try e.storageOf(it.v, it.tags, &ls);
-                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = it.route });
-                        }
+                        try e.readAt(it.v, deep, it.tags, it.route, out);
                         continue;
                     }
                     const st = Step.fromWord(rest[0]);
@@ -514,10 +512,7 @@ pub const Eval = struct {
                         .level => try e.projectLevels(it.v, words[it.at + 1 ..], deep, it.tags, it.route, out),
                         else => {
                             // A step the literal cannot follow: every object of it.
-                            var ls: std.ArrayList(u32) = .empty;
-                            defer ls.deinit(e.gpa());
-                            try e.leavesOf(it.v, it.tags, &ls);
-                            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = try e.routeStep(it.route, none) });
+                            try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out);
                         },
                     }
                 },
@@ -603,10 +598,7 @@ pub const Eval = struct {
     fn projectLevels(e: *Eval, v: u32, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
         const place = e.f.val(v).place;
         if (place == .none) {
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(e.gpa());
-            try e.leavesOf(v, tags, &ls);
-            for (ls.items) |l| try out.append(e.gpa(), .{ .leaf = l, .route = route });
+            try e.readAt(v, true, tags, route, out);
             return;
         }
         const pl = e.places();
