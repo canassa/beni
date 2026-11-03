@@ -59,7 +59,8 @@ pub const Context = struct {
     fieldRank: *const fn (ctx: *anyopaque, s: Bir.SymbolIndex) u32,
     /// A constructor reference's `(ordinal, arity)`.
     ctorOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
-    /// A parameterless value's `(module, declaration)`; `none` for a `foreign`'s.
+    /// A parameterless value's `(module, declaration)`; `.{ none, 0 }` for a
+    /// `foreign`'s, `.{ none, 1 }` for one that holds no object.
     sharedOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
     callee: *const fn (ctx: *anyopaque, inst: u32, args: []const u32) Error!Callee,
@@ -83,9 +84,8 @@ pub const Context = struct {
     siteSig: *const fn (ctx: *anyopaque, inst: u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
     /// The pessimistic contract of a call of `arity` arguments.
     pessimistic: *const fn (ctx: *anyopaque, arity: u32) Error!Contract.Id,
-    /// A `try`'s shape: `(success ordinal, failure ordinal, failure
-    /// arity)` of its scrutinee's type (`Ok`/`Err` or `Just`/`Nothing`),
-    /// or null.
+    /// A `try`'s shape: `(success ordinal, failure ordinal, failure arity)` of its
+    /// scrutinee's type (`Ok`/`Err` or `Just`/`Nothing`), or null.
     tryShape: *const fn (ctx: *anyopaque, inst: u32) ?[3]u32,
 };
 
@@ -591,7 +591,7 @@ const Walker = struct {
                 try k.evidence(i);
                 if (k.isCallee(i)) return .{};
                 if (k.ctx.sharedOf(k.ctx.ctx, i)) |md| {
-                    if (md[0] == none) return .{ .v = try fr.mk(.{ .kind = .host }) };
+                    if (md[0] == none) return .{ .v = if (md[1] == 0) try fr.mk(.{ .kind = .host }) else try fr.scalar() };
                     if (Slots.holdsAny(fr.places, try fr.places.rootPath(k.gpa, try k.placeOf(i)))) return .{ .v = try fr.mk(.{ .kind = .shared, .head = md[0], .site = md[1] }) };
                     return .{ .v = try fr.scalar() };
                 }
