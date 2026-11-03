@@ -56,7 +56,7 @@ pub fn canonical(x: Ctx, c: Cond) Error!Cond {
         paths.clearRetainingCapacity();
         try Slots.replay(g, x.account, x.places, x.roots[j], w, &paths);
         if (paths.items.len != 1 or wild(x, .from(paths.items[0])) or
-            try manyPlaces(x, x.places.pathPlace(.from(paths.items[0]))) or
+            x.places.slotsAtLeast(x.places.pathPlace(.from(paths.items[0]))) > Slots.below_min or
             try BelowSize.moreBelow(x.slots, g, x.account, x.places, .from(paths.items[0]), Slots.below_min))
         {
             try run.append(x.arena, o);
@@ -73,32 +73,6 @@ pub fn canonical(x: Ctx, c: Cond) Error!Cond {
     }
     if (!changed) return c;
     return Cond.of(x.account, run.items);
-}
-
-/// Whether `below` of a path at place `p` has more than `Slots.below_min`
-/// slots, read off the place graph without a walk of the paths: each step
-/// is at least one path, so the object places at and below `p`, counted
-/// once a step (a place on the stack again counts nothing), are at most
-/// its slots. Each place is read once (`memo`), the count capped.
-fn manyPlaces(x: Ctx, p: Ids.PlaceId) Error!bool {
-    var memo: Ids.FixedDict(1) = .{};
-    defer memo.deinit(x.gpa);
-    return try lower(x, p, &memo) > Slots.below_min;
-}
-
-fn lower(x: Ctx, p: Ids.PlaceId, memo: *Ids.FixedDict(1)) Error!u32 {
-    const cap: u32 = Slots.below_min + 1;
-    const got = try memo.getOrPut(x.gpa, .{p.int()});
-    if (got.found_existing) return got.value_ptr.*;
-    got.value_ptr.* = 0;
-    try x.account.reserve(.inspection, 1);
-    var n: u32 = @intFromBool(!Place.Kind.own(x.places.kind(p)).isEmpty());
-    for (x.places.steps(p).children) |c| {
-        if (n >= cap) break;
-        n = @min(cap, n + try lower(x, c, memo));
-    }
-    (try memo.getOrPut(x.gpa, .{p.int()})).value_ptr.* = n;
-    return n;
 }
 
 /// A slot no step below can name: a type variable's or an opaque place.
