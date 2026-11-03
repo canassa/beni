@@ -1,0 +1,2 @@
+Task.timeout's answer is what the work answers, here a list it makes (ownership-v2.md §2.13.6): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 accepts each edit; the sanitised run prints the same.
