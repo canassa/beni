@@ -51,6 +51,7 @@ const Eval = @import("Eval.zig");
 const ReadOff = @import("ReadOff.zig");
 const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
+const Kept = @import("Kept.zig");
 const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
 const Bir = @import("../bir/Bir.zig");
@@ -1490,10 +1491,12 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         lines.deinit(gpa);
     }
     for (rs) |_| try lines.append(gpa, .empty);
-    // Inference rounds deliver facts between the members (§2.12 step 2);
-    // then a validation round evaluates each code once more, plainly,
+    // Inference rounds deliver facts between the members (§2.12 step 2), their judgements
+    // kept across rounds; then a validation round evaluates each code once more, plainly,
     // under the candidates, and its verdicts are the lines (step 3).
     var validating = false;
+    var kg = try Kept.Group.init(gpa, order.items.len);
+    defer kg.deinit(gpa);
     while (true) : (round += 1) {
         for (lines.items) |*l| l.clearRetainingCapacity();
         mod.reads.clearRetainingCapacity();
@@ -1529,6 +1532,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             try ReadOff.factsOff(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
         }
+        if (!validating and solver.used) try kg.round(gpa, &rs[0].account, &mod.contracts, mod.codes.items, ids, drafts, evals);
         for (order.items, 0..) |x, i| {
             const id = ids[i];
             const k = owner.items[x];
@@ -1538,10 +1542,9 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const e = &evals[i];
             try Eval.finishDemands(e);
             try Closures.escapedWrites(e);
-            const got = try Resolve.resolve(e, &regions.items[k], ra);
-            // R-5.13.1: in a comparison's walk, a write of what arrived is
-            // `comparison_changes_value`; a write of a fresh value stays
-            // accepted, and the contract keeps its writes (§2.13.13 item 13).
+            const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
+            // R-5.13.1: in a comparison's walk, a write of what arrived is `comparison_changes_value`;
+            // a write of a fresh value stays accepted, and the contract keeps its writes (§2.13.13 item 13).
             if (mod.comparison[r.decl]) for (got.lines) |*l| {
                 if (l.outcome.verdict == .accepted and l.outcome.accepted == .param) {
                     l.outcome.verdict = .refused;
@@ -1555,10 +1558,8 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                 // Not within its candidate: an inference defect, joined and
                 // validated again (§2.12 step 3), never silent.
                 if (try mod.contracts.within(ra, &mod.slots, c, code.contract)) {
-                    // Within: the code's own contract is what it does under
-                    // the candidates, so it is what callers read (no
-                    // reliance a round of the inference made and a later
-                    // one dropped).
+                    // Within: the code's own contract is what it does under the candidates, so it is
+                    // what callers read (no reliance a round of the inference made and a later one dropped).
                     code.contract = c;
                 } else {
                     code.contract = try mod.contracts.join(gpa, ra, &r.account, &mod.slots, code.contract, c);
@@ -1584,9 +1585,8 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         if (validating) {
             if (!moved) break;
         } else if (!stale or !moved) {
-            // A round in which no code read another's draft was a plain
-            // evaluation already: its verdicts stand (a code with no
-            // recursion is evaluated once).
+            // A round in which no code read another's draft was a plain evaluation already: its
+            // verdicts stand (a code with no recursion is evaluated once).
             if (!solver.used) break;
             validating = true;
         }
