@@ -61,31 +61,27 @@ const poisonObject = (o, site) => {
 // `n`: the written list's length, which a plain base takes.
 const poison = (xs, site, n) => {
   if (Array.isArray(xs)) return poisonArray(xs, site, n);
-  // Every part is read before any is poisoned.
-  const view = xs.o !== undefined;
-  const { b, p, h, t, T } = xs;
-  poisonObject(xs, site);
-  for (const a of view ? [b, p] : [h, t, p]) if (Array.isArray(a)) poisonArray(a, site);
-  if (!view && T !== undefined && T.tc > 0) {
-    const { r } = T;
-    poisonObject(T, site);
-    if (Array.isArray(r)) poisonArray(r, site);
+  const header = xs.$h;
+  if (header === undefined) {
+    const base = xs.b;
+    poisonObject(xs, site);
+    return poisonArray(base, site);
   }
+  // Read every alias before installing any of its traps. The token is
+  // shared runtime metadata and is never poisoned.
+  const cache = header.cache, tail = header.tail, root = header.root;
+  const arrays = [cache.flat, tail.values];
+  if (header.treeCount > 0) arrays.push(root.a);
+  poisonObject(xs, site);
+  for (const array of arrays) if (Array.isArray(array)) poisonArray(array, site);
+  const objects = [header, cache, tail];
+  if (header.treeCount > 0) objects.push(root);
+  for (const object of objects) poisonObject(object, site);
 };
 
-const own = (a) => (Array.isArray(a) ? a.slice() : a);
-
-// The list a write runs on: a fresh copy of `xs` that shares none of the
-// storage `poison` poisons. A plain array or a view is copied whole. A trie is
-// copied as its header, head, tail, tree and root, O(32): the nodes below the
-// root are shared, which no writer writes (they path-copy), and which
-// `poison` leaves alone.
 const fresh = (xs) => {
   if (Array.isArray(xs)) return xs.slice();
-  if (xs.o !== undefined || xs.T === undefined) return xs.b.slice(xs.o);
-  const { length, h, hc, T, t, $plain } = xs;
-  const tree = T.tc > 0 ? { r: own(T.r), s: T.s, off: T.off, tc: T.tc } : T;
-  return { length, h: own(h), hc, T: tree, t: own(t), p: null, $plain };
+  return xs.$h !== undefined ? xs.$plain().slice() : xs.b.slice(xs.o);
 };
 
 // `List.<writer>(base, …rest)` under the sanitiser: `site` names the write.

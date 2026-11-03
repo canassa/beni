@@ -1,0 +1,68 @@
+-- List implementation metadata is not part of Issue.input. Only elements
+-- in this version count: a later append may claim a slot with a callable.
+import List
+import Node
+import Schema
+
+
+ints : Schema.Schema String (List Int)
+ints =
+    Schema.converted Schema.string (Schema.conversion (λ_ → Ok []) λ_ → Err [ Schema.issue "ints" ])
+
+
+callbacks : Schema.Schema String (List (Maybe (⊤ → ⊤)))
+callbacks =
+    Schema.converted
+        Schema.string
+        (Schema.conversion (λ_ → Ok []) λ_ → Err [ Schema.issue "callbacks" ])
+
+
+callback : ⊤ → ⊤
+callback ⊤ = Debug.log "must not invoke a list element" ⊤
+
+
+options : Schema.Options
+options = { Record.copy (Schema.defaultOptions ⊤) | reportInput = True }
+
+
+reported : Result (List Schema.Issue) a → String
+reported result =
+    case result of
+        Err [ problem, …_ ] →
+            case problem.input of
+                Nothing →
+                    "none"
+                Just value →
+                    case Schema.print Schema.value value of
+                        Ok json →
+                            json
+                        Err _ →
+                            "unprintable"
+        _ →
+            "unexpected success"
+
+
+kept : Result (List Schema.Issue) a → String
+kept result =
+    case result of
+        Err [ problem, …_ ] →
+            case problem.input of
+                Nothing →
+                    "none"
+                Just _ →
+                    "data"
+        _ →
+            "unexpected success"
+
+
+main : Node.Program
+main =
+    numbers = List.push (List.range 0 31) 32
+    prefix = List.push (List.repeat Nothing 32) Nothing
+    later = List.push prefix (Just callback)
+    Node.printLines
+        [ reported (Schema.encodeWith ints options numbers)
+        , reported (Schema.encodeWith ints options (List.drop numbers 30))
+        , kept (Schema.encodeWith callbacks options prefix)
+        , kept (Schema.encodeWith callbacks options later)
+        ]

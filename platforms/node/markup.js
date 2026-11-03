@@ -7,7 +7,7 @@
 // the array itself, or `$plain()` of a view or a trie (`Elements`) — and a
 // tuple as `{ a, b }`.
 
-const Elements = (list) => (Array.isArray(list) ? list : list.b.slice(list.o));
+const Elements = (list) => (Array.isArray(list) ? list : (list.$plain ? list.$plain() : list.b.slice(list.o)));
 
 const replacements = { "&": "&amp;", "<": "&lt;", '"': "&quot;", "\r": "&#13;" };
 const replace = (c) => replacements[c];

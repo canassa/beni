@@ -7,18 +7,18 @@
 # words in §24.8, then put the new hash here.
 #
 # file                          declaration         hash
-core/String.beni                String.elements     6ad40d933dcc45ccd143441617d827639d23233570859550df3d6c04fdab5588
-core/String.beni                String.join         a40d289d336a29616aa70c7be46d2f71a461897b018014bd284a6293ad31c2fd
-core/String.beni                String.fromList     85f80127cea0c75675397231606be3001003c9e5690e7c4d073688d2c853c08f
-core/String.beni                String.split        6e9739ff7e758ab7c017a903f78c1546a2f1fc8f6eac81e1b442b9864a58487d
-core/String.beni                String.words        4500c2288ae517c963a515563db65bfd8ccaa6d4e5ad2dafe06a67159ca378bc
-core/String.beni                String.lines        a4aebc6e58b8e3107034d191ae5aa760f2c46306db26fc946a565f5b27380f3b
-core/String.beni                String.toList       96a3f56091778683e9ac974c406c881c5c6c255094354768726a0517dbca501c
-core/String.beni                String.indexes      aa46b881c0a809e0f63c2f5a324fb2ca74fc3a1b5f23bbc492c34cbed74a838e
-core/Debug.beni                 Debug.logAs         e87fb512372356e1b97c15d30c96fbf70000c1827ed811ed821c10942e6fdf46
-core/Debug.beni                 Debug.toStringAs    9721dfa272bf1c15a90c9d9df0fc1278047c7eab4b78fe87c5dcf6c7192c1ab2
-core/Debug.beni                 Debug.log           0027a590612d84d0bdfb13861c3da3ab82a9540fe90baa88c54e2c84c5cd3df9
-core/Debug.beni                 Debug.toString      613ca54abbe8d10944bf759e0d7f2f89f955126744e02ec1e82d30efddd339a3
+core/String.beni String.elements 740fc1e90c6e16df26beda5c1493541a4294af644e2ad9f40ae5bb6000af0df8
+core/String.beni String.join a40d289d336a29616aa70c7be46d2f71a461897b018014bd284a6293ad31c2fd
+core/String.beni String.fromList 285d36db5c37813492f539cf6c4b5c771df0eefab2ccdb715c93b7ba7ee43b74
+core/String.beni String.split 6e9739ff7e758ab7c017a903f78c1546a2f1fc8f6eac81e1b442b9864a58487d
+core/String.beni String.words 06fbb094faa63e7196626711431188d1914e5031f0518f2dc00826093923edd5
+core/String.beni String.lines a4aebc6e58b8e3107034d191ae5aa760f2c46306db26fc946a565f5b27380f3b
+core/String.beni String.toList 96a3f56091778683e9ac974c406c881c5c6c255094354768726a0517dbca501c
+core/String.beni String.indexes aa46b881c0a809e0f63c2f5a324fb2ca74fc3a1b5f23bbc492c34cbed74a838e
+core/Debug.beni Debug.logAs e87fb512372356e1b97c15d30c96fbf70000c1827ed811ed821c10942e6fdf46
+core/Debug.beni Debug.toStringAs 0cd07e36d790ebe178851c1e7afa1b36686b2f8eac5bcd508883acbc44e2570f
+core/Debug.beni Debug.log 0027a590612d84d0bdfb13861c3da3ab82a9540fe90baa88c54e2c84c5cd3df9
+core/Debug.beni Debug.toString 613ca54abbe8d10944bf759e0d7f2f89f955126744e02ec1e82d30efddd339a3
 core/Task.beni                   Task.timeout             f50be3112f2996bdbba6304178953f5503b61e2d2b0624885b086beaa9f020bc
 core/Task.beni                   Task.raceOk              039a240424cf3295941a88afed1dcbb5406a9957a5e7bde955297b01ba5c3185
 core/Task.beni                   Task.startIn             9db1b5dfe54ed887e5feb2721c0a46de3e8fa467c7beced6d842395f06ba57e1
@@ -28,31 +28,31 @@ core/Task.beni                   Task.haltAs              e90e451c285f9a3a01b439
 core/Task.beni                   Task.startRacers         9f8a121fe97e1dfa90d96cb2045176d3c6ef97707434cdfd1ba1122527dfcaac
 core/Schema.beni                Schema.print        3a80795348d8d28d8d25a8b2d23171e571c557af846f1d8f9edd68af7ebd0dd1
 core/Schema.beni                Schema.printWith    9bcc40b4e9446b99264307c3c3750cdeb7fa03b3f13514fc8f475df9ce2d9a62
-core/Js.js                      Js.args             60918ef47c38583496832acc4a33a2c2c7421ae9ff7d3e1668f6bebfe1632360
-core/Js.js                      Js.from             58f75c4409ebd100b249820fbd069e46ce5f285b91b4f581c8c67a66b44dc204
-core/Js.js                      Js.to               5163adb42e6582f154935f9dd82bef550a96e02b87002fcdb9d38fc2f81d072a
-core/Js.js                      Js.same             0e175ad684f7ebbaf06564a9fa8e9a6ef1a3ff0c56c4b59c6328e6acc01bfea0
-core/Js.js                      Js.isNull           4c7ffbb2bba536432f3bb842a6c98ccf27ddcebf263000f091ed9e36c6a16b2d
-core/Js.js                      Js.isUndefined      fd2093d2055eccc2443acc27d8f8da409d665a3e18ba0d47b4eb3a7018b830e2
-core/Js.js                      Js.isNullish        b583c74aa98b558c4f7dfff78c8d8a4fe11deb6715c7efcd45a0699928cab6c4
-core/Js.js                      Js.lt               d814e8f1b1138ac211f50d086c6ebfa097b054dac30eef3fa59cf03227511b7e
-core/Js.js                      Js.gt               67d735ae91359072a964ff0a9658cd4cb95acb30e3085c919f1833b1208207ca
-core/Js.js                      Js.le               4fc487e0fcfaa0b8f74d21f3dd9071e5ed530f919b03fbc6df6c345054e74092
-core/Js.js                      Js.ge               92976d58c8b6e0897c2f70baf4d8282e4a3a7857be8d72799670618c7b9143e8
-core/Js.js                      Js.typeOf           26a54a7f5bd7a4c319163144c07a20c2d91212a09d02b1afa28c597f6021ba8b
-core/Js.js                      Js.typeIs           e75a2c0052c03d548fb3e64ab086d4ebeb31174fd721d4beae889aa0ead892dc
-core/Js.js                      Js.array            aea16879d2fb8c2094e09433a3e83a0f135caa56a643b887abfde07cc191c5e8
-core/Js.js                      Js.object           26439083cc74fdebbd368949200f307d5333370f4dabb6966066a0f156af0488
-core/Js.js                      Js.each             29bcff32c565d0d30585d21fd32ea2b499019c901be4527bb683439f9f727b2d
-core/Js.js                      Js.ref              63bbd25263b49e6ee7d261a4cc65b816a57f693bdf2b449a958944428339f38f
-core/Js.js                      Js.read             77d880dddfc4b9528f23c0c1da0459b1716cdd54a85c36b3e9561ff24168483a
-core/Js.js                      Js.write            a906cb99b93ea7cb525e268db3181563dca63210541667ef2f793d25e8bdeee2
-core/Js.js                      Js.throw            628e1f05cb228941c7205949f7301f0a65c18538d6e4a9ca30e4ff3163b32457
-core/Js.js                      Js.finally          1a6f2d1ad7df3202bf878f7f7f6c6ddec0fc75b191e103682c147c58cf0a9394
-core/Js.js                      Js.catchIf          761a837beb982dc19efa35c98a944c5829628e843713484a85cee4cf735477d6
-core/Js.js                      Js.pure             d26c91d0e718d417966b583cd06490d4165ec975b74b76eaa30594b47366893d
-core/Js.js                      Js.fingerprint      30a526a5dfc14aa239d4e5a546c481c08b8010d51d0ec3c7dae88921f03e9288
-core/Js.js                      Js.suspending       4ec46a146eac3d0f1f029df6b311ffddbab73f54789897f67340ca12b7564c09
+core/Js.js Js.args c15ed95be23fac3d1810eeb6009e45ae88a81b1fe31e5232fb96032876151b04
+core/Js.js Js.from 58f75c4409ebd100b249820fbd069e46ce5f285b91b4f581c8c67a66b44dc204
+core/Js.js Js.to 5163adb42e6582f154935f9dd82bef550a96e02b87002fcdb9d38fc2f81d072a
+core/Js.js Js.same 0e175ad684f7ebbaf06564a9fa8e9a6ef1a3ff0c56c4b59c6328e6acc01bfea0
+core/Js.js Js.isNull 4c7ffbb2bba536432f3bb842a6c98ccf27ddcebf263000f091ed9e36c6a16b2d
+core/Js.js Js.isUndefined fd2093d2055eccc2443acc27d8f8da409d665a3e18ba0d47b4eb3a7018b830e2
+core/Js.js Js.isNullish b583c74aa98b558c4f7dfff78c8d8a4fe11deb6715c7efcd45a0699928cab6c4
+core/Js.js Js.lt d814e8f1b1138ac211f50d086c6ebfa097b054dac30eef3fa59cf03227511b7e
+core/Js.js Js.gt 67d735ae91359072a964ff0a9658cd4cb95acb30e3085c919f1833b1208207ca
+core/Js.js Js.le 4fc487e0fcfaa0b8f74d21f3dd9071e5ed530f919b03fbc6df6c345054e74092
+core/Js.js Js.ge 92976d58c8b6e0897c2f70baf4d8282e4a3a7857be8d72799670618c7b9143e8
+core/Js.js Js.typeOf 26a54a7f5bd7a4c319163144c07a20c2d91212a09d02b1afa28c597f6021ba8b
+core/Js.js Js.typeIs e75a2c0052c03d548fb3e64ab086d4ebeb31174fd721d4beae889aa0ead892dc
+core/Js.js Js.array aea16879d2fb8c2094e09433a3e83a0f135caa56a643b887abfde07cc191c5e8
+core/Js.js Js.object 26439083cc74fdebbd368949200f307d5333370f4dabb6966066a0f156af0488
+core/Js.js Js.each 29bcff32c565d0d30585d21fd32ea2b499019c901be4527bb683439f9f727b2d
+core/Js.js Js.ref 63bbd25263b49e6ee7d261a4cc65b816a57f693bdf2b449a958944428339f38f
+core/Js.js Js.read 77d880dddfc4b9528f23c0c1da0459b1716cdd54a85c36b3e9561ff24168483a
+core/Js.js Js.write a906cb99b93ea7cb525e268db3181563dca63210541667ef2f793d25e8bdeee2
+core/Js.js Js.throw 628e1f05cb228941c7205949f7301f0a65c18538d6e4a9ca30e4ff3163b32457
+core/Js.js Js.finally 1a6f2d1ad7df3202bf878f7f7f6c6ddec0fc75b191e103682c147c58cf0a9394
+core/Js.js Js.catchIf 761a837beb982dc19efa35c98a944c5829628e843713484a85cee4cf735477d6
+core/Js.js Js.pure d26c91d0e718d417966b583cd06490d4165ec975b74b76eaa30594b47366893d
+core/Js.js Js.fingerprint 30a526a5dfc14aa239d4e5a546c481c08b8010d51d0ec3c7dae88921f03e9288
+core/Js.js Js.suspending 4ec46a146eac3d0f1f029df6b311ffddbab73f54789897f67340ca12b7564c09
 platforms/node/Node.beni        Node.print          264360a1ae4275474cc5654558a20dd9aa413f8084915660ff1ecc340dfc7fa3
 platforms/node/Node.beni        Node.printLines     3bbcc03c964b4ae581e4781d6f610f27c3c08cc47c74581faab0c6778f0c8fdd
 platforms/node/Node.beni        Node.exitWith       9b93eadbc1527b0c5d581049e76862b8e9cb320666f2f9d8bc26149ae54127c3
@@ -80,24 +80,6 @@ tests/platforms/page/runtime.js              Page.run                 94db922d68
 # `core/List.beni`'s array primitives and the Builder, `Ref` and
 # `Deferred`, each worded beside its type (R-5.10.8), and the pinned
 # `sortWith` row with the helpers its body runs [O 2026-10-26].
-core/List.beni                List.append         6e39f6d0822a5711c55490f1af9c28f48d9406020dbfd9fdd9b8d263eecc9f14
-core/List.beni                List.set            9f93fd9937b4c6ab335fa31ed78e8806ba643b081c4f034b5d451e8da9b347d9
-core/List.beni                List.push           2170601ff25beadcb284fcde4d942dc9646300cf7f53795fac00a5e7ad681af2
-core/List.beni                List.pop            9eed252fc467416fb0eae7e896899864320851572d47fb1a150b9a97da36fef0
-core/List.beni                List.insertAt       e85544e8292143165cd9627aac47c4eed1a9f5c4d099b679dc2bf9a9cc5ad52b
-core/List.beni                List.removeAt       58e6091a22f3e50a8418265c5b1ea2a01e16a66402b326edd53beb9ad8954073
-core/List.beni                List.swap           25c180116d3a51ce152742b494cf7df403eb2040c1ac5742179b894d57be93cd
-core/List.beni                List.view           d8483a0041b930940b988b6fe81d33d206d19b6298ce283610d5db29ac0c2161
-core/List.beni                List.base           f7b4ab9953b93387b3b97c7a208e8e482369c9ab143ce2a269f3e44de0fb3e6d
-core/List.beni                List.offset         5948d15f79c5fcf2e08b0551efa79a14e510ec0f2692d484eb87af0031b2be42
-core/List.beni                List.builder        645a748dd8bcb4c54c0ca308e90a5dedc3eee2dbc75853b3f06dfc88fdbb1457
-core/List.beni                List.done           8de0b0d2c17f15f08179cbffbf02c3d0d1919f43051421bc7906293d01106e56
-core/List.beni                List.sortWith       b7ab5497f8a3445190b8f8991206e5a404f9c6958952bd9cd71b42a736149f13
-core/List.beni                List.sortRange      0134063b20980d610914834d38143a1b4228099b304f737e9855d3e55b26da76
-core/List.beni                List.merge          0da98002cbed9a8d853f8e63667c3e92b9936c31bebaff553292a0e76575eac9
-core/List.js                  List.length         d29c060851c95a74574b0b333e8a30676150e7f03f8914826cb37d5e931beaa4
-core/List.js                  List.traverseAt     8e37c3054d1fd83ee4fce3469d405f5a1041944123dd2de56e7c82456d8af8f0
-core/List.js                  List.put            286a8b1d168b66f275712e15239f53e9781f4a1afcde2ffd894895b8f281d006
 core/Ref.beni                 Ref.make            c9b05c32082ff83273a53acac9fab0877995071b310cb0292881f2f1e4c6cabd
 core/Ref.beni                 Ref.get             969b4f392da46ec630cc3122e1f1ef829c00b0b5e057582c2f2badde6888ebd8
 core/Ref.beni                 Ref.set             a233d3b602fda8b5d21391117431a4035df04f0802d201141aba7568ef998aec
@@ -108,82 +90,29 @@ core/Deferred.beni            Deferred.wait       0fd1fc2cab0c05d7c85a302622b729
 core/Deferred.beni            Deferred.complete   5240fc4c43112afc24e2da942985a7e844c2f8bde0ed346e5d968b0917f8a8cd
 core/Deferred.beni            Deferred.poll       9286e70f17e95d2be61f79072690c0746ca29c891569dbdbd8b9c9162c079d46
 core/Deferred.beni            Deferred.isDone     d9cfc7ce6721be29aa4de6e445f580e49b777719476070be540a97483bfa3963
-core/List.beni                List.cons           41d3cb1371fbae9bb627a157b538207990d21f197cfaffe36f110636d5694e05
-core/List.beni                List.sliceOf        6885afa24a036f93011b1e76cf30bf6901ba4888ca9e270845d4cdee8271e50a
-core/List.beni                List.focus          6a24ae82b9f8399007a33a8a228f5b75772d7804d66bcac4f945c887179ef524
 #
 # The index obligation (ownership-v2.md §2.13.6, R-5.10.7): every body that
 # reads a container through a `taken` result — `traverseAt` — reads it only
 # through it, once per index, moving one way. These bodies are part of the
 # trusted surface; `check_test.zig` fails when one is added unlisted.
-core/List.beni                List.foldlFrom      f0b148d0d9015b8e667c55e3fc93a70c81af4fe2861a2d5388cc15748c5e5d79
-core/List.beni                List.foldrFrom      6c1acdf587f102ca159cc714c16c615cbe29e3da4a61f6a95b913326749d8926
-core/List.beni                List.mapHelp        68604fb212552a4aa63591248c9e4ebbee794cfc731b6b74a102eb648c7b278e
-core/List.beni                List.indexedMapHelp d60439e211641fd2cd3d2e74adc335786d7359b43e191529a30e3f4c59f690da
-core/List.beni                List.filterHelp     b3c6634ee320ca247cc44ef2cf82e62578064cd9fa17605c88943c9f337e5649
-core/List.beni                List.filterMapHelp  4ad55f3b748451bd6f7db626320a64bfcba66a8ab67dbf3881c130b4e0d70438
-core/List.beni                List.reverseHelp    e3c86a01f586b5e0413bff340f6c7d7039b933dd00f2f5c55fac86d08b874df6
 #
 # The helpers the worded List primitives run (R-5.10.7: the body a row was
 # justified against includes the module's declarations it reaches), and
 # the test platforms' worded declarations.
-core/List.beni                List.isPlain        d917d4aad7bf5e0ff7342c22fcba21470f6c5b38f8d3e3e46338237427d8437f
-core/List.beni                List.isTrie         c50d0857a77d098dc5a10c917e5b05f295d4b5faa90a992242be66057adc714b
-core/List.beni                List.trieDrop       50a58635fdc5e0bc406764d65b22966f9edf3269362595ffb9581b292d9b045b
-core/List.beni                List.viewOf         c990bb42cb4e3ca2ab04dce577da82064ad4f58270cd9e7f418aea6f2d73b2f4
-core/List.beni                List.viewPlain      56a33bd500d13b889d8163e6f266b893ffa6a6f35be809f31d29d366d541ff9d
-core/List.beni                List.header         7fb144267951081de7c3a4b06f5e02158e5e72502b3b04452bb708e7499d9bc2
-core/List.beni                List.leafAt         7203f2498b194aa1d3291e537165296055e64e92fcdeaa725a3d8df0321db9b2
-core/List.beni                List.treeOf         01ccd5dae7b73bb7b214d2e25a365fc324d5cb44f30338202bab47ff2acfcfbf
-core/List.beni                List.triePlain      5574f18191c298f2a6c39053afbb07579af1a41b1969cad0face7b09ab0e92e6
-core/List.beni                List.flatHead       d0492c898af706767bf565e1b2e5c60674c2a9d9976c2c75601419ffc5c4dec1
-core/List.beni                List.flatTree       f6830376677670d5e6fc72ed46ce281c703176d2d516c455b970f643c3b765a1
-core/List.beni                List.copyTo         705002e88d04202788e469f625722809c16800c026a533f615797359d4e3a0b6
-core/List.beni                List.outside        0594d03e19da6c6293ae524e0143cf29eafd9a36a0d7bcde586add1e96ba3ee5
-core/List.beni                List.unsafeGet      6408f56503e532c9cc8dbc5d5be617c6662b82ec60cdb90addcc7ca3eae68149
-core/List.beni                List.trieSet        4cd662e6be3cbc64a1218ff95e1001b411315599be9fc06c32e8751ec12fd13f
-core/List.js                  List.at             718de89caa80d73751fbec4b523d6a71a63100d7a8f1a7c7aded3796c827c80a
-core/List.beni                List.fromPlain      530f3b09f32cd999fdec18f474cf5420d60edef5c307504ca98847aa95053292
-core/List.beni                List.noTree         67aff8b6414b6fc6a2587af2d898aff48d703e63cf2b7c9d7f3aebc045210887
-core/List.beni                List.fromLevels     9efd0da9c6a0eb5f961d365b2c01f92eae93b9ebf696979154c9a964254eb927
-core/List.beni                List.chunks         e1ec78ee6b421c58b928468def66c85f37f67d2ee536cff6010e2698a395e8c9
-core/List.beni                List.trieGet        f14375d51380642cda654b9680863eb8d21ab81e609384bb7eed90e0be53277e
-core/List.beni                List.changed        9b96576b089b14506fceced20eed04b0ec5e8a21d99c10d74723512727f0dd09
-core/List.beni                List.putLeaf        8847ea6ba04352a50a6bc68926da3365c0a4121fb1f36f79c6d3715be575cba3
-core/List.beni                List.padNull        39a836f6465d0326cf54beeaf1bc83c3970c03946514c2e89786f09647ed3051
-core/List.beni                List.triePop        9e55139fa6ad9eeb4c8571834269e46030fa2166b5c65aa1f9a3d51f159de1b4
-core/List.beni                List.popLeaf        a31a18a5497214a95c7c29cdea691ce95b38a58684a4749a03f6d509da66d442
-core/List.beni                List.collapse       1a8f608fe0b4fff1aaa4e272e851abb0c5a7ebd06abc9a1dd543b6e90d78d765
-core/List.beni                List.prefixOrNull   e7dc789bab67b84705b7c13f3e2c3e61317415519026d9d554e277f31deb6276
-core/List.beni                List.triePush       f13a52d28c228f55a932610f31c2ab9fcd79cba0cf08af57e68d873683bb108d
-core/List.beni                List.claim          30f7105393dd3ad36e5b1c79bbdaabab4db2b234f38c33e2d1c763ab3bdb9b7d
-core/List.beni                List.treeRight      b2e19afd38f659ab811b1b8903cb67d18348e5227f50296d6824a345c7d07f98
-core/List.beni                List.rightGrow      af6f3773f17db453c90ec40d4525a0bbb41d92e7b0dbc22d7fe95923c9321267
-core/List.beni                List.copy           783a7a1af5d026d8926ea60a6993dfee60244e28035de7953215f5f28bb5f5a2
-core/List.beni                List.plainOf        50e673fd3a34d122bc7cac5c74b2b2354526df336e4b3f8999c686e561df2948
-core/List.beni                List.triePushed     51f692fddaff6c37093d4082c76d0a07fb581c90892adba38777315c5d1f89d7
-core/List.beni                List.fillTail       4324642e605f5505f297b954e5a623ce16b4bcc6da49a83dbbc1f40ff9d84793
-core/List.beni                List.pushedLeaves   dc5114a9a53b06743a6e2ccbacab71ccb110879b0a6526be39e754f305705b44
-core/List.beni                List.slice          d4c5f6ef37f9523702b6d92b6e63b8131782d34bbe2f4a9b75cde5ca78c560ae
-core/List.js                  List.half           848d765d16275cad92806425a08879f9c96ac9a6bb984528df138aa05ca82c40
-core/List.beni                List.putAll         e6c37945fa31366e41a1cda5cd2f29241628bbac6143444353a4f29333f3d8d3
-core/List.beni                List.clampIndex     097faaf7e66db482209cb80344bc2fe323f23fb5655451e8f51927b630e9cff4
-core/List.beni                List.reconsed       d32dd348086989ff56d0e0b952435571293f9882d198b44f3c242a966c62d769
-core/List.beni                List.pushFrom       387a6efcfeba6d91aedf21c990dcb3346007792d88bb4830c08fb5f6c6445304
 tests/platforms/entry/Start.beni   Start.launch        d4fe8e66cf4e5382f6e3612c4cbc2092d3d329438f676650e05eb04cb6309bf3
 tests/platforms/entry-shape/Start.beni   Start.launch        31d697f6b3153998a89dda71eea5a8bc22eee381899554e3dac145e946e4fc87
 # The code generator's inlined forms of List's `at`, `traverseAt`, `put`,
 # `half` and `length`: the code that runs in place of their siblings.
-src/Operator.zig                Operator.listPrimitives cd2e9bc2299beeb212262732d4d6420c0f265b5d4900a2a7282a8b0732cdd18a
-src/js/Lower.zig                Lower.listPrimitives 9c32196b6dd091c0fe5414feb3528e8e03f7d6b7f30b11f568fbba1f24599f77
+src/Operator.zig Operator.listPrimitives d33aba76ddf6568562da9cb8e43766fa7f7fbeb7eb646b301c7f92b02f212187
+src/js/Lower.zig Lower.listPrimitives 4e2cfeece19e2a60f07026a742a2a8fef85fdc0963d1f379674d7d8451e171ed
 # The code generator's forms of `List.cons`: the re-cons of a scalar view and
 # the cons steps of a loop that builds, which run in place of its body.
-src/js/Lower.zig                Lower.listRecons     426b66d3ae9f008c345e1b6a837c3c417ca577210d5c6ccbcc95ada036eafb91
-src/js/Lower.zig                Lower.listConsTail   7c488b8a7cc81baeba74afa8d08b7e21304eb77f4b101363f275ae1f9053ee88
-src/js/Lower.zig                Lower.listIsCons     b627b7ce8a482e9629ccca3be970825edd07c92c2ca0e7d10fe30b021ea3279c
-src/js/Lower.zig                Lower.listConsStep   584c9d920d77481b7bb184d6a433e5272f45bf2d175ce927676f35b44125de2e
-src/js/Lower.zig                Lower.listConsScalar b83eed7b4a45546226966250fcd19936a10e23b1d8a75a6ddbeb50c5e4142a9f
-core/Js.js                      Js.invoke           deed135f854650a35e005310f5e1c414898bd0615855db4baa04366b14f9ca1e
+src/js/Lower.zig Lower.listRecons 426b66d3ae9f008c345e1b6a837c3c417ca577210d5c6ccbcc95ada036eafb91
+src/js/Lower.zig Lower.listConsTail 7c488b8a7cc81baeba74afa8d08b7e21304eb77f4b101363f275ae1f9053ee88
+src/js/Lower.zig Lower.listIsCons b627b7ce8a482e9629ccca3be970825edd07c92c2ca0e7d10fe30b021ea3279c
+src/js/Lower.zig Lower.listConsStep 584c9d920d77481b7bb184d6a433e5272f45bf2d175ce927676f35b44125de2e
+src/js/Lower.zig Lower.listConsScalar b83eed7b4a45546226966250fcd19936a10e23b1d8a75a6ddbeb50c5e4142a9f
+core/Js.js Js.invoke deed135f854650a35e005310f5e1c414898bd0615855db4baa04366b14f9ca1e
 core/Task.beni                   Task.scope               ab1de28cccca6f8b513c03a46bd6a0fb069ad118825b4096990ad0c1a94e467e
 core/Task.beni                   Task.makeFiber           7b0691d5205fe43c4c7d1883fd06da90aa3cbbc1b8c2d657cb1beee30d733804
 core/Task.beni                   Task.poll                a1ac39db9b8128dea838876b74f76562b768bf5b54a3b656f7827ac5bd3beb8a
@@ -198,14 +127,163 @@ core/Js/Runtime.js               Js.Runtime.timer         1d90ec25224132c1eb18a9
 core/Js/Runtime.js               Js.Runtime.now           5f8ad749ef8bde915122ab036d1655780f85741a7c969142e4939896d90238ad
 core/Js/Runtime.js               Js.Runtime.random        cd7e7e58dbd410f3c1906a03f74aa3a328c7cca490e47830e5737c47371a164d
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell e343b103ba37017572c4eb7ee96f8fd9a945972dc4ad44c2cd0cb369c11b632c intrinsic:core
-src/js/Lower.zig Js.cellRead 296790d6070ddaaa748d82f71c970d840a4ba8a84855c79c2dcde24e9a25492e intrinsic:core
-src/js/Lower.zig Js.cellWrite e360a82c99c61600dc923a2874dca7501e1acf328dc79eb2d4529c2ac2086ac9 intrinsic:core
-src/js/Lower.zig Js.none d7a476e8e1dc3c02265ce8bbe4af38ac74202995fabede5add2ae79db4dd0fc6 intrinsic:core
-src/js/Lower.zig Js.some 847efa3c2356fe2fc5267640a0803d7832cdc175c0e10083594a90e4afa8dbb4 intrinsic:core
-src/js/Lower.zig Js.optMatch 40e05ac344a049035a816bfe36c32015f18459a2d13dd47eaba781bb10acf09b intrinsic:core
-src/js/Lower.zig Js.optWithDefault a3a5481bf31840e8e06cef0271ba5cb2516b88086117d02dbb5f9a0486d45bd7 intrinsic:core
+src/js/Lower.zig Js.cell 2124addca31ef8617d0fcfaf502c4e2e289e468ec49be4505b5d226b5a07fee4 intrinsic:core
+src/js/Lower.zig Js.cellRead bc22f544d1adb699421962a7b17f7fa13b8ad4ef339bdfaab91238fcf5247c30 intrinsic:core
+src/js/Lower.zig Js.cellWrite 857016b40cdda9d8db4acd5729ed35d279bbcf1bf3a3ec7fb3bccc272c2d82ad intrinsic:core
+src/js/Lower.zig Js.none 69a4fc8a41cbf3e6602df8d56a9adcc9f42588594cd8270ad3d36f00f1faa681 intrinsic:core
+src/js/Lower.zig Js.some 696a0b9bcabe09a8ab7ab260da917bd4cf74343d89273cc239b5b79f5db650e5 intrinsic:core
+src/js/Lower.zig Js.optMatch 62c13f5fdcac600ffe79182c04eba3fda701eb9378b25972a92408d57ecce1f3 intrinsic:core
+src/js/Lower.zig Js.optWithDefault 749550cd792dcd324f037b961628eddd82eb7d5962768a7669305c70e8e8d1d1 intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
-src/js/Lower.zig Js.Any.pack 5b11b4cc87ae4b3a364def7dd945f823323a70fbf9b3b320583d77c582a77a00 intrinsic:core
+src/js/Lower.zig Js.Any.pack ea17cf8a3f63d6295addc2d145e774cd97ebd545a430da91f8068d3a5b2180b1 intrinsic:core
+src/js/Lower.zig Js.Any.unpack 5b11b4cc87ae4b3a364def7dd945f823323a70fbf9b3b320583d77c582a77a00 intrinsic:core
+core/Js/Inspect.js Js.Inspect.view ecbb30eedfbdc1c9bb9890c4b2a237960d2fb457f52f91dae8d4bffcf8195c54
+core/Js/Inspect.js Js.Inspect.data 3db872bf1c782633919cf66aeb2601670381471ac3439344f96aa594a4bb1590
+core/Js/Inspect.js Js.Inspect.list ff9e3ba1daee002a9b4ca2984def77da3731807ed1ebc33ed772c11d984e54ca
+core/Js/Inspect.js Js.Inspect.inspect d2630574758704878b5f0b1136440f3b2a381e01a530bbb11da797d10aaed27b
+core/Js/Inspect.js Js.Inspect.kind d6a01173754941b3cb69e418dbf80e5c92eddd13742a4b819da0fa78e071c57e
+core/Js/Inspect.js Js.Inspect.tag 17c827f33a2ae5dbbe52ac64dcb7561b5dc4e83439fbad1abba36e9836807adb
+core/Js/Inspect.js Js.Inspect.keys 1e49e6c5208419e36b3e71ad6e48942dbebe25d9abadd56992ae7333733865ae
+core/Js/Inspect.js Js.Inspect.field 9a7d778470e4b4357f73f289698051241528978c420a76359ff02d8622edf565
+core/Js/Inspect.js Js.Inspect.element 7759bdb6de71dfe9e0ce1a43dfb77a073a566236aa320808eed22dac2cf782f0
+core/Js/Inspect.js Js.Inspect.length 335923b8a55e2e3f14e129b730c2fff763925367e477044eb09fb196a99d3ecc
+core/Js/Inspect.js Js.Inspect.string de2ce20d3cfeae4f90e2fa119877cca9b5ff8345e299698ab156b758fd7545fd
+core/Js/Inspect.js Js.Inspect.number 3824ad7bd398a0111455c4065b9b3c78c6166625919a64c4fa411635826b51d4
+core/Js/Inspect.js Js.Inspect.boolean 502aa78bfa420fe1345f2571bc5c1e22a20ecf9fac133035f1a9a81a43ea2a0b
+core/Js/Data.beni Js.Data.checked 36a449811dea1905d0396bc8cee13dbd9a9a86f7d450584df89286221fbe5f58
+core/Js/Data.js Js.Data.checkedGraph cd5ced63b9c579ddc839703a46e1279eed136d3118224a527d88a6b0c3419ddb
+core/List.beni List.cons fa56d0dc91cf58e9b488ac23a5e14117191e41326f7d9bd24d75528e009832d9
+core/List.beni List.append d0a62e90de66db5440010a051b92e80a064562fde6b14ec6f6cd94aa2db0c65f
+core/List.beni List.appendFrom c38753cb7912166d98b418d60a7599b87b80d41a66323446f0b6e49f097203b5
+core/List.beni List.eq 6e890f60fea358b576da3e93e8edbb630e30565db87a325a401c609aff98bf91
+core/List.beni List.eqFrom 5d83e8b3b05d943dc1e0d3061ad5e5d20f8d7782512f2ae937106dded0e17a5d
+core/List.beni List.compare 26f293641f7fe2dee7aa1dae32f776659c3e1bebb4302b2cc75eb2c0a3365083
+core/List.beni List.compareFrom ea73ee4d95df32fbc2f9507f87400f8f01e9224853fa335b6af6adb02c63443f
+core/List.beni List.set 31924bb5d20ce0e43ef9e0cc6ba936b6f34f0013ffec24db545bdea2de7107d7
+core/List.beni List.push d1a95c170578bee20843d275d5819648e82f09b306c3f5547d521f75c7dee669
+core/List.beni List.pop a3e35b97598607e7bb9a1a3f83ea0f256129cb9a1bd7b9582fb2a34c23949c37
+core/List.beni List.slice d4c5f6ef37f9523702b6d92b6e63b8131782d34bbe2f4a9b75cde5ca78c560ae
+core/List.beni List.clampIndex 097faaf7e66db482209cb80344bc2fe323f23fb5655451e8f51927b630e9cff4
+core/List.beni List.copy d0b4c57725d4f2e5dfbd0050e1057ffb20cc0557d2ec3c2576292b7a81262dbe
+core/List.beni List.sliceOf bae11c0aed25b19a0678822fa1c1658487a697240890a12cb1bc8bf62e73a1fd
+core/List.beni List.insertAt 03e9f3a7f9226430fc1b024ee824c2ba49654f124aa1aefe1d9a8745e54d9505
+core/List.beni List.removeAt df5f165a0c16380276a5796577c25fd213500e5a170bedaa079d1960ee8cd00b
+core/List.beni List.swap 25c180116d3a51ce152742b494cf7df403eb2040c1ac5742179b894d57be93cd
+core/List.beni List.unsafeGet 3e939c01da66bfae155d4213225a4b905dda72d33c23b91c9898036ea49937b3
+core/List.beni List.outside 0594d03e19da6c6293ae524e0143cf29eafd9a36a0d7bcde586add1e96ba3ee5
+core/List.beni List.view 9125407e61c9076e475ff28e0bf048dcc9a1259dc80ed9dd27dfed89ddcac068
+core/List.beni List.copyInto 59603cd3bca79c94caa6cc01111ce524d722f0602c4bd9d2cb5660ff8b22c314
+core/List.beni List.close 6aa567db7e0267abf11ae292a7db5af05b5a94a0bcfee6f0b1aa2466a72bfb6f
+core/List.beni List.foldl 3585d439dca373e3ed8b6c8ba05a2a16784752a016e361d1f8767b9bf8434aec
+core/List.beni List.foldlFrom f0b148d0d9015b8e667c55e3fc93a70c81af4fe2861a2d5388cc15748c5e5d79
+core/List.beni List.foldr 94c4408d68147d727f8d2b3f0564def3995e3790ec2f7933d9ddf909478fb8c1
+core/List.beni List.foldrFrom 6c1acdf587f102ca159cc714c16c615cbe29e3da4a61f6a95b913326749d8926
+core/List.beni List.singleton 866d5a895c81f7b103369e2f2fab0fc45c9c6f0d80ce9c6ad33689adbca34514
+core/List.beni List.repeat 7bab4c2d9d0da4cc1887759e8a382c15b2edc87c117eef294952846e38e5bd6b
+core/List.beni List.repeatHelp e0430183bf8a9a8e5f912842576399e5ca6660ab9d70ed042442f72a19281a4b
+core/List.beni List.range ed115c840915c604b38804ba25712f264079df8b28c638555571cdb647fe6045
+core/List.beni List.rangeHelp ec2a0cbed4d5f4ba1aca02ab6623f263be1da4845228365925dd781f39df2eb1
+core/List.beni List.initialize 9790fdc256632e449a2e65ff1ba88019ffbba204993e464ff98e29233b0ac6f5
+core/List.beni List.initializeHelp 49e5ab8106be1d01d19a8127e8b755f36b3619fed290fd0ed473ed24f0b54f19
+core/List.beni List.map 273a4a472f80a184977df2a0a7398953c0be472e8b91e342798a7ab9e326a39c
+core/List.beni List.mapHelp 68604fb212552a4aa63591248c9e4ebbee794cfc731b6b74a102eb648c7b278e
+core/List.beni List.indexedMap f899e81eac55d260bd8f2596b4c67f4f4a516b6b86daa57221ca423224c1827c
+core/List.beni List.indexedMapHelp d60439e211641fd2cd3d2e74adc335786d7359b43e191529a30e3f4c59f690da
+core/List.beni List.filter 9c3a292b1124c3a5d8d495d2bca7aa80145e7b57e2d6d456dd303479f2e8c238
+core/List.beni List.filterHelp b3c6634ee320ca247cc44ef2cf82e62578064cd9fa17605c88943c9f337e5649
+core/List.beni List.filterMap 5ece38e34bf136f05d78ea5a585a92c4997de4c550fe8ae102ffc62beffe80f7
+core/List.beni List.filterMapHelp 4ad55f3b748451bd6f7db626320a64bfcba66a8ab67dbf3881c130b4e0d70438
+core/List.beni List.reverse 8605b38a2cb351e21b9e15749a1ef2e1139b42b9301647c18c58d26f2e6de195
+core/List.beni List.reverseHelp e3c86a01f586b5e0413bff340f6c7d7039b933dd00f2f5c55fac86d08b874df6
+core/List.beni List.member 6af35f38925d2e3047a88b16435fcffdfcd0980a06d9fe9a71f93a7d2f3a6149
+core/List.beni List.all 3aca1937e4e702e70eca6d1f1ab136888d4b389a912d41c17225ae2f27deaea2
+core/List.beni List.any 7e041a1f248b885ccf6c424887bb2dabcacede4716c5a46cab020f618ec7d089
+core/List.beni List.anyFrom c2e792ead5795957cf6fa9f1255cb2e5ca5c6f974c69e8effe712967e06356df
+core/List.beni List.maximum b7578d9897543abcc52831bf441d95ba1e6a5513350c39b5d704f42c76540540
+core/List.beni List.minimum 3ba85118eeb0f3cb895432558ae666d4a528a0775bd3acd9c7f595066aefa5de
+core/List.beni List.sum 6890da528fdda31116caa90952f1a24e534f2cfa1fe0f23acbdb26a050a43bfe
+core/List.beni List.product 2980c0dd5daaddccae6a8aefab5a0a15ad9e5ad246d6da8f16ab63200e9251d3
+core/List.beni List.putAll e6c37945fa31366e41a1cda5cd2f29241628bbac6143444353a4f29333f3d8d3
+core/List.beni List.concat fef7bbefd656c4830d2123b2034dee3c6d894e86a42db4c23f3fb08434cb5a88
+core/List.beni List.totalFrom d79e9f05e479f7965c38f76fdb5683a4a3a32dbfa57f4b4b5404530a53b84a31
+core/List.beni List.concatFrom fdfd97e0365d13cfef10e6461a743b9f093545b363a6197ac97cbaf5926b56bb
+core/List.beni List.concatMap e64137d1e422a7c67d74edb593b52340717de2eedecb5db5b7b93714444c9533
+core/List.beni List.intersperse 3f978dac47707135037ab9747194ce684067d1924153185f01d86fc93a10af91
+core/List.beni List.intersperseHelp 651f4431268fe8afd83ebd67b062406b05b84bb2a07a085b75330b5365ed5c18
+core/List.beni List.map2 d13bb94e6ffd8844819090d7951932977ff00d85a544d313f17d9b1f863f9afa
+core/List.beni List.map2Help 25ca2966097666cbb6551056bf4756a3e6b102b57daeeeafb1c40526a3595469
+core/List.beni List.map3 6529f4bea1656c836fd9570298d574c6d3ac45009f929e8206e0aa5ecee082c1
+core/List.beni List.map3Help 4db832bc221d4cccc6778cec96a429fd361ee59baa7758e6a3bdad7f917dbf91
+core/List.beni List.map4 d9fc0984e0042d7afd0914fe9450adc8614234307d1427fd1ccd1250e19b82c4
+core/List.beni List.map4Help 8bd6b5d96b6bf10d2b7c448d4f5576bbcf6cff54adb3f3475a3aa45abfe96fd2
+core/List.beni List.map5 4590109538d2b4772320dfe6d6085c8a5ee5dac27f9107988178e46d20033e0f
+core/List.beni List.map5Help 869606371b7871d56b865e76dc1c0e5f8452003f85980955d37d12c2c0052a71
+core/List.beni List.sort 44e0c1943faaebbd81331a0c27bfd54e03867b30b2e162d74199c95bcf358b6c
+core/List.beni List.sortBy 1b1e796274a50026a2e451088bcec058c914905afe0c3b4bb6ce97f615e0ea69
+core/List.beni List.sortWith b7ab5497f8a3445190b8f8991206e5a404f9c6958952bd9cd71b42a736149f13
+core/List.beni List.sortRange 0134063b20980d610914834d38143a1b4228099b304f737e9855d3e55b26da76
+core/List.beni List.merge 0da98002cbed9a8d853f8e63667c3e92b9936c31bebaff553292a0e76575eac9
+core/List.beni List.isEmpty e02fc7aa6e2faaadb0c86b03bf2f55010d06ebdbd358749ca58a07043325bada
+core/List.beni List.head 9d2a2272182699ca4226a76a84c20a09080537b40b0122732883ad280174d314
+core/List.beni List.tail 749089318fac9b6805db4170fd45d8496c176777f117fb630c6f1179c70421c9
+core/List.beni List.take be9888c2ad9dbb468148b70cfd3174d6c9db1d0abe55ad99a7c216f87bd693fe
+core/List.beni List.drop 2ff100f2f7b26c0aba3899b61182c7bae0d0490be389f5ac690df99e7487b5c5
+core/List.beni List.get 055762fa1f13310f248b1c30f8f0bb0a55b8e20f62e4a3fe342d88235e706f9e
+core/List.beni List.last c38cb51bf7d65739eeb91d64d7adba233d3e0a64656df0730916264471f73acb
+core/List.beni List.update 7fb8432ef563e7611166d2e6ab5dfc5a4bd6dd66560351bbf5180a380bd946dd
+core/List.beni List.focus 6a24ae82b9f8399007a33a8a228f5b75772d7804d66bcac4f945c887179ef524
+core/List.beni List.partition a247065827d5f3c60884b9fb9a57cec615aefc5b8d409de5862875e6e89fad35
+core/List.beni List.partitionHelp f52deb8784080465194526758aff9b7b1873de1b31bb4ee15fd049784c7fa073
+core/List.beni List.unzip 7237324990f0fd1e2dca8e45c0da1466d8df9c1b8357d1acc3f245d541829fe7
+core/List.beni List.unzipHelp 5a2cfcc20fa912f0ce89107f34c97b50973c5770dddbf5254fd3ca6057b59515
+core/List.beni List.header e6d26ffc02da9cfa1a1263131e86cb2b11a4e8db7aa24e9d8d168f2d043c8269
+core/List.beni List.emptyHeader 95b8fe4e6fe1a48837d872d5cafb004ddd7b7f769e8cac7708bb7f58dcfaea57
+core/List.beni List.fromArray 309c0bc452f1b9b679a57724f0c5f184497b36a75cbaa20e7eac35e259b5389b
+core/List.beni List.pushHeader 6edd540a3c9e1fffeb0941c3559b6df871d252b2522ac242722733b861c7de29
+core/List.beni List.path 96babb4ee34b8c0b229ba5946bd75d6819dc97e3b1dc07f276d0f8807f6a1e78
+core/List.beni List.insertLeaf 4eec39357c58c379558ea434f07b52823b299f7208e2a1cfef8ce1ab83f55a65
+core/List.beni List.plainHeader 4fbcc2527bf5ee98b60c05bf6e37640335aee1b53480d10f11ec88c77659450a
+core/List.beni List.flattenTree ecfe0ad5795f51324119f76ab0bd38981491ffef84459f5b7230eebd54c7dbbb
+core/List.beni List.flattenChildren 58255f047a4234fc1a914bd2abe5dbd1e75d1e497825c4762b6acc63406fc39e
+core/List.beni List.viewToken 868d139fc6eb273c359094a50fa2c12612d932024f202f8c9de40e24a295ec9d
+core/List.beni List.headerGet 107bfeb44e1b2d9fc35dfe1e6fe08fc45c310ebabed2c7709134954abadabe16
+core/List.beni List.leafValues 0cbb2981510f318e825ba5e9c5ac21511ba4b0172c588ddeca77a4944abeaa4b
+core/List.beni List.makeHeader 762322b092fd2238ca7adaab377df8f695a09dd119074110363dc06ef111508a
+core/List.beni List.setHeader 00a3cbf0ee418de918ef6c1b1c8034f6df6edc937e1cdbbf6f718d119092f3f6
+core/List.beni List.setTree 00d9de0a5ff3ffcdd7f1f6b288e3b9e806ea01a08d60f44c03fd3aeabadd25ab
+core/List.beni List.popHeader 5886eba67badbcf01895b07e782c97749de28b2e1408c3fd57f4d89d7a6af6d3
+core/List.beni List.removeLeaf 2ec9bf3d06dc248207db276a2061cda36b360ee116119ddf968c69109429192c
+core/List.beni List.collapseRoot 9168ecb492a33911ca1e803c1b5893183a35526fbcebff9b52621a654ef6d210
+core/List.js List.length d29c060851c95a74574b0b333e8a30676150e7f03f8914826cb37d5e931beaa4
+core/List.js List.at 718de89caa80d73751fbec4b523d6a71a63100d7a8f1a7c7aded3796c827c80a
+core/List.js List.traverseAt 8e37c3054d1fd83ee4fce3469d405f5a1041944123dd2de56e7c82456d8af8f0
+core/List.js List.put 286a8b1d168b66f275712e15239f53e9781f4a1afcde2ffd894895b8f281d006
+core/List.js List.half 848d765d16275cad92806425a08879f9c96ac9a6bb984528df138aa05ca82c40
+core/List.js List.builder 02f7d02af2c3e4790f203fb90623e5de01ee0fafdc45a984174e3cccd1ef36b7
+core/List.js List.done 8e2523a962c3b7771f923264de41a2a98cee17a13511b21c11f5d5a8366bc893
+core/List.js List.base 942c53b9de4f099965b838e0c1917f87da9fd8b58e4597da1b2730b35491d529
+core/List.js List.offset 69f24d9098f06bf5006c16bf5aad111789f03d8e633f72fedc98886c7adea3f4
+core/List.js List.View de6eb05d88558aa3eac6a87631e136096f5e9b3cc70da84cc0d38444c747d7e4
+core/List.js List.viewOf fbdbfbcb531934d8ce346d8ba3f3ada51b8bb72270c7a59b69cee6d99942f655
+core/List.js List.isView ab4052cbbbeff952ad8df0ca743e3a5b5750e2a95e3edb9368098a8d65d075ef
+core/List.js List.wrapTree c71e794cf1343d0f77501ed9976947f71ad3ce7d6bdb705640274f1392cd65fa
+core/List.js List.treeOf e962d06a63c6f07302f9265115690b21930d3cfd5dc9f6f821b23686b5a28736
+core/List.js List.isTree 79b8d33b005ade36bfce9a17ec079540398260d93a8a317786092b634f93a0a5
+core/List.js List.peekArray 0f08051242d1026597697eeb7646eacd6e621a0bf178a8797c6a32979ff17857
+core/List.js List.writeArray e73cef7700c266785c38cfab9c21f004b14f1b9c2795838a939b9b578e3c0bc5
+src/js/Lower.zig List.at c164e2bc6af475a2d264ca8dcc55933889d091fbe5d1b82e65b3d87d21bc2d97 intrinsic:core
+src/js/Lower.zig List.traverseAt 65544d38ca829056af84929240a93386cd2b30e763a5bb0467cc15470ad389b6 intrinsic:core
+src/js/Lower.zig List.put 6c0dba2ef22cb9c16864600c891e233ee36e6c19eb5ab1540d492861672eefaa intrinsic:core
+src/js/Lower.zig List.half 580e54a7da47b4ef81faa8f8481958192d7f25a372f618031c6d1dd77f9286f7 intrinsic:core
+src/js/Lower.zig List.length 9bd988aa11e0c776550bb4d4d08c7c8253bf93d19ff74510ac704c8e22bc3261 intrinsic:core
+src/js/Lower.zig List.builder d04f94a41b1980fc9f5f5118f7a41b786c4047f958ea5946469fb66070a3a44e intrinsic:core
+src/js/Lower.zig List.done d31f905af35b353fc9b380b3439a2be5c37a1eecd941c2c3deae07bca3b569c0 intrinsic:core
+src/js/Lower.zig List.base 704a3bc0d91ee55579cf7cbf1d2a29a1ad09e20f4c577d223ba0bf20e651065c intrinsic:core
+src/js/Lower.zig List.offset 984e0e3f6c73b00c241302422f8795e4c6e54d7b86d3cdaa88100dc2d946f1d1 intrinsic:core
+src/js/Lower.zig List.peekArray 3dc517ea18042c9f353de82bb03029a57ab43635c25304a29702b1bd69217b39 intrinsic:core
+src/js/Lower.zig List.writeArray 545c9ac8efd9233b327ec5b944e44a25cbc6d5d23e5f40ec7ab7390d0bca26c5 intrinsic:core
+src/js/Lower.zig List.wrapTree 90b3dded4170630fdd62751e986e910878a36bc2986cfba54ce0ef14bb933a72 intrinsic:core
+src/js/Lower.zig List.treeOf 174132d2c8180389cf7b1fe9ba1b42cfac6e3b1af4f81bbbe46a00cdd9938f12 intrinsic:core
+src/js/Lower.zig List.isTree 2a652bf97d2043c13d562e013a97de58fa5b5d1807b584cb7c155a5086e8596a intrinsic:core

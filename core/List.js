@@ -12,6 +12,18 @@ export const put = (b, i, x) => {
 export const half = (n) => n >>> 1;
 export const builder = (n) => new Array(n > 0 ? n : 0);
 export const done = (b, n) => { b.length = n; return b; };
-export const base = (xs) => Array.isArray(xs) ? xs : xs.b;
-export const offset = (xs) => Array.isArray(xs) ? 0 : xs.o;
-export const viewOf = (b, o) => ({ b, o, length: b.length - o });
+export const base = (xs) => Array.isArray(xs) ? xs : xs.$h !== undefined ? xs.$plain() : xs.b;
+export const offset = (xs) => Array.isArray(xs) || xs.$h !== undefined ? 0 : xs.o;
+const View = function(b, o, token) {
+  this.b = b;
+  this.o = o;
+  this.length = b.length - o;
+  this.$t = token;
+};
+export const viewOf = (b, o, token) => new View(b, o, token);
+export const isView = (xs) => xs instanceof View;
+export const wrapTree = (length, header, plain, token) => ({ length, $h: header, $plain: plain, $t: token });
+export const treeOf = (xs) => xs.$h;
+export const isTree = (xs) => xs.$h !== undefined;
+export const peekArray = (builder) => builder;
+export const writeArray = (builder, index, value) => { builder[index] = value; return null; };

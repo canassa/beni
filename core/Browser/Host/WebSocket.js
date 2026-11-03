@@ -1,4 +1,4 @@
-export const tryCreate = (url, protocols) => { try { return { $: "Just", a: new globalThis.WebSocket(url, Array.isArray(protocols) ? protocols : protocols.b.slice(protocols.o)) }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "SecurityError") throw error; return { $: "Nothing", a: null }; } };
+export const tryCreate = (url, protocols) => { try { return { $: "Just", a: new globalThis.WebSocket(url, Array.isArray(protocols) ? protocols : (protocols.$plain ? protocols.$plain() : protocols.b.slice(protocols.o))) }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "SecurityError") throw error; return { $: "Nothing", a: null }; } };
 export const arrayBuffer = (socket) => { socket.binaryType = "arraybuffer"; return null; };
 export const readyState = (socket) => { return socket.readyState; };
 export const bufferedAmount = (socket) => { return socket.bufferedAmount; };

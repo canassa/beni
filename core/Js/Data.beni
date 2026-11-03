@@ -1,7 +1,13 @@
 -- Core-only checked conversion of a value graph to plain host data.
 import Js
+import List
 
 
 -- The value is retained only after the whole reachable graph is checked.
--- No function, accessor or native object is called or admitted.
-pub foreign pure checked : returned a → Maybe Js.Value
+-- Private list protocol callbacks are metadata; their logical elements are
+-- checked and projected to a plain array without invoking those callbacks.
+pub checked : returned a → Maybe Js.Value
+checked value = checkedGraph List.viewToken value
+
+
+foreign pure checkedGraph : borrowed Js.Cell { listProtocol : ⊤ }, returned a → Maybe Js.Value

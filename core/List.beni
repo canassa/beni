@@ -17,19 +17,32 @@ cons x xs =
     b = base xs
     o = offset xs
     if o > 0 && Js.same (at b (o - 1)) x then
-        if o == 1 then b else viewOf b (o - 1)
+        if o == 1 then b else viewOf b (o - 1) viewToken
     else
         copied = put (builder (length xs + 1)) 0 x
         done (copyInto b o (length b) copied 1) (length xs + 1)
 
 
---| Put two lists together, in order, in a fresh list.
+--| Put two lists together, in order. Appending a shorter right side to a
+--| tree-backed left side grows its tail; each singleton append is amortised
+--| O(1). Empty operands still produce a fresh list.
 pub append : written List a, borrowed List a → concatenated List a
 append xs ys =
     n = length xs
     m = length ys
-    first = copyInto (base xs) (offset xs) (offset xs + n) (builder (n + m)) 0
-    done (copyInto (base ys) (offset ys) (offset ys + m) first n) (n + m)
+    if n ≥ 32 && m > 0 && m < n then
+        appendFrom xs (base ys) (offset ys) (offset ys + m)
+    else
+        first = copyInto (base xs) (offset xs) (offset xs + n) (builder (n + m)) 0
+        done (copyInto (base ys) (offset ys) (offset ys + m) first n) (n + m)
+
+
+appendFrom : List a, List a, Int, Int → List a
+appendFrom xs b i end =
+    if i < end then
+        appendFrom (push xs (at b i)) b (i + 1) end
+    else
+        xs
 
 
 --| The number of elements.
@@ -44,7 +57,14 @@ eq xs ys = length xs == length ys && eqFrom (base xs) (offset xs) (base ys) (off
 
 eqFrom : List a, Int, List a, Int → Bool
     where a.eq : a, a → Bool
-eqFrom a i b j = if i < length a then at a i == at b j && eqFrom a (i + 1) b (j + 1) else True
+eqFrom a i b j =
+    if i < length a then
+        if at a i == at b j then
+            eqFrom a (i + 1) b (j + 1)
+        else
+            False
+    else
+        True
 
 
 --| Compare elements in order by their own compare method.
@@ -77,22 +97,53 @@ set xs i value =
         xs
     else if Js.same (unsafeGet xs i) value then
         xs
+    else if isTree xs || length xs > 256 then
+        Js.pure λ⊤ →
+            previous =
+                if isTree xs then
+                    treeOf xs
+                else
+                    fromArray (base xs) (offset xs) (offset xs + length xs) (emptyHeader ⊤)
+            header (setHeader previous i value)
     else
         b = copyInto (base xs) (offset xs) (offset xs + length xs) (builder (length xs)) 0
         done (put b i value) (length xs)
 
 
---| Add an element at the end.
+--| Add an element at the end in amortised O(1). An earlier version keeps
+--| its elements: branching from an already claimed tail copies at most 32.
 pub push : written returned List a, stored a → List a
-push xs value =
+push xs value = Js.pure λ⊤ →
     n = length xs
-    b = copyInto (base xs) (offset xs) (offset xs + n) (builder (n + 1)) 0
-    done (put b n value) (n + 1)
+    if n < 32 then
+        b = copyInto (base xs) (offset xs) (offset xs + n) (builder (n + 1)) 0
+        done (put b n value) (n + 1)
+    else
+        previous =
+            if isTree xs then
+                treeOf xs
+            else
+                fromArray (base xs) (offset xs) (offset xs + n) (emptyHeader ⊤)
+        header (pushHeader previous value)
 
 
 --| Remove the last element. An empty list is left alone.
 pub pop : written returned List a → List a
-pop xs = if length xs == 0 then xs else sliceOf xs 0 (length xs - 1)
+pop xs = Js.pure λ⊤ →
+    n = length xs
+    if n == 0 then
+        xs
+    else if n == 1 then
+        []
+    else if n < 32 then
+        sliceOf xs 0 (n - 1)
+    else
+        previous =
+            if isTree xs then
+                treeOf xs
+            else
+                fromArray (base xs) (offset xs) (offset xs + n) (emptyHeader ⊤)
+        header (popHeader previous)
 
 
 --| A fresh list of elements from from up to to. Negative indexes count from the end.
@@ -166,7 +217,11 @@ swap xs i j =
 
 
 unsafeGet : borrowed List a, borrowed Int → elementof a
-unsafeGet xs i = at (base xs) (offset xs + i)
+unsafeGet xs i = Js.pure λ⊤ →
+    if isTree xs then
+        headerGet (treeOf xs) i
+    else
+        at (base xs) (offset xs + i)
 
 
 outside : Int, Int → Bool
@@ -174,7 +229,8 @@ outside i n = Js.shiftRightZero i 0 ≠ i || i ≥ n
 
 
 view : returned List a, borrowed Int → List a
-view xs k = if k == 0 then xs else if k ≥ length xs then [] else viewOf (base xs) (offset xs + k)
+view xs k =
+    if k == 0 then xs else if k ≥ length xs then [] else viewOf (base xs) (offset xs + k) viewToken
 
 
 -- The owner's 2026-11-02 core-only array operations. No Js.Value conversion.
@@ -184,7 +240,7 @@ foreign pure base : returned List a → List a
 foreign pure offset : borrowed List a → Int
 
 
-foreign pure viewOf : returned List a, borrowed Int → List a
+foreign pure viewOf : returned List a, borrowed Int, aliased Js.Cell { listProtocol : ⊤ } → List a
 
 
 foreign pure at : borrowed List a, borrowed Int → elementof a
@@ -1017,3 +1073,285 @@ unzipHelp a o i n xs ys =
                 unzipHelp a o (i + 1) n (put xs i x) (put ys i y)
     else
         ( done xs n, done ys n )
+
+
+-- A persistent radix tree and a tail whose unused slots can be claimed once.
+-- Headers retain their own tail count, so a later append never changes an
+-- earlier list. Branching from an earlier tail copies at most 32 elements.
+type Tree a
+    = Leaf (List a)
+    | Branch (List (Tree a))
+
+
+type alias Tail a =
+    Js.Cell { values : Builder a, used : Int }
+
+
+type alias Header a =
+    total : Int
+    treeCount : Int
+    root : Tree a
+    shift : Int
+    capacity : Int
+    tail : Tail a
+    cache : Js.Cell { flat : Js.Opt (List a) }
+
+
+-- These are the core-only List view wrapper and its checked discriminator.
+-- All tree traversal, tail claiming and flattening remain in beni.
+foreign pure wrapTree :
+      unused Int
+    , stored Header a
+    , escaped sync (⊤ → List a)
+    , aliased Js.Cell { listProtocol : ⊤ }
+    → List a
+
+
+foreign pure treeOf : borrowed List a → Header a
+
+
+foreign pure isTree : borrowed List a → Bool
+
+
+header : Header a → List a
+header h = wrapTree h.total h (λ⊤ → plainHeader h) viewToken
+
+
+emptyHeader : ⊤ → Header a
+emptyHeader _ =
+    { total = 0
+    , treeCount = 0
+    , root = Leaf []
+    , shift = 0
+    , capacity = 32
+    , tail = Js.cell { values = builder 32, used = 0 }
+    , cache = Js.cell { flat = Js.none ⊤ }
+    }
+
+
+fromArray : List a, Int, Int, Header a → Header a
+fromArray b i end h =
+    if i < end then
+        fromArray b (i + 1) end (pushHeader h (at b i))
+    else
+        h
+
+
+pushHeader : Header a, a → Header a
+pushHeader h value =
+    count = h.total - h.treeCount
+    if count < 32 then
+        claimed = Js.cellRead h.tail .used == count
+        old = Js.cellRead h.tail .values
+        values =
+            if claimed then
+                old
+            else
+                copyInto (peekArray old) 0 count (builder 32) 0
+        writeArray values count value
+        next = values
+        nextTail =
+            if claimed then
+                Js.cellWrite h.tail (count + 1) .used
+                h.tail
+            else
+                Js.cell { values = next, used = count + 1 }
+        { total = h.total + 1
+        , treeCount = h.treeCount
+        , root = h.root
+        , shift = h.shift
+        , capacity = h.capacity
+        , tail = nextTail
+        , cache = Js.cell { flat = Js.none ⊤ }
+        }
+    else
+        leaf = Leaf (peekArray (Js.cellRead h.tail .values))
+        root =
+            if h.treeCount == 0 then
+                leaf
+            else if h.treeCount == h.capacity then
+                Branch [ h.root, path h.shift leaf ]
+            else
+                insertLeaf h.root h.shift h.treeCount leaf
+        { total = h.total + 1
+        , treeCount = h.treeCount + 32
+        , root = root
+        , shift = if h.treeCount == h.capacity then h.shift + 5 else h.shift
+        , capacity = if h.treeCount == h.capacity then h.capacity * 32 else h.capacity
+        , tail = Js.cell { values = put (builder 32) 0 value, used = 1 }
+        , cache = Js.cell { flat = Js.none ⊤ }
+        }
+
+
+path : Int, Tree a → Tree a
+path shift leaf = if shift == 0 then leaf else Branch [ path (shift - 5) leaf ]
+
+
+insertLeaf : Tree a, Int, Int, Tree a → Tree a
+insertLeaf tree shift index leaf =
+    case tree of
+        Leaf _ →
+            leaf
+        Branch children →
+            slot = Js.bitAnd (Js.shiftRightZero index shift) 31
+            next =
+                if slot < length children then
+                    insertLeaf (unsafeGet children slot) (shift - 5) index leaf
+                else
+                    path (shift - 5) leaf
+            Branch
+                (if slot < length children then
+                    set (copy children) slot next
+                 else
+                    push (copy children) next
+                )
+
+
+plainHeader : Header a → List a
+plainHeader h = Js.pure λ⊤ →
+    Js.optMatch (Js.cellRead h.cache .flat)
+        (λ⊤ →
+            first = flattenTree h.root (builder h.total) 0 h.capacity
+            tailValues = peekArray (Js.cellRead h.tail .values)
+            b = copyInto tailValues 0 (h.total - h.treeCount) first h.treeCount
+            flat = done b h.total
+            Js.cellWrite h.cache (Js.some flat) .flat
+            flat
+        )
+        λflat → flat
+
+
+flattenTree : Tree a, Builder a, Int, Int → Builder a
+flattenTree tree into start span =
+    case tree of
+        Leaf values →
+            copyInto values 0 (length values) into start
+        Branch children →
+            flattenChildren children 0 into start (span // 32)
+
+
+flattenChildren : List (Tree a), Int, Builder a, Int, Int → Builder a
+flattenChildren children i into start span =
+    if i < length children then
+        next = flattenTree (unsafeGet children i) into start span
+        flattenChildren children (i + 1) next (start + span) span
+    else
+        into
+
+
+-- The checked data conversion recognises only views carrying this private token.
+pub viewToken : Js.Cell { listProtocol : ⊤ }
+viewToken = Js.cell { listProtocol = ⊤ }
+
+
+-- A read-only view of a tail buffer; unlike done, it never resizes it.
+foreign pure peekArray : returned Builder a → List a
+
+
+-- Only private tail capacity is written: a header never exposes slots past
+-- its own count, and claiming checks that no later header has used the slot.
+foreign impure writeArray : aliased Builder a, unused Int, aliased a → ⊤
+
+
+-- Runtime protocol check; views use the private native prototype.
+pub foreign pure isView : borrowed a → Bool
+
+
+headerGet : Header a, Int → a
+headerGet h i =
+    if i < h.treeCount then
+        at (leafValues h.root h.shift i) (Js.bitAnd i 31)
+    else
+        at (peekArray (Js.cellRead h.tail .values)) (i - h.treeCount)
+
+
+leafValues : Tree a, Int, Int → List a
+leafValues tree shift i =
+    case tree of
+        Leaf values →
+            values
+        Branch children →
+            leafValues (unsafeGet children (Js.bitAnd (Js.shiftRightZero i shift) 31)) (shift - 5) i
+
+
+makeHeader : Int, Int, Tree a, Int, Int, Tail a → Header a
+makeHeader total treeCount root shift capacity held =
+    { total = total
+    , treeCount = treeCount
+    , root = root
+    , shift = shift
+    , capacity = capacity
+    , tail = held
+    , cache = Js.cell { flat = Js.none ⊤ }
+    }
+
+
+setHeader : Header a, Int, a → Header a
+setHeader h i value =
+    if i < h.treeCount then
+        makeHeader h.total h.treeCount (setTree h.root h.shift i value) h.shift h.capacity h.tail
+    else
+        count = h.total - h.treeCount
+        values = copyInto (peekArray (Js.cellRead h.tail .values)) 0 count (builder 32) 0
+        next = put values (i - h.treeCount) value
+        makeHeader
+            h.total
+            h.treeCount
+            h.root
+            h.shift
+            h.capacity
+            (Js.cell { values = next, used = count })
+
+
+setTree : Tree a, Int, Int, a → Tree a
+setTree tree shift i value =
+    case tree of
+        Leaf values →
+            Leaf (set (copy values) (Js.bitAnd i 31) value)
+        Branch children →
+            slot = Js.bitAnd (Js.shiftRightZero i shift) 31
+            next = setTree (unsafeGet children slot) (shift - 5) i value
+            Branch (set (copy children) slot next)
+
+
+popHeader : Header a → Header a
+popHeader h =
+    count = h.total - h.treeCount
+    if count > 1 then
+        makeHeader (h.total - 1) h.treeCount h.root h.shift h.capacity h.tail
+    else
+        lastLeaf = leafValues h.root h.shift (h.treeCount - 1)
+        values = copyInto lastLeaf 0 32 (builder 32) 0
+        held = Js.cell { values = values, used = 32 }
+        case removeLeaf h.root h.shift (h.treeCount - 1) of
+            Nothing →
+                makeHeader (h.total - 1) 0 (Leaf []) 0 32 held
+            Just root →
+                ( smaller, shift, capacity ) = collapseRoot root h.shift h.capacity
+                makeHeader (h.total - 1) (h.treeCount - 32) smaller shift capacity held
+
+
+removeLeaf : Tree a, Int, Int → Maybe (Tree a)
+removeLeaf tree shift i =
+    case tree of
+        Leaf _ →
+            Nothing
+        Branch children →
+            slot = Js.bitAnd (Js.shiftRightZero i shift) 31
+            case removeLeaf (unsafeGet children slot) (shift - 5) i of
+                Nothing →
+                    if length children == 1 then
+                        Nothing
+                    else
+                        Just (Branch (sliceOf children 0 (length children - 1)))
+                Just next →
+                    Just (Branch (set (copy children) slot next))
+
+
+collapseRoot : Tree a, Int, Int → Tree a × Int × Int
+collapseRoot tree shift capacity =
+    case tree of
+        Branch [ child ] →
+            collapseRoot child (shift - 5) (capacity // 32)
+        _ →
+            ( tree, shift, capacity )

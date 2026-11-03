@@ -2613,7 +2613,13 @@ const Fn = struct {
         try g.constDecl(out, xs, try g.l.condOf(
             try g.globalCall("Array", "isArray", &.{try g.id(v)}),
             try g.id(v),
-            try g.call(try g.prop(try g.prop(try g.id(v), "b"), "slice"), &.{try g.prop(try g.id(v), "o")}),
+            try g.l.condOf(
+                try g.prop(try g.id(v), "$plain"),
+                try g.call(try g.prop(try g.id(v), "$plain"), &.{}),
+                try g.call(try g.prop(try g.prop(try g.id(v), "b"), "slice"), &.{try g.prop(try g.id(v), "o")}),
+                g.p,
+            ),
+
             g.p,
         ));
         const before = try g.fresh("$before");

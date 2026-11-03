@@ -412,6 +412,8 @@ fromList list = Js.pure λ⊤ →
     plain =
         if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
             xs
+        else if not (Js.isUndefined (Js.get xs "$plain")) then
+            Js.call xs "$plain" []
         else
             Js.call (Js.get xs "b") "slice" [ Js.get xs "o" ]
     Js.to (Js.call plain "join" [ Js.from "" ])
@@ -479,6 +481,8 @@ elements : Js.Value → Js.Value
 elements xs =
     if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
         xs
+    else if not (Js.isUndefined (Js.get xs "$plain")) then
+        Js.call xs "$plain" []
     else
         Js.call (Js.get xs "b") "slice" [ Js.get xs "o" ]
 

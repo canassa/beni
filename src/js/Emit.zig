@@ -5943,7 +5943,7 @@ const Emitter = struct {
             const text = try e.scratch.dupe(u8, &.{ch});
             try plain.put(e.scratch, text, {});
         }
-        for ([_][]const u8{ "$", "$wire", "$plain", "$b", "$o", "length", "id", "url" }) |text| try plain.put(e.scratch, text, {});
+        for ([_][]const u8{ "$", "$wire", "$plain", "$h", "$t", "$b", "$o", "length", "id", "url" }) |text| try plain.put(e.scratch, text, {});
         try e.closeBoundary();
         if (e.boundary) |boundary| {
             var it = boundary.pinned.keyIterator();

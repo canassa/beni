@@ -1,0 +1,61 @@
+-- Growing an accumulator must not copy its full prefix on each append.
+-- The former array-only runtime exceeded the corpus hang guard here.
+-- Both spellings cross three tree depths; branching and a previously read
+-- prefix must keep their values after a later append claims tail capacity.
+import List
+import Node exposing (Program)
+
+
+pushes : Int, List Int → List Int
+pushes i xs =
+    if i == 300000 then
+        xs
+    else
+        pushes (i + 1) (List.push xs i)
+
+
+spreads : Int, List Int → List Int
+spreads i xs =
+    if i == 300000 then
+        xs
+    else
+        spreads (i + 1) [ …xs, i ]
+
+
+popCount : List Int, Int → Int
+popCount xs count =
+    if List.isEmpty xs then
+        count
+    else
+        popCount (List.pop xs) (count + 1)
+
+
+item : List Int, Int → Int
+item xs i =
+    case List.get xs i of
+        Just value →
+            value
+        Nothing →
+            -999
+
+
+main : Program
+main =
+    pushed = pushes 0 []
+    spread = spreads 0 []
+    changed = List.set pushed 123456 (negate 1)
+    removed = popCount spread 0
+    prefix = List.push (List.range 0 2047) 2048
+    before = List.sum prefix
+    left = List.push prefix 7
+    right = List.push prefix 9
+    Node.printLines
+        [ "push: ${List.length pushed}, ${List.sum pushed}"
+        , "spread: ${List.length spread}, ${List.sum spread}"
+        , if List.eq pushed spread then "equal: yes" else "equal: no"
+        , "get/set: ${item pushed 299999}, ${item changed 123456}, ${item pushed 123456}"
+        , "pop: ${removed}"
+        , "prefix: ${List.length prefix}, ${before}, ${List.sum prefix}"
+        , "branches: ${List.length left}, ${List.sum left}, ${List.sum right}"
+        , "read: ${Debug.toString (List.slice right 2046 2050)}"
+        ]

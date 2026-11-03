@@ -10856,6 +10856,7 @@ pub const Lowerer = struct {
             // Any's guard and payload stay typed; only an exact compiler
             // identity match can construct Just at the requested type.
             // ownership pin begin: pack
+            // ownership pin begin: unpack
             if (which == .any_pack or which == .any_unpack) {
                 if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
                     try l.reportEvidenceShape(inst);
@@ -10877,6 +10878,7 @@ pub const Lowerer = struct {
                 const matches = try l.binary(.strict_eq, try l.member(boxed, type_key, p), id, p);
                 return l.condOf(matches, try l.coreCtorApplied("Maybe", "Just", &.{try l.member(boxed, value_key, p)}, p), try l.coreCtorApplied("Maybe", "Nothing", &.{}, p), p);
             }
+            // ownership pin end: unpack
             // ownership pin end: pack
             // `Js.fingerprint x` is the identity its site carries, the last
             // root (`backend.md` §4, *`Js.fingerprint` is its type's
@@ -11926,12 +11928,21 @@ pub const Lowerer = struct {
             .int32_shiftRightZero => l.binary(.bit_or, try l.binary(.shr, v[0], v[1], p), try zero.node(l, p), p),
             // ownership pin begin: listPrimitives (tests/corpus/ownership/word-bodies.txt:
             // the code List's `length`, `traverseAt` and `put` words describe)
+            // ownership pin begin: at
+            // ownership pin begin: traverseAt
             .list_at, .list_traverseAt => l.add(.index_get, p, v[0].int(), v[1].int()),
+            // ownership pin end: traverseAt
+            // ownership pin end: at
+            // ownership pin begin: half
             .list_half => l.binary(.shr, v[0], try l.numberNode("1", p), p),
+            // ownership pin end: half
+            // ownership pin begin: length
             .list_length => l.member(v[0], try l.interner.getOrPut(l.gpa, "length"), p),
+            // ownership pin end: length
             // `b[i] = x;` where the call was, then `b`: the builder is read
             // twice, so a builder that is not a name is bound first, and
             // the store runs where the call ran, after its operands.
+            // ownership pin begin: put
             .list_put => blk: {
                 var builder = v[0];
                 if (!l.isAtom(builder)) {
@@ -11943,6 +11954,8 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
                 break :blk builder;
             },
+            // ownership pin end: put
+            // ownership pin begin: builder
             .list_builder => blk: {
                 const array = try l.member(try l.add(.global_this, p, Node.Data.unused, Node.Data.unused), try l.interner.getOrPut(l.gpa, "Array"), p);
                 const n = try l.bindSubject(out, v[0], p);
@@ -11950,27 +11963,56 @@ pub const Lowerer = struct {
                 const range = try l.b.addRange(&.{size});
                 break :blk l.add(.new_call, p, array.int(), @backingInt(try l.b.addRecord(range)));
             },
+            // ownership pin end: builder
+            // ownership pin begin: done
             .list_done => blk: {
                 const builder = try l.bindSubject(out, v[0], p);
                 const size = try l.member(builder, try l.interner.getOrPut(l.gpa, "length"), p);
                 try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), v[1].int()));
                 break :blk builder;
             },
+            // ownership pin end: done
+            // ownership pin begin: base
+            // ownership pin begin: offset
             .list_base, .list_offset => blk: {
                 const xs = try l.bindSubject(out, v[0], p);
                 const array = try l.member(try l.add(.global_this, p, Node.Data.unused, Node.Data.unused), try l.interner.getOrPut(l.gpa, "Array"), p);
                 const plain = try l.hostCall(try l.member(array, try l.interner.getOrPut(l.gpa, "isArray"), p), &.{xs}, p);
-                break :blk l.condOf(plain, if (which == .list_base) xs else try zero.node(l, p), try l.member(xs, try l.interner.getOrPut(l.gpa, if (which == .list_base) "b" else "o"), p), p);
+                const data = try l.member(xs, try l.interner.getOrPut(l.gpa, "$h"), p);
+                const tree = try l.binary(.strict_ne, data, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const ordinary = try l.member(xs, try l.interner.getOrPut(l.gpa, if (which == .list_base) "b" else "o"), p);
+                const unpacked = if (which == .list_base)
+                    try l.hostCall(try l.member(xs, try l.interner.getOrPut(l.gpa, "$plain"), p), &.{}, p)
+                else
+                    try zero.node(l, p);
+                break :blk l.condOf(plain, if (which == .list_base) xs else try zero.node(l, p), try l.condOf(tree, unpacked, ordinary, p), p);
             },
-            .list_viewOf => blk: {
-                const b = try l.bindSubject(out, v[0], p);
-                const o = try l.bindSubject(out, v[1], p);
-                break :blk l.object(&.{
-                    try l.property(try l.interner.getOrPut(l.gpa, "b"), b, p),
-                    try l.property(try l.interner.getOrPut(l.gpa, "o"), o, p),
-                    try l.property(try l.interner.getOrPut(l.gpa, "length"), try l.binary(.sub, try l.member(b, try l.interner.getOrPut(l.gpa, "length"), p), o, p), p),
-                }, p);
+            // ownership pin end: offset
+            // ownership pin end: base
+            // ownership pin begin: peekArray
+            .list_peekArray => v[0],
+            // ownership pin end: peekArray
+            // ownership pin begin: writeArray
+            .list_writeArray => blk: {
+                const slot = try l.add(.index_get, p, v[0].int(), v[1].int());
+                try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
+                break :blk l.nullNode(p);
             },
+            // ownership pin end: writeArray
+            // ownership pin begin: wrapTree
+            .list_wrapTree => l.object(&.{
+                try l.property(try l.interner.getOrPut(l.gpa, "length"), v[0], p),
+                try l.property(try l.interner.getOrPut(l.gpa, "$h"), v[1], p),
+                try l.property(try l.interner.getOrPut(l.gpa, "$plain"), v[2], p),
+                try l.property(try l.interner.getOrPut(l.gpa, "$t"), v[3], p),
+            }, p),
+            // ownership pin end: wrapTree
+            // ownership pin begin: treeOf
+            .list_treeOf => l.member(v[0], try l.interner.getOrPut(l.gpa, "$h"), p),
+            // ownership pin end: treeOf
+            // ownership pin begin: isTree
+            .list_isTree => l.binary(.strict_ne, try l.member(v[0], try l.interner.getOrPut(l.gpa, "$h"), p), try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
+            // ownership pin end: isTree
             // ownership pin end: listPrimitives
         };
     }

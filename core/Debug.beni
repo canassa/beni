@@ -413,6 +413,8 @@ plain : Js.Value → Js.Value
 plain value =
     if Js.to (Js.call (Js.global "Array") "isArray" [ Js.from value ]) then
         value
+    else if not (Js.isUndefined (Js.get value "$plain")) then
+        Js.call value "$plain" []
     else
         Js.call (Js.get value "b") "slice" [ Js.get value "o" ]
 
