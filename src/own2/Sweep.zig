@@ -23,6 +23,7 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
+const Routed = @import("Routed.zig");
 
 pub const Error = Ids.ChargeError;
 const PathId = Ids.PathId;
@@ -45,11 +46,13 @@ const unknown_key: Key = .{ 4, 0, 0 };
 pub const Hold = struct { leaf: u32, q: PathId, refine: bool, agg: bool = false, done: bool = false, node: u32 = none };
 
 /// A holder's value as a DAG (§2.8 step 3 on slots), when a node of it is
-/// reached by two paths: each `(value, tags)` once, at its least path, with
-/// its holds and its kids in order, each by the step that reaches it (none:
-/// the same path).
-pub const DNode = struct { holds: Ids.Range = .{}, edges: Ids.Range = .{}, q: PathId };
-pub const DEdge = struct { node: u32 = none, step: ?Place.Step = null };
+/// reached by two paths: each value `v` once, at its least path, with its
+/// holds (under no tags) and its kids in order, each by the step that
+/// reaches it (none: the same path) and an `alt`'s arm by its tag
+/// (`arm`, 0 for none): the descent reads a node under the route set its
+/// arrivals unite (`DagRoutes`), never once per tag list.
+pub const DNode = struct { holds: Ids.Range = .{}, edges: Ids.Range = .{}, q: PathId, v: u32 = none };
+pub const DEdge = struct { node: u32 = none, step: ?Place.Step = null, arm: u32 = 0 };
 pub const Dag = struct {
     nodes: std.ArrayList(DNode) = .empty,
     edges: std.ArrayList(DEdge) = .empty,
@@ -63,7 +66,7 @@ pub const Dag = struct {
 /// built node at its path, and every leaf of a `ref`, `⊤` or shared value at
 /// the path that reaches it. One walk of the value; a node met again at the
 /// same path and tags is not walked again. When one is met at a second
-/// path, the value is walked again as `dag` (true returned): each node
+/// path, the value is walked again as `dag` (true returned): each value
 /// once, kids in order, so a node's first visit is at its least path.
 pub fn holdsOfValue(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(Hold), dag: *Dag) Error!bool {
     const start = out.items.len;
@@ -83,12 +86,13 @@ fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(H
     defer stack.deinit(g);
     var seen: Ids.FixedDict(3) = .{};
     defer seen.deinit(g);
-    // Per `(value, tags)`: its first path, or its DAG node.
+    // Per `(value, tags)`: its first path; per value: its DAG node, read
+    // under route sets (`DagRoutes`), never once per tag list.
     var first: Ids.FixedDict(2) = .{};
     defer first.deinit(g);
     try stack.append(g, .{ .v = value, .q = root, .tags = 0 });
     while (stack.pop()) |it| {
-        const at = try first.getOrPut(g, .{ it.v, it.tags });
+        const at = try first.getOrPut(g, .{ it.v, if (dag != null) 0 else it.tags });
         if (dag) |d| {
             if (at.found_existing) {
                 d.edges.items[it.edge].node = at.value_ptr.*;
@@ -96,7 +100,7 @@ fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(H
             }
             at.value_ptr.* = @intCast(d.nodes.items.len);
             if (it.edge != none) d.edges.items[it.edge].node = at.value_ptr.*;
-            try d.nodes.append(g, .{ .q = it.q, .holds = .{ .start = @intCast(out.items.len - base) } });
+            try d.nodes.append(g, .{ .q = it.q, .v = it.v, .holds = .{ .start = @intCast(out.items.len - base) } });
         } else if (at.found_existing) {
             if (at.value_ptr.* != it.q.int()) return false;
         } else at.value_ptr.* = it.q.int();
@@ -122,8 +126,10 @@ fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(H
                 const ks = fr.kidsOf(x);
                 var i: usize = 0;
                 while (i < ks.len) : (i += 2) {
-                    const t = (try fr.mergeTags(it.tags, try fr.internTags(&.{.{ x.head, try fr.armOf(ks[i]) }}))) orelse continue;
-                    if (dag) |d| try d.edges.append(g, .{});
+                    const arm = try fr.internTags(&.{.{ x.head, try fr.armOf(ks[i]) }});
+                    // A DAG's arm is its edge's tag, its node under none.
+                    if (dag) |d| try d.edges.append(g, .{ .arm = arm });
+                    const t = if (dag != null) 0 else (try fr.mergeTags(it.tags, arm)) orelse continue;
                     try stack.append(g, .{ .v = ks[i + 1], .q = it.q, .tags = t });
                 }
             },
@@ -148,7 +154,8 @@ fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(H
             .ref, .top, .shared => {
                 var ls: std.ArrayList(u32) = .empty;
                 defer ls.deinit(g);
-                try ev.leavesOf(it.v, it.tags, &ls);
+                // A DAG's node reads each leaf once under its route set (`Leaf.routes`).
+                if (dag != null) try Routed.leavesOf(ev, it.v, &ls) else try ev.leavesOf(it.v, it.tags, &ls);
                 for (ls.items) |l| try out.append(g, .{ .leaf = l, .q = it.q, .refine = x.family == Slots.empty, .node = ni });
             },
         }
@@ -393,8 +400,8 @@ pub const Live = struct {
             const eb: u32 = @intCast(x.dedges.items.len);
             try ev.f.charge(.inspection, @intCast(d.nodes.items.len + d.edges.items.len));
             x.holders.items[hi].d_root = nb;
-            for (d.nodes.items) |n| try x.dnodes.append(g, .{ .q = n.q, .holds = n.holds, .edges = .{ .start = n.edges.start + eb, .len = n.edges.len } });
-            for (d.edges.items) |e| try x.dedges.append(g, .{ .node = e.node + nb, .step = e.step });
+            for (d.nodes.items) |n| try x.dnodes.append(g, .{ .q = n.q, .v = n.v, .holds = n.holds, .edges = .{ .start = n.edges.start + eb, .len = n.edges.len } });
+            for (d.edges.items) |e| try x.dedges.append(g, .{ .node = e.node + nb, .step = e.step, .arm = e.arm });
         }
         const h = &x.holders.items[hi];
         h.h_start = @intCast(x.holds.items.len);
