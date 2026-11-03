@@ -819,7 +819,14 @@ value it reaches by `(module, declaration)`, the one a `top-level` refusal names
 the facts, made for every target. The **run** of keys (sorted, once each) is made only for a target that meets
 a live holder, a holder a demand meets live, and an escape's leaf: a value that comes from k atoms has k keys,
 and a chain `x_k = step x_(k-1) [ k ]` would cost Σk to key every leaf. None of the readers expands a call
-again.
+again. A run is copied from its kids' runs only while it has at most `flat_max` (32) keys and no kid's
+keys are shared; past that a leaf's keys are a **shared set** (`KeySets.zig`, #1714, 2026-11-03): a hash-consed
+big-endian Patricia tree over the keys' dense ids, the union of its own keys and its kids' sets, so a kid's set
+is never copied and a set and its subset unite into the set itself. A set is listed (its keys sorted) only when
+a reader asks for it, once a set. A chain of n leaves, each over the one below plus one key, costs a path a
+level and not Σk items: #1146's chain of knots through calls and #1130's 400-call chain read at its end are
+linear (`build_test.zig`). Charged: a node made or found is one `set`, a pair of nodes a union meets one
+`inspection`, a key listed one `edge`.
 
 **The holder index and its sweep** (#1714, 2026-11-02; #1214's live chains, restated on slots). Step 5 asks
 only the holders that are *live at the demand*: bound before its point and used after it (`Liveness.lastUse`).
@@ -3233,7 +3240,7 @@ every growth reservation of §4.4 does. Per walk:
 | the distinct check | linear in entries and their ancestors' index hits (§2.9.3); pairs only for list-step groups | `cond`, `inspection` |
 | a call's instantiation | once per call per candidate generation: the callee's arrivals × the projected positions | `edge`, `inspection` |
 | demand resolution | per demand, its targets × the holders live at it (§2.8, *The holder index and its sweep*), plus one liveness query per holder path; its escapes by the escape index, O((1 + k) log e) | `demand`, `use`, `inspection` |
-| base keys | once per leaf, its expansion's runs (§2.8, *Base keys*) | `inspection`, `edge` |
+| base keys | once per leaf, its expansion's runs or shared sets (§2.8, *Base keys*) | `inspection`, `edge`, `set` |
 | deliveries (§2.12) | once per (edge, fact) | `edge` |
 
 *A module table's entries, charged per account* (#1714, amended 2026-11-02). The module's tables — `Place`'s
