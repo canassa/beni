@@ -1153,6 +1153,20 @@ pub const Module = struct {
         return mod.fnPlaces(v, params);
     }
 
+    /// The function type a label's callee has at its origin, the callback
+    /// call `f x` of this module (`siteSig` of its head), or null: an
+    /// origin with a mark (`RowEnv.taken_origin`), another module's, or no
+    /// call's (§2.11.3, #1758).
+    fn originSig(ctx: *anyopaque, origin: [3]u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId {
+        const mod = self(ctx);
+        const bir = mod.in.bir;
+        if (origin[0] != mod.in.module or origin[1] >= bir.decls.len or origin[2] >= 1 << 30) return null;
+        const d = bir.decls[origin[1]];
+        const i = d.inst_start.int() + origin[2];
+        if (i >= d.inst_end.int() or bir.instTag(@fromBackingInt(i)) != .call) return null;
+        return siteSig(ctx, bir.instData(@fromBackingInt(i)).lhs, params);
+    }
+
     /// A `try`'s shape (§2.11.5): `(success, failure, failure arity)` ordinals of its scrutinee's type, `Ok`/`Err` or `Just`/`Nothing`.
     fn tryShape(ctx: *anyopaque, inst: u32) ?[3]u32 {
         const mod = self(ctx);
@@ -1184,6 +1198,7 @@ pub const Module = struct {
             .contractOf = contractOf,
             .codeSig = codeSig,
             .siteSig = siteSig,
+            .originSig = originSig,
             .pessimistic = pessimistic,
             .tryShape = tryShape,
         };
