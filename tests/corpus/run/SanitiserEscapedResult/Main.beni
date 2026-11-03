@@ -66,4 +66,11 @@ main =
     kd = Kept.kept ⊤
     ( e0, e1 ) = viaForeign ⊤
     v = List.set e0 0 9
-    Node.printLines [ ka, kb, kc, kd, String.join (List.map v String.fromInt) ",", String.join (List.map e1 String.fromInt) "," ]
+    Node.printLines
+        [ ka
+        , kb
+        , kc
+        , kd
+        , String.join (List.map v String.fromInt) ","
+        , String.join (List.map e1 String.fromInt) ","
+        ]
