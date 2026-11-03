@@ -824,6 +824,9 @@ pub const SupplyEntry = struct {
 };
 
 pub const Calls = enum(u8) { zero, once, many };
+/// A `passOn` call in progress: the whole call, so that only a true re-entry
+/// of it stops (a nested pass of another summary or call is its own).
+const PassKey = struct { s: *const Summary, avs: [*]const AV, inst: Inst.Index, lambda: u32, j: u32, jj: u32 };
 
 pub const FunFacts = struct {
     param: u32,
@@ -8255,7 +8258,7 @@ const Walker = struct {
     /// `passOn` calls in progress, as (parameter handed on, caller's parameter):
     /// a lambda applied to a function parameter hands it back to itself, and
     /// the re-entry would repeat the call in progress without end.
-    pass_active: std.ArrayList([2]u32) = .empty,
+    pass_active: std.ArrayList(PassKey) = .empty,
     /// §30.9: what callees rely on of the enclosing lambdas' own parameters.
     lambda_needs: std.ArrayList(LambdaNeed) = .empty,
     /// The record a program constructor with an entry row is handed: its
@@ -18955,8 +18958,8 @@ const Walker = struct {
         // Reached again from within itself with the same function parameters,
         // it would run the pass in progress again without end: what the outer
         // call computes is all the re-entry could add, so it stops.
-        const key: [2]u32 = .{ j, jj };
-        for (w.pass_active.items) |k| if (k[0] == key[0] and k[1] == key[1]) return;
+        const key: PassKey = .{ .s = s, .avs = avs.ptr, .inst = inst, .lambda = lambda, .j = j, .jj = jj };
+        for (w.pass_active.items) |k| if (std.meta.eql(k, key)) return;
         try w.pass_active.append(w.a, key);
         defer _ = w.pass_active.pop();
         var ff = facts;
