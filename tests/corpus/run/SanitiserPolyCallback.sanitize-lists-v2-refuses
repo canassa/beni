@@ -1,4 +1,4 @@
 # v2 refuses the push of a record field a polymorphic callback answered with (§2.11.3).
 43:7 list_still_used List.push
-49:7 list_may_be_shared List.push
-57:7 list_may_be_shared List.push
+49:7 list_still_used List.push
+57:7 list_still_used List.push

@@ -1,0 +1,37 @@
+-- A runtime catch for a closure that calls a captured closure which edits
+-- its parameter in place (`ownership-v2.md` §2.11.3, §2.11.4): `h = λv → g v`
+-- is called on `k`, and `g` pushes onto what it is handed. `g`'s own type is
+-- `List number → List number`, a type variable's place, so it was read as
+-- unknown code at `h`'s label and its write was lost; and through a callee's
+-- label (`apply2`, `List.map`) only the inner label's condition was asked.
+-- Each edit of `k`, read again or handed twice, is refused now; accepted,
+-- the sanitised run shows the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apply2 : a, a, (a → b) → b × b
+apply2 x y f = ( f x, f y )
+
+
+later : List Int → String
+later k =
+    g = λv → List.push v 5
+    h = λv → g v
+    a = h k
+    "${show a} ${show k}"
+
+
+main : Program
+main =
+    k = [ 1 ]
+    g = λv → List.push v 6
+    ( a, b ) = apply2 k k λv → g v
+    m = [ 2 ]
+    r = List.map [ m, m ] λv → g v
+    Node.printLines [ later [ 1 ], show a, show b, String.join (List.map r show) ";" ]
