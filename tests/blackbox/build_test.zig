@@ -13241,7 +13241,7 @@ fn doublingProduct(a: std.mem.Allocator, src: *std.ArrayList(u8), name: []const 
 /// A genuine product from a few atoms: `n` copies of a record of `m` list
 /// fields, each with one field fresh, joined at one list's elements. Each
 /// copy differs from the others, so the join is m·n work whatever shares,
-/// and nothing of it is source: at m = n = 91 `h` costs about 76 000
+/// and nothing of it is source: at m = 93, n = 92 `h` costs about 77 000
 /// growth records.
 fn recordProduct(a: std.mem.Allocator, h: *std.ArrayList(u8), m: u32, n: u32) !void {
     try recordType(a, h, m);
@@ -13259,7 +13259,7 @@ fn recordType(a: std.mem.Allocator, out: *std.ArrayList(u8), m: u32) !void {
 
 fn nearLimitModule(a: std.mem.Allocator, h_first: bool, size: u64) ![]const u8 {
     var h: std.ArrayList(u8) = .empty;
-    try recordProduct(a, &h, 91, 91);
+    try recordProduct(a, &h, 93, 92);
     const g = "pub g : List Int → List Int\ng ys =\n    List.push ys 0\n";
     const head = try std.fmt.allocPrint(a, "@ownership_summary_size(module, {d})\n\n\n", .{size});
     return std.mem.concat(a, u8, if (h_first) &.{ head, h.items, "\n\n", g } else &.{ head, g, "\n\n", h.items });
@@ -13282,9 +13282,9 @@ test "the checker v2 charges a declaration near its limit the same in either ord
     // #1104: a table both declarations share once charged its first miss to
     // whichever declaration met it first, so a declaration near its limit
     // passed after another and failed before it. Three modules in one run:
-    // `h` first and `g` first under one allowance above `h`'s growth (76 058
-    // at 91 fields, with result trees, per-account table fills and paths read off their nodes, #1714, from
-    // `recordProduct`), and `g` first under one below it. The run
+    // `h` first and `g` first under one allowance above `h`'s growth (77 222
+    // at 93 fields and 92 copies, with result trees, per-account table fills, paths read off their nodes
+    // and result slots read off a column per read, #1714, from `recordProduct`), and `g` first under one below it. The run
     // checks that both lie within 5 % of the growth it reports, so a change
     // of cost that moves them out fails here and names the growth.
     const above: u64 = 79_000;
@@ -13822,10 +13822,12 @@ test "the checker v2 settles a ring whose res.shape grows a type a round in one 
     // The slot domain (#1685) walks no member again: a new `res` fact is
     // delivered to the call that reads it (§2.12), so `m0` walks once at
     // every k and its records are 3 011 at (10, 2) and 4 685 at (10, 3).
+    // Since the read-off reads a slot's result slots off a column per read
+    // (#1714), they are 1 959 and 2 589 (2 703 and 4 377 before it).
     const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
     const walks = [_]u64{ 1, 1 };
     // 1.5 times the measured records: a doubled cost per round fails.
-    const ceilings = [_]u64{ 4_500, 7_000 };
+    const ceilings = [_]u64{ 3_000, 4_000 };
     var total: [cases.len]u64 = undefined;
     for (cases, walks, ceilings, 0..) |c, want, ceiling, i| {
         var w = try World.init(testing.allocator, testing.io);
@@ -13848,11 +13850,13 @@ test "the checker v2 settles a ring whose res.shape grows a type a round in one 
             return error.TestUnexpectedResult;
         }
     }
-    // More versions, more rounds, each over a larger contract: 1.55 times
-    // the records from k = 2 to 3. A cost per round that grows with K²
-    // (2.25 times the contract, 3.5 times the records) fails.
-    try testing.expect(total[1] * 2 >= 3 * total[0]);
-    try testing.expect(total[1] <= 3 * total[0]);
+    // More versions, more rounds, each over a larger contract: 1.32 times
+    // the records from k = 2 to 3 (1.62 before #1714's column per read,
+    // whose cost a round grew with K). A cost a round that grows with K,
+    // as that one did, fails, and so does one that grows with K² (2.25
+    // times the contract, 3.5 times the records).
+    try testing.expect(total[1] * 4 >= 5 * total[0]);
+    try testing.expect(total[1] * 2 <= 3 * total[0]);
 }
 
 /// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
@@ -14010,9 +14014,11 @@ test "the checker v2 publishes nothing of a recursive group a limit stops, and s
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 120 fields exhausts past
+    // §8 S3b slice 4, *Failure*: `shift`/`shift2` at 136 fields exhausts past
     // the lanes (at 24 before the slot domain, #1685, which checks 96; 112
-    // until the read-off named a slot once, #1714, which checks 114). The
+    // until the read-off named a slot once, #1714, which checks 114; 120
+    // until it read a slot's result slots off a column per read, #1714,
+    // which checks 134). The
     // group is built whole or not at all: one member has the limit, the
     // other is unbuilt at its group call, and neither publishes a class or a
     // line. `before`, an earlier group, still serves `after`, whose call is
@@ -14023,7 +14029,7 @@ test "the checker v2 publishes nothing of a recursive group a limit stops, and s
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const dump = try groupFieldShift(&w, 120, true);
+    const dump = try groupFieldShift(&w, 136, true);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
