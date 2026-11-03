@@ -223,7 +223,15 @@ module Browser.Host.NodeProcess
   value writeOut : String → ⊤  -- impure
 module Browser.Host.Promise
   type Promise a
+  type Resolvers a
+  value after : Promise a, (a → ⊤) → Promise ⊤  -- impure
+  value dataResolvers : ⊤ → Resolvers Value  -- impure
   value observe : Promise a, (a → ⊤), (Rejection → ⊤) → ⊤  -- impure
+  value promise : Resolvers a → Promise a  -- impure
+  value reject : Resolvers a, Rejection → ⊤  -- impure
+  value resolve : Resolvers a, a → ⊤  -- impure
+  value stringResolvers : ⊤ → Resolvers String  -- impure
+  value unitResolvers : ⊤ → Resolvers ⊤  -- impure
 module Browser.Host.ReadResult
   type ReadResult
   value done : ReadResult → Bool  -- impure
@@ -247,6 +255,8 @@ module Browser.Host.Rejection
   value raise : Rejection → a  -- impure
   value setAbandoned : Rejection, Value → ⊤  -- impure
   value typeErrorMessage : Rejection → Maybe String  -- impure
+module Browser.Host.Request
+  type Request
 module Browser.Host.Response
   type Response
   value headers : Response → Headers  -- impure
@@ -366,7 +376,7 @@ module Deferred
   opaque type Deferred a
   value complete : Deferred a, a → Bool  -- impure
   value isDone : Deferred a → Bool  -- impure
-  value make : ⊤ → Deferred a
+  value make : ⊤ → Deferred a  -- impure
   value poll : Deferred a → Maybe a  -- impure
   value wait : (Deferred a) → a  -- suspends
 module Dict
@@ -499,7 +509,7 @@ module Latch
   opaque type Latch
   value close : Latch → ⊤  -- impure
   value isOpen : Latch → Bool  -- impure
-  value make : Bool → Latch
+  value make : Bool → Latch  -- impure
   value open : Latch → ⊤  -- impure
   value release : Latch → ⊤  -- impure
   value wait : (Latch) → ⊤  -- suspends
@@ -591,18 +601,18 @@ module Maybe
   value withDefault : Maybe a, a → a
 module Queue
   opaque type Queue a
-  value bounded : Int → Queue a
-  value dropping : Int → Queue a
+  value bounded : Int → Queue a  -- impure
+  value dropping : Int → Queue a  -- impure
   value end : (Queue a) → ⊤  -- impure
   value offer : (Queue a), a → Bool  -- suspends
   value offerAll : (Queue a), List a → List a  -- suspends
   value poll : (Queue a) → Maybe a  -- impure
   value size : Queue a → Int  -- impure
-  value sliding : Int → Queue a
+  value sliding : Int → Queue a  -- impure
   value take : (Queue a) → Maybe a  -- suspends
   value takeAll : (Queue a) → List a  -- suspends
   value takeN : (Queue a), Int → List a  -- suspends
-  value unbounded : ⊤ → Queue a
+  value unbounded : ⊤ → Queue a  -- impure
 module Random.Pcg
   type Generator a
     Generator
@@ -630,7 +640,7 @@ module Record
 module Ref
   opaque type Ref a
   value get : Ref a → a  -- impure
-  value make : a → Ref a
+  value make : a → Ref a  -- impure
   value modify : Ref a, (a → b × a) → b  -- impure
   value set : Ref a, a → ⊤  -- impure
   value update : Ref a, (a → a) → ⊤  -- impure
@@ -806,7 +816,7 @@ module Semaphore
   opaque type Semaphore
   value acquire : (Semaphore), Int → ⊤  -- suspends
   value available : Semaphore → Int  -- impure
-  value make : Int → Semaphore
+  value make : Int → Semaphore  -- impure
   value release : Semaphore, Int → ⊤  -- impure
   value resize : Semaphore, Int → ⊤  -- impure
   value tryWithPermits : Semaphore, Int, (⊤ → a) → Maybe a  -- impure

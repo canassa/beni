@@ -747,6 +747,19 @@ Trie headers remain distinguishable by their own `$plain` callback. The private 
 They add no user surface or Js.Buffer. `workers-task-storage.md` records
 the decision.
 
+**Core/platform-private bridge list** (2026-11-03). The checked package
+identity governs these names, for named access and static dispatch alike:
+
+- Core and platforms may use the whole `Browser.Host.Cloudflare` and
+  `Js.Protocol` modules, `WebSocket.fromNative`, `WebSocket.toNative`,
+  and `Worker.Object.hostState`.
+- The same authority protects Worker's bridge exports: `fromHost`,
+  `hostResponse`, `makeRequest`, `hostRequest`, `requestWithBody`,
+  `requestBody`, `wrapEnv`, `nativeEnv`, `setDraining`, `chainNow`,
+  `selfRef`, `refStub`, `refPost`, `printRef`, and `settleHost`.
+- Only core Debug may use the whole `Js.Inspect` module. The Cloudflare-only
+  reply intrinsic below has its narrower platform identity check.
+
 **Cloudflare reply discovery** (owner, 2026-11-03; #1612) is a
 platform-private rule-6 extension. `Worker.Object.replyIds : borrowed msg → fresh List String`
 is available only inside the actual Cloudflare platform. It is a saturated-call

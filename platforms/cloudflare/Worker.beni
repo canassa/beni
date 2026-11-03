@@ -29,8 +29,21 @@
 --! `Worker.js` holds the two places the host throws for ordinary input
 --! (a redirect target, an object id); everything else is beni over `Js`.
 
+import Browser.Host.Cloudflare as Native
+import Browser.Host.Data as Data
+import Browser.Host.Headers as Headers
+import Browser.Host.Promise as Promise
+import Browser.Host.RegExp as RegExp
+import Browser.Host.Rejection as Rejection
+import Browser.Host.Request as HostRequest
+import Browser.Host.Response as HostResponse
+import Browser.Host.Timers as Timers
+import Browser.Host.URL as URL
 import Js
+import Js.Chain as Chain
+import Js.Protocol as Protocol
 import List
+import Maybe
 import Schema exposing (Schema)
 import String
 import Task exposing (Scheduler)
@@ -41,26 +54,37 @@ type alias V =
 
 
 --| What `main` is: a Worker, built by `program`.
-pub foreign type Program
+pub type alias Program =
+    Native.Program
 
 
 --| A request's context: its bindings (`env`), its execution context and
 --| its scheduler.
-pub foreign type Context
+pub opaque type Context
+    = Context Env Native.ExecutionContext Scheduler
 
 
 --| A Durable Object class, made by `Worker.Object.define`; `program`'s
 --| `objects` lists them, and the entry file exports each by its name.
-pub foreign type Definition
+pub type alias Definition =
+    Native.Definition
 
 
 --| A typed reference to a Durable Object of protocol `msg`: from a
 --| `Namespace msg` by name or id (§9.12 (e.10)).
-pub foreign type Ref msg
+pub opaque type Ref msg
+    = Ref
+        { stub : Maybe Native.Stub
+        , id : String
+        , name : Maybe String
+        , print : msg → Result (List Schema.Issue) String
+        , post : Maybe (msg → ⊤)
+        }
 
 
 --| The host's request, read through the functions below.
-pub foreign type Request
+pub opaque type Request
+    = Request HostRequest.Request (Maybe String)
 
 
 --| A response: the host's object, built by `text`, `html`, `empty`,
@@ -71,28 +95,24 @@ pub foreign type Request
 --| body and no header of the program's, and one `console.error` line
 --| names the fault (§9.12 (d)).
 pub opaque type Response
-    = Response V V V
-
-
--- A response from the host's object, as `forward` and `callService` get
--- one, and as `Object.accept` makes the 101 (§9.12 (g), through
--- `withWorker`): not the platform's own, so `withHeader` copies it first.
-fromHost : V → Response
-fromHost r = Response r (Js.from False) (Js.from False)
+    = Response HostResponse.Response Bool Bool
 
 
 --| The Worker's bindings, read by name: each answers `Maybe`, because a
 --| binding the configuration does not declare is a mismatch between two
 --| files the author owns, never a crash.
-pub foreign type Env
+pub opaque type Env
+    = Env Native.Env
 
 
 --| A Durable Object binding, as objects of protocol `msg`.
-pub foreign type Namespace msg
+pub opaque type Namespace msg
+    = Namespace Native.Namespace (msg → Result (List Schema.Issue) String)
 
 
 --| A service or assets binding: anything with `fetch`.
-pub foreign type Service
+pub opaque type Service
+    = Service Native.Service
 
 
 --| Why an id did not parse: the host's `TypeError`, "Invalid Durable
@@ -123,368 +143,273 @@ pub type ServiceError
     = Unavailable
 
 
--- ---- The program ----------------------------------------------------------
+-- ---- The program and typed host boundary ----------------------------------
 
---| A Worker: `fetch` answers each request, on a scheduler and in a scope of
---| its own; `objects` are the Durable Object classes the entry file
---| exports (`Worker.Object.define`, the next slice).
 pub program : { fetch : Context, Request → Response, objects : List Definition } → Program
-program p =
-    Js.to
-        (Js.from
-            { fetch = Js.from λrequest bindings ctx → handle p.fetch request bindings ctx
-            , objects = Js.from (List.map p.objects withWorker)
-            }
-        )
+program p = Native.program (λrequest bindings ctx → handle p.fetch request bindings ctx) p.objects
 
 
--- What `Worker.Object` needs of this module, handed to each definition as
--- values rather than exported: the chain id, the host's object of a
--- `Response`, and the draining object. None is a program's to call
--- (P723-3).
-withWorker : Definition → Definition
-withWorker definition =
-    _ =
-        Js.set (Js.from definition)
-            "worker"
-            (Js.from
-                { chainNow = Js.from chainNow
-                , fromHost = Js.from fromHost
-                , hostResponse = Js.from hostResponse
-                , setDraining = Js.from λobject → Js.write draining object
-                }
-            )
-    definition
-
-
---| The request's bindings.
 pub env : Context → Env
-env ctx = Js.to (Js.get (Js.from ctx) "env")
+env (Context bindings _ _) = bindings
 
 
--- The host's object a response holds: for `Worker.Object`, which hands it
--- to the host (through `withWorker`).
-hostResponse : Response → Js.Value
-hostResponse (Response r _ _) = r
+pub fromHost : HostResponse.Response → Response
+fromHost response = Response response False False
 
 
--- The object whose scheduler is draining, or null: set by `Worker.Object`
--- around each turn of an object's scheduler, so `forward`, `post` and
--- `ask` from a handler find the handler's chain id ((e.3)). The Worker's
--- own requests have none.
-draining : Js.Ref Js.Value
-draining = Js.ref Js.null
+pub hostResponse : Response → HostResponse.Response
+hostResponse (Response response _ _) = response
 
 
--- The chain id a call between objects carries ((e.3)): the running
--- handler's, or a fresh one from a Worker, which parks in no object and
--- so begins no cycle. Every ref carries it, for `Worker.Object`'s `post`
--- and `ask`.
-chainNow : ⊤ → Js.Value
+pub makeRequest : HostRequest.Request → Request
+makeRequest request = Request request Nothing
+
+
+pub hostRequest : Request → HostRequest.Request
+hostRequest (Request request _) = request
+
+
+pub requestWithBody : HostRequest.Request, String → Request
+requestWithBody request body = Request request (Just body)
+
+
+pub requestBody : Request → String
+requestBody (Request _ body) = Maybe.withDefault body ""
+
+
+pub wrapEnv : Native.Env → Env
+wrapEnv bindings = Env bindings
+
+
+pub nativeEnv : Env → Native.Env
+nativeEnv (Env bindings) = bindings
+
+
+-- Read the live handler's chain, rather than a snapshot taken before consume.
+draining : Js.Ref (Maybe (⊤ → Maybe String))
+draining = Js.ref Nothing
+
+
+pub setDraining : Maybe (⊤ → Maybe String) → ⊤
+setDraining getter = Js.write draining getter
+
+
+pub chainNow : ⊤ → String
 chainNow ⊤ =
-    inst = Js.read draining
-    if Js.isNull inst || Js.isNull (Js.get inst "chain") then
-        Js.call (Js.global "crypto") "randomUUID" []
-    else
-        Js.get inst "chain"
+    chain =
+        case Js.read draining of
+            Nothing →
+                Nothing
+            Just current →
+                Protocol.call current ⊤
+    case chain of
+        Nothing →
+            Native.randomUUID ⊤
+        Just current →
+            current
 
 
--- The host's `fetch` handler, through `runtime.js`: answers the host a
--- promise of the response. The request gets a scheduler of its own
--- (§9.12 (d); `transparent-effects-proposal.md` §17.5): its drains run in
--- a reaction of a promise made here, in this request's context, so a
--- fiber woken from another request's context still runs in its own
--- (`arm`). The handler runs in a detached fiber started under that
--- scheduler from outside any fiber, so its first step is already the
--- scheduler's. The fiber resolves the promise with the response; a throw
--- leaves the drain, the scheduler stops (its hook holds the teardown in
--- `waitUntil`), and the throw reaches the promise through the
--- trampoline's chain, so the host answers 1101 with it.
-handle : (Context, Request → Response), V, V, V → V
+type alias Trampoline =
+    tasks : Chain.Chain (⊤ → ⊤)
+    wake : Js.Ref (Maybe (Promise.Resolvers ⊤))
+    answer : Promise.Resolvers HostResponse.Response
+    answered : Js.Ref Bool
+
+
+handle :
+      (Context, Request → Response)
+    , HostRequest.Request
+    , Native.Env
+    , Native.ExecutionContext
+    → Promise.Promise HostResponse.Response
 handle fetch request bindings ctx =
-    -- Nested, not joined with `&&`: an `if` on `Js.testHooks` alone keeps
-    -- one arm, so a build without the flag holds nothing of the hooks.
     if Js.testHooks ⊤ then
-        if isHook request then hooked request else serve fetch request bindings ctx
+        if String.startsWith (Native.requestPath request) "/__beni/" then
+            hooked request
+        else
+            serve fetch request bindings ctx
     else
         serve fetch request bindings ctx
 
 
--- The Worker's test hooks (§9.12 (k)), in a `--test-hooks` build only:
--- `/__beni/mark/<text>` writes `beni:mark <text>` to both console streams,
--- so the tests' driver knows every line of a step has landed on each;
--- `/__beni/schedulers`
--- answers how many schedulers the kernel lists, so a fixture sees that a
--- request's leaves it.
-isHook : V → Bool
-isHook request = String.startsWith (pathOf request) "/__beni/"
-
-
-hooked : V → V
+hooked : HostRequest.Request → Promise.Promise HostResponse.Response
 hooked request =
-    at = pathOf request
-    if String.startsWith at "/__beni/mark/" then
-        -- On both streams, since the driver orders each stream by its own
-        -- mark.
-        _ = Js.call (Js.global "console") "log" [ Js.from "beni:mark ${String.dropLeft at 13}" ]
-        _ = Js.call (Js.global "console") "error" [ Js.from "beni:mark ${String.dropLeft at 13}" ]
-        Js.call (Js.global "Promise") "resolve"
-            [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
-    else if at == "/__beni/schedulers" then
-        Js.call (Js.global "Promise") "resolve"
-            [ Js.construct (Js.global "Response")
-                [ Js.from (String.fromInt (Task.schedulersListed ⊤)), Js.from { status = 200 } ]
-            ]
-    else if at == "/__beni/holds" then
-        -- How many answered requests still hold work under `waitUntil`.
-        Js.call (Js.global "Promise") "resolve"
-            [ Js.construct (Js.global "Response")
-                [ Js.from (String.fromInt (Js.read holds)), Js.from { status = 200 } ]
-            ]
-    else
-        Js.call (Js.global "Promise") "resolve"
-            [ Js.construct (Js.global "Response")
-                [ Js.from "no such hook", Js.from { status = 404 } ]
-            ]
+    at = Native.requestPath request
+    response =
+        if String.startsWith at "/__beni/mark/" then
+            Native.consoleLog "beni:mark ${String.dropLeft at 13}"
+            Native.consoleError "beni:mark ${String.dropLeft at 13}"
+            empty 204
+        else if at == "/__beni/schedulers" then
+            build 200 (Just (String.fromInt (Task.schedulersListed ⊤))) []
+        else if at == "/__beni/holds" then
+            build 200 (Just (String.fromInt (Js.read holds))) []
+        else
+            build 404 (Just "no such hook") []
+    d = Native.responseResolvers ⊤
+    Promise.resolve d (hostResponse response)
+    Promise.promise d
 
 
-pathOf : V → String
-pathOf request = Js.to (Js.get (Js.construct (Js.global "URL") [ Js.get request "url" ]) "pathname")
-
-
-serve : (Context, Request → Response), V, V, V → V
+serve :
+      (Context, Request → Response)
+    , HostRequest.Request
+    , Native.Env
+    , Native.ExecutionContext
+    → Promise.Promise HostResponse.Response
 serve fetch request bindings ctx =
-    d = Js.call (Js.global "Promise") "withResolvers" []
-    t =
-        Js.from
-            { answered = False
-            , ctx = ctx
-            , reject = Js.get d "reject"
-            , tasks = Js.array []
-            , wake = Js.null
-            }
+    d = Native.responseResolvers ⊤
+    t = { tasks = Chain.make ⊤, wake = Js.ref Nothing, answer = d, answered = Js.ref False }
     arm t
-    holder = Js.ref Js.null
-
-    s =
-        Task.schedulerWith
-            (λdrain → runLater t (Js.from drain))
-            (λdrain → laterTurn t (Js.from drain))
-            λ⊤ → stop ctx (Js.read holder)
-    Js.write holder (Js.from s)
-    context = Js.from { ctx = ctx, env = bindings, request = request, scheduler = Js.from s }
-    Task.withScheduler s λ⊤ →
-        _ = Task.spawnDetached λ⊤ → answer t d (fetch (Js.to context) (Js.to request))
+    holder = Js.ref Nothing
+    scheduler = Task.schedulerWith (runLater t _) (laterTurn t _) λ⊤ →
+        case Js.read holder of
+            Nothing →
+                ⊤
+            Just s →
+                stop ctx s
+    Js.write holder (Just scheduler)
+    context = Context (Env bindings) ctx scheduler
+    Protocol.call
+        (λ⊤ →
+            Task.withScheduler scheduler λ⊤ →
+                _ = Task.spawnDetached λ⊤ →
+                    response = fetch context (makeRequest request)
+                    Js.write t.answered True
+                    Promise.resolve d (hostResponse response)
+                ⊤
+        )
         ⊤
-    _ = Js.call (Js.get d "promise") "then" [ Js.from λ_ → answered t s, Js.null ]
-    listenForAbort request ctx s
-    Js.get d "promise"
+    listenForAbort request ctx scheduler
+    _ = Promise.after (Promise.promise d) λ_ → answered ctx scheduler
+    Promise.promise d
 
 
--- Arm the trampoline: a promise made in this request's context, whose
--- reaction runs every task queued since, after arming the next. A task
--- that throws rejects the reaction's promise, which `then` hands on to the
--- request's `reject` unchanged: nothing is caught (`CLAUDE.md` rule 9),
--- and the host reports the defect as the request's failure. Measured
--- under workerd: a reaction registered here runs in this context whoever
--- resolves the promise (§9.12 (d)).
-arm : V → ⊤
+arm : Trampoline → ⊤
 arm t =
-    p = Js.construct (Js.global "Promise") [ Js.from λresolve _ → Js.set t "wake" resolve ]
-    _ =
-        Js.call (Js.call p "then" [ Js.from λ_ → fire t ]) "then"
-            [ Js.null, Js.from λreason → failed t reason ]
-    ⊤
+    d = Promise.unitResolvers ⊤
+    Js.write t.wake (Just d)
+    Promise.observe (Promise.after (Promise.promise d) λ⊤ → fire t) (λ⊤ → ⊤) (failed t _)
 
 
--- A throw out of a drain: before the answer it is the request's failure,
--- handed to the request's `reject` unchanged, so the host answers 1101
--- with it; after the answer `reject` would do nothing, so the reason is
--- written to the console — the decided defect rule, logged and stopped —
--- and thrown again, where it is an unhandled rejection the host keeps
--- (`CLAUDE.md` rule 9: never dropped in silence; measured, workerd writes
--- nothing of its own for one). Nothing is caught.
-failed : V, V → ⊤
+failed : Trampoline, Rejection.Rejection → ⊤
 failed t reason =
-    if Js.to (Js.get t "answered") then
-        _ =
-            Js.call (Js.global "console") "error"
-                [ Js.from "beni: a defect after the answer stopped the request's fibers:", reason ]
-        Js.throw reason
+    if Js.read t.answered then
+        Native.consoleReason "beni: a defect after the answer stopped the request's fibers:" reason
+        Rejection.raise reason
     else
-        Js.to (Js.apply (Js.get t "reject") [ reason ])
+        Promise.reject t.answer reason
 
 
--- The scheduler's continuation after 64 resumptions: a timer of zero in
--- this request's context, so the isolate's event loop runs between the
--- batches of a request that keeps yielding, and every other request gets
--- its events (§17.5's amendment of the Worker slice).
-laterTurn : V, V → ⊤
+laterTurn : Trampoline, (⊤ → ⊤) → ⊤
 laterTurn t task =
-    _ = Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → runLater t task, Js.from 0 ]
+    _ = Timers.start (λ⊤ → runLater t task) 0
     ⊤
 
 
-fire : V → ⊤
+fire : Trampoline → ⊤
 fire t =
     arm t
-    tasks = Js.get t "tasks"
-    Js.set t "tasks" (Js.array [])
-    Js.each tasks λtask → Js.to (Js.apply task [ Js.null ])
+    -- Snapshot before invoking any job, matching the old array replacement.
+    tasks = Chain.toList t.tasks
+    Chain.clear t.tasks
+    each tasks λtask → Protocol.call task ⊤
 
 
--- The scheduler's `run`: queue the task and resolve the armed promise.
-runLater : V, V → ⊤
+runLater : Trampoline, (⊤ → ⊤) → ⊤
 runLater t task =
-    _ = Js.call (Js.get t "tasks") "push" [ task ]
-    Js.to (Js.apply (Js.get t "wake") [ Js.null ])
+    _ = Chain.append t.tasks task
+    case Js.read t.wake of
+        Nothing →
+            ⊤
+        Just wake →
+            Promise.resolve wake ⊤
 
 
--- The handler's fiber answers the promise with the host's response.
-answer : V, V, Response → ⊤
-answer t d (Response r _ _) =
-    -- Answered from here on: a throw out of a fiber that runs after this
-    -- one in the same drain is a defect after the answer (`failed`).
-    Js.set t "answered" (Js.from True)
-    Js.to (Js.apply (Js.get d "resolve") [ r ])
-
-
--- After the response: work that outlives it — a fiber `fetch` started
--- with `Task.spawnDetached`, still running — runs under `ctx.waitUntil`
--- until it ends or the platform's deadline stops it (§9.12 (d)).
-answered : V, Scheduler → ⊤
-answered t s =
-    ctx = Js.get t "ctx"
-    if Task.schedulerBusy s then
+answered : Native.ExecutionContext, Scheduler → ⊤
+answered ctx scheduler =
+    if Task.schedulerBusy scheduler then
         Js.write holds (Js.read holds + 1)
-        Js.to (Js.call ctx "waitUntil" [ heldUntilIdle s ])
+        Native.waitUntil ctx (heldUntilIdle scheduler)
     else
-        -- Nothing outlives the answer: the scheduler is stopped at once,
-        -- so it leaves the kernel's list (P705-1).
-        Task.stopScheduler s cleanupDeadline λ_ → ⊤
+        Task.stopScheduler scheduler cleanupDeadline λ_ → ⊤
 
 
--- The requests answered whose work is still held under `waitUntil`: what
--- the test hook `/__beni/holds` reports (§9.12 (k)).
 holds : Js.Ref Int
 holds = Js.ref 0
 
 
--- The platform's deadline after the response: 5 seconds before the
--- host's 30-second cap (§9.12 (d); the value #600's measurement settles).
 deadline : Int
 deadline = 25000
 
 
--- The teardown's deadline: cleanup that waits is given this long, as the
--- `browser` platform's `deadline` and `node`'s shutdown give (§9.8.14).
 cleanupDeadline : Int
 cleanupDeadline = 1000
 
 
--- A promise that settles when no fiber of the scheduler runs any more:
--- when the last ends, or when the deadline stops them and their cleanup
--- has run.
-heldUntilIdle : Scheduler → V
-heldUntilIdle s =
-    d = Js.call (Js.global "Promise") "withResolvers" []
-    resolve = Js.from λ_ →
-        Js.write holds (Js.read holds - 1)
-        Js.apply (Js.get d "resolve") [ Js.null ]
-    timer =
-        Js.apply (Js.global "setTimeout")
-            [ Js.from λ⊤ →
-                Task.stopScheduler s cleanupDeadline λ_ → Js.to (Js.apply resolve [ Js.null ])
-            , Js.from deadline
-            ]
-    Task.onSchedulerIdle s λ⊤ →
-        _ = Js.apply (Js.global "clearTimeout") [ timer ]
-        -- The last fiber ended: the scheduler is stopped, so it leaves the
-        -- kernel's list, and the request is let go.
-        Task.stopScheduler s cleanupDeadline λ_ → Js.to (Js.apply resolve [ Js.null ])
-    Js.get d "promise"
+heldUntilIdle : Scheduler → Promise.Promise ⊤
+heldUntilIdle scheduler =
+    d = Promise.unitResolvers ⊤
+    finished = Js.ref False
+    finish ⊤ =
+        if not (Js.read finished) then
+            Js.write finished True
+            Js.write holds (Js.read holds - 1)
+            Promise.resolve d ⊤
+    timer = Timers.start (λ⊤ → Task.stopScheduler scheduler cleanupDeadline λ_ → finish ⊤) deadline
+    Task.onSchedulerIdle scheduler λ⊤ →
+        Timers.clear timer
+        Task.stopScheduler scheduler cleanupDeadline λ_ → finish ⊤
+    Promise.promise d
 
 
--- A defect under the request's scheduler: the scheduler has stopped and
--- its hook runs in the stop, before the throw goes on. The teardown of
--- the request's fibers — cancelled, their finalisers run under the
--- cleanup deadline — is held in `waitUntil`, so it runs after the host
--- has answered the client with 1101.
-stop : V, V → ⊤
-stop ctx held =
-    if Js.isNull held then
-        ⊤
-    else
-        s : Scheduler
-        s = Js.to held
-        d = Js.call (Js.global "Promise") "withResolvers" []
-        Task.stopScheduler s cleanupDeadline λ_ → Js.to (Js.apply (Js.get d "resolve") [ Js.null ])
-        Js.to (Js.call ctx "waitUntil" [ Js.get d "promise" ])
+stop : Native.ExecutionContext, Scheduler → ⊤
+stop ctx scheduler =
+    d = Promise.unitResolvers ⊤
+    Task.stopScheduler scheduler cleanupDeadline λ_ → Promise.resolve d ⊤
+    Native.waitUntil ctx (Promise.promise d)
 
 
--- A client disconnect interrupts the request's scope, where the host
--- provides `request.signal` (`enable_request_signal`, §9.12 (i)): the
--- same teardown, held in `waitUntil`.
-listenForAbort : V, V, Scheduler → ⊤
-listenForAbort request ctx s =
-    signal = Js.get request "signal"
-    if Js.isNullish signal then
-        ⊤
-    else
-        Js.to
-            (Js.call signal "addEventListener"
-                [ Js.from "abort"
-                , Js.from λ_ →
-                    d = Js.call (Js.global "Promise") "withResolvers" []
-                    Task.stopScheduler s cleanupDeadline λ_ →
-                        Js.to (Js.apply (Js.get d "resolve") [ Js.null ])
-                    Js.to (Js.call ctx "waitUntil" [ Js.get d "promise" ])
-                ]
-            )
+listenForAbort : HostRequest.Request, Native.ExecutionContext, Scheduler → ⊤
+listenForAbort request ctx scheduler =
+    case Native.requestSignal request of
+        Nothing →
+            ⊤
+        Just signal →
+            Native.onAbort signal λ⊤ → stop ctx scheduler
 
 
 -- ---- The request ------------------------------------------------------------
 
 --| The method, in upper case, as the host gives it.
 pub method : Request → String
-method request = Js.to (Js.get (Js.from request) "method")
+method request = Native.requestMethod (hostRequest request)
 
 
 --| The full URL as the host gives it: `"https://h/arena/x/ws?k=v"`.
 pub url : Request → String
-url request = Js.to (Js.get (Js.from request) "url")
+url request = Native.requestUrl (hostRequest request)
 
 
 --| The URL's `pathname`: `"/arena/x/ws"`.
 pub path : Request → String
-path request =
-    Js.to (Js.get (Js.construct (Js.global "URL") [ Js.get (Js.from request) "url" ]) "pathname")
+path request = Native.requestPath (hostRequest request)
 
 
 --| The header's value, the name in any case; the host joins repeats with
 --| `", "`. `Nothing` when the request has none.
 pub header : Request, String → Maybe String
 header request name =
-    if not (validName name) then
-        -- The host throws on a name that is not a token: no request has such a header.
-        Nothing
+    if validName name then
+        Headers.get (Native.requestHeaders (hostRequest request)) name
     else
-        value = Js.call (Js.get (Js.from request) "headers") "get" [ Js.from name ]
-        if Js.isNull value then Nothing else Just (Js.to value)
+        Nothing
 
 
 --| Every header, names lower-cased and sorted by name as the host keeps
 --| them, repeats joined with `", "`.
 pub headers : Request → List (String × String)
-headers request = pairsOf (Js.get (Js.from request) "headers")
-
-
-pairsOf : V → List (String × String)
-pairsOf hostHeaders =
-    pairs = Js.call (Js.global "Array") "from" [ Js.call hostHeaders "entries" [] ]
-    List.initialize (Js.to (Js.get pairs "length")) λi →
-        pair = Js.at pairs i
-        ( Js.to (Js.at pair 0), Js.to (Js.at pair 1) )
+headers request = Headers.entries (Native.requestHeaders (hostRequest request))
 
 
 -- ---- The response -----------------------------------------------------------
@@ -525,8 +450,7 @@ redirect request target status =
 --| response becomes invalid (§9.12 (d)).
 pub withHeader : Response, String, String → Response
 withHeader (Response r own bad) name value =
-    if Js.to bad then
-        -- An invalid response keeps no header of the program's.
+    if bad then
         Response r own bad
     else if String.startsWith (String.toLower name) "x-beni-" then
         invalid "the header name \"${name}\" is the platform's: x-beni- names are refused"
@@ -534,27 +458,23 @@ withHeader (Response r own bad) name value =
         invalid "the header name \"${name}\" is not a token"
     else if not (validValue value) then
         invalid "the value of the header \"${name}\" holds a control character"
-    else if Js.to own then
-        _ = Js.call (Js.get r "headers") "append" [ Js.from name, Js.from value ]
+    else if own then
+        Headers.append (HostResponse.headers r) name value
         Response r own bad
-    else if Js.to (Js.get r "status") == 101 then
-        -- The host's 101 carries its socket, which no copy keeps.
+    else if HostResponse.status r == 101 then
         invalid
             "a header cannot be added to a 101 answer from an object: its socket cannot be copied"
     else
-        -- A response from `forward` or `callService` is the host's, whose
-        -- headers are immutable (measured): copied once, before the first
-        -- append, and the copy is the platform's from then on.
-        copy = Js.construct (Js.global "Response") [ Js.get r "body", r ]
-        _ = Js.call (Js.get copy "headers") "append" [ Js.from name, Js.from value ]
-        Response copy (Js.from True) bad
+        copy = Native.responseCopy r
+        Headers.append (HostResponse.headers copy) name value
+        Response copy True bad
 
 
 -- Build the host's `Response` once every rule holds (§9.12 (d)).
 build : Int, Maybe String, List (String × String) → Response
 build status body hs =
     if
-        not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from status ]))
+        not (Data.isInteger (Js.from status))
             || status < 200
             || status > 599
     then
@@ -564,7 +484,7 @@ build status body hs =
     else if List.any hs λ( name, value ) → not (validName name) || not (validValue value) then
         invalid "a header name is a token, and its value holds no control character"
     else
-        Response (construct status body hs) (Js.from True) (Js.from False)
+        Response (construct status body hs) True False
 
 
 bodyPresent : Maybe String → Bool
@@ -577,20 +497,8 @@ bodyPresent body =
             False
 
 
-construct : Int, Maybe String, List (String × String) → V
-construct status body hs =
-    pairs = List.foldl hs (Js.array []) λ( name, value ) arr →
-        _ = Js.call arr "push" [ Js.array [ Js.from name, Js.from value ] ]
-        arr
-    Js.construct (Js.global "Response")
-        [ case body of
-            Just s →
-                Js.from s
-
-            Nothing →
-                Js.null
-        , Js.from { headers = pairs, status = status }
-        ]
+construct : Int, Maybe String, List (String × String) → HostResponse.Response
+construct status body hs = Native.responseCreate status body hs
 
 
 -- An invalid response is a 500 with an empty body and no header of the
@@ -598,37 +506,23 @@ construct status body hs =
 -- (§9.12 (d)). Not a defect, for §9.10 (d)'s reason.
 invalid : String → Response
 invalid fault =
-    _ = Js.call (Js.global "console") "error" [ Js.from "beni: invalid response: ${fault}" ]
-    Response
-        (Js.construct (Js.global "Response") [ Js.null, Js.from { status = 500 } ])
-        (Js.from True)
-        (Js.from True)
+    Native.consoleError "beni: invalid response: ${fault}"
+    Response (Native.responseCreate 500 Nothing []) True True
 
 
 validName : String → Bool
-validName name =
-    Js.to (Js.call (Js.regExp "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" "") "test" [ Js.from name ])
+validName name = testPattern "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" name
 
 
 validValue : String → Bool
-validValue value = not (Js.to (Js.call (Js.regExp "[\\r\\n\\x00]" "") "test" [ Js.from value ]))
+validValue value = not (testPattern "[\\r\\n\\x00]" value)
 
 
 -- `new URL(target, base)`, whose `TypeError` from that call alone is the
 -- fault (§9.12 (d)): `Js.catchIf` names it, and throws anything else
 -- again (`CLAUDE.md` rule 9).
 resolveUrl : String, String → Maybe String
-resolveUrl target base =
-    Js.catchIf
-        (λ⊤ →
-            Just
-                (Js.to
-                    (Js.get (Js.construct (Js.global "URL") [ Js.from target, Js.from base ]) "href"
-                    )
-                )
-        )
-        (λerr → Js.instanceOf err (Js.global "TypeError"))
-        λ_ → Nothing
+resolveUrl target base = Maybe.map (URL.tryCreate target base) URL.href
 
 
 -- ---- The bindings -----------------------------------------------------------
@@ -637,112 +531,55 @@ resolveUrl target base =
 --| the schema is the one their `define` took (§9.12 (e.10)). `Nothing` when
 --| the binding is not declared, or is not a namespace.
 pub objects : Env, String, Schema e msg → Maybe (Namespace msg)
-objects bindings name schema =
-    binding = Js.get (Js.from bindings) name
-    -- A namespace answers every property name since the compatibility
-    -- date 2024-04-03, so it is told apart by what it lacks: `idFromName`
-    -- is a function and `fetch` is not (§9.12 (d)).
-    if
-        Js.isNullish binding
-            || not (Js.typeIs (Js.get binding "idFromName") "function")
-            || Js.typeIs (Js.get binding "fetch") "function"
-    then
-        Nothing
-    else
-        Just (Js.to (Js.from { ns = binding, schema = Js.from schema }))
+objects (Env bindings) name schema = Maybe.map (Native.namespace bindings name) λns →
+    Namespace ns (Schema.print schema _)
 
 
 --| A service or assets binding: an object whose `fetch` is a function.
 pub service : Env, String → Maybe Service
-service bindings name =
-    binding = Js.get (Js.from bindings) name
-    if Js.isNullish binding || not (Js.typeIs (Js.get binding "fetch") "function") then
-        Nothing
-    else
-        Just (Js.to binding)
+service (Env bindings) name = Maybe.map (Native.service bindings name) Service
 
 
 --| A plain-text variable or secret.
 pub var : Env, String → Maybe String
-var bindings name =
-    binding = Js.get (Js.from bindings) name
-    if Js.typeIs binding "string" then Just (Js.to binding) else Nothing
+var (Env bindings) name = Native.variable bindings name
 
 
 -- ---- Durable Object references --------------------------------------------
 
 --| The one object of that name: `getByName`.
 pub byName : Namespace msg, String → Ref msg
-byName ns name =
-    stub = Js.call (Js.get (Js.from ns) "ns") "getByName" [ Js.from name ]
-    Js.to
-        (Js.from
-            { chainNow = Js.from chainNow
-            , name = Js.from name
-            , schema = Js.get (Js.from ns) "schema"
-            , stub = stub
-            }
-        )
+byName (Namespace ns print) name = remoteRef (Native.byName ns name) (Just name) print
 
 
 --| A fresh object: `newUniqueId`, then `get`; its id is `refId`.
 pub unique : Namespace msg → Ref msg
-unique ns =
-    host = Js.get (Js.from ns) "ns"
-    id = Js.call host "newUniqueId" []
-    Js.to
-        (Js.from
-            { chainNow = Js.from chainNow
-            , name = Js.null
-            , schema = Js.get (Js.from ns) "schema"
-            , stub = Js.call host "get" [ id ]
-            }
-        )
+unique (Namespace ns print) = remoteRef (Native.getStub ns (Native.uniqueId ns)) Nothing print
 
 
 --| The object of an id a `unique` ref reported through `refId`:
 --| `idFromString`.
 pub byId : Namespace msg, String → Result IdError (Ref msg)
-byId ns idText =
-    host = Js.get (Js.from ns) "ns"
-    case idFromString host idText of
-        Just id →
-            Ok
-                (Js.to
-                    (Js.from
-                        { chainNow = Js.from chainNow
-                        , name = Js.null
-                        , schema = Js.get (Js.from ns) "schema"
-                        , stub = Js.call host "get" [ id ]
-                        }
-                    )
-                )
-
+byId (Namespace ns print) idText =
+    case Native.idFromString ns idText of
         Nothing →
             Err InvalidId
+        Just id →
+            Ok (remoteRef (Native.getStub ns id) Nothing print)
 
 
 -- `idFromString`, whose `TypeError` is "Invalid Durable Object ID":
 -- `Js.catchIf` names it, and throws anything else again (`CLAUDE.md`
 -- rule 9).
-idFromString : Js.Value, String → Maybe Js.Value
-idFromString namespace idText =
-    Js.catchIf
-        (λ⊤ → Just (Js.call namespace "idFromString" [ Js.from idText ]))
-        (λerr → Js.instanceOf err (Js.global "TypeError"))
-        λ_ → Nothing
-
 
 --| The object's id, 64 hex digits.
 pub refId : Ref msg → String
-refId ref = Js.to (Js.call (Js.get (Js.get (Js.from ref) "stub") "id") "toString" [])
+refId (Ref ref) = ref.id
 
 
 --| The name `byName` was given; `Nothing` otherwise.
 pub refName : Ref msg → Maybe String
-refName ref =
-    name = Js.get (Js.from ref) "name"
-    if Js.isNull name then Nothing else Just (Js.to name)
+refName (Ref ref) = ref.name
 
 
 --| Forward the request to the object and wait for its answer: the host's
@@ -782,60 +619,100 @@ reserved at =
 
 
 send : Ref msg, Request → Result StubError Response
-send ref request =
-    stub = Js.get (Js.from ref) "stub"
-    hs = Js.construct (Js.global "Headers") [ Js.get (Js.from request) "headers" ]
-    -- Every `x-beni-` header is the platform's: stripped, so a client sets
-    -- no chain, no ask id and no origin mark ((e.3), (e.10)).
-    Js.each (Js.call (Js.global "Array") "from" [ Js.call hs "keys" [] ]) λname →
-        if String.startsWith (Js.to name) "x-beni-" then
-            Js.to (Js.call hs "delete" [ name ])
-    _ = Js.call hs "set" [ Js.from "x-beni-chain", chainNow ⊤ ]
-    sent = Js.construct (Js.global "Request") [ Js.from request, Js.from { headers = hs } ]
-    case settleHost (Js.call stub "fetch" [ sent ]) of
-        Ok r →
-            if
-                Js.to (Js.get r "status") == 508
-                    && Js.same
-                        (Js.call (Js.get r "headers") "get" [ Js.from "x-beni-cycle" ])
-                        (Js.from "1")
-            then
-                Err Cycle
-            else
-                Ok (fromHost r)
-
-        Err reason →
-            if Js.to (Js.get reason "overloaded") == True then
-                Err Overloaded
-            else if Js.to (Js.get reason "durableObjectReset") == True then
-                Err Reset
-            else if Js.to (Js.get reason "retryable") == True then
-                Err Transient
-            else
-                Js.throw reason
+send (Ref ref) request =
+    case ref.stub of
+        Nothing →
+            Err Cycle
+        Just stub →
+            hs = Headers.create ⊤
+            each (headers request) λ( name, value ) →
+                if not (String.startsWith name "x-beni-") then Headers.append hs name value
+            Headers.set hs "x-beni-chain" (chainNow ⊤)
+            case settleHost (Native.stubFetch stub (Native.requestCopy (hostRequest request) hs)) of
+                Ok response →
+                    if
+                        HostResponse.status response == 508
+                            && Headers.get (HostResponse.headers response) "x-beni-cycle"
+                                == Just "1"
+                    then
+                        Err Cycle
+                    else
+                        Ok (fromHost response)
+                Err reason →
+                    if Native.overloaded reason then
+                        Err Overloaded
+                    else if Native.reset reason then
+                        Err Reset
+                    else if Native.retryable reason then
+                        Err Transient
+                    else
+                        Rejection.raise reason
 
 
 --| Call a service or assets binding and wait for its answer. `Unavailable`
 --| when the host's error is `retryable`; anything else is a defect.
 pub callService : Service, Request → Result ServiceError Response
-callService svc request =
-    case settleHost (Js.call (Js.from svc) "fetch" [ Js.from request ]) of
-        Ok r →
-            Ok (fromHost r)
-
+callService (Service svc) request =
+    case settleHost (Native.serviceFetch svc (hostRequest request)) of
+        Ok response →
+            Ok (fromHost response)
         Err reason →
-            if Js.to (Js.get reason "retryable") == True then Err Unavailable else Js.throw reason
+            if Native.retryable reason then Err Unavailable else Rejection.raise reason
 
 
 -- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's
 -- own result, so the caller sorts the reason and throws what it does not
 -- name from the fiber, where a throw is a defect (`CLAUDE.md` rule 9). The
 -- reaction only resumes; it catches nothing. `Worker.Object` has its own.
-settleHost : Js.Value → Result Js.Value Js.Value
+pub settleHost : Promise.Promise a → Result Rejection.Rejection a
 settleHost promise = Task.callback λresume →
-    _ =
-        Js.call promise "then"
-            [ Js.from λvalue → Task.resume resume (Ok value)
-            , Js.from λreason → Task.resume resume (Err reason)
-            ]
+    Promise.observe promise (λvalue → Task.resume resume (Ok value)) λreason →
+        Task.resume resume (Err reason)
     λ⊤ → ⊤
+
+
+remoteRef : Native.Stub, Maybe String, (msg → Result (List Schema.Issue) String) → Ref msg
+remoteRef stub name print =
+    Ref
+        { stub = Just stub
+        , id = Native.idText (Native.stubId stub)
+        , name = name
+        , print = print
+        , post = Nothing
+        }
+
+
+pub selfRef : String, Maybe String, (msg → Result (List Schema.Issue) String), (msg → ⊤) → Ref msg
+selfRef id name print post =
+    Ref { stub = Nothing, id = id, name = name, print = print, post = Just post }
+
+
+pub refStub : Ref msg → Maybe Native.Stub
+refStub (Ref ref) = ref.stub
+
+
+pub refPost : Ref msg → Maybe (msg → ⊤)
+refPost (Ref ref) = ref.post
+
+
+pub printRef : Ref msg, msg → Result (List Schema.Issue) String
+printRef (Ref ref) message = ref.print message
+
+
+testPattern : String, String → Bool
+testPattern pattern value =
+    case RegExp.create pattern "" of
+        Ok regex →
+            RegExp.test regex value
+        Err _ →
+            False
+
+
+each : List a, (a → ⊤) → ⊤
+each values action =
+    case values of
+        [] →
+            ⊤
+        [ first, …rest ] →
+            action first
+            each rest action

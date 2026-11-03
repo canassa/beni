@@ -9,6 +9,9 @@
 --! are the same across hibernation; `attach` and `attachment` keep a value
 --! of the program's beside them, as JSON text through a schema.
 
+import Browser.Host.Cloudflare as Native
+import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.Uint8Array as Uint8Array
 import Js
 import List
 import Schema exposing (Schema)
@@ -18,7 +21,8 @@ import String
 --| An accepted socket: the host's object, the same across one life of the
 --| object. Across hibernation the state is rebuilt from `Object.sockets`,
 --| and `id` is what a program keeps in storage.
-pub foreign type Socket
+pub opaque type Socket
+    = Socket Native.Socket
 
 
 --| How a socket closed: the peer's code and reason, or 1006 and `""` for
@@ -51,7 +55,7 @@ pub type AttachError
 
 --| Two sockets are the same host object.
 pub eq : Socket, Socket → Bool
-eq a b = Js.same (Js.from a) (Js.from b)
+eq (Socket a) (Socket b) = Native.socketEq a b
 
 
 --| Send `text` as one message: `Err NotOpen` when the connection is not
@@ -61,7 +65,7 @@ eq a b = Js.same (Js.from a) (Js.from b)
 pub write : Socket, String → Result WriteError ⊤
 write socket text =
     if open socket then
-        _ = Js.call (Js.from socket) "send" [ Js.from text ]
+        Native.socketSend (toNative socket) text
         Ok ⊤
     else
         Err NotOpen
@@ -80,7 +84,7 @@ close socket why =
         Err ReasonTooLong
     else
         if open socket then
-            Js.to (Js.call (Js.from socket) "close" [ Js.from why.code, Js.from why.reason ])
+            Native.socketClose (toNative socket) why.code why.reason
         Ok ⊤
 
 
@@ -129,15 +133,14 @@ attach socket schema value =
             if 2 * (fixed + units text) + 64 > 16384 then
                 Err TooLarge
             else
-                _ =
-                    Js.call (Js.from socket) "serializeAttachment"
-                        [ Js.from
-                            { data = Js.from text
-                            , id = Js.get env "id"
-                            , protocol = Js.get env "protocol"
-                            , tags = Js.get env "tags"
-                            }
-                        ]
+                Native.socketAttach (toNative socket)
+                    (Js.from
+                        { data = Js.from text
+                        , id = Js.get env "id"
+                        , protocol = Js.get env "protocol"
+                        , tags = Js.get env "tags"
+                        }
+                    )
                 Ok ⊤
 
 
@@ -160,12 +163,12 @@ attachment socket schema =
 -- The host's attachment: `{ id, protocol, tags, data }`, written at
 -- `accept`, so a socket this platform accepted always has one.
 envelope : Socket → Js.Value
-envelope socket = Js.call (Js.from socket) "deserializeAttachment" []
+envelope socket = Native.socketAttachment (toNative socket)
 
 
 -- `readyState` OPEN.
 open : Socket → Bool
-open socket = Js.to (Js.get (Js.from socket) "readyState") == 1
+open socket = Native.socketState (toNative socket) == 1
 
 
 -- The codes a server may send (RFC 6455 §7.4, and the IANA registry);
@@ -187,9 +190,13 @@ units text = Js.to (Js.get (Js.from text) "length")
 
 
 utf8Length : String → Int
-utf8Length text =
-    Js.to
-        (Js.get
-            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
-            "length"
-        )
+utf8Length text = Uint8Array.byteLength (TextEncoder.encode (TextEncoder.create ⊤) text)
+
+
+-- Platform-private native bridge; the opaque wrapper keeps Socket methods local.
+pub fromNative : Native.Socket → Socket
+fromNative socket = Socket socket
+
+
+pub toNative : Socket → Native.Socket
+toNative (Socket socket) = socket

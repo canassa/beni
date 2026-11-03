@@ -2,6 +2,7 @@
   "platform": true,
   "name": "cloudflare",
   "program": "Worker.Program",
+  "entryHost": "serviceWorker",
   "runtime": "runtime.js",
   "entry": "_worker.mjs",
   "exports": "program"

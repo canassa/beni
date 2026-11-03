@@ -1,0 +1,109 @@
+-- Typed native/callable state and nested generic Reply holders. The self-only
+-- variants refuse schema printing: collecting holders must not print them.
+import Duration
+import Schema exposing (Schema)
+import Task
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object exposing (Reply)
+
+
+type Box a
+    = Box a
+
+
+type Msg
+    = Start String (Reply String)
+    | Relayed { items : Maybe (List (Int × Box (Reply String))) }
+    | Unrelated
+
+
+type alias State =
+    env : Worker.Env
+    format : String → String
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ scorer ] }
+
+
+protocol : Schema String Msg
+protocol = Schema.converted Schema.string (Schema.conversion decode encode)
+
+
+decode : String → Result (List Schema.Issue) Msg
+decode contents =
+    case String.split contents "|" of
+        [ "start", op, encoded ] →
+            case Schema.parse (Object.replySchema Schema.string) encoded of
+                Ok channel →
+                    Ok (Start op channel)
+                Err issues →
+                    Err issues
+        _ →
+            Err [ Schema.issue "invalid operation" ]
+
+
+encode : Msg → Result (List Schema.Issue) String
+encode message =
+    case message of
+        Start op channel →
+            case Schema.print (Object.replySchema Schema.string) channel of
+                Ok encoded →
+                    Ok ("start|${op}|${encoded}")
+                Err issues →
+                    Err issues
+        _ →
+            Err [ Schema.issue "self-only message must not be printed" ]
+
+
+scorer : Worker.Definition
+scorer =
+    Object.define "Scorer" protocol
+        (λctx → { env = Object.env ctx, format = λprefix → prefix ++ ":relayed" })
+        { Object.none | received = received }
+
+
+received : Object.Context Msg, State, Msg → State
+received ctx state message =
+    case message of
+        Start op channel →
+            if op == "relay" then
+                Object.post (Object.self ctx) (Relayed { items = Just [ ( 7, Box channel ) ] })
+            else
+                Object.post (Object.self ctx) Unrelated
+            state
+        Relayed payload →
+            case payload.items of
+                Just [ ( _, Box channel ) ] →
+                    prefix = Maybe.withDefault (Worker.var state.env "PREFIX") "missing"
+                    Object.reply channel (state.format prefix)
+                    state
+                _ →
+                    state
+        Unrelated →
+            -- This queued message carries no Reply. It must not postpone the
+            -- first handler's NoReply until this wait ends.
+            Task.sleep (Duration.millis 10000)
+            state
+
+
+route : Context, Request → Response
+route ctx request =
+    op = if Worker.path request == "/relay" then "relay" else "unrelated"
+    case Worker.objects (Worker.env ctx) "SCORERS" protocol of
+        Nothing →
+            Worker.text 500 "missing namespace"
+        Just namespace →
+            target = Worker.byName namespace "one"
+            case
+                Task.timeout (Duration.millis 1000) λ⊤ →
+                    Object.ask target Schema.string (Start op _)
+            of
+                Nothing →
+                    Worker.text 200 "timeout"
+                Just (Ok result) →
+                    Worker.text 200 result
+                Just (Err Object.NoReply) →
+                    Worker.text 200 "NoReply"
+                Just (Err _) →
+                    Worker.text 200 "unexpected ask failure"
