@@ -534,8 +534,8 @@ receive handle req res =
 
 
 -- The codes of `error` on a socket that mean one client is gone (§9.11,
--- amendment item 15): the same list as `WebSocket.js`'s, since the two
--- cannot share a file.
+-- amendment item 15): the same list as `WebSocket.beni`'s, since the two
+-- cannot share one (this module imports that one, and the table is not `pub`).
 gone : Js.Value
 gone =
     Js.object
@@ -568,7 +568,7 @@ isGone error =
 -- A request for a WebSocket (§9.11 (e)): its handshake is checked, then
 -- it waits for the accept loop with no body. A client that goes away
 -- while the program decides is the socket's `error` with a code of
--- `gone`, which ends nothing else; `WebSocket.js` takes the socket over
+-- `gone`, which ends nothing else; `WebSocket.beni` takes the socket over
 -- on accept, through the record of eight names item 26 gives (the body
 -- is the empty string: an upgrade carries none).
 takeUpgrade : Js.Value, Js.Value, Js.Value, Js.Value → ⊤
