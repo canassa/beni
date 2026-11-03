@@ -100,7 +100,8 @@ pub const magic = "BENIIFC\x00";
 /// 19: Wire obligations and projected paths.
 /// 20: native realm classes, evaluated realm masks and HostFree quantifiers.
 /// 21: realm-only dependencies may name unresolved scheme variables.
-pub const format_version: u32 = 21;
+/// 22: effect paths may end with a length-prefixed Any key (kind 7).
+pub const format_version: u32 = 22;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -1012,6 +1013,8 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
             var sites = (Interface.EffectBlock{ .words = words[0..len] }).sites();
             while (sites.next()) |site| {
                 for (site.steps) |step| {
+                    // An Any key is a terminal byte payload, not more path steps.
+                    if (Interface.EffectBlock.stepKind(step) == 7) break;
                     if (Interface.EffectBlock.stepKind(step) == 4 and Interface.EffectBlock.stepIndex(step) >= symbols) return false;
                 }
             }

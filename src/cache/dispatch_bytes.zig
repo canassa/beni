@@ -93,7 +93,8 @@ pub const magic = "BENIDSP\x00";
 /// 14 adds checked render identity facts and their local paths.
 /// 15: effect declaration byte 2 carries the totality proof.
 /// 16: effect rows grow to 8 bytes with call and initializer realm masks.
-pub const format_version: u32 = 16;
+/// 17: identity-only binders and tagged unconstrained quantifier slots.
+pub const format_version: u32 = 17;
 
 pub const Column = enum(u32) {
     terms,
@@ -1147,7 +1148,7 @@ pub fn verify(l: *const Loaded) bool {
         // `Convention.of`'s first rule: evidence is exactly what makes a
         // value not `plain`, so a row that says otherwise was not written
         // by `finish`.
-        if ((info.convention == .plain) != (info.requirements.len == 0)) return false;
+        if ((info.convention == .plain) != (info.requirements.len == 0 and info.identities.len == 0)) return false;
         // A thunk is a value of non-function type: arity 0 by `of`.
         if (info.convention == .thunk and info.value_arity != 0) return false;
         if (!identitiesOk(d, info.identities, info.requirements)) return false;
@@ -1177,14 +1178,24 @@ pub fn verify(l: *const Loaded) bool {
     return true;
 }
 
-/// A binder's identities fit the column and each names one of its own
-/// requirements, ascending (checker-v2.md §33).
+/// A binder's identities fit the column. Constrained slots name requirements;
+/// tagged slots name unconstrained quantifiers. Each family is ascending, in
+/// quantifier order (checker-v2.md §33).
 fn identitiesOk(d: *const Dispatch, r: Dispatch.Range, requirements: Dispatch.Range) bool {
     if (!rangeOk(r, d.identities.len)) return false;
     if (r.len == 0) return true;
-    for (d.identities[r.start..][0..r.len], 0..) |j, i| {
-        if (j >= requirements.len) return false;
-        if (i != 0 and d.identities[r.start + i - 1] >= j) return false;
+    var last_requirement: ?u32 = null;
+    var last_quantifier: ?u32 = null;
+    for (d.identities[r.start..][0..r.len]) |j| {
+        if (j & Dispatch.identity_quantifier != 0) {
+            const quantifier = j & ~Dispatch.identity_quantifier;
+            if (last_quantifier) |previous| if (previous >= quantifier) return false;
+            last_quantifier = quantifier;
+        } else {
+            if (j >= requirements.len) return false;
+            if (last_requirement) |previous| if (previous >= j) return false;
+            last_requirement = j;
+        }
     }
     return true;
 }
@@ -1935,4 +1946,32 @@ test "declaration totality dispatch rows reject old versions and non-bit bytes" 
     bytes[start + 2] = 1;
     std.mem.writeInt(u32, bytes[8..12], format_version - 1, .little);
     try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+}
+
+test "identity-only and mixed identity binders round-trip without method placeholders" {
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const table: Dispatch = .{
+        .decls = &.{
+            .{ .identities = .{ .start = 0, .len = 1 }, .convention = .function, .value_arity = 1 },
+            .{ .requirements = .{ .len = 1 }, .identities = .{ .start = 1, .len = 3 }, .convention = .function, .value_arity = 3 },
+        },
+        .requirements = &.{.{ .quantified = 1, .var_name = .none, .method = InternPool.WellKnown.compare.symbol() }},
+        .identities = &.{ Dispatch.identity_quantifier, Dispatch.identity_quantifier, 0, Dispatch.identity_quantifier | 2 },
+    };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    defer loaded.deinit(gpa);
+    try expectSameTable(&table, &loaded.table, &global);
+
+    const corrupt = try gpa.dupe(u8, bytes);
+    defer gpa.free(corrupt);
+    const identities = columnAt(corrupt, .identities);
+    // Repeating the first unconstrained quantifier remains malformed.
+    std.mem.writeInt(u32, corrupt[identities + 12 ..][0..4], Dispatch.identity_quantifier, .little);
+    try testing.expectError(error.BadSidecar, read(gpa, corrupt, &global));
 }

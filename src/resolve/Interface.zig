@@ -365,8 +365,8 @@ pub const Quantified = struct {
     equatable: bool,
     /// The value takes this quantifier's type identity as a hidden
     /// parameter after its evidence (`static-dispatch-spike.md` §8.6,
-    /// checker-v2.md §33): bit 9 of the flag word. Only a scheme's
-    /// quantifier with a constraint has it.
+    /// checker-v2.md §33): bit 9 of the flag word. A quantifier reached
+    /// by Any has it even without a method constraint.
     identity: bool = false,
     /// A `Js.from` in the value's body, or a crossing quantifier of a
     /// callee, is instantiated at a type mentioning this quantifier: what

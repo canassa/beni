@@ -185,9 +185,9 @@ pub const DeclInfo = struct {
     /// A range of `requirements`, in canonical order (spike §7.2).
     requirements: Range = .empty,
     /// Its identity parameters (checker-v2.md §33): a range of
-    /// `identities`, each the requirement index its quantifier is placed
-    /// at, ascending. Identity `i` is hidden parameter
-    /// `requirements.len + i`.
+    /// `identities`, each its first requirement index or a bit-31-tagged
+    /// unconstrained quantifier ordinal, in canonical quantifier order.
+    /// Identity `i` is hidden parameter `requirements.len + i`.
     identities: Range = .empty,
     /// The parameter count of the declaration's solved type, 0 for a
     /// non-function.
@@ -393,7 +393,7 @@ decls: []const DeclInfo = &.{},
 lets: []const LetInfo = &.{},
 requirements: []const Requirement = &.{},
 /// What every `DeclInfo.identities` and `LetInfo.identities` ranges over:
-/// requirement indices (checker-v2.md §33).
+/// requirement indices or tagged unconstrained quantifiers (checker-v2.md §33).
 identities: []const u32 = &.{},
 /// What every `text` term ranges over: identity text.
 text: []const u8 = &.{},

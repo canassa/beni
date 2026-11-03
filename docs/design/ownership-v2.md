@@ -161,6 +161,8 @@ the `Enforce`/`Groups` boundary (§8, S3a) and is the one piece of `own2/` that 
 once; no global structural interning is required to construct its cycles. SCC/reverse-edge work computes
 `holds` in O(nodes+edges), never by rescanning the whole graph until unchanged. Constructor-template
 substitution and non-regular joins are charged adapter operations, not free solved-store edges.
+Unnamed variables, functions and crossing structural leaves have no nominal head: the adapter uses the
+no-type sentinel and a block writes the empty name, never session type zero.
 Structural identity compares `(kind, head, children)` where the head is the session `TypeId` of a nominal or
 foreign type, the field names (by text) of a record, the arity of a tuple. Comparisons/re-interning needed by an
 owner or codec use charged graph-pair tasks, not an unproved linear structural-isomorphism operation. §36's

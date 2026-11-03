@@ -2147,6 +2147,10 @@ paths that reach a seed. An identity-only quantifier sets the existing
 interface identity bit even when its constraint list is empty. Its dispatch
 slot is its canonical scheme quantifier index tagged with bit 31; existing
 method-rooted slots keep their original indices and evidence ordering.
+The sidecar validates the two slot families separately in quantifier order;
+identity-only binders use the evidence calling convention too. Interface
+effect paths ending in an Any key validate its length-prefixed bytes as a
+payload, rather than interpreting those bytes as field steps.
 
 The pass reuses instantiation records for a module's own references and records
 unconstrained imported identity slots as the interface is read. Generic local

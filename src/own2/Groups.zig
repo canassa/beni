@@ -154,8 +154,8 @@ pub const Adapter = struct {
     }
 
     fn leaf(a: *Adapter, slot: *u32, k: Place.Kind) Allocator.Error!u32 {
-        // `⊤`'s head is no type's, so it is told from a crossing type's.
-        if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = if (k == .cross) none else 0, .a = 0, .b = 0 });
+        // Unnamed leaves have no type head; zero is a real session TypeId.
+        if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = none, .a = 0, .b = 0 });
         return slot.*;
     }
 
@@ -282,7 +282,7 @@ pub const Adapter = struct {
         const r, _ = a.in.store.resolved(v);
         if (a.by_var.get(r.int())) |id| return id;
         if (a.open.getPtr(r.int())) |knot| {
-            if (knot.* == none) knot.* = try a.add(.{ .kind = .cyclic, .place_kind = .@"var", .head = 0, .a = 0, .b = 0 });
+            if (knot.* == none) knot.* = try a.add(.{ .kind = .cyclic, .place_kind = .@"var", .head = none, .a = 0, .b = 0 });
             return knot.*;
         }
         // A record's field types are read here, on demand.

@@ -543,7 +543,7 @@ pub const Table = struct {
                 kinds[i] = .cross;
                 // A leaf names no type: the head would otherwise carry a
                 // session id into a block.
-                t.places.items(.head)[i] = 0;
+                t.places.items(.head)[i] = Ids.none_int;
                 ranges[i].len = 0;
             }
         }
@@ -1471,10 +1471,10 @@ test "constructor steps order by (constructor, argument), whatever order they we
 /// constant on the way out and back, as a string table would renumber them.
 const Shift = struct {
     fn out(_: *anyopaque, x: u32) u32 {
-        return x + 1000;
+        return if (x == Ids.none_int) Ids.none_int else x + 1000;
     }
     fn back(_: *anyopaque, x: u32) u32 {
-        return x - 1000;
+        return if (x == Ids.none_int) Ids.none_int else x - 1000;
     }
     const names: Names = .{ .ctx = undefined, .head = out, .field = out };
     const remap: Remap = .{ .ctx = undefined, .head = back, .field = back };
@@ -1566,7 +1566,7 @@ test "no session id reaches the bytes for any place kind, a reclassified leaf in
     // `type T = A T | B` holds nothing: a leaf, and no longer a `T`.
     const t = try f.of(8);
     try testing.expectEqual(Kind.cross, f.table.kind(t));
-    try testing.expectEqual(@as(u32, 0), f.table.head(t));
+    try testing.expectEqual(Ids.none_int, f.table.head(t));
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(gpa);
     try f.table.encode(gpa, rec, Shift.names, &words);
@@ -1576,7 +1576,7 @@ test "no session id reaches the bytes for any place kind, a reclassified leaf in
     var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
     defer decoded.deinit(gpa);
     try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account), null));
-    // Every head came back as it was, the leaf's as 0.
+    // Every head came back as it was, the leaf's as the no-type sentinel.
     var i: u32 = 0;
     var seen_heads: u32 = 0;
     while (i < decoded.count()) : (i += 1) {

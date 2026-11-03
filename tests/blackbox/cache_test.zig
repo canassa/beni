@@ -5909,3 +5909,37 @@ test "ownership summary interfaces are deterministic at --jobs=1 and --jobs=8" {
     // └─────────────────────────────────────────┘
     for (out[1..]) |other| try testing.expectEqualStrings(out[0], other);
 }
+
+test "headless ownership places never inspect an importing application" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A crossing constructor was published with head 0. Importing its block
+    // mistook that for Msg and violated the cache firewall while checking
+    // the platform. Unnamed variables and closures have no type head either.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Cmd
+        \\import Tea
+        \\
+        \\pub type Msg
+        \\    = Captured (Cmd.Send Msg)
+        \\
+        \\pub keep : Msg → Msg
+        \\keep msg =
+        \\    msg
+        \\
+    );
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const result = try w.runWith(&.{ "check", "--ownership=v2", "--ownership-everywhere", "--platform=browser-tea", "--no-cache", "Main.beni" }, .{ .raw_diagnostics = true });
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stdout);
+    try testing.expectEqualStrings("", result.stderr);
+    try testing.expect(!w.exists(".beni-cache"));
+}
