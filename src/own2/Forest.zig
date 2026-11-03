@@ -164,12 +164,6 @@ pub const Less = struct {
     lt: *const fn (ctx: *const anyopaque, a: Arrival, b: Arrival) bool,
 };
 
-/// `plain`: a node's runs are each side's, merged. `join`: a contract
-/// joined into another keeps the other's entries' shape (§2.10 *Lattice*):
-/// where it brings open arrivals, every arrival at the slot is open; its
-/// plain ones go to the plain run there, else to an open one.
-pub const Mode = enum(u8) { plain, join };
-
 /// `n` below the steps `words`.
 pub fn graft(t: *Trees.Table, gpa: Allocator, words: []const u32, n: Node) Ids.IndexError!Node {
     var m = n;
@@ -182,29 +176,18 @@ pub fn graft(t: *Trees.Table, gpa: Allocator, words: []const u32, n: Node) Ids.I
     return m;
 }
 
-/// `a ∪ b` by `mode`, each pair of nodes once (`memo`, the caller's).
-pub fn unite(t: *Trees.Table, gpa: Allocator, memo: *Ids.FixedDict(2), a: Node, b: Node, less: Less, mode: Mode) Ids.IndexError!Node {
-    if (b == 0 or (a == b and mode == .plain)) return a;
-    if (a == 0 and mode == .plain) return b;
+/// `a ∪ b`, pointwise (§2.10 *Lattice*): a node's runs are each side's,
+/// merged; each pair of nodes once (`memo`, the caller's).
+pub fn unite(t: *Trees.Table, gpa: Allocator, memo: *Ids.FixedDict(2), a: Node, b: Node, less: Less) Ids.IndexError!Node {
+    if (b == 0 or a == b) return a;
+    if (a == 0) return b;
     if (memo.get(.{ a, b })) |n| return n;
     var hr: std.ArrayList(Arrival) = .empty;
     defer hr.deinit(gpa);
     var op: std.ArrayList(Arrival) = .empty;
     defer op.deinit(gpa);
-    if (mode == .plain or t.open(b).len != 0) {
-        try merge(gpa, &hr, t.here(a), t.here(b), less);
-        try merge(gpa, &op, t.open(a), t.open(b), less);
-        if (mode == .join) {
-            const all = try gpa.dupe(Arrival, op.items);
-            defer gpa.free(all);
-            op.clearRetainingCapacity();
-            try merge(gpa, &op, all, hr.items, less);
-            hr.clearRetainingCapacity();
-        }
-    } else if (t.here(a).len != 0 or t.open(a).len == 0) {
-        try merge(gpa, &hr, t.here(a), t.here(b), less);
-        try op.appendSlice(gpa, t.open(a));
-    } else try merge(gpa, &op, t.open(a), t.here(b), less);
+    try merge(gpa, &hr, t.here(a), t.here(b), less);
+    try merge(gpa, &op, t.open(a), t.open(b), less);
     var ks: std.ArrayList([2]u32) = .empty;
     defer ks.deinit(gpa);
     const ka = t.kids(a);
@@ -218,7 +201,7 @@ pub fn unite(t: *Trees.Table, gpa: Allocator, memo: *Ids.FixedDict(2), a: Node, 
         } else {
             const x = if (i < ka.len and ka[i][0] == kb[j][0]) ka[i][1] else 0;
             if (x != 0) i += 1;
-            try ks.append(gpa, .{ kb[j][0], try unite(t, gpa, memo, x, kb[j][1], less, mode) });
+            try ks.append(gpa, .{ kb[j][0], try unite(t, gpa, memo, x, kb[j][1], less) });
             j += 1;
         }
     }
@@ -410,7 +393,7 @@ test "a union is pointwise and keeps every slot of both sides" {
             return @backingInt(a.kind) < @backingInt(b.kind);
         }
     }.lt };
-    const u = try unite(&t, gpa, &memo, try graft(&t, gpa, &.{ 1, 2 }, fresh), pair, less, .plain);
+    const u = try unite(&t, gpa, &memo, try graft(&t, gpa, &.{ 1, 2 }, fresh), pair, less);
     try testing.expectEqual(@as(u32, 3), t.count(u));
     try testing.expectEqual(leaf, t.kidAt(u, 2).?);
     try testing.expectEqual(@as(usize, 1), t.here(t.kidAt(t.kidAt(u, 1).?, 2).?).len);

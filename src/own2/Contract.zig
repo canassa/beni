@@ -454,13 +454,13 @@ pub const Table = struct {
             memo.clearRetainingCapacity();
             const n = if (ident) e.node else try Forest.mapLabels(&t.trees, gpa, &memo, e.node, rank, less);
             memo.clearRetainingCapacity();
-            root = try Forest.unite(&t.trees, gpa, &memo, root, try Forest.graft(&t.trees, gpa, slots.relWords(e.slot), n), less, .plain);
+            root = try Forest.unite(&t.trees, gpa, &memo, root, try Forest.graft(&t.trees, gpa, slots.relWords(e.slot), n), less);
         };
         if (r.base != 0) {
             memo.clearRetainingCapacity();
             const b = if (ident) r.base else try Forest.mapLabels(&t.trees, gpa, &memo, r.base, rank, less);
             memo.clearRetainingCapacity();
-            root = try Forest.unite(&t.trees, gpa, &memo, b, root, less, .plain);
+            root = try Forest.unite(&t.trees, gpa, &memo, b, root, less);
         }
         return root;
     }
@@ -611,7 +611,7 @@ pub const Table = struct {
         defer memo.deinit(gpa);
         const m = try Forest.mapLabels(&t.trees, gpa, &memo, n, map, lessOf(slots));
         memo.clearRetainingCapacity();
-        r.base = try Forest.unite(&t.trees, gpa, &memo, r.base, m, lessOf(slots), .join);
+        r.base = try Forest.unite(&t.trees, gpa, &memo, r.base, m, lessOf(slots));
     }
 
     /// Equality of two committed contracts: their words (both canonical).
