@@ -276,34 +276,22 @@ fn cover(uses: *Later.Uses, u: Facts.Use, c: PathId) Error!Cover {
         .none => {},
     };
     // A write at `c` or above it is all of it; one only below it, some.
-    const key = fr.slots.relKey(rem);
-    if (try writtenAbove(uses, hd.writes, foot[1], key)) return .all;
-    if (try Later.effectMeets(uses.ev, uses.contracts, hd.writes, foot[1], key, false)) return .some;
+    for (uses.contracts.writesOf(hd.writes)) |r| if (r[0] == foot[1]) {
+        if (writtenAbove(&uses.contracts.trees, r[1], rw)) return .all;
+        if (Later.writeMeets(&uses.contracts.trees, r[1], rw)) return .some;
+    };
     return got;
 }
 
-/// Whether effect run `r` (sorted, §2.10) has an effect of parameter `j`
-/// at `key` or at a prefix of it: a binary search a prefix, charged.
-fn writtenAbove(uses: *Later.Uses, r: Ids.Range, j: u32, key: []const u32) Error!bool {
-    const fr = &uses.w.f;
-    const effs = uses.contracts.effectsOf(r);
-    if (effs.len == 0) return false;
-    const step = std.math.log2_int_ceil(u32, @intCast(effs.len + 1)) + 1;
-    const Ctx = struct { slots: *const Slots.Table, j: u32, key: []const u32 };
-    const before = struct {
-        fn f(x: Ctx, e: @TypeOf(effs[0])) bool {
-            if (e.j != x.j) return e.j < x.j;
-            return std.mem.order(u32, x.slots.relKey(e.slot), x.key) == .lt;
-        }
-    }.f;
-    var len: usize = 0;
-    while (len <= key.len) : (len += 3) {
-        try fr.charge(.inspection, step);
-        const p = key[0..len];
-        const i = std.sort.partitionPoint(@TypeOf(effs[0]), effs, Ctx{ .slots = fr.slots, .j = j, .key = p }, before);
-        if (i < effs.len and effs[i].j == j and std.mem.eql(u32, fr.slots.relKey(effs[i].slot), p)) return true;
+/// Whether write tree `n0` writes the slot `words` below its root or a
+/// prefix of it: the walk down its steps, charged by the caller.
+fn writtenAbove(t: *const Trees.Table, n0: Trees.Node, words: []const u32) bool {
+    var n = n0;
+    for (words) |w| {
+        if (t.here(n).len != 0 or t.open(n).len != 0) return true;
+        n = t.kidAt(n, w) orelse return false;
     }
-    return false;
+    return t.here(n).len != 0 or t.open(n).len != 0;
 }
 
 /// An effect tree's reach of the subtree at `words` below its root: an

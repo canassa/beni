@@ -23,6 +23,7 @@ const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
 const Routed = @import("Routed.zig");
+const Graft = @import("Graft.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -124,27 +125,6 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     try onceDemands(e);
 }
 
-/// Whether a type variable's or an opaque place is at or below `p`: a
-/// place no step below it can name.
-fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
-    if (p == .none) return false;
-    var seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, places.count());
-    defer seen.deinit(gpa);
-    var stack: std.ArrayList(PlaceId) = .empty;
-    defer stack.deinit(gpa);
-    try stack.append(gpa, p);
-    while (stack.pop()) |x| {
-        if (seen.isSet(x.int())) continue;
-        seen.set(x.int());
-        switch (places.kind(x)) {
-            .@"var", .@"opaque" => return true,
-            else => {},
-        }
-        try stack.appendSlice(gpa, places.steps(x).children);
-    }
-    return false;
-}
-
 /// Map or apply the labels of call `q`'s callee (§2.11.3).
 fn labelsOf(e: *Evaluation, q: u32) Error!void {
     const f = e.fr();
@@ -173,9 +153,9 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 const at_site = site_result != null and site.items.len == sig.own;
                 var wild = false;
                 if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
-                    wild = wild or try wildBelow(gpa, f.places, p);
+                    wild = wild or try Subtree.wildBelow(gpa, f.places, p);
                 };
-                if (!at_site) wild = wild or try wildBelow(gpa, f.places, sig.result);
+                if (!at_site) wild = wild or try Subtree.wildBelow(gpa, f.places, sig.result);
                 var args: std.ArrayList(u32) = .empty;
                 defer args.deinit(gpa);
                 for (0..sig.own) |k| {
@@ -315,11 +295,25 @@ fn callEffects(e: *Evaluation, q: u32) Error!void {
     };
     const h = e.contracts.head(call.contract);
     for (e.contracts.effectsOf(h.escapes)) |x| try callEscape(e, q, x);
-    // The writes of one argument by one walk of it (`Routed`).
-    const ws = e.contracts.effectsOf(h.writes);
-    const pre = try Routed.ofWrites(&e.ev, call.args, ws);
+    // The writes a stop leaves, of one argument by one walk of it (`Routed`).
+    var flat: std.ArrayList(Contract.Effect) = .empty;
+    for (e.contracts.writesOf(h.writes)) |x| try callTree(e, q, .{ .j = x[0], .slot = Slots.root, .node = x[1] }, &flat);
+    const pre = try Routed.ofWrites(&e.ev, call.args, flat.items);
     defer for (pre) |*p| if (p.*) |*l| l.deinit(e.gpa());
-    for (ws, pre) |x, p| try callWriteFrom(e, q, x, if (p) |l| l.items else null);
+    for (flat.items, pre) |x, p| try callWriteFrom(e, q, x, if (p) |l| l.items else null, .{});
+}
+
+/// Call `q`'s write tree `x`: grafted demands where it stops at a
+/// parameter of the frame (`Graft`, §2.11.2), else written out (arena).
+fn callTree(e: *Evaluation, q: u32, x: Contract.Effect, flat: *std.ArrayList(Contract.Effect)) Error!void {
+    var gs: std.ArrayList(Graft.Group) = .empty;
+    defer gs.deinit(e.gpa());
+    const call = e.fr().calls.items[q];
+    const g = (try Graft.stop(&e.ev, call, x, &gs)) orelse if (try Graft.literal(&e.ev, call, x, &gs)) Graft.Graft{} else return e.contracts.effectFlat(e.gpa(), e.ev.arena, e.fr().account, e.fr().slots, e.fr().places, x, flat);
+    for (gs.items) |*gr| {
+        defer gr.targets.deinit(e.gpa());
+        try callWriteFrom(e, q, gr.x, gr.targets.items, g);
+    }
 }
 
 /// An escape of call `q`'s callee: its projections escape at the call.
@@ -340,10 +334,12 @@ pub const cellWrite = Cells.cellWrite;
 /// A write of call `q`'s callee: a demand at the call. What it relies on
 /// is instantiated once the group's facts are in (`finishDemands`).
 pub fn callWrite(e: *Evaluation, q: u32, x: Contract.Effect) Error!void {
-    return callWriteFrom(e, q, x, null);
+    var flat: std.ArrayList(Contract.Effect) = .empty;
+    try callTree(e, q, x, &flat);
+    for (flat.items) |y| try callWriteFrom(e, q, y, null, .{});
 }
 
-fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relation.Proj) Error!void {
+fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relation.Proj, graft: Graft.Graft) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const call = f.calls.items[q];
@@ -392,6 +388,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         .call = q,
         .arg = x.j,
         .cell = cellWrite(f.slots, x),
+        .graft = .{ graft.j, graft.slot, graft.node },
     };
     // The other arguments are its operands (§2.11.2 item 4): a write must
     // not reach what the call is also handed (`List.set b 0 (Node b)`).
@@ -443,7 +440,8 @@ pub fn finishDemands(e: *Evaluation) Error!void {
     for (e.demands.items) |*d| {
         if (d.call == none) continue;
         const call = f.calls.items[d.call];
-        if (req_of[d.call] == null) req_of[d.call] = try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req), d.call);
+        const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
+        if (req_of[d.call] == null) req_of[d.call] = (try Graft.movedReq(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
         d.relies = req_of[d.call].?;
         if (!call.virtual) continue;
         const outer = virtualOuter(e, d.call) orelse continue;
@@ -530,7 +528,9 @@ fn onceDemands(e: *Evaluation) Error!void {
         const sig = try e.ctx.codeSig(e.ctx.ctx, cl.code);
         const x = f.val(cl.value);
         const caps = f.kidsOf(x);
-        for (e.contracts.effectsOf(h.writes)) |wr| {
+        var flat: std.ArrayList(Contract.Effect) = .empty;
+        try e.contracts.writesFlat(gpa, e.ev.arena, f.account, f.slots, f.places, h.writes, &flat);
+        for (flat.items) |wr| {
             if (wr.j < sig.own or wr.j - sig.own >= caps.len) continue;
             const cell = cellWrite(f.slots, wr);
             if (!cell and !h.flags.once) continue;

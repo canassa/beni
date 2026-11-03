@@ -276,17 +276,19 @@ fn merge(gpa: Allocator, out: *std.ArrayList(Arrival), xs: []const Arrival, ys: 
 /// A tree's text (§2.10 *Text*): `entry` for each entry in the canonical
 /// order, a kid equal to an earlier sibling as `.1 = .0`, each
 /// with its slot's words.
-pub fn text(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, root: Node, ctx: *anyopaque, entry: EntryText) std.Io.Writer.Error!void {
+/// `twins`: a kid equal to an earlier sibling prints as that sibling;
+/// otherwise every entry is written out.
+pub fn text(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, root: Node, ctx: *anyopaque, entry: EntryText, twins: bool) std.Io.Writer.Error!void {
     var path: std.ArrayList(u32) = .empty;
     defer path.deinit(gpa);
-    textAt(t, gpa, places, root, ctx, entry, &path) catch return error.WriteFailed;
+    textAt(t, gpa, places, root, ctx, entry, twins, &path) catch return error.WriteFailed;
 }
 
 /// An entry's text: its slot's words, open or not, and its arrivals; or
 /// the words of the earlier sibling it equals (`as`).
 pub const EntryText = *const fn (ctx: *anyopaque, path: []const u32, open: bool, run: []const Arrival, as: ?[]const u32) std.Io.Writer.Error!void;
 
-fn textAt(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, n: Node, ctx: *anyopaque, entry: EntryText, path: *std.ArrayList(u32)) (std.Io.Writer.Error || Allocator.Error)!void {
+fn textAt(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, n: Node, ctx: *anyopaque, entry: EntryText, twins: bool, path: *std.ArrayList(u32)) (std.Io.Writer.Error || Allocator.Error)!void {
     if (t.here(n).len != 0) try entry(ctx, path.items, false, t.here(n), null);
     if (t.open(n).len != 0) try entry(ctx, path.items, true, t.open(n), null);
     var ks: std.ArrayList([2]u32) = .empty;
@@ -295,7 +297,7 @@ fn textAt(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, n: 
     for (ks.items, 0..) |k, i| {
         const top = path.items.len;
         defer path.shrinkRetainingCapacity(top);
-        const twin: ?u32 = for (ks.items[0..i]) |o| {
+        const twin: ?u32 = if (!twins) null else for (ks.items[0..i]) |o| {
             if (o[1] == k[1]) break o[0];
         } else null;
         if (twin) |o| {
@@ -307,7 +309,7 @@ fn textAt(t: *const Trees.Table, gpa: Allocator, places: *const Place.Table, n: 
             try entry(ctx, path.items[top + 1 ..], false, &.{}, path.items[0 .. top + 1]);
         } else {
             try path.append(gpa, k[0]);
-            try textAt(t, gpa, places, k[1], ctx, entry, path);
+            try textAt(t, gpa, places, k[1], ctx, entry, twins, path);
         }
     }
 }

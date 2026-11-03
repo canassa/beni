@@ -19,7 +19,7 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 17;
+pub const version: u32 = 18;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -92,8 +92,8 @@ const Writer = struct {
         }
     }
 
-    /// The node table of a contract's trees (§3.6, version 17): every node
-    /// its result, its reads and its supplies' results reach, once, in
+    /// The node table of a contract's trees (§3.6, version 18): every node
+    /// its result, reads, writes and supplies' results reach, once, in
     /// post-order with each node's kids in the canonical order; `index`
     /// maps a node to its place in the table (from 1; 0 is the empty node).
     fn table(w: *Writer, roots: []const Contract.Node, index: *Index) Allocator.Error!void {
@@ -142,19 +142,20 @@ const Writer = struct {
         var roots: std.ArrayList(Contract.Node) = .empty;
         defer roots.deinit(w.gpa);
         try roots.append(w.gpa, h.res_root);
-        for (w.t.readsOf(h.reads)) |x| try roots.append(w.gpa, x[1]);
+        for ([_]Ids.Range{ h.reads, h.writes }) |rr| for (w.t.readsOf(rr)) |x| try roots.append(w.gpa, x[1]);
         for (w.t.labelsOf(h.labels)) |l| for (w.t.suppliesOf(l.supplies)) |s| try roots.append(w.gpa, s.res_root);
         var index: Index = .empty;
         defer index.deinit(w.gpa);
         try w.table(roots.items, &index);
         try w.word(nodeIndex(&index, h.res_root));
         try w.cond(h.res_cond);
-        try w.word(h.reads.len);
-        for (w.t.readsOf(h.reads)) |x| {
-            try w.word(x[0]);
-            try w.word(nodeIndex(&index, x[1]));
+        for ([_]Ids.Range{ h.reads, h.writes }) |rr| {
+            try w.word(rr.len);
+            for (w.t.readsOf(rr)) |x| {
+                try w.word(x[0]);
+                try w.word(nodeIndex(&index, x[1]));
+            }
         }
-        try w.effects(h.writes);
         try w.cond(h.req);
         try w.effects(h.escapes);
         try w.word(h.labels.len);
@@ -260,7 +261,7 @@ const Reader = struct {
         }
     }
 
-    /// A contract's node table (§3.6, version 17), each node re-interned in
+    /// A contract's node table (§3.6, version 18), each node re-interned in
     /// `t`'s trees (equal subtrees are one node here too): `out[i]` is the
     /// block's node `i` (0 the empty node). A kid names an earlier node.
     fn table(r: *Reader, t: *Contract.Table, out: *std.ArrayList(Contract.Node)) Error!void {
@@ -313,11 +314,10 @@ const Reader = struct {
         try r.table(t, &nodes);
         d.res.base = try node(nodes.items, try r.next());
         d.res_cond = try r.cond();
-        for (0..try r.count()) |_| {
+        for ([_]*std.ArrayList(Contract.Effect){ &d.reads, &d.writes }) |list| for (0..try r.count()) |_| {
             const j = try r.next();
-            try d.reads.append(r.arena, .{ .j = j, .slot = Slots.root, .node = try node(nodes.items, try r.next()) });
-        }
-        try r.effects(&d.writes);
+            try list.append(r.arena, .{ .j = j, .slot = Slots.root, .node = try node(nodes.items, try r.next()) });
+        };
         d.req = try r.cond();
         try r.effects(&d.escapes);
         for (0..try r.count()) |_| {
