@@ -14546,7 +14546,9 @@ const Walker = struct {
         const callee: Inst.Index = @fromBackingInt(@intCast(w.bir.instData(inst).lhs));
         const site = dt.siteOf(callee) orelse dt.siteOf(inst) orelse return top_taint;
         const roots = dt.argsAt(site.evidence);
-        if (roots.len != 1) return top_taint;
+        // The entry points recognized by codecRunRow have one method
+        // requirement: codec. Identity/data roots follow method evidence.
+        if (roots.len == 0) return top_taint;
         return w.termTaint(dt, roots[0], 0);
     }
 
@@ -14575,14 +14577,14 @@ const Walker = struct {
     }
 
     /// §30.10: the slots of the conversion `Schema.conversion forward
-    /// backward` made at `inst`, whose value `made` holds the two functions
-    /// at `.there` and `.back` (`core/Schema`'s `Pair`). Decoding hands
+    /// backward` made at `inst`, whose value `made` holds the two typed
+    /// fields of core's `Conversion` constructor. Decoding hands
     /// `forward` a value built from the input and answers what it returns;
     /// encoding hands `backward` the program's value. So `⟨decoded⟩` holds
     /// what `forward` may return that is neither built by its call nor its
     /// argument, and `⟨encoded⟩` the same of `backward` — nothing at all
     /// when the end it returns, `a` or `b`, holds no list.
-    fn conversionSlots(w: *Walker, inst: Inst.Index, made: AV) Allocator.Error!AV {
+    fn conversionSlots(w: *Walker, inst: Inst.Index, made: AV, schema_module: u32) Allocator.Error!AV {
         var ends: [2]?Var = .{ null, null };
         if (w.instType(inst)) |v| switch (w.store.resolvedContent(v)) {
             .structure => |st| switch (st) {
@@ -14594,19 +14596,25 @@ const Walker = struct {
             },
             else => {},
         };
-        // The engine-owned Pair representation (§30.10), read at its full
-        // type before asking which function each field holds.
-        const pair_view = try w.readCast(made, try w.castRecord(&.{ .{ .name = "back", .key = try w.o.castId("1:Js::Value()") }, .{ .name = "there", .key = try w.o.castId("1:Js::Value()") } }, try w.o.castId("{}")));
-        const fields = [_][]const u8{ "there", "back" };
+        // The engine-owned Conversion constructor retains both typed
+        // callbacks. Project its fields directly, preserving their classes.
+        var conversion: ?u32 = null;
+        for (w.o.in.birs[schema_module].ctors, 0..) |_, i| {
+            if (std.mem.eql(u8, w.o.ctorName(schema_module, @intCast(i)), "Conversion")) {
+                conversion = try w.o.ctorId(schema_module, @intCast(i));
+                break;
+            }
+        }
         const kinds = [_]StepKind{ .schema_decoded, .schema_encoded };
         var parts: [2]AV = .{ &.{}, &.{} };
-        for (fields, kinds, ends, &parts) |field, kind, end, *part| {
+        for (kinds, ends, 0..) |kind, end, i| {
             if (end) |v| if (!try w.trackedVar(v)) continue;
-            const answer = if (w.o.in.interner.find(field)) |sym|
-                try w.functionAnswer(try w.proj(pair_view, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded, ends[1], ends[0])
+            const callback = if (conversion) |c|
+                try w.proj(made, .{ .kind = .ctor, .arg = try w.o.ctorStep(c, @intCast(i)) }, null)
             else
-                try w.single(.{ .kind = .top, .a = unfollowed });
-            part.* = try w.under(answer, try w.o.child(eps, kind, 0));
+                &.{};
+            const answer = try w.functionAnswer(callback, inst, kind == .schema_encoded, ends[1], ends[0]);
+            parts[i] = try w.under(answer, try w.o.child(eps, kind, 0));
         }
         return w.unionOf(&parts);
     }
@@ -14730,7 +14738,7 @@ const Walker = struct {
         if (has_params and args.len == 2 and w.isCore(t, "Schema") and std.mem.eql(u8, w.targetName(t), "conversion")) {
             if (try w.o.ensureSummary(t.m, t.d)) |s| {
                 const made = try w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t) }, args, &.{}, null);
-                return w.unionOf(&.{ made, try w.conversionSlots(inst, made) });
+                return w.unionOf(&.{ made, try w.conversionSlots(inst, made, t.m) });
             }
         }
         if (if (has_params) try w.o.ensureSummary(t.m, t.d) else null) |s| {

@@ -1517,8 +1517,9 @@ Analysis slots are not physical fields. A cast preserves a root's `⟨decoded⟩
 under a cast marker. An unknown runtime suffix is `any` with argument 1; ordinary
 unknown suffixes keep argument 0. Both overlap physical paths conservatively; the
 runtime suffix cannot introduce a synthetic analysis slot. The argument is carried
-in version 24's path encoding. Schema's conversion-slot analysis reads its engine-owned
-`Pair` representation at its complete record type before projecting `there` and `back`.
+in version 24's path encoding. Schema's conversion-slot analysis projects the two typed callback fields of
+core's `Conversion` constructor directly. Neither callback is represented as
+`Js.Value`, so this projection requires no cast or erased record view.
 
 *Amended 2026-10-22 (#712): the full type is an interned graph.* Type nodes
 retain their complete head, labels and child identities. Equality compares that
@@ -6586,6 +6587,9 @@ string, as `print`'s words say.
 definition's slots are derived as a declaration's, each of its slots' evidence adding its own; a type's
 module's `codec` contributes what its summary names. An evidence parameter — the codec of a type variable —
 is `⊤`. `Http.expectJson`, a value whose evidence is its own, keeps `⊤` in its lambda.
+These entry points have one codec method requirement. Its evidence is the first
+root; checked identity and data witnesses follow it and do not describe aliases.
+Their presence must not turn a known derived codec into an unknown one.
 
 **Soundness.** A list the answer may hold arrives in one of four ways: the run built it from the input (fresh,
 no other holder); a conversion's function returned it (its slot names it: what it captured, a top-level

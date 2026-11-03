@@ -1,0 +1,17 @@
+-- A decoded record is fresh even when Schema also receives private witnesses.
+import Json
+import Node
+import Records exposing (Model)
+
+
+bump : Model → Model
+bump model = { model | n = model.n + 1 }
+
+
+main : Node.Program
+main =
+    case Json.decode "{\"n\":1}" of
+        Ok model →
+            Node.print "${(bump model).n}"
+        Err _ →
+            Node.print "bad"

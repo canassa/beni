@@ -13663,3 +13663,31 @@ test "Schema endpoint identities agree across imports and warm compiled and libr
         }
     }
 }
+
+test "decoded records retain freshness with checked Schema evidence" {
+    // PREPARE: the record alias crosses a module and the decoder has hidden
+    // identity/data witnesses beside its codec requirement.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_][]const u8{ "Main.beni", "Records.beni" }) |name| {
+        const path = try w.arena.allocator().print("tests/corpus/run/JsonDecodedRecord/{s}", .{name});
+        const contents = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, w.arena.allocator(), .limited(world.max_stream_bytes));
+        try w.write(name, contents);
+    }
+    for ([_][]const []const u8{ &.{}, &.{"--release"}, &.{"--schema-library"}, &.{ "--schema-library", "--release" } }) |mode| {
+        for (0..2) |pass| {
+            // EXECUTE: both the ordinary and library paths under ownership,
+            // then a warm checker cache with a different worker count.
+            var args: std.ArrayList([]const u8) = .empty;
+            defer args.deinit(w.arena.allocator());
+            try args.appendSlice(w.arena.allocator(), &.{ "build", "--platform=node", "--ownership-everywhere", "--roundtrip-dispatch", "--out=out", if (pass == 0) "--jobs=1" else "--jobs=8" });
+            try args.appendSlice(w.arena.allocator(), mode);
+            try args.appendSlice(w.arena.allocator(), &.{ "Main.beni", "Records.beni" });
+            const built = try w.run(args.items);
+            // VERIFY the complete build result and the updated value.
+            try expectBuilt(built);
+            try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+            try w.expectProgram("out/_main.mjs", .{ .stdout = "2\n" });
+        }
+    }
+}
