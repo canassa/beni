@@ -2375,7 +2375,10 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    With these rows, a frame that spawns and joins can edit in place what the work does not reach (#1734's
    probes `C8SpawnOtherRef`, `C9SpawnNothing`, `C12JoinOnly`, `C13MakeAfterJoin`). It is still coarse in one place:
    a loan of a list is `⊤` in v2, so while the answer of a `join` of a `Fiber (List a)` is live (as for
-   `Deferred.wait`), each in-place edit of a list is refused, even of a list made after the join. The four bodies
+   `Deferred.wait`), each in-place edit of a list is refused, even of a list made after the join. *Amended
+   2026-11-03 (#1739):* no longer: §2.9.2 step 4's *made after* (#1714) reads an atom made after the loan's
+   call as none of its objects, so a literal or a copy made after it is edited in place
+   (`run/SanitiserLoanFreshEdit`), and two joins of one fiber still refuse (`run/SanitiserFiberJoins`). The four bodies
    and every helper of `Task` they run are pinned in `word-bodies.txt`. `check_test`'s reach rule follows them
    from these four v2 rows. `Task`'s v1 rows keep v1's rule (their own body), as they did before `Task` had a
    v2 row.
