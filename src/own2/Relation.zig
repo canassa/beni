@@ -241,59 +241,6 @@ pub const Eval = struct {
         }
     }
 
-    /// A leaf of a value and the slot it sits at: `leavesOf`'s leaves, each
-    /// at the steps from the value's slot that name it (a part no step
-    /// names, a list's storage or an opaque value's, sits at its value's).
-    pub fn partsOf(e: *Eval, v0: u32, at0: []const u32, out: *std.ArrayList(Part)) Error!void {
-        const f = e.f;
-        const g = e.gpa();
-        const Item = struct { v: u32, tags: u32, at: []const u32 };
-        var stack: std.ArrayList(Item) = .empty;
-        defer stack.deinit(g);
-        try stack.append(g, .{ .v = v0, .tags = 0, .at = at0 });
-        while (stack.pop()) |it| {
-            try e.charge(.inspection, 1);
-            const x = f.val(it.v);
-            const here = try f.slots.relOfWords(g, f.account, f.places, it.at);
-            switch (x.kind) {
-                .built => {
-                    if (x.site != none) try out.append(g, .{ .leaf = try f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .at = here });
-                    if (x.form == .list and x.head != 0) {
-                        var ls: std.ArrayList(u32) = .empty;
-                        defer ls.deinit(g);
-                        try e.storageOf(x.head - 1, it.tags, &ls);
-                        for (ls.items) |l| try out.append(g, .{ .leaf = l, .at = here });
-                    }
-                    for (f.kidsOf(x), 0..) |kv, n| {
-                        const st: ?Step = switch (x.form) {
-                            .tuple => try Step.index(f.account, @intCast(n)),
-                            .ctor => try f.places.ctorStep(g, f.account, x.head, @intCast(n)),
-                            .list => Step.elem,
-                            .record => try Step.field(f.account, f.wordsOf(x.extra)[n]),
-                            .closure, .opaque_ => null,
-                        };
-                        const at = if (st) |stp| try std.mem.concat(e.arena, u32, &.{ it.at, &.{stp.word()} }) else it.at;
-                        try stack.append(g, .{ .v = kv, .tags = it.tags, .at = at });
-                    }
-                },
-                .alt => {
-                    const ks = f.kidsOf(x);
-                    var i: usize = 0;
-                    while (i < ks.len) : (i += 2) {
-                        const t = (try f.mergeTags(it.tags, try f.internTags(&.{.{ x.head, try f.armOf(ks[i]) }}))) orelse continue;
-                        try stack.append(g, .{ .v = ks[i + 1], .tags = t, .at = it.at });
-                    }
-                },
-                else => {
-                    var ls: std.ArrayList(u32) = .empty;
-                    defer ls.deinit(g);
-                    try e.leavesOf(it.v, it.tags, &ls);
-                    for (ls.items) |l| try out.append(g, .{ .leaf = l, .at = here });
-                },
-            }
-        }
-    }
-
     /// The value at relative steps `words` of value `v`, by the walk's projection.
     pub fn valueAt(e: *Eval, v0: u32, words: []const u32) Error!u32 {
         const f = e.f;
@@ -956,6 +903,42 @@ pub const Eval = struct {
                 for (below.items) |x| try e.addBelow(ki, x, at_base);
                 return;
             }
+            // An argument's subtree by structure (§2.10 *Arrivals by
+            // structure*): each slot below is the argument projected there,
+            // deep where no step below it can be named, never a key of its own.
+            // A deep arrival (a type variable's slot) is all of it at each.
+            if (a.kind == .param and !a.deep) {
+                // A parameter's whole subtree at the slot's own place is that
+                // one open item: its slots below fold as the slot's, so the
+                // read-off says it open again (one normal form, §2.11.2).
+                var whole = below.items.len != 0;
+                for (below.items) |x| {
+                    const xl = e.f.leafAt(x);
+                    if (xl.kind != .ref or e.f.roots.items[xl.root].kind != .param or xl.at_pos) {
+                        whole = false;
+                        break;
+                    }
+                    const ps = e.f.pos.items[xl.pos].slot;
+                    if (e.places().pathPlace(ps) != e.places().pathPlace(base) or (Subtree.wholeOf(e.f.slots, xl.slots) != ps and xl.slots != try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), ps))) whole = false;
+                }
+                if (whole) {
+                    for (below.items) |x| try e.addBelow(ki, x, at_base);
+                    return;
+                }
+                var at: std.ArrayList(u32) = .empty;
+                defer at.deinit(e.gpa());
+                for (e.f.slots.items(try Subtree.belowAll(e.f.slots, e.gpa(), e.account(), e.places(), base))) |sl| if (sl != base.int()) {
+                    const sw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sl)));
+                    var sa = a;
+                    const pk = e.places().kind(e.places().pathPlace(.from(sl)));
+                    sa.deep = a.deep or pk == .@"var" or pk == .@"opaque";
+                    at.clearRetainingCapacity();
+                    try e.arrivalLeaves(k.call, none, sa, sw[@min(n, sw.len)..], &at);
+                    for (at.items) |x| try e.addBelow(ki, x, sl);
+                };
+                for (acc.items) |x| try e.addBelow(ki, x, base.int());
+                return;
+            }
             // Each slot below through its own key: a whole subtree's slots
             // written out (`belowAll`, §2.3.1, charged).
             for (e.f.slots.items(try Subtree.belowAll(e.f.slots, e.gpa(), e.account(), e.places(), base))) |sl| {
@@ -1088,11 +1071,6 @@ pub const Eval = struct {
             a.j = e.live.?.labelIn(e.live.?.ctx, call.code, a.j, call.contract) orelse return;
         }
         try e.feed(ki, a, at);
-    }
-
-    /// The words of key `ki`'s caller slot.
-    pub fn keyRel(e: *Eval, ki: u32) Error!Slots.Rel {
-        return e.f.slots.relOf(e.gpa(), e.account(), e.places(), e.keys.items[ki].slot);
     }
 
     fn addLeaf(e: *Eval, ki: u32, x: u32) Error!void {

@@ -53,6 +53,8 @@ const layers = [_]Entry{
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
+    // The identity tree's one normal form, below `Contract` (#1714).
+    .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
@@ -86,6 +88,8 @@ const layers = [_]Entry{
     // A write onto a caller's parameter stops there, its targets read off
     // the callee's tree (#1714, §2.11.2).
     .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
+    // A value's leaves at their slots, split from `Relation` (#1714).
+    .{ .file = "Parts.zig", .layer = 8, .max_lines = 70 },
     // What the distinct check reads of its rounds, split from `Distinct` (#1714).
     .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
@@ -420,7 +424,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 55), layers.len);
+    try testing.expectEqual(@as(usize, 57), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

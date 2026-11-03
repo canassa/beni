@@ -146,6 +146,16 @@ pub const Table = struct {
         return true;
     }
 
+    /// `j` when `n` is `ε… π_j·ε` and nothing else: the whole subtree of
+    /// parameter `j` at its own path (§2.11.2, *the identity control*).
+    pub fn identity(t: *const Table, n: Node) ?u32 {
+        if (n == 0 or t.here(n).len != 0 or t.kids(n).len != 0) return null;
+        const o = t.open(n);
+        // Slot 0 is a parameter's root (`Slots.root`).
+        if (o.len != 1 or o[0].kind != .param or o[0].slot != 0) return null;
+        return o[0].j;
+    }
+
     /// The entries at and below `n`.
     pub fn count(t: *const Table, n: Node) u32 {
         return if (n == 0) 0 else t.counts.items[n];

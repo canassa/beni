@@ -1368,9 +1368,17 @@ t`, the result's slot and the parameter's slot one path) folds below it exactly 
 is one open arrival there too, cycles below or not, once written out it would name more than
 `Subtree.written_max` (256) slots. Over five mutually recursive types with a list and a `Maybe` of each other
 (`K0 … K4`), `same : K0 → K0` named so many that it passed `ownership_summary_size` at any allowance; it is now
-`res ε… π1ε`, and a caller reads each slot of it as of any open arrival. Below that size the slots are still
-written out: their readers cost less than the open node's (`Dict.descend` 37 191 records written out, 66 105
-open), and they say the same. Not in a callback's supply: there the open node read back at a caller's argument
+`res ε… π1ε`, and a caller reads each slot of it as of any open arrival. Until the next amendment, below that size
+the slots were written out: their readers cost less than the open node's (`Dict.descend` 37 191 records written
+out, 66 105 open). *Amended 2026-11-03 (#1714, the manager's decision):* the size gate is withdrawn.
+A subtree returned at its own path is the one open arrival at any size: that node, `ε… π_j·ε` at a result's
+root, is the **identity tree**, recognised at a call by its structure (§2.11.2, *the identity control*). The
+open node is made cheap to read instead: a below key reads an open `π_j·s` at each slot below as argument `j`
+projected there, never through a key of its own per slot; a parameter's whole subtree at the slot's own place is
+that one open item, which the read-off says as it says a parameter's subtree (open where its paths fold as the
+slot's, slot by slot otherwise); and a commit drops an arrival `π_j·(s·r)` at `p·r` that an open, non-deep
+`π_j·s` at `p` says by structure (`Normal.zig`), so the two spellings are one tree. `Dict.descend` costs 24 895
+records (26 448 written out); `Dict.removeMin` 25 704 (23 589), all at growth 0. Not in a callback's supply: there the open node read back at a caller's argument
 names its top slot only, which says less than the slots written out (`Codec.Decode.decodeString`). Where nothing the frame reads grows and no place below the slot is on a cycle, the
 read-off **describes a value once per (value, place)** and a call once per (callee node, place). The text
 prints a kid equal to an earlier sibling as `.1 = .0`, for reads too (`π1#1.2 = π1#1.0`). A defect of the
@@ -1415,6 +1423,17 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    or more levels below at the same place, and into a reference by its descendant paths, never its own
    storage); `fresh` is the atom `fresh k`; `cb L` the call's label instantiation (§2.11.3); `⊤` is `⊤`. The
    instantiation is built once per call per candidate generation (§2.12) and never re-read lazily.
+   *The identity control* (#1714, 2026-11-03, the manager's decision): where the callee is settled when the
+   caller is walked (a contract from an earlier group, an import, words; never a member of the caller's own
+   group), its `res` is the identity tree on parameter `j` (`ε… π_j·ε` and nothing else, `Trees.identity`),
+   it writes nothing of `π_j`, and `a_j` is at the call's own place, the call's result **is** `a_j`: the walk
+   gives the call the argument's value, with no per-slot instantiation. The call is still a call: its uses,
+   writes, `req`, escapes and labels are read from `C` as above. It is recognised by the contract's structure,
+   never a name or an annotation, at any size, and it is exact: the result's objects at every slot are the
+   argument's there, so its separation is the argument's own. A generic identity (`idt : a → a`,
+   `ε… π1ε*`) no longer lumps every object of the argument at the result's top slot, so a write through it
+   targets only what it writes (`GenericResultHeldImported.nested` no longer writes `π1ε`). `wrap (ident r)`
+   costs 1 611 records at 10 calls and 6 313 at 40, against 1 571 / 6 153 for `wrap r` (was 2 585 / 10 197).
 3. **The separation** of the call's result is `C.res_cond` instantiated on the arguments: the distinct check
    over the projections of its selected occurrences, under the routed rule (§2.9.3). It is computed once per
    call, on first need; a cycle through the call's own condition reads it as `no`.
