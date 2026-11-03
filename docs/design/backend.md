@@ -2369,6 +2369,15 @@ Nothing about the TYPE is asked, because nothing needs to be: a value nobody rea
 cannot tell: the caller that would have seen `undefined` for `null` does not exist.
 Fixture: `emit/DiscardedStatements` (with the statements above), and every `run/` program.
 
+*Amended 2026-11-03* (#1806). **A payload extractor's result is read**, by the lowering's
+listener, which calls it while the event is dispatched (`boundary.md` §9.3): the call is in no
+module's BIR, as `core/List`'s five and `core/Schema`'s compiled values are called from code no
+BIR shows. A beni extractor that is not `pub` (#925) is in no interface, so without this it
+qualified, and one with a block body was written with no `return` and handed the handler
+`undefined` (a one-line body is an expression arrow and never lost its value). `findUnobserved`
+marks every extractor `Reach.privateExtractor` finds for the vocabulary module's event rows as
+read. Fixture: `browser/dom/PrivateViaBlock`.
+
 *Amended 2026-10-02.* **A discarded `case` is its tree, each leaf discarded** (`Lower.discardCase`).
 The list above covered a conditional that lowers to `c ? a : b`; an `if` or `case` whose arms need
 statements of their own lowered to a temporary assigned in every arm, `let $t; if (c) { â¦; $t =

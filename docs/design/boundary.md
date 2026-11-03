@@ -1496,7 +1496,9 @@ Everything above holds of it unchanged: its type is `E -> P` with `E` a `foreign
 event is dispatched (below); reachability keeps a non-`pub` one for an event that names it, and the
 vocabulary module exports it when it is live, exactly as for a non-`pub` `foreign`
 (`Reach.privateExtractor`). A declaration with no annotation is refused as a `via` that names
-nothing is (`unbound_variable`). **An extractor is `sync`** (*amended 2026-10-26*, the review of
+nothing is (`unbound_variable`). Its result is read by the lowering's listener and by no module's
+code, so it is never a function whose result nothing reads (`backend.md` §4, amended 2026-11-03,
+#1806). **An extractor is `sync`** (*amended 2026-10-26*, the review of
 #925): every lowering calls it while the event is dispatched, outside any fiber, so one that may
 suspend — a beni body that waits, or a `foreign suspends` rung — is `sync_boundary` at the event
 whose `via` names it (`checker-v2.md` §25.8), checked once the effects are inferred, as the sync
