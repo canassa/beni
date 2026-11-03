@@ -7084,10 +7084,12 @@ printed. What the move fixes in place:
 - **`Result` crosses no `foreign` any more.** The sibling's `next` built `{ $: "Ok", a: text }`
   and `{ $: "Err", a: { code, reason } }` by hand, so `foreign next`'s
   `Resume (Result Close String)` pinned `Result`'s string tags in every release build that serves
-  a WebSocket (§4, *What JavaScript may read of a beni value*). A reader is a `Resume Js.Value`
-  now, answered with the text or with the end, and `read` builds the `Result` in beni — a
-  `Js.to` typed `Resume (Result Close String)` would pin it again — so a release build gives
-  `Result` integer tags where nothing else pins them. `Close` keeps `code` and `reason`: one
+  a WebSocket (§4, *What JavaScript may read of a beni value*). A waiting reader is a host
+  function now, `Js.from` of a lambda typed `Js.Value → ⊤` that holds the typed `Resume` and
+  builds the `Result` from the text or the end object it is given — a `Js.to` typed
+  `Resume (Result Close String)` would pin it again, and work after `Task.callback` in `read`
+  would cost a continuation per read — so `read` stays one `Task.callback`, and a release build
+  gives `Result` integer tags where nothing else pins them. `Close` keeps `code` and `reason`: one
   source field text has one spelling everywhere (§4, *amended 2026-10-22*), `code` is the host
   property `isGone` reads of an `Error`, and `reason` is the end object's key.
 - **The host door** is `process.getBuiltinModule` for `node:buffer` (`Buffer`, `isUtf8`),
