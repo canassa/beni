@@ -16,6 +16,7 @@ const Message = @import("Message.zig");
 const Report = @import("Report.zig");
 const Block = @import("Block.zig");
 const Hoists = @import("Hoists.zig");
+const Subtree = @import("Subtree.zig");
 
 pub const Names = Message.Names;
 pub const ModuleReport = Report.Module;
@@ -29,6 +30,7 @@ pub const Input = struct {
     publish: bool = false,
     /// Per module, its lowering channel (`Hoists`, §3.7), in `gpa`.
     channels: ?[]Hoists.Table = null,
+    below: bool = false, // with the summaries, each one's `belowLine`
 };
 
 const FieldNames = struct {
@@ -50,6 +52,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         try Groups.checkModule(mi, mod);
         defer mod.deinit();
         var lines: std.ArrayList(@import("Facts.zig").Line) = .empty;
+        var belows: std.ArrayList(struct { []const u8, u32 }) = .empty;
         var others: std.ArrayList([]const u8) = .empty;
         var limits: u32 = 0;
         // A worded declaration's body is its pins' to check, not this run's.
@@ -135,6 +138,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
                 buf.writer.print("summary {s}: ", .{name}) catch return error.OutOfMemory;
                 ContractText.print(&mod.contracts, gpa, dr.contract, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &buf.writer) catch return error.OutOfMemory;
                 try others.append(arena, buf.written());
+                if (in.below and dr.decl < mod.body_code.len and mod.body_code[dr.decl] != Ids.none_int) try belows.append(arena, .{ name, mod.body_code[dr.decl] });
             }
         }
         // An import read as unknown is said, never silent (§3.6): its codes
@@ -152,6 +156,15 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         // The dump names the block by its size and a hash of its bytes: what
         // the determinism tests compare across job counts (rule 5).
         if (in.format_summaries) if (block) |b| try others.append(arena, try std.fmt.allocPrint(arena, "block: {d} bytes, hash {x:0>16}", .{ b.len, std.hash.Wyhash.hash(0, b) }));
+        var fn_names: FieldNames = .{ .names = in.names };
+        for (belows.items) |b| {
+            var bl: std.Io.Writer.Allocating = .init(arena);
+            belowLine(mod, gpa, &bl.writer, .{ .ctx = &fn_names, .field = FieldNames.field }, b[0], b[1]) catch |err| switch (err) {
+                error.OutOfMemory, error.WriteFailed => return error.OutOfMemory,
+                else => bl.writer.writeAll(" ?") catch return error.OutOfMemory,
+            };
+            try others.append(arena, bl.written());
+        }
         var errs: std.ArrayList(Groups.WordError) = .empty;
         defer errs.deinit(gpa);
         Groups.wordKindErrors(mod, &errs) catch |err| switch (err) {
@@ -170,6 +183,44 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
         r.* = .{ .module = mi.module, .lines = lines.items, .others = others.items, .limits = limits, .block = block, .word_errors = word_errors };
     }
     return out;
+}
+
+/// `--ownership-below`: each parameter's slots as `Subtree.belowAll` writes them, with each one's `below` by index
+/// (`{0,2}`) or `*` where no step names one; `…` past 512, `?` where a walk stops. Its own account, after every
+/// summary and the block (the walks intern slots): a script reads both spellings of a subtree as one (§2.9.1).
+fn belowLine(mod: *Groups.Module, gpa: Allocator, w: *std.Io.Writer, names: ContractText.Names, name: []const u8, code: u32) !void {
+    try w.print("below {s}:", .{name});
+    var account: Ids.Account = .{};
+    defer account.deinit(gpa);
+    const c = mod.codes.items[code];
+    for (mod.code_places.items[c.params.start..][0..c.params.len], 0..) |pl, j| {
+        try w.print(" π{d}", .{j + 1});
+        if (pl == .none) continue;
+        const root = try mod.places.rootPath(gpa, pl);
+        if (try Subtree.moreBelow(&mod.slots, gpa, &account, &mod.places, root, 512)) {
+            try w.writeAll(" …");
+            continue;
+        }
+        const all = try gpa.dupe(u32, mod.slots.items(try Subtree.belowAll(&mod.slots, gpa, &account, &mod.places, root)));
+        defer gpa.free(all);
+        var index: Ids.FixedDict(1) = .{};
+        defer index.deinit(gpa);
+        for (all, 0..) |x, i| try index.put(gpa, .{x}, @intCast(i));
+        for (all) |x| {
+            try w.writeAll(" ");
+            try ContractText.relText(&mod.slots, &mod.places, names, w, try mod.slots.relOf(gpa, &account, &mod.places, .from(x)));
+            const k = mod.places.kind(mod.places.pathPlace(.from(x)));
+            if (k == .@"var" or k == .@"opaque") {
+                try w.writeAll("*");
+                continue;
+            }
+            for (mod.slots.items(try Subtree.belowAll(&mod.slots, gpa, &account, &mod.places, .from(x))), 0..) |y, n| {
+                try w.writeAll(if (n == 0) "{" else ",");
+                if (index.get(.{y})) |i| try w.print("{d}", .{i}) else try w.writeAll("?");
+            }
+            try w.writeAll("}");
+        }
+    }
 }
 
 /// The first and last source lines of declaration `d`: its name and every
