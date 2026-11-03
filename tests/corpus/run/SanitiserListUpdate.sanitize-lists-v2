@@ -1,0 +1,4 @@
+List.update's callback is called once on the element at the index (ownership-v2.md §2.13.6, taken): built again
+under --ownership=v2 and the list stale-read sanitiser. v2 accepts each edit of a fresh element, and of a value
+whose rows share only keys the callback does not write, directly and through a helper; the sanitised run prints
+the same.

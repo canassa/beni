@@ -68,17 +68,19 @@ const layers = [_]Entry{
     // How large `below(p)` is, split from `Subtree` (#1714).
     .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 630 },
-    .{ .file = "Rows.zig", .layer = 5, .max_lines = 320 },
     // A selection in its one spelling of a subtree (#1714).
     .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
     // A set met against a run of slots in one pass, for `Descent` (#1714).
     .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
+    // The environment rows are read in, split from `Rows` (#1752).
+    .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 530 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
     .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
     // Worded contracts by declaration and places, one footprint a callee (#1714).
     .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
+    .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
     .{ .file = "Liveness.zig", .layer = 6, .max_lines = 1190 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
@@ -452,7 +454,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 70), layers.len);
+    try testing.expectEqual(@as(usize, 71), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

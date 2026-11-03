@@ -1,0 +1,34 @@
+-- A runtime catch for `List.update`'s callback (`ownership-v2.md` §2.13.6,
+-- `taken`): `focus` hands the callback the element at the index, called
+-- once, and puts its answer back there. The callback may edit the element in
+-- place when nothing else holds what it writes: the rows below are fresh, or
+-- share only the keys the callback does not write, also through a helper
+-- that passes the callback on. Before, the row was unknown code, and every
+-- such edit was refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+rows : List (List Int × List Int) → String
+rows rs = String.join (List.map rs λ( k, vs ) → show k ++ ":" ++ show vs) ";"
+
+
+upd :
+      List (List Int × List Int)
+    , (List Int × List Int → List Int × List Int)
+    → List (List Int × List Int)
+upd rs f = List.update rs 0 f
+
+
+main : Program
+main =
+    fresh = List.update [ [ 1 ], [ 1 ] ] 0 λv → List.push v 2
+    key = [ 1 ]
+    keyed = List.update [ ( key, [ 0 ] ), ( key, [ 1 ] ) ] 1 λ( k, vs ) → ( k, List.push vs 9 )
+    passed = upd [ ( key, [ 0 ] ), ( key, [ 1 ] ) ] λ( k, vs ) → ( k, List.push vs 8 )
+    Node.printLines [ String.join (List.map fresh show) ";", rows keyed, rows passed, show key ]
