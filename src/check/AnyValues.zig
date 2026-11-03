@@ -74,7 +74,10 @@ fn sameValue(e: *Effects, a: Var, b: Var) bool {
     const x, _ = e.store.resolved(a);
     const y, _ = e.store.resolved(b);
     if (a == b) return true;
-    if (x == y) return e.realmCarrier(x) or switch (e.store.content(x)) { .structure => |shape| shape == .record or shape == .tuple, else => false };
+    if (x == y) return e.realmCarrier(x) or switch (e.store.content(x)) {
+        .structure => |shape| shape == .record or shape == .tuple,
+        else => false,
+    };
     if (e.solved.slot.len == 0) return false;
     if (!@import("Realms.zig").stored(e, x) and !@import("Realms.zig").unknown(e.store, x)) return false;
     if (!@import("Realms.zig").stored(e, y) and !@import("Realms.zig").unknown(e.store, y)) return false;
@@ -339,7 +342,9 @@ pub fn sites(e: *Effects, variable: Var, out: *std.ArrayList(Site), allocator: A
         const edges = try allocator.dupe(Edge, e.stored.nodes.items[id].edges.items);
         defer allocator.free(edges);
         std.mem.sort(Edge, edges, {}, struct {
-            fn less(_: void, a: Edge, b: Edge) bool { return std.mem.lessThan(u8, a.name, b.name); }
+            fn less(_: void, a: Edge, b: Edge) bool {
+                return std.mem.lessThan(u8, a.name, b.name);
+            }
         }.less);
         var i = edges.len;
         while (i > 0) {

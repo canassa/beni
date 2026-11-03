@@ -118,21 +118,21 @@ pub fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32
         copied.clearRetainingCapacity();
         try @import("AnyValues.zig").images(e, r, class.node, &copied, scratch);
         for (copied.items) |actual| {
-        const c = class_index;
-        const i = try e.nodeFor(actual);
+            const c = class_index;
+            const i = try e.nodeFor(actual);
 
-        if (reps[c] == none) {
-            reps[c] = i;
-        } else if (reps[c] != i) {
-            try e.edgeNodes(reps[c], i, none);
-            try e.edgeNodes(i, reps[c], none);
-            const lr = s.level.items[reps[c]];
-            const li = s.level.items[i];
-            if (@backingInt(lr) > @backingInt(li)) try e.raise(i, lr, work, scratch);
-            if (@backingInt(li) > @backingInt(lr)) try e.raise(reps[c], li, work, scratch);
-            try e.raiseRealm(i, e.realmOf(reps[c]), work, scratch);
-            try e.raiseRealm(reps[c], e.realmOf(i), work, scratch);
-        }
+            if (reps[c] == none) {
+                reps[c] = i;
+            } else if (reps[c] != i) {
+                try e.edgeNodes(reps[c], i, none);
+                try e.edgeNodes(i, reps[c], none);
+                const lr = s.level.items[reps[c]];
+                const li = s.level.items[i];
+                if (@backingInt(lr) > @backingInt(li)) try e.raise(i, lr, work, scratch);
+                if (@backingInt(li) > @backingInt(lr)) try e.raise(reps[c], li, work, scratch);
+                try e.raiseRealm(i, e.realmOf(reps[c]), work, scratch);
+                try e.raiseRealm(reps[c], e.realmOf(i), work, scratch);
+            }
         }
     }
     for (classes, 0..) |c, ci| {
