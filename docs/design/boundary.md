@@ -1560,9 +1560,12 @@ package that declares `"runtime"`:
   any other name, and a use of it then reads the module's declaration — `Html.text` is `Rt$text` —
   so §9.3's "binds to the markup runtime" means the file or its module, whichever supplies it.)*
   A supplied value must take the
-  declared count of parameters and no evidence (`Convention`'s arity, a trailing `()` run counted as
+  declared count of written parameters and no method evidence (`Convention`'s arity, a trailing `()` run counted as
   written or not, as check 4 counts a sibling's), or it is `foreign_arity_mismatch` at the
-  declaration. `run` takes one. The module is ordinary platform code: it may import `Js` (§4.2)
+  declaration. Hidden type identities may be supplied by a compiler-generated adapter
+  when every identity is an endpoint of a checked `Schema e a` argument. The adapter reads
+  the schema's stored endpoint identities in the function's ABI order, then passes the written
+  arguments; it never guesses identity from a host value. `run` takes one. The module is ordinary platform code: it may import `Js` (§4.2)
   and every module its package sees, and it may not import the file.
 - **The file may import the module.** `import { first, slot } from "beni:Rt";` — the one
   specifier a hand-written file may name that is not a package, and only in the markup runtime,
