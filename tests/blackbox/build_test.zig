@@ -11118,9 +11118,12 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     // `π1#1.2 = π1#1.0`: the reads below `#1.2` are `#1.0`'s, each exact.
     // `Tree` is on a cycle, so a subtree read or selected whole is the
     // symbol (§2.3.1): `π2{ε*}` and `π1ε* π2ε*` name the object slots the
-    // written-out lists named, and `#1.0⟲*` is `#1.0⟲#1.1`. The result,
-    // the point of this test, is unchanged.
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲*,#1.1} π2{ε*}; reads π1ε* π2ε*\n") != null);
+    // written-out lists named, and `#1.0⟲*` is `#1.0⟲#1.1`. A contract's
+    // selection spells a subtree of at most `below_min` slots written out
+    // (§2.9.1, *One spelling of a subtree*): `π2{ε*}` is `Tree`'s five
+    // lists and `#1.0⟲*` is `#1.0⟲#1.1`. The result, the point of this
+    // test, is unchanged.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1ε* π2ε*\n") != null);
 }
 
 test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {

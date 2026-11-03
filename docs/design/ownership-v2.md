@@ -1033,6 +1033,25 @@ passes, so the plain occurrence asked only the outer object to be once: `idd x =
 cast (`Js.to (Js.from [ xs, xs ])`, an identity at an opaque slot, §2.13.9), answered two parts the caller took
 for apart. The mark is bit 62 of the occurrence and bit 30 of its parameter word in a block (§3.6).
 
+**One spelling of a subtree** [#1714, 2026-11-03]. `(j, p)*` asks every slot of `below(p)`, and so do the
+occurrences at those slots written out (deep where no step below can be named): one set, two words. A round
+that read the set the other way moved the contract although nothing changed (`Dict.descend`: round 0 read
+`right`'s slots one by one, round 1 instantiated `π2ε*` over `Step key value right rest`, deep at `right`,
+whose `below` is `↓#0.4` since a cycle holds an object, §2.3.1; two more rounds, 38 195 records). So a
+contract's selections (`res_cond`, `req`, a supply's condition) are read off in one spelling (`Canon.zig`,
+at the read-off, §2.10): a deep occurrence `(j, p)*` whose `below(p)` written out has at most `below_min`
+slots is those slots, with its apartness; past the bound, at a type variable's or an opaque place, or at steps
+that name no single path, it stays. Equality of contracts is then equality of the normal form, so a round
+that only respells a subtree changes nothing (§2.12): `Dict.descend` is 3 rounds and 25 773 records, with
+`below`'s cycle rule kept for the walk's slot sets. The other direction (written-out slots past the bound to
+the symbol) is not taken: nothing reads a subtree past `below_min` slot by slot into a selection but a
+constructor's and a worded declaration's occurrences (§2.3.1 *Written out where a contract names each slot*),
+which are not rounds' contracts. *Measured, rejected:* spelling a subtree whose `below` is a symbol as the
+deep occurrence (the other normal form): an instantiated `(j, p)*` projects deep at the caller's path, whose
+`below` under a folded `⟲` name holds more than the callee's slots did, so `req` grew in later rounds (the
+k-list-fields family went from 5 rounds to 7, 1.15 M to 1.5 M records at k = 16), and two deep spellings of
+one set met in one selection and read as one object twice (`FoldSymbolicCall`'s `probeDistinct` refused).
+
 A **condition** is `no` (unprovable) or a selection. Conjunction is the union of the selections: linear,
 never a table of pairs. `yes` is the empty selection. A condition `a` is **weaker** than `b` (asks no more)
 when `a`'s selection is a subset of `b`'s, or `b` is `no`. A selection is printed and encoded in a canonical
@@ -3906,6 +3925,7 @@ values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Held, Ids, Place, R
 `Distinct` and `Eval`, and every layer from `Walk` and `Distinct` up moved one place (`Walk`, `Distinct` L9;
 `Eval`, `Holders`, `Later`, `Sweep`, `Stack` L10; `ReadOff`, `Descent`, `Deliver`, `Closures` L11; `Resolve`
 L12; `Groups` L13; `Block`, `Message`, `Report`, `Hoists` L14; `Ownership` L15; `Enforce` L16).*
+*Amended 2026-11-03 (#1714): `Canon` (L5, a contract's selections in one spelling of a subtree, §2.9.1; imports Ids, Place, Slots, Subtree, Conds) is new beside `Rows`, read by `ReadOff`.*
 
 ```
 L13 Enforce
@@ -3941,6 +3961,7 @@ L0  Ids  Counters  Scratch
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |
+| `Canon.zig` | 5 | a contract's selection in one spelling of a subtree: a small `below(p)` written out (§2.9.1, #1714) | Ids, Place, Slots, Subtree, Conds |
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
