@@ -1,6 +1,7 @@
 //! L4: how large `below(p)` is, without writing it out
-//! (`docs/design/ownership-v2.md` §2.3.1), read by the hidden
-//! `--ownership-below` dump: whether it has more than a bound of slots.
+//! (`docs/design/ownership-v2.md` §2.3.1), split from `Subtree`: whether it
+//! has more than a bound of slots, and whether a place no step can name
+//! (a type variable's, an opaque one) is below a place.
 //!
 //! Obligations kept here: none of §2.14's directly (a walk stopped past its
 //! bound answers "more": never fewer slots than there are).
@@ -13,6 +14,7 @@ const Slots = @import("Slots.zig");
 
 const Table = Slots.Table;
 const PathId = Ids.PathId;
+const PlaceId = Ids.PlaceId;
 const Error = Slots.Error;
 
 /// Whether `below(p)` written out has more than `n` slots: `belowAll`'s
@@ -39,6 +41,27 @@ pub fn moreBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Plac
             if ((try seen.getOrPut(gpa, .{nx.int()})).found_existing) continue;
             try queue.append(gpa, nx);
         }
+    }
+    return false;
+}
+
+/// Whether a type variable's or an opaque place is at or below `p`: a
+/// place no step below it can name.
+pub fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
+    if (p == .none) return false;
+    var seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, places.count());
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(PlaceId) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, p);
+    while (stack.pop()) |x| {
+        if (seen.isSet(x.int())) continue;
+        seen.set(x.int());
+        switch (places.kind(x)) {
+            .@"var", .@"opaque" => return true,
+            else => {},
+        }
+        try stack.appendSlice(gpa, places.steps(x).children);
     }
     return false;
 }

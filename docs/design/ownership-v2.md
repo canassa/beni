@@ -1029,6 +1029,17 @@ the cause word stays condition 5's (the manager's decision, 2026-10-30, #1214), 
 of the cells is `alias … (approx)`, never `element`. The result of every writer, construction, append and update **is
 its base's object** (R-0.1, R-4.10.1): a `delta` or the base's node, so the next holder is the new version.
 
+**Twin demands** (#1714, specified and built 2026-11-03). Two demands of one evaluation that one call makes
+for one argument, equal in every field but the path their text names (the targets and the operands by their
+leaves and values, the point, the kind, the base, the pending operands, the flags), are **twins**: the later is
+not judged, and its line is the first's verdict with its own text. Every field the judgement reads is equal, so
+the verdict is the one a second judgement would give, and `req` gains nothing from it. Twins come from a
+callee's writes through a folding `⟲`: in `type B = B (List B) …` with k list fields, `incList` writes
+`[*]#B.j⟲` for each field j, and each projects onto the same k canonical slots of the caller's `x[*]⟲#B.i`
+(§2.1), so the call made k demands with one set of targets, each judged against k slots. A demand of a call
+that makes only one for its argument costs nothing more; the others pay one record a target for the lookup,
+and a hit pays for the comparison.
+
 **Record lowering boundary (S5).** A write authorization is tied to a settled demand, the receiver's
 value version, written fields and phase. A hoist names the old value version, field/constructor path and
 placement dominating the read but after its binding. Branch/loop compatibility and pending operands are
@@ -1061,6 +1072,28 @@ the value it is instantiated on (§2.11.2 item 3 projects it deep). Such a slot 
 passes, so the plain occurrence asked only the outer object to be once: `idd x = x` handed `( xs, xs )`, and a
 cast (`Js.to (Js.from [ xs, xs ])`, an identity at an opaque slot, §2.13.9), answered two parts the caller took
 for apart. The mark is bit 62 of the occurrence and bit 30 of its parameter word in a block (§3.6).
+
+**One spelling of a subtree** [#1714, 2026-11-03]. `(j, p)*` asks every slot of `below(p)`, and so do the
+occurrences at those slots written out (deep where no step below can be named): one set, two words. A round
+that read the set the other way moved the contract although nothing changed (`Dict.descend`: round 0 read
+`right`'s slots one by one, round 1 instantiated `π2ε*` over `Step key value right rest`, deep at `right`,
+whose `below` is `↓#0.4` since a cycle holds an object, §2.3.1; two more rounds, 38 195 records). So a
+contract's selections (`res_cond`, `req`, a supply's condition) are read off in one spelling (`Canon.zig`,
+at the read-off, §2.10): a deep occurrence `(j, p)*` whose `below(p)` written out has at most `below_min`
+slots is those slots, with its apartness; past the bound, at a type variable's or an opaque place, or at steps
+that name no single path, it stays. Past the bound is decided first off the place graph: each place keeps a
+lower bound on the object slots below a path at it (`Place.slotsAtLeast`, made with its component: each object
+place of the component once, and what is below each step out of it), so a type of many places is read in one
+lookup, not a walk of its places a selection (#1714: `Schema.described*` 254 → 244 growth records). Equality of contracts is then equality of the normal form, so a round
+that only respells a subtree changes nothing (§2.12): `Dict.descend` is 3 rounds and 25 773 records, with
+`below`'s cycle rule kept for the walk's slot sets. The other direction (written-out slots past the bound to
+the symbol) is not taken: nothing reads a subtree past `below_min` slot by slot into a selection but a
+constructor's and a worded declaration's occurrences (§2.3.1 *Written out where a contract names each slot*),
+which are not rounds' contracts. *Measured, rejected:* spelling a subtree whose `below` is a symbol as the
+deep occurrence (the other normal form): an instantiated `(j, p)*` projects deep at the caller's path, whose
+`below` under a folded `⟲` name holds more than the callee's slots did, so `req` grew in later rounds (the
+k-list-fields family went from 5 rounds to 7, 1.15 M to 1.5 M records at k = 16), and two deep spellings of
+one set met in one selection and read as one object twice (`FoldSymbolicCall`'s `probeDistinct` refused).
 
 A **condition** is `no` (unprovable) or a selection. Conjunction is the union of the selections: linear,
 never a table of pairs. `yes` is the empty selection. A condition `a` is **weaker** than `b` (asks no more)
@@ -1200,15 +1233,46 @@ changed (a parameter's group for its new members' pairs and occurrences; a call'
 as before), and asks the answer rule only for pairs with a new entry; a second parameter's group makes every
 parameter group ask its occurrences, as before. A new member is compared with the earlier ones, pairwise up to
 eight and then by the index, which also lists each entry under every ancestor (`(ancestor, 5, slot)`) so that a
-new entry meets the earlier ones below it. The root to expand is the greatest of a heap of the expandable roots,
+new entry meets the earlier ones below it; an earlier entry that several of its slots meet is asked once. The root to expand is the greatest of a heap of the expandable roots,
 or of the groups that ask to be expanded (`must`), a stale one skipped. A vouched block keeps the first of two
-equal leaves in the inline order (its members compared by the expansions they came from). Each round charges a
+equal leaves in the inline order (its members compared by the expansions they came from, below their common
+ancestor: each entry keeps a skew-binary jump pointer, whose depth is a function of its own depth alone, so the
+comparison takes O(log depth) steps, not the depth of the chain of expansions). An expansion's leaf
+that is the leaf of the entry it expands or of one that entry was expanded from is not made an entry: around a
+cycle of expansions (a fold's supply and its step's answer, #1714) it names that ancestor's objects, which the
+chain reads already, so a chain's leaves are distinct and the rounds end; a second chain still meets the cycle's
+exits (`FoldSupplyCycle`). That test is one lookup for a leaf no entry has (the chain is walked only for one
+that some entry has), never a walk a new entry: a chain of n calls walked it at every expansion, n², and
+`x_k = step x_{k-1} [ k ]` cost 143 / 443 records a call at 10 / 40 calls (#1714). *A chain of calls handing one
+object on* (#1714, 2026-11-03): where the expansion takes one entry of its root and gives one leaf, a call's
+leaf of one object slot (no family's, no type variable's) whose call has one leaf there is read on to its end
+(`Relation.Eval.endOf`, by `(leaf, keys' growth)`): each call on the way would be a group of one entry of one
+object, which asks nothing of its own, so the check reads the same leaves without a round a call. `step` is then
+113 / 104 records a call at 10 / 40 calls, `shared` 120 / 112; every summary and verdict is unchanged. Each
+round charges a
 record and one per new entry (each changes one group at most; the changed groups are listed as they change,
 never found by a scan), besides the work of its checks. Every outcome is the one the
 regrouping check gave: a group's check reads its members only, and the conditions gathered are a set. This is
 the fixpoint's own working state, never a table of earlier answers. *Live sibling positions* at n = 10 / 20 / 40
 / 80: 4 090 / 11 883 / 38 608 / 136 538 records, now 3 134 / 6 370 / 12 923 / 26 191 (with the pending operands
 of §2.8): flat per position.
+
+*A call's atoms* (#1714, 2026-11-03; `AtomSets.zig`). A leaf of a call's result whose expansion ends, through
+calls only, at atoms names exactly those atoms. It keeps them as a set: a hash-consed Patricia set of atom keys
+(`KeySets`, the resolve lane's base-key sets), made with the leaf's first reading as the union of its expansion's
+sets and sharing their nodes, so `y_k = List.push y_{k-1} [ k ]` makes a path a level, never a copy of the k atoms
+below. A leaf that reaches a parameter, a label, a supply, `⊤`, a cycle, or a slot no step below names (one leaf
+there may be one object several times, #1710) has no set. A set is made once a leaf while no key grows, as
+`endOf`'s answers are; it is the leaf's description, never an answer of the check. Once a check, at its first round
+after an expansion that would expand a root no group asks to, it asks whether it is decided already: every live
+entry is an atom, a parameter's object (never an atom of this frame) or a call's leaf with a set; every call's group
+has vouched for its own objects (its callee's `res_cond`, asked by the group's check and not `no`, or its members
+all apart occurrences, or one member of one object, an expansion's family excepted); and no atom is named twice.
+The last is a membership query, not a listing: the largest set is kept whole, every other atom is looked up in it
+(a step a level) and among the others. Then every expansion would make atoms that meet nothing and ask nothing, and
+the check ends with what it has gathered. Before, `x_k = merge x_{k-1} y_k` with `y_k` grown by a push expanded
+`y_k`'s chain to its k atoms at every call: 328 / 534 records a call at 10 / 40 calls, now 297 / 319 (`indep`, two
+chains merged, 397 / 601, now 366 / 387). Every summary and verdict is unchanged.
 
 #### 2.9.4 What a write relies on
 
@@ -1287,7 +1351,15 @@ than `claim`'s, and `got` does not return where `claim` does not.
   at or above the result slot already holds is said there for every slot below it, so it is not described again
   (`Held.zig`; one lookup in the draft, one record, as an arrival's; a committed tree joined in is not read). Without
   that, `Schema.shapeOf` describes the same fresh objects at every slot of its recursive result and passes its
-  allowance.
+  allowance. *A call's subtree of atoms* (#1714, 2026-11-03; `AtomGraft.zig`): where a settled callee (no live
+  draft) says only atoms at and below a call's slot and open above it, and the slot's place is the result slot's,
+  the read-off grafts the callee's node there and says the open atoms above it wide, instead of reading a key below
+  the slot item by item. Each node of a result tree keeps whether every arrival at and below it is an atom, made
+  with the node, so the test at a call's root reads no node; a deeper slot is walked from the root, a record a
+  node. The graft names the slots below the result slot by the callee's own steps, so it is taken only where no
+  place on the result slot's path above it is reachable from its place (no cycle spans it, and `Place.extend`
+  then folds every return below it as the callee does). Every summary is the slot-by-slot read's; `shapesOf`'s
+  growth goes from 5 622 to 3 119.
   *Amended 2026-11-03 (#1225, #1714): a parameter's path grafted.* When a call's argument `j` is one of the
   caller's parameters `j'` whole, at its root and at the place of the callee's parameter `j`, the callee's slots
   of `π_j` are the caller's slots of `π_j'` step for step: the same relative steps. So a call slot whose
@@ -1380,7 +1452,23 @@ of a parameter's subtree of more than 16 objects takes the callee's read tree wh
 subtree of more than 16 objects, read at its own acyclic place, is **one open arrival**, and a caller
 describes the argument's value there; by-structure continuation is exact only where no cycle is below the
 place (with `⟲` the result's level paths fold otherwise than the parameter's), so a slot with a cycle below
-it is still written out. Where nothing the frame reads grows and no place below the slot is on a cycle, the
+it is still written out. *Amended 2026-11-03 (#1715):* a parameter's subtree that the result returns **at its own path** (`same t =
+t`, the result's slot and the parameter's slot one path) folds below it exactly as the result's slot does, so it
+is one open arrival there too, cycles below or not, once written out it would name more than
+`Subtree.written_max` (256) slots. Over five mutually recursive types with a list and a `Maybe` of each other
+(`K0 … K4`), `same : K0 → K0` named so many that it passed `ownership_summary_size` at any allowance; it is now
+`res ε… π1ε`, and a caller reads each slot of it as of any open arrival. Until the next amendment, below that size
+the slots were written out: their readers cost less than the open node's (`Dict.descend` 37 191 records written
+out, 66 105 open). *Amended 2026-11-03 (#1714, the manager's decision):* the size gate is withdrawn.
+A subtree returned at its own path is the one open arrival at any size: that node, `ε… π_j·ε` at a result's
+root, is the **identity tree**, recognised at a call by its structure (§2.11.2, *the identity control*). The
+open node is made cheap to read instead: a below key reads an open `π_j·s` at each slot below as argument `j`
+projected there, never through a key of its own per slot; a parameter's whole subtree at the slot's own place is
+that one open item, which the read-off says as it says a parameter's subtree (open where its paths fold as the
+slot's, slot by slot otherwise); and a commit drops an arrival `π_j·(s·r)` at `p·r` that an open, non-deep
+`π_j·s` at `p` says by structure (`Normal.zig`), so the two spellings are one tree. `Dict.descend` costs 24 895
+records (26 448 written out); `Dict.removeMin` 25 704 (23 589), all at growth 0. Not in a callback's supply: there the open node read back at a caller's argument
+names its top slot only, which says less than the slots written out (`Codec.Decode.decodeString`). Where nothing the frame reads grows and no place below the slot is on a cycle, the
 read-off **describes a value once per (value, place)** and a call once per (callee node, place). The text
 prints a kid equal to an earlier sibling as `.1 = .0`, for reads too (`π1#1.2 = π1#1.0`). A defect of the
 slot domain's base went with the trees: a result kept the draft's label numbers while the labels were
@@ -1423,7 +1511,22 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    `π_j·s` projects `a_j` by the steps of `s` (a `⟲` is projected into a literal exactly, as the values one
    or more levels below at the same place, and into a reference by its descendant paths, never its own
    storage); `fresh` is the atom `fresh k`; `cb L` the call's label instantiation (§2.11.3); `⊤` is `⊤`. The
-   instantiation is built once per call per candidate generation (§2.12) and never re-read lazily.
+   instantiation is built once per call per candidate generation (§2.12) and never re-read lazily. The walk
+   of a `⟲` into a literal meets each (value, place, literal route) once, not once per path (#1714): two
+   arrivals by one literal route are one position, and they give the same projections. Its leaves carry no
+   route, so it meets each (value, place) once. `xᵢ = if n == i then Node xᵢ₋₁ [] Leaf else xᵢ₋₁` names
+   `xᵢ₋₁` twice, 2ⁱ paths but i + 1 literal routes.
+   *The identity control* (#1714, 2026-11-03, the manager's decision): where the callee is settled when the
+   caller is walked (a contract from an earlier group, an import, words; never a member of the caller's own
+   group), its `res` is the identity tree on parameter `j` (`ε… π_j·ε` and nothing else, `Trees.identity`),
+   it writes nothing of `π_j`, and `a_j` is at the call's own place, the call's result **is** `a_j`: the walk
+   gives the call the argument's value, with no per-slot instantiation. The call is still a call: its uses,
+   writes, `req`, escapes and labels are read from `C` as above. It is recognised by the contract's structure,
+   never a name or an annotation, at any size, and it is exact: the result's objects at every slot are the
+   argument's there, so its separation is the argument's own. A generic identity (`idt : a → a`,
+   `ε… π1ε*`) no longer lumps every object of the argument at the result's top slot, so a write through it
+   targets only what it writes (`GenericResultHeldImported.nested` no longer writes `π1ε`). `wrap (ident r)`
+   costs 1 611 records at 10 calls and 6 313 at 40, against 1 571 / 6 153 for `wrap r` (was 2 585 / 10 197).
 3. **The separation** of the call's result is `C.res_cond` instantiated on the arguments: the distinct check
    over the projections of its selected occurrences, under the routed rule (§2.9.3). It is computed once per
    call, on first need; a cycle through the call's own condition reads it as `no`. *Amended 2026-11-03
@@ -1553,7 +1656,9 @@ doubling literal over one list projected 2ᵏ paths onto the same list.
   or a record, a tree of plain steps) is walked once per `(node, value)`, a demand a written slot there,
   named by the first route: two routes to one value are one demand. Read part by part (a parameter asked
   deep apart and plain), a literal's selection asks its plain occurrences on the whole values first, and a
-  value they name twice makes it `no` before the walk by routes (`Graft.plainsOnLiteral`). The fold is
+  value they name twice makes it `no` before the walk by routes (`Graft.plainsOnLiteral`); those plain
+  occurrences are projected as the walk by routes projects them, one walk a parameter (#1714: `f` over the
+  doubling literal 365 / 826 records at depth 4 / 8, was 365 / 1 229 with a projection an occurrence). The fold is
   made on `req` at the read-off (`Graft.fold`); a full slot with nothing asked below it is kept as it is
   (it names the same objects). Measured (Debug): `caller w = tₖ w` 1 609 / 26 226 at k = 4 / 8 and past
   the limit at 10 is 240 / 298 / 364 at k = 8 / 10 / 12, one demand; the K-wide caller 850 / 2 078 / 5 878
@@ -3965,6 +4070,8 @@ values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Held, Ids, Place, R
 `Distinct` and `Eval`, and every layer from `Walk` and `Distinct` up moved one place (`Walk`, `Distinct` L9;
 `Eval`, `Holders`, `Later`, `Sweep`, `Stack` L10; `ReadOff`, `Descent`, `Deliver`, `Closures` L11; `Resolve`
 L12; `Groups` L13; `Block`, `Message`, `Report`, `Hoists` L14; `Ownership` L15; `Enforce` L16).*
+*Amended 2026-11-03 (#1714): `KeySets` (L1, hash-consed Patricia sets of keys; imports Ids) and `AtomSets` (L8, a call's leaf's atoms for the distinct check, §2.9.3 *A call's atoms*; imports Ids, Slots, Value, Relation, Entries, Contract, KeySets) are new.*
+*Amended 2026-11-03 (#1714): `Canon` (L5, a contract's selections in one spelling of a subtree, §2.9.1; imports Ids, Place, Slots, Subtree, Conds) is new beside `Rows`, read by `ReadOff`.*
 
 ```
 L13 Enforce
@@ -3995,11 +4102,13 @@ L0  Ids  Counters  Scratch
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
 | `PlaceBelow.zig` | 2 | what a place graph says below a path: object slots counted, a family read off (§2.3.1, #1714) | Ids, Place |
+| `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |
+| `Canon.zig` | 5 | a contract's selection in one spelling of a subtree: a small `below(p)` written out (§2.9.1, #1714) | Ids, Place, Slots, Subtree, Conds |
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
@@ -4009,9 +4118,11 @@ L0  Ids  Counters  Scratch
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Entries.zig` | 6 | the distinct check's entries and its rounds' state: groups kept across rounds, the within-group index, the heaps of roots to expand (§2.9.3) | Ids, Slots, Subtree, Contract, Value |
+| `AtomGraft.zig` | 7 | a call's subtree of atoms read as the callee's node: the atom test on a result tree's node, and whether a cycle spans a result slot (§2.10 *Read-off*, #1714) | Ids, Trees, Forest, Value |
 | `Held.zig` | 6 | the atoms a draft's result holds open at or above a slot, which the read-off of a call's subtree below it need not describe again (§2.10 *Read-off*, #1716) | Ids, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries, CallGraft |
+| `ApartParts.zig` | 8 | a deep apart occurrence beside plain ones: written out per route, the plain ones' objects taken out (§2.9.1), split from `Distinct` (#1714) | Ids, Slots, Subtree, Contract, Relation |
 | `Routed.zig` | 8 | one walk of a value along several paths, a value several arms reach read once under a route set (§2.11.2, #1714) | Ids, Place, Relation, Coexist, Contract |
 | `Graft.zig` | 8 | a write onto a caller's parameter that stops there, its targets read off the callee's tree; a literal walked once per (node, value); a callee's `req` moved onto exact parameter slots; the exact fold of a stored selection (§2.11.2, #1714) | Ids, Place, Slots, Trees, Forest, Contract, Value, Relation |
 | `CallGraft.zig` | 8 | a call whose arguments are the caller's parameters whole: the callee's arrivals at a call slot and its condition renamed, never projected; a demand's written path replayed when its line is printed (§2.10 *a parameter's path grafted*, §2.11.2, #1225, #1714) | Ids, Place, Slots, Contract, Relation |
