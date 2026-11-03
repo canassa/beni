@@ -232,8 +232,7 @@ pub const Adapter = struct {
 
     // ---- store variables -----------------------------------------------------
 
-    /// The id of store variable `v`: post-order over its structure on an
-    /// explicit stack, each root once.
+    /// The id of store variable `v`: post-order over its structure on an explicit stack, each root once.
     pub fn ofVar(a: *Adapter, v: Var) Error!u32 {
         const store = a.in.store;
         const root, _ = store.resolved(v);
@@ -282,8 +281,7 @@ pub const Adapter = struct {
         };
     }
 
-    /// The id of a child read while its parent closes: its own, or the knot
-    /// of a variable still open (a cycle).
+    /// The id of a child read while its parent closes: its own, or the knot of a variable still open (a cycle).
     fn childId(a: *Adapter, v: Var) Error!u32 {
         const r, _ = a.in.store.resolved(v);
         if (a.by_var.get(r.int())) |id| return id;
@@ -847,7 +845,10 @@ pub const Module = struct {
         if ((decl.kind != .value and decl.kind != .foreign_value) or decl.params != 0) return null;
         const at = placeOfInst(ctx, ref) catch return null;
         if (mod.places.kind(at) == .closure) return null;
-        return if (decl.kind == .foreign_value) .{ none, 0 } else md;
+        if (decl.kind == .foreign_value) return .{ none, 0 };
+        // A value whose contract holds no object (`Dict.empty`) is no shared object (§2.3.3).
+        const c = if (md[0] != mod.in.module) mod.importedContract(md[0], md[1]) catch null else if (md[1] < mod.body_code.len and mod.body_code[md[1]] != none) contractOf(ctx, mod.body_code[md[1]]) else null;
+        return if (c != null and mod.contracts.holdsNothing(c.?)) .{ none, 1 } else md;
     }
 
     pub fn isListAppend(ctx: *anyopaque, inst: u32) bool {
@@ -1152,8 +1153,7 @@ pub const Module = struct {
         return mod.fnPlaces(v, params);
     }
 
-    /// A `try`'s shape (§2.11.5): `(success, failure, failure arity)`
-    /// ordinals of its scrutinee's type, `Ok`/`Err` or `Just`/`Nothing`.
+    /// A `try`'s shape (§2.11.5): `(success, failure, failure arity)` ordinals of its scrutinee's type, `Ok`/`Err` or `Just`/`Nothing`.
     fn tryShape(ctx: *anyopaque, inst: u32) ?[3]u32 {
         const mod = self(ctx);
         const scrut = mod.in.bir.instData(@fromBackingInt(inst)).lhs;
@@ -1277,8 +1277,7 @@ pub fn charging(mod: *Module, account: *Ids.Account) void {
     mod.adapter.account = account;
 }
 
-/// The codes of declaration `di`: its body, then its lambdas and local
-/// functions, with their captures (§2.11.4).
+/// The codes of declaration `di`: its body, then its lambdas and local functions, with their captures (§2.11.4).
 fn declCodes(mod: *Module, di: u32, out: *std.ArrayList(u32)) Error!void {
     const in = mod.in;
     const bir = in.bir;
@@ -1394,7 +1393,12 @@ fn declCodes(mod: *Module, di: u32, out: *std.ArrayList(u32)) Error!void {
             break :blk .{ bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index), dd.rhs };
         };
         const pstart: u32 = @intCast(mod.code_places.items.len);
-        for (params) |p| try mod.code_places.append(gpa, if (bir.instTag(p) == .pat_var) try Module.placeOfLocal(mod, bir.instData(p).lhs) else try Module.placeOfInst(mod, p.int()));
+        // A pattern's own type is not recorded: its place is the parameter's in the code's function type.
+        var fps: std.ArrayList(PlaceId) = .empty;
+        defer fps.deinit(gpa);
+        const fl = if (tag == .lambda) c else mod.cur_locals + bir.extraData(@fromBackingInt(dd.lhs), Bir.LetDef).local;
+        const typed = (try mod.fnPlaces(if (tag == .lambda and fl < mod.in.inst_type.len) mod.in.inst_type[fl] else if (tag != .lambda and fl < mod.in.local_type.len) mod.in.local_type[fl] else .none, &fps)) != null and fps.items.len == params.len;
+        for (params, 0..) |p, pi| try mod.code_places.append(gpa, if (bir.instTag(p) == .pat_var) try Module.placeOfLocal(mod, bir.instData(p).lhs) else if (typed) fps.items[pi] else try Module.placeOfInst(mod, p.int()));
         for (caps.items[k].items) |l| try mod.code_places.append(gpa, try Module.placeOfLocal(mod, l));
         const cstart: u32 = @intCast(mod.code_caps.items.len);
         try mod.code_caps.appendSlice(gpa, caps.items[k].items);
@@ -1644,8 +1648,7 @@ fn isFunctionScheme(in: *const Input, di: u32) bool {
     };
 }
 
-/// R_f (§4.4): the declaration's `@ownership_summary_size`, else the
-/// module's, else the default.
+/// R_f (§4.4): the declaration's `@ownership_summary_size`, else the module's, else the default.
 fn allowanceOf(bir: *const Bir, di: u32) u32 {
     const d = bir.decls[di];
     return if (d.summary_size != 0) d.summary_size else if (bir.summary_size != 0) bir.summary_size else Ids.Account.default_allowance;
@@ -1822,8 +1825,7 @@ fn expandsToVariable(in: *const Input, start_module: u32, start: Bir.Inst.Index)
     }
 }
 
-/// The aliased type of the alias a type reference names, with the module
-/// it is written in; null for anything else.
+/// The aliased type of the alias a type reference names, with the module it is written in; null for anything else.
 fn aliasOf(in: *const Input, module: u32, ref: Bir.Inst.Index) ?struct { u32, Bir.Inst.Index } {
     const bir = in.birs[module];
     const data = bir.instData(ref);

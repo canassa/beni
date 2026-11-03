@@ -1,0 +1,3 @@
+A runtime catch for a lambda whose parameter is a pattern (ownership-v2.md §2.11.4): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses both pushes; with the pattern's bindings lost, each
+sanitised run showed the stale read.
