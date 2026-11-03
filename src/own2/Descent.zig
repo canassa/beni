@@ -264,6 +264,7 @@ fn cover(uses: *Later.Uses, u: Facts.Use, c: PathId) Error!Cover {
     const fr = &uses.w.f;
     const foot = uses.w.foots.items[u.use_node.int()];
     const call = fr.calls.items[foot[0]];
+    if (uses.feet) |l| try l.append(fr.gpa, foot);
     if (call.contract == none) return .all;
     const hd = uses.contracts.head(call.contract);
     const rem = (try fr.slots.relBelow(fr.gpa, fr.account, fr.places, u.path, c)) orelse return .some;
