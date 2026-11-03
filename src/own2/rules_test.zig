@@ -102,6 +102,8 @@ const layers = [_]Entry{
     // A callee's tree and condition taken as the caller's at a call whose
     // arguments are its parameters whole (#1225, #1714, §2.10).
     .{ .file = "CallGraft.zig", .layer = 8, .max_lines = 170 },
+    // A holder DAG's items under united route sets, for the descent (#1714).
+    .{ .file = "DagRoutes.zig", .layer = 8, .max_lines = 170 },
     // A value's leaves at their slots, split from `Relation` (#1714).
     .{ .file = "Parts.zig", .layer = 8, .max_lines = 70 },
     // What the distinct check reads of its rounds, split from `Distinct` (#1714).
@@ -133,6 +135,8 @@ const layers = [_]Entry{
     // A holder's later uses, split from `Resolve` for the best-hold descent (#1714).
     .{ .file = "Later.zig", .layer = 10, .max_lines = 180 },
     .{ .file = "Sweep.zig", .layer = 10, .max_lines = 720 },
+    // The paths at which a hold holds a target, split from `Descent` (#1714).
+    .{ .file = "HoldAt.zig", .layer = 10, .max_lines = 140 },
     // The pending operands by clock and key, split from the walk's copies (#1714).
     .{ .file = "Stack.zig", .layer = 10, .max_lines = 380 },
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
@@ -444,7 +448,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 66), layers.len);
+    try testing.expectEqual(@as(usize, 68), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

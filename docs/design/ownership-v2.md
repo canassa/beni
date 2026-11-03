@@ -1015,7 +1015,31 @@ witness at one use of one holder is the least path, an exact one before one at o
 (*Verdicts*). An aggregated holder reads its pending holds by the same descent. The doubling DAG
 `tₖ = ( tₖ₋₁, tₖ₋₁ )` over `xs`, `xs` pushed while `t_d` is read, cost d = 8: 40 478 demands' records and a limit
 at 10; now d = 8 / 10 / 12: 249 / 281 / 313, the witness `t_d.0.0…0`, as v1 names it.
-*Amended 2026-11-03 (#1742):* a hold that meets a target of its own root at some of its slots (`Descent.holdsAt`)
+*Amended 2026-11-03 (#1714): a hold under its route set.* A holder DAG's nodes are its **values** (a value met
+again under other tags is the node it is already), each holding its leaves under no tags (a deep set's element
+once, with its route set, `RouteWalk.leavesOf`), and an `alt`'s edge carries its arm's tag. The descent first lists
+its items in the order it meets them: a `(node, path)`, or, below a kid that answers for its subtree, a
+`(node, use)` (and whether a `[*]` or a `⟲` is on the way) at the path it is met at first; each once. Then each item
+is reached under one route set (`DagRoutes.zig`): items in decreasing value id, so every arrival is in before an
+item is read (a kid's value is made before its parent's, as in `RouteWalk`), the arrivals united, and an edge's arm
+tag put in front of every route (a route it conflicts with dropped; an item no route reaches is not read). Last,
+each item's met holds are judged in that order, each hold's leaf under the item's routes: one route merged into its
+tags, or the set as its `routes` (`Value.Leaf.routes`, §2.3.5), which the relation reads (`Coexist.setsMeet`); a
+leaf with a set of its own takes the item's routes written out. Each item stands for the holds the walk by
+`(value, tags)` listed at that path, so the judgements are the same, and the order of first meetings, so every
+witness, is that walk's. A key's kids are read under their sets (`Holders`, `Eval.expandRouted`): a key is no
+route, so the fold certificate through a shared DAG no longer expands each written-out route.
+*Open (#1714): the shared-link knot chain.* Which holders are DAGs is unchanged: a `(value, tags)` met at a second
+path. `x_k = if c then T [ x_{k-1} ] else x_{k-1}` meets each `x_j` under one tag list per subset of the choices
+above it, every one at a single path, so it is no DAG and its holds are listed once a tag list (2ⁿ; 45 225 records
+at n = 10, the limit at 16). Making it a DAG (a value met under a second tag list) costs 1 888 / 13 921 / 57 937
+records at n = 8 / 64 / 256, but every `else if` chain whose arms share one value becomes a DAG too, and a target
+then meets that value's one tagless hold through every arm's node: the chain read after the call of `chainDump`'s
+build test goes from about linear to 16 342 / 61 730 / 244 642 records at D = 8 / 16 / 32. A plain holder's tag
+tree (`TagTree`) finds the arm a target's tags name without visiting the others; the descent needs the same index
+over its edges' arm tags before the classification can move. Searching a routed target once under its set, not once
+a route, loses the same index (3 035 / 9 775 / 34 891 there), so `Resolve` still writes a target's routes out.
+*Amended 2026-11-03 (#1742):* a hold that meets a target of its own root at some of its slots (`HoldAt.holdsAt`)
 holds it there, and its other objects are the target's only where the root is not separated: the rest of the
 holder is asked **apart** from the target (§2.9.2 step 3, under the selection of both), never related. The rest
 is the holder's slots less the target's, and a slot set that holds a whole subtree as a symbol (`↓ε`, §2.3.1) keeps
@@ -4168,6 +4192,7 @@ L0  Ids  Counters  Scratch
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries, CallGraft |
 | `RouteWalk.zig` | 8 | one walk of a value along several paths, a value several arms or levels below a `⟲` reach read once under a route set; an arrival's leaves at a parameter's slot with their sets (§2.3.5, §2.11.2, #1714) | Ids, Place, Slots, Relation, Coexist |
+| `DagRoutes.zig` | 8 | a holder DAG's items under the route sets their arrivals unite, in decreasing value id; a leaf under an item's routes (§2.8, #1714) | Ids, Coexist, Relation |
 | `ApartPlain.zig` | 8 | a selection's apart and plain occurrences of one parameter read part by part, split from `Distinct` (§2.9.1, #1714) | Ids, Slots, Subtree, Contract, Relation |
 | `Routed.zig` | 9 | a call's writes of one argument projected by the walk; a leaf once per route of its set (§2.11.2, #1714) | Ids, Place, Relation, Contract, RouteWalk |
 | `Graft.zig` | 8 | a write onto a caller's parameter that stops there, its targets read off the callee's tree; a literal walked once per (node, value); a callee's `req` moved onto exact parameter slots; the exact fold of a stored selection (§2.11.2, #1714) | Ids, Place, Slots, Trees, Forest, Contract, Value, Relation |
@@ -4179,7 +4204,8 @@ L0  Ids  Counters  Scratch
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder (a DAG once a node), buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Value, Relation |
 | `Stack.zig` | 8 | the pending operands by clock and key: their leaves listed once, lists by push with trees of removal and `rank₂`, aggregated ones (§2.8) | Ids, Value, Relation, Distinct, Walk, Regions |
 | `Later.zig` | 8 | a holder's later uses that read a hold at a path, through call uses' footprints, asked once a judgement (§2.7, §2.8, #1714) | Ids, Facts, Slots, Value, Relation, Contract, Forest, Walk, Liveness, Regions |
-| `Descent.zig` | 10 | the best-hold descent over a holder DAG; the paths at which a hold holds a target (§2.8, #1714) | Ids, Facts, Slots, Trees, PlaceBelow, Subtree, Value, Relation, Distinct, Liveness, Later, Sweep |
+| `HoldAt.zig` | 10 | the paths at which a hold holds a target, and the relation there (§2.8, #1714), split from `Descent` | Ids, Slots, Subtree, MeetRun, Value, Relation, Distinct |
+| `Descent.zig` | 10 | the best-hold descent over a holder DAG; the paths at which a hold holds a target (§2.8, #1714) | Ids, Facts, Trees, PlaceBelow, Liveness, Later, Sweep, DagRoutes, HoldAt |
 | `Kept.zig` | 10 | a group's judgements kept across its rounds: each with its key, the footprints and holder events it read, its writes; the round's print of what no key names (§2.12, #1714) | Ids, Facts, Contract, Value, Walk |
 | `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
