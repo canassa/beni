@@ -1502,6 +1502,9 @@ suspend — a beni body that waits, or a `foreign suspends` rung — is `sync_bo
 whose `via` names it (`checker-v2.md` §25.8), checked once the effects are inferred, as the sync
 step above checks a function the sibling may call. What changes is that `html`'s extractors need
 no sibling, so `Html.js` goes the way the rest of the platforms' JavaScript goes (#877).
+*Done 2026-11-03*: the three extractors are beni declarations of `Html.beni`, `targetValue` and
+`targetChecked` `pub`, `pointer` not, each `Event → …` or `Dispatched → Pointer` over `Js.get`,
+and `Html.js` is deleted (`plans/runtime-in-beni.md` step 14).
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
@@ -4771,7 +4774,9 @@ still running — a `Task.spawnDetached` one — is cancelled and cleaned up rat
 process alive. A page is not affected: it is alive while it is open.
 
 *As built 2026-10-29 (`plans/runtime-in-beni.md` step 10).* `finish` and
-`startRead` are beni over `Js` in `Io.beni`. The newer `startReadDir` stays in `Io.js`.
+`startRead` are beni over `Js` in `Io.beni`. The newer `startReadDir` stays in `Io.js`. *Amended
+2026-11-03*: `startReadDir` is beni over `Js` as well, and `Io.js` is gone (`plans/runtime-in-beni.md`
+step 14).
 A beni platform module reaches a Node built-in
 module through `process.getBuiltinModule` (`Js.call (Js.global "process") "getBuiltinModule"
 [ Js.from "node:fs/promises" ]`), asked at each call so that a replaced export is seen; the
@@ -5633,7 +5638,11 @@ specified, with these findings:
 - **The extractor's key is `ev`, not `e`.** A first version returned `{ e, x, y }`. The release
   minifier keeps the spelling of a name that stands where a property name can, anywhere in the file
   (`src/js/Minify.zig`, *A2*), so the parameter `e` of `targetValue` and `targetChecked` kept its
-  name, and TodoMVC's release file changed.
+  name, and TodoMVC's release file changed. *Amended 2026-11-03*: the extractors are beni over `Js`
+  (`plans/runtime-in-beni.md` step 14). The key stays `ev`, since `pointerEvent` reads it; the
+  minifier no longer sees the extractors, and the release renamer gives their parameters its
+  own short names (`backend.md` §9). No parameter is called `event`, the window's global, so a
+  development build's body shadows nothing.
 - **`browser-inline`** needed no change. It compiles neither a `style` attribute nor a lambda
   handler yet (`browser-inline.md` §5), so `browser/inline/PointerPoint` has constructors as its
   handlers and no style.

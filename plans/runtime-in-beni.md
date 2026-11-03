@@ -29,6 +29,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 | 12 | **`node`'s `Http/Server.js`** (`startListen`, `nextRequest`, `requestOf`, `isUpgrade`, `refuseUpgrade`, `notOffered`, `write`, `awaitClosed`, `beginClose`, `boundAddress`) | **specified 2026-11-01**, below: eleven exports and thirteen helpers; `WebSocket.js` stays |
 | 13 | **`node`'s `WebSocket.js`** (`fromUpgrade`, `next`, `send`, `begin`, `finish`, `unsent`, `chosen`, `awaitDrain`) | **specified 2026-11-03**, below: eight exports and twenty helpers; the frames over the host buffer by `Js.setAt` and `Js.bitXor` |
+| 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1094,3 +1095,59 @@ sibling's shape side by side in a new `emit/release/app/WebSocketEcho`, and no r
 slowdown: §9.11 (m)'s load (`bench/websocket/load.mjs`, 100 players) runs against master in the
 release build, and the server's CPU time and instructions per message go in the pull request's
 body before it is pushed.
+
+
+## Step 14 — the three thin files (`Html.js`, `Prerender.js`, `Io.js`) (2026-11-03)
+
+**What moves.** Three siblings, five exports, one pull request, and no compiler change: #925
+(2026-10-30) lets a vocabulary's `via` name a beni declaration, which was the one feature
+`Html.js` waited for (`boundary.md` §9.3, amended 2026-10-23).
+
+- `platforms/html/Html.js` → `Html.beni`: `targetValue e = Js.to (Js.get (Js.get (Js.from e)
+  "target") "value")`, `targetChecked` the same over `checked`, both `pub` as before; `pointer`,
+  not `pub` as before (§9.8.20, amended 2026-10-22), reads the dispatched event's `currentTarget`
+  and its `getBoundingClientRect` while the event is dispatched (§9.8.20 (d): `currentTarget` is
+  null after it), and returns `Js.to` of a `Js.object` of three keys — `ev`, the event, which
+  `pointerEvent` reads, and `x` and `y`, `clientX − left` and `clientY − top` — as `Pointer`. The
+  sibling's two facts hold in beni for other reasons and are kept as comments: no parameter is
+  called `event` (the window's global, which the minifier never renamed; a beni parameter is
+  renamed by the release renamer and shadows nothing in development), and the key `ev` is not `e`
+  (a key the minifier never renamed; now no minifier sees the file, and `Js.object`'s keys are
+  literal in every build).
+- `platforms/node/Prerender.js` → `Prerender.beni`: `writeRecords text` reads `process.argv[2]`
+  with `Js.at`; `undefined` writes `text` to `process.stdout`, a name writes it with `node:fs`'s
+  `writeFileSync`, asked of `process.getBuiltinModule`. A failure to write is not caught and
+  crashes the program (rule 9), as the sibling's did.
+- `platforms/node/Io.js` → `Io.beni`: `startReadDir path resume` calls `node:fs/promises`'s
+  `readdir` with `withFileTypes`, asked of `process.getBuiltinModule` at each call as `startRead`
+  is; `then` takes two lambdas. The fulfilment, unless the canceller ran (a `Js.Ref Bool`:
+  `readdir` takes no signal, so a cancelled fiber's listing finishes and no one waits for it),
+  maps each `Dirent` to an `Entry` — `name` by `Js.get`, `kind` by the entry's `isFile`,
+  `isDirectory` and `isSymbolicLink` in that order, else `Other` — sorts the list with
+  `List.sortBy` on `name` (`String.compare` is code point order, which is the order of the UTF-8
+  bytes the sibling's `Buffer.compare` gave), and resumes with `Ok`. The rejection handler
+  `dirRejected` is `rejected`'s shape with no abort case: an `Error` whose `code` is a key of
+  `dirCodes` — the sibling's nine codes, a `Js.object` read by `Object.hasOwn` and `Reflect.get`,
+  kept apart from `codes` because `IsADirectory` and `TooLarge` are never a listing's answer —
+  resumes with that `FileError` unless cancelled; anything else is `Js.throw`n, a rejection
+  nothing handles, so Node reports it and exits 1 (rule 9). The canceller writes the ref. Then
+  `Io.js` is deleted, and `node` keeps `markup.js` and `runtime.js` (steps 15 and 16).
+
+**What changes shape.** `Result FileError (List Entry)` crossed the boundary through
+`startReadDir`'s `foreign` annotation, which pinned `Result`'s tags, `Entry`'s `name` and `kind`
+and `EntryKind`'s tags in every release build that lists a directory; it crosses nothing now, so
+a release build gives them integer tags and short names where nothing else pins them.
+`FileError` keeps its string tags, as step 10 says: `dirCodes` holds its constructors through
+`Js.from`. `Event`, `Dispatched` and `Pointer` stay `foreign type`s, and `Pointer`'s three keys
+stay literal (`Js.object`), so `pointerEvent`, `localX` and `localY` read what they read. `String`
+and `⊤` cross nothing new. A development build no longer copies a sibling file for `Html` (523
+raw bytes in TodoMVC, §9.8.20 as built), `Prerender` or `Io`.
+
+**The bar** (`core-in-beni.md` R47-3): release brotli no larger on the programs that reach each
+piece — every page of the `browser/` corpus and `bench/size.mjs`'s page lines for `Html.js`
+(TodoMVC and Conduit reach `targetValue`; the pointer pages reach `pointer`), the `run/ReadDir*`
+programs for `Io.js`, and the prerender data programs (`browser/prerender/Data*`, built for
+`node` with `--release`) for `Prerender.js` — measured with both compilers on the same sources;
+the shape side by side in `emit/release/app/IoReadDir` (new) and the existing `dom`/`tea` release
+goldens that reach an extractor; and no slowdown to measure: each export runs once per event,
+once per listing or once per program, and does the same host calls in the same order.
