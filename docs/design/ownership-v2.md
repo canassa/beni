@@ -989,6 +989,17 @@ the cause word stays condition 5's (the manager's decision, 2026-10-30, #1214), 
 of the cells is `alias … (approx)`, never `element`. The result of every writer, construction, append and update **is
 its base's object** (R-0.1, R-4.10.1): a `delta` or the base's node, so the next holder is the new version.
 
+**Twin demands** (#1714, specified and built 2026-11-03). Two demands of one evaluation that one call makes
+for one argument, equal in every field but the path their text names (the targets and the operands by their
+leaves and values, the point, the kind, the base, the pending operands, the flags), are **twins**: the later is
+not judged, and its line is the first's verdict with its own text. Every field the judgement reads is equal, so
+the verdict is the one a second judgement would give, and `req` gains nothing from it. Twins come from a
+callee's writes through a folding `⟲`: in `type B = B (List B) …` with k list fields, `incList` writes
+`[*]#B.j⟲` for each field j, and each projects onto the same k canonical slots of the caller's `x[*]⟲#B.i`
+(§2.1), so the call made k demands with one set of targets, each judged against k slots. A demand of a call
+that makes only one for its argument costs nothing more; the others pay one record a target for the lookup,
+and a hit pays for the comparison.
+
 **Record lowering boundary (S5).** A write authorization is tied to a settled demand, the receiver's
 value version, written fields and phase. A hoist names the old value version, field/constructor path and
 placement dominating the read but after its binding. Branch/loop compatibility and pending operands are

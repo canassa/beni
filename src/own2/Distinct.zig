@@ -158,42 +158,63 @@ fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error
             try plain.append(g, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
         }
     }
+    // What arrives at the plain slots, read once for every occurrence:
+    // the callee's result tree is walked once per plain slot, not once
+    // per (occurrence, slot).
+    var reach: Reach = .empty;
+    defer reach.deinit(g);
+    var hits: std.ArrayList(Contract.Hit) = .empty;
+    defer hits.deinit(g);
+    for (plain.items) |words| {
+        try e.charge(.cond, e.contracts.trees.count(h.res_root));
+        hits.clearRetainingCapacity();
+        try e.hitsAt(h.res_root, words, &hits);
+        // A slot the result tree does not name may hold anything.
+        if (hits.items.len == 0) return instSel(e, full, call);
+        for (hits.items) |hit| for (hit.arrivals) |a| {
+            if (a.kind != .param) continue;
+            // The arrival's slot is its own steps, then what the plain
+            // slot takes on below an open one.
+            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
+            try e.charge(.cond, @intCast(aw.len));
+            try reachMark(&reach, g, aw, if (a.deep) reach_deep else reach_at);
+            for (1..aw.len) |n| try reachMark(&reach, g, aw[0..n], reach_below);
+        };
+    }
     const out = try e.arena.alloc(u64, full.sel.len);
     for (full.sel, 0..) |o, k| {
         out[k] = o;
         if (Contract.isApart(o)) continue;
-        if (!try arrivesAtPlain(e, h.res_root, o, plain.items)) out[k] = o | Contract.apart_bit;
+        if (!try arrivesAtPlain(e, &reach, o)) out[k] = o | Contract.apart_bit;
     }
     return instSel(e, try Cond.of(e.account(), out), call);
 }
 
-/// Whether occurrence `o` of a callee may arrive at one of the result
-/// slots `plain` (words from the result's root) by its result tree `res`.
-/// A slot `res` does not name may hold anything.
-fn arrivesAtPlain(e: *Eval, res: Contract.Node, o: u64, plain: []const []const u32) Error!bool {
-    // A deep occurrence also reaches every slot below its own.
-    const deep = Contract.isDeep(o);
-    const ow = e.f.slots.relWords(Contract.occRel(o));
-    var hits: std.ArrayList(Contract.Hit) = .empty;
-    defer hits.deinit(e.gpa());
-    for (plain) |words| {
-        try e.charge(.cond, e.contracts.trees.count(res));
-        hits.clearRetainingCapacity();
-        try e.hitsAt(res, words, &hits);
-        if (hits.items.len == 0) return true;
-        for (hits.items) |hit| {
-            const suffix = words[hit.depth..];
-            for (hit.arrivals) |a| {
-                if (a.kind != .param or a.j != Contract.occParam(o)) continue;
-                // The arrival's slot is its own steps, then what the
-                // plain slot takes on below an open one; a deep arrival
-                // reaches every slot below that.
-                const aw = try std.mem.concat(e.arena, u32, &.{ e.f.slots.relWords(a.slot), suffix });
-                if (aw.len <= ow.len and std.mem.eql(u32, aw, ow[0..aw.len]) and (a.deep or aw.len == ow.len)) return true;
-                if (deep and aw.len > ow.len and std.mem.eql(u32, ow, aw[0..ow.len])) return true;
-            }
-        }
-    }
+/// What arrives at a check's plain slots, by a callee's result tree: for
+/// each word sequence `j · slot`, an arrival of parameter `j` there
+/// (`reach_at`), a deep one (`reach_deep`), or an arrival below it
+/// (`reach_below`).
+const Reach = std.StringHashMapUnmanaged(u8);
+const reach_at: u8 = 1;
+const reach_deep: u8 = 2;
+const reach_below: u8 = 4;
+
+fn reachMark(r: *Reach, g: Allocator, key: []const u32, bit: u8) Error!void {
+    const got = try r.getOrPut(g, std.mem.sliceAsBytes(key));
+    got.value_ptr.* = if (got.found_existing) got.value_ptr.* | bit else bit;
+}
+
+/// Whether occurrence `o` of a callee may arrive at one of the check's
+/// plain slots: an arrival at its own slot, a deep arrival above it, or,
+/// for a deep occurrence (which reaches every slot below its own), an
+/// arrival below it.
+fn arrivesAtPlain(e: *Eval, reach: *const Reach, o: u64) Error!bool {
+    const key = try std.mem.concat(e.arena, u32, &.{ &.{Contract.occParam(o)}, e.f.slots.relWords(Contract.occRel(o)) });
+    try e.charge(.cond, @intCast(key.len));
+    const at = reach.get(std.mem.sliceAsBytes(key)) orelse 0;
+    if (at & (reach_at | reach_deep) != 0) return true;
+    if (Contract.isDeep(o) and at & reach_below != 0) return true;
+    for (1..key.len) |n| if ((reach.get(std.mem.sliceAsBytes(key[0..n])) orelse 0) & reach_deep != 0) return true;
     return false;
 }
 
