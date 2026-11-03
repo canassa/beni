@@ -165,6 +165,12 @@ page_fuzz_test.test.a missed write of a controlled input's value is caught #0 10
 page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 4233ee20420100ef432a5f3356c02e5f8badb672f3a2a32dfca43b3f6381e692
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 df80cf41f293a227e438b3ae01f5f6524264f09041988726a747daae715cc0c0
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 db44601cee0289ff6a3d9d3ca29e91311faf41f013b3ab83e5b58299538154b8
+platform_test.test.Cloudflare reply scans elide Reply-free traversal and fence application callers #0 b78ba5fa99b9da695b637e525fdd2067eafa0950b76a1bbc357558baed938861
+platform_test.test.Cloudflare reply scans rederive plans when a cached platform becomes Cloudflare #0 f2279f4d1ecf04ce3f4a2a91f7c61edcf78d3a67a419ab3821cef8d6f404ae79
+platform_test.test.Cloudflare reply scans traverse typed persistent list headers #0 e7485208e06652d016ce14ca9c606f4ce7424300a67a03516d57ecc989c04f6d
+platform_test.test.Cloudflare reply scans traverse typed persistent list headers #1 06f395fafa4ba479a3671765d7db6879d9a5180007e204280b5846887983a244
+platform_test.test.Cloudflare reply scans use typed plans, generic guards, active views and cached roots #0 130367c347ecb74f012baee08f93b6e2ab34b4898a2b590e6df336d415af92df
+platform_test.test.Cloudflare reply scans use typed plans, generic guards, active views and cached roots #1 d48b7e86976b4cb9aa0e4cb9c371e3fe9ac268fda4e827cc3ed5750972b3f0cc
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 38e7c63d07b9cb509df45fc367b8f7bfc09e8e11b9ee8211de4d366a5aaf2d48
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 f2eb89eaa16eb2b0c0233313ac47b88a5d61b8cc6d01b318716c0c1277e4b7ed

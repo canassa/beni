@@ -3,6 +3,28 @@ let nestedStable;
 let reads;
 let observed = false;
 let installed = false;
+let stableInstalled = false;
+let outgoingView;
+let shapedRecord;
+let outgoingTree;
+let viewObserved = false;
+export const watchView = (view, record, tree) => { outgoingView = view; shapedRecord = record; outgoingTree = tree; install(); };
+const install = () => {
+  if (installed) return;
+  installed = true;
+  const post = globalThis.Worker.prototype.postMessage;
+  globalThis.Worker.prototype.postMessage = function(frame) {
+    if ((frame.kind === "Request" || frame.kind === 5) && outgoingView) {
+      const fields = Object.values(frame.payload);
+      viewObserved = !fields.includes(outgoingView) && fields.includes(shapedRecord) && fields.some(value =>
+        Array.isArray(value) && value.length === 2 && value[0] === 1 && value[1] === 2) &&
+        typeof outgoingTree.$plain === "function" && !fields.includes(outgoingTree) && fields.some(value =>
+          Array.isArray(value) && value.length === 100 && value[0] === 1 && value[99] === 100);
+      outgoingView = null;
+    }
+    return post.call(this, frame);
+  };
+};
 export const watch = (value, nested) => {
   nestedStable = nested;
   stable = value;
@@ -11,8 +33,8 @@ export const watch = (value, nested) => {
   reads = 0;
   Object.defineProperty(value, key, {enumerable: true, configurable: true,
     get() { reads++; return text; }});
-  if (installed) return;
-  installed = true;
+  if (stableInstalled) return;
+  stableInstalled = true;
   const post = globalThis.Worker.prototype.postMessage;
   globalThis.Worker.prototype.postMessage = function(frame) {
     if ((frame.kind === "Request" || frame.kind === 5) && stable) {
@@ -27,4 +49,4 @@ export const watch = (value, nested) => {
     return post.call(this, frame);
   };
 };
-export const passed = () => observed;
+export const passed = () => observed && viewObserved;

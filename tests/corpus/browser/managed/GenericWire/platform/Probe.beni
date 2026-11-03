@@ -3,3 +3,6 @@ pub foreign impure watch : a, b → ⊤
 
 
 pub foreign impure passed : ⊤ → Bool
+
+
+pub foreign impure watchView : List Int, a, List Int → ⊤
