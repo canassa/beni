@@ -89,6 +89,17 @@ module Random
   value uniform : a, List a → Generator a
   value value : (Generator a) → a  -- impure
   value weighted : Float × a, List (Float × a) → Generator a
+module Rt
+  value classes : Value → Value  -- impure
+  value escape : Value → Value  -- impure
+  value escapeAttr : Value → Value  -- impure
+  value list : Value, Value, Value → Value  -- impure
+  value map : Value, Value → Value
+  value rawText : Value, Value → Value  -- impure
+  value run : Value → ⊤  -- impure
+  value safeUrl : Value → Value  -- impure
+  value styles : Value → Value  -- impure
+  value text : Value → Value  -- impure
 module Ssr
   value render : Html msg → String
 module WebSocket
