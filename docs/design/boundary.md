@@ -1381,7 +1381,7 @@ back under its budget: 4 264 M instructions, where the whole platform made it 4 
 ```json
 "markup": { "vocabulary": "Html", "type": "Html.Html" }          -- html
 "markup": { "lowering": "dom", "runtime": "runtime.js", "module": "Rt" }   -- browser: the same file as its "runtime"
-"markup": { "lowering": "ssr", "runtime": "markup.js" }           -- node
+"markup": { "lowering": "ssr", "module": "Rt" }                   -- node (since 2026-11-03; "runtime": "markup.js" before)
 ```
 
 | Field | Is | Checked |
@@ -1406,7 +1406,12 @@ must**: a delegated listener, which the markup runtime installs, has to deliver 
 program's `send`, which the program runtime owns, and a sibling may not import another file
 (`backend.md` §2). So the one file owns the program loop, the render loop and the DOM patching, and
 nothing crosses between two files at run time (`backend.md` §15.11). `node` needs no such sharing — a
-string renderer sends nothing — and keeps `markup.js` beside `runtime.js`.
+string renderer sends nothing — and keeps `markup.js` beside `runtime.js`. *Amended 2026-11-03*
+(#1810, `plans/runtime-in-beni.md` step 15): `node` has no file at all. Its runtime module `Rt`
+supplies `run` and the `ssr` lowering's seven exports and the two primitives, and the manifest
+says `"markup": { "lowering": "ssr", "module": "Rt" }` and no `"runtime"`, the shape
+`browser` has had since 2026-10-02 (§5.2, *`"runtime"` is optional when the runtime module is the
+whole runtime*). `markup.js` and `runtime.js` are deleted.
 
 **A runtime module: the markup runtime written in beni** (*added 2026-10-02*, `plans/browser-
 decisions.md` R47-1; research 47 §6 item 1). A fifth field, `"module"`, names a module of the
