@@ -110,7 +110,7 @@ pub const below_min = Slots.below_min;
 /// One projected object: its leaf and the literal route that reached it.
 pub const Part = struct { leaf: u32, at: Slots.Rel };
 
-pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0 };
+pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0, routes: u32 = 0 };
 
 pub const Eval = struct {
     f: *Frame,

@@ -20,6 +20,7 @@ const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const Held = @import("Held.zig");
+const Routed = @import("Routed.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -866,9 +867,15 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             for (e.contracts.readsOf(h.reads)) |x| if (x[0] == ft[1]) try readsThrough(s, b.value, f.slots.relWords(rel), x[1], pass);
             continue;
         }
-        e.ev.pass = pass;
-        defer e.ev.pass = 0;
-        try e.ev.project(b.value, f.slots.relWords(rel), true, 0, 0, &ps);
+        // A choice is read by route sets, a value two arms reach once.
+        if (f.val(b.value).kind == .alt) {
+            const req = [1]Routed.Req{.{ .words = f.slots.relWords(rel), .deep = true, .out = &ps }};
+            try Routed.project(&e.ev, b.value, &req, 0, pass);
+        } else {
+            e.ev.pass = pass;
+            defer e.ev.pass = 0;
+            try e.ev.project(b.value, f.slots.relWords(rel), true, 0, 0, &ps);
+        }
         for (ps.items) |p| try paramEffects(s, p.leaf, true, .reads);
     }
     // Writes: every demand's parameter targets, whatever its verdict.
@@ -973,9 +980,9 @@ fn readsThrough(s: *Sink, v: u32, at: []const u32, n: Contract.Node, pass: u32) 
     for (es.items.items) |x| {
         var ps: std.ArrayList(Relation.Proj) = .empty;
         defer ps.deinit(gpa);
-        e.ev.pass = if (x.open) pass else 0;
-        defer e.ev.pass = 0;
-        try e.ev.project(v, es.wordsOf(x), x.open, 0, 0, &ps);
+        // A read is one whatever route reaches it: the walk by route sets.
+        const req = [1]Routed.Req{.{ .words = es.wordsOf(x), .deep = x.open, .out = &ps }};
+        try Routed.project(&e.ev, v, &req, 0, if (x.open) pass else 0);
         for (ps.items) |p| try paramEffects(s, p.leaf, x.open, .reads);
     }
 }
