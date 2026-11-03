@@ -261,6 +261,8 @@ pub const Table = struct {
     /// slot that is not an object slot is the empty set.
     pub fn canon(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, p: PathId) Error!SetId {
         try account.reserve(.memo, 1);
+        // No `⟲` on the way: `p` is its own name, read off its node (§2.3.1).
+        if (!places.paths.col.info[p.int()].levels) return t.sets.intern(gpa, if (isObject(places, p)) &.{p.int()} else &.{});
         if (t.canon_of.get(p)) |hit| {
             try account.readEntry(gpa, .canon, p.int(), t.canon_cost.get(p.int()));
             return hit;

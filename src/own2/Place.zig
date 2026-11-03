@@ -67,8 +67,7 @@ pub const Kind = enum(u8) {
     @"var",
     cross,
 
-    /// The kind of cell a value at a place of this kind IS, as a `Holds`
-    /// bit; nothing for a tuple, a constructor or a crossing leaf.
+    /// The kind of cell a value at a place of this kind IS, as a `Holds` bit; none for a tuple, a constructor, a crossing leaf.
     pub fn own(k: Kind) Holds {
         return switch (k) {
             .record => .{ .record = true },
@@ -145,8 +144,7 @@ pub const Step = packed struct(u32) {
     pub const contents: Step = .{ .kind = .contents, .payload = 0 };
     pub const env: Step = .{ .kind = .env, .payload = 0 };
 
-    /// A payload past 28 bits is the named format limit `step_payload`,
-    /// never a truncation.
+    /// A payload past 28 bits is the named format limit `step_payload`, never a truncation.
     fn checked(account: *Account, kind: StepKind, payload: u32) Ids.AccountError!Step {
         try account.limit(.step_payload, @as(u64, payload) + 1);
         return .{ .kind = kind, .payload = @intCast(payload) };
@@ -182,16 +180,14 @@ pub const Description = struct {
     head: u32 = 0,
 };
 
-/// The type graph, as the caller sees it: `describe(v)` appends `v`'s
-/// children (in any order; the table sorts them) and returns its kind and
-/// head. Passed down, never stored (§5).
+/// The type graph, as the caller sees it: `describe(v)` appends `v`'s children (in any order; the table
+/// sorts them) and returns its kind and head. Passed down, never stored (§5).
 pub const Source = struct {
     ctx: *anyopaque,
     describe: *const fn (ctx: *anyopaque, v: u32, out: *std.ArrayList(Child)) Allocator.Error!Description,
 };
 
-/// How `encode` writes a head and a field rank: through the block writer's
-/// string table, so no session id is written (§3.6).
+/// How `encode` writes a head and a field rank: through the block writer's string table, so no session id is written (§3.6).
 pub const Names = struct {
     ctx: *anyopaque,
     head: *const fn (ctx: *anyopaque, head: u32) u32,
@@ -203,8 +199,7 @@ pub const Names = struct {
     }
 };
 
-/// The reader's inverse of `Names`: a written head to this session's, a
-/// written field name to this table's rank.
+/// The reader's inverse of `Names`: a written head to this session's, a written field name to this table's rank.
 pub const Remap = Names;
 
 pub const Place = struct {
@@ -217,8 +212,9 @@ pub const Place = struct {
     /// The strongly connected component of the place graph this place is
     /// in (`settleCycles`): what `sameCycle` reads for §2.2's `⟲` matching.
     scc: u32,
-    /// `objectsBelow` (§2.3.1), set with `scc`.
+    /// `objectsBelow` (§2.3.1) and `PlaceBelow.familyBelow`, set with `scc`.
     below: u8 = 0,
+    family: bool = false,
 };
 
 /// A subtree of more object slots than this is held whole, `↓p` (§2.3.1).
@@ -232,20 +228,27 @@ pub const PathNode = struct {
     parent: PathId,
     step: Step,
     place: PlaceId,
-    /// Steps from the root.
-    depth: u32,
-    /// At or below a summary position: a `[*]` or a `⟲` on the way.
-    summary: bool,
+    /// Steps from the root (at most `path_steps`), and the way's flags.
+    info: PathInfo,
     /// The nearest node at or above this one whose step stays on a cycle (a
     /// `⟲`, or a step between two places of one cyclic SCC): the prefixes
     /// §2.8's cycle anchors key, so a reader visits them alone, never every
     /// step of a long path (#1236). Set when the node is made: SCCs are
     /// settled before any path reaches their places.
     anchor_up: PathId = .none,
-    /// The step re-entered a place on the path: the first return, a plain
-    /// step (#1253), or a `⟲`. What widen opens a union, choice or
-    /// positions node at (§2.3).
+    /// A skew-binary jump pointer (`ancestorAt`, #1714).
+    jump: PathId = .none,
+};
+
+pub const PathInfo = packed struct(u32) {
+    depth: u29,
+    /// At or below a summary position: a `[*]` or a `⟲` on the way.
+    summary: bool,
+    /// The step re-entered a place on the path: the first return, a plain step (#1253),
+    /// or a `⟲`. What widen opens a union, choice or positions node at (§2.3).
     ret: bool = false,
+    /// A `⟲` on the way: else the path is its own canonical name (`Slots.canon`).
+    levels: bool = false,
 };
 
 pub const Error = Ids.ChargeError;
@@ -269,8 +272,7 @@ pub const Table = struct {
     paths: Ids.Columns(PathNode) = .empty,
     /// `(parent path, step)` → path; a root is `(none, place)`.
     path_index: Ids.Interned(2) = .{},
-    /// `extend`'s memo: `(path, step)` → the canonical result, `none` for
-    /// no such step.
+    /// `extend`'s memo: `(path, step)` → the canonical result, `none` for no such step.
     extend_memo: Ids.FixedDict(2) = .{},
     /// `C#i` steps: `(constructor, argument)` pairs interned, the payload
     /// their index, so a module has 2²⁸ of them (`ctor_steps`); the
@@ -283,8 +285,7 @@ pub const Table = struct {
     level_memo: Ids.IdColumn(PathId) = .{},
     fold_runs: std.ArrayList([2]u32) = .empty,
     fold_paths: std.ArrayList(PathId) = .empty,
-    /// Each memo's fill costs (§4.1, *A module table's entries*): `extend`'s
-    /// by its memo's entry number, the others by path.
+    /// Each memo's fill costs (§4.1, *A module table's entries*): `extend`'s by its memo's entry number, the others by path.
     extend_cost: Ids.Costs = .{},
     hit_cost: Ids.Costs = .{},
     up_cost: Ids.Costs = .{},
@@ -310,8 +311,7 @@ pub const Table = struct {
         inline for (.{ &t.extend_cost, &t.hit_cost, &t.up_cost, &t.level_cost }) |c| c.deinit(gpa);
     }
 
-    /// Start a block's place namespace: `ofBlock`'s numbers from here on
-    /// are the next block's, and meet no earlier block's.
+    /// Start a block's place namespace: `ofBlock`'s numbers from here on are the next block's, and meet no earlier block's.
     pub fn beginBlock(t: *Table) void {
         t.block_var.clear();
     }
@@ -546,8 +546,7 @@ pub const Table = struct {
         while (i < t.count()) : (i += 1) {
             if ((kinds[i] == .ctor or kinds[i] == .tuple) and hs[i].isEmpty()) {
                 kinds[i] = .cross;
-                // A leaf names no type: the head would otherwise carry a
-                // session id into a block.
+                // A leaf names no type: the head would otherwise carry a session id into a block.
                 t.places.col.head[i] = 0;
                 ranges[i].len = 0;
             }
@@ -616,16 +615,26 @@ pub const Table = struct {
                     low[parent - first] = @min(low[parent - first], low[p - first]);
                 }
                 if (low[p - first] != index[p - first]) continue;
-                // Every component below pops first: a lone place sums its kids.
+                // Every component below pops first: a lone place sums its kids; a family is below when a member on a cycle holds an object, an element holds one, or a component below is one.
                 const kids = children[ranges[p].start..][0..ranges[p].len];
                 const lone = stack.items[stack.items.len - 1] == p and std.mem.indexOfScalar(PlaceId, kids, .from(p)) == null;
                 var below: u32 = if (lone) @intFromBool(!t.places.col.kind[p].own().isEmpty()) else if (t.places.col.holds[p].isEmpty()) 0 else below_min + 1;
                 for (if (lone) kids else kids[0..0]) |c| below = @min(below + t.objectsBelow(c), below_min + 1);
+                var fam = false;
+                for (stack.items[std.mem.lastIndexOfScalar(u32, stack.items, p).?..]) |m| {
+                    const rg = ranges[m];
+                    fam = fam or (!lone and (!t.places.col.holds[m].isEmpty() or !t.places.col.kind[m].own().isEmpty()));
+                    for (children[rg.start..][0..rg.len], t.step_tab.col.step[rg.start..][0..rg.len]) |c, s| {
+                        const held = !t.places.col.holds[c.int()].isEmpty() or !t.places.col.kind[c.int()].own().isEmpty();
+                        fam = fam or (s.kind == .elem and held) or ((c.int() < first or !on_stack[c.int() - first]) and t.places.col.family[c.int()]);
+                    }
+                }
                 while (true) {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
                     sccs[m] = p + 1;
                     t.places.col.below[m] = @intCast(below);
+                    t.places.col.family[m] = fam;
                     if (m == p) break;
                 }
             }
@@ -659,8 +668,7 @@ pub const Table = struct {
 
     // ---- canonical paths ------------------------------------------------
 
-    /// `path_index`'s keys, rebuilt from the paths: `(parent, step)`, and
-    /// `(none, place)` for a root.
+    /// `path_index`'s keys, rebuilt from the paths: `(parent, step)`, and `(none, place)` for a root.
     const PathKeys = struct {
         t: *const Table,
         pub fn keyAt(c: PathKeys, i: u32) [2]u32 {
@@ -675,7 +683,7 @@ pub const Table = struct {
         try t.paths.ensureUnusedCapacity(gpa, 1);
         if (try t.path_index.getOrInsert(gpa, .{ Ids.none_int, place.int() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
         const id: PathId = .from(@intCast(t.paths.len()));
-        try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .depth = 0, .summary = false });
+        try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .info = .{ .depth = 0, .summary = false }, .jump = id });
         return id;
     }
 
@@ -699,16 +707,20 @@ pub const Table = struct {
     }
 
     pub fn pathDepth(t: *const Table, p: PathId) u32 {
-        return t.paths.col.depth[p.int()];
+        return t.paths.col.info[p.int()].depth;
     }
 
-    /// Whether `prefix` is `path` or an ancestor of it. O(depth) column
-    /// reads, the caller's charged walk (§2.2: `alias` costs O(path length)).
+    /// Whether `prefix` is `path` or an ancestor of it; the caller charges `ancestorAt`'s reads.
     pub fn isPrefix(t: *const Table, prefix: PathId, path: PathId) bool {
-        if (t.pathDepth(prefix) > t.pathDepth(path)) return false;
-        var at = path;
-        while (t.pathDepth(at) > t.pathDepth(prefix)) at = t.pathParent(at);
-        return at == prefix;
+        return t.pathDepth(prefix) <= t.pathDepth(path) and t.ancestorAt(path, t.pathDepth(prefix))[0] == prefix;
+    }
+
+    /// `p`'s ancestor at depth `d` (or `p`) by jump pointers, and its O(log depth) reads.
+    pub fn ancestorAt(t: *const Table, p: PathId, d: u32) struct { PathId, u32 } {
+        var at = p;
+        var n: u32 = 0;
+        while (t.pathDepth(at) > d) : (n += 1) at = if (t.pathDepth(t.paths.col.jump[at.int()]) >= d) t.paths.col.jump[at.int()] else t.pathParent(at);
+        return .{ at, n };
     }
 
     /// `path · step`, canonical (§2.1): null when the place has no such
@@ -788,7 +800,7 @@ pub const Table = struct {
         }
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
         // A first return: a plain step back onto a place of the path.
-        if (out == null and deepest != .none) t.paths.col.ret[result.int()] = true;
+        if (out == null and deepest != .none) t.paths.col.info[result.int()].ret = true;
         return result;
     }
 
@@ -855,10 +867,13 @@ pub const Table = struct {
         try t.paths.ensureUnusedCapacity(gpa, 1);
         if (try t.path_index.getOrInsert(gpa, .{ parent.int(), step.word() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
         const id: PathId = .from(@intCast(t.paths.len()));
-        const summary = t.paths.col.summary[parent.int()] or step.kind == .elem or step.kind == .level;
+        const summary = t.paths.col.info[parent.int()].summary or step.kind == .elem or step.kind == .level;
         const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
         const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
-        try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up, .ret = step.kind == .level });
+        const pj = t.paths.col.jump[parent.int()];
+        const jump = if (depth - 1 - t.pathDepth(pj) == t.pathDepth(pj) - t.pathDepth(t.paths.col.jump[pj.int()])) t.paths.col.jump[pj.int()] else parent;
+        const info: PathInfo = .{ .depth = @intCast(depth), .summary = summary, .ret = step.kind == .level, .levels = t.paths.col.info[parent.int()].levels or step.kind == .level };
+        try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .info = info, .anchor_up = up, .jump = jump });
         return id;
     }
 
@@ -992,7 +1007,7 @@ pub const Table = struct {
         while (k < r[1]) : (k += 1) {
             try charge.reserve(gpa, .inspection, 1);
             const e = t.fold_paths.items[r[0] + k];
-            try charge.reserve(gpa, .path, t.pathDepth(e) -| t.pathDepth(p));
+            try charge.reserve(gpa, .path, t.ancestorAt(e, t.pathDepth(p))[1]);
             if (t.isPrefix(p, e)) continue;
             for (acc.items) |a| {
                 if (a == e) break;
@@ -1108,7 +1123,7 @@ pub const Table = struct {
     }
 
     fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, charge: Charge, x: PathId, e: PathId, t: *const Table) Error!void {
-        try charge.reserve(gpa, .path, t.pathDepth(e) -| t.pathDepth(x));
+        try charge.reserve(gpa, .path, t.ancestorAt(e, t.pathDepth(x))[1]);
         if (t.isPrefix(x, e)) return;
         for (acc.items) |a| if (a == e) return;
         try acc.append(gpa, e);
@@ -1117,7 +1132,7 @@ pub const Table = struct {
     /// Whether `path` is a summary position or below one: it holds a
     /// `[*]` or a `⟲` (§2.2's occurrence rule). O(1): a column.
     pub fn isSummary(t: *const Table, path: PathId) bool {
-        return t.paths.col.summary[path.int()];
+        return t.paths.col.info[path.int()].summary;
     }
 
     /// Whether `y` is a sealed first return (#1253): a plain step back onto
@@ -1138,10 +1153,9 @@ pub const Table = struct {
         }
         return true;
     }
-    /// Whether `path`'s last step re-entered a place on it: a first return
-    /// or a `⟲` (`PathNode.ret`). O(1): a column.
+    /// Whether `path`'s last step re-entered a place on it: a first return or a `⟲` (`PathNode.ret`). O(1): a column.
     pub fn isReturn(t: *const Table, path: PathId) bool {
-        return t.paths.col.ret[path.int()];
+        return t.paths.col.info[path.int()].ret;
     }
 
     /// The node a return `path` came back to (`isReturn`): a `⟲`'s parent,

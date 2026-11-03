@@ -62,8 +62,7 @@ pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below,
 /// `d`: a `describe_below` consumer's prefix slot (its key's).
 pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0 };
 
-/// A module code's parameters' places, its own place and its result's
-/// (`Walk.Sig`, read by `CallGraft` too).
+/// A module code's parameters' places, its own place and its result's (`Walk.Sig`, read by `CallGraft` too).
 pub const Sig = struct { params: []const PlaceId, own: u32, result: PlaceId };
 pub const CodeSig = struct { ctx: *anyopaque, of: *const fn (ctx: *anyopaque, code: u32) Error!Sig };
 
@@ -71,8 +70,7 @@ pub const CodeSig = struct { ctx: *anyopaque, of: *const fn (ctx: *anyopaque, co
 /// grow, and the queue of what is still to be delivered.
 pub const Live = struct {
     ctx: *anyopaque,
-    /// The draft result slots of code `code` when it is a member being
-    /// solved now, else null.
+    /// The draft result slots of code `code` when it is a member being solved now, else null.
     draftRes: *const fn (ctx: *anyopaque, code: u32) ?*Contract.Draft.Res,
     /// Key `key` of `ev` reads member `code`'s result at relative steps `rel`.
     watch: *const fn (ctx: *anyopaque, code: u32, rel: Slots.Rel, ev: *Eval, key: u32) Error!void,
@@ -470,8 +468,7 @@ pub const Eval = struct {
                         if (all.items.len == before and rest.len != 0) {
                             const k = e.places().kind(e.places().pathPlace(.from(t)));
                             if (k == .@"opaque" or k == .@"var") {
-                                // A call's result read on past its place:
-                                // through what arrives there.
+                                // A call's result read on past its place: through what arrives there.
                                 if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, it.tags, it.route, out)) continue;
                                 try inside.append(e.gpa(), t);
                             }
@@ -666,8 +663,7 @@ pub const Eval = struct {
 
     // ---- instantiation (§2.11.2) ---------------------------------------------
 
-    /// The result tree of contract `c` (`which` none) or of its supply
-    /// `(label << 16) | k`.
+    /// The result tree of contract `c` (`which` none) or of its supply `(label << 16) | k`.
     pub fn resRoot(e: *Eval, c: Contract.Id, which: u32) Contract.Node {
         const h = e.contracts.head(c);
         if (which == none) return h.res_root;
@@ -1162,6 +1158,10 @@ pub const Eval = struct {
         defer e.pass = saved_pass;
         try e.charge(.edge, 1);
         const cl = e.f.calls.items[call];
+        var words: std.ArrayList(u32) = .empty;
+        defer words.deinit(e.gpa());
+        if (a.kind == .param or a.kind == .cb) try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
+        try words.appendSlice(e.gpa(), suffix);
         switch (a.kind) {
             .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = call })),
             .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top })),
@@ -1169,20 +1169,21 @@ pub const Eval = struct {
             .param => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 const arg = cl.args[a.j];
-                var words: std.ArrayList(u32) = .empty;
-                defer words.deinit(e.gpa());
-                try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
-                try words.appendSlice(e.gpa(), suffix);
+                const x = e.f.val(arg);
+                // An argument at the root of the callee's path, no `⟲` on its way: the leaf there (§2.11.2).
+                const at = if (a.path != none) e.places().ancestorAt(.from(a.path), 0) else .{ PathId.none, 0 };
+                if (suffix.len == 0 and a.path != none and x.kind == .ref and x.family == Slots.empty and !e.places().paths.col.info[a.path].levels and e.f.pos.items[x.pos].slot == at[0]) {
+                    try e.charge(.path, at[1] + 1);
+                    const set = if (a.deep) try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(a.path)) else try e.f.slots.canon(e.gpa(), e.account(), e.places(), .from(a.path));
+                    if (set != Slots.empty) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set }));
+                    return;
+                }
                 var ps: std.ArrayList(Proj) = .empty;
                 defer ps.deinit(e.gpa());
                 try e.project(arg, words.items, a.deep, 0, 0, &ps);
                 for (ps.items) |p| try out.append(e.gpa(), p.leaf);
             },
             .cb => {
-                var words: std.ArrayList(u32) = .empty;
-                defer words.deinit(e.gpa());
-                try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
-                try words.appendSlice(e.gpa(), suffix);
                 if (e.known.get(.{ call, a.j })) |vc| {
                     // The known code's answer at that slot: its virtual call's.
                     const r = e.f.roots.items[e.f.calls.items[vc].root];

@@ -33,9 +33,13 @@ pub const Arrival = struct {
     deep: bool = false,
     j: u32 = 0,
     slot: u32 = 0,
+    /// `param`: the module's path `slot` names from the parameter's root, when
+    /// the read-off knew it (never in a block): a caller handing that
+    /// parameter whole reads the path, not the steps (§2.11.2, #1714).
+    path: u32 = Ids.none_int,
 
     pub fn eql(a: Arrival, b: Arrival) bool {
-        return a.kind == b.kind and a.deep == b.deep and a.j == b.j and a.slot == b.slot;
+        return a.kind == b.kind and a.deep == b.deep and a.j == b.j and a.slot == b.slot and a.path == b.path;
     }
 };
 
@@ -52,7 +56,7 @@ pub const Table = struct {
     nodes: Runs = .{},
     /// Per node: its entries at and below it (saturating).
     counts: std.ArrayList(u32) = .empty,
-    /// Arrival runs by content (three words an arrival), each with its
+    /// Arrival runs by content (four words an arrival), each with its
     /// range of `arrivals`; run 0 is the empty run.
     arr_runs: Runs = .{},
     arr_range: std.ArrayList(Range) = .empty,
@@ -98,7 +102,7 @@ pub const Table = struct {
         if (run.len == 0) return 0;
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(gpa);
-        for (run) |a| try words.appendSlice(gpa, &.{ @as(u32, @backingInt(a.kind)) | @as(u32, @intFromBool(a.deep)) << 8, a.j, a.slot });
+        for (run) |a| try words.appendSlice(gpa, &.{ @as(u32, @backingInt(a.kind)) | @as(u32, @intFromBool(a.deep)) << 8, a.j, a.slot, a.path });
         const id = try t.arr_runs.intern(gpa, words.items);
         if (id < t.arr_range.items.len) return id;
         const start: u32 = @intCast(t.arrivals.items.len);
