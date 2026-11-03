@@ -154,6 +154,8 @@ pub const Demand = struct {
     /// A write grafted at the frame's parameter (`Graft`, §2.11.2): its
     /// `(j, slot, tree)`, what the read-off adds; `j` is `none` otherwise.
     graft: [3]u32 = .{ none, 0, 0 },
+    /// The other routes a grouped demand covers (`Graft`), named in its line.
+    also: []const PathId = &.{},
 };
 
 /// A local's binding.

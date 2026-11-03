@@ -34,7 +34,14 @@ pub const Graft = struct { j: u32 = none, slot: Slots.Rel = Slots.root, node: No
 
 /// One demand: the effect its text names (the least route of its state,
 /// relative to the argument) and its targets.
-pub const Group = struct { x: Contract.Effect, targets: std.ArrayList(Proj) = .empty };
+/// `also`: the other routes it covers, each named by its least route (the
+/// line names every one, §2.11.2).
+pub const Group = struct { x: Contract.Effect, targets: std.ArrayList(Proj) = .empty, also: std.ArrayList(Slots.Rel) = .empty };
+
+/// Call `call`'s instruction a write of argument `j` names as its base.
+pub fn argInst(call: Value.Call, j: u32) u32 {
+    return if (j < call.arg_insts.len and call.arg_insts[j] != none) call.arg_insts[j] else call.inst;
+}
 
 const Walk = struct {
     ev: *Relation.Eval,
@@ -90,8 +97,20 @@ const Walk = struct {
     fn groupOf(w: *Walk, key: [4]u32, n: Node) Error!*Group {
         const g = w.ev.gpa();
         const got = try w.by_key.getOrPut(g, key);
-        if (got.found_existing) return &w.groups.items[got.value_ptr.*];
+        const slot = try w.leastRel(n);
+        if (got.found_existing) {
+            const gr = &w.groups.items[got.value_ptr.*];
+            try gr.also.append(g, slot);
+            return gr;
+        }
         got.value_ptr.* = @intCast(w.groups.items.len);
+        try w.groups.append(g, .{ .x = .{ .j = w.j, .slot = slot, .deep = key[3] == 1 } });
+        return &w.groups.items[w.groups.items.len - 1];
+    }
+
+    /// The least route below `words` that node `n` writes.
+    fn leastRel(w: *Walk, n: Node) Error!Slots.Rel {
+        const g = w.ev.gpa();
         const top = w.words.items.len;
         defer w.words.shrinkRetainingCapacity(top);
         var m = n;
@@ -101,9 +120,7 @@ const Walk = struct {
             try w.words.append(g, w.ks.items[0][0]);
             m = w.ks.items[0][1];
         }
-        const slot = try w.ev.f.slots.relOfWords(g, w.ev.account(), w.ev.places(), w.words.items);
-        try w.groups.append(g, .{ .x = .{ .j = w.j, .slot = slot, .deep = key[3] == 1 } });
-        return &w.groups.items[w.groups.items.len - 1];
+        return w.ev.f.slots.relOfWords(g, w.ev.account(), w.ev.places(), w.words.items);
     }
 
     fn target(w: *Walk, state: [3]u32, kind: u32, n: Node, deep: bool) Error!void {
@@ -153,8 +170,26 @@ const Lit = struct {
     ev: *Relation.Eval,
     j: u32,
     groups: *std.ArrayList(Group),
+    /// `(node, value)` → its first visit in `visits`: the groups it made
+    /// and the length of its route.
     seen: Ids.FixedDict(2) = .{},
+    visits: std.ArrayList([3]u32) = .empty,
     words: std.ArrayList(u32) = .empty,
+
+    /// A second route to a visited `(node, value)`: each group its first
+    /// visit made covers this route too, named by its own steps below.
+    fn again(l: *Lit, visit: [3]u32) Error!void {
+        const g = l.ev.gpa();
+        const sl = l.ev.f.slots;
+        const top = l.words.items.len;
+        defer l.words.shrinkRetainingCapacity(top);
+        for (l.groups.items[visit[0]..visit[1]]) |*gr| {
+            try l.ev.charge(.inspection, 1);
+            l.words.shrinkRetainingCapacity(top);
+            try l.words.appendSlice(g, sl.relWords(gr.x.slot)[visit[2]..]);
+            try gr.also.append(g, try sl.relOfWords(g, l.ev.account(), l.ev.places(), l.words.items));
+        }
+    }
 
     fn add(l: *Lit, deep: bool) Error!*Group {
         const slot = try l.ev.f.slots.relOfWords(l.ev.gpa(), l.ev.account(), l.ev.places(), l.words.items);
@@ -168,7 +203,12 @@ const Lit = struct {
         const ev = l.ev;
         const g = ev.gpa();
         const f = ev.f;
-        if ((try l.seen.getOrPut(g, .{ n, v })).found_existing) return;
+        const got = try l.seen.getOrPut(g, .{ n, v });
+        if (got.found_existing) return l.again(l.visits.items[got.value_ptr.*]);
+        const vi: u32 = @intCast(l.visits.items.len);
+        got.value_ptr.* = vi;
+        try l.visits.append(g, .{ @intCast(l.groups.items.len), 0, @intCast(l.words.items.len) });
+        defer l.visits.items[vi][1] = @intCast(l.groups.items.len);
         try ev.charge(.inspection, 1);
         const x = f.val(v);
         const t = &ev.contracts.trees;
@@ -235,6 +275,7 @@ pub fn literal(ev: *Relation.Eval, call: Value.Call, x: Contract.Effect, groups:
     var l: Lit = .{ .ev = ev, .j = x.j, .groups = groups };
     defer {
         l.seen.deinit(g);
+        l.visits.deinit(g);
         l.words.deinit(g);
     }
     try l.at(x.node, call.args[x.j]);
