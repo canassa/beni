@@ -22,6 +22,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
+const RowEnv = @import("RowEnv.zig");
 const Paths = @import("Paths.zig");
 const Host = @import("Host.zig");
 const W = @import("Walk.zig");
@@ -401,6 +402,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
                 for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), words)) {
                     d.kept = true;
                 };
+                if (lab.origin[2] & RowEnv.taken_origin != 0) d.taken_occs = try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, gpa, e.ev.arena, su, words, x.deep);
             };
             // A virtual call's head is a code, never an instruction: the
             // walked call names the demand.
@@ -432,6 +434,10 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == d.arg) {
             d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), outer[0]));
         };
+        if (d.taken_occs) |os| {
+            var run = os;
+            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, &run), outer[0]));
+        }
     }
 }
 

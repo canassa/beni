@@ -139,6 +139,8 @@ pub const Demand = struct {
     /// and the argument written.
     call: u32 = none,
     arg: u32 = none,
+    /// A `taken` label's supply write: its container's occurrences at the label's caller (`Eval.finishDemands`).
+    taken_occs: ?[2]u64 = null,
     /// A construction's base value: its storage, the targets, is read again
     /// by each evaluation (a prepend's re-cons reads the calls' contracts).
     base_value: u32 = none,
