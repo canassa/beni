@@ -6154,7 +6154,7 @@ pub const Lowerer = struct {
     /// (`backend.md` §9, *Item 4, taken up*). Configured opaque markup also
     /// uses this path in development: its single field is the platform ABI.
     fn integerTags(l: *const Lowerer, id: Dispatch.TypeId) bool {
-        if (l.in.types.isUnboxedMarkup(l.in.graph, id)) return true;
+        if (l.in.types.isCellWrapper(id) or l.in.types.isUnboxedMarkup(l.in.graph, id)) return true;
         const b = l.in.boundary orelse return false;
         return b.integerTags(id);
     }

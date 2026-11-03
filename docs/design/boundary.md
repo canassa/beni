@@ -569,6 +569,14 @@ The qualified call remains available only to core/platform code, so a value
 returned by a platform cannot bypass the name fence. Wire refuses both Cell
 and Opt. All other foreigns retain exact sibling coverage.
 
+*Manager decision, 2026-11-03:* a nominal with one constructor whose only
+field is a `Js.Cell` uses the cell's own representation in development and
+release (`backend.md` §4, *Unboxed cell wrappers*). The constructor pattern is
+total; there is no tag to test and the cell already has identity. No object or
+payload indirection is added, and Debug shows `<internals>`. This breaks
+recursive cell aliases without allocation. It changes no public type or API,
+and does not extend to `Js.Ref` or arbitrary payloads.
+
 *Owner amendment, 2026-11-02:* Opt's absence is one unique private core
 sentinel constant per program, explicitly stored in empty fields. Some is
 identity, and presence tests compare with that sentinel. Payloads may include

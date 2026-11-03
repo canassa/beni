@@ -546,6 +546,21 @@ The last five are static dispatch's, and
 call shapes and the evidence convention, Â§9 for the exact JavaScript of every derived function.
 Nothing here reopens a representation decision â Â§9.4's shapes are what derivation walks.
 
+### Unboxed cell wrappers
+
+*Manager decision, 2026-11-03.* A nominal type with exactly one constructor
+and exactly one field whose type is `Js.Cell r` is represented by that cell
+in development and release. Type aliases of the field expand before this test.
+Constructing or matching the nominal adds no object, field access or tag test:
+a single-constructor pattern is total, and the cell already owns the identity.
+This permits recursive renderer graphs without recursive aliases or wrapper
+allocations. Debug shows `<internals>`, as it does for the cell itself.
+The nominal type and its public declarations remain distinct in the checker;
+Task's existing representations are unchanged. A field of `Js.Ref`, an
+arbitrary record or a type parameter keeps today's development boxing. This
+rule does not apply to a constructor with another field or a type with another
+constructor. Ordinary release unboxing below remains separate.
+
 ### Ordered dictionaries
 
 *Added 2026-10-22 (#294), specifying the owner's 2026-10-17 and 2026-10-19
@@ -6861,7 +6876,7 @@ keeps a type's string tags keeps its object:
   answer, at `Order`; so the key's type is opaque at the door and a release build may unbox it.
   `emit/release/tea/HttpSendTracked` shows `Http.Key`'s `Track` box gone and its compare on two
   strings (*amended 2026-10-26*).
-- **A `--library` build, and a build that reaches `Debug`, unbox nothing**, as they number no tag.
+- **Apart from the cell-wrapper rule in §4 and the configured opaque markup ABI, a `--library` build and a build that reaches `Debug` unbox nothing**, as they number no tag.
 - **Markup.** A selector probe (Â§15.5) of such a type is the value itself, which is the field the
   probe would have read; nothing else a lowering writes reads a beni constructor.
 - **`==` and `compare` mean what they meant.** The derived `eq` and `compare` of such a type are

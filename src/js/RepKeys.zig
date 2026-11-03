@@ -432,7 +432,7 @@ const Field = struct { module: Graph.Index, inst: Inst.Index };
 /// `id` is that field (`Lower.ctorRepLocal`'s `.unboxed`: integer tags, one
 /// constructor, one field).
 fn unboxedField(r: *const RepKeys, id: TypeId) ?Field {
-    const unboxed = r.in.types.isUnboxedMarkup(r.in.graph, id) or
+    const unboxed = r.in.types.isCellWrapper(id) or r.in.types.isUnboxedMarkup(r.in.graph, id) or
         (if (r.in.boundary) |b| b.integerTags(id) else false);
     if (!unboxed) return null;
     const e = r.in.types.entries[id.int()];
@@ -620,7 +620,7 @@ fn inBoundary(r: *RepKeys, t: u32) bool {
     const id: TypeId = @fromBackingInt(@intCast(n.value));
     const e = r.in.types.entries[id.int()];
     if (e.kind != .adt or r.noSite(t)) return false;
-    if (r.in.types.isUnboxedMarkup(r.in.graph, id)) return false;
+    if (r.in.types.isCellWrapper(id) or r.in.types.isUnboxedMarkup(r.in.graph, id)) return false;
     const b = r.in.boundary orelse return true;
     return !b.integerTags(id);
 }

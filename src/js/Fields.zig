@@ -159,6 +159,9 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
         if (id == in.types.well_known.bool or id == in.types.well_known.order) continue;
         b.integer_tags.set(i);
     }
+    for (in.types.entries, 0..) |e, i| if (e.cell_wrapper) {
+        b.integer_tags.set(i);
+    };
     if (in.graph.markup.opaque_type) |declared| {
         const id = in.types.ofDecl(declared.module, declared.decl);
         if (id != .none) b.integer_tags.set(id.int());
