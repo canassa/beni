@@ -10431,12 +10431,15 @@ fn chainDump(w: *World, called: bool) ![3][3]u64 {
     return out;
 }
 
-/// The call's own records over an `else if` chain of D arms (`chosen`'s,
-/// as `chainDump`'s called chain), for D = 8, 16 and 32 (#1525). Each
+/// The call's cost over an `else if` chain of D arms (`chosen`'s, as
+/// `chainDump`'s called chain), for D = 8, 16 and 32 (#1525): `calledD`'s
+/// total, less `plainD`'s (the same chain without the call). Each
 /// declaration is alone in its module and `incAll` is imported, so no walk
-/// of another declaration fills a memo it reads: `calledD`'s total, less
-/// `plainD`'s (the same chain without the call) and less the call's
-/// demands. One dump.
+/// of another declaration fills a memo it reads. The call's demands are
+/// kept in: less them the figure is 129 / 85 / -44 once the read-off reads
+/// a column per read (#1714), the call costing less than the plain chain's
+/// leaf escape queries, and a figure that cannot be negative checks
+/// nothing. One dump.
 fn chainCallCold(w: *World) ![3]u64 {
     const a = testing.allocator;
     try w.write("Lib.beni", "pub type Rose\n    = Rose (List Rose)\n\n\npub incAll : Rose → Rose\nincAll r =\n    case r of\n        Rose kids →\n            Rose (incList (List.push kids (Rose [])))\n\n\nincList : List Rose → List Rose\nincList rs =\n    case rs of\n        [ s, …rest ] →\n            [ incAll s, …incList rest ]\n\n        [] →\n            []\n");
@@ -10467,9 +10470,16 @@ fn chainCallCold(w: *World) ![3]u64 {
         const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
         // The plain chain's read-off asks each built leaf whether an
         // escape reaches it (§2.10, *host objects*), which the call's
-        // result does not: the call can cost less than the plain chain
-        // and its demands, its own records then 0.
-        out[i] = (try accountTotal(dump.stdout, name)) -| (try accountTotal(dump.stdout, try std.fmt.bufPrint(&pn, "plain{d}", .{n})) + try accountField(dump.stdout, name, "demands"));
+        // result does not, so the call's own records can be fewer than the
+        // plain chain's: the difference includes the call's demands, and
+        // is positive.
+        const called = try accountTotal(dump.stdout, name);
+        const plain = try accountTotal(dump.stdout, try std.fmt.bufPrint(&pn, "plain{d}", .{n}));
+        if (called <= plain) {
+            std.debug.print("the call at D = {d} costs {d} records, the plain chain {d}\n", .{ n, called, plain });
+            return error.TestUnexpectedResult;
+        }
+        out[i] = called - plain;
     }
     return out;
 }
@@ -10520,7 +10530,10 @@ test "the checker v2's call over a chain of nested choices is linear in its dept
     // memos the callee group or another declaration filled made the count
     // move with every change to their walks (74 at D = 128 once): 1 101 /
     // 1 154 / 1 251, and 1 209 / 1 525 / 2 592 with #1467's `ownInSides`
-    // undone. At most 1.5 times a doubling, and D = 32's +10%.
+    // undone. The figure is now the call's total less the plain
+    // chain's, demands included (277 / 377 / 556 since #1714's column per
+    // read; the call's own records alone fell below the plain chain's).
+    // At most 1.5 times a doubling, and D = 32's +10%.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
@@ -10532,7 +10545,7 @@ test "the checker v2's call over a chain of nested choices is linear in its dept
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectChainGrowth("the call", costs, 15, 10, 1_380);
+    try expectChainGrowth("the call", costs, 15, 10, 612);
 }
 
 test "the checker v2's demands over a chain of nested choices cost records linear in its depth" {
@@ -13780,18 +13793,20 @@ test "the checker v2 solves a self-recursive fold in one walk and no growth at a
 }
 
 /// R-7.4's Θ(NK) witness (§4.1's qualified row, §8 S3b slice 5d2): a ring
-/// of `k` members `m_i c = if c then T_i [] [] else T_i [] [ m_{i+1} c ]`,
-/// each over a type of its own (`T_i (List Int) (List T_{i+1})`), so the
-/// ring's `res.shape` grows one type a round before it folds; `m0` also
-/// holds `n` statements.
+/// of `k` members `m_i c = if c then T_i [] [] [] else T_i [] [ m_{i+1} c ] []`,
+/// each over a type of its own (`T_i (List Int) (List T_{i+1}) (List T_i)`,
+/// the last field a list of the type itself and never filled), so the ring's
+/// `res.shape` grows one type a round before it folds, and each type a
+/// round adds a self-referential level to every contract; `m0` also holds
+/// `n` statements.
 fn shapeRing(w: *World, n: usize, k: usize) !world.Result {
     const a = w.arena.allocator();
     var src: std.ArrayList(u8) = .empty;
-    for (0..k) |i| try src.print(a, "type T{d} =\n    T{d} (List Int) (List T{d})\n\n\n", .{ i, i, (i + 1) % k });
+    for (0..k) |i| try src.print(a, "type T{d} =\n    T{d} (List Int) (List T{d}) (List T{d})\n\n\n", .{ i, i, (i + 1) % k, i });
     for (0..k) |i| {
         try src.print(a, "pub m{d} : Bool → T{d}\nm{d} c =\n", .{ i, i, i });
         if (i == 0) for (1..n + 1) |s| try src.print(a, "    s{d} = List.push [ {d} ] 0\n", .{ s, s });
-        try src.print(a, "    if c then\n        T{d} [] []\n\n    else\n        T{d} [] [ m{d} c ]\n\n\n", .{ i, i, (i + 1) % k });
+        try src.print(a, "    if c then\n        T{d} [] [] []\n\n    else\n        T{d} [] [ m{d} c ] []\n\n\n", .{ i, i, (i + 1) % k });
     }
     try w.write("Main.beni", src.items);
     return w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
@@ -13823,11 +13838,12 @@ test "the checker v2 settles a ring whose res.shape grows a type a round in one 
     // delivered to the call that reads it (§2.12), so `m0` walks once at
     // every k and its records are 3 011 at (10, 2) and 4 685 at (10, 3).
     // Since the read-off reads a slot's result slots off a column per read
-    // (#1714), they are 1 959 and 2 589 (2 703 and 4 377 before it).
+    // (#1714), they are 1 959 and 2 589 (2 703 and 4 377 before it). With the third
+    // field they are 3 519 and 8 838.
     const cases = [_][2]usize{ .{ 10, 2 }, .{ 10, 3 } };
     const walks = [_]u64{ 1, 1 };
     // 1.5 times the measured records: a doubled cost per round fails.
-    const ceilings = [_]u64{ 3_000, 4_000 };
+    const ceilings = [_]u64{ 5_300, 13_300 };
     var total: [cases.len]u64 = undefined;
     for (cases, walks, ceilings, 0..) |c, want, ceiling, i| {
         var w = try World.init(testing.allocator, testing.io);
@@ -13850,13 +13866,16 @@ test "the checker v2 settles a ring whose res.shape grows a type a round in one 
             return error.TestUnexpectedResult;
         }
     }
-    // More versions, more rounds, each over a larger contract: 1.32 times
-    // the records from k = 2 to 3 (1.62 before #1714's column per read,
-    // whose cost a round grew with K). A cost a round that grows with K,
-    // as that one did, fails, and so does one that grows with K² (2.25
-    // times the contract, 3.5 times the records).
-    try testing.expect(total[1] * 4 >= 5 * total[0]);
-    try testing.expect(total[1] * 2 <= 3 * total[0]);
+    // More versions, more rounds, each over a larger contract: 2.51 times
+    // the records from k = 2 to 3. The floor is what proves a round is
+    // charged as K grows, so it stays at 1.5 when the checker gets cheaper:
+    // the construction is made dearer instead. The third field, a list of
+    // the type itself, makes a contract's tree grow with every type the
+    // ring adds, which the column per read (#1714) must still pay for.
+    // A flat cost fails the floor, and one that grows with K² (3.5 times
+    // the records) the band's top.
+    try testing.expect(total[1] * 2 >= 3 * total[0]);
+    try testing.expect(total[1] <= 3 * total[0]);
 }
 
 /// `shift (R x₁ … xₙ) k`, which moves its cells one field per round
