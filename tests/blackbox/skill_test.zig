@@ -428,6 +428,13 @@ fn hasWord(text: []const u8, word: []const u8) bool {
 
 test "the generated API reference of core is what zig build skill-api writes today" {
     try expectPackageCurrent("core");
+    const api = try Io.Dir.cwd().readFileAlloc(testing.io, "skills/beni/references/api-core.md", testing.allocator, .limited(world.max_stream_bytes));
+    defer testing.allocator.free(api);
+    for ([_][]const u8{ "  type Builder ", "  type Cell ", "  type Opt " }) |name| {
+        try testing.expect(std.mem.indexOf(u8, api, name) == null);
+    }
+    try testing.expect(!hasWord(api, "closeSelf"));
+    try testing.expect(hasWord(api, "Value"));
 }
 
 test "the generated API reference of node is what zig build skill-api writes today" {

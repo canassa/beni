@@ -141,6 +141,7 @@ module Browser.Host.Event
   value dataOnly : Event → Maybe Value  -- impure
   value defaultPrevented : Event → Bool  -- impure
   value error : Event → Maybe Rejection  -- impure
+  value errorMessage : Event → Maybe String  -- impure
   value isPrimary : Event → Bool  -- impure
   value key : Event → String  -- impure
   value metaKey : Event → Bool  -- impure
@@ -154,6 +155,7 @@ module Browser.Host.EventTarget
   type EventTarget
   value asAnchor : EventTarget → Maybe HTMLAnchorElement  -- impure
   value current : ⊤ → EventTarget  -- impure
+  value isPage : ⊤ → Bool  -- impure
 module Browser.Host.Events
   value listen : EventTarget, String, (Event → ⊤) → (⊤ → ⊤)  -- impure
 module Browser.Host.Fetch
@@ -244,11 +246,14 @@ module Browser.Host.RegExp
     SyntaxError
   type RegExp
   value create : String, String → Result CreateError RegExp  -- impure
+  value group : RegExp, String, Int → Maybe String  -- impure
   value replace : RegExp, String, String → String  -- impure
   value test : RegExp, String → Bool  -- impure
 module Browser.Host.Rejection
   type Rejection
+  value assign : Rejection, Value → ⊤  -- impure
   value code : Rejection → Maybe String  -- impure
+  value create : String → Rejection  -- impure
   value isError : Rejection → Bool  -- impure
   value isTypeError : Rejection → Bool  -- impure
   value name : Rejection → String  -- impure
@@ -447,8 +452,6 @@ module Int32
   value xor : Int32, Int32 → Int32
   value zero : Int32
 module Js
-  type Cell a
-  type Opt a
   type Ref a
   type Value
   value apply : Value, args → Value  -- impure
