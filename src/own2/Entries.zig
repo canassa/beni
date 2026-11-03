@@ -276,6 +276,8 @@ pub const Rounds = struct {
     musts: std.ArrayList(u32) = .empty,
     /// The leaves some entry has (`Chains.onChain` walks a chain only for one).
     has_leaf: Ids.FixedDict(1) = .{},
+    /// `AtomSets.settled` was asked (once a check).
+    settle_asked: bool = false,
 
     pub fn deinit(r: *Rounds, g: Allocator) void {
         for (r.groups.items) |*gr| {

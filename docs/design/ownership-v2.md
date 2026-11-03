@@ -1217,6 +1217,23 @@ the fixpoint's own working state, never a table of earlier answers. *Live siblin
 / 80: 4 090 / 11 883 / 38 608 / 136 538 records, now 3 134 / 6 370 / 12 923 / 26 191 (with the pending operands
 of §2.8): flat per position.
 
+*A call's atoms* (#1714, 2026-11-03; `AtomSets.zig`). A leaf of a call's result whose expansion ends, through
+calls only, at atoms names exactly those atoms. It keeps them as a set: a hash-consed Patricia set of atom keys
+(`KeySets`, the resolve lane's base-key sets), made with the leaf's first reading as the union of its expansion's
+sets and sharing their nodes, so `y_k = List.push y_{k-1} [ k ]` makes a path a level, never a copy of the k atoms
+below. A leaf that reaches a parameter, a label, a supply, `⊤`, a cycle, or a slot no step below names (one leaf
+there may be one object several times, #1710) has no set. A set is made once a leaf while no key grows, as
+`endOf`'s answers are; it is the leaf's description, never an answer of the check. Once a check, at its first round
+after an expansion that would expand a root no group asks to, it asks whether it is decided already: every live
+entry is an atom, a parameter's object (never an atom of this frame) or a call's leaf with a set; every call's group
+has vouched for its own objects (its callee's `res_cond`, asked by the group's check and not `no`, or its members
+all apart occurrences, or one member of one object, an expansion's family excepted); and no atom is named twice.
+The last is a membership query, not a listing: the largest set is kept whole, every other atom is looked up in it
+(a step a level) and among the others. Then every expansion would make atoms that meet nothing and ask nothing, and
+the check ends with what it has gathered. Before, `x_k = merge x_{k-1} y_k` with `y_k` grown by a push expanded
+`y_k`'s chain to its k atoms at every call: 328 / 534 records a call at 10 / 40 calls, now 297 / 319 (`indep`, two
+chains merged, 397 / 601, now 366 / 387). Every summary and verdict is unchanged.
+
 #### 2.9.4 What a write relies on
 
 A demand (§2.8) is resolved against the relation. Every **under** it meets is added to the condition the write
@@ -3975,6 +3992,7 @@ values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Held, Ids, Place, R
 `Distinct` and `Eval`, and every layer from `Walk` and `Distinct` up moved one place (`Walk`, `Distinct` L9;
 `Eval`, `Holders`, `Later`, `Sweep`, `Stack` L10; `ReadOff`, `Descent`, `Deliver`, `Closures` L11; `Resolve`
 L12; `Groups` L13; `Block`, `Message`, `Report`, `Hoists` L14; `Ownership` L15; `Enforce` L16).*
+*Amended 2026-11-03 (#1714): `KeySets` (L1, hash-consed Patricia sets of keys; imports Ids) and `AtomSets` (L8, a call's leaf's atoms for the distinct check, §2.9.3 *A call's atoms*; imports Ids, Slots, Value, Relation, Entries, Contract, KeySets) are new.*
 *Amended 2026-11-03 (#1714): `Canon` (L5, a contract's selections in one spelling of a subtree, §2.9.1; imports Ids, Place, Slots, Subtree, Conds) is new beside `Rows`, read by `ReadOff`.*
 
 ```
