@@ -719,7 +719,7 @@ pub const Eval = struct {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, a, words[hit.depth..], &acc);
+            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, Subtree.readAt(e.places(), a, slot, hit.open), words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
             try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -766,23 +766,23 @@ pub const Eval = struct {
                 const rw = e.f.slots.relWords(rs.slot);
                 if (rw.len > words.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
                 if (rs.node == 0) {
-                    if (rw.len == words.len or list.isOpen(rs)) try e.feedDraft(ki, rs.a, @intCast(rw.len));
+                    if (rw.len == words.len or list.isOpen(rs)) try e.feedDraft(ki, rs.a, @intCast(rw.len), list.isOpen(rs));
                     continue;
                 }
                 // A subtree made whole: what it says at the slot's steps.
                 var hits: std.ArrayList(Contract.Hit) = .empty;
                 defer hits.deinit(e.gpa());
                 try e.hitsAt(rs.node, words[rw.len..], &hits);
-                var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32 }) = .empty;
+                var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32, open: bool }) = .empty;
                 defer arrs.deinit(e.gpa());
-                for (hits.items) |hit| for (hit.arrivals) |a| try arrs.append(e.gpa(), .{ .a = a, .n = @intCast(rw.len + hit.depth) });
-                for (arrs.items) |x| try e.feedDraft(ki, x.a, x.n);
+                for (hits.items) |hit| for (hit.arrivals) |a| try arrs.append(e.gpa(), .{ .a = a, .n = @intCast(rw.len + hit.depth), .open = hit.open });
+                for (arrs.items) |x| try e.feedDraft(ki, x.a, x.n, x.open);
             }
         } else if (e.contractOf(call)) |c| {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try e.feed(ki, a, hit.depth);
+            for (hits.items) |hit| for (hit.arrivals) |a| try e.feed(ki, a, hit.depth, hit.open);
         } else try e.addLeaf(ki, try e.f.leaf(.{ .kind = .top }));
         e.cur_sub = sub;
         e.inst_depth -= 1;
@@ -1071,7 +1071,7 @@ pub const Eval = struct {
 
     /// Arrival `a` of key `ki`'s callee, at a slot whose steps are the
     /// first `at` of the key's: its leaves added to the key.
-    pub fn feed(e: *Eval, ki: u32, a: Contract.Arrival, at: u32) Error!void {
+    pub fn feed(e: *Eval, ki: u32, a: Contract.Arrival, at: u32, open: bool) Error!void {
         const k = e.keys.items[ki];
         const words = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));
         const suffix = try e.gpa().dupe(u32, words[@min(at, words.len)..]);
@@ -1081,21 +1081,21 @@ pub const Eval = struct {
         const saved = e.cur_sub;
         e.cur_sub = .{ .kind = .forward, .a = ki };
         defer e.cur_sub = saved;
-        try e.arrivalLeaves(k.call, none, a, suffix, &acc);
+        try e.arrivalLeaves(k.call, none, Subtree.readAt(e.places(), a, k.slot, open), suffix, &acc);
         for (acc.items) |x| try e.addLeaf(ki, x);
     }
 
     /// An arrival of a member's draft: its label, if any, renamed to the
     /// candidate's (the labels the evaluation applied); one the candidate
     /// does not have yet arrives in a later round.
-    pub fn feedDraft(e: *Eval, ki: u32, a0: Contract.Arrival, at: u32) Error!void {
+    pub fn feedDraft(e: *Eval, ki: u32, a0: Contract.Arrival, at: u32, open: bool) Error!void {
         var a = a0;
         if (a.kind == .cb) {
             const call = e.f.calls.items[e.keys.items[ki].call];
             if (call.contract == none) return;
             a.j = e.live.?.labelIn(e.live.?.ctx, call.code, a.j, call.contract) orelse return;
         }
-        try e.feed(ki, a, at);
+        try e.feed(ki, a, at, open);
     }
 
     /// The words of key `ki`'s caller slot.
@@ -1206,8 +1206,8 @@ pub const Eval = struct {
                         if (out.items.len == start) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                         return;
                     }
-                    // The known code's call, read where its leaves are wanted.
-                    for (all.items) |s| try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = try e.f.slots.internSorted(e.gpa(), e.account(), &.{s}) }));
+                    // The known code's call, read where its leaves are wanted (deep: its subtree).
+                    for (all.items) |s| try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = if (a.deep) try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(s)) else try e.f.slots.internSorted(e.gpa(), e.account(), &.{s}) }));
                     return;
                 }
                 const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));

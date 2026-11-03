@@ -1,0 +1,3 @@
+A callback that answers a record update of what it writes (ownership-v2.md §2.10, Read-off; #1756): built again
+under --ownership=v2 and the list stale-read sanitiser. v2 accepts each edit through a label, as it accepts the
+tuple form, and the sanitised run prints the same.

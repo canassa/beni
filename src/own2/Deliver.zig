@@ -252,10 +252,10 @@ pub const Solver = struct {
             if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
             hits.clearRetainingCapacity();
             _ = try Forest.atSlot(t, s.gpa, n, words[rw.len..], &hits);
-            var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32 }) = .empty;
+            var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32, open: bool }) = .empty;
             defer arrs.deinit(s.gpa);
-            for (hits.items) |h| for (h.arrivals) |a| try arrs.append(s.gpa, .{ .a = a, .n = @intCast(rw.len + h.depth) });
-            for (arrs.items) |y| try e.ev.feedDraft(kw[1], y.a, y.n);
+            for (hits.items) |h| for (h.arrivals) |a| try arrs.append(s.gpa, .{ .a = a, .n = @intCast(rw.len + h.depth), .open = h.open });
+            for (arrs.items) |y| try e.ev.feedDraft(kw[1], y.a, y.n, y.open);
         }
     }
 
@@ -280,13 +280,13 @@ pub const Solver = struct {
                 try e.ev.f.charge(.edge, 1);
                 const words = e.ev.f.slots.relWords(kw[2]);
                 if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
-                try e.ev.feedDraft(kw[1], arrival, @intCast(rw.len));
+                try e.ev.feedDraft(kw[1], arrival, @intCast(rw.len), true);
             }
         } else if (s.res_watch.get(.{ x, rel })) |li| {
             var i: usize = 0;
             while (i < s.res_lists.items[li].items.len) : (i += 1) {
                 const kw = s.res_lists.items[li].items[i];
-                try s.evals[kw[0]].ev.feedDraft(kw[1], arrival, @intCast(rw.len));
+                try s.evals[kw[0]].ev.feedDraft(kw[1], arrival, @intCast(rw.len), false);
             }
         }
     }
