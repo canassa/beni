@@ -77,6 +77,7 @@ pub const Evaluation = struct {
             e.sink.building.deinit(g);
             e.sink.nodes.deinit(g);
             e.sink.acyclic.deinit(g);
+            e.sink.dests.deinit(g);
         }
     }
 
@@ -579,23 +580,22 @@ pub const Sink = struct {
     /// there. Describing it again adds nothing, and a fold's answer that
     /// feeds itself would describe it without end.
     described: Ids.FixedDict(4) = .{},
-    /// `(leaf, deep, list)`: a leaf whose parameter effects are said
-    /// already. Effects only grow, so saying them again adds nothing.
+    /// `(leaf, deep, list)`: a leaf whose parameter effects are said already (effects only grow).
     effected: Ids.FixedDict(3) = .{},
-    /// The subtrees being described once per place (§2.10): arrivals go
-    /// to the innermost, relative to its path.
+    /// The subtrees described once per place (§2.10): arrivals go to the innermost, relative to it.
     building: std.ArrayList(Builder) = .empty,
     /// `(kind, a, b, c, place, d)` → a subtree described already; `none`
     /// while it is, `none - 1` where it cannot be.
     nodes: Ids.FixedDict(6) = .{},
     /// Per place: 1 when no place below it is on a cycle, else 2.
     acyclic: Ids.FixedDict(1) = .{},
+    /// `(from, q, slot)` → the one result slot `ReadOff.destsOf` replays.
+    dests: Ids.FixedDict(3) = .{},
     /// 0 not known; 1 nothing the frame reads grows; 2 something does.
     frozen: u8 = 0,
     /// The subtrees begun so far.
     serial: u32 = 0,
-    /// The shallowest subtree in progress that a description met again:
-    /// what is made below it is not kept.
+    /// The shallowest subtree in progress a description met again: nothing below it is kept.
     cut: usize = std.math.maxInt(usize),
 };
 
