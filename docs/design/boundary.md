@@ -7073,7 +7073,11 @@ printed. What the move fixes in place:
 - **The frames are built and unmasked over the host buffer.** A header byte is `Js.setAt`, the
   lengths are `Buffer`'s `writeUInt16BE`/`writeUInt32BE` and `readUInt16BE`/`readUInt32BE` by
   `Js.call`, and the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and
-  `Js.bitXor`, which the tail-call loop (`backend.md` §8) writes as the sibling's `for`.
+  `Js.bitXor`, which the tail-call loop (`backend.md` §8) writes as the sibling's `for`. The
+  parser is one self-recursive tail function, `parse`, which the same loop writes as the
+  sibling's `while`: a chunk of ten thousand tiny frames runs in constant stack. It was two
+  functions calling each other at first — mutual recursion, which §8 leaves out — and a peer's
+  64 KiB write of empty pong frames overflowed the stack and exited the process (#1801).
 - **One cache for the whole process stays** (item 27): the last text framed and its frame are two
   top-level `Js.ref`s, made at module load as `Rt.beni`'s `spaces` is.
 - **The one handler that filters by code** — the socket's `error` listener, `isGone` over the
