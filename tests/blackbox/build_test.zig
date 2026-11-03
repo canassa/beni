@@ -10375,8 +10375,9 @@ fn chainDump(w: *World, called: bool) ![3][3]u64 {
         std.debug.print("a call over the chain is refused\n{s}\n", .{dump});
         return error.TestUnexpectedResult;
     }
-    // Per depth: the plain chain's records; the call's, less the plain
-    // chain's and the call's demands; the call's demands.
+    // Per depth: the plain chain's records, 0 (no test reads the call's
+    // other records; the call can cost less than the plain chain), and the
+    // call's demands.
     var out: [3][3]u64 = undefined;
     for (depths, 0..) |n, i| {
         var pn: [16]u8 = undefined;
@@ -10386,7 +10387,6 @@ fn chainDump(w: *World, called: bool) ![3][3]u64 {
         if (!called) continue;
         const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
         const demands = try accountField(dump, name, "demands");
-        out[i][1] = try accountTotal(dump, name) - plain - demands;
         out[i][2] = demands;
     }
     return out;
