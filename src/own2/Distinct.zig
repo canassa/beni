@@ -20,6 +20,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
 const Routed = @import("Routed.zig");
+const Graft = @import("Graft.zig");
 const Coexist = @import("Coexist.zig");
 
 const Error = Relation.Error;
@@ -213,6 +214,9 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     defer plains.deinit(g);
     defer e.parts = false;
     for (c.sel) |o| if (Contract.occParam(o) >= cl.args.len) return Cond.unprovable;
+    // A literal read part by part: its plain occurrences whole first (`Graft`).
+    if (try Graft.plainsOnLiteral(e, c, cl, &ps) and (try distinct(e, ps.items, true)).no) return Cond.unprovable;
+    ps.clearRetainingCapacity();
     // Each parameter's occurrences are projected by one walk of its
     // argument (§2.11.2 item 3): a step they share is read once, and a
     // value several arms reach once under their routes.

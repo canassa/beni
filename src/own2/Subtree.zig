@@ -311,3 +311,23 @@ fn belowAllFill(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place
     }
     return t.sorted(gpa, account, acc.items);
 }
+/// Whether a type variable's or an opaque place is at or below `p`: a
+/// place no step below it can name.
+pub fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
+    if (p == .none) return false;
+    var seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, places.count());
+    defer seen.deinit(gpa);
+    var stack: std.ArrayList(PlaceId) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, p);
+    while (stack.pop()) |x| {
+        if (seen.isSet(x.int())) continue;
+        seen.set(x.int());
+        switch (places.kind(x)) {
+            .@"var", .@"opaque" => return true,
+            else => {},
+        }
+        try stack.appendSlice(gpa, places.steps(x).children);
+    }
+    return false;
+}

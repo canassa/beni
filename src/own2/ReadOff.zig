@@ -15,6 +15,7 @@ const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
+const Graft = @import("Graft.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
@@ -823,6 +824,11 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
 /// A demand's written parameter slots (whatever its verdict).
 fn demandFacts(e: *Evaluation, di: usize) Error!void {
     const dm = e.demands.items[di];
+    if (dm.graft[0] != Ids.none_int) {
+        const eff: Contract.Effect = .{ .j = dm.graft[0], .slot = dm.graft[1], .node = dm.graft[2] };
+        if (try Contract.Draft.addEffect(&e.sink.d.writes, e.sink.arena, eff)) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, true, eff);
+        return;
+    }
     for (e.w.leavesOfRun(dm.targets)) |t| try paramEffects(&e.sink, t, dm.deep, .writes);
 }
 
@@ -1021,7 +1027,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
             _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = true });
         };
     }
-    d.req = v.req;
+    d.req = try Graft.fold(&e.ev, v.req);
     for (f.cbs.items, 0..) |cb, ci| {
         if (cb.inst == none) continue;
         const at = try labelIndex(s, @intCast(ci));
@@ -1047,7 +1053,10 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     }
     // A code that writes one of its captures is `once` (R-2.8); a cell
     // operation on a captured `Ref` is not such a write (§2.11.4).
-    for (d.writes.items) |x| if (x.j >= code.params.len and !Eval.cellWrite(f.slots, x)) {
+    var flat: std.ArrayList(Contract.Effect) = .empty;
+    defer flat.deinit(e.gpa());
+    for (d.writes.items) |x| if (x.j >= code.params.len) try e.contracts.effectFlat(e.gpa(), e.gpa(), f.account, f.slots, f.places, x, &flat);
+    for (flat.items) |x| if (!Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
 }

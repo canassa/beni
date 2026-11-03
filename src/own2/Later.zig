@@ -16,6 +16,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
+const Trees = @import("Trees.zig");
 const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
 const Regions = @import("Regions.zig");
@@ -118,46 +119,23 @@ pub const Uses = struct {
         if (call.contract == none) return true;
         const h = u.contracts.head(call.contract);
         const rem = (try fr.slots.relBelow(fr.gpa, fr.account, fr.places, x.path, q)) orelse return true;
-        // The reads by the callee's tree a parameter, the writes by binary
-        // search over its sorted effects (§2.7), each charged.
+        // The callee's read and write trees a parameter (§2.7), charged.
         const rw = fr.slots.relWords(rem);
         try fr.charge(.inspection, @intCast(rw.len + 1));
         for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, r[1], rw)) return true;
-        return effectMeets(u.ev, u.contracts, h.writes, foot[1], fr.slots.relKey(rem), false);
+        for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, r[1], rw)) return true;
+        return false;
     }
 };
 
-/// Whether effect run `r` (sorted by parameter, then canonical key, §2.10)
-/// has an effect of parameter `j` that meets the slot of canonical key
-/// `key` (§2.7, a footprint entry read at a path): one at `key` or below
-/// it, or one at a proper prefix of it that is deep (any, when not
-/// `deep_only`). Binary searches by prefix, one a prefix of `key` and one
-/// below it, each charged before its work: never a scan of the run.
-pub fn effectMeets(ev: *Relation.Eval, contracts: *const Contract.Table, r: Ids.Range, j: u32, key: []const u32, deep_only: bool) Error!bool {
-    const slots = ev.f.slots;
-    const effs = contracts.effectsOf(r);
-    const n: u32 = @intCast(effs.len);
-    if (n == 0) return false;
-    const step = std.math.log2_int_ceil(u32, n + 1) + 1;
-    const Ctx = struct { slots: *const Slots.Table, j: u32, key: []const u32 };
-    const before = struct {
-        fn f(c: Ctx, x: Contract.Effect) bool {
-            if (x.j != c.j) return x.j < c.j;
-            return std.mem.order(u32, c.slots.relKey(x.slot), c.key) == .lt;
-        }
-    }.f;
-    // At or below `key`: the first effect not before it has `key` as prefix.
-    try ev.f.charge(.inspection, step);
-    const at = std.sort.partitionPoint(Contract.Effect, effs, Ctx{ .slots = slots, .j = j, .key = key }, before);
-    if (at < n and effs[at].j == j and std.mem.startsWith(u32, slots.relKey(effs[at].slot), key)) return true;
-    // At a proper prefix: three words a step (`Slots.relKey`).
-    var len: usize = 0;
-    while (len + 3 <= key.len) : (len += 3) {
-        if (len == key.len) break;
-        try ev.f.charge(.inspection, step);
-        const p = key[0..len];
-        const i = std.sort.partitionPoint(Contract.Effect, effs, Ctx{ .slots = slots, .j = j, .key = p }, before);
-        if (i < n and effs[i].j == j and std.mem.eql(u32, slots.relKey(effs[i].slot), p) and (effs[i].deep or !deep_only)) return true;
+/// Whether write tree `n0` meets the slot `words` below its root (§2.7, a
+/// footprint entry read at a path): a write at it or below it, or at a
+/// proper prefix of it. The walk down its steps, charged by the caller.
+pub fn writeMeets(t: *const Trees.Table, n0: Trees.Node, words: []const u32) bool {
+    var n = n0;
+    for (words) |w| {
+        if (t.here(n).len != 0 or t.open(n).len != 0) return true;
+        n = t.kidAt(n, w) orelse return false;
     }
-    return false;
+    return t.count(n) != 0;
 }

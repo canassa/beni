@@ -1448,6 +1448,35 @@ doubling literal over one list projected 2ᵏ paths onto the same list.
   xₖ₋₁ )` and the walk meets `(nodeᵢ, xᵢ)` by two routes. The second route reaching a pair whose subtree
   selects a plain occurrence at an object is that object twice: the instantiated `req` is `no` there and
   then, and the write's targets are the pair's leaves once.
+- *As built (#1714, 2026-11-03).* `writes` are one tree a parameter, kept as the reads are (`Table.writesOf`,
+  §2.10 *Effects as trees*): a plain mark writes its slot, an open one its slot and everything below. The
+  summary prints them written out, an entry a slot, as the flat runs did; a block encodes them as the reads
+  (version 18). A reader that takes a write a slot at a time (a closure's captures, `once`, a write that
+  does not stop) writes the tree out (`Table.writesFlat`). `Graft.zig` (L8) holds the stop. Its demands are
+  judged on **every** object of their routes, not on the least route alone: a subtree that writes every object
+  below its slot (the test of *Stored selections fold exactly*, made on the write tree) is one target, the deep
+  projection there (`↓s`, §2.3.1); elsewhere each written slot is its own target, as before. So the verdict
+  and every condition a demand gathers are the per-route ones, and `T(c)` decides only how the targets are
+  grouped into demands: `T(c)` is read as the frame's positions below `c` along the tree's steps (a holder
+  bound by a pattern, an operand named by a projection). A slot `T(c)` names is read step by step, past it a
+  whole subtree; the demand of a state is named by its least route. The stop holds only where the canonical
+  names are the steps joined (no `[*]`, `⟲` or `◆` in the tree, no place on a cycle above `c`). The
+  caller's `req` from such a call is the callee's moved to the arguments' slots (`Graft.movedReq`) when
+  every parameter it asks is handed an exact slot of a parameter of the frame and no two of those slots
+  are one at or below the other; otherwise it is instantiated as before. A literal (a tuple, a constructor
+  or a record, a tree of plain steps) is walked once per `(node, value)`, a demand a written slot there,
+  named by the first route: two routes to one value are one demand. Read part by part (a parameter asked
+  deep apart and plain), a literal's selection asks its plain occurrences on the whole values first, and a
+  value they name twice makes it `no` before the walk by routes (`Graft.plainsOnLiteral`). The fold is
+  made on `req` at the read-off (`Graft.fold`); a full slot with nothing asked below it is kept as it is
+  (it names the same objects). Measured (Debug): `caller w = tₖ w` 1 609 / 26 226 at k = 4 / 8 and past
+  the limit at 10 is 240 / 298 / 364 at k = 8 / 10 / 12, one demand; the K-wide caller 850 / 2 078 / 5 878
+  at K = 8 / 16 / 32 (K + 1 demands) is 441 / 793 / 1 497, two demands; `f` over the doubling literal
+  546 / 11 008 at depth 4 / 8 (one demand a path) is 231 / 464, one demand. The ledger moves no verdict;
+  72 summaries differ, each asking at least what it asked (a deep occurrence moved where the instantiation
+  wrote its parts out, `s*~` for `s~, s[*]*~`). Lines merge where routes share a state or a value
+  (`ParamLeafByNode`'s `alone` and `deep`, `CallOtherPathsKeys`, `LevelPlacesCall`). **Not built:** `req`
+  as a tree (the fold keeps it linear here).
 
 *Specified 2026-11-03 (#1714): stored selections fold exactly.* A stored selection (a contract's `req`, a
 `res_cond`, a supply's condition) names each object slot it asks. A slot every object slot of whose subtree
@@ -3868,6 +3897,7 @@ L0  Ids  Counters  Scratch
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries |
 | `Routed.zig` | 8 | one walk of a value along several paths, a value several arms reach read once under a route set (§2.11.2, #1714) | Ids, Place, Relation, Coexist, Contract |
+| `Graft.zig` | 8 | a write onto a caller's parameter that stops there, its targets read off the callee's tree; a literal walked once per (node, value); a callee's `req` moved onto exact parameter slots; the exact fold of a stored selection (§2.11.2, #1714) | Ids, Place, Slots, Trees, Forest, Contract, Value, Relation |
 | `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, a cell callback's supply, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
