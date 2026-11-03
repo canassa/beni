@@ -7081,12 +7081,15 @@ printed. What the move fixes in place:
   (rule 9). The table is the same list as `Server.beni`'s; the two modules keep one each, since
   `Server.beni` imports `WebSocket.beni` and not the reverse. A write callback's error ends
   nothing here, as before (item 14): the callback ignores its argument.
-- **`Close` and `Result` cross no `foreign` any more.** The sibling's `next` built
-  `{ $: "Ok", a: text }` and `{ $: "Err", a: { code, reason } }` by hand, so `foreign next`'s
-  `Resume (Result Close String)` pinned `Result`'s string tags and `Close`'s field names in every
-  release build that serves a WebSocket (§4, *What JavaScript may read of a beni value*). The
-  values are built in beni now (`Task.resume resume (Ok text)`), so a release build gives them
-  short names and integer tags where nothing else pins them.
+- **`Result` crosses no `foreign` any more.** The sibling's `next` built `{ $: "Ok", a: text }`
+  and `{ $: "Err", a: { code, reason } }` by hand, so `foreign next`'s
+  `Resume (Result Close String)` pinned `Result`'s string tags in every release build that serves
+  a WebSocket (§4, *What JavaScript may read of a beni value*). A reader is a `Resume Js.Value`
+  now, answered with the text or with the end, and `read` builds the `Result` in beni — a
+  `Js.to` typed `Resume (Result Close String)` would pin it again — so a release build gives
+  `Result` integer tags where nothing else pins them. `Close` keeps `code` and `reason`: one
+  source field text has one spelling everywhere (§4, *amended 2026-10-22*), `code` is the host
+  property `isGone` reads of an `Error`, and `reason` is the end object's key.
 - **The host door** is `process.getBuiltinModule` for `node:buffer` (`Buffer`, `isUtf8`),
   `node:crypto` (`createHash`) and `node:os` (`ENETRESET`), as `Server.beni` opens `node:http`;
   `setTimeout`, `clearTimeout`, `Math` and `process` are globals.
