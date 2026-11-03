@@ -28,6 +28,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 10 | **`node`'s `Io.js`** (`finish`, `startRead`) | **built 2026-10-29**, below: both exports moved; the newer `startReadDir` stays in the sibling (rows 8 and 9, `Dom.js` and `Events.js`/`Tea.js`, are #1208's and #1228's) |
 | 11 | **`cloudflare`'s `Worker.js`, `Worker/Object.js`, `Worker/Storage.js`** (`resolveUrl`, `idFromString`, `repliesIn`, `kvPut`) | **built 2026-10-29**, below: the three siblings deleted, `runtime.js` stays (rows 8 to 10 are #1208's, #1228's and #1246's) |
 | 12 | **`node`'s `Http/Server.js`** (`startListen`, `nextRequest`, `requestOf`, `isUpgrade`, `refuseUpgrade`, `notOffered`, `write`, `awaitClosed`, `beginClose`, `boundAddress`) | **specified 2026-11-01**, below: eleven exports and thirteen helpers; `WebSocket.js` stays |
+| 13 | **`node`'s `WebSocket.js`** (`fromUpgrade`, `next`, `send`, `begin`, `finish`, `unsent`, `chosen`, `awaitDrain`) | **specified 2026-11-03**, below: eight exports and twenty helpers; the frames over the host buffer by `Js.setAt` and `Js.bitXor` |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1061,3 +1062,30 @@ import `Http.Server` (`bench/size.mjs`, both compilers), the sibling's shape sid
 `emit/release/app/HttpServe`, and no reproducible slowdown of a request: the three per-request
 loops are timed against master, both builds, two processes each, and the figures go in the pull
 request's body before it is pushed.
+
+
+## Step 13 — `node`'s `WebSocket.js` (2026-11-03)
+
+**What moves.** The eight exports of `platforms/node/WebSocket.js` (`boundary.md` §9.11 (f)–(i),
+the amendment's items 14–28) and the twenty helpers behind them — the frame writer, the frame
+parser with its fault table, the close handshake, the back pressure, the pong queue, the readers
+and the drainers — written in beni over `Js` in `WebSocket.beni`, and the file deleted. `Socket`
+stays a `foreign type` with no sibling; a connection's state is a `Js.object` of the sibling's
+names, written with `Js.set`. The frames are built over `Buffer` by `Js.call` and `Js.setAt`, and
+the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and `Js.bitXor`. The one
+handler that filters by code ends in `Js.throw`. The host is reached through
+`process.getBuiltinModule` (`node:buffer`, `node:crypto`, `node:os`) and the globals. The upgrade
+record stays the `Js.object` of §9.11 item 26, and `upgraded` keeps its signature: typing the
+record is a later step.
+
+**What changes shape.** `Result` and `Close` crossed the boundary through `foreign next`'s
+`Resume (Result Close String)`, which pinned `Result`'s string tags and `Close`'s `code` and
+`reason` in every release build that serves a WebSocket; they cross nothing now, so a release
+build gives them integer tags and short names where nothing else pins them.
+
+**The bar** (`core-in-beni.md` R47-3): release brotli no larger on the ten `run/WebSocket*`
+programs, the chat example and the websocket bench (`bench/size.mjs`, both compilers), the
+sibling's shape side by side in a new `emit/release/app/WebSocketEcho`, and no reproducible
+slowdown: §9.11 (m)'s load (`bench/websocket/load.mjs`, 100 players) runs against master in the
+release build, and the server's CPU time and instructions per message go in the pull request's
+body before it is pushed.

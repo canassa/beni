@@ -6553,8 +6553,9 @@ are the first bytes of the connection.
 fiber of the upgrade. The common surface works on `socket` as (a) says; the codes that the
 server may send with `close` are 1000 to 1003, 1007 to 1014 *(amended: no 1010, item 3 below)* and 3000 to 4999 (RFC 6455 §7.4 and
 the IANA registry), and `close` with any other code is `Err (InvalidCode code)`. The platform
-reads and writes RFC 6455 frames itself in `WebSocket.js`, a sibling of `node`'s `WebSocket`
-module, with `node:crypto` for the handshake and no package:
+reads and writes RFC 6455 frames itself in `node`'s `WebSocket` module (in beni over `Js` since
+2026-11-03, *The sibling, moved* below; its sibling `WebSocket.js` before), with `node:crypto` for the
+handshake and no package:
 
 - It sends each message as one unmasked frame. It joins a fragmented message from the client
   before `read` sees it, and it answers each ping with a pong that carries the ping's data.
@@ -6630,8 +6631,8 @@ never calls `read` sees no close from its client until a `write` fails: the conn
 A defect in `upgrade` or in a session stops the process, as a defect in a handler does (§9.10
 (f)).
 
-*As built, 2026-10-20, the server* (`platforms/node/WebSocket.beni` and its sibling
-`WebSocket.js`; `Http/Server.beni` (and `Server.js`, since moved to beni); `tests/serve/driver.mjs` and `preload.mjs`),
+*As built, 2026-10-20, the server* (`platforms/node/WebSocket.beni` (and its sibling
+`WebSocket.js`, since moved to beni); `Http/Server.beni` (and `Server.js`, since moved to beni); `tests/serve/driver.mjs` and `preload.mjs`),
 as (e)–(i) and the amendment's items 14–28 say, with these readings:
 
 - **The two siblings meet by value** (item 26; since the move, `Server.beni` makes it). `Server.js` makes the upgrade's record —
@@ -6642,7 +6643,7 @@ as (e)–(i) and the amendment's items 14–28 say, with these readings:
   loop as it queues a request. `Server.beni` calls the program's `upgrade` in a fiber of the
   server's scope, and for an accept calls `WebSocket.upgraded`, a `pub` function that takes the
   record as a `Js.Value` (a program has no `Js.Value` to give it) and answers the socket and the
-  function the session's end calls. `WebSocket.js` takes the socket over: it checks first that
+  function the session's end calls. `WebSocket.beni`'s `fromUpgrade` takes the socket over: it checks first that
   the socket is alive, and a socket that is not keeps `waiting` and starts no session; then it
   removes `waiting`, writes the 101, and sets `goAway`, which `Server.close` calls for the 1001.
 - **A refusal is written by hand** on a socket that Node gave up: the status line with Node's
@@ -6973,7 +6974,10 @@ renumbered.
     beni now (§9.10 *The sibling, moved*), and the record is a `Js.object` of the same eight
     names — `handle`, `req`, `res`, `socket`, `head`, `waiting`, `goAway`, `body` — which
     `Js.object` never renames (§4.2), so `WebSocket.js` reads and writes it as before: it
-    takes `req`, `socket`, `head` and `handle`, reads `waiting` and writes `goAway`.
+    takes `req`, `socket`, `head` and `handle`, reads `waiting` and writes `goAway`. *Amended
+    2026-11-03*: `WebSocket.js` is beni too (*The sibling, moved*, below), and the record stays a
+    `Js.object` of those eight names: `Server.beni` queues a request and an upgrade alike as a
+    `Js.Value`, and `upgraded` takes it as one. Typing the record is a later step, not this one.
 27. **One state, one encoding.** A server frame is not masked, so one state sent to every player
     is the same bytes. The platform keeps one cache for the whole process, not one per socket: the
     last text that `write` framed, and its frame. A `write` of the same text to any socket reuses
@@ -7053,6 +7057,42 @@ and (j) say, with these readings:
   costs what hand-written JavaScript costs. A click on the same page costs about 7.5 µs. The
   event's string reaches `update` as it is, with no copy. A constant state is cheaper, about 3.5
   µs, only because the view then has no text to write.
+
+**The sibling, moved (2026-11-03).** `WebSocket.js` is written in beni over `Js` in `WebSocket.beni`,
+one declaration per former export, and the file is deleted (`plans/runtime-in-beni.md` step 13;
+the bar is `plans/core-in-beni.md` R47-3). Nothing a program sees changes: (a)–(j) hold as
+written, the amendment's items 14–28 hold, and every `run/WebSocket*` fixture prints what it
+printed. What the move fixes in place:
+
+- **`Socket` stays a `foreign type`** with no sibling, as `Http.Server`'s `Handle` (§9.10 *The
+  sibling, moved*). A connection's state is a `Js.object` of the sibling's names (`raw`, `state`,
+  `queue`, `sizes`, `queued`, `readers`, `end`, `drainers`, `chunks`, `bytes`, `frame`, `parts`,
+  `partBytes`, `max`, `protocol`, `timer`, `paused`, `done`, `writes`, `flushed`, `pendingPong`,
+  `path`), read with `Js.get` and written with `Js.set`, which a build writes as the property
+  read and the assignment the sibling wrote: the frame parser touches a dozen of them per frame.
+- **The frames are built and unmasked over the host buffer.** A header byte is `Js.setAt`, the
+  lengths are `Buffer`'s `writeUInt16BE`/`writeUInt32BE` and `readUInt16BE`/`readUInt32BE` by
+  `Js.call`, and the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and
+  `Js.bitXor`, which the tail-call loop (`backend.md` §8) writes as the sibling's `for`.
+- **One cache for the whole process stays** (item 27): the last text framed and its frame are two
+  top-level `Js.ref`s, made at module load as `Rt.beni`'s `spaces` is.
+- **The one handler that filters by code** — the socket's `error` listener, `isGone` over the
+  table of item 15 and `ENETRESET` by number — ends in `Js.throw` for an error it does not name
+  (rule 9). The table is the same list as `Server.beni`'s; the two modules keep one each, since
+  `Server.beni` imports `WebSocket.beni` and not the reverse. A write callback's error ends
+  nothing here, as before (item 14): the callback ignores its argument.
+- **`Close` and `Result` cross no `foreign` any more.** The sibling's `next` built
+  `{ $: "Ok", a: text }` and `{ $: "Err", a: { code, reason } }` by hand, so `foreign next`'s
+  `Resume (Result Close String)` pinned `Result`'s string tags and `Close`'s field names in every
+  release build that serves a WebSocket (§4, *What JavaScript may read of a beni value*). The
+  values are built in beni now (`Task.resume resume (Ok text)`), so a release build gives them
+  short names and integer tags where nothing else pins them.
+- **The host door** is `process.getBuiltinModule` for `node:buffer` (`Buffer`, `isUtf8`),
+  `node:crypto` (`createHash`) and `node:os` (`ENETRESET`), as `Server.beni` opens `node:http`;
+  `setTimeout`, `clearTimeout`, `Math` and `process` are globals.
+- **Speed is measured, not assumed**: (m)'s load (`bench/websocket/load.mjs`, the arena server,
+  100 players) runs against master, release build, and the pull request's body carries the
+  server's CPU time and instructions per message beside master's.
 
 ### 9.12 The `cloudflare` platform: Workers and Durable Objects (2026-10-20)
 
