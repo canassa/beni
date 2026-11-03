@@ -371,16 +371,15 @@ const Fold = struct {
     }
 };
 
-/// The plain occurrences of selection `c` projected on call `call`'s
-/// arguments as a whole, into `out`, when one of its parameters is asked
-/// deep apart and plain on a literal, which the selection then reads part
-/// by part, every route of the literal on its own (§2.11.2, *A literal
-/// argument*): a literal that reaches one object by two routes names it
-/// twice at the plain occurrences already, and then the selection is `no`
-/// at once. False when no parameter is read so.
-pub fn plainsOnLiteral(ev: *Relation.Eval, c: Contract.Cond, call: Value.Call, out: *std.ArrayList(Proj)) Error!bool {
-    const g = ev.gpa();
-    const any = for (c.sel) |o| {
+/// Whether selection `c`'s plain occurrences are read on call `call`'s
+/// arguments as a whole first (`Distinct.instSel`): one of its parameters
+/// is asked deep apart and plain on a literal, which the selection then
+/// reads part by part, every route of the literal on its own (§2.11.2, *A
+/// literal argument*): a literal that reaches one object by two routes
+/// names it twice at the plain occurrences already, and then the selection
+/// is `no` at once.
+pub fn plainsOnLiteral(ev: *Relation.Eval, c: Contract.Cond, call: Value.Call) bool {
+    for (c.sel) |o| {
         const j = Contract.occParam(o);
         if (j >= call.args.len or ev.f.val(call.args[j]).kind != .built) continue;
         var plain = false;
@@ -388,16 +387,9 @@ pub fn plainsOnLiteral(ev: *Relation.Eval, c: Contract.Cond, call: Value.Call, o
         for (c.sel) |y| if (Contract.occParam(y) == j) {
             if (!Contract.isApart(y)) plain = true else if (Contract.isDeep(y)) deep_apart = true;
         };
-        if (plain and deep_apart) break true;
-    } else false;
-    if (!any) return false;
-    for (c.sel) |o| if (!Contract.isApart(o) and Contract.occParam(o) < call.args.len) {
-        var ps: std.ArrayList(Proj) = .empty;
-        defer ps.deinit(g);
-        try ev.project(call.args[Contract.occParam(o)], ev.f.slots.relWords(Contract.occRel(o)), Contract.isDeep(o), 0, try ev.routeStep(0, 0x8000_0000 | Contract.occParam(o)), &ps);
-        for (ps.items) |p| try out.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
-    };
-    return true;
+        if (plain and deep_apart) return true;
+    }
+    return false;
 }
 
 /// Whether every step of tree `n` is a plain one a slot names exactly (a
