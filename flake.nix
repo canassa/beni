@@ -200,8 +200,9 @@
         # tests' driver, `tests/workers/driver.mjs`, which imports Miniflare
         # from the file `BENI_MINIFLARE` names, starts `workerd` on
         # 127.0.0.1 and disposes it at the end, and the step `zig build
-        # test-workers`, which runs the `workers/` corpus in this shell. No
-        # CI job runs it yet (#697). Nothing is deployed and no account is
+        # test-workers`, which runs the `workers/` corpus in this shell. CI's
+        # `workers` job runs it (.github/workflows/ci.yml), with a Nix store
+        # of its own. Nothing is deployed and no account is
         # used. The closure is 2.2 GiB, of which 1.9 GiB is beside
         # `default`'s (Node, glibc and icu are shared), so the shell is its
         # own, as `browser` is: the Nix store CI saves is bounded at 2 GiB
