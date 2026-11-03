@@ -1,0 +1,23 @@
+import Js
+
+
+constant : msg → List String
+constant _ = []
+
+
+record : (⊤ → ⊤) → List String
+record effect =
+    constant
+        { effect = effect ⊤, ordinary = 42, cell = Js.cell { value = 42 }, option = Js.some 42 }
+
+
+line : a → ⊤
+line value =
+    Js.to
+        (Js.call (Js.global "console") "log"
+            [ Js.call (Js.global "JSON") "stringify" [ Js.from value ] ]
+        )
+
+
+pub run : ⊤ → ⊤
+run _ = line (record λ_ → line "effect")

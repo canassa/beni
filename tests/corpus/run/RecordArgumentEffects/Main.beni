@@ -1,0 +1,6 @@
+import Page
+import Probe
+
+
+main : Page.Program
+main = Page.program Probe.run

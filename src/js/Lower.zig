@@ -6516,6 +6516,7 @@ pub const Lowerer = struct {
             const p = l.pos(inst);
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, values[i], p);
+            if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             values[i] = try l.ident(n, p);
         }
         return values;
