@@ -59,6 +59,8 @@ const layers = [_]Entry{
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
+    // How large `below(p)` is, split from `Subtree` (#1714).
+    .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 5, .max_lines = 320 },
     // A selection in its one spelling of a subtree (#1714).
@@ -84,6 +86,8 @@ const layers = [_]Entry{
     // A write onto a caller's parameter stops there, its targets read off
     // the callee's tree (#1714, §2.11.2).
     .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
+    // What the distinct check reads of its rounds, split from `Distinct` (#1714).
+    .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -110,7 +114,8 @@ const layers = [_]Entry{
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
-    .{ .file = "ReadOff.zig", .layer = 11, .max_lines = 1160 },
+    // Where the read-off puts what it describes, split from `ReadOff` (#1714).
+    .{ .file = "Put.zig", .layer = 11, .max_lines = 170 },
     // The best-hold descent over a holder DAG, below Resolve (#1714).
     .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
@@ -118,6 +123,7 @@ const layers = [_]Entry{
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
     // A group's judgements kept across its rounds (§2.12, #1714).
     .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
+    .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
@@ -414,7 +420,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 52), layers.len);
+    try testing.expectEqual(@as(usize, 55), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
