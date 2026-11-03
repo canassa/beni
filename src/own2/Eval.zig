@@ -120,27 +120,6 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     try onceDemands(e);
 }
 
-/// Whether a type variable's or an opaque place is at or below `p`: a
-/// place no step below it can name.
-fn wildBelow(gpa: Allocator, places: *const Place.Table, p: PlaceId) Allocator.Error!bool {
-    if (p == .none) return false;
-    var seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, places.count());
-    defer seen.deinit(gpa);
-    var stack: std.ArrayList(PlaceId) = .empty;
-    defer stack.deinit(gpa);
-    try stack.append(gpa, p);
-    while (stack.pop()) |x| {
-        if (seen.isSet(x.int())) continue;
-        seen.set(x.int());
-        switch (places.kind(x)) {
-            .@"var", .@"opaque" => return true,
-            else => {},
-        }
-        try stack.appendSlice(gpa, places.steps(x).children);
-    }
-    return false;
-}
-
 /// Map or apply the labels of call `q`'s callee (§2.11.3).
 fn labelsOf(e: *Evaluation, q: u32) Error!void {
     const f = e.fr();
@@ -169,9 +148,9 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 const at_site = site_result != null and site.items.len == sig.own;
                 var wild = false;
                 if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
-                    wild = wild or try wildBelow(gpa, f.places, p);
+                    wild = wild or try Subtree.wildBelow(gpa, f.places, p);
                 };
-                if (!at_site) wild = wild or try wildBelow(gpa, f.places, sig.result);
+                if (!at_site) wild = wild or try Subtree.wildBelow(gpa, f.places, sig.result);
                 var args: std.ArrayList(u32) = .empty;
                 defer args.deinit(gpa);
                 for (0..sig.own) |k| {
@@ -405,7 +384,11 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         d.kind = .callsite;
         const outer = virtualOuter(e, q);
         if (outer) |o| {
-            d.pending = e.w.sites.items[o[0]].pending;
+            // The outer call may be virtual too (a label of a known code's
+            // own label): the operands pending are the walked call's.
+            var wq = o[0];
+            while (wq >= e.w.walk_calls) wq = (virtualOuter(e, wq) orelse break)[0];
+            d.pending = if (wq < e.w.walk_calls) e.w.sites.items[wq].pending else none;
             const oc = f.calls.items[o[0]];
             const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
             // A cell callback's write of the contents is deep at the cell's
@@ -419,7 +402,9 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
                     d.kept = true;
                 };
             };
-            d.callee_inst = oc.head;
+            // A virtual call's head is a code, never an instruction: the
+            // walked call names the demand.
+            d.callee_inst = if (wq < e.w.walk_calls) f.calls.items[wq].head else none;
             const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
             d.base_inst = sa.inst;
             d.write_path = sa.path;
