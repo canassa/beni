@@ -219,6 +219,8 @@ pub const Place = struct {
     scc: u32,
     /// `objectsBelow` (§2.3.1), set with `scc`.
     below: u8 = 0,
+    /// `slotsAtLeast` (§2.9.1), set with `scc`.
+    lower: u8 = 0,
 };
 
 /// A subtree of more object slots than this is held whole, `↓p` (§2.3.1).
@@ -621,6 +623,8 @@ pub const Table = struct {
                 const lone = stack.items[stack.items.len - 1] == p and std.mem.indexOfScalar(PlaceId, kids, .from(p)) == null;
                 var below: u32 = if (lone) @intFromBool(!t.places.col.kind[p].own().isEmpty()) else if (t.places.col.holds[p].isEmpty()) 0 else below_min + 1;
                 for (if (lone) kids else kids[0..0]) |c| below = @min(below + t.objectsBelow(c), below_min + 1);
+                const members = try gpa.dupe(u32, stack.items[std.mem.lastIndexOfScalar(u32, stack.items, p).?..]);
+                defer gpa.free(members);
                 while (true) {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
@@ -628,6 +632,12 @@ pub const Table = struct {
                     t.places.col.below[m] = @intCast(below);
                     if (m == p) break;
                 }
+                var least: u32 = 0; // `lower`
+                for (members) |m| {
+                    least += @intFromBool(!t.places.col.kind[m].own().isEmpty());
+                    for (children[ranges[m].start..][0..ranges[m].len]) |c| least += if (sccs[c.int()] != p + 1) t.places.col.lower[c.int()] else 0;
+                }
+                for (members) |m| t.places.col.lower[m] = @intCast(@min(least, below_min + 1));
             }
         }
     }
@@ -650,6 +660,11 @@ pub const Table = struct {
 
     /// A value at a place on a cycle can re-enter its own path (§2.3's widen).
     pub const onCycle = cyclic;
+
+    /// At most the object slots at and below a path at `p`, capped: each object place of its component once, and what is below each step out of it.
+    pub fn slotsAtLeast(t: *const Table, p: PlaceId) u8 {
+        return t.places.col.lower[p.int()];
+    }
 
     /// The object places at and below `p`, saturating at `below_min + 1`, as is
     /// a cycle below `p` that holds an object (§2.3.1): `below` is then `↓p`.
