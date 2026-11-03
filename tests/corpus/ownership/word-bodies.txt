@@ -27,7 +27,7 @@ core/Task.beni                   Task.haltOthers          cb415ff10e57f6fbed74f4
 core/Task.beni                   Task.haltAs              e90e451c285f9a3a01b439d061f6ee36b7297c965c04afca78abf0a9abb3d894
 core/Task.beni                   Task.startRacers         9f8a121fe97e1dfa90d96cb2045176d3c6ef97707434cdfd1ba1122527dfcaac
 core/Schema.beni                Schema.print        3a80795348d8d28d8d25a8b2d23171e571c557af846f1d8f9edd68af7ebd0dd1
-core/Schema.beni                Schema.printWith    9bcc40b4e9446b99264307c3c3750cdeb7fa03b3f13514fc8f475df9ce2d9a62
+core/Schema.beni                Schema.printWith    3a3d6278fb1fe5b2c0aba23967ff26ef3ab01064f5ef1af0a362932c5f429d83
 core/Js.js Js.args c15ed95be23fac3d1810eeb6009e45ae88a81b1fe31e5232fb96032876151b04
 core/Js.js Js.from 58f75c4409ebd100b249820fbd069e46ce5f285b91b4f581c8c67a66b44dc204
 core/Js.js Js.to 5163adb42e6582f154935f9dd82bef550a96e02b87002fcdb9d38fc2f81d072a
@@ -53,15 +53,15 @@ core/Js.js Js.catchIf 761a837beb982dc19efa35c98a944c5829628e843713484a85cee4cf73
 core/Js.js Js.pure d26c91d0e718d417966b583cd06490d4165ec975b74b76eaa30594b47366893d
 core/Js.js Js.fingerprint 30a526a5dfc14aa239d4e5a546c481c08b8010d51d0ec3c7dae88921f03e9288
 core/Js.js Js.suspending 4ec46a146eac3d0f1f029df6b311ffddbab73f54789897f67340ca12b7564c09
-platforms/node/Node.beni        Node.print          264360a1ae4275474cc5654558a20dd9aa413f8084915660ff1ecc340dfc7fa3
-platforms/node/Node.beni        Node.printLines     3bbcc03c964b4ae581e4781d6f610f27c3c08cc47c74581faab0c6778f0c8fdd
-platforms/node/Node.beni        Node.exitWith       9b93eadbc1527b0c5d581049e76862b8e9cb320666f2f9d8bc26149ae54127c3
+platforms/node/Node.beni        Node.print          2e49bbbbc5205e18f1f7d3c33ffa7acd11d5a93ee233d6166206aa1f1aed1e47
+platforms/node/Node.beni        Node.printLines     5595c3846b7be208bc32de0a151040b53efae2624fec0d87b24ba960393dddf1
+platforms/node/Node.beni        Node.exitWith       5b2baac4cdc06c32bbd21afba887f0047a95ecee198b9d7bb63323f5e1fc7645
 platforms/node/Ssr.beni         Ssr.render          045f71e7ff0de60367e997ca719fcc6d3a102caa10e0e2df17deed0c922bff8a
 
 # Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
 platforms/browser/Browser.beni               Browser.program          a1a03d3bdb04728a2178b66cab64a4ee5b0a208a1df64457b3653f821d0980f8
 platforms/browser/Browser.beni               Browser.hosted           b60687d2b82a5f5c513e529c47f2bcf18fa63bb2aebd38360f9e5cc013dd5c62
-platforms/browser/Browser.beni               Browser.host             33c2cf0b8d1c38fdfc4b36fd6a3c91c2c6ce5b454d67af551bd2043e0cc71032
+platforms/browser/Browser.beni               Browser.host             79d061150295df6491d2d1bf56142eacff40ababc5aa4f324031fde2988055b4
 platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500a7feac2eb34e69e9fcf30fa4f498653e306168d75936f47cf113e1
 platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
 platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29
@@ -80,16 +80,16 @@ tests/platforms/page/runtime.js              Page.run                 94db922d68
 # `core/List.beni`'s array primitives and the Builder, `Ref` and
 # `Deferred`, each worded beside its type (R-5.10.8), and the pinned
 # `sortWith` row with the helpers its body runs [O 2026-10-26].
-core/Ref.beni                 Ref.make            c9b05c32082ff83273a53acac9fab0877995071b310cb0292881f2f1e4c6cabd
-core/Ref.beni                 Ref.get             969b4f392da46ec630cc3122e1f1ef829c00b0b5e057582c2f2badde6888ebd8
-core/Ref.beni                 Ref.set             a233d3b602fda8b5d21391117431a4035df04f0802d201141aba7568ef998aec
+core/Ref.beni                 Ref.make            ecefae8e80c7b361aa7c3d541dfa3025a4e982297b9a855d8b1818a8904039ca
+core/Ref.beni                 Ref.get             0ac3f09815455a60eb645348eaa18de9d31136c1879ce0f3a82312e3e1530303
+core/Ref.beni                 Ref.set             7f71b7c2faaf7688a4b409431603db2ae9a2780ec47734dffe5277b2bc8da8f1
 core/Ref.beni                 Ref.update          8a45f5e191c5dce5afde8c5c9a576b4c211562126923d95801ec6a08e084f401
 core/Ref.beni                 Ref.modify          31543018ac32428a5ab69a8a2efc19402d2c45dae43f00ae836c1f099a63d902
-core/Deferred.beni            Deferred.make       fd3ad4364257fdcd93473fcb9e3230d1f73c0f3c77c0d05c6b836172f0184574
-core/Deferred.beni            Deferred.wait       0fd1fc2cab0c05d7c85a302622b729a1b96c05f1129259338bd8ca200ef0daa1
-core/Deferred.beni            Deferred.complete   5240fc4c43112afc24e2da942985a7e844c2f8bde0ed346e5d968b0917f8a8cd
-core/Deferred.beni            Deferred.poll       9286e70f17e95d2be61f79072690c0746ca29c891569dbdbd8b9c9162c079d46
-core/Deferred.beni            Deferred.isDone     d9cfc7ce6721be29aa4de6e445f580e49b777719476070be540a97483bfa3963
+core/Deferred.beni            Deferred.make       c67ea58019bdf17ed034dbef9c55b949944034208a350ad2e3d69711fffb3dd3
+core/Deferred.beni            Deferred.wait       4ef6d282075c246368d39a18ef3a313896768a5a9fd9f2af6768cb63c5ff4ab0
+core/Deferred.beni            Deferred.complete   23e5401429c94cc952ff5b2743024d58e0336a1271cb4c0597090a04861daa00
+core/Deferred.beni            Deferred.poll       7e0ad5079b40768b6819b1eb20baafc28e14b95281adce990a087de8cde482bb
+core/Deferred.beni            Deferred.isDone     4182375fde4cd5dd5bdf56e752afecfeb8466cf7305c142ba88967dff42bbb9e
 #
 # The index obligation (ownership-v2.md §2.13.6, R-5.10.7): every body that
 # reads a container through a `taken` result — `traverseAt` — reads it only
@@ -121,19 +121,14 @@ core/Task.beni                   Task.join                76863f4141a6c49a3ddf63
 core/Task.beni                   Task.entry               d7d15e727f2f93a919f77d5603261fabbe10698f00b92fbc170a9e8c9be4006c
 core/Task.beni                   Task.requeue             8edb7462da9cb9c179446f70c033021ad18c4f41a7401734a7483e0fc8c659d6
 core/Js/Runtime.js               Js.Runtime.parked        cd78ee9414dfa1aa0eb7a27df6392c884bd73f958da80bce43ef92115ef5e432
-core/Js/Runtime.js               Js.Runtime.microtask     cdb953fe67e2aa7799252426439105e3e2cc6d3a5ffe02d80638f13ff63440a7
-core/Js/Runtime.js               Js.Runtime.macrotask     9c79193f18ff119174b08d1133be988bc217d7d083eea6fef19dae28981a31b2
-core/Js/Runtime.js               Js.Runtime.timer         1d90ec25224132c1eb18a9e1000c81a6d02ef4e1dd14e0077b9b4ffbe49829ca
-core/Js/Runtime.js               Js.Runtime.now           5f8ad749ef8bde915122ab036d1655780f85741a7c969142e4939896d90238ad
-core/Js/Runtime.js               Js.Runtime.random        cd7e7e58dbd410f3c1906a03f74aa3a328c7cca490e47830e5737c47371a164d
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell 94d6fe0c62bfdb15cb6f50cfc995bf3afc61d15199ee158b0f9f7a8907845f6d intrinsic:core
-src/js/Lower.zig Js.cellRead ea641e69bae17fbc75201cf909d567bb5862e6e2e26b23247442648efe1844b0 intrinsic:core
-src/js/Lower.zig Js.cellWrite 9a918a49b775a49f1e7e39c172f833c66c4d74f9dcd0b8428959c2b8905e0a5c intrinsic:core
-src/js/Lower.zig Js.none 2a659ca08466de691a5372c81ea0e8d3e62ffcc6f444b63760c563c1b234c730 intrinsic:core
-src/js/Lower.zig Js.some c3f1ebee40d99d29a120155ec30eb19b26ed7da0720348bc73e62b674e0b79d7 intrinsic:core
-src/js/Lower.zig Js.optMatch d050a11ad4b97b2e215a209ea9de31bf5fe9abb8fb61f5fd539d6e7c793ed0c3 intrinsic:core
-src/js/Lower.zig Js.optWithDefault 46590957f376b78f4f9e980313071ee84549d3944962abcb5ba3e616709b3c8e intrinsic:core
+src/js/Lower.zig Js.cell 77f260ca279a4af59bfbc12693467e40eea8432d80089b92b42eb6fefbac9de8 intrinsic:core
+src/js/Lower.zig Js.cellRead e64a759dcf8b6f398f5c6fda5976b069282f50bcd34c8ad175b7a79879431fbe intrinsic:core
+src/js/Lower.zig Js.cellWrite b56150093978a3b521f40908f278a94706819c53ab10019ba33ffeb895c72c3d intrinsic:core
+src/js/Lower.zig Js.none d789f93ae7feca38e7eb57195832187111f84d3d5a7dc417269bf04d38937f3e intrinsic:core
+src/js/Lower.zig Js.some 77c759e06a79a8ae0a6d981d86eb6988200046cde2e3647929d2ee96f756e11d intrinsic:core
+src/js/Lower.zig Js.optMatch 7df266426b7b0bf979d2f5d75599a5398ce06f6a0a25f17993823ce6c25c52b8 intrinsic:core
+src/js/Lower.zig Js.optWithDefault 616c4fab9dcb6fe746f4b4574efee84d68c0dcfb6561eebf99a7e2905e4dab0d intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
@@ -153,7 +148,7 @@ core/Js/Inspect.js Js.Inspect.string de2ce20d3cfeae4f90e2fa119877cca9b5ff8345e29
 core/Js/Inspect.js Js.Inspect.number 3824ad7bd398a0111455c4065b9b3c78c6166625919a64c4fa411635826b51d4
 core/Js/Inspect.js Js.Inspect.boolean 502aa78bfa420fe1345f2571bc5c1e22a20ecf9fac133035f1a9a81a43ea2a0b
 core/Js/Data.beni Js.Data.checked 36a449811dea1905d0396bc8cee13dbd9a9a86f7d450584df89286221fbe5f58
-core/Js/Data.js Js.Data.checkedGraph cd5ced63b9c579ddc839703a46e1279eed136d3118224a527d88a6b0c3419ddb
+core/Js/Data.js Js.Data.checkedGraph 93ad53946e5f2bfe3f3378c6a695b71322c710b8d21163e892ebe5714a2fd6a9
 core/List.beni List.cons fa56d0dc91cf58e9b488ac23a5e14117191e41326f7d9bd24d75528e009832d9
 core/List.beni List.append d0a62e90de66db5440010a051b92e80a064562fde6b14ec6f6cd94aa2db0c65f
 core/List.beni List.appendFrom c38753cb7912166d98b418d60a7599b87b80d41a66323446f0b6e49f097203b5
@@ -290,7 +285,7 @@ src/js/Lower.zig List.isTree 2a652bf97d2043c13d562e013a97de58fa5b5d1807b584cb7c1
 core/Js/Any.js Js.Any.Box 7cbb50b054da40acfbe0fca4f4525192fffb9150468f1c6345c84aab6bfe7c53
 core/Js/Any.js Js.Any.pack 7e5109fb2c066bd589d93b37971a381c53799bb034761b0be721201db897dc35
 core/Js/Any.js Js.Any.unpack 5c2bb25693fd943ce564d0f1c47ba0a617d921c67481d2c94813a1a39f1f2912
-core/Js/Any.js Js.Any.packet f49197ad50fcded12f973f23163a3269a1ec5ffa0791ff9d88c5edb928fda40d
+core/Js/Any.js Js.Any.packet 72356458b6e41a36b4ff0615dad8feb4fc517c3077d8f40ac47f1bf5f21962b4
 core/Js/Any.js Js.Any.packetKey 27c7b926dcde49d0390a09ab75a29314779e92b2ece94be8c34bcd7ff4b77a54
 core/Js/Any.js Js.Any.packetDescriptor 0475beda2d8c2ead7e13cdecb8ea9744811403a9e491e67a05595ec41a3330ac
 
@@ -302,3 +297,142 @@ src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1
 src/js/Lower.zig Js.Array.arrayAllocate 5d64494a1e4215d903442b27d3576d7b13db1685c2f4f7d3b268e3ee9096bab5 intrinsic:core
 src/js/Lower.zig Js.Array.arraySet edfcf11ea9c9ba7a75f9386fe4e425b2d4e052e0fcc4e1a7fb042b330a24031c intrinsic:core
 src/js/Lower.zig Js.Array.arrayDone a8b286b0244a3875d62df852531b1a16afc42a11ae9a8b5c01cbd0a5692e9abe intrinsic:core
+
+# Individually read native/inspection/FIFO bodies, 2026-11-03 (#1804).
+core/Browser/Host/Event.js Browser.Host.Event.errorMessage 2a5c1c42ca2f37eca07d01f3634b8a569f5b47da06fa3842dfcd2e6d28c98646
+core/Browser/Host/Rejection.js Browser.Host.Rejection.assign 3936f006d3eb283378c66a609450f4a25368d46ede5516de29767b86e6d8d941
+core/Browser/Host/RegExp.js Browser.Host.RegExp.group c5dfab8e9db4cae504ba687a3f32f1ba414d1c7c39c4a37a26bb9a3a163f115e
+core/Browser/Host/Worker.js Browser.Host.Worker.endpoint 755e1a042413a6c4c0d8aa4c2033473718f43191d53b8da4acea04b58833b8d8
+core/Browser/Host/Worker.js Browser.Host.Worker.post 115425a022a32c21f75a89e0511368245dcbc266c9a690afbe98895cab0367e4
+core/Browser/Host/Worker.js Browser.Host.Worker.terminate 7354b6b30beb22ed25f4d0cd021adcd3a05582a12171369313bbb89625e93f51
+core/Browser/Host/Worker.js Browser.Host.Worker.toEventTarget 444c5bf77999d80d95f10a250de61a385740a6eea2cdef3c856b5b911724eeb9
+core/Browser/Host/Event.js Browser.Host.Event.dataOnly 9ff771015a1c1bd620213895cda143e96f0203f1ab55d5993c62f2b7021c51fc
+core/Browser/Host/Event.js Browser.Host.Event.error df145ea6e21c7bae65b22705b3a8b1ab88d0fec276b5f845c6cea56cd8d90b0f
+core/Browser/Host/Rejection.js Browser.Host.Rejection.setAbandoned 373c6edf7ce252b243aed04c231f66453514ea08ae32f43e719ebfcef7bab73c
+core/Browser/Host/Element.js Browser.Host.Element.focus 258bdd8beeff05352d35f55770a78573e793ded22895c45dea4ac4aec52e3fbe
+core/Browser/Host/Element.js Browser.Host.Element.blur 20bcd4223df5c4a598806d6c27f7c58d9b96ca9da5b5129bee60da3076ed96bb
+core/Browser/Host/Element.js Browser.Host.Element.box 57888c15553dae3caaba55ae599f94b7fd80132a5994bc895345f85a974cccb5
+core/Browser/Host/Element.js Browser.Host.Element.scrollTo bb07423773670f40c5f04ac2c7b6cc55eb4ad6c84638aefcdfb7f3f9527d99e4
+core/Browser/Host/Element.js Browser.Host.Element.scrollIntoView 696d0538d49d10c160839b85ca77bdd2914c3cd1ee27a2c4529cb4afc5a19fdc
+core/Browser/Host/DOMRect.js Browser.Host.DOMRect.x b045282a51811211793f60d048ded6437b77e9c5f6d00382eb50aaade9b8005c
+core/Browser/Host/DOMRect.js Browser.Host.DOMRect.y 77df80f69010eb25e017f33835be989a3299b651f4b7bad8720e37e96ece53b6
+core/Browser/Host/DOMRect.js Browser.Host.DOMRect.width 17db611d15b0668c637230f5c98192c041d0ca65945e400c3aefa9cced9fde2a
+core/Browser/Host/DOMRect.js Browser.Host.DOMRect.height 1fa4837c7c1348d0de2c1ff1476a59f0c38d2a6f6ed26277cce3e57a37194042
+core/Browser/Host/Element.js Browser.Host.Element.fullscreenSupported e94d7475791dd5b4fe397c4f7b4a787921e321963d58e5867f775bb59ab57730
+core/Browser/Host/Element.js Browser.Host.Element.requestFullscreen 11d66eeddfda6de712d44b848ed987efbaa90cf23e3b89494a8374fd41956535
+core/Browser/Host/Rejection.js Browser.Host.Rejection.typeErrorMessage 75ace726a581d0e0e6b495bc5158fe9c807fbd404e36be4e50efa9af4b1171c1
+core/Browser/Host/URL.js Browser.Host.URL.protocol 176fd1f7caa41bba5737dbcaf3229087839cfc7809741645c404ff7550364b50
+core/Browser/Host/URL.js Browser.Host.URL.setProtocol 4e573f8dc6d0c0f5ef0ee864856dfac4bb80c8a37b41d236aa4273e3550d0673
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.arrayBuffer ee1234af96bc7d0ed86e59098be318f08cc991d18255d6ea9c6d6af69865f066
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.readyState 9ecc29dcaa032c9dd0fd33feefef5b9c6c4367667139cd4e7854ee3b92b6b80d
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.bufferedAmount 4c6ce72ae6ac8eca96a73192459510a0c69879dfb90e7f1df7b228ba87331141
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.protocol b9fd48f725c67fe1c112cfc9a60c36cf34439fb2a2abf2569931f90d6f648dc3
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.send 31fda12cb4092166952f49376c386c2e0eea43d0835b91f92ecc500a129af51a
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.close 2ca2a75baaf1e00d5cd7d95acc0a562daed929670d17d2ba9e0b8d6cbff117cd
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.closeWithoutCode 2c4437aff52b89e1c8bb15604777a4f81f7e26ef42c5eb7fffa0ae89a9c244be
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.onOpen 28f19d9ae160be4eae92c2ffcd2ad80f40ffc4af77a732e8cf6e47748d7a98ed
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.onError aecc71bc30e66339069ac37361ac395973e887a10e213981e77ef9522a6066ef
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.onText 742054f94468732ed86b0f4a343c8532debf8da7086757fcfef59fdedaaca683
+core/Browser/Host/WebSocket.js Browser.Host.WebSocket.onClose 7340e0bef02b0ea9db0903002a874608753bb7204d67fc7d8ef4eb6da31edf97
+core/Browser/Host/Storage.js Browser.Host.Storage.get 2fea5ec7d475f156b3150e6c02391341724b60b174c6daf55c25815909c3adc0
+core/Browser/Host/Storage.js Browser.Host.Storage.set 7826ba3f149c15b76b2d820f5b66a26c3c5c44f52555fe96597486c167756433
+core/Browser/Host/Storage.js Browser.Host.Storage.remove 8f9829fe964305944f4bf1b20f6e1f1b1a0f4cf69a2fdc4d4d3850fae3396d2a
+core/Browser/Host/Storage.js Browser.Host.Storage.length 1fa83e9a7ea39c742978451620f82b5add0d0f7df870edc745d121402cbc9b49
+core/Browser/Host/Storage.js Browser.Host.Storage.key 95ffd0217faf01706c5d511d133a6318d0156916828d40b3f6aa8c2fdb96c939
+core/Browser/Host/URL.js Browser.Host.URL.href 6faace375d62740635e9520dae861fe12fa9a9ff93020be1f03e226511866965
+core/Browser/Host/URL.js Browser.Host.URL.username a1d99fa05e4739dc4712fe7a2bfca4fcced9ead3aeb48250a418d59afbd0546f
+core/Browser/Host/URL.js Browser.Host.URL.password 3c08d85c4ad2ee1fdc0b2bac09d55fe9a307daf3e9cd11dfb8f7a24a00e5825c
+core/Browser/Host/Headers.js Browser.Host.Headers.append 6352fd4352f9dc302f5a7b2b2a02372ee9983688d4035a7c0df5e91f20cd07e1
+core/Browser/Host/Headers.js Browser.Host.Headers.has 250082d1d6e499894b42f1a449078e146b248feea95051d8074d2bde33ae1a7d
+core/Browser/Host/Headers.js Browser.Host.Headers.set 1d97a409cc9be30c4bb53be28c19eb225d1f5605a753599dfe57d91283cb95af
+core/Browser/Host/Headers.js Browser.Host.Headers.get 1cdd3f6168eae7154c45bee15ad1a9d8e573650ba469cf66a99ee509f2b67711
+core/Browser/Host/Headers.js Browser.Host.Headers.entries 88cbeb93022441008f869025a08794dae314f618572601cc51e7158cc9d0ce25
+core/Browser/Host/FormData.js Browser.Host.FormData.append 4addef6ca7a8b91f14764638d2a64951ea8d5f4125fd13380dd1a1f9f8a4aaa6
+core/Browser/Host/Fetch.js Browser.Host.Fetch.formBody eb79450d21f79ce9523b83ff4687298c8291684a9a765d504008fd061b3a8d05
+core/Browser/Host/Fetch.js Browser.Host.Fetch.init 135a20611fc2a751b629e9fdd0cefd819cf8bf307c02b64297b55cac000a72b9
+core/Browser/Host/Fetch.js Browser.Host.Fetch.fetch 95ba470e4350d956e46fb917461af84a090c26fb90ecba5ac183da000fbd9eaa
+core/Browser/Host/Response.js Browser.Host.Response.url 99d2700ea8741ecfec5bba8f6517373e182c856417466608edc44600e3211847
+core/Browser/Host/Response.js Browser.Host.Response.status 06f3de9541ea2b8c473335da4ef594421c700f7b3fc44d6c308cfbebfab8f04a
+core/Browser/Host/Response.js Browser.Host.Response.statusText dafae565e0b8c22448336a4781211a7f22a47b1c61271adff6fced8271b6a01d
+core/Browser/Host/Response.js Browser.Host.Response.ok a75192272d9d0c45d4016591f4da972964fc54ecbdd05bd81b123998a567bef4
+core/Browser/Host/Response.js Browser.Host.Response.headers 0c87d91a87d37af8b6274c4c0670157a45ae88a4fb1b88c724a511af7bdf25a2
+core/Browser/Host/Response.js Browser.Host.Response.text d9f4c52518c02fe6855ca8a0c5030a3f6f667a7ff8fdd0628cf840c5b6d3310b
+core/Browser/Host/Response.js Browser.Host.Response.reader 81c978894b98a7ba5b500f637dbe6b0810071c685d6cf8abefaf844026a14017
+core/Browser/Host/ReadableStreamDefaultReader.js Browser.Host.ReadableStreamDefaultReader.read 0210a177df304c746b24e5686fdd42e4e9ec7b2bf48a34ed06771f304db092da
+core/Browser/Host/ReadResult.js Browser.Host.ReadResult.done be5d812e3f1a0cf3ae33906da6fd5e9fdfc1fec6a27e9c1cea75791f91ed5502
+core/Browser/Host/ReadResult.js Browser.Host.ReadResult.value 1c636946c2029c3d6c0d22c56fb4eec1dbe878e3439a2754cf574c35878a2761
+core/Browser/Host/TextDecoder.js Browser.Host.TextDecoder.decodeMore ed87fbbc0d2770a5c2277149b9c5ecb948efb46a7f1b6dc00ce981590ab3aed7
+core/Browser/Host/TextDecoder.js Browser.Host.TextDecoder.finish a1fc8ae406a59801e77bac35e3e8cd597279e69c408889717cc41280e97bd0c0
+core/Browser/Host/AbortController.js Browser.Host.AbortController.abortWith 319a309574cba8cf78cd0af74aaaf8145f8fde76beda230b4f56ea5150f19ee4
+core/Browser/Host/AbortSignal.js Browser.Host.AbortSignal.reasonIs 8c504c247609a00c8b99a7c69a7c0b8d3b3a334b10776809e61401082cd3b583
+core/Browser/Host/Rejection.js Browser.Host.Rejection.isTypeError a83f3889789f37a2c5d40a17c37b89aa16538d30815a66938eca4e2fc38531c6
+core/Browser/Host/RegExp.js Browser.Host.RegExp.test 35e238a603ba2669ff6a31ffe4b6745195d1695c283be694fbc95f8d66c1fe90
+core/Browser/Host/RegExp.js Browser.Host.RegExp.replace faa3fcf7d69acc07df864e96583aed09dae4bf1a254c1767ba24c42996833ba0
+core/Browser/Host/Promise.js Browser.Host.Promise.observe 6ccf4bb4c57182e58864c3ea2c486f0634a0ce3945fb16d25050d4551d913076
+core/Browser/Host/Rejection.js Browser.Host.Rejection.isError 0a77f27e9be3dd38cc3c221cd87c8b5259d3870f596c38268579a65505eac907
+core/Browser/Host/Rejection.js Browser.Host.Rejection.name fb7da45ac1e57dd4c1c5674a10393a7164a8688752423f133cff22d10bba49e9
+core/Browser/Host/Rejection.js Browser.Host.Rejection.code c383ead5fc8814818708867f27a884a04bea1a27d0031bbf022cb74437db4331
+core/Browser/Host/Rejection.js Browser.Host.Rejection.raise 04bbe37bd3949311205650e8abc30f652ed90779b98060006ad09794f11cae29
+core/Browser/Host/AbortController.js Browser.Host.AbortController.signal c9b6cb5b5e10f61cace8653c72f4a8f8f361d2e7dfcc336e6ecc5d78562b6911
+core/Browser/Host/AbortController.js Browser.Host.AbortController.abort 3f6622ce8d5f67e9a046d2cb971495192af234ba9e6bfd6c825f332bceb027dd
+core/Browser/Host/AbortSignal.js Browser.Host.AbortSignal.aborted f9815182277a51cb1f514c41348b43ee5f17feb087a272dec15a7caba2486cbf
+core/Browser/Host/NodeFs.js Browser.Host.NodeFs.readUtf8 6bb071903e1b3e9cc385eda1a54ccdba1234f7bc2cb7a19c0f1cfb6d61fd77e7
+core/Browser/Host/NodeDirent.js Browser.Host.NodeDirent.name 77ab216aeb4a5ebdb15a835e486dd1e59609dfea984ae55169a882b104d05913
+core/Browser/Host/NodeDirent.js Browser.Host.NodeDirent.isFile 645c7ffc3c2baf0c5f65c7b8d533ffb4151cc4f18309e7e2b5107c6008ee4f99
+core/Browser/Host/NodeDirent.js Browser.Host.NodeDirent.isDirectory da2effb27d0b6047cdc2510978d4b30464c0057754e1e2d64ad7cfdd7182c481
+core/Browser/Host/NodeDirent.js Browser.Host.NodeDirent.isSymbolicLink abdbc670ac236e70aba59c978c79649ca61da75c2bdaa07b1cae9cac00177785
+core/Browser/Host/NodeProcess.js Browser.Host.NodeProcess.beforeExit 3d2415669dd42ef1f57a2058640214ce37175bc1f0990468292e6a5c2010a3a9
+core/Browser/Host/Events.js Browser.Host.Events.listen d5df630e3007c88a6ee85de49114ee1dc324ed45423823e7bb427ccce7435cec
+core/Browser/Host/Window.js Browser.Host.Window.requestFrame 01ae08f402edab09c834a0b3d89ef56a876bebd1f4b2ff2bfae7159f0c43b184
+core/Browser/Host/Window.js Browser.Host.Window.cancelFrame 63d3dd6416d3427f54876437c4cef6f93e5113cfb4f9ab2e2a1be80981d20381
+core/Browser/Host/Event.js Browser.Host.Event.defaultPrevented 73f5720d35192314c34fa328a4b0986891a4e123e6b37778207e1762ccf04c93
+core/Browser/Host/Event.js Browser.Host.Event.button 83b9a8bf0f88eca52be22469591955c5943eb728a52c5903b85c412501f6ceb0
+core/Browser/Host/Event.js Browser.Host.Event.composedPath d3c2b74fbcf1e4809211382f41381ff0a1bb3b26cd7c9c13e46e5ad84c8b66d3
+core/Browser/Host/EventTarget.js Browser.Host.EventTarget.asAnchor 74cceda523cdbdb114928ae0f757ae541d7e686e51b3adba4ee25c211e4cdd15
+core/Browser/Host/HTMLAnchorElement.js Browser.Host.HTMLAnchorElement.hasAttribute 4a9830461de6888aa516d7fb8f7c3c96e66763c1ae7f630b9608d39c5cc4d950
+core/Browser/Host/HTMLAnchorElement.js Browser.Host.HTMLAnchorElement.href ac51a8a0a7559e858262b17e1c562fe500d683b59a0044e9f1cd294c88ee8407
+core/Browser/Host/HTMLAnchorElement.js Browser.Host.HTMLAnchorElement.protocol a15bb3b31f675765349b70d4272fb08de1d2f2e740a53a10ca21384fd22bb6eb
+core/Browser/Host/HTMLAnchorElement.js Browser.Host.HTMLAnchorElement.host f17c1d6d1b3df16af39c3f18244be858ca632c69cbd133966ec7b7b9466e82fa
+core/Browser/Host/HTMLAnchorElement.js Browser.Host.HTMLAnchorElement.target aced7f8ea591d3884627993c0bb5fbfc96b3f9b118e0deb575a75d69eb3f9026
+core/Browser/Host/Event.js Browser.Host.Event.currentBox 5d3da7d63586f21f830a9c5dc8e1f649da876832a64acaa344c333b14a220e18
+core/Browser/Host/DOMRect.js Browser.Host.DOMRect.left e583262e6cd7cc3254c90f6b18ed27c783246310fc7398ff45232153a846cf2c
+core/Browser/Host/DOMRect.js Browser.Host.DOMRect.top fe6cd63132feca4daf8427dadc1ea576acd5f4b44a6a6118f22011be62c7b696
+core/Browser/Host/Event.js Browser.Host.Event.targetValue 20d3d074a4760ce54fa91f341cc0c3614ecc689bcde706de6d957eb48ceddbbd
+core/Browser/Host/Event.js Browser.Host.Event.targetChecked 4f8252d43e375f2cb062e9f35cbf6f394650eadfdc24cf2eeb8d5cb5f012f9e4
+core/Browser/Host/Window.js Browser.Host.Window.listen 99deb5e2eb6d69f2ec365c346092d74a7832621679c65442b6062883f7f1fc69
+core/Browser/Host/Document.js Browser.Host.Document.listen fce3cbeee230128b49afda4da32af3f6bf1caa7fbe22e72602b88f9b5a87bb29
+core/Browser/Host/Event.js Browser.Host.Event.preventDefault e463b2e75fff67712b36bf9a4144df00e372fc5d6387d1827bb745ddbec8f181
+core/Browser/Host/Event.js Browser.Host.Event.key 712984fd12fce9c79000c37b51f08bf379bd710cd6a7881ebf5e1d0421f324b1
+core/Browser/Host/Event.js Browser.Host.Event.code c898190007db964f41bd86f6b42e59fde7bb4abef2c0e03c5896fbbf220c7a8a
+core/Browser/Host/Event.js Browser.Host.Event.ctrlKey 8029b8c1cb537381c6540e4d3a517562dd45b0b9f5d7ec44d1cccf50fd0f5ee7
+core/Browser/Host/Event.js Browser.Host.Event.shiftKey 84c8211b3a55c42ad204d7fda671fd52dfd557356ebe55305cbf073a5de334bd
+core/Browser/Host/Event.js Browser.Host.Event.altKey 4d739c704f255a06b04b645c3e0440da8f7b785991170222be0375a1fe5bd9cf
+core/Browser/Host/Event.js Browser.Host.Event.metaKey 4c3b2394d9c74b8cf082cbcec68b15d7e300318f87517d9ad0db5938e7487f04
+core/Browser/Host/Event.js Browser.Host.Event.pointerId 1d9871261a080821ec2f33a040d3c27d96c5060656c3937fb491da518cd43773
+core/Browser/Host/Event.js Browser.Host.Event.pointerType 673b020b8a4e36ae558154e104dd761e794055ffb0d2f54ef59f9c41c3fe669f
+core/Browser/Host/Event.js Browser.Host.Event.isPrimary 7ab12d39f8576e471ea8d6636d6210dbc44eb70b514a739cdbef4bd0fbf594d8
+core/Browser/Host/Event.js Browser.Host.Event.clientX fd7d43200f1be09f2e62c45bc34ef7f9855a053761e1f6f63644e2c2d0d2d170
+core/Browser/Host/Event.js Browser.Host.Event.clientY 24ddc2be6a5e122758423116fee16a281e9e70c051540e5aa9adbe7265055181
+core/Browser/Host/Timers.js Browser.Host.Timers.queueMicrotask 1720f10ea51e2d4591e5f97b3f1c0ac396f9e604cf230c0d2c1bd7ddd0a2cec6
+core/Browser/Host/Timers.js Browser.Host.Timers.start 69d839d50e57ed358b449fbaf5d1b27d9d1909f4ba654f6de098f94f139094e3
+core/Browser/Host/Timers.js Browser.Host.Timers.clear a011e99fa62d1effe47b0917fd989a604e719fd1023c11bb2f7ce15b73045ac6
+core/Browser/Host/MessagePort.js Browser.Host.MessagePort.postUnit ead6d9eb9ebdb2c512c6ead6b9b23a5cbc73442ad151af451e22edbe1315da98
+core/Browser/Host/MessagePort.js Browser.Host.MessagePort.onMessage 66fe10dcc74a0ed22ab4176c6e2c3934a156ca40ebf69c94e53e1100597b10a2
+core/Browser/Host/Immediate.js Browser.Host.Immediate.trySchedule 6b1b1dbe19d95f6857fa12a49ae3f45734b50ec39c57f7cd2586d4f608dc2e4a
+core/Debug.beni Debug.show b43d7dd29b1df026aa18d8e19c1f72b2ce2c96a85ee1e631faf80361aa7fddbe
+core/Debug.beni Debug.showCode ec98fbd2f128a4a81550ec6754435f36df418f31b66f261dca01e80a10dc1d70
+core/Debug.beni Debug.showApplied 50e58388e8d858deb6e50fc2a7665574340a517e362cec129fd5e4d87239fc73
+core/Debug.beni Debug.tupleParts 7f42a86a54bee5ba34c7030274822b506d44c72a089e1d4b339689089947942e
+core/Debug.beni Debug.showType 768a59ea6c42f8bc6b27a7a8207b1cd520815c0b2bb9b7c22b2fb62c429945ef
+core/Debug.beni Debug.constructorParts 10270496d74b0038921ba90aaf9add4c97b7a3b34c6ae5334dfa76d80622656c
+core/Debug.beni Debug.showRecord acad480fdf0946a83436a2550b1e4f252b1331990a0a65c5d532538a7fdd5392
+core/Debug.beni Debug.recordFields ff90faeb9174b1f47d26de6150c75dd45b4e3abbf5c4725392ac7cd1d9f4fa12
+core/Debug.beni Debug.listItems ba70387636e184698e89ccda3ae2b1a1e99cd85e2ec6a45aabc1cdada05fd24a
+core/Debug.beni Debug.listParts 158e798bf7bd55211e575d65aa0897e72b8298a98b1ef43e830afc87de5d2b28
+core/Debug.beni Debug.dictPairs 62e4d43d91a8506bb07ef074890c354e498cedd92d3259b38cb0b6378be03503
+core/Debug.beni Debug.untypedValue 26b7d772a39b889c37aea05bae2a571a78b3fc41022741656d22d386f7ac8ebf
+core/Debug.beni Debug.untypedObject ad10080dd3df094c6e043bf57b38a262613a45f50229a97b20f5fc01b03a7816
+core/Debug.beni Debug.untypedItems e731098110002982911ae9d15f037f2e4cff242d4973dd3490ef4d810f673261
+core/Debug.beni Debug.untypedConstructor 7f79a9c110bd27a1e9e7e0df721bbe4fbe2f1260c6b8170550426f8d4667a7be
+core/Debug.beni Debug.untypedFields ebd2779412e5d923aa845f5ac4f41f80835f8bf6948ef390290371de8b72a361
+core/Deferred.beni Deferred.wake fc88ad6c5084f64d4d2e572b24b7ac673638af5c7ab9f643bbe6be87c7b425e2

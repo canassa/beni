@@ -11,4 +11,4 @@ pub foreign impure isPage : ⊤ → Bool
 pub foreign impure current : ⊤ → EventTarget
 
 
-pub foreign impure asAnchor : borrowed EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement
+pub foreign impure asAnchor : aliased EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement

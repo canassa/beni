@@ -1,0 +1,12 @@
+module AnyDataWords
+  9:12 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  20:13 List.push xs: rejected unknown: the list came from JavaScript (approx)
+  25:12 List.push xs: rejected alias: value holds it and is read at 26:5
+  summary packed: π1 RAEW[storage], π1[*] RA; res .0 fresh1{lost}r{lost}, .1 π1, .1[*] ~π1[*]
+  summary unpacked: π1 R; res [*] ~⊤{lost}r{lost}, fresh1 ⊤{lost}r{lost}
+  summary checked: π1 RAW[storage], π1[*] RA; res .0 ~condition(fresh2) π1, .1 condition(fresh3) π1, .1[*] ~condition(fresh4) ~π1[*], condition(fresh1){shared}r{shared}
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause unknown 1
+cause escaped 1
+cause alias 1

@@ -6,4 +6,6 @@ import Browser.Host.ReadResult as ReadResult
 pub foreign type ReadableStreamDefaultReader
 
 
-pub foreign impure read : borrowed ReadableStreamDefaultReader → Promise.Promise ReadResult.ReadResult
+pub foreign impure read :
+      escaped ReadableStreamDefaultReader
+    → Promise.Promise ReadResult.ReadResult

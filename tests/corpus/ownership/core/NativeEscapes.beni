@@ -1,0 +1,97 @@
+-- Every callback below is retained by the host. Removing its escaped word
+-- must change the verdict for a later write to the captured list.
+import Browser.Host.Document
+import Browser.Host.Events
+import Browser.Host.MessagePort
+import Browser.Host.NodeProcess
+import Browser.Host.Promise
+import Browser.Host.WebSocket
+import Browser.Host.Window
+import List
+
+
+pub documentListener xs =
+    _ = Browser.Host.Document.listen "tick" λ_ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub targetListener target xs =
+    _ = Browser.Host.Events.listen target "tick" λ_ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub portListener port xs =
+    Browser.Host.MessagePort.onMessage port λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub processListener xs =
+    Browser.Host.NodeProcess.beforeExit λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub promiseSuccess promise xs =
+    Browser.Host.Promise.observe promise
+        (λ_ →
+            _ = List.push xs 1
+            ⊤
+        )
+        λ_ → ⊤
+    List.push xs 2
+
+
+pub promiseFailure promise xs =
+    Browser.Host.Promise.observe promise (λ_ → ⊤) λ_ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub socketOpen socket xs =
+    Browser.Host.WebSocket.onOpen socket λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub socketError socket xs =
+    Browser.Host.WebSocket.onError socket λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub socketText socket xs =
+    Browser.Host.WebSocket.onText socket λ_ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub socketClose socket xs =
+    Browser.Host.WebSocket.onClose socket λ_ _ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub frame xs =
+    _ = Browser.Host.Window.requestFrame λ⊤ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2
+
+
+pub windowListener xs =
+    _ = Browser.Host.Window.listen "tick" λ_ →
+        _ = List.push xs 1
+        ⊤
+    List.push xs 2

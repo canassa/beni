@@ -8,4 +8,4 @@ pub foreign type ReadResult
 pub foreign impure done : borrowed ReadResult → Bool
 
 
-pub foreign impure value : borrowed ReadResult → Maybe Uint8Array.Uint8Array
+pub foreign impure value : aliased ReadResult → Maybe Uint8Array.Uint8Array

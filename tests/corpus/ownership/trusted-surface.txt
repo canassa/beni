@@ -56,9 +56,7 @@ core       String.words          ownership/Words.beni            -
 core       String.lines          ownership/Words.beni            -
 core       String.toList         ownership/Words.beni            -
 core       String.indexes        ownership/Words.beni            -
-# crossing is the unsafe end already: taking it away claims less
-html       Html.Event            ownership/WordsBrowser.beni     -
-html       Html.Pointer          ownership/WordsBrowser.beni     -
+# Html.Event/Pointer now use typed native wrappers; no crossing word remains.
 # a fresh Program holds no list; fresh is the top for a result that holds none
 node       Node.print            ownership/Words.beni            -
 node       Node.printLines       ownership/Words.beni            -
@@ -79,13 +77,6 @@ browser-inline Tea.application    ownership/EntryUrlTaggers.beni   1:entry>-
 browser-inline Tea.document       browser/inline/DocumentTitle.beni     -
 page       Page.sandbox           browser/Counter.beni             1:entry>-
 core       Js.invoke             ownership/core/JsWords.beni     2:aliased>borrowed+1:returned>-+res:->fresh
-# Retained callbacks must not permit mutation of their captured lists later.
-core       Js.Runtime.microtask  ownership/core/RuntimeWords.beni 1:escaped>borrowed
-core       Js.Runtime.macrotask  ownership/core/RuntimeWords.beni 1:escaped>borrowed
-core       Js.Runtime.timer      ownership/core/RuntimeWords.beni 2:escaped>borrowed
-# Scalar results and unit inputs carry no mutable payload; there is no observable unsafe neighbour.
-core       Js.Runtime.now        ownership/core/RuntimeWords.beni -
-core       Js.Runtime.random     ownership/core/RuntimeWords.beni -
 # defect never returns; its message is immutable text.
 core       Js.Runtime.defect     ownership/core/RuntimeWords.beni -
 # Only Task reads parked as the identity of its plain sentinel, never as mutable program data.
@@ -105,3 +96,172 @@ core List.isView ownership/core/ListViewIdentity.beni -
 
 # Private array allocation is fresh and exclusive; neither assertion has an unsafe stronger neighbour.
 core Js.Array.arrayAllocate ownership/core/JsArrayWords.beni - Array.arrayAllocate
+
+# Native bodies audited individually under #1804. Opaque receivers and scalar
+# arguments grant no beni-list editing permission; unknown results grant no
+# freshness. Their remaining words have no unsafe neighbour a verdict sees.
+# Retained callbacks instead have explicit capture flips below.
+core Browser.Host.Event.errorMessage ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.assign ownership/core/NativeWords.beni -
+core Browser.Host.RegExp.group ownership/core/NativeWords.beni -
+core Browser.Host.Worker.endpoint ownership/core/NativeWords.beni -
+core Browser.Host.Worker.post ownership/core/NativeWords.beni -
+core Browser.Host.Worker.terminate ownership/core/NativeWords.beni -
+core Browser.Host.Worker.toEventTarget ownership/core/NativeWords.beni -
+core Browser.Host.Event.dataOnly ownership/core/NativeWords.beni -
+core Browser.Host.Event.error ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.setAbandoned ownership/core/NativeWords.beni -
+core Browser.Host.Element.focus ownership/core/NativeWords.beni -
+core Browser.Host.Element.blur ownership/core/NativeWords.beni -
+core Browser.Host.Element.box ownership/core/NativeWords.beni -
+core Browser.Host.Element.scrollTo ownership/core/NativeWords.beni -
+core Browser.Host.Element.scrollIntoView ownership/core/NativeWords.beni -
+core Browser.Host.DOMRect.x ownership/core/NativeWords.beni -
+core Browser.Host.DOMRect.y ownership/core/NativeWords.beni -
+core Browser.Host.DOMRect.width ownership/core/NativeWords.beni -
+core Browser.Host.DOMRect.height ownership/core/NativeWords.beni -
+core Browser.Host.Element.fullscreenSupported ownership/core/NativeWords.beni -
+core Browser.Host.Element.requestFullscreen ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.typeErrorMessage ownership/core/NativeWords.beni -
+core Browser.Host.URL.protocol ownership/core/NativeWords.beni -
+core Browser.Host.URL.setProtocol ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.arrayBuffer ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.readyState ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.bufferedAmount ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.protocol ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.send ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.close ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.closeWithoutCode ownership/core/NativeWords.beni -
+core Browser.Host.WebSocket.onOpen ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.WebSocket.onError ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.WebSocket.onText ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.WebSocket.onClose ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.Storage.get ownership/core/NativeWords.beni -
+core Browser.Host.Storage.set ownership/core/NativeWords.beni -
+core Browser.Host.Storage.remove ownership/core/NativeWords.beni -
+core Browser.Host.Storage.length ownership/core/NativeWords.beni -
+core Browser.Host.Storage.key ownership/core/NativeWords.beni -
+core Browser.Host.URL.href ownership/core/NativeWords.beni -
+core Browser.Host.URL.username ownership/core/NativeWords.beni -
+core Browser.Host.URL.password ownership/core/NativeWords.beni -
+core Browser.Host.Headers.append ownership/core/NativeWords.beni -
+core Browser.Host.Headers.has ownership/core/NativeWords.beni -
+core Browser.Host.Headers.set ownership/core/NativeWords.beni -
+core Browser.Host.Headers.get ownership/core/NativeWords.beni -
+core Browser.Host.Headers.entries ownership/core/NativeWords.beni -
+core Browser.Host.FormData.append ownership/core/NativeWords.beni -
+core Browser.Host.Fetch.formBody ownership/core/NativeWords.beni -
+core Browser.Host.Fetch.init ownership/core/NativeWords.beni -
+core Browser.Host.Fetch.fetch ownership/core/NativeWords.beni -
+core Browser.Host.Response.url ownership/core/NativeWords.beni -
+core Browser.Host.Response.status ownership/core/NativeWords.beni -
+core Browser.Host.Response.statusText ownership/core/NativeWords.beni -
+core Browser.Host.Response.ok ownership/core/NativeWords.beni -
+core Browser.Host.Response.headers ownership/core/NativeWords.beni -
+core Browser.Host.Response.text ownership/core/NativeWords.beni -
+core Browser.Host.Response.reader ownership/core/NativeWords.beni -
+core Browser.Host.ReadableStreamDefaultReader.read ownership/core/NativeWords.beni -
+core Browser.Host.ReadResult.done ownership/core/NativeWords.beni -
+core Browser.Host.ReadResult.value ownership/core/NativeWords.beni -
+core Browser.Host.TextDecoder.decodeMore ownership/core/NativeWords.beni -
+core Browser.Host.TextDecoder.finish ownership/core/NativeWords.beni -
+core Browser.Host.AbortController.abortWith ownership/core/NativeWords.beni -
+core Browser.Host.AbortSignal.reasonIs ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.isTypeError ownership/core/NativeWords.beni -
+core Browser.Host.RegExp.test ownership/core/NativeWords.beni -
+core Browser.Host.RegExp.replace ownership/core/NativeWords.beni -
+core Browser.Host.Promise.observe ownership/core/NativeEscapes.beni 2:escaped>borrowed|3:escaped>borrowed
+core Browser.Host.Rejection.isError ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.name ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.code ownership/core/NativeWords.beni -
+core Browser.Host.Rejection.raise ownership/core/NativeWords.beni -
+core Browser.Host.AbortController.signal ownership/core/NativeWords.beni -
+core Browser.Host.AbortController.abort ownership/core/NativeWords.beni -
+core Browser.Host.AbortSignal.aborted ownership/core/NativeWords.beni -
+core Browser.Host.NodeFs.readUtf8 ownership/core/NativeWords.beni -
+core Browser.Host.NodeDirent.name ownership/core/NativeWords.beni -
+core Browser.Host.NodeDirent.isFile ownership/core/NativeWords.beni -
+core Browser.Host.NodeDirent.isDirectory ownership/core/NativeWords.beni -
+core Browser.Host.NodeDirent.isSymbolicLink ownership/core/NativeWords.beni -
+core Browser.Host.NodeProcess.beforeExit ownership/core/NativeEscapes.beni 1:escaped>borrowed
+core Browser.Host.Events.listen ownership/core/NativeEscapes.beni 3:escaped>borrowed
+core Browser.Host.Window.requestFrame ownership/core/NativeEscapes.beni 1:escaped>borrowed
+core Browser.Host.Window.cancelFrame ownership/core/NativeWords.beni -
+core Browser.Host.Event.defaultPrevented ownership/core/NativeWords.beni -
+core Browser.Host.Event.button ownership/core/NativeWords.beni -
+core Browser.Host.Event.composedPath ownership/core/NativeWords.beni -
+core Browser.Host.EventTarget.asAnchor ownership/core/NativeWords.beni -
+core Browser.Host.HTMLAnchorElement.hasAttribute ownership/core/NativeWords.beni -
+core Browser.Host.HTMLAnchorElement.href ownership/core/NativeWords.beni -
+core Browser.Host.HTMLAnchorElement.protocol ownership/core/NativeWords.beni -
+core Browser.Host.HTMLAnchorElement.host ownership/core/NativeWords.beni -
+core Browser.Host.HTMLAnchorElement.target ownership/core/NativeWords.beni -
+core Browser.Host.Event.currentBox ownership/core/NativeWords.beni -
+core Browser.Host.DOMRect.left ownership/core/NativeWords.beni -
+core Browser.Host.DOMRect.top ownership/core/NativeWords.beni -
+core Browser.Host.Event.targetValue ownership/core/NativeWords.beni -
+core Browser.Host.Event.targetChecked ownership/core/NativeWords.beni -
+core Browser.Host.Window.listen ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.Document.listen ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.Event.preventDefault ownership/core/NativeWords.beni -
+core Browser.Host.Event.key ownership/core/NativeWords.beni -
+core Browser.Host.Event.code ownership/core/NativeWords.beni -
+core Browser.Host.Event.ctrlKey ownership/core/NativeWords.beni -
+core Browser.Host.Event.shiftKey ownership/core/NativeWords.beni -
+core Browser.Host.Event.altKey ownership/core/NativeWords.beni -
+core Browser.Host.Event.metaKey ownership/core/NativeWords.beni -
+core Browser.Host.Event.pointerId ownership/core/NativeWords.beni -
+core Browser.Host.Event.pointerType ownership/core/NativeWords.beni -
+core Browser.Host.Event.isPrimary ownership/core/NativeWords.beni -
+core Browser.Host.Event.clientX ownership/core/NativeWords.beni -
+core Browser.Host.Event.clientY ownership/core/NativeWords.beni -
+core Browser.Host.Timers.queueMicrotask ownership/core/RuntimeWords.beni 1:escaped>borrowed
+core Browser.Host.Timers.start ownership/core/RuntimeWords.beni 1:escaped>borrowed
+core Browser.Host.Timers.clear ownership/core/NativeWords.beni -
+core Browser.Host.MessagePort.postUnit ownership/core/NativeWords.beni -
+core Browser.Host.MessagePort.onMessage ownership/core/NativeEscapes.beni 2:escaped>borrowed
+core Browser.Host.Immediate.trySchedule ownership/core/RuntimeWords.beni 1:escaped>borrowed
+
+# The closed borrowed inspection protocol returns only rendered text. Raw views
+# grant no editing permission; these private helpers are reached by toString.
+core Debug.show ownership/JsPure.beni - Debug.toString
+core Debug.showCode ownership/JsPure.beni - Debug.toString
+core Debug.showApplied ownership/JsPure.beni - Debug.toString
+core Debug.tupleParts ownership/JsPure.beni - Debug.toString
+core Debug.showType ownership/JsPure.beni - Debug.toString
+core Debug.constructorParts ownership/JsPure.beni - Debug.toString
+core Debug.showRecord ownership/JsPure.beni - Debug.toString
+core Debug.recordFields ownership/JsPure.beni - Debug.toString
+core Debug.listItems ownership/JsPure.beni - Debug.toString
+core Debug.listParts ownership/JsPure.beni - Debug.toString
+core Debug.dictPairs ownership/JsPure.beni - Debug.toString
+core Debug.untypedValue ownership/JsPure.beni - Debug.toString
+core Debug.untypedObject ownership/JsPure.beni - Debug.toString
+core Debug.untypedItems ownership/JsPure.beni - Debug.toString
+core Debug.untypedConstructor ownership/JsPure.beni - Debug.toString
+core Debug.untypedFields ownership/JsPure.beni - Debug.toString
+core Js.Inspect.inspect ownership/JsPure.beni - Debug.toString
+core Js.Inspect.kind ownership/JsPure.beni - Debug.toString
+core Js.Inspect.tag ownership/JsPure.beni - Debug.toString
+core Js.Inspect.keys ownership/JsPure.beni - Debug.toString
+core Js.Inspect.field ownership/JsPure.beni - Debug.toString
+core Js.Inspect.element ownership/JsPure.beni - Debug.toString
+core Js.Inspect.length ownership/JsPure.beni - Debug.toString
+core Js.Inspect.string ownership/JsPure.beni - Debug.toString
+core Js.Inspect.number ownership/JsPure.beni - Debug.toString
+core Js.Inspect.boolean ownership/JsPure.beni - Debug.toString
+
+# Private List protocol readers/builders are covered by the public list words
+# and separately pinned bodies; they grant no additional caller permission.
+core List.viewOf ownership/Words.beni - List.push
+core List.treeOf ownership/Words.beni - List.push
+core List.isTree ownership/Words.beni - List.push
+core List.peekArray ownership/Words.beni - List.push
+core List.writeArray ownership/Words.beni - List.push
+
+# Box payloads escape, unpacked payloads stay unknown, checked data keeps
+# source aliases. The private graph checker grants no separate caller right.
+core Js.Any.pack ownership/core/AnyDataWords.beni 1:escaped>borrowed
+core Js.Any.unpack ownership/core/AnyDataWords.beni res:->fresh+res:->exclusive
+core Js.Data.checked ownership/core/AnyDataWords.beni 1:returned>borrowed+res:->fresh
+core Js.Data.checkedGraph ownership/core/AnyDataWords.beni - Js.Data.checked

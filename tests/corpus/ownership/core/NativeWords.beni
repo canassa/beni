@@ -1,0 +1,511 @@
+-- Audited native-word calls. Handles stay typed; no raw casts manufacture them.
+import Browser.Host.AbortController
+import Browser.Host.AbortSignal
+import Browser.Host.DOMRect
+import Browser.Host.Document
+import Browser.Host.Element
+import Browser.Host.Event
+import Browser.Host.EventTarget
+import Browser.Host.Events
+import Browser.Host.Fetch
+import Browser.Host.FormData
+import Browser.Host.HTMLAnchorElement
+import Browser.Host.Headers
+import Browser.Host.Immediate
+import Browser.Host.MessagePort
+import Browser.Host.NodeDirent
+import Browser.Host.NodeFs
+import Browser.Host.NodeProcess
+import Browser.Host.Promise
+import Browser.Host.ReadResult
+import Browser.Host.ReadableStreamDefaultReader
+import Browser.Host.RegExp
+import Browser.Host.Rejection
+import Browser.Host.Response
+import Browser.Host.Storage
+import Browser.Host.TextDecoder
+import Browser.Host.Timers
+import Browser.Host.URL
+import Browser.Host.WebSocket
+import Browser.Host.Window
+import Browser.Host.Worker
+
+
+-- Browser.Host.Event.errorMessage
+pub probe0 arg0 = Browser.Host.Event.errorMessage arg0
+
+
+-- Browser.Host.Rejection.assign
+pub probe1 arg0 arg1 = Browser.Host.Rejection.assign arg0 arg1
+
+
+-- Browser.Host.RegExp.group
+pub probe2 arg0 arg1 arg2 = Browser.Host.RegExp.group arg0 arg1 arg2
+
+
+-- Browser.Host.Worker.endpoint
+pub probe3 arg0 = Browser.Host.Worker.endpoint arg0
+
+
+-- Browser.Host.Worker.post
+pub probe4 arg0 arg1 = Browser.Host.Worker.post arg0 arg1
+
+
+-- Browser.Host.Worker.terminate
+pub probe5 arg0 = Browser.Host.Worker.terminate arg0
+
+
+-- Browser.Host.Worker.toEventTarget
+pub probe6 arg0 = Browser.Host.Worker.toEventTarget arg0
+
+
+-- Browser.Host.Event.dataOnly
+pub probe7 arg0 = Browser.Host.Event.dataOnly arg0
+
+
+-- Browser.Host.Event.error
+pub probe8 arg0 = Browser.Host.Event.error arg0
+
+
+-- Browser.Host.Rejection.setAbandoned
+pub probe9 arg0 arg1 = Browser.Host.Rejection.setAbandoned arg0 arg1
+
+
+-- Browser.Host.Element.focus
+pub probe10 arg0 = Browser.Host.Element.focus arg0
+
+
+-- Browser.Host.Element.blur
+pub probe11 arg0 = Browser.Host.Element.blur arg0
+
+
+-- Browser.Host.Element.box
+pub probe12 arg0 = Browser.Host.Element.box arg0
+
+
+-- Browser.Host.Element.scrollTo
+pub probe13 arg0 arg1 arg2 = Browser.Host.Element.scrollTo arg0 arg1 arg2
+
+
+-- Browser.Host.Element.scrollIntoView
+pub probe14 arg0 = Browser.Host.Element.scrollIntoView arg0
+
+
+-- Browser.Host.DOMRect.x
+pub probe15 arg0 = Browser.Host.DOMRect.x arg0
+
+
+-- Browser.Host.DOMRect.y
+pub probe16 arg0 = Browser.Host.DOMRect.y arg0
+
+
+-- Browser.Host.DOMRect.width
+pub probe17 arg0 = Browser.Host.DOMRect.width arg0
+
+
+-- Browser.Host.DOMRect.height
+pub probe18 arg0 = Browser.Host.DOMRect.height arg0
+
+
+-- Browser.Host.Element.fullscreenSupported
+pub probe19 arg0 = Browser.Host.Element.fullscreenSupported arg0
+
+
+-- Browser.Host.Element.requestFullscreen
+pub probe20 arg0 = Browser.Host.Element.requestFullscreen arg0
+
+
+-- Browser.Host.Rejection.typeErrorMessage
+pub probe21 arg0 = Browser.Host.Rejection.typeErrorMessage arg0
+
+
+-- Browser.Host.URL.protocol
+pub probe22 arg0 = Browser.Host.URL.protocol arg0
+
+
+-- Browser.Host.URL.setProtocol
+pub probe23 arg0 arg1 = Browser.Host.URL.setProtocol arg0 arg1
+
+
+-- Browser.Host.WebSocket.arrayBuffer
+pub probe24 arg0 = Browser.Host.WebSocket.arrayBuffer arg0
+
+
+-- Browser.Host.WebSocket.readyState
+pub probe25 arg0 = Browser.Host.WebSocket.readyState arg0
+
+
+-- Browser.Host.WebSocket.bufferedAmount
+pub probe26 arg0 = Browser.Host.WebSocket.bufferedAmount arg0
+
+
+-- Browser.Host.WebSocket.protocol
+pub probe27 arg0 = Browser.Host.WebSocket.protocol arg0
+
+
+-- Browser.Host.WebSocket.send
+pub probe28 arg0 arg1 = Browser.Host.WebSocket.send arg0 arg1
+
+
+-- Browser.Host.WebSocket.close
+pub probe29 arg0 arg1 arg2 = Browser.Host.WebSocket.close arg0 arg1 arg2
+
+
+-- Browser.Host.WebSocket.closeWithoutCode
+pub probe30 arg0 = Browser.Host.WebSocket.closeWithoutCode arg0
+
+
+-- Browser.Host.WebSocket.onOpen
+pub probe31 arg0 arg1 = Browser.Host.WebSocket.onOpen arg0 arg1
+
+
+-- Browser.Host.WebSocket.onError
+pub probe32 arg0 arg1 = Browser.Host.WebSocket.onError arg0 arg1
+
+
+-- Browser.Host.WebSocket.onText
+pub probe33 arg0 arg1 = Browser.Host.WebSocket.onText arg0 arg1
+
+
+-- Browser.Host.WebSocket.onClose
+pub probe34 arg0 arg1 = Browser.Host.WebSocket.onClose arg0 arg1
+
+
+-- Browser.Host.Storage.get
+pub probe35 arg0 arg1 = Browser.Host.Storage.get arg0 arg1
+
+
+-- Browser.Host.Storage.set
+pub probe36 arg0 arg1 arg2 = Browser.Host.Storage.set arg0 arg1 arg2
+
+
+-- Browser.Host.Storage.remove
+pub probe37 arg0 arg1 = Browser.Host.Storage.remove arg0 arg1
+
+
+-- Browser.Host.Storage.length
+pub probe38 arg0 = Browser.Host.Storage.length arg0
+
+
+-- Browser.Host.Storage.key
+pub probe39 arg0 arg1 = Browser.Host.Storage.key arg0 arg1
+
+
+-- Browser.Host.URL.href
+pub probe40 arg0 = Browser.Host.URL.href arg0
+
+
+-- Browser.Host.URL.username
+pub probe41 arg0 = Browser.Host.URL.username arg0
+
+
+-- Browser.Host.URL.password
+pub probe42 arg0 = Browser.Host.URL.password arg0
+
+
+-- Browser.Host.Headers.append
+pub probe43 arg0 arg1 arg2 = Browser.Host.Headers.append arg0 arg1 arg2
+
+
+-- Browser.Host.Headers.has
+pub probe44 arg0 arg1 = Browser.Host.Headers.has arg0 arg1
+
+
+-- Browser.Host.Headers.set
+pub probe45 arg0 arg1 arg2 = Browser.Host.Headers.set arg0 arg1 arg2
+
+
+-- Browser.Host.Headers.get
+pub probe46 arg0 arg1 = Browser.Host.Headers.get arg0 arg1
+
+
+-- Browser.Host.Headers.entries
+pub probe47 arg0 = Browser.Host.Headers.entries arg0
+
+
+-- Browser.Host.FormData.append
+pub probe48 arg0 arg1 arg2 = Browser.Host.FormData.append arg0 arg1 arg2
+
+
+-- Browser.Host.Fetch.formBody
+pub probe49 arg0 = Browser.Host.Fetch.formBody arg0
+
+
+-- Browser.Host.Fetch.init
+pub probe50 arg0 arg1 arg2 arg3 arg4 = Browser.Host.Fetch.init arg0 arg1 arg2 arg3 arg4
+
+
+-- Browser.Host.Fetch.fetch
+pub probe51 arg0 arg1 = Browser.Host.Fetch.fetch arg0 arg1
+
+
+-- Browser.Host.Response.url
+pub probe52 arg0 = Browser.Host.Response.url arg0
+
+
+-- Browser.Host.Response.status
+pub probe53 arg0 = Browser.Host.Response.status arg0
+
+
+-- Browser.Host.Response.statusText
+pub probe54 arg0 = Browser.Host.Response.statusText arg0
+
+
+-- Browser.Host.Response.ok
+pub probe55 arg0 = Browser.Host.Response.ok arg0
+
+
+-- Browser.Host.Response.headers
+pub probe56 arg0 = Browser.Host.Response.headers arg0
+
+
+-- Browser.Host.Response.text
+pub probe57 arg0 = Browser.Host.Response.text arg0
+
+
+-- Browser.Host.Response.reader
+pub probe58 arg0 = Browser.Host.Response.reader arg0
+
+
+-- Browser.Host.ReadableStreamDefaultReader.read
+pub probe59 arg0 = Browser.Host.ReadableStreamDefaultReader.read arg0
+
+
+-- Browser.Host.ReadResult.done
+pub probe60 arg0 = Browser.Host.ReadResult.done arg0
+
+
+-- Browser.Host.ReadResult.value
+pub probe61 arg0 = Browser.Host.ReadResult.value arg0
+
+
+-- Browser.Host.TextDecoder.decodeMore
+pub probe62 arg0 arg1 = Browser.Host.TextDecoder.decodeMore arg0 arg1
+
+
+-- Browser.Host.TextDecoder.finish
+pub probe63 arg0 = Browser.Host.TextDecoder.finish arg0
+
+
+-- Browser.Host.AbortController.abortWith
+pub probe64 arg0 arg1 = Browser.Host.AbortController.abortWith arg0 arg1
+
+
+-- Browser.Host.AbortSignal.reasonIs
+pub probe65 arg0 arg1 = Browser.Host.AbortSignal.reasonIs arg0 arg1
+
+
+-- Browser.Host.Rejection.isTypeError
+pub probe66 arg0 = Browser.Host.Rejection.isTypeError arg0
+
+
+-- Browser.Host.RegExp.test
+pub probe67 arg0 arg1 = Browser.Host.RegExp.test arg0 arg1
+
+
+-- Browser.Host.RegExp.replace
+pub probe68 arg0 arg1 arg2 = Browser.Host.RegExp.replace arg0 arg1 arg2
+
+
+-- Browser.Host.Promise.observe
+pub probe69 arg0 arg1 arg2 = Browser.Host.Promise.observe arg0 arg1 arg2
+
+
+-- Browser.Host.Rejection.isError
+pub probe70 arg0 = Browser.Host.Rejection.isError arg0
+
+
+-- Browser.Host.Rejection.name
+pub probe71 arg0 = Browser.Host.Rejection.name arg0
+
+
+-- Browser.Host.Rejection.code
+pub probe72 arg0 = Browser.Host.Rejection.code arg0
+
+
+-- Browser.Host.Rejection.raise
+pub probe73 arg0 = Browser.Host.Rejection.raise arg0
+
+
+-- Browser.Host.AbortController.signal
+pub probe74 arg0 = Browser.Host.AbortController.signal arg0
+
+
+-- Browser.Host.AbortController.abort
+pub probe75 arg0 = Browser.Host.AbortController.abort arg0
+
+
+-- Browser.Host.AbortSignal.aborted
+pub probe76 arg0 = Browser.Host.AbortSignal.aborted arg0
+
+
+-- Browser.Host.NodeFs.readUtf8
+pub probe77 arg0 arg1 = Browser.Host.NodeFs.readUtf8 arg0 arg1
+
+
+-- Browser.Host.NodeDirent.name
+pub probe78 arg0 = Browser.Host.NodeDirent.name arg0
+
+
+-- Browser.Host.NodeDirent.isFile
+pub probe79 arg0 = Browser.Host.NodeDirent.isFile arg0
+
+
+-- Browser.Host.NodeDirent.isDirectory
+pub probe80 arg0 = Browser.Host.NodeDirent.isDirectory arg0
+
+
+-- Browser.Host.NodeDirent.isSymbolicLink
+pub probe81 arg0 = Browser.Host.NodeDirent.isSymbolicLink arg0
+
+
+-- Browser.Host.NodeProcess.beforeExit
+pub probe82 arg0 = Browser.Host.NodeProcess.beforeExit arg0
+
+
+-- Browser.Host.Events.listen
+pub probe83 arg0 arg1 arg2 = Browser.Host.Events.listen arg0 arg1 arg2
+
+
+-- Browser.Host.Window.requestFrame
+pub probe84 arg0 = Browser.Host.Window.requestFrame arg0
+
+
+-- Browser.Host.Window.cancelFrame
+pub probe85 arg0 = Browser.Host.Window.cancelFrame arg0
+
+
+-- Browser.Host.Event.defaultPrevented
+pub probe86 arg0 = Browser.Host.Event.defaultPrevented arg0
+
+
+-- Browser.Host.Event.button
+pub probe87 arg0 = Browser.Host.Event.button arg0
+
+
+-- Browser.Host.Event.composedPath
+pub probe88 arg0 = Browser.Host.Event.composedPath arg0
+
+
+-- Browser.Host.EventTarget.asAnchor
+pub probe89 arg0 = Browser.Host.EventTarget.asAnchor arg0
+
+
+-- Browser.Host.HTMLAnchorElement.hasAttribute
+pub probe90 arg0 arg1 = Browser.Host.HTMLAnchorElement.hasAttribute arg0 arg1
+
+
+-- Browser.Host.HTMLAnchorElement.href
+pub probe91 arg0 = Browser.Host.HTMLAnchorElement.href arg0
+
+
+-- Browser.Host.HTMLAnchorElement.protocol
+pub probe92 arg0 = Browser.Host.HTMLAnchorElement.protocol arg0
+
+
+-- Browser.Host.HTMLAnchorElement.host
+pub probe93 arg0 = Browser.Host.HTMLAnchorElement.host arg0
+
+
+-- Browser.Host.HTMLAnchorElement.target
+pub probe94 arg0 = Browser.Host.HTMLAnchorElement.target arg0
+
+
+-- Browser.Host.Event.currentBox
+pub probe95 arg0 = Browser.Host.Event.currentBox arg0
+
+
+-- Browser.Host.DOMRect.left
+pub probe96 arg0 = Browser.Host.DOMRect.left arg0
+
+
+-- Browser.Host.DOMRect.top
+pub probe97 arg0 = Browser.Host.DOMRect.top arg0
+
+
+-- Browser.Host.Event.targetValue
+pub probe98 arg0 = Browser.Host.Event.targetValue arg0
+
+
+-- Browser.Host.Event.targetChecked
+pub probe99 arg0 = Browser.Host.Event.targetChecked arg0
+
+
+-- Browser.Host.Window.listen
+pub probe100 arg0 arg1 = Browser.Host.Window.listen arg0 arg1
+
+
+-- Browser.Host.Document.listen
+pub probe101 arg0 arg1 = Browser.Host.Document.listen arg0 arg1
+
+
+-- Browser.Host.Event.preventDefault
+pub probe102 arg0 = Browser.Host.Event.preventDefault arg0
+
+
+-- Browser.Host.Event.key
+pub probe103 arg0 = Browser.Host.Event.key arg0
+
+
+-- Browser.Host.Event.code
+pub probe104 arg0 = Browser.Host.Event.code arg0
+
+
+-- Browser.Host.Event.ctrlKey
+pub probe105 arg0 = Browser.Host.Event.ctrlKey arg0
+
+
+-- Browser.Host.Event.shiftKey
+pub probe106 arg0 = Browser.Host.Event.shiftKey arg0
+
+
+-- Browser.Host.Event.altKey
+pub probe107 arg0 = Browser.Host.Event.altKey arg0
+
+
+-- Browser.Host.Event.metaKey
+pub probe108 arg0 = Browser.Host.Event.metaKey arg0
+
+
+-- Browser.Host.Event.pointerId
+pub probe109 arg0 = Browser.Host.Event.pointerId arg0
+
+
+-- Browser.Host.Event.pointerType
+pub probe110 arg0 = Browser.Host.Event.pointerType arg0
+
+
+-- Browser.Host.Event.isPrimary
+pub probe111 arg0 = Browser.Host.Event.isPrimary arg0
+
+
+-- Browser.Host.Event.clientX
+pub probe112 arg0 = Browser.Host.Event.clientX arg0
+
+
+-- Browser.Host.Event.clientY
+pub probe113 arg0 = Browser.Host.Event.clientY arg0
+
+
+-- Browser.Host.Timers.queueMicrotask
+pub probe114 arg0 = Browser.Host.Timers.queueMicrotask arg0
+
+
+-- Browser.Host.Timers.start
+pub probe115 arg0 arg1 = Browser.Host.Timers.start arg0 arg1
+
+
+-- Browser.Host.Timers.clear
+pub probe116 arg0 = Browser.Host.Timers.clear arg0
+
+
+-- Browser.Host.MessagePort.postUnit
+pub probe117 arg0 = Browser.Host.MessagePort.postUnit arg0
+
+
+-- Browser.Host.MessagePort.onMessage
+pub probe118 arg0 arg1 = Browser.Host.MessagePort.onMessage arg0 arg1
+
+
+-- Browser.Host.Immediate.trySchedule
+pub probe119 arg0 = Browser.Host.Immediate.trySchedule arg0

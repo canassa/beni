@@ -1,6 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Js
 import Browser.Host.EventTarget as EventTarget
+import Js
 
 
 pub foreign type Endpoint
@@ -28,7 +28,7 @@ pub foreign impure supported : ⊤ → Bool
 pub foreign impure tryCreate : String, String, String → Result CreateError Worker
 
 
-pub foreign pure endpoint : borrowed Worker → Endpoint
+pub foreign pure endpoint : returned Worker → Endpoint
 
 
 pub foreign impure self : ⊤ → Endpoint
@@ -40,4 +40,4 @@ pub foreign impure post : borrowed Endpoint, Js.Value → Result PostError ⊤
 pub foreign impure terminate : borrowed Worker → ⊤
 
 
-pub foreign pure toEventTarget : borrowed Endpoint → EventTarget.EventTarget
+pub foreign pure toEventTarget : returned Endpoint → EventTarget.EventTarget

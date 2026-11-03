@@ -3,5 +3,8 @@ import Browser.Host.Event as Event
 import Browser.Host.EventTarget as EventTarget
 
 
-
-pub foreign impure listen : borrowed EventTarget.EventTarget, String, escaped sync (Event.Event → ⊤) → (⊤ → ⊤)
+pub foreign impure listen :
+      aliased EventTarget.EventTarget
+    , String
+    , escaped sync (Event.Event → ⊤)
+    → (⊤ → ⊤)

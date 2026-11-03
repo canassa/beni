@@ -1,0 +1,41 @@
+module NativeEscapes
+  15:13 List.push xs: rejected later-use: xs is read again at 17:5
+  17:5 List.push xs: rejected escaped: a function value that Browser.Host.Document.listen hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  22:13 List.push xs: rejected later-use: xs is read again at 24:5
+  24:5 List.push xs: rejected escaped: a function value that Browser.Host.Events.listen hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  29:13 List.push xs: rejected later-use: xs is read again at 31:5
+  31:5 List.push xs: rejected escaped: a function value that Browser.Host.MessagePort.onMessage hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  36:13 List.push xs: rejected later-use: xs is read again at 38:5
+  38:5 List.push xs: rejected escaped: a function value that Browser.Host.NodeProcess.beforeExit hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  44:17 List.push xs: rejected later-use: xs is read again at 48:5
+  48:5 List.push xs: rejected escaped: a function value that Browser.Host.Promise.observe hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  53:13 List.push xs: rejected later-use: xs is read again at 55:5
+  55:5 List.push xs: rejected escaped: a function value that Browser.Host.Promise.observe hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  60:13 List.push xs: rejected later-use: xs is read again at 62:5
+  62:5 List.push xs: rejected escaped: a function value that Browser.Host.WebSocket.onOpen hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  67:13 List.push xs: rejected later-use: xs is read again at 69:5
+  69:5 List.push xs: rejected escaped: a function value that Browser.Host.WebSocket.onError hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  74:13 List.push xs: rejected later-use: xs is read again at 76:5
+  76:5 List.push xs: rejected escaped: a function value that Browser.Host.WebSocket.onText hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  81:13 List.push xs: rejected later-use: xs is read again at 83:5
+  83:5 List.push xs: rejected escaped: a function value that Browser.Host.WebSocket.onClose hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  88:13 List.push xs: rejected later-use: xs is read again at 90:5
+  90:5 List.push xs: rejected escaped: a function value that Browser.Host.Window.requestFrame hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  95:13 List.push xs: rejected later-use: xs is read again at 97:5
+  97:5 List.push xs: rejected escaped: a function value that Browser.Host.Window.listen hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  summary documentListener: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary targetListener: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary portListener: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary processListener: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary promiseSuccess: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary promiseFailure: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary socketOpen: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary socketError: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary socketText: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary socketClose: π1 R, π2 RAJW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary frame: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary windowListener: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 24: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 24
+total 24: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 24
+cause escaped 12
+cause later-use 12

@@ -1034,6 +1034,14 @@ test "ownership words: flipping core's Js words is noticed" {
     try expectFlips("ownership/core/RuntimeWords.beni", &.{"--core"});
 }
 
+test "ownership words: native retained callbacks preserve captured aliases" {
+    try expectFlips("ownership/core/NativeEscapes.beni", &.{"--core"});
+}
+
+test "ownership words: existential storage and checked data preserve aliases" {
+    try expectFlips("ownership/core/AnyDataWords.beni", &.{"--core"});
+}
+
 test "ownership words: flipping the Words fixture's words is noticed" {
     try expectFlips("ownership/Words.beni", &.{"--platform=node"});
 }

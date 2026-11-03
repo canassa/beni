@@ -1,14 +1,14 @@
--- ownership: the browser platforms' ownership words (`ownership-checker.md`
--- §24.8), each pinned by a verdict that depends on it. `Html.Event` is
--- `crossing`: a DOM event holds no beni list, so a message that carries one
--- carries no cell, and `update`'s push onto `model.items` is accepted
--- `entry` (rejected `payload` while the event could stand for a list).
--- `Html.Pointer`, a pointer event and its point, is `crossing` too: without
--- the word, `update`'s summary has the `Pointer` of `Aim` escape. The
--- key of a keyed command is held by the command (`Hosted.key`, inferred),
--- not given to JavaScript: a command built and dropped leaves its key list
--- unescaped, and `keys` writes it afterwards, accepted. Each program's
--- entry word selects its direct row, including on browser-tea (§20.2).
+-- ownership: the browser entry protocol and key aliases (§24.8).
+-- Html.Event and Html.Pointer now retain typed native event handles;
+-- this fixture assumes no explicit crossing word on either declaration.
+-- Keyboard and pointer updates still exercise message payload analysis
+-- and the entry model protocol through the public event projections.
+-- A keyed command built and dropped leaves its key list unescaped,
+-- while a command returned to its caller keeps the key alias alive.
+-- The two key cases below continue to pin both directions.
+-- Entry words select direct rows, including browser-tea (§20.2).
+-- Only public keyboard and pointer projections read event data.
+-- The direct update path writes the current model items.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub

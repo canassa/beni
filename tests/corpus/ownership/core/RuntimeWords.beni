@@ -1,34 +1,40 @@
--- Core-private scheduler callbacks retain their captures after the call.
--- Changing escaped to borrowed must not make a later write safe.
+-- Core scheduling now uses typed native operations. These registrations
+-- retain callbacks and must keep captured lists shared after the call.
+import Browser.Host.Date
+import Browser.Host.Immediate
+import Browser.Host.Math
+import Browser.Host.Timers
 import Js.Runtime
 import List
 
 
 micro xs =
-    Js.Runtime.microtask λ⊤ →
+    Browser.Host.Timers.queueMicrotask λ⊤ →
         _ = List.push xs 1
         ⊤
     List.push xs 2
 
 
 macro xs =
-    Js.Runtime.macrotask λ⊤ →
+    _ = Browser.Host.Immediate.trySchedule λ⊤ →
         _ = List.push xs 1
         ⊤
     List.push xs 2
 
 
 timer xs =
-    _ = Js.Runtime.timer 1 λ⊤ →
-        _ = List.push xs 1
-        ⊤
+    _ =
+        Browser.Host.Timers.start
+            (λ⊤ →
+                _ = List.push xs 1
+                ⊤
+            )
+            1
     List.push xs 2
 
 
--- Scalar-only adapters and the Task-only sentinel have no mutable payload
--- whose ownership can be improved. Task.timeout reaches Task.requeue and
--- Js.Runtime.parked through the runtime, rather than exposing them here.
+-- Scalar native adapters have no mutable payload or unsafe stronger word.
 scalar ⊤ =
-    _ = Js.Runtime.now ⊤
-    _ = Js.Runtime.random ⊤
+    _ = Browser.Host.Date.now ⊤
+    _ = Browser.Host.Math.random ⊤
     Js.Runtime.defect "done"

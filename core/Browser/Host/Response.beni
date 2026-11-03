@@ -19,10 +19,12 @@ pub foreign impure statusText : borrowed Response → String
 pub foreign impure ok : borrowed Response → Bool
 
 
-pub foreign impure headers : borrowed Response → Headers.Headers
+pub foreign impure headers : aliased Response → Headers.Headers
 
 
-pub foreign impure text : borrowed Response → Promise.Promise String
+pub foreign impure text : escaped Response → Promise.Promise String
 
 
-pub foreign impure reader : borrowed Response → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader
+pub foreign impure reader :
+      aliased Response
+    → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader

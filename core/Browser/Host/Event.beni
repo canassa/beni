@@ -1,12 +1,8 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.EventTarget as EventTarget
-
-
 import Browser.Host.DOMRect as DOMRect
-
-
-import Js
+import Browser.Host.EventTarget as EventTarget
 import Browser.Host.Rejection as Rejection
+import Js
 
 
 pub foreign type Event
@@ -15,10 +11,10 @@ pub foreign type Event
 pub foreign impure errorMessage : borrowed Event → Maybe String
 
 
-pub foreign impure dataOnly : borrowed Event → Maybe Js.Value
+pub foreign impure dataOnly : aliased Event → Maybe Js.Value
 
 
-pub foreign impure error : borrowed Event → Maybe Rejection.Rejection
+pub foreign impure error : aliased Event → Maybe Rejection.Rejection
 
 
 pub foreign impure defaultPrevented : borrowed Event → Bool
@@ -27,7 +23,7 @@ pub foreign impure defaultPrevented : borrowed Event → Bool
 pub foreign impure button : borrowed Event → Int
 
 
-pub foreign impure composedPath : borrowed Event → List EventTarget.EventTarget
+pub foreign impure composedPath : aliased Event → List EventTarget.EventTarget
 
 
 pub foreign impure currentBox : borrowed Event → DOMRect.DOMRect

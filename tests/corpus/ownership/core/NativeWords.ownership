@@ -1,0 +1,123 @@
+module NativeWords
+  summary probe0: π1 R
+  summary probe1: π1 R, π2 RE
+  summary probe2: π1 R
+  summary probe3: π1 RA; res π1
+  summary probe4: π1 R, π2 RE
+  summary probe5: π1 R
+  summary probe6: π1 RA; res π1
+  summary probe7: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe8: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe9: π1 R, π2 RE
+  summary probe10: π1 R
+  summary probe11: π1 R
+  summary probe12: π1 R; res ⊤{lost}r{lost}
+  summary probe13: π1 R
+  summary probe14: π1 R
+  summary probe15: π1 R
+  summary probe16: π1 R
+  summary probe17: π1 R
+  summary probe18: π1 R
+  summary probe19: π1 R
+  summary probe20: π1 RE; res ⊤{lost}r{lost}
+  summary probe21: π1 R
+  summary probe22: π1 R
+  summary probe23: π1 R
+  summary probe24: π1 R
+  summary probe25: π1 R
+  summary probe26: π1 R
+  summary probe27: π1 R
+  summary probe28: π1 R
+  summary probe29: π1 R
+  summary probe30: π1 R
+  summary probe31: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe32: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe33: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe34: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed, supply 2 ⊤ borrowed
+  summary probe35: π1 R
+  summary probe36: π1 R
+  summary probe37: π1 R
+  summary probe38: π1 R
+  summary probe39: π1 R
+  summary probe40: π1 R
+  summary probe41: π1 R
+  summary probe42: π1 R
+  summary probe43: π1 R
+  summary probe44: π1 R
+  summary probe45: π1 R
+  summary probe46: π1 R
+  summary probe47: π1 R; res ⊤{lost}r{lost}
+  summary probe48: π1 R
+  summary probe49: π1 RA; res π1
+  summary probe50: π2 RA, π3 RE, π4 RA; res ⊤{lost}r{lost}, ⋆ ~π2 ~π4
+  summary probe51: π2 RE; res ⊤{lost}r{lost}
+  summary probe52: π1 R
+  summary probe53: π1 R
+  summary probe54: π1 R
+  summary probe55: π1 R
+  summary probe56: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe57: π1 RE; res ⊤{lost}r{lost}
+  summary probe58: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe59: π1 RE; res ⊤{lost}r{lost}
+  summary probe60: π1 R
+  summary probe61: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe62: π1 R, π2 R
+  summary probe63: π1 R
+  summary probe64: π1 R, π2 RE
+  summary probe65: π1 R, π2 R
+  summary probe66: π1 R
+  summary probe67: π1 R
+  summary probe68: π1 R
+  summary probe69: π1 R, π2 RJ, π3 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed; π3 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe70: π1 R
+  summary probe71: π1 R
+  summary probe72: π1 R
+  summary probe73: π1 RE; res ⊤{lost}r{lost}
+  summary probe74: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe75: π1 R
+  summary probe76: π1 R
+  summary probe77: π2 RE; res ⊤{lost}r{lost}
+  summary probe78: π1 R
+  summary probe79: π1 R
+  summary probe80: π1 R
+  summary probe81: π1 R
+  summary probe82: π1 RJ; π1 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe83: π1 RA, π3 RJ; res ⊤{lost}r{lost}, ⋆ ~π1; π3 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe84: π1 RJ; res ⊤{lost}r{lost}; π1 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe85: π1 R
+  summary probe86: π1 R
+  summary probe87: π1 R
+  summary probe88: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe89: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary probe90: π1 R
+  summary probe91: π1 R
+  summary probe92: π1 R
+  summary probe93: π1 R
+  summary probe94: π1 R
+  summary probe95: π1 R; res ⊤{lost}r{lost}
+  summary probe96: π1 R
+  summary probe97: π1 R
+  summary probe98: π1 R
+  summary probe99: π1 R
+  summary probe100: π2 RJ; res ⊤{lost}r{lost}; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe101: π2 RJ; res ⊤{lost}r{lost}; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe102: π1 R
+  summary probe103: π1 R
+  summary probe104: π1 R
+  summary probe105: π1 R
+  summary probe106: π1 R
+  summary probe107: π1 R
+  summary probe108: π1 R
+  summary probe109: π1 R
+  summary probe110: π1 R
+  summary probe111: π1 R
+  summary probe112: π1 R
+  summary probe113: π1 R
+  summary probe114: π1 RJ; π1 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe115: π1 RJ; res ⊤{lost}r{lost}; π1 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe116: π1 R
+  summary probe117: π1 R
+  summary probe118: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary probe119: π1 RJ; π1 calls many, unseen, supply 1 ⊤ borrowed
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

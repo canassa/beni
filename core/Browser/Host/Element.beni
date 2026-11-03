@@ -1,8 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.Node as Node
-
-
 import Browser.Host.DOMRect as DOMRect
+import Browser.Host.Node as Node
 import Browser.Host.Promise as Promise
 
 
@@ -27,7 +25,7 @@ pub foreign impure scrollIntoView : borrowed Element → ⊤
 pub foreign impure fullscreenSupported : borrowed Element → Bool
 
 
-pub foreign impure requestFullscreen : borrowed Element → Promise.Promise ⊤
+pub foreign impure requestFullscreen : escaped Element → Promise.Promise ⊤
 
 
 pub foreign pure toNode : Element → Node.Node

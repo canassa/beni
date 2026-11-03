@@ -1,0 +1,26 @@
+-- Existential storage escapes its payload; checked conversion preserves aliases.
+import Js.Any
+import Js.Data
+import List
+
+
+pub packed xs =
+    box = Js.Any.pack xs
+    more = List.push xs 1
+    ( box, more )
+
+
+pub unpacked box =
+    value : Maybe (List Int)
+    value = Js.Any.unpack box
+    case value of
+        Nothing →
+            []
+        Just xs →
+            List.push xs 1
+
+
+pub checked xs =
+    value = Js.Data.checked xs
+    more = List.push xs 1
+    ( value, more )

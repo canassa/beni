@@ -4305,6 +4305,69 @@ word-bodies.txt. Entry declarations print an entry line marked (words), separate
 from their inferred summaries. Removing entry in a flip exposes the callback
 writers as pending; the hosted and ordinary-program fixtures pin that boundary.
 
+**Typed native and storage audit, 2026-11-03 (#1804).** Each sibling body
+was read before its pin was added. Native scalar getters and methods borrow
+only their opaque receiver; an opaque host state change grants no permission to
+edit a beni list. Native results remain unknown unless an explicit alias below
+relates them to an argument. Async inputs are conservatively escaped.
+
+| Declaration | Audited ownership fact |
+|---|---|
+| `Browser.Host.AbortController.abortWith` | `borrowed AbortController, escaped DOMException.DOMException → ⊤`: abort stores its reason on the native signal |
+| `Browser.Host.AbortController.signal` | `aliased AbortController → AbortSignal.AbortSignal`: the result is the controller signal |
+| `Browser.Host.Element.requestFullscreen` | `escaped Element → Promise.Promise ⊤`: the asynchronous fullscreen request may retain its element |
+| `Browser.Host.Event.dataOnly` | `aliased Event → Maybe Js.Value`: the checked graph may be the original event data |
+| `Browser.Host.Event.error` | `aliased Event → Maybe Rejection.Rejection`: Just holds the native event error |
+| `Browser.Host.Event.composedPath` | `aliased Event → List EventTarget.EventTarget`: the new list contains native targets from the event path |
+| `Browser.Host.EventTarget.asAnchor` | `aliased EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement`: Just holds the original target |
+| `Browser.Host.Events.listen` | `aliased EventTarget.EventTarget, String, escaped sync (Event.Event → ⊤) → (⊤ → ⊤)`: the returned remover captures its target; the host retains the handler |
+| `Browser.Host.Fetch.formBody` | `returned FormData.FormData → Body`: the wrapper returns its input unchanged |
+| `Browser.Host.Fetch.init` | `String, aliased Headers.Headers, Maybe Body, aliased AbortSignal.AbortSignal, String → Init`: the returned init object holds headers and signal |
+| `Browser.Host.Fetch.fetch` | `String, escaped Init → Promise.Promise Response.Response`: asynchronous fetch may retain request input parts |
+| `Browser.Host.NodeFs.readUtf8` | `String, escaped AbortSignal.AbortSignal → Promise.Promise String`: the asynchronous file operation retains its cancellation signal |
+| `Browser.Host.ReadResult.value` | `aliased ReadResult → Maybe Uint8Array.Uint8Array`: Just holds result.value |
+| `Browser.Host.ReadableStreamDefaultReader.read` | `escaped ReadableStreamDefaultReader → Promise.Promise ReadResult.ReadResult`: an asynchronous read may retain the reader |
+| `Browser.Host.Rejection.raise` | `escaped Rejection → a`: throw hands the native reason to JavaScript |
+| `Browser.Host.Response.headers` | `aliased Response → Headers.Headers`: the result is response.headers |
+| `Browser.Host.Response.text` | `escaped Response → Promise.Promise String`: asynchronous body consumption may retain response parts |
+| `Browser.Host.Response.reader` | `aliased Response → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader`: the returned reader retains the response body stream |
+| `Browser.Host.Worker.endpoint` | `returned Worker → Endpoint`: the wrapper returns its input unchanged |
+| `Browser.Host.Worker.toEventTarget` | `returned Endpoint → EventTarget.EventTarget`: the wrapper returns its input unchanged |
+
+Timer, immediate, frame, event, WebSocket, process and Promise registrations
+retain their callbacks: those parameters stay escaped, and dedicated capture
+fixtures flip them toward borrowed and require the verdict to change. Retired
+Js.Runtime scheduling exports are replaced in the fixture and surface list by
+the real typed native scheduling operations; parked and defect remain.
+
+Node.print/printLines/exitWith build fresh opaque Program constructors holding
+only numbers and text; printLines only reads its list through String.join. Ref
+make/get/set delegate to typed Js.Ref operations under the same cell provenance
+contract. Deferred stores its completed value once, keeps typed Resume entries
+in a Chain, removes cancelled waiters and resumes each removed entry in FIFO
+order. Its poll/isDone read the stored Maybe without manufacturing ownership.
+
+Js.cell builds a fresh shallow shell (or reuses its freshly evaluated record
+literal); fields retain their input aliases. Literal cell selectors lower to
+a field read/write, never a callback call. Opt matching calls one branch, and
+matching/default preserve the selected payload alias. The private None and
+escape protocol carries no new payload editing permission. Debug rendering
+helpers only read Inspect.Raw views and append text to fresh output arrays;
+none stores an inspected view in ordinary data. Their new pins cover each
+helper separately, while the existing inspection-view helper pins remain.
+
+The checked graph adapter reads own data descriptors, rejects callable/native
+graphs, validates active type branches, and may return its input or a projected
+copy; its returned/unknown result grants no new editing permission. Any.pack
+already escapes its payload; the private packet helper only marks a compiler-
+proved fresh object with immutable identity metadata, while unpack stays
+unknown. Schema.printWith still builds a fresh result shell, with issue inputs
+aliasing the supplied value; its existing pin was re-read without changing
+the interpreter or any Schema compiler hook. Browser.host installs one current
+model and one current view through typed refs, replacing each after its sync
+callback; its entry protocol still retains no earlier model. These pins will
+be re-audited when the separately owned DOM/Schema changes land.
+
 ### 24.9 The decoder in `Expect`
 
 `Http.request r` calls the function `r.expect` holds — `transfer`'s pattern `(Expect accept read)` binds it and
