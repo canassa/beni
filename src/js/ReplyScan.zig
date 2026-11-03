@@ -7,9 +7,9 @@ const List = std.ArrayList(N);
 const E = std.mem.Allocator.Error;
 
 // ownership pin begin: replyIds
-pub fn emit(l: anytype, value: N, root: N, plans: N, brand: N, keys: N, is_view: N, p: u32) E!N {
+pub fn emit(l: anytype, value: N, root: N, plans: N, brand: N, keys: N, is_view: N, opt_none: ?N, p: u32) E!N {
     var g: Generator(@TypeOf(l.*)) = .{ .l = l, .p = p };
-    return g.emit(value, root, plans, brand, keys, is_view);
+    return g.emit(value, root, plans, brand, keys, is_view, opt_none);
 }
 
 fn Generator(comptime L: type) type {
@@ -90,7 +90,7 @@ fn Generator(comptime L: type) type {
         fn dec(g: *G, out: *List, i: N) E!void {
             try g.assign(out, i, try g.bin(.sub, i, try g.num("1")));
         }
-        fn emit(g: *G, value: N, root: N, input_plans: N, brand: N, input_keys: N, is_view: N) E!N {
+        fn emit(g: *G, value: N, root: N, input_plans: N, brand: N, input_keys: N, is_view: N, opt_none: ?N) E!N {
             var body: List = .empty;
             const plans = try g.bind(&body, "$replyPlans", input_plans, false);
             const keys = try g.bind(&body, "$replyBrandKeys", input_keys, false);
@@ -106,6 +106,7 @@ fn Generator(comptime L: type) type {
             const n = try g.bind(&walk, "$replyNode", try g.slot(item, 1), false);
             const null_v = try g.l.nullNode(g.p);
             try g.iff(&walk, try g.bin(.logical_or, try g.eq(v, null_v), try g.bin(.strict_ne, try g.l.unary(.type_of, v, g.p), try g.lit("object"))), &.{cont});
+            if (opt_none) |none| try g.iff(&walk, try g.eq(v, none), &.{cont});
             const kind = try g.bind(&walk, "$replyKind", try g.num("5"), true);
             const edges = try g.bind(&walk, "$replyEdges", try g.array(&.{}), true);
             var planned: List = .empty;
@@ -146,7 +147,12 @@ fn Generator(comptime L: type) type {
             var alias: List = .empty;
             try g.push(&alias, stack, v, edges);
             try alias.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.eq(kind, try g.num("9")), alias.items);
+            try g.iff(&walk, try g.eq(kind, try g.num("10")), alias.items);
+            // A present Opt is its payload; absence was skipped by identity.
+            var optional: List = .empty;
+            try g.push(&optional, stack, v, try g.slot(try g.slot(edges, 0), 1));
+            try optional.append(g.l.scratch, cont);
+            try g.iff(&walk, try g.eq(kind, try g.num("9")), optional.items);
             var ref_body: List = .empty;
             try g.push(&ref_body, stack, try g.field(v, "v"), try g.slot(try g.slot(edges, 0), 1));
             try ref_body.append(g.l.scratch, cont);

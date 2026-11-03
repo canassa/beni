@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"normalize"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "wire views passed"
+<body>
+  <main>
+    <button>"normalize"</button>
+    <output>"wire views passed"</output>
+  </main>
+</body>

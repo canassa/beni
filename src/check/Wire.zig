@@ -14,7 +14,7 @@ const Var = Store.Var;
 
 pub const Range = struct { start: u32 = 0, len: u32 = 0 };
 pub const Node = struct { kind: Kind, edges: Range = .{}, type_index: ?u32 = null, reply_mode: bool = false };
-pub const Kind = enum(u32) { stable, list, record, tuple, tagged, variable, open_record, reply, ref };
+pub const Kind = enum(u32) { stable, list, record, tuple, tagged, variable, open_record, reply, ref, opt };
 pub const Edge = struct { label: Symbol.Optional = .none, child: u32 };
 pub const Root = struct { decl: u32, roles: Range };
 pub const Scan = struct { inst: u32, node: u32 };
@@ -412,6 +412,11 @@ const Builder = struct {
                     if (w.replies and entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js") and std.mem.eql(u8, cx.interner.slice(entry.name), "Ref")) {
                         return w.add(.ref, &.{.{ .child = try w.node(args[0], path, depth + 1) }});
                     }
+                    if (w.replies and entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js")) {
+                        const name = cx.interner.slice(entry.name);
+                        if (std.mem.eql(u8, name, "Cell")) return w.node(args[0], path, depth + 1);
+                        if (std.mem.eql(u8, name, "Opt")) return w.add(.opt, &.{.{ .child = try w.node(args[0], path, depth + 1) }});
+                    }
                     if (w.replies and entry.package == .platform and cx.graph.isCloudflare(entry.module) and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Worker.Object") and std.mem.eql(u8, cx.interner.slice(entry.name), "Reply")) {
                         const index = try w.add(.reply, &.{});
                         w.nodes.items[index].type_index = @intCast(w.types.items.len);
@@ -534,7 +539,7 @@ pub fn inhabited(a: Allocator, plan: *const Artifact) Allocator.Error![]bool {
             cursors[edge.child] += 1;
         }
         has_value[i] = switch (node.kind) {
-            .stable, .variable, .list, .reply, .ref => true,
+            .stable, .variable, .list, .reply, .ref, .opt => true,
             .record, .tuple, .open_record => node.edges.len == 0,
             .tagged => false,
         };

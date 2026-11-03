@@ -1,0 +1,47 @@
+import Js
+import List
+import Worker.Object as Object
+
+
+scan : msg → List String
+scan value = Object.replyIds value
+
+
+pub run : ⊤ → ⊤
+run _ =
+    ref = Js.ref (Object.local "ref")
+    cell = Js.cell { reply = Object.local "cell", hidden = Object.remote "remote" }
+    some = Js.some (Object.local "opt")
+    none : Js.Opt (Object.Reply ⊤)
+    none = Js.none ⊤
+    noneList : Js.Opt (List (Object.Reply ⊤))
+    noneList = Js.none ⊤
+    list = Js.some [ Object.local "list" ]
+    nested = Js.cell { slot = Js.some ref }
+    valid =
+        Object.replyIds ref == [ "ref" ]
+            && scan ref == [ "ref" ]
+            && Object.replyIds cell == [ "cell" ]
+            && scan cell == [ "cell" ]
+            && Object.replyIds some == [ "opt" ]
+            && scan some == [ "opt" ]
+            && Object.replyIds list == [ "list" ]
+            && scan list == [ "list" ]
+            && Object.replyIds none == []
+            && scan none == []
+            && Object.replyIds noneList == []
+            && scan noneList == []
+            && Object.replyIds nested == [ "ref" ]
+            && scan nested == [ "ref" ]
+    if valid then
+        Js.cellWrite cell (Object.local "later") .reply
+        if Object.replyIds cell == [ "later" ] && scan cell == [ "later" ] then
+            line "stores passed"
+        else
+            line "stores failed"
+    else
+        line "stores failed"
+
+
+line : String → ⊤
+line text = Js.to (Js.call (Js.global "console") "log" [ Js.from text ])

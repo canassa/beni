@@ -1,0 +1,15 @@
+-- Gate-level coverage of the same Wire interpreter used by worker messages.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update = λ_ _ _ → Probe.run ⊤
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={⊤}>normalize</button><output>{model}</output></main>
+        }

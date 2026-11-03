@@ -1,0 +1,32 @@
+import Browser.WorkerWire as Wire
+import Js
+import List
+
+
+pub run : ⊤ → String
+run _ =
+    tail = List.drop [ 0, 1, 2 ] 1
+    shaped = { b = [ 0, 1, 2 ], o = 1, length = 2 }
+    grown = List.foldl (List.range 1 100) [] λi xs → List.push xs i
+    -- Wire's documented descriptor format: parameter 0 has a variable node.
+    plan = Js.call (Js.global "JSON") "parse" [ Js.from "[[[0,0,0,[]]],[[5,[]]]]" ]
+    normalized = Wire.normalize plan 0 "" (Js.from { view = tail, shaped = shaped, grown = grown })
+    view = Js.get normalized "view"
+    tree = Js.get normalized "grown"
+    sameRecord = Js.same (Js.get normalized "shaped") (Js.from shaped)
+    cloned = Js.apply (Js.global "structuredClone") [ normalized ]
+    if
+        sameRecord
+            && Js.to (Js.call (Js.global "Array") "isArray" [ view ])
+            && Js.to (Js.call (Js.global "Array") "isArray" [ tree ])
+            && Js.same (Js.get view "length") (Js.from 2)
+            && Js.same (Js.at view 0) (Js.from 1)
+            && Js.same (Js.at view 1) (Js.from 2)
+            && Js.same (Js.get tree "length") (Js.from 100)
+            && Js.same (Js.at tree 99) (Js.from 100)
+            && Js.same (Js.at (Js.get cloned "view") 0) (Js.from 1)
+            && Js.same (Js.get (Js.get cloned "shaped") "length") (Js.from 2)
+    then
+        "wire views passed"
+    else
+        "wire views failed"

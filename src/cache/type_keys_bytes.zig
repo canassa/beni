@@ -515,11 +515,11 @@ fn symbolAt(blob: []const u8, at: u32, in: *Interning) ReadError!?Symbol {
 pub fn verify(a: *const TypeKeys.Artifact) bool {
     for (a.wire.nodes) |n| {
         if (@as(u64, n.edges.start) + n.edges.len > a.wire.edges.len) return false;
-        if ((n.kind == .list or n.kind == .ref) and n.edges.len != 1) return false;
+        if ((n.kind == .list or n.kind == .ref or n.kind == .opt) and n.edges.len != 1) return false;
         if (n.type_index) |ti| if (ti >= (if (n.reply_mode) a.wire.scan_types.len else a.wire.types.len)) return false;
         if ((n.kind == .tagged or n.kind == .reply) and n.type_index == null) return false;
         if ((n.kind == .stable or n.kind == .reply) and n.edges.len != 0) return false;
-        if ((n.kind == .reply or n.kind == .ref) and !n.reply_mode) return false;
+        if ((n.kind == .reply or n.kind == .ref or n.kind == .opt) and !n.reply_mode) return false;
         for (a.wire.edges[n.edges.start..][0..n.edges.len]) |edge| {
             if (edge.child >= a.wire.nodes.len or a.wire.nodes[edge.child].reply_mode != n.reply_mode) return false;
         }
