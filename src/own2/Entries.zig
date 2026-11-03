@@ -19,12 +19,34 @@ const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
+const Place = @import("Place.zig");
 
 pub const Error = Ids.ChargeError;
 const Frame = Value.Frame;
 const none: u32 = Ids.none_int;
 
-pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32 };
+/// `one`: the given entry this one is a candidate for, when that entry's
+/// occurrence names one object (`singular`); `none` otherwise.
+pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32, one: u32 = none };
+
+/// Whether a callee's occurrence `o`, projected to entry leaf `li`, names
+/// one object of one invocation (§2.9.3, *candidates of one object*): not
+/// deep nor apart, a path of fields, tuple indices and constructor
+/// arguments only, at a slot some step below can name.
+pub fn singular(f: *Frame, o: u64, li: u32) bool {
+    if (Contract.isDeep(o) or Contract.isApart(o) or Contract.isFed(o)) return false;
+    for (f.slots.relWords(Contract.occRel(o))) |w| switch (Place.Step.fromWord(w).kind) {
+        .field, .index, .ctor_arg => {},
+        else => return false,
+    };
+    const l = f.leafAt(li);
+    return !Subtree.symbolic(f.slots, l.slots) and !wildEntry(f, .{ .leaf = li, .route = 0, .occ = o, .block = none });
+}
+
+/// Whether two entries are candidates of one object: never two of its places.
+pub fn oneObject(a: Ent, b: Ent) bool {
+    return a.one != none and a.one == b.one;
+}
 
 /// The occurrences a check gathers, each once.
 pub const Occs = struct {
@@ -75,13 +97,13 @@ pub fn allApart(ents: []const Ent, idx: []const u32) bool {
 pub fn atomTwice(f: *Frame, ents: []const Ent, idx: []const u32) Error!bool {
     var es: std.ArrayList(@TypeOf(f.sets.tags).Entry) = .empty;
     defer es.deinit(f.gpa);
-    for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ) });
+    for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ), .one = ents[i].one });
     return f.sets.tags.anyPair(f.gpa, f.account, es.items);
 }
 
 pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
     try f.charge(.cond, 1);
-    if (a.block != none and a.block == b.block) return false;
+    if ((a.block != none and a.block == b.block) or oneObject(a, b)) return false;
     if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ) return false;
     // Apart occurrences need only be apart from the plain ones.
     if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
@@ -106,7 +128,7 @@ pub fn answerMeets(f: *Frame, ents: []const Ent, alive: []const bool, fresh: usi
         if (!alive[i] or !isAnswer(f, f.leafAt(en.leaf))) continue;
         for (ents[if (i >= fresh) 0 else fresh..], if (i >= fresh) 0 else fresh..) |o, k| {
             if (k == i or !alive[k]) continue;
-            if (o.block != none and o.block == en.block) continue;
+            if ((o.block != none and o.block == en.block) or oneObject(o, en)) continue;
             if (try f.sets.tags.meet(f.account, f.leafAt(en.leaf).tags, f.leafAt(o.leaf).tags)) return true;
         }
     }

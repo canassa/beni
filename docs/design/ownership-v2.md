@@ -1132,6 +1132,29 @@ reached it, so one value placed twice is two entries):
   parameters.
 - The conditions met are gathered as occurrences, each once, and made one selection at the end: a merge per
   entry or per group costs their product (the *Fields* family went 1.94×, 2.15×, 2.37× per doubling before).
+- *Amended 2026-11-03 (#1713):* **candidates of one object.** A callee's occurrence that is neither deep nor
+  apart, at a path of fields, tuple indices and constructor arguments only, names one object of one
+  invocation (an entry whose slot no step below can name, or a whole subtree, is not such an entry). Every
+  entry the check makes from it, projected or expanded, is a **candidate** of that object: where the object
+  may come from. Two candidates of one object are never compared, in a group or in an atom's, and an
+  answer is not compared with a candidate of its own object either. A candidate met again with its leaf
+  and block, or an apart entry met again with its leaf, block and occurrence, is not made twice. Before
+  this, a fold's accumulator was read as two objects: its supply is the first value or the label's answer
+  handed back, and that answer holds the accumulator, so expanding it reached the first value again, as a
+  second entry of its atom, and every fold whose step reads two parts of its accumulator (`π2{.0,.1~}`) was
+  refused `disjoint`.
+  *Why this is sound.* At one invocation the occurrence's place holds one object. Each entry made from it
+  says that object may be this leaf's, at one route; two of them are two answers to where one object comes
+  from, never two places that hold it, so they cannot make it occur twice. Their comparisons with every
+  other entry are kept: the candidates of `.0` and `.1` come from two occurrences, so a first value
+  `( t, t )`, or an answer `( p, p )` handed back, still meets itself and is refused. A repeated candidate,
+  or apart entry, has the same comparisons as the first (the same leaf, block and occurrence; its route is
+  new, so the routed rule never spares it), and leaving it out is what ends the expansion of
+  accumulator → answer → accumulator. Measured: 8 positions refused before are accepted (`FoldKeepsInner`
+  ×3, `FoldKeepsInnerRefused` ×3, which v1 also accepts, `FoldFeedbackCondition`, and
+  `SanitiserNestedCallbackWrite`'s tuple fold), and `groupOrder` no longer reaches its limit; the negative
+  controls (`run/SanitiserFoldAlternativesShared`) trap when all the parts are read as candidates of one
+  object.
 - **The routed rule.** When a callee's condition is instantiated (§2.11.2), two distinct occurrences of the
   callee that land in one value of this frame by one literal route and position are two distinct positions of
   it: they ask that value's own separation, never a refusal. Two parameters handed one value are that value

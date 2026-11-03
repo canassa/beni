@@ -1,0 +1,9 @@
+# v2 refuses each fold whose accumulator holds one list at both parts, in its first value or in an answer handed back (§2.9.3).
+51:16 list_may_be_shared List.foldl
+51:16 list_may_be_shared List.foldl
+52:16 list_may_be_shared List.foldl
+52:16 list_may_be_shared List.foldl
+53:16 list_may_be_shared SanitiserFoldAlternativesShared.myFold
+53:16 list_may_be_shared SanitiserFoldAlternativesShared.myFold
+54:9 list_may_be_shared List.foldl
+54:9 list_may_be_shared List.foldl

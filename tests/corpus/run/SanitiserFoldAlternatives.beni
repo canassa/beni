@@ -1,0 +1,35 @@
+-- A runtime catch for a fold whose accumulator has parts
+-- (`ownership-v2.md` §2.9.3, *candidates of one object*): each round's
+-- accumulator is its first value or the answer handed back, never both, so
+-- one part's first value, reached directly and again through the answer,
+-- is one object at one place. A tuple accumulator is edited in place,
+-- through `List.foldl` and a user-written fold; v2 refused each before and
+-- accepts it now, and the sanitised run prints the same.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+split : Int, List Int × List Int → List Int × List Int
+split n ( p, q ) = if n > 2 then ( List.push p n, q ) else ( p, List.push q n )
+
+
+myFold : List a, b, (a, b → b) → b
+myFold xs acc f =
+    case xs of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            myFold rest (f x acc) f
+
+
+main : Program
+main =
+    ( a, b ) = List.foldl [ 1, 2, 3, 4 ] ( [], [] ) split
+    ( c, d ) = myFold [ 1, 2, 3 ] ( [ 0 ], [ 9 ] ) split
+    Node.printLines [ show a, show b, show c, show d ]

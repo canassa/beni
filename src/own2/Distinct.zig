@@ -350,7 +350,8 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     const f = e.f;
     var st: Entries.Rounds = .{};
     defer st.deinit(g);
-    for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none }, .{ none, @intCast(k), 0 });
+    // A callee's occurrence that names one object: its entries are candidates of it.
+    for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .one = if (routed and Entries.singular(f, p.occ, p.leaf)) @intCast(k) else none }, .{ none, @intCast(k), 0 });
     const acc: Cond = .{};
     // The conditions met, gathered and made one at the end: a merge per
     // entry or group would cost their product (§2.9.3's linear bound).
@@ -384,6 +385,11 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     defer taken.deinit(g);
     var dirty: std.ArrayList(u32) = .empty;
     defer dirty.deinit(g);
+    // The candidates of one object and the apart entries made, by leaf, block
+    // and occurrence: one met again is compared as the first, and adds nothing
+    // (a fold's accumulator, fed its own answer).
+    var cands: Ids.FixedDict(5) = .{};
+    defer cands.deinit(g);
     var fresh: usize = 0;
     var rounds: u32 = 0;
     while (true) : (rounds += 1) {
@@ -489,7 +495,8 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 try e.charge(.edge, 1);
                 e.route_count += 1;
                 if (blk != none and (try seen.getOrPut(g, .{x})).found_existing) continue;
-                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
+                if ((en.one != none or Contract.isApart(en.occ)) and (try cands.getOrPut(g, .{ x, en.one, blk, @truncate(en.occ), @intCast(en.occ >> 32) })).found_existing) continue;
+                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .one = en.one }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
         // Families of the expansion ask their own separation.

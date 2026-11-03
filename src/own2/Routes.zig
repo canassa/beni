@@ -475,9 +475,9 @@ pub const Table = struct {
         return false;
     }
 
-    /// One entry of `anyPair`: its tags, its block (`none` for none) and
-    /// whether it is an apart occurrence.
-    pub const Entry = struct { tags: u32, block: u32, apart: bool };
+    /// One entry of `anyPair`: its tags, its block (`none` for none), whether
+    /// it is an apart occurrence, and `one` (`Entries.Ent`'s).
+    pub const Entry = struct { tags: u32, block: u32, apart: bool, one: u32 = none };
 
     /// Whether two of the entries `es` may be one object twice: two that
     /// share no block, are not both apart and whose tags hold together.
@@ -563,7 +563,7 @@ pub const Table = struct {
     }
 
     fn mayPair(t: *Table, gpa: Allocator, account: *Ids.Account, a: Entry, b: Entry) Error!bool {
-        if ((a.block != none and a.block == b.block) or (a.apart and b.apart)) return false;
+        if ((a.block != none and a.block == b.block) or (a.apart and b.apart) or (a.one != none and a.one == b.one)) return false;
         return (try t.merge(gpa, account, a.tags, b.tags)) != null;
     }
 

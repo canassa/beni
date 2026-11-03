@@ -1,0 +1,3 @@
+A fold whose accumulator has parts (ownership-v2.md §2.9.3, candidates of one object): built again under
+--ownership=v2 and the list stale-read sanitiser. Each round's accumulator is its first value or the answer handed
+back, never both; v2 accepts the tuple folds, and the sanitised run prints the same.
