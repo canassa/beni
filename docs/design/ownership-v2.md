@@ -1502,7 +1502,7 @@ than `claim`'s, and `got` does not return where `claim` does not.
   and 48:21, `Differential` 92:16, `BesideRecordHelper` 24:5, and folds and recursions whose keys read too much,
   `PolyRecBranch` 61:31 among them); 3 refusals move from the callee to the caller, where the fixture wants them
   (`ElementEdits.repeated`, `Differential.t57Repeated`, `t57RepeatedRows`: v1 refuses them too);
-  `SubscriptionTapFold`'s `build` grows 31 872 records, not 65 512. The negative controls
+  `SubscriptionTapFold`'s `build` grows 53 715 records, not 65 512. The negative controls
   (`run/SanitiserRecordCallbackShared`) trap when the apart occurrence is dropped.
 - `res_cond`: the distinct check of §2.9.3 over the result's leaves.
 - `reads`, `writes`, `escapes`: the frame's uses of its parameters' positions, its demands' targets that are
