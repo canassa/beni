@@ -9992,6 +9992,183 @@ test "the checker v2's call costs are flat per call through chains of calls and 
     try testing.expect(cost[1][2] * 10 <= cost[0][2] * 22);
 }
 
+/// `chain`'s total in a v2 dump of #1146's chain of knots through calls,
+/// `n` deep: `x_k = knot c x_{k-1} e`, where `knot c x t = if c then T
+/// [ x ] else t` and `e` is `x_{k-1}` again or, `params`, the parameter `t`
+/// at every level. `x0 = L zs`, so `x_n` holds `zs` at every depth up to n,
+/// and a push of `zs` while `x_n` is read after is refused.
+fn knotChainTotal(w: *World, n: u32, params: bool) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "type T =\n    T (List T)\n    | L (List Int)\n\n\nknot : Bool, T, T → T\nknot c x t =\n    if c then T [ x ] else t\n\n\npub chain : Bool, T, List Int → Int\nchain c t zs =\n    x0 = L zs\n");
+    for (1..n + 1) |k| {
+        if (params) try src.print(a, "    x{d} = knot c x{d} t\n", .{ k, k - 1 }) else try src.print(a, "    x{d} = knot c x{d} x{d}\n", .{ k, k - 1, k - 1 });
+    }
+    try src.print(a, "    ys = List.push zs 1\n    List.length ys + String.length (Debug.toString x{d})\n", .{n});
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    var want_buf: [96]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, ":10 List.push zs: rejected alias: x{d} holds it and is read at ", .{n});
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, want) != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "knot", "growth"));
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
+test "the checker v2 counts #1146's chain of knots through calls in n log n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.3.1, §2.11.2, §8 S3b (#1146): the chain
+    // `X_k = union(N_k, X_{k+1})`, `N_k{arg: L_k}`, `L_k{[*]: X_{k-1}}`
+    // of the shape domain's `linkArgs` test, written as a program: each
+    // level is a call of `knot`, whose answer joins a new `T [ x ]` with
+    // the level below or with the parameter. `T` is one place, so `knot`'s
+    // contract is a few `⟲` slots whatever the depth, and the caller applies
+    // it once a call. The shape domain linked the chain in Θ(n²) records.
+    // At four times the levels, at most six times the records (n log n at
+    // most, never sixteen), with growth 0 at 1 024.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const sizes = [_]u32{ 4, 16, 64, 256, 1_024 };
+    for ([_]bool{ false, true }) |params| {
+        var cost: [sizes.len]u64 = undefined;
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        for (sizes, 0..) |n, i| cost[i] = try knotChainTotal(&w, n, params);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for (1..sizes.len) |i| if (cost[i] > 6 * cost[i - 1]) {
+            std.debug.print("knot chain (params {}): {any} records at {any}\n", .{ params, cost, sizes });
+            return error.TestUnexpectedResult;
+        };
+    }
+}
+
+/// `chain`'s total in a v2 dump of `x_k = f c x_{k-1}` to n, where `f c x
+/// = if c then x else [ 1 ]`: `x_n` is the parameter or a fresh list, one
+/// condition per call. `read`: `xs` is pushed while `x_n` is read only at
+/// the end, refused; otherwise `x_n` itself is pushed at the end, accepted
+/// as a parameter write.
+fn joinCallChainTotal(w: *World, n: u32, read: bool) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "f : Bool, List Int → List Int\nf c x =\n    if c then x else [ 1 ]\n\n\npub chain : Bool, List Int → Int\nchain c xs =\n    x0 = xs\n");
+    for (1..n + 1) |k| try src.print(a, "    x{d} = f c x{d}\n", .{ k, k - 1 });
+    if (read) {
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + List.length x{d}\n", .{n});
+    } else {
+        try src.print(a, "    List.length (List.push x{d} 1)\n", .{n});
+    }
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    var want_buf: [96]u8 = undefined;
+    const want = if (read)
+        try std.fmt.bufPrint(&want_buf, ":10 List.push xs: rejected alias: x{d} holds it and is read at ", .{n})
+    else
+        try std.fmt.bufPrint(&want_buf, ":18 List.push x{d}: accepted param\n", .{n});
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, want) != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
+test "the checker v2 reads a chain of 400 calls at its end in records linear in its calls" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.2, R-7.12 (#1130): `x_k = f c x_{k-1}`, each
+    // answer the join of its argument and a fresh list, so `x_400` is the
+    // parameter or one of 400 fresh lists, each under its own call's
+    // condition. Nothing reads a link of the chain before its end: the one
+    // read, or the one write, at the end resolves all 400. At 400 calls at
+    // most 4.4 times the records of 100. The shape domain also ran this read
+    // on a 64 KiB stack; the binary gives its check thread
+    // `Check.stack_size`, so a black-box test cannot pin that half.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_]bool{ true, false }) |read| {
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const c100 = try joinCallChainTotal(&w, 100, read);
+        const c400 = try joinCallChainTotal(&w, 400, read);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        if (c400 * 10 > c100 * 44) {
+            std.debug.print("call chain (read {}): {d} records at 100 calls, {d} at 400\n", .{ read, c100, c400 });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "the checker v2 charges a callee's deep write path a few records a step at each call" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.8, §2.11.2, §4.4 (#1225's S3b half): `deepN r`
+    // writes `π1.a…a`, N steps; `callN` passes its parameter on and
+    // `sharedN` reads it again after the call (the verdicts are
+    // `ownership/DeepWrittenPathCall`'s). Each caller instantiates the write
+    // once, a step at a time: at twice the steps at most 2.2 times the
+    // records, and growth 0 at every depth up to 256.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const depths = [_]u32{ 32, 64, 128, 256 };
+    var src: std.ArrayList(u8) = .empty;
+    for (depths) |n| {
+        try src.print(a, "deep{d} r = List.push r", .{n});
+        for (0..n) |_| try src.appendSlice(a, ".a");
+        try src.print(a, " 1\n\n\npub call{d} r = deep{d} r\n\n\npub shared{d} r = ( deep{d} r, r )\n\n\n", .{ n, n, n, n });
+    }
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\ntotal 12: accepted 8 (fresh 0, call 0, param 8, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4\ncause later-use 4\n") != null);
+    var cost: [2][depths.len]u64 = undefined;
+    var growth: [2][depths.len]u64 = undefined;
+    for (depths, 0..) |n, i| {
+        var name_buf: [2][16]u8 = undefined;
+        const names = [2][]const u8{
+            try std.fmt.bufPrint(&name_buf[0], "call{d}", .{n}),
+            try std.fmt.bufPrint(&name_buf[1], "shared{d}", .{n}),
+        };
+        for (names, 0..) |name, k| {
+            growth[k][i] = try accountField(dump.stdout, name, "growth");
+            cost[k][i] = try accountTotal(dump.stdout, name);
+        }
+    }
+    for (0..2) |k| {
+        const flat = for (1..depths.len) |i| {
+            if (cost[k][i] * 10 > cost[k][i - 1] * 22) break false;
+        } else true;
+        if (!flat or std.mem.max(u64, &growth[k]) != 0) {
+            std.debug.print("{s}: {any} records, growth {any}, at {any} steps\n", .{ if (k == 0) "call" else "shared", cost[k], growth[k], depths });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
 /// The `total` of `owner`'s account in a v2 dump of `src` as `Main.beni`,
 /// growth 0 and no declaration past a limit.
 fn ownTotalFor(w: *World, src: []const u8, owner: []const u8) !u64 {

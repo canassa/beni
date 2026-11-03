@@ -1,0 +1,51 @@
+-- ownership (project): `SlotJoinSharedRoutesCall` with every callee in
+-- another module (ownership-v2.md §2.3.5, §2.11.2, §3.6): a call of an
+-- imported declaration applies the contract its module's block publishes,
+-- so a join under two shared-owner routes keeps every arm's slots across
+-- the block as it does in one module. Each read along a route an arm keeps
+-- to `xs` is refused; `apart` is accepted.
+import Lib
+
+
+pub bothArms : Bool → List Int × Int
+bothArms c =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = if c then { a = w, b = w } else { a = { items = [ 2 ] }, b = w }
+    ( Lib.pushIt xs, Lib.readA t + Lib.readB t )
+
+
+pub thenArmA : Bool → List Int × Int
+thenArmA c =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { items = [ 2 ] }
+    t = if c then { a = w, b = w } else { a = v, b = v }
+    ( Lib.pushIt xs, Lib.readA t )
+
+
+pub elseArmB : Bool → List Int × Int
+elseArmB c =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { items = [ 2 ] }
+    t = if c then { a = v, b = v } else { a = w, b = w }
+    ( Lib.pushIt xs, Lib.readB t )
+
+
+pub pickedB : Bool → List Int × Int
+pickedB c =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { items = [ 2 ] }
+    t = Lib.pick c { a = v, b = v } { a = w, b = w }
+    ( Lib.pushIt xs, Lib.readB t )
+
+
+pub apart : Bool → List Int × Int
+apart c =
+    xs = [ 1 ]
+    w = { items = [ 3 ] }
+    v = { items = [ 2 ] }
+    t = Lib.pick c { a = w, b = w } { a = v, b = v }
+    ( Lib.pushIt xs, Lib.readA t + Lib.readB t )
