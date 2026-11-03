@@ -40,8 +40,8 @@ pub fn setsMeet(t: *Table, gpa: Allocator, account: *Ids.Account, ta: u32, ra: u
     if (shallow(t, ra) and shallow(t, rb)) {
         var es: std.ArrayList(Entry) = .empty;
         defer es.deinit(gpa);
-        try listsInto(t, gpa, account, ra, ta, 0, false, &es);
-        try listsInto(t, gpa, account, rb, tb, 1, false, &es);
+        try listsInto(t, gpa, account, ra, ta, 0, false, none, &es);
+        try listsInto(t, gpa, account, rb, tb, 1, false, none, &es);
         return anyPair(t, gpa, account, es.items);
     }
     var seen: Ids.FixedDict(3) = .{};
@@ -77,14 +77,14 @@ fn push(t: *const Table, gpa: Allocator, account: *Ids.Account, seen: *Ids.Fixed
 }
 
 /// The lists of a `shallow` set `rs`, `tags` merged in (one they conflict
-/// with dropped), as entries of block `blk`.
-fn listsInto(t: *Table, gpa: Allocator, account: *Ids.Account, rs: u32, tags: u32, blk: u32, apart: bool, out: *std.ArrayList(Entry)) Error!void {
+/// with dropped), as entries of block `blk` (and `one`, `Entry`'s).
+fn listsInto(t: *Table, gpa: Allocator, account: *Ids.Account, rs: u32, tags: u32, blk: u32, apart: bool, one_of: u32, out: *std.ArrayList(Entry)) Error!void {
     const one = [1]u32{rs};
     const ms: []const u32 = if (rs == 0 or t.rset(rs).kind == .flat) &one else t.runs.get(t.rset(rs).a);
     for (ms) |m| for (if (m == 0) &[1]u32{0} else t.runs.get(t.rset(m).a)) |r| {
         try account.reserve(.inspection, 1);
         const x = (try t.merge(gpa, account, r, tags)) orelse continue;
-        try out.append(gpa, .{ .tags = x, .block = blk, .apart = apart });
+        try out.append(gpa, .{ .tags = x, .block = blk, .apart = apart, .one = one_of });
     };
 }
 
@@ -102,9 +102,9 @@ fn earliest(a: u32, b: u32) u32 {
 }
 
 /// One entry of `anyPair`: its tags, its block (`none` for none),
-/// whether it is an apart occurrence, and its route set (§2.11.2; 0 for
-/// its tags alone).
-pub const Entry = struct { tags: u32, block: u32, apart: bool, routes: u32 = 0 };
+/// whether it is an apart occurrence, its route set (§2.11.2; 0 for
+/// its tags alone), and `one` (`Entries.Ent`'s).
+pub const Entry = struct { tags: u32, block: u32, apart: bool, routes: u32 = 0, one: u32 = none };
 
 /// Whether two of the entries `es` may be one object twice: two that
 /// share no block, are not both apart and whose tags hold together.
@@ -130,7 +130,7 @@ pub fn anyPair(t: *Table, gpa: Allocator, account: *Ids.Account, es0: []const En
         // own routes never hold together (§2.11.2).
         if (shallow(t, a.routes)) {
             const blk = if (a.block != none) a.block else 0x8000_0000 | @as(u32, @intCast(i));
-            try listsInto(t, gpa, account, a.routes, a.tags, blk, a.apart, &plain);
+            try listsInto(t, gpa, account, a.routes, a.tags, blk, a.apart, a.one, &plain);
             continue;
         }
         for (es0, 0..) |b, k| if (k != i and (b.routes == 0 or k < i)) {
@@ -213,7 +213,7 @@ pub fn anyPair(t: *Table, gpa: Allocator, account: *Ids.Account, es0: []const En
 }
 
 fn mayPair(t: *Table, gpa: Allocator, account: *Ids.Account, a: Entry, b: Entry) Error!bool {
-    if ((a.block != none and a.block == b.block) or (a.apart and b.apart)) return false;
+    if ((a.block != none and a.block == b.block) or (a.apart and b.apart) or (a.one != none and a.one == b.one)) return false;
     return setsMeet(t, gpa, account, a.tags, a.routes, b.tags, b.routes);
 }
 
