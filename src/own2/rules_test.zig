@@ -110,6 +110,8 @@ const layers = [_]Entry{
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
+    // A group's judgements kept across its rounds (§2.12, #1714).
+    .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
@@ -406,7 +408,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 48), layers.len);
+    try testing.expectEqual(@as(usize, 49), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

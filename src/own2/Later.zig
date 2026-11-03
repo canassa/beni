@@ -33,6 +33,8 @@ pub const Uses = struct {
     regions: *const Regions.Tree,
     /// A judgement's `liveAt` answers (+1, 0 none), each asked once a target.
     asked: Ids.FixedDict(3) = .{},
+    /// The `(call, parameter)` footprints read, for a kept judgement (§2.12).
+    feet: ?*std.ArrayList([2]u32) = null,
 
     fn f(u: *Uses) *Value.Frame {
         return &u.w.f;
@@ -116,6 +118,7 @@ pub const Uses = struct {
         const fr = u.f();
         const foot = u.w.foots.items[x.use_node.int()];
         const call = fr.calls.items[foot[0]];
+        if (u.feet) |l| try l.append(fr.gpa, foot);
         if (call.contract == none) return true;
         const h = u.contracts.head(call.contract);
         const rem = (try fr.slots.relBelow(fr.gpa, fr.account, fr.places, x.path, q)) orelse return true;

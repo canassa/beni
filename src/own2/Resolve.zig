@@ -38,6 +38,7 @@ const Stack = @import("Stack.zig");
 const TagTree = @import("TagTree.zig");
 const Later = @import("Later.zig");
 const Descent = @import("Descent.zig");
+const Kept = @import("Kept.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -45,35 +46,10 @@ const PathId = Ids.PathId;
 const none: u32 = Ids.none_int;
 const debug = false;
 
-pub const HolderKind = enum(u8) { binding, pending };
-
-/// The holder a refusal names: a local (`who`) or a pending operand (its
-/// instruction's token).
-pub const Holder = struct { kind: HolderKind, who: u32, token: u32 };
-
-/// A demand's verdict (R-0.3) with what `Message` says of it.
-pub const Outcome = struct {
-    verdict: enum(u8) { accepted, refused } = .accepted,
-    accepted: Facts.Verdict.Accepted = .fresh,
-    cause: Facts.Cause = .unknown,
-    exactness: Facts.Exactness = .exact,
-    holder_path: PathId = .none,
-    other_paths: bool = false,
-    /// `top_level`: the value's `(module, declaration)`.
-    shared: [2]u32 = .{ none, none },
-};
-
-/// One verdict line: the demand, its outcome, the holder and the use.
-pub const Line = struct {
-    demand: Walk.Demand,
-    outcome: Outcome,
-    holder: ?Holder = null,
-    /// What the judgement added to `demand.relies` (the callee's own,
-    /// shared by its call's demands): gathered apart, so that a frame's
-    /// `req` reads a call's `relies` once, not once per write of it.
-    extra: Cond = .{},
-    use_token: u32 = none,
-};
+pub const HolderKind = Kept.HolderKind;
+pub const Holder = Kept.Holder;
+pub const Outcome = Kept.Outcome;
+pub const Line = Kept.Line;
 
 pub const Result = struct {
     lines: []Line,
@@ -118,6 +94,8 @@ const Resolver = struct {
     /// Whether a judgement's aggregated holders add to the frame's `req`:
     /// a demand's do, a label's supplied part's are judged one by one.
     aggregate: bool = false,
+    /// The code's kept judgements across the group's rounds (§2.12).
+    kept: ?*Kept.Table = null,
 
     fn f(r: *Resolver) *Value.Frame {
         return &r.e.w.f;
@@ -162,7 +140,7 @@ const Resolver = struct {
 
     /// Key every unkeyed live holder (§2.8, *Holder entries judged by base
     /// leaves*): its holds listed once, each hold's base keys, its uses.
-    fn keyLive(r: *Resolver) Error!void {
+    pub fn keyLive(r: *Resolver) Error!void {
         if (!r.live.any()) return;
         const g = r.gpa();
         const w = r.e.w;
@@ -176,6 +154,7 @@ const Resolver = struct {
         var points: std.ArrayList(u32) = .empty;
         defer points.deinit(g);
         while (r.live.takeUnkeyed()) |hi| {
+            if (r.kept) |k| try k.event(g, .{ Kept.key_event, hi, 0 });
             const local = r.live.holders.items[hi].local;
             hds.clearRetainingCapacity();
             keys.clearRetainingCapacity();
@@ -250,7 +229,7 @@ const Resolver = struct {
     /// holds have is done (`dones`, once the demand is accepted). When no
     /// pending one is used after the point, the first done holder that is
     /// adds the target's selection with its own (which `req` has already).
-    fn aggregated(r: *Resolver, t: u32, point: u32, relied: *Holders.Gather, done_holds: *std.ArrayList(u32), dones: *std.ArrayList(u32)) Error!void {
+    fn aggregated(r: *Resolver, t: u32, point: u32, relied: *Holders.Gather, done_holds: *std.ArrayList([2]u32), dones: *std.ArrayList(u32)) Error!void {
         const g = r.gpa();
         const fr = r.f();
         var found = false;
@@ -264,7 +243,7 @@ const Resolver = struct {
             for (try r.aggHolds(hi, false, t, point, relied), 0..) |got, k| switch (got) {
                 .skip => {},
                 .some, .empty => all = false,
-                .all => try done_holds.append(g, h.h_start + @as(u32, @intCast(k))),
+                .all => try done_holds.append(g, .{ hi, @intCast(k) }),
             };
             found = found or r.agg_any;
             if (all) try dones.append(g, hi);
@@ -438,7 +417,7 @@ const Resolver = struct {
         try r.keyLive();
         const base_local: u32 = if (w.bir.instTag(@fromBackingInt(d.base_inst)) == .local) w.bir.instData(@fromBackingInt(d.base_inst)).lhs else none;
         var best: ?Witness = null;
-        var done_holds: std.ArrayList(u32) = .empty;
+        var done_holds: std.ArrayList([2]u32) = .empty;
         defer done_holds.deinit(g);
         var dones: std.ArrayList(u32) = .empty;
         defer dones.deinit(g);
@@ -509,13 +488,24 @@ const Resolver = struct {
         }
         o.accepted = if (d.callback) .callback_param else ground;
         // What the aggregated holders added is in `req` from now on.
-        for (done_holds.items) |k| r.live.holds.items[k].done = true;
-        for (dones.items) |hi| r.live.aggDone(hi);
+        for (done_holds.items) |x| try Kept.done(r, Kept.hold_event, x[0], x[1]);
+        for (dones.items) |hi| try Kept.done(r, Kept.holder_event, hi, 0);
         try r.ops.writes.appendSlice(g, writes.items);
         if (r.aggregate) try r.stack.accept(r.ev(), d.pending, d.point, targets, Holders.paramTarget);
         line.extra = try relied.cond(r.ev().arena, r.account());
         r.e.ev.f.account.in_demands = false;
         return line;
+    }
+
+    /// Demand `d` judged, or its judgement of the round before taken again
+    /// (§2.12, *judgements kept across rounds*); under the cross-check,
+    /// judged and compared.
+    fn judgeKept(r: *Resolver, d: Walk.Demand) Error!Line {
+        const k = r.kept orelse return r.judge(d);
+        const found = try k.find(r.e.w, d, r.e.contracts);
+        const at = k.mark(r.ops.writes.items.len, r.stack.writes.items.len);
+        if (found) |ri| if (!Kept.cross) return k.replay(r, d, ri, at);
+        return k.judged(r, d, try r.judge(d), found, at);
     }
 
     /// A supplied leaf `t` judged as a write the callback may make, the
@@ -569,8 +559,9 @@ const Resolver = struct {
 
 /// Judge every demand of evaluation `e`; the lines in `arena` (null when
 /// only the verdicts are wanted, during a fixed point).
-pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocator) Error!Result {
-    var r: Resolver = .{ .e = e, .arena = arena, .regions = regions, .uses = .{ .w = e.w, .ev = &e.ev, .contracts = e.contracts, .regions = regions } };
+pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocator, kt: ?*Kept.Table) Error!Result {
+    if (kt) |k| try k.begin(e.w.f.gpa, e.escapes.items);
+    var r: Resolver = .{ .e = e, .arena = arena, .regions = regions, .kept = kt, .uses = .{ .w = e.w, .ev = &e.ev, .contracts = e.contracts, .regions = regions, .feet = if (kt) |k| &k.feet else null } };
     defer r.deinit();
     const f = &e.w.f;
     // Every judgement, in the walk's order: the demands, the direct labels'
@@ -633,7 +624,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 r.aggregate = true;
                 defer e.w.f.account.in_demands = false;
                 defer r.aggregate = false;
-                break :blk try r.judge(e.demands.items[j.i]);
+                break :blk try r.judgeKept(e.demands.items[j.i]);
             },
             .cb => blk: {
                 const cb = f.cbs.items[j.i];
