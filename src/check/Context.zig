@@ -38,6 +38,7 @@ interfaces: []const Interface,
 module: Graph.Index,
 /// The same effective authority name resolution uses, including --core roots.
 authority: @import("../resolve/CorePrivate.zig").Authority = .app,
+app_is_platform: bool = false,
 bir: *const Bir,
 schemas: *Schema.State,
 /// Written types the reader could not finish, by the instruction a message

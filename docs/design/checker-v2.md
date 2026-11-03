@@ -2955,7 +2955,8 @@ type `M` declares.
 **Runtime-private public exports (#1749, 2026-11-03).** Imported method
 selection applies the same `CorePrivate` policy as named access before it
 instantiates a method. The caller carries its actual core/platform/app
-authority; `--core` also authorizes root-package sources. Task, Debug and
+authority. A root platform manifest authorizes its modules as platform
+sources; `--core` also authorizes root-package sources. Task, Debug and
 worker exceptions require both the proper authority and module identity.
 A platform-returned value cannot grant an app its declaring module's
 private methods: refusal is `private_method`, including a chained call.

@@ -473,6 +473,12 @@ pub fn privateMethod(r: *Report, region: Bir.Inst.Index, shown: Var, culprit: Ty
     const w = &out.writer;
     const module_text = interner.slice(env.graph.moduleName(entry.module));
     const m = interner.slice(method);
+    if (@import("../resolve/CorePrivate.zig").explanation(module_text, m)) |reason| {
+        w.writeAll(reason) catch return error.OutOfMemory;
+        const message = try out.toOwnedSlice();
+        try r.emit(.{ .code = .private_method, .module = r.module, .region = region, .message = message });
+        return;
+    }
     const type_text = interner.slice(entry.name);
     // The shown value renders its types unqualified, so the type is named
     // as it will appear there, with its module beside it.

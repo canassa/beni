@@ -2378,13 +2378,11 @@ test "release workers that launch a child retain forced child abandonment" {
     try testing.expectEqual(@as(usize, 1), leaves);
 }
 
-/// Real package identities with small source-only handles: no Js casts or
-/// foreign operations are needed to reproduce a private method escape.
+/// Small local handles exercise real package identities without reserving
+/// module names that are absent from the workers branch.
 fn writePrivateDispatchPlatform(w: *World) !void {
     try w.copyTreeInto("core", "core", "_expected.");
     const runtime = try w.read("core/Js/Runtime.beni");
-    // Its native parked function ignores the argument. A generic input lets
-    // this fixture exercise the task-only method rule on a nominal receiver.
     const generic = try std.mem.replaceOwned(u8, w.arena.allocator(), runtime, "parked : unused ⊤", "parked : unused token");
     try w.write("core/Js/Runtime.beni", try std.mem.concat(w.arena.allocator(), u8, &.{
         generic,
@@ -2392,12 +2390,12 @@ fn writePrivateDispatchPlatform(w: *World) !void {
         \\pub type Token = Token
         \\pub touch : Token → Int
         \\touch _ = 17
+        \\pub eq : Token, Token → Bool
+        \\eq _ _ = True
         \\
     }));
     try w.write("core/PrivateProbe.beni",
         \\import Js.Runtime as Runtime
-        \\import Debug
-        \\pub debugToken = Debug.privateToken
         \\pub coreToken = Runtime.Token
         \\pub allowed = coreToken.touch
         \\
@@ -2411,36 +2409,14 @@ fn writePrivateDispatchPlatform(w: *World) !void {
         \\allowedPrivate = privateToken.parked
         \\
     }));
-    const token =
-        \\pub type Token = Token
-        \\pub expose : Token → Int
-        \\expose _ = 19
-        \\
-    ;
-    try w.write("core/Js/Inspect.beni", token);
-    try w.write("core/Js/Protocol.beni", token);
-    const original_debug = try w.read("core/Debug.beni");
-    const debug = try std.mem.replaceOwned(u8, w.arena.allocator(), original_debug, "import Js\n", "import Js\nimport Js.Inspect as Inspect\n");
-    try w.write("core/Debug.beni", try std.mem.concat(w.arena.allocator(), u8, &.{
-        debug,
-        \\
-        \\pub privateToken = Inspect.Token
-        \\pub allowedPrivate = privateToken.expose
-        \\
-    }));
-    try w.write("core/Browser/Host/Cloudflare.beni",
-        \\pub type Socket = Socket
-        \\pub socketSend : Socket, String → ⊤
-        \\socketSend _ _ = ⊤
-        \\
-    );
     try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"private-dispatch\",\"program\":\"Test.Program\",\"runtime\":\"runtime.js\"}\n");
     try w.write("platform/runtime.js", "export const run = () => {};\n");
-    try w.write("platform/WebSocket.beni",
-        \\import Browser.Host.Cloudflare as Native
-        \\pub opaque type Socket = Socket Native.Socket
-        \\pub toNative : Socket → Native.Socket
-        \\toNative (Socket socket) = socket
+    try w.write("platform/Secret.beni",
+        \\pub type Token = Token
+        \\hidden : Token → Int
+        \\hidden _ = 19
+        \\pub token = Token
+        \\pub allowed = token.hidden
         \\
     );
     try w.write("platform/Browser/Worker.beni",
@@ -2456,16 +2432,18 @@ fn writePrivateDispatchPlatform(w: *World) !void {
         \\
     );
     try w.write("platform/Test.beni",
-        \\import Js.Protocol as Protocol
+        \\import Js
+        \\import Secret
         \\import Browser.Worker as Worker
         \\import Browser.WorkerRuntime
-        \\import WebSocket
         \\pub type Program = Program
-        \\pub platformToken = Protocol.Token
+        \\pub platformToken = Secret.token
         \\pub workerToken = Worker.Program
-        \\pub allowed = platformToken.expose
-        \\pub allowedSocket : WebSocket.Socket, String → ⊤
-        \\allowedSocket socket payload = socket.toNative.socketSend payload
+        \\pub allowed = Secret.allowed
+        \\pub cell : ⊤ → Int
+        \\cell ⊤ =
+        \\    state = Js.cell { number = 23 }
+        \\    Js.cellRead state .number
         \\
     );
 }
@@ -2477,10 +2455,8 @@ test "CorePrivate rules fence static dispatch with the same package authority as
     for ([_][]const u8{
         "import PrivateProbe\npub leak = PrivateProbe.coreToken.touch\n",
         "import Task\npub leak : Int\nleak = Task.privateToken.parked\n",
-        "import Test\npub leak = Test.platformToken.expose\n",
-        "import Debug\npub leak = Debug.privateToken.expose\n",
+        "import Test\npub leak = Test.platformToken.hidden\n",
         "import Test\npub leak = Test.workerToken.run\n",
-        "import WebSocket\npub leak : WebSocket.Socket, String → ⊤\nleak socket payload = socket.toNative.socketSend payload\n",
     }) |source| {
         try w.write("Main.beni", source);
         for ([_][]const u8{ "check", "build" }) |command| {
@@ -2489,10 +2465,6 @@ test "CorePrivate rules fence static dispatch with the same package authority as
             else
                 &.{ command, "--core-root=core", "--platform=platform", "--no-cache", "Main.beni" };
             const result = try w.run(args);
-            if (result.diagnostics.len != 1) {
-                std.debug.print("source: {s}\n", .{source});
-                for (result.diagnostics) |d| std.debug.print("{s}:{d}: {t}: {s}\n", .{ d.span.file, d.span.start.line, d.code, d.message });
-            }
             try testing.expectEqual(@as(u8, 1), result.exit_code);
             try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
             try testing.expectEqual(diagnostic.Code.private_method, result.diagnostics[0].code);
@@ -2500,38 +2472,25 @@ test "CorePrivate rules fence static dispatch with the same package authority as
             try testing.expect(!w.exists("refused"));
         }
     }
-    // Checking this imports all legitimate platform/core/Task/Debug callers
-    // above, including the exact socket bridge that is private to platforms.
     try w.write("Main.beni", "import Test\npub value = Test.allowed\n");
     const allowed = try w.run(&.{ "check", "--core-root=core", "--platform=platform", "--no-cache", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), allowed.exit_code);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), allowed.diagnostics);
 
-    // A trusted spelling alone never authorizes an app module. Conversely,
-    // core authoring roots named Task/Debug have their proper authority.
-    for ([_]struct { module: []const u8, value: []const u8 }{
-        .{ .module = "Task", .value = "PrivateProbe.coreToken.parked" },
-        .{ .module = "Debug", .value = "PrivateProbe.debugToken.expose" },
-    }) |spoof| {
-        const path = try std.fmt.allocPrint(w.arena.allocator(), "spoof/{s}.beni", .{spoof.module});
-        try w.write(path, try std.fmt.allocPrint(w.arena.allocator(), "import PrivateProbe\npub value : Int\nvalue = {s}\n", .{spoof.value}));
-        for ([_]bool{ false, true }) |core| {
-            const result = if (core)
-                try w.run(&.{ "check", "--core", "--core-root=core", "--root=spoof", "--no-cache", path })
-            else
-                try w.run(&.{ "check", "--core-root=core", "--root=spoof", "--no-cache", path });
-            try testing.expectEqual(@as(u8, if (core) 0 else 1), result.exit_code);
-            if (core) {
-                try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), result.diagnostics);
-            } else {
-                try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
-                try testing.expectEqual(diagnostic.Code.private_method, result.diagnostics[0].code);
-            }
+    try w.write("spoof/Task.beni", "import PrivateProbe\npub value : Int\nvalue = PrivateProbe.coreToken.parked\n");
+    for ([_]bool{ false, true }) |core| {
+        const result = if (core)
+            try w.run(&.{ "check", "--core", "--core-root=core", "--root=spoof", "--no-cache", "spoof/Task.beni" })
+        else
+            try w.run(&.{ "check", "--core-root=core", "--root=spoof", "--no-cache", "spoof/Task.beni" });
+        try testing.expectEqual(@as(u8, if (core) 0 else 1), result.exit_code);
+        if (core) {
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), result.diagnostics);
+        } else {
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            try testing.expectEqual(diagnostic.Code.private_method, result.diagnostics[0].code);
         }
     }
-
-    // --core root files remain package app in the graph. Its authority must
-    // reach method solving, and cannot leak through the shared cache key.
     try w.write("Authorized.beni", "import PrivateProbe\npub value = PrivateProbe.coreToken.touch\n");
     for ([_]bool{ true, false, true }) |core| {
         const result = if (core)
@@ -2546,4 +2505,37 @@ test "CorePrivate rules fence static dispatch with the same package authority as
             try testing.expectEqual(diagnostic.Code.private_method, result.diagnostics[0].code);
         }
     }
+}
+
+test "CorePrivate nested refusals describe the runtime fence without an add pub hint" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePrivateDispatchPlatform(&w);
+    for ([_][]const u8{
+        "[ PrivateProbe.coreToken ] == [ PrivateProbe.coreToken ]",
+        "( PrivateProbe.coreToken, 1 ) == ( PrivateProbe.coreToken, 1 )",
+        "{ token = PrivateProbe.coreToken } == { token = PrivateProbe.coreToken }",
+    }) |comparison| {
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import PrivateProbe\npub value = {s}\n", .{comparison}));
+        const result = try w.run(&.{ "check", "--core-root=core", "--platform=platform", "--no-cache", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.private_method, result.diagnostics[0].code);
+        try testing.expectEqualStrings("This name is private to core runtime modules.", result.diagnostics[0].message);
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "CorePrivate authoring checks run inside a platform package with platform authority" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writePrivateDispatchPlatform(&w);
+    var platform = try w.tmp.dir.openDir(testing.io, "platform", .{});
+    defer platform.close(testing.io);
+    // Both the named cell primitive and the worker dot-call occur in app
+    // graph modules because this platform is itself the root project.
+    const result = try w.runWith(&.{ "check", "--core-root=../core", "--no-cache", "." }, .{ .cwd = .{ .dir = platform } });
+    if (result.exit_code != 0) for (result.diagnostics) |d| std.debug.print("{s}:{d}: {t}: {s}\n", .{ d.span.file, d.span.start.line, d.code, d.message });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), result.diagnostics);
 }

@@ -10,10 +10,6 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
-    .{ .module = "Browser.Host.Cloudflare", .name = null, .access = .platform },
-    .{ .module = "WebSocket", .name = "toNative", .access = .platform },
-    .{ .module = "Js.Protocol", .name = null, .access = .platform },
-    .{ .module = "Js.Inspect", .name = null, .access = .debug },
     .{ .module = "Js", .name = "Cell", .access = .runtime },
     .{ .module = "Js", .name = "cell", .access = .runtime },
     .{ .module = "Js", .name = "cellRead", .access = .runtime },
@@ -52,22 +48,27 @@ pub fn workerCaller(platform: bool, module: []const u8) bool {
     return platform and (std.mem.eql(u8, module, "Browser.Worker") or std.mem.eql(u8, module, "Browser.WorkerRuntime"));
 }
 
-/// Effective caller authority; --core authorizes the root app package too.
+/// Effective caller authority, including root core/platform authoring.
 pub const Authority = enum { app, core, platform };
 
-pub fn authority(package: anytype, core_app: bool) Authority {
+pub fn authority(package: anytype, core_app: bool, app_is_platform: bool) Authority {
     return switch (package) {
         .core => .core,
         .platform => .platform,
-        .app => if (core_app) .core else .app,
+        .app => if (core_app) .core else if (app_is_platform) .platform else .app,
     };
 }
 
 /// The same name fence governs imported names and imported methods. An app
 /// module with a reserved spelling never acquires a trusted module's policy.
 pub fn denied(owner: Authority, module: []const u8, name: []const u8, is_value: bool, caller: Authority, caller_module: []const u8) bool {
-    if (owner == .app) return false;
     const required = access(module, name, is_value) orelse return false;
+    return deniedAccess(required, owner, caller, caller_module);
+}
+
+/// Apply a declaration’s access class after its trusted owner is known.
+pub fn deniedAccess(required: Access, owner: Authority, caller: Authority, caller_module: []const u8) bool {
+    if (owner == .app) return false;
     return switch (required) {
         .core => owner == .core and caller != .core,
         .task => owner == .core and !(caller == .core and std.mem.eql(u8, caller_module, "Task")),
@@ -89,4 +90,32 @@ pub fn explanation(module: []const u8, name: []const u8) ?[]const u8 {
         else
             "This name is private to core runtime modules.",
     };
+}
+
+// The platform/debug classes have no bindings on workers yet. Test their
+// policy on hypothetical declarations, without reserving production names.
+test "access classes use effective caller authority and trusted owner identity" {
+    const Case = struct { access: Access, owner: Authority, caller: Authority, module: []const u8 = "Local", denied: bool };
+    for ([_]Case{
+        .{ .access = .core, .owner = .core, .caller = .app, .denied = true },
+        .{ .access = .core, .owner = .core, .caller = .core, .denied = false },
+        .{ .access = .core, .owner = .platform, .caller = .app, .denied = false },
+        .{ .access = .task, .owner = .core, .caller = .core, .module = "Task", .denied = false },
+        .{ .access = .task, .owner = .core, .caller = .platform, .module = "Task", .denied = true },
+        .{ .access = .task, .owner = .core, .caller = .app, .module = "Task", .denied = true },
+        .{ .access = .task, .owner = .core, .caller = .core, .denied = true },
+        .{ .access = .worker, .owner = .platform, .caller = .platform, .module = "Browser.WorkerRuntime", .denied = false },
+        .{ .access = .worker, .owner = .platform, .caller = .app, .module = "Browser.WorkerRuntime", .denied = true },
+        .{ .access = .worker, .owner = .platform, .caller = .core, .module = "Browser.WorkerRuntime", .denied = true },
+        .{ .access = .runtime, .owner = .core, .caller = .platform, .denied = false },
+        .{ .access = .runtime, .owner = .core, .caller = .app, .denied = true },
+        .{ .access = .platform, .owner = .platform, .caller = .platform, .denied = false },
+        .{ .access = .platform, .owner = .core, .caller = .core, .denied = false },
+        .{ .access = .platform, .owner = .core, .caller = .app, .denied = true },
+        .{ .access = .platform, .owner = .app, .caller = .app, .denied = false },
+        .{ .access = .debug, .owner = .core, .caller = .core, .module = "Debug", .denied = false },
+        .{ .access = .debug, .owner = .core, .caller = .app, .module = "Debug", .denied = true },
+        .{ .access = .debug, .owner = .core, .caller = .platform, .module = "Debug", .denied = true },
+        .{ .access = .debug, .owner = .core, .caller = .core, .denied = true },
+    }) |c| try std.testing.expectEqual(c.denied, deniedAccess(c.access, c.owner, c.caller, c.module));
 }
