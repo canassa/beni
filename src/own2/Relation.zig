@@ -116,6 +116,10 @@ pub const Part = struct { leaf: u32, at: Slots.Rel };
 
 pub const Proj = struct { leaf: u32, route: u32 = 0, occ: u64 = 0, routes: u32 = 0 };
 
+fn noRouted(_: *Eval, _: u32, _: []const u32, _: bool, _: u32, _: *std.ArrayList(u32)) Error!void {
+    unreachable;
+}
+
 pub const Eval = struct {
     f: *Frame,
     contracts: *const Contract.Table,
@@ -178,6 +182,8 @@ pub const Eval = struct {
     /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place,
     /// not once a place and literal route.
     no_routes: bool = false,
+    /// An arrival's leaves at a parameter's slot (its path, when known): `Routed.paramLeaves`, set by an evaluation that instantiates.
+    routed: *const fn (e: *Eval, v: u32, words: []const u32, deep: bool, path: u32, out: *std.ArrayList(u32)) Error!void = noRouted,
 
     pub fn deinit(e: *Eval) void {
         const g = e.f.gpa;
@@ -366,11 +372,6 @@ pub const Eval = struct {
         };
     }
 
-    /// The object slots of a slot set (its canonical names).
-    fn objects(e: *Eval, s: Slots.SetId) Error!Slots.SetId {
-        return e.f.slots.setOf(e.gpa(), e.account(), e.places(), e.f.slots.items(s));
-    }
-
     // ---- projection of an arrival onto a value -------------------------------
 
     /// The kid of `routeStep` that a `many` leaf's second copy takes.
@@ -528,7 +529,7 @@ pub const Eval = struct {
 
     /// The shortest steps from path `from` to a path at place `target`,
     /// into `out` (nothing when there is none).
-    fn stepsTo(e: *Eval, from: PathId, target: PlaceId, out: *std.ArrayList(u32)) Error!void {
+    pub fn stepsTo(e: *Eval, from: PathId, target: PlaceId, out: *std.ArrayList(u32)) Error!void {
         const pl = e.places();
         const Item = struct { p: PathId, back: u32, word: u32 };
         var queue: std.ArrayList(Item) = .empty;
@@ -845,12 +846,6 @@ pub const Eval = struct {
         return e.f.leaf(w);
     }
 
-    /// A key's items: its leaves and their slots.
-    pub fn keyItems(e: *const Eval, ki: u32) struct { []const u32, []const u32 } {
-        const k = e.keys.items[ki];
-        return .{ k.leaves.items, k.at.items };
-    }
-
     /// The callee's arrival `a` at its result slot `rel` (`open`: and below)
     /// for below-key `ki`: read at that slot when it is at or below the
     /// key's prefix, at the prefix, open, when the slot is open above it.
@@ -1148,7 +1143,7 @@ pub const Eval = struct {
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
-    pub fn arrivalLeaves(e: *Eval, call: u32, c: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
+    pub fn arrivalLeaves(e: *Eval, call: u32, _: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
         e.pass = 0;
@@ -1166,22 +1161,7 @@ pub const Eval = struct {
             .param => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 const arg = cl.args[a.j];
-                const x = e.f.val(arg);
-                // An argument at the root of the callee's path, no `⟲` on its way: the leaf there (§2.11.2).
-                const at = if (a.path != none) e.places().ancestorAt(.from(a.path), 0) else .{ PathId.none, 0 };
-                if (suffix.len == 0 and a.path != none and x.kind == .ref and x.family == Slots.empty and !e.places().paths.col.info[a.path].levels and e.f.pos.items[x.pos].slot == at[0]) {
-                    try e.charge(.path, at[1] + 1);
-                    const set = if (a.deep) try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(a.path)) else try e.f.slots.canon(e.gpa(), e.account(), e.places(), .from(a.path));
-                    if (set != Slots.empty) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set }));
-                    return;
-                }
-                var ps: std.ArrayList(Proj) = .empty;
-                defer ps.deinit(e.gpa());
-                const was = e.no_routes;
-                e.no_routes = true;
-                defer e.no_routes = was;
-                try e.project(arg, words.items, a.deep, 0, 0, &ps);
-                for (ps.items) |p| try out.append(e.gpa(), p.leaf);
+                try e.routed(e, arg, words.items, a.deep, if (suffix.len == 0) a.path else none, out);
             },
             .cb => {
                 if (e.known.get(.{ call, a.j })) |vc| {
@@ -1214,7 +1194,6 @@ pub const Eval = struct {
                 try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
             },
         }
-        _ = c;
     }
 
     /// Whether a leaf's root is expanded into the leaves it comes from.
@@ -1239,9 +1218,28 @@ pub const Eval = struct {
         }
     }
 
-    /// A call, supply or known label's leaf as the leaves it comes from,
-    /// with its tags; a leaf met again while it is expanded adds nothing.
+    /// `expandRouted`, each leaf's route set written out (§2.3.5, *a key's leaf*): one leaf a route.
     pub fn expand(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(e.gpa());
+        try e.expandRouted(li, &ls);
+        for (ls.items) |x| {
+            var l = e.f.leafAt(x);
+            if (l.routes == 0) try out.append(e.gpa(), x) else {
+                var it = try e.f.sets.tags.routeIter(e.gpa(), l.routes, l.tags);
+                defer it.deinit(e.gpa());
+                l.routes = 0;
+                while (try it.next(e.gpa(), e.account())) |t| {
+                    l.tags = t;
+                    try out.append(e.gpa(), try e.f.leaf(l));
+                }
+            }
+        }
+    }
+
+    /// A call, supply or known label's leaf as the leaves it comes from,
+    /// its tags merged in (never its route set), each with its own set (§2.3.5); one met again while expanded adds nothing.
+    pub fn expandRouted(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
         e.pass = 0;

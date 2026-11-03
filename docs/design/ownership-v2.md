@@ -566,6 +566,51 @@ leaves by four a level (n = 8: 744 671 records; master's v2 5 431 at n = 5 and 1
   changed no verdict over the 2 177 roots, but weakened the result separation of nested `case`s whose inner
   arm keeps the outer value to `no` (`dropWhile`, `SameVariant.update`). Two routes, intersected past two,
   still weakened `UnknownElements.update`. Neither is used.
+- *Specified 2026-11-03 (#1714, the manager's decision): a key's leaf carries its route set.* An instantiation's
+  leaf (what a key of §2.11.2 holds, `instAt`/`instBelow`, and what `Eval.expand` gives) is a `Value.Leaf`
+  whose field `routes` is a route set of this section, **relative to the leaf's `tags`**, 0 for none: the
+  same field and the same meaning as a write target's (`Routed.ofWrites`) and a projection's output
+  (`Relation.Proj.routes`). The leaf stands for the leaves `l` with `tags := tags ⊓ r`, one for each route
+  `r` of the set (a route that conflicts with `tags` stands for none); `routes = 0` is the leaf under its
+  tags alone, as before.
+  - *Made by* the projection of an arrival `π_j·s` onto argument `j` (`arrivalLeaves`). Its walk is the
+    selection's walk (§2.11.2, *a projection carries a route set*) with `⟲` one of its shared steps: the
+    descent items `(value, place, below)` below a `⟲` are merged under route sets as the path items are. A
+    key reads no literal route, so there items merge whatever their literal routes; where routes are read
+    (the distinct check's own projections) the literal route stays part of the item. Each output is one
+    leaf, its set the item's.
+  - *Identity.* A leaf's id includes `routes` (`Frame.leaf`), so a key holds a leaf once per route set; two
+    sets for one leaf are two leaves of the key, never united after the walk. A key is a set of leaves under
+    conditions, as it was: an object a key names under two routes is one object at that slot, whose routes
+    say when it is there, not two occurrences of it.
+  - *Exactness.* Written out (`writtenOut`: one leaf per route, `tags` that route merged with the leaf's,
+    `routes = 0`), a key's leaves are the leaves it held before, up to `internRoutes`' normalisation (two
+    routes that differ only in one choice's arms are one route over both, a route another implies is
+    dropped): the same objects under the same conditions.
+  - *Readers.* `Eval.expand` gives the leaves **written out**, so every reader that reads `tags` alone gets
+    what it got before: correct, not yet cheaper. `Eval.expandRouted` gives them with their sets, for a
+    reader that reads them: the read-off (it reads no tags), `AtomSets` (atoms by identity), and the
+    distinct check, whose entry from such a leaf is the leaf without its set, under the set as its routes
+    (`Entries.Ent.routes`); where the parent entry has routes too, the leaf is written out under the
+    parent's. A reader switches by calling `expandRouted` and reading `Leaf.routes` (`Coexist.setsMeet`
+    of `tags` and `routes`), or by writing out where it needs lists (writing out is the old cost again).
+    The holder lane's readers (`Holders`, `Sweep`, `Later`, a `Hold`'s routes) switch on their side.
+  - *As built (#1714, 2026-11-03), the values lane's side.* The walk is `RouteWalk.zig` (L8, split from
+    `Routed`, which keeps the write targets and `writtenOut` at L9). A descent item is `(value, ⟲'s index,
+    place, origin, below)`; an `alt`'s arms below a `⟲` add no tag, as `projectLevels`' do. Where no
+    literal route is read (`Eval.no_routes`) the walk takes a built value's steps itself, so arrivals merge
+    below it too; a value with no arm or part is `project`'s alone. `arrivalLeaves` reaches the walk through
+    `Eval.routed` (`RouteWalk.paramLeaves`, set by an evaluation: `Relation` is below it). The distinct
+    check's expansion, the read-off and `AtomSets` call `expandRouted`; the relation's own expansions
+    (`overlap`, `heldBy`, `apartOf`) keep the written-out `expand`. An item is charged once: a merge when it
+    arrives, a walked item when it is read, an emitted one by `project`. Measured (Debug), the fold
+    certificate through a shared DAG (`d_N`, `incAll (same x_N)`): 2 762 / 8 236 records at N = 4 / 8 are
+    2 295 / 5 723 (28 742 at 16). The part outside the holder lane's judgement is 2 032 / 3 708 / 8 423
+    (×1.8, ×2.3 a doubling). Its demands are 263 / 2 015 / 20 319, because `Holders.Walker.open` reads the
+    key written out: N³/6 routes of about N tags, each one built again. **The test passes when the holder
+    readers read the sets.** The ledger (2 196 roots) moves no verdict and no summary, and no limit line. No
+    account grows worse (48 better). Totals: 281 up, 7 810 down. Every row of the cost table is down, with
+    the same growth.
 
 ### 2.4 The state of a frame
 
@@ -4122,8 +4167,9 @@ L0  Ids  Counters  Scratch
 | `Held.zig` | 6 | the atoms a draft's result holds open at or above a slot, which the read-off of a call's subtree below it need not describe again (§2.10 *Read-off*, #1716) | Ids, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries, CallGraft |
-| `ApartParts.zig` | 8 | a deep apart occurrence beside plain ones: written out per route, the plain ones' objects taken out (§2.9.1), split from `Distinct` (#1714) | Ids, Slots, Subtree, Contract, Relation |
-| `Routed.zig` | 8 | one walk of a value along several paths, a value several arms reach read once under a route set (§2.11.2, #1714) | Ids, Place, Relation, Coexist, Contract |
+| `RouteWalk.zig` | 8 | one walk of a value along several paths, a value several arms or levels below a `⟲` reach read once under a route set; an arrival's leaves at a parameter's slot with their sets (§2.3.5, §2.11.2, #1714) | Ids, Place, Slots, Relation, Coexist |
+| `ApartPlain.zig` | 8 | a selection's apart and plain occurrences of one parameter read part by part, split from `Distinct` (§2.9.1, #1714) | Ids, Slots, Subtree, Contract, Relation |
+| `Routed.zig` | 9 | a call's writes of one argument projected by the walk; a leaf once per route of its set (§2.11.2, #1714) | Ids, Place, Relation, Contract, RouteWalk |
 | `Graft.zig` | 8 | a write onto a caller's parameter that stops there, its targets read off the callee's tree; a literal walked once per (node, value); a callee's `req` moved onto exact parameter slots; the exact fold of a stored selection (§2.11.2, #1714) | Ids, Place, Slots, Trees, Forest, Contract, Value, Relation |
 | `CallGraft.zig` | 8 | a call whose arguments are the caller's parameters whole: the callee's arrivals at a call slot and its condition renamed, never projected; a demand's written path replayed when its line is printed (§2.10 *a parameter's path grafted*, §2.11.2, #1225, #1714) | Ids, Place, Slots, Contract, Relation |
 | `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |

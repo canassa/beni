@@ -1,11 +1,11 @@
-//! L8: a deep apart occurrence read part by part beside plain ones
-//! (`docs/design/ownership-v2.md` §2.9.1, §2.11.2), split from `Distinct`
-//! (#1714): which parameters ask both, the projections written out per
-//! route where two route sets name one place, and the apart projections
-//! without the objects the plain ones ask.
+//! L8: a selection's apart and plain occurrences of one parameter read
+//! part by part (`docs/design/ownership-v2.md` §2.9.1, §2.11.2): which
+//! parameters are asked both ways, the plain objects taken from the apart
+//! ones at their routes, and a projection's route sets written out where
+//! the two are compared route by route. Split from `Distinct` (#1714).
 //!
-//! Obligations kept here: none of §2.14's directly (the distinct check
-//! that reads these keeps O3).
+//! Obligations kept here: §2.9.1's deep apart occurrence asks apart only
+//! the objects its condition's plain occurrences do not ask plain.
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
