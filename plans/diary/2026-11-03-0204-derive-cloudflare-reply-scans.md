@@ -30,3 +30,31 @@ rather than aborting. The real pack maker rebuilding the reply fixture's
 Cloudflare platform reproduces the previous abort and passes with the fix.
 That regression is part of both `skill-api` and the gates; `skill-api` also
 successfully rebuilt the safe compiler and embedded platform libraries.
+
+**Trie restoration integration**
+
+Rebased onto the typed persistent List restoration, retaining its private
+Cell token and three-argument native view constructor unchanged. The Wire
+generic path materializes both views and trie headers through typed List
+copying. Added a real grown-header check to the Chrome interaction fixture
+and a separate typed/generic reply-scan fixture, leaving the basic fixture's
+release-unboxed Reply coverage intact.
+
+The restored-ABI measurement used the same private Cell token in both
+versions, changing only a literal view wrapper to the private constructor.
+At 10k/100k elements, creation was 0.11→0.11 / 0.11→0.12 µs (both versions'
+rounds overlap at 0.11–0.12); length was 0.10→0.10 µs. View sums were
+6.43→6.45 / 73.24→67.05 µs under load 42.5→40.6, with overlapping rounds.
+There is no consistent slowdown. A no-view release probe emitted identical
+bytes. OrdinaryTea's JavaScript and source map are also identical to an
+unmodified self-hosted safe compiler on the restored base; its checked-in
+golden mismatch is inherited. Reverting only Wire's new normalization makes
+the current Chrome fixture fail again. Six reply run hashes were recorded.
+
+The post-rebase unfiltered gates ran once under the shared lock: 247/284
+steps succeeded, 2081/2170 tests passed, 16 skipped, 72 failed, one crashed.
+The failures remain in the inherited cache/interface, golden, runtime-entry,
+stack-depth, ratchet, generated-API, ownership audit and host formatting
+suites. All six reply checks, intrinsic-pin checks, Wire Ref refusals, the
+private predicate ownership fixture, pack/skill-api rebuild and GenericWire
+Chrome checks are green. No inherited check or golden was relaxed.

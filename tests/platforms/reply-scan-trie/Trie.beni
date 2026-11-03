@@ -1,0 +1,32 @@
+import Js
+import List
+import String
+import Worker.Object as Object
+
+
+scan : msg → List String
+scan value = Object.replyIds value
+
+
+line : String → ⊤
+line text = Js.to (Js.call (Js.global "console") "log" [ Js.from text ])
+
+
+pub run : ⊤ → ⊤
+run _ =
+    n = 100
+    values = List.foldl (List.range 1 n) [] λi xs → List.push xs (Object.local (String.fromInt i))
+    -- Observation only; both scan arguments below retain their checked List type.
+    header = Js.typeIs (Js.get (Js.from values) "$plain") "function"
+    found = Object.replyIds values
+    shortened = List.pop values
+    generic = scan shortened
+    if
+        header
+            && List.length values == n
+            && found == List.map (List.range 1 n) String.fromInt
+            && generic == List.map (List.range 1 (n - 1)) String.fromInt
+    then
+        line "trie passed"
+    else
+        line "trie failed"

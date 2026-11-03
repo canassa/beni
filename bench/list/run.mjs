@@ -127,10 +127,12 @@ const workloads = [
   ["pop", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$pop(xs)],
   ["slice (a quarter)", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$slice(xs, n)],
   ["drop (half)", (m, n) => m.ListBench$make(n), (m, xs, n) => m.ListBench$drop(xs, n)],
+  ["view sum", (m, n) => m.ListBench$drop(m.ListBench$make(n), n), (m, xs) => m.ListBench$sum(xs)],
+  ["view length", (m, n) => m.ListBench$drop(m.ListBench$make(n), n), (m, xs) => m.ListBench$length(xs)],
   ["[ x, ...xs ]", (m, n) => m.ListBench$make(n), (m, xs) => m.ListBench$cons(xs)],
 ];
 
-let sink = 0;
+let sink; // Keep returned objects alive so allocation cannot be eliminated.
 function sample(call, m, xs, n) {
   const budget = options.sampleMs * 1e6;
   let calls = 0;
@@ -138,7 +140,7 @@ function sample(call, m, xs, n) {
   let elapsed = 0n;
   do {
     const r = call(m, xs, n);
-    sink ^= r === null ? 0 : 1;
+    sink = r;
     calls += 1;
     elapsed = process.hrtime.bigint() - start;
   } while (elapsed < budget);

@@ -928,13 +928,6 @@ with the trie.
    A reader indexes it in place. If a reader needs an array of its own, `xs.$b.slice(xs.$o)` is
    that array. It is the reader's copy, and `core/List` does not cache it.
 
-Amendment (owner, 2026-11-03): views use one private constructor and prototype in `core/List.js`.
-Their fields and all typed readers stay unchanged. The platform-private
-`List.isView` tests that identity; generic scans must use it rather than infer
-a view from a user record with the same fields. Plain arrays keep their
-ordinary prototype. The implementation's fixed view keys are `b`, `o`, and
-`length` (the ``/`` notation above names those same base/offset roles).
-
 The idiom is `const a = Array.isArray(xs) ? xs : xs.$b, o = Array.isArray(xs) ? 0 : xs.$o;`,
 then an index loop from `o`. `$plain()` is withdrawn. No reader may write either form (invariant
 1). What a sibling may return as a list is unchanged: a fresh plain array, or a list it was
@@ -1361,6 +1354,20 @@ name of a view or a trie:
 3. Otherwise **`xs.$plain()`** returns a plain array of the elements, which the caller must not
    write. For a trie it is computed once and cached (invariant 1), so a second call on the same
    header is O(1).
+
+Amendment (owner, 2026-11-03): until the plain-array representation lands,
+the compiler emits arrays, typed trie headers with `$plain()`, and suffix
+views with `b`, `o`, `length`, and their existing private Cell token. Views
+use one private constructor and prototype in `core/List.js`; `viewOf` takes
+that token as its third argument. All existing typed readers stay unchanged.
+The platform-private `List.isView` tests the prototype without adding a
+marker field. A generic walk must use it rather than infer a view from a
+user record with the same field names. It reads a trie through `$plain()`,
+never as a record, and a view through its active base/offset elements.
+The current reader expression is `Array.isArray(xs) ? xs : xs.$plain ?
+xs.$plain() : xs.b.slice(xs.o)`. A value is a list exactly when it is an
+array, satisfies `List.isView`, or has the private `$plain` protocol. This
+amends the older exact discriminator and one-line idiom below.
 
 The idiom is one line, and every first-party file that reads a list uses it:
 

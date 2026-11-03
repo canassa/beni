@@ -103,6 +103,8 @@ variable : V → V
 variable value =
     if Js.isNullish value || not (Js.typeIs value "object") then
         value
+    else if List.isView value || Js.typeIs (Js.get value "$plain") "function" then
+        mapFields (copyArray value) λ_ item → variable item
     else
         mapFields value λ_ item → variable item
 

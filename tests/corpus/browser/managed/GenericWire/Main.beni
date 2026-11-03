@@ -101,8 +101,14 @@ exercise : ⊤ → String
 exercise _ = Task.scope λowner →
     tail = List.drop [ 0, 1, 2 ] 1
     value = { values = tail }
+    shaped = { b = [ 0, 1, 2 ], o = 1, length = 2 }
+    grown = List.foldl (List.range 1 100) [] λi xs → List.push xs i
+    Probe.watchView tail shaped grown
     message =
         { values = List.drop [ [], tail, tail ] 1
+        , directView = tail
+        , shaped = shaped
+        , grown = grown
         , tag = Envelope value [ value ] ( value, "page" )
         , pair = ( tail, value )
         }
