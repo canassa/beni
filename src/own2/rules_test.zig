@@ -96,6 +96,8 @@ const layers = [_]Entry{
     .{ .file = "Parts.zig", .layer = 8, .max_lines = 70 },
     // What the distinct check reads of its rounds, split from `Distinct` (#1714).
     .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
+    // A chain of calls handing one object on, split from `Relation` (#1714).
+    .{ .file = "Ends.zig", .layer = 8, .max_lines = 40 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -428,7 +430,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 59), layers.len);
+    try testing.expectEqual(@as(usize, 60), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
