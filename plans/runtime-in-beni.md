@@ -1080,9 +1080,10 @@ record is a later step.
 
 **What changes shape.** `Result` crossed the boundary through `foreign next`'s
 `Resume (Result Close String)`, which pinned its string tags in every release build that serves
-a WebSocket; a reader is a `Resume Js.Value` now, answered with the text or the end object, and
-`read` builds the `Result` in beni, so a release build gives `Result` integer tags where nothing
-else pins them. `Close` keeps `code` and `reason` (one text, one spelling, `boundary.md` §4
+a WebSocket; a waiting reader is a host function now (`Js.from` of a lambda typed
+`Js.Value → ⊤`, holding the typed `Resume` and building the `Result` from the text or the end
+object), so `read` stays one `Task.callback` and a release build gives `Result` integer tags where
+nothing else pins them. `Close` keeps `code` and `reason` (one text, one spelling, `boundary.md` §4
 amended 2026-10-22: `code` is the host property `isGone` reads, `reason` the end object's key).
 
 **The bar** (`core-in-beni.md` R47-3): release brotli no larger on the ten `run/WebSocket*`
