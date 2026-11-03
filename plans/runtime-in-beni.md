@@ -1072,7 +1072,9 @@ parser with its fault table, the close handshake, the back pressure, the pong qu
 and the drainers — written in beni over `Js` in `WebSocket.beni`, and the file deleted. `Socket`
 stays a `foreign type` with no sibling; a connection's state is a `Js.object` of the sibling's
 names, written with `Js.set`. The frames are built over `Buffer` by `Js.call` and `Js.setAt`, and
-the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and `Js.bitXor`. The one
+the unmask loop is a tail-recursive function over `Js.at`, `Js.setAt` and `Js.bitXor`; the parser
+is one self-recursive tail function, so a chunk of any number of frames runs in constant stack
+(#1801: it was mutual recursion at first, and a hostile chunk overflowed the stack). The one
 handler that filters by code ends in `Js.throw`. The host is reached through
 `process.getBuiltinModule` (`node:buffer`, `node:crypto`, `node:os`) and the globals. The upgrade
 record stays the `Js.object` of §9.11 item 26, and `upgraded` keeps its signature: typing the
