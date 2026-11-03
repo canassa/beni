@@ -1136,7 +1136,9 @@ body before it is pushed.
 **What changes shape.** `Result FileError (List Entry)` crossed the boundary through
 `startReadDir`'s `foreign` annotation, which pinned `Result`'s tags, `Entry`'s `name` and `kind`
 and `EntryKind`'s tags in every release build that lists a directory; it crosses nothing now, so
-a release build gives them integer tags and short names where nothing else pins them.
+a release build gives `Result` and `EntryKind` integer tags and `kind` a short name where nothing
+else pins them. `Entry.name` keeps its name: `Js.get entry "name"` reads the `Dirent`'s property of
+that text, and one source text has one spelling everywhere (`boundary.md` §4, amended 2026-10-22).
 `FileError` keeps its string tags, as step 10 says: `dirCodes` holds its constructors through
 `Js.from`. `Event`, `Dispatched` and `Pointer` stay `foreign type`s, and `Pointer`'s three keys
 stay literal (`Js.object`), so `pointerEvent`, `localX` and `localY` read what they read. `String`
