@@ -237,32 +237,20 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     defer plains.deinit(g);
     defer e.parts = false;
     for (c.sel) |o| if (Contract.occParam(o) >= cl.args.len) return Cond.unprovable;
-    // A literal read part by part: its plain occurrences whole first (`Graft`).
-    if (try Graft.plainsOnLiteral(e, c, cl, &ps) and (try distinct(e, ps.items, true)).no) return Cond.unprovable;
-    ps.clearRetainingCapacity();
-    // Each parameter's occurrences are projected by one walk of its
-    // argument (§2.11.2 item 3): a step they share is read once, and a
-    // value several arms reach once under their routes.
     const got = try e.arena.alloc(std.ArrayList(Proj), c.sel.len);
     for (got) |*x| x.* = .empty;
     defer for (got) |*x| x.deinit(g);
-    const reqs = try e.arena.alloc(Routed.Req, c.sel.len);
-    var js: std.ArrayList(u32) = .empty;
-    defer js.deinit(g);
-    for (c.sel, 0..) |o, i| {
-        const j = Contract.occParam(o);
-        if (std.mem.indexOfScalar(u32, js.items, j) != null) continue;
-        try js.append(g, j);
-        var n: usize = 0;
-        for (c.sel[i..], i..) |x, k| if (Contract.occParam(x) == j) {
-            reqs[n] = .{ .words = e.f.slots.relWords(Contract.occRel(x)), .deep = Contract.isDeep(x), .out = &got[k] };
-            n += 1;
-        };
-        e.parts = mixed(c.sel, j);
-        // Routes are per parameter: two parameters handed one value are
-        // that value twice (the experiment's third requirement).
-        try Routed.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j), 0);
+    // A literal read part by part: its plain occurrences whole first (`Graft`).
+    if (Graft.plainsOnLiteral(e, c, cl)) {
+        try projectAll(e, c, cl, got, true);
+        for (c.sel, got) |o, *gp| {
+            for (gp.items) |p| try ps.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
+            gp.clearRetainingCapacity();
+        }
+        if ((try distinct(e, ps.items, true)).no) return Cond.unprovable;
+        ps.clearRetainingCapacity();
     }
+    try projectAll(e, c, cl, got, false);
     for (c.sel, got) |o, *gp| {
         e.parts = mixed(c.sel, Contract.occParam(o));
         const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
@@ -277,6 +265,30 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     try ps.appendSlice(g, plains.items);
     try withoutPlain(e, aps.items, plains.items, &ps);
     return distinct(e, ps.items, true);
+}
+
+/// Each parameter's occurrences of `c` (`plain`: its plain ones only) into
+/// `got`, by one walk of its argument (§2.11.2 item 3): a step they share is
+/// read once, and a value several arms reach once under their routes.
+fn projectAll(e: *Eval, c: Cond, cl: Value.Call, got: []std.ArrayList(Proj), plain: bool) Error!void {
+    const g = e.gpa();
+    const reqs = try e.arena.alloc(Routed.Req, c.sel.len);
+    var js: std.ArrayList(u32) = .empty;
+    defer js.deinit(g);
+    for (c.sel, 0..) |o, i| {
+        const j = Contract.occParam(o);
+        if ((plain and Contract.isApart(o)) or std.mem.indexOfScalar(u32, js.items, j) != null) continue;
+        try js.append(g, j);
+        var n: usize = 0;
+        for (c.sel[i..], i..) |x, k| if (Contract.occParam(x) == j and !(plain and Contract.isApart(x))) {
+            reqs[n] = .{ .words = e.f.slots.relWords(Contract.occRel(x)), .deep = Contract.isDeep(x), .out = &got[k] };
+            n += 1;
+        };
+        e.parts = !plain and mixed(c.sel, j);
+        // Routes are per parameter: two parameters handed one value are
+        // that value twice (the experiment's third requirement).
+        try Routed.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j), 0);
+    }
 }
 
 /// Whether two of the projections name one leaf's place by one route
