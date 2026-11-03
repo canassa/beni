@@ -8252,6 +8252,10 @@ const Walker = struct {
     /// hands on to a callee, as `(closure, j)`, for each lambda the pass is
     /// inside: a carried lambda's calls of them go to what the caller passed.
     env_passes: std.ArrayList([2]u32) = .empty,
+    /// `passOn` calls in progress, as (parameter handed on, caller's parameter):
+    /// a lambda applied to a function parameter hands it back to itself, and
+    /// the re-entry would repeat the call in progress without end.
+    pass_active: std.ArrayList([2]u32) = .empty,
     /// §30.9: what callees rely on of the enclosing lambdas' own parameters.
     lambda_needs: std.ArrayList(LambdaNeed) = .empty,
     /// The record a program constructor with an entry row is handed: its
@@ -18948,6 +18952,13 @@ const Walker = struct {
     /// callee's function parameter or slot `j`: it takes the callee's facts
     /// (§16.4 item 4).
     fn passOn(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, lambda: u32, j: u32, facts: FunFacts, jj: u32) Allocator.Error!void {
+        // Reached again from within itself with the same function parameters,
+        // it would run the pass in progress again without end: what the outer
+        // call computes is all the re-entry could add, so it stops.
+        const key: [2]u32 = .{ j, jj };
+        for (w.pass_active.items) |k| if (k[0] == key[0] and k[1] == key[1]) return;
+        try w.pass_active.append(w.a, key);
+        defer _ = w.pass_active.pop();
         var ff = facts;
         var deps: std.ArrayList(u32) = .empty;
         for (facts.need_if) |writer| {

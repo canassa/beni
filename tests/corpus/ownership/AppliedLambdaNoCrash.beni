@@ -1,0 +1,6 @@
+-- ownership: a lambda applied directly to a function parameter hands that
+-- parameter back to itself. v1 once recursed through `passOn` without end
+-- and overflowed the stack (#1747); it now stops the re-entry. The summary
+-- is pessimistic (`unseen`, `borrowed`), never a crash and never an accept
+-- of more than the parameter's calls can justify.
+applyTwice f x = (λg y → g (g y)) f x
