@@ -19,7 +19,7 @@ pub const lowerings = [_]m.Lowering{ .{
     },
     .module = module,
     .root = root,
-}, @import("typed.zig").lowering };
+}, @import("typed.zig").lowering, @import("shared.zig").lowering };
 
 /// `wrap`, hoisted once per module: `(tag, inner) => tag + "[" + inner + "]"`.
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {

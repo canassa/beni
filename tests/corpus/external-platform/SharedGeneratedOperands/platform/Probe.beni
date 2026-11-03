@@ -1,0 +1,68 @@
+import CaptureCheck
+import Html exposing (Html)
+import Js.Any as Any
+
+
+pub foreign type Program
+
+
+pub foreign pure show : Html msg → Program
+
+
+pub opaque type Saved
+    = Saved Any.Any
+
+
+pub save value = Saved (Any.pack value)
+
+
+pub first rows = List.head rows
+
+
+pub sample rows =
+    case rows of
+        [ ( _, _, _, value ), …_ ] →
+            value.sample
+        [] →
+            sample rows
+
+
+pub keyValue : List (Saved × Saved × Saved × { sample : a, keyOf : a → key }) → key
+keyValue rows =
+    case rows of
+        [ ( _, _, _, value ), …_ ] →
+            value.keyOf value.sample
+        [] →
+            keyValue rows
+
+
+read : Any.Any, a → Maybe a
+read saved _ = Any.unpack saved
+
+
+pub inspect : List (Saved × Saved × Saved × { sample : a, keyOf : a → key }) → String
+inspect rows =
+    case rows of
+        [ ( Saved firstBox, Saved secondBox, _, value ), …_ ] →
+            original = read firstBox value.sample
+            originalKey = read secondBox (value.keyOf value.sample)
+            case ( original, originalKey ) of
+                ( Just _, Just _ ) →
+                    "matched"
+                _ →
+                    "wrong identity"
+        [] →
+            "empty"
+
+
+pub capture : Saved, packet → String
+capture (Saved saved) example =
+    original = read saved example
+    case original of
+        Just _ →
+            "tuple matched"
+        Nothing →
+            "tuple identity changed"
+
+
+pub data value = CaptureCheck.data value

@@ -8626,6 +8626,12 @@ construction, as the note above asks:
   - a scalar-replaced object written to, called through or read two deep;
   - a call the scan no longer counts. `inlineSmallPass` lists a statement's calls before it
     writes any, and a copy of a call's root (`Copy.atom`) shares that call's callee.
+- **Shared expressions count at every occurrence** (#1782). A lowering may reuse a generated
+  expression node. Rewriting that node changes every occurrence of it: a call update retracts
+  and extends its subtree as many times as the scan lists the call. A pending list of calls
+  rewrites each node once, even when its replacement is another call; its old callee body no
+  longer describes the replacement. Sharing is not common-subexpression elimination: every
+  occurrence still evaluates the expression where it stands.
 - **Checked.** A safety build checks every scan it updates, and every one it keeps across a
   change, in a module of at most 3 000 nodes. It walks the statement again and compares the sum
   of each node's `contribution` (its operands and what it reads of its child), the first name of

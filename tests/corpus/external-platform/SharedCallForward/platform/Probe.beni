@@ -1,0 +1,13 @@
+import Html exposing (Html)
+
+
+pub foreign type Program
+
+
+pub foreign pure show : Html msg → Program
+
+
+pub foreign pure combine : String, String → String
+
+
+pub flip left right = combine right left
