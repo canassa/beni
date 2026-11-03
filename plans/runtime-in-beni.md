@@ -1078,10 +1078,12 @@ handler that filters by code ends in `Js.throw`. The host is reached through
 record stays the `Js.object` of §9.11 item 26, and `upgraded` keeps its signature: typing the
 record is a later step.
 
-**What changes shape.** `Result` and `Close` crossed the boundary through `foreign next`'s
-`Resume (Result Close String)`, which pinned `Result`'s string tags and `Close`'s `code` and
-`reason` in every release build that serves a WebSocket; they cross nothing now, so a release
-build gives them integer tags and short names where nothing else pins them.
+**What changes shape.** `Result` crossed the boundary through `foreign next`'s
+`Resume (Result Close String)`, which pinned its string tags in every release build that serves
+a WebSocket; a reader is a `Resume Js.Value` now, answered with the text or the end object, and
+`read` builds the `Result` in beni, so a release build gives `Result` integer tags where nothing
+else pins them. `Close` keeps `code` and `reason` (one text, one spelling, `boundary.md` §4
+amended 2026-10-22: `code` is the host property `isGone` reads, `reason` the end object's key).
 
 **The bar** (`core-in-beni.md` R47-3): release brotli no larger on the ten `run/WebSocket*`
 programs, the chat example and the websocket bench (`bench/size.mjs`, both compilers), the
