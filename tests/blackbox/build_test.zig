@@ -9400,6 +9400,67 @@ test "the checker v2 refuses one view written twice through a wrapper, the tag o
     ++ tag_tail, "Main.incP <P …>", &.{ "#Node.2⟨Tree⟩#Node.1#Box.0", "#Node.2#Node.1#Box.0", "#Node.1#Box.0", "#Node.0⟨Tree⟩#Node.1#Box.0", "#Node.0#Node.1#Box.0" });
 }
 
+test "the checker v2 refuses one tree handed twice to a callee whose separation is deep" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9.3: one object at two places is two entries.
+    // `idd`'s separation is `π1{ε*}`, projected deep over `P t t`: the
+    // leaf set of `P t t` holds `t`'s leaf once, marked `many`, and its
+    // second copy took the first's route, so the check read the two as one
+    // and `firstOnly` wrote `a` while `b` is the same tree. The second copy
+    // now has a route of its own and the write is refused.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\type Tree
+        \\    = Node Tree (List Int) Tree
+        \\    | Leaf
+        \\
+        \\
+        \\type P
+        \\    = P Tree Tree
+        \\
+        \\
+        \\idd : a → a
+        \\idd x =
+        \\    x
+        \\
+        \\
+        \\incAll : Tree → Tree
+        \\incAll t =
+        \\    case t of
+        \\        Node l xs r →
+        \\            Node (incAll l) (List.push xs 1) (incAll r)
+        \\
+        \\        Leaf →
+        \\            Leaf
+        \\
+        \\
+        \\firstOnly : P → P
+        \\firstOnly p =
+        \\    case idd p of
+        \\        P a b →
+        \\            P (incAll a) b
+        \\
+        \\
+        \\dup : Tree → P
+        \\dup t =
+        \\    firstOnly (P t t)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.firstOnly <P …>#P.0#Node.1: rejected disjoint") != null);
+}
+
 test "the checker v2 refuses one view written twice through two wrappers, the tag or none, in either walk order (row 17)" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE / EXECUTE / VERIFY              │
