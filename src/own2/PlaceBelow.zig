@@ -38,23 +38,11 @@ pub fn slotsBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.Ta
 /// place reachable from `p`'s is a list or a dictionary whose elements hold
 /// an object, or lies on a cycle and holds one (every second return there
 /// is a `⟲`, and `Up(p)`'s paths are `⟲`s).
+/// The place graph's answer is a column of each place, set with its strongly
+/// connected component (`Place.Place.family`, #1714): one record.
 pub fn familyBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.Table, p: PathId) Error!bool {
+    _ = gpa;
     if (places.isSummary(p)) return true;
-    var seen: Ids.FixedDict(1) = .{};
-    defer seen.deinit(gpa);
-    var stack: std.ArrayList(PlaceId) = .empty;
-    defer stack.deinit(gpa);
-    try stack.append(gpa, places.pathPlace(p));
-    while (stack.pop()) |at| {
-        if ((try seen.getOrPut(gpa, .{at.int()})).found_existing) continue;
-        try account.reserve(.inspection, 1);
-        const held = !places.holds(at).isEmpty() or !Place.Kind.own(places.kind(at)).isEmpty();
-        if (held and places.cyclic(at)) return true;
-        const st = places.steps(at);
-        for (st.steps, st.children) |s, c| {
-            if (s.kind == .elem and (!places.holds(c).isEmpty() or !Place.Kind.own(places.kind(c)).isEmpty())) return true;
-            try stack.append(gpa, c);
-        }
-    }
-    return false;
+    try account.reserve(.inspection, 1);
+    return places.places.col.family[places.pathPlace(p).int()];
 }

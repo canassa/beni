@@ -216,7 +216,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
             // a cycle (so its paths are its steps), is one open arrival, never one
             // a slot below it (§2.10, *Arrivals by structure*).
             if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and try acyclicBelow(s, f.places.pathPlace(q)) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot)) {
-                return arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var" }, out);
+                return arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
             }
             // A call's or a supply's whole subtree read by structure is read
             // through one key below its position, never one per slot below it
@@ -230,7 +230,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
             if (held) for (Subtree.subs(f.slots, l.slots)) |el| {
                 const x = Slots.pathOf(el);
                 if (r.kind == .param) {
-                    try arrive(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, x), .deep = true }, out);
+                    try arrive(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, x), .deep = true, .path = x.int() }, out);
                 } else try describeSub(s, l, pslot, x, q, by_structure, out);
             };
             for (if (held) Subtree.explicit(f.slots, l.slots) else f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
@@ -689,7 +689,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: ResList) Error!void {
                     },
                     .param => {
                         const pk = f.places.kind(f.places.pathPlace(Slots.pathOf(sl)));
-                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = Slots.isSub(sl) or pk == .@"var" or pk == .@"opaque" };
+                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = Slots.isSub(sl) or pk == .@"var" or pk == .@"opaque", .path = Slots.pathOf(sl).int() };
                         try arrive(s, q, a, out);
                         for (qs_all) |qs| try arrive(s, .from(qs), a, out);
                     },
@@ -733,7 +733,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: ResList) Error!void {
                         // never by steps the slot cannot take.
                         const pk = f.places.kind(f.places.pathPlace(Slots.pathOf(sl)));
                         const wild = pk == .@"var" or pk == .@"opaque";
-                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = wild };
+                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = wild, .path = Slots.pathOf(sl).int() };
                         if (wild and f.places.pathPlace(Slots.pathOf(sl)) != f.places.pathPlace(.from(dest))) {
                             for (f.slots.items(try Subtree.belowAll(f.slots, gpa, f.account, f.places, .from(dest)))) |qs| try arrive(s, .from(qs), a, out);
                         } else if (whole or Slots.isSub(sl)) try arriveWide(s, .from(dest), a, out) else try arrive(s, .from(dest), a, out);
@@ -760,7 +760,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
     switch (r.kind) {
         .param => {
             const deep = f.places.kind(f.places.pathPlace(.from(sl))) == .@"var";
-            try arrive(s, at, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep }, out);
+            try arrive(s, at, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = deep, .path = sl }, out);
         },
         .cb => {
             const rel = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
@@ -1095,7 +1095,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: ResList) Error!void {
                     .param => for (f.slots.elems(l.slots)) |el| {
                         if (Slots.isNot(el)) continue;
                         const sl = Slots.pathOf(el);
-                        _ = try Contract.Draft.addArrival(try resList(s, out), s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .deep = Slots.isSub(el) or f.places.kind(f.places.pathPlace(sl)) == .@"var" });
+                        _ = try Contract.Draft.addArrival(try resList(s, out), s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .deep = Slots.isSub(el) or f.places.kind(f.places.pathPlace(sl)) == .@"var", .path = sl.int() });
                     },
                     .cb => for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
                         const below = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;
