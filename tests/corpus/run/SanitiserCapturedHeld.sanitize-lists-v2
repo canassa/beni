@@ -1,0 +1,3 @@
+A closure a callee hands back, which reads a list (ownership-v2.md §2.10, #1772): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses the push while the closure still reads the list;
+were it to accept it, the sanitised run would show the edited length.
