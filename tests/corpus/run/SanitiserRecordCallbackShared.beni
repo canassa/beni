@@ -1,0 +1,63 @@
+-- A runtime catch for a callback that answers a record update of what it
+-- writes (`ownership-v2.md` §2.10, *Read-off*; #1756): the written field
+-- must be apart from the record's other objects. Each record here holds the
+-- written list at another place too: at another field, through `apply1` and
+-- `List.update`; at another element's field; at a nested record's twin.
+-- Each edit is refused; with the record's other objects not asked apart,
+-- the sanitised runs show the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias G =
+    title : String
+    kids : List String
+    other : List String
+
+
+type alias In =
+    xs : List String
+
+
+type alias Out =
+    a : In
+    b : In
+
+
+grow : G → G
+grow g = { g | kids = List.push g.kids "new" }
+
+
+bump : Out → Out
+bump o = { o | a = { xs = List.push o.a.xs "n" } }
+
+
+apply1 : (x → x), x → x
+apply1 f v = f v
+
+
+show : G → String
+show g = String.join g.kids "," ++ "|" ++ String.join g.other ","
+
+
+main : Program
+main =
+    k1 = [ "x" ]
+    g = apply1 grow { title = "a", kids = k1, other = k1 }
+    k2 = [ "y" ]
+    gs = List.update [ { title = "b", kids = k2, other = k2 } ] 0 grow
+    k3 = [ "z" ]
+    hs =
+        List.update
+            [ { title = "c", kids = k3, other = [] }, { title = "d", kids = [], other = k3 } ]
+            0
+            grow
+    i = { xs = [ "w" ] }
+    o = apply1 bump { a = i, b = i }
+    Node.printLines
+        [ show g
+        , String.join (List.map gs show) ";"
+        , String.join (List.map hs show) ";"
+        , String.join o.a.xs "," ++ "|" ++ String.join o.b.xs ","
+        ]

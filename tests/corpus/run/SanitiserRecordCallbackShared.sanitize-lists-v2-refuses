@@ -1,0 +1,5 @@
+# v2 refuses each record-update callback that writes a list the record also holds at another place (§2.10).
+47:9 list_may_be_shared SanitiserRecordCallbackShared.apply1
+49:10 list_may_be_shared List.update
+52:9 list_may_be_shared List.update
+57:9 list_may_be_shared SanitiserRecordCallbackShared.apply1
