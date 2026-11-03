@@ -24,6 +24,7 @@ const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
 const Routed = @import("Routed.zig");
 const Graft = @import("Graft.zig");
+const RowEnv = @import("RowEnv.zig");
 const Host = @import("Host.zig");
 const W = @import("Walk.zig");
 
@@ -248,8 +249,7 @@ fn cellTaint(e: *Evaluation, q: u32, cs: Contract.Arrival, bw: []const u32, drop
     for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, vi);
 }
 
-/// An arrival of call `q`'s supply, as leaves (`Relation.arrivalLeaves`'
-/// rule, read from outside).
+/// An arrival of call `q`'s supply, as leaves (`Relation.arrivalLeaves`' rule, read from outside).
 pub fn supplyLeaves(e: *Evaluation, q: u32, a: Contract.Arrival, out: *std.ArrayList(u32)) Error!void {
     const f = e.fr();
     const call = f.calls.items[q];
@@ -416,6 +416,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
                 for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), words)) {
                     d.kept = true;
                 };
+                if (lab.origin[2] & RowEnv.taken_origin != 0) d.taken_occs = try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, gpa, e.ev.arena, su, words, x.deep);
             };
             // A virtual call's head is a code, never an instruction: the walked call names the demand.
             d.callee_inst = if (wq < e.w.walk_calls) f.calls.items[wq].head else none;
@@ -447,6 +448,10 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == d.arg) {
             d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), outer[0]));
         };
+        if (d.taken_occs) |os| {
+            var run = os;
+            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, &run), outer[0]));
+        }
     }
 }
 
@@ -558,8 +563,7 @@ fn onceDemands(e: *Evaluation) Error!void {
 
 // ---- read-off --------------------------------------------------------------
 
-/// The read-off.s entry points (`ReadOff.zig`): a demand or an escape made
-/// while it is under way, and a leaf delivered to it.
+/// The read-off.s entry points (`ReadOff.zig`): a demand or an escape made while it is under way, and a leaf delivered to it.
 pub const Hooks = struct {
     demand: *const fn (e: *Evaluation, di: usize) Error!void,
     escape: *const fn (e: *Evaluation, leaf: u32) Error!void,
@@ -580,11 +584,9 @@ pub const Sink = struct {
     /// `(leaf, deep, list)`: a leaf whose parameter effects are said
     /// already. Effects only grow, so saying them again adds nothing.
     effected: Ids.FixedDict(3) = .{},
-    /// The subtrees being described once per place (§2.10): arrivals go
-    /// to the innermost, relative to its path.
+    /// The subtrees being described once per place (§2.10): arrivals go to the innermost, relative to its path.
     building: std.ArrayList(Builder) = .empty,
-    /// `(kind, a, b, c, place, d)` → a subtree described already; `none`
-    /// while it is, `none - 1` where it cannot be.
+    /// `(kind, a, b, c, place, d)` → a subtree described already; `none` while it is, `none - 1` where it cannot be.
     nodes: Ids.FixedDict(6) = .{},
     /// Per place: 1 when no place below it is on a cycle, else 2.
     acyclic: Ids.FixedDict(1) = .{},
@@ -592,15 +594,13 @@ pub const Sink = struct {
     frozen: u8 = 0,
     /// The subtrees begun so far.
     serial: u32 = 0,
-    /// The shallowest subtree in progress that a description met again:
-    /// what is made below it is not kept.
+    /// The shallowest subtree in progress that a description met again: what is made below it is not kept.
     cut: usize = std.math.maxInt(usize),
     /// The sources the frame's escapes reach (§2.10, *host objects*).
     host: Host.State = .{},
 };
 
-/// A subtree being described at path `q` (`depth` steps from its root).
-/// `depth`: its serial number in the evaluation.
+/// A subtree being described at path `q` (`depth` steps from its root). `depth`: its serial number in the evaluation.
 pub const Builder = struct { q: PathId, depth: u32, res: Contract.Draft.Res = .{} };
 
 /// What `Resolve` tells the read-off: the accepted demands' reliance and

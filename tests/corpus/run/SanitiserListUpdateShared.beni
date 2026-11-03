@@ -1,0 +1,33 @@
+-- A runtime catch for `List.update`'s callback (`ownership-v2.md` §2.13.6,
+-- `taken`): the rest of the list stays, so what the callback edits in place
+-- must occur nowhere else in it. Each row here holds the edited list twice:
+-- as both elements, through a helper that passes the callback on, and at
+-- another path of the other element. Each edit is refused; asked only of
+-- the element, or lost where the callback is passed on, the sanitised runs
+-- show the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+upd : List (List Int), (List Int → List Int) → List (List Int)
+upd rs f = List.update rs 0 f
+
+
+main : Program
+main =
+    a = [ 1 ]
+    twice = List.update [ a, a ] 0 λv → List.push v 2
+    b = [ 1 ]
+    passed = upd [ b, b ] λv → List.push v 3
+    l = [ 1 ]
+    cross = List.update [ ( [ 0 ], l ), ( l, [ 1 ] ) ] 0 λ( k, vs ) → ( k, List.push vs 4 )
+    Node.printLines
+        [ String.join (List.map twice show) ";"
+        , String.join (List.map passed show) ";"
+        , String.join (List.map cross λ( k, vs ) → show k ++ ":" ++ show vs) ";"
+        ]

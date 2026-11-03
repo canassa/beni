@@ -1903,6 +1903,19 @@ result held ran under it (`run/SanitiserLambdaPattern`; the sanitised runs trapp
 callback's write of a pattern's part is a write of its supply, which a worded row with a callback reads as
 unknown code (`List.update`'s `focus`): those writes are refused at the call until the row is read (#1704).
 
+*Amended 2026-11-03 (#1752): a `taken` callback's row is read.* `focus : written returned List a, borrowed Int,
+once taken stored (a → a) → List a` gives its callback a label: called `once` (`many` without the word), its one
+supply `π1[*]` slot for slot, kept by nothing, and with `stored` its answer arrives at the result's `[*]`. The
+rest of the list stays, so what the callback writes must occur nowhere else in it (§2.13.6, *the container is
+exclusive*): each write of the supply at slot `s` relies, at the caller, on `π1{[*]*~, [*]·s}` — the written
+objects once, apart from everything else the elements hold. The label's origin carries a mark (bit 30 of its
+offset) that a pass keeps, so the condition is asked wherever the callback is known, also through a helper that
+passes it on; a supply that is no parameter's slot there was judged at the pass. Measured on `List.update xs 0
+λv → List.push v 2`: accepted for fresh elements and for rows that share only keys the callback does not
+write; refused for `[ a, a ]`, through a helper, and for a list at another path of another element. Asked of
+nothing, or with the mark lost at a pass, the sanitised runs of `run/SanitiserListUpdateShared` show the stale
+read; asked `[*]*` plain, rows that share a key the callback does not write are refused.
+
 The value of a lambda is `built(closure, site ι, kids = the captures' values at creation)`: the closure holds
 its captures, so a holder of the closure holds them (§2.8 *Dead*: `captured`). Calling a closure value is a
 call of its code with the arguments and the captured values. A function declaration used as a value is a
@@ -4236,6 +4249,9 @@ values, §2.10 *Read-off*; Contract, Distinct, Eval, Forest, Held, Ids, Place, R
 L12; `Groups` L13; `Block`, `Message`, `Report`, `Hoists` L14; `Ownership` L15; `Enforce` L16).*
 *Amended 2026-11-03 (#1714): `KeySets` (L1, hash-consed Patricia sets of keys; imports Ids) and `AtomSets` (L8, a call's leaf's atoms for the distinct check, §2.9.3 *A call's atoms*; imports Ids, Slots, Value, Relation, Entries, Contract, KeySets) are new.*
 *Amended 2026-11-03 (#1714): `Canon` (L5, a contract's selections in one spelling of a subtree, §2.9.1; imports Ids, Place, Slots, Subtree, Conds) is new beside `Rows`, read by `ReadOff`.*
+*Amended 2026-11-03 (#1752): `RowEnv` (L5: the tables a row is read in, its result and parameter slots, and what
+a `taken` callback's write asks at its caller; Ids, Place, Slots, Subtree, Contract, Forest) was split out of
+`Rows`, which moved to L6.*
 
 ```
 L13 Enforce
