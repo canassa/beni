@@ -927,6 +927,22 @@ module's output. A chain that names neither is refused before a source is read, 
 with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
 
+**A runtime module without markup** (*specified 2026-11-03, not built*; #1812,
+`plans/runtime-in-beni.md` step 16). A chain that declares no markup `"lowering"` has no
+`"markup".module` to name a runtime module in, so a platform with no markup — `cloudflare` —
+could keep `run` only in a `"runtime"` file. A top-level `"module"` of the package that declares
+`"program"` names a beni module of that package that supplies `run`, and only `run`, since there
+is no lowering to ask for more: the build writes no runtime file, and the entry file imports
+`run` from the module's output, as it does under `"markup".module`. The module is held to §9.2's
+terms: `run` is a `pub` value with a body that takes one parameter and no evidence, or it is
+`foreign_export_mismatch` against the manifest at `1:1`; a name that is no module of the package
+is `foreign_sibling_missing` there. A package that declares both `"runtime"` and `"module"`, or a
+top-level `"module"` in a chain that declares a `lowering` (its runtime module is `"markup"`'s,
+§9.2), is the exit-2 manifest failure, as a key of the wrong JSON type is. Inherited first-found
+down the chain like every field (§9.1). The test platform `tests/platforms/program-module` and
+a `run/` fixture over it prove the shape; `cloudflare` takes it when its `runtime.js` moves
+(#1813).
+
 **Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
 2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the
 code the chain emits may write a list's array where the ownership checker accepted the edit, so

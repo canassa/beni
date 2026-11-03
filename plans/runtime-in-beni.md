@@ -31,6 +31,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 13 | **`node`'s `WebSocket.js`** (`fromUpgrade`, `next`, `send`, `begin`, `finish`, `unsent`, `chosen`, `awaitDrain`) | **specified 2026-11-03**, below: eight exports and twenty helpers; the frames over the host buffer by `Js.setAt` and `Js.bitXor` |
 | 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
 | 15 | **`node`'s `markup.js` and `runtime.js`** (`escape`, `escapeAttr`, `safeUrl`, `list`, `classes`, `styles`, `rawText`, `text`, `map`; `run`) | **specified 2026-11-03**, below: the runtime module `Rt.beni`, as `browser`'s; both files deleted |
+| 16 | **A runtime module without markup** (`cloudflare`'s `runtime.js` needs it; #1812) | **specified 2026-11-03**, below: a top-level `"module"` key for a chain with no lowering; the build waits on `runtime-in-beni-q3` (#1813) |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1250,3 +1251,24 @@ characters. `"markup".module` is read from the package that declares the chain's
 `build/bad/MarkupRuntime*` platforms declare their file as their program runtime too. The
 playground frame defines `globalThis.process`, which the runtime reads where the file imported
 `node:process` (`playground.md` §5).
+
+
+## Step 16 — a runtime module without markup (2026-11-03)
+
+**What is wanted.** `boundary.md` §5.2 lets a chain leave out `"runtime"` when it names a markup
+`"lowering"` and a runtime module (`"markup".module`), which supplies `run`. `cloudflare` declares
+no markup, so its `run` has nowhere to live but `runtime.js`. A top-level `"module"` key of the
+package that declares `"program"` names a beni module that supplies `run` and nothing else
+(§5.2, amended 2026-11-03; issue #1812). The compiler change: `Manifest` gains the key,
+`platform.zig` reads it (`chain.first("module")`, refused beside `"runtime"` in one package and
+beside a `lowering` in the chain), and `Emit.moduleIsRuntime` takes a chain with a runtime module
+and no lowering, whose expected export set is `run` alone (`checkMarkupRuntime` asks no lowering
+for its list); the entry file, the hoisting, the reachability roots and the release map already
+read `runtime_module`. Proof: `tests/platforms/program-module`, a platform over nothing with
+`"program"`, `"module": "Rt"` and a `Rt.beni` whose `run` prints the program's text through
+`Js`, and a `run/` fixture built for it; a `build/bad/` fixture per refusal.
+
+**Why it waits.** Its one consumer is `cloudflare`'s `runtime.js` (#1813), whose move needs two
+`Js` spellings the owner decides (`runtime-in-beni-q3`, 2026-11-03): under A the feature is built
+and the move follows; under B `runtime.js` stays, and a runtime module without markup serves
+nothing, so it is not built. The spec stands either way.
