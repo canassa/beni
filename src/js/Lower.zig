@@ -252,6 +252,8 @@ pub const Input = struct {
     worker_host: bool = false,
     worker_host_client: bool = false,
     worker_kinds: []const @import("Emit.zig").EntryKind = &.{},
+    // Checked per-call reply plans are also required by library/pack emission.
+    reply_plans: ?*const @import("../check/Wire.zig").Artifact = null,
     worker_wire: ?*const @import("../check/Wire.zig").Artifact = null,
     worker_wire_direct_calls: []const Bir.Inst.Index = &.{},
     bir: *const Bir,
@@ -6579,7 +6581,7 @@ pub const Lowerer = struct {
     /// too. A branch of a short circuit or of a `case` has an `out` of its
     /// own, so nothing is ever evaluated that the source would not have.
     // ownership pin begin: replyIds
-    fn replyCtor(l: *Lowerer, wire: *const @import("../check/Wire.zig").Artifact, node: @import("../check/Wire.zig").Node, tag: Symbol) CtorRep {
+    fn replyCtor(l: *Lowerer, wire: *const @import("../check/Wire.zig").Artifact, node: @import("../check/Wire.zig").Node, tag: Symbol, inst: Inst.Index) Allocator.Error!CtorRep {
         const entry = l.in.types.entry(wire.scan_types[node.type_index.?]);
         if (entry.module == l.in.module) {
             for (l.bir.ctors, 0..) |ctor, i| if (ctor.decl == entry.decl and l.bir.symbol(ctor.name) == tag) return l.ctorRepLocal(@intCast(i));
@@ -6600,7 +6602,8 @@ pub const Lowerer = struct {
                 return .{ .tagged = .{ .fields = max, .int = int } };
             }
         }
-        unreachable; // The cached plan names a checked nominal constructor.
+        try l.report(.internal, inst, "A reply scan names a constructor absent from its checked module.", .{});
+        return .{ .tagged = .{ .fields = 0 } };
     }
 
     fn replyPrivate(l: *Lowerer, module: Graph.Index, spelling: []const u8, p: u32) Allocator.Error!Node.Index {
@@ -6617,7 +6620,10 @@ pub const Lowerer = struct {
 
     fn replyScan(l: *Lowerer, out: *StmtList, inst: Inst.Index, args: []const Inst.Index, p: u32) Allocator.Error!Node.Index {
         const Wire = @import("../check/Wire.zig");
-        const wire = l.in.worker_wire orelse unreachable;
+        const wire = l.in.reply_plans orelse {
+            try l.report(.internal, inst, "A reply scan has no checked module plans.", .{});
+            return l.nullNode(p);
+        };
         const root = for (wire.scans) |scan| {
             if (scan.inst == inst.int()) break scan.node;
         } else {
@@ -6641,12 +6647,12 @@ pub const Lowerer = struct {
                 continue;
             }
             if (node.kind == .reply) {
-                const rep = l.replyCtor(wire, node, l.interner.global.find("Reply").?);
+                const rep = try l.replyCtor(wire, node, l.interner.global.find("Reply").?, inst);
                 try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(7, p), try l.add(if (rep == .unboxed) .true_lit else .false_lit, p, 0, 0) }, p));
                 continue;
             }
             const edges = wire.edges[node.edges.start..][0..node.edges.len];
-            if (node.kind == .tagged and edges.len == 1 and l.replyCtor(wire, node, edges[0].label.unwrap().?) == .unboxed) {
+            if (node.kind == .tagged and edges.len == 1 and (try l.replyCtor(wire, node, edges[0].label.unwrap().?, inst)) == .unboxed) {
                 const tuple = wire.nodes[edges[0].child];
                 const child = wire.edges[tuple.edges.start].child;
                 try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(9, p), try l.intNode(child, p) }, p));
@@ -6655,7 +6661,7 @@ pub const Lowerer = struct {
             var emitted: std.ArrayList(Node.Index) = .empty;
             for (edges, 0..) |edge, ei| {
                 const label = if (edge.label.unwrap()) |label|
-                    if (node.kind == .record or node.kind == .open_record) try l.fieldString(label, p) else try l.tagLiteral(l.replyCtor(wire, node, label), label, p)
+                    if (node.kind == .record or node.kind == .open_record) try l.fieldString(label, p) else try l.tagLiteral(try l.replyCtor(wire, node, label, inst), label, p)
                 else
                     try l.stringNode(l.interner.slice(try l.slotName(@intCast(ei))), p);
                 try emitted.append(l.scratch, try l.arrayNode(&.{ label, try l.intNode(edge.child, p) }, p));

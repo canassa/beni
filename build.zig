@@ -1277,6 +1277,19 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const skill_api_step = b.step("skill-api", "Write skills/beni/references/api-*.md from `beni dump --stage=interface` on the gates' beni");
+    // Exercise the actual pack maker against a Cloudflare library containing
+    // replyIds, even before the platform family adds its production call.
+    const reply_pack_run = b.addRunArtifact(corePackMaker(b));
+    reply_pack_run.setName("rebuild a Cloudflare reply library for a compiler");
+    reply_pack_run.addDirectoryArg(coreDirectory(b, shipped_core));
+    reply_pack_run.addFileContentArg(default_id.hex);
+    _ = reply_pack_run.addOutputFileArg("reply.pack");
+    reply_pack_run.addArgs(&.{ "cloudflare", "platforms/cloudflare" });
+    reply_pack_run.addDirectoryArg(platformDirectory(b, .{ .name = "cloudflare", .dir = "tests/platforms/reply-scan", .zig = null, .deps = &.{} }));
+    const reply_pack_step = b.step("test-reply-pack", "Rebuild the embedded Cloudflare reply library through the real pack maker");
+    reply_pack_step.dependOn(&reply_pack_run.step);
+    skill_api_step.dependOn(reply_pack_step);
+
     {
         const run = b.addRunArtifact(skill_api_exe);
         run.addArgs(&.{ beni_safe_path, ".", "skills/beni/references" });
@@ -1304,6 +1317,7 @@ pub fn build(b: *std.Build) void {
     // A `gates` that could not say what CLAUDE.md says a green gate means
     // fails before it runs anything (`gatesRefusal`).
     const gates_step = b.step("gates", "Run test, test-blackbox, fmt-check and beni-fmt-check concurrently");
+    gates_step.dependOn(reply_pack_step);
     if (gatesRefusal(b, test_filters.len != 0 or corpus_only.len != 0)) |why| {
         gates_step.dependOn(&b.addFail(why).step);
         return;

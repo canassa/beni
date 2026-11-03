@@ -7336,6 +7336,7 @@ const Emitter = struct {
                 .worker_host = e.workerHostModule() == m,
                 .worker_host_client = (e.workerHostClient()) == m,
                 .worker_kinds = e.options.platform.entry_kinds,
+                .reply_plans = &e.session.checked.type_keys[m.int()].wire,
                 .worker_wire = &e.session.checked.type_keys[m.int()].wire,
                 .worker_wire_direct_calls = if (e.worker_wire_direct_module == m) e.worker_wire_direct_calls else &.{},
                 .worker_descriptors = slot.worker_descriptors,

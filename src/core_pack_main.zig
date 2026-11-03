@@ -395,6 +395,7 @@ const Maker = struct {
             .interfaces = session.resolution.interfaces,
             .dispatch = dispatchOf(session, m),
             .types = &session.checked.types,
+            .reply_plans = &session.checked.type_keys[m.int()].wire,
             .specifiers = &.{},
             .sibling = "",
             .live = &mk.live,
