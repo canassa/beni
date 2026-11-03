@@ -29,6 +29,12 @@ pub foreign impure rendererBody : ⊤ → Node.Node
 pub foreign impure rendererText : String → Node.Node
 
 
+pub foreign impure body : ⊤ → Maybe Element.Element
+
+
+pub foreign impure div : ⊤ → Element.Element
+
+
 pub foreign impure byId : String → Maybe Element.Element
 
 

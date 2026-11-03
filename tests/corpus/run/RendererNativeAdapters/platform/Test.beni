@@ -1,0 +1,59 @@
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.Event as Event
+import Browser.Host.Node as Node
+import Browser.Host.Rejection as Rejection
+import Js
+
+
+pub opaque type Program
+    = Program
+        (Node.Node, Node.Node → String)
+        (Node.Node → String)
+        (Node.Node → String)
+        (Event.Event → String)
+        String
+
+
+pub program :
+      sync (Node.Node, Node.Node → String)
+    , sync (Node.Node → String)
+    , sync (Node.Node → String)
+    , sync (Event.Event → String)
+    → Program
+program append readBody create display =
+    Program append readBody create display "renderer native adapters"
+
+
+pub inspect : Node.Node, Node.Node → String
+inspect parent child =
+    case Node.append parent child of
+        Ok ⊤ →
+            "appended"
+        Err Node.HierarchyRequestError →
+            "hierarchy"
+
+
+pub body : Node.Node → String
+body expected =
+    case Document.body ⊤ of
+        Nothing →
+            "no body"
+        Just element →
+            if Js.same (Element.toNode element) expected then "body identity" else "wrong body"
+
+
+pub div : Node.Node → String
+div expected =
+    element = Document.div ⊤
+    Element.styleText element "white-space:pre-wrap"
+    if Js.same (Element.toNode element) expected then "div identity" else "wrong div"
+
+
+pub report : Event.Event → String
+report event =
+    case Event.error event of
+        Nothing →
+            Event.message event
+        Just reason →
+            Rejection.display reason

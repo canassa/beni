@@ -1,3 +1,4 @@
+export const styleText = (element, value) => { element.setAttribute("style", value); return null; };
 export const focus = (element) => { element.focus(); return null; };
 export const blur = (element) => { element.blur(); return null; };
 export const box = (element) => { return element.getBoundingClientRect(); };

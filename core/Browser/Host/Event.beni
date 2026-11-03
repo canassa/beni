@@ -15,6 +15,9 @@ pub foreign type Event
 pub foreign impure errorMessage : borrowed Event → Maybe String
 
 
+pub foreign impure message : borrowed Event → String
+
+
 pub foreign impure dataOnly : aliased Event → Maybe Js.Value
 
 

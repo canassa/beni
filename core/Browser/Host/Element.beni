@@ -9,6 +9,9 @@ import Browser.Host.Promise as Promise
 pub foreign type Element
 
 
+pub foreign impure styleText : borrowed Element, String → ⊤
+
+
 pub foreign impure focus : borrowed Element → ⊤
 
 

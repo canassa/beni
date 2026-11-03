@@ -98,6 +98,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) try w.writeAll(@import("Cloudflare.zig").declarations);
     if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("pub foreign type Resolvers a\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("import Js\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("pub type MoveError\n    = HierarchyRequestError\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -204,6 +205,22 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
             .worker_event_target => "(endpoint) => { return endpoint; }",
             .global_event_target => "(ignored) => { return globalThis; }",
             .event_data_only => "(event) => { const value = event.data;\n" ++ CheckedData.body ++ "}",
+            .key_map_values => "(map) => { return globalThis.Array.from(map.values()); }",
+            .key_map_make => "(unit) => { return new globalThis.Map(); }",
+            .key_map_get_or => "(map, key, fallback) => { const value = map.get(key); return value !== undefined || map.has(key) ? value : fallback; }",
+            .key_map_get => "(map, key) => { return map.has(key) ? { $: \"Just\", a: map.get(key) } : { $: \"Nothing\", a: null }; }",
+            .key_map_set => "(map, key, value) => { map.set(key, value); return null; }",
+            .key_map_has => "(map, key) => { return map.has(key); }",
+            .key_map_remove => "(map, key) => { return map.delete(key); }",
+            .key_map_clear => "(map) => { map.clear(); return null; }",
+            .key_map_size => "(map) => { return map.size; }",
+            .key_map_each => "(map, visit) => { map.forEach((value, key) => visit(key, value)); return null; }",
+            .document_body => "(unit) => { const body = globalThis.document.body; return body === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: body }; }",
+            .document_create_element => "(unit) => { return globalThis.document.createElement(\"div\"); }",
+            .node_append => "(parent, child) => { try { parent.appendChild(child); return { $: \"Ok\", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"HierarchyRequestError\") throw error; return { $: \"Err\", a: { $: \"HierarchyRequestError\", a: null } }; } }",
+            .element_attribute => "(element, value) => { element.setAttribute(\"style\", value); return null; }",
+            .event_message => "(event) => { return globalThis.String(event.message); }",
+            .rejection_display => "(reason) => { return globalThis.String(reason); }",
             .event_error => "(event) => { const error = event.error; return error == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: error }; }",
             .console_error_data => "(label, data) => { globalThis.console.error(label, data); return null; }",
             .rejection_abandoned => "(error, reports) => { error.abandonedWorkers = reports; return null; }",

@@ -1,0 +1,98 @@
+import Browser.Host.KeyMap as Map
+import Js
+import Js.Protocol as Protocol
+
+
+pub opaque type Program
+    = Program (⊤ → String) String
+
+
+pub program : sync (⊤ → String) → Program
+program body = Program body "native maps"
+
+
+put : Map.Map key value, key, value → ⊤
+put table key value = Map.set table key value
+
+
+get : Map.Map key value, key → Maybe value
+get table key = Map.get table key
+
+
+expect : Bool, String → ⊤
+expect condition message = if not condition then Protocol.defect message
+
+
+pub inspect : ⊤ → String
+inspect ⊤ =
+    calls = Js.ref 0
+    key = λ⊤ → Js.write calls 1000
+    other = λ⊤ → Js.write calls 2000
+    value =
+        λn →
+            Js.write calls (Js.read calls + n)
+            n + 1
+    callbacks = Map.make ⊤
+    put callbacks key value
+    expect (Map.has callbacks key && not (Map.has callbacks other)) "callback key identity"
+    expect (Js.read calls == 0) "storing or finding a callback invoked it"
+    answer =
+        case get callbacks key of
+            Nothing →
+                -1
+            Just callback →
+                callback 41
+    expect (answer == 42 && Js.read calls == 41) "callback value lost its body"
+    case List.head (Map.values callbacks) of
+        Nothing →
+            Protocol.defect "missing callback in values"
+        Just callback →
+            expect (callback 0 == 1) "values lost the callback type"
+    put callbacks key λn → n * 2
+    expect (Map.size callbacks == 1) "replacement duplicated a callback key"
+    case get callbacks key of
+        Nothing →
+            Protocol.defect "missing replacement"
+        Just callback →
+            expect (callback 21 == 42) "replacement was not retained"
+    expect (Map.remove callbacks key && not (Map.remove callbacks key)) "callback removal"
+    expect (Map.size callbacks == 0 && Js.read calls == 41) "callback was invoked unexpectedly"
+
+    words = Map.make ⊤
+    put words 1 "A"
+    put words 2 "B"
+    order = Js.ref ""
+    Map.each words λindex word →
+        Js.write order (Js.read order ++ word)
+        if index == 1 then put words 3 "C"
+    expect (Js.read order == "ABC") "iteration lost an appended entry or changed order"
+    snapshot = List.foldl (Map.values words) "" λword text → text ++ word
+    expect (snapshot == "ABC") "values changed insertion order"
+    Map.clear words
+    expect (Map.size words == 0 && not (Map.has words 1)) "clear retained entries"
+    case get words 1 of
+        Nothing →
+            ⊤
+        Just _ →
+            Protocol.defect "clear retained a lookup"
+
+    optional = Map.make ⊤
+    put optional 1 Js.undefined
+    case get optional 1 of
+        Nothing →
+            Protocol.defect "an undefined payload was mistaken for absence"
+        Just payload →
+            expect (Js.isUndefined payload) "an undefined payload changed"
+    put callbacks key value
+    fallback = λ_ → 99
+    selectedCallback = Map.getOr callbacks key fallback
+    expect (selectedCallback 41 == 42) "a present callback was not returned directly"
+    absent = Map.getOr callbacks other fallback
+    expect (absent 41 == 99) "an absent callback did not use the typed default"
+    expect
+        (Js.isUndefined (Map.getOr optional 1 (Js.from "fallback")))
+        "an undefined payload became the default"
+    expect
+        (Js.same (Map.getOr optional 2 (Js.from "fallback")) (Js.from "fallback"))
+        "a missing payload lost the default"
+    "callbacks and key identity\nreplacement and removal\nordered live iteration\nvalues and clear\nundefined remains present"

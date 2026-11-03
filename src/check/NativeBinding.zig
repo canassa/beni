@@ -182,6 +182,45 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .worker_event_target => a.len == 1 and named(cx, a[0], "Browser.Host.Worker", "Endpoint") and native(cx, r, "EventTarget"),
         .global_event_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
         .event_data_only => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |data| named(cx, data, "Js", "Value") else false),
+        .key_map_values => blk: {
+            if (a.len != 1) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;
+            const item = argument(cx, r, "List", "List", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(item);
+        },
+        .key_map_make => a.len == 1 and unit(cx, a[0]) and argument(cx, r, "Browser.Host.KeyMap", "Map", 1) != null,
+        .key_map_clear, .key_map_size => a.len == 1 and argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) != null and (if (row.recipe == .key_map_clear) unit(cx, r) else named(cx, r, "Basics", "Int")),
+        .key_map_set, .key_map_get_or, .key_map_get, .key_map_has, .key_map_remove => blk: {
+            if (a.len != (if (row.recipe == .key_map_set or row.recipe == .key_map_get_or) @as(usize, 3) else 2)) break :blk false;
+            const key = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 0) orelse break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;
+            if (cx.store.find(key) != cx.store.find(a[1])) break :blk false;
+            break :blk switch (row.recipe) {
+                .key_map_set => cx.store.find(value) == cx.store.find(a[2]) and unit(cx, r),
+                .key_map_get_or => cx.store.find(value) == cx.store.find(a[2]) and cx.store.find(value) == cx.store.find(r),
+                .key_map_get => if (argument(cx, r, "Maybe", "Maybe", 0)) |item| cx.store.find(value) == cx.store.find(item) else false,
+                .key_map_has, .key_map_remove => named(cx, r, "Basics", "Bool"),
+                else => unreachable,
+            };
+        },
+        .key_map_each => blk: {
+            if (a.len != 2 or !unit(cx, r)) break :blk false;
+            const key = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 0) orelse break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;
+            const callback = Walk.function(cx.store, a[1]) orelse break :blk false;
+            break :blk callback.params.len == 2 and cx.store.find(key) == cx.store.find(callback.params[0]) and cx.store.find(value) == cx.store.find(callback.params[1]) and unit(cx, callback.result);
+        },
+        .document_body => a.len == 1 and unit(cx, a[0]) and (if (argument(cx, r, "Maybe", "Maybe", 0)) |element| native(cx, element, "Element") else false),
+        .document_create_element => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Element"),
+        .node_append => blk: {
+            if (a.len != 2 or !native(cx, a[0], "Node") or !native(cx, a[1], "Node")) break :blk false;
+            const failure = argument(cx, r, "Result", "Result", 0) orelse break :blk false;
+            const value = argument(cx, r, "Result", "Result", 1) orelse break :blk false;
+            break :blk named(cx, failure, "Browser.Host.Node", "MoveError") and unit(cx, value);
+        },
+        .element_attribute => a.len == 2 and native(cx, a[0], "Element") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .event_message => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .rejection_display => a.len == 1 and native(cx, a[0], "Rejection") and named(cx, r, "String", "String"),
         .event_error => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |reason| native(cx, reason, "Rejection") else false),
         .console_error_data => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "Js", "Value") and unit(cx, r),
         .rejection_abandoned => a.len == 2 and native(cx, a[0], "Rejection") and named(cx, a[1], "Js", "Value") and unit(cx, r),

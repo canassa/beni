@@ -2,6 +2,10 @@
 import Js
 
 
+pub type MoveError
+    = HierarchyRequestError
+
+
 pub foreign type Node
 
 
@@ -24,6 +28,9 @@ pub foreign impure rendererRemove : borrowed Node → ⊤
 
 
 pub foreign impure rendererClone : borrowed Node → Node
+
+
+pub foreign impure append : borrowed Node, borrowed Node → Result MoveError ⊤
 
 
 pub foreign impure textContent : Node → Maybe String
