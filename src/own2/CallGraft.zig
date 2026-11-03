@@ -67,7 +67,14 @@ pub fn slotArrivals(ev: *Relation.Eval, call: u32, sl: Ids.PathId, out: *std.Arr
         if (argParam(ev, call, sig.params, @intCast(j)) != null) break;
     } else return false;
     const f = ev.f;
-    const words = f.slots.relWords(try f.slots.relOf(ev.gpa(), ev.account(), f.places, sl));
+    // The slot's steps read off its path, uncharged: a test that fails pays
+    // nothing the projection pays again; one that passes pays `relOf` below.
+    var steps: std.ArrayList(u32) = .empty;
+    defer steps.deinit(ev.gpa());
+    var at = sl;
+    while (f.places.pathParent(at) != .none) : (at = f.places.pathParent(at)) try steps.append(ev.gpa(), f.places.pathStep(at).word());
+    std.mem.reverse(u32, steps.items);
+    const words = steps.items;
     const var_slot = f.places.kind(f.places.pathPlace(sl)) == .@"var";
     var hits: std.ArrayList(Contract.Hit) = .empty;
     defer hits.deinit(ev.gpa());
@@ -90,6 +97,7 @@ pub fn slotArrivals(ev: *Relation.Eval, call: u32, sl: Ids.PathId, out: *std.Arr
         }
         try out.append(ev.gpa(), a);
     };
+    _ = try f.slots.relOf(ev.gpa(), ev.account(), f.places, sl);
     try ev.charge(.inspection, @intCast(@max(1, out.items.len - start)));
     return true;
 }
