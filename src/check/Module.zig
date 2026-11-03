@@ -180,7 +180,6 @@ pub fn check(in: Input) Error!Check.Counters {
     schemas.key_observer = key_preparation.observer();
     try schemas.buildAll();
     try key_preparation.run();
-    var markup_payload = key_preparation.markup_payload;
     schemas.key_observer = null;
     schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
@@ -331,12 +330,9 @@ pub fn check(in: Input) Error!Check.Counters {
     for (bir.decls) |d| if (d.kind == .schema) {
         var final_keys = try KeyKinds.Preparation.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir, &schemas, &key_errors);
         try final_keys.run();
-        markup_payload = final_keys.markup_payload;
         if (final_keys.changed) try KeyKinds.validateFormations(scratch, store, in.types, bir, inst_type, decl_scheme, &key_errors);
         break;
     };
-
-    if (markup_payload) |payload| try solver.instantiate.opt_payload.append(gpa, .{ .inst = payload.inst, .decl = payload.decl, .v = payload.v });
 
     // What P2 and P4 found too deep, reported now so its declaration's
     // failure bit is set before P7 reads it.

@@ -124,3 +124,13 @@ The scoped Zig name filter omits corpus; corpus verification comes from the
 full recordings, while scoped recordings update only packet scenario hashes.
 Every retained new record is present in both successful verification outputs.
 Evidence: best/hash-attribution.json and best/hash-record-integrity.json.
+
+Owner decision, 2026-11-04: LAND the production metadata-spread representation
+with the steady helpers release4x +2.0% [0.97,3.65] regression accepted as
+[#1819](https://github.com/canassa/beni/issues/1819), part of #1612. The constructor
+candidate is NOT implemented in this lane. Its starting review remains at
+dagon ~/worktree-evidence/wd-hf-dom/packet-benchmark/final-4a36377862/best/constructor-review.md,
+and the separate fix must land before launch PR #1701. This supersedes the
+performance hold above, without changing or concealing the measured result.
+The production packet and seven saved typed-runtime prerequisites are being
+reconstructed on workers-hostfree c3b7ca13e1 before the remaining conversion.
