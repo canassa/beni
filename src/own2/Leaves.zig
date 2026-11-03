@@ -10,7 +10,9 @@
 //! the tag sets under which it is reached (a route set of `Routes.zig`),
 //! its `right` its `many` bit (two coexisting routes reach it). A wrap
 //! node tags a whole set; a wrap inside a wrap is two nodes when the
-//! inner's choices all come first. Every node made
+//! inner's choices all come first. A **route wrap** puts a set whose
+//! elements are all unconditional under a route set: two arms that hold one
+//! subtree join in one node (§2.11.2, #1714). Every node made
 //! is one `set` record and every pair of nodes a join meets one
 //! `inspection`, reserved before the work. The recursion is the key width,
 //! 33 frames, a constant (R-7.12).
@@ -33,7 +35,9 @@ pub const empty: u32 = none;
 /// A leaf (`mask == 0`: `prefix` is the key, `left` its routes, `right`
 /// its `many` bit), a **wrap** (`mask == wrap`: every element of set
 /// `right` with tags `left` merged in, opened one level where a join looks
-/// inside, so tagging a set is one node) or a branch (`mask` the branching bit, `prefix` the bits
+/// inside, so tagging a set is one node), a **route wrap** (`mask ==
+/// rwrap`: every element of set `right`, unconditional in it, under each
+/// route of route set `left`) or a branch (`mask` the branching bit, `prefix` the bits
 /// above it, the keys with the bit clear in `left`, set in `right`).
 pub const Node = struct { prefix: u32, mask: u32, left: u32, right: u32 };
 
@@ -42,11 +46,14 @@ pub const Node = struct { prefix: u32, mask: u32, left: u32, right: u32 };
 pub const Elem = struct { key: u32, routes: u32, tags: u32, many: bool };
 
 const wrap: u32 = std.math.maxInt(u32);
+const rwrap: u32 = std.math.maxInt(u32) - 1;
 
 /// A node's bits: a key below it is one a pass must read (`refs`), every
 /// element below it is `many`.
 const refs_bit: u8 = 1;
 const many_bit: u8 = 2;
+/// Every element below the node is unconditional (no route, no wrap).
+const plain_bit: u8 = 4;
 
 pub const Table = struct {
     nodes: std.ArrayList(Node) = .empty,
@@ -91,7 +98,7 @@ pub const Table = struct {
 
     fn leafNode(t: *Table, gpa: Allocator, account: *Ids.Account, key: u32, routes: u32, many: bool, refs: bool) Error!u32 {
         if (routes == none) return none;
-        const bits: u8 = (if (refs) refs_bit else 0) | (if (many) many_bit else 0);
+        const bits: u8 = (if (refs) refs_bit else 0) | (if (many) many_bit else 0) | (if (routes == 0) plain_bit else 0);
         return t.make(gpa, account, .{ .prefix = key, .mask = 0, .left = routes, .right = @intFromBool(many) }, bits);
     }
 
@@ -105,7 +112,7 @@ pub const Table = struct {
         if (r == none) return l;
         const bl = t.bits.items[l];
         const br = t.bits.items[r];
-        return t.make(gpa, account, .{ .prefix = prefix, .mask = mask, .left = l, .right = r }, ((bl | br) & refs_bit) | (bl & br & many_bit));
+        return t.make(gpa, account, .{ .prefix = prefix, .mask = mask, .left = l, .right = r }, ((bl | br) & refs_bit) | (bl & br & (many_bit | plain_bit)));
     }
 
     inline fn matches(key: u32, prefix: u32, mask: u32) bool {
@@ -144,29 +151,62 @@ pub const Table = struct {
             tags = (try t.tags.merge(gpa, account, n.left, x)) orelse return none;
             child = n.right;
         }
-        return t.make(gpa, account, .{ .prefix = t.node(child).prefix, .mask = wrap, .left = tags, .right = child }, t.bits.items[child]);
+        return t.make(gpa, account, .{ .prefix = t.node(child).prefix, .mask = wrap, .left = tags, .right = child }, t.bits.items[child] & ~plain_bit);
+    }
+
+    /// Plain set `s` under route set `rs`: one node.
+    fn underRoutes(t: *Table, gpa: Allocator, account: *Ids.Account, rs: u32, s: u32) Error!u32 {
+        if (s == none or rs == none) return none;
+        if (rs == 0) return s;
+        return t.make(gpa, account, .{ .prefix = t.node(s).prefix, .mask = rwrap, .left = rs, .right = s }, t.bits.items[s] & ~plain_bit);
+    }
+
+    /// The node below the wraps at the top of `s`.
+    fn core(t: *const Table, s0: u32) u32 {
+        var s = s0;
+        while (s != none and (t.node(s).mask == wrap or t.node(s).mask == rwrap)) s = t.node(s).right;
+        return s;
+    }
+
+    /// The routes under which set `s0`, tagged `tg`, reaches its core: its
+    /// tag wraps merged, under its route wrap; null where the tags conflict
+    /// or the core is not plain.
+    fn coreRoutes(t: *Table, gpa: Allocator, account: *Ids.Account, s0: u32, tg: u32) Error!?u32 {
+        var tags = tg;
+        var rs: u32 = 0;
+        var s = s0;
+        while (t.node(s).mask == wrap or t.node(s).mask == rwrap) : (s = t.node(s).right) {
+            try account.reserve(.inspection, 1);
+            if (t.node(s).mask == rwrap) rs = t.node(s).left else tags = (try t.tags.merge(gpa, account, tags, t.node(s).left)) orelse return null;
+        }
+        if (t.bits.items[s] & plain_bit == 0) return null;
+        return try t.tags.wrapRoutes(gpa, account, rs, tags);
     }
 
     /// Set `s` with no wrap at its top: the wraps at its top (one inside
     /// another, the outer after the inner), innermost first, pushed one
     /// level down.
     fn open(t: *Table, gpa: Allocator, account: *Ids.Account, s0: u32) Error!u32 {
-        if (s0 == none or t.node(s0).mask != wrap) return s0;
-        var nest: std.ArrayList(u32) = .empty;
+        if (s0 == none or (t.node(s0).mask != wrap and t.node(s0).mask != rwrap)) return s0;
+        var nest: std.ArrayList([2]u32) = .empty;
         defer nest.deinit(gpa);
         var s = s0;
-        while (t.node(s).mask == wrap) : (s = t.node(s).right) {
+        while (t.node(s).mask == wrap or t.node(s).mask == rwrap) : (s = t.node(s).right) {
             try account.reserve(.inspection, 1);
-            try nest.append(gpa, t.node(s).left);
+            try nest.append(gpa, .{ t.node(s).mask, t.node(s).left });
         }
         var i = nest.items.len;
         while (i > 0 and s != none) {
             i -= 1;
             const c = t.node(s);
+            const kind, const x = nest.items[i];
+            // A route wrap's set is plain: its elements' routes are the wrap's.
             s = if (c.mask == 0)
-                try t.leafNode(gpa, account, c.prefix, try t.tags.wrapRoutes(gpa, account, c.left, nest.items[i]), c.right != 0, t.isRefs(s))
+                try t.leafNode(gpa, account, c.prefix, if (kind == rwrap) x else try t.tags.wrapRoutes(gpa, account, c.left, x), c.right != 0, t.isRefs(s))
+            else if (kind == rwrap)
+                try t.branch(gpa, account, c.prefix, c.mask, try t.underRoutes(gpa, account, x, c.left), try t.underRoutes(gpa, account, x, c.right))
             else
-                try t.branch(gpa, account, c.prefix, c.mask, try t.withTags(gpa, account, c.left, nest.items[i]), try t.withTags(gpa, account, c.right, nest.items[i]));
+                try t.branch(gpa, account, c.prefix, c.mask, try t.withTags(gpa, account, c.left, x), try t.withTags(gpa, account, c.right, x));
         }
         return s;
     }
@@ -238,7 +278,7 @@ pub const Table = struct {
         var at = s;
         while (at != none) {
             const n = t.node(at);
-            if (n.mask == wrap) return none;
+            if (n.mask == wrap or n.mask == rwrap) return none;
             if (n.mask == 0) return if (n.prefix == key) at else none;
             if (!matches(key, n.prefix, n.mask)) return none;
             at = if (zeroBit(key, n.mask)) n.left else n.right;
@@ -249,6 +289,8 @@ pub const Table = struct {
     /// The elements both sets have exactly alike.
     fn alike(t: *Table, gpa: Allocator, account: *Ids.Account, a0: u32, b0: u32) Error!u32 {
         if (a0 == b0 or a0 == none or b0 == none) return if (a0 == b0) a0 else none;
+        // One core under two sets of wraps: its elements' routes differ.
+        if (t.core(a0) == t.core(b0)) return none;
         const a = try t.open(gpa, account, a0);
         const b = try t.open(gpa, account, b0);
         if (a == none or b == none) return none;
@@ -267,6 +309,7 @@ pub const Table = struct {
     fn minus(t: *Table, gpa: Allocator, account: *Ids.Account, a0: u32, c0: u32) Error!u32 {
         if (a0 == c0 or a0 == none) return none;
         if (c0 == none) return a0;
+        if (t.core(a0) == t.core(c0)) return a0;
         const a = try t.open(gpa, account, a0);
         const c = try t.open(gpa, account, c0);
         if (a == none or c == none) return a;
@@ -288,6 +331,10 @@ pub const Table = struct {
         if (b0 == none) return t.withTags(gpa, account, a0, ta);
         if (a0 == b0 and co) return t.allMany(gpa, account, a0);
         if (a0 == b0 and ta == 0 and tb == 0) return a0;
+        // Two arms over one plain subtree: one route wrap, their routes united.
+        if (!co and t.core(a0) == t.core(b0)) if (try t.coreRoutes(gpa, account, a0, ta)) |ra| if (try t.coreRoutes(gpa, account, b0, tb)) |rb| {
+            return t.underRoutes(gpa, account, try t.tags.unite(gpa, account, ra, rb), t.core(a0));
+        };
         const a = try t.open(gpa, account, a0);
         const b = try t.open(gpa, account, b0);
         if (a == none or b == none) return t.join2(gpa, account, a, ta, b, tb, co);
@@ -335,25 +382,30 @@ pub const Table = struct {
     pub const Iterator = struct {
         t: *Table,
         pass: u32 = 0,
-        /// `(node, tags of the wraps above it)`.
-        stack: [70][2]u32 = undefined,
+        /// `(node, tags of the wraps above it, the route wrap above it or 0)`.
+        stack: [70][3]u32 = undefined,
         depth: usize = 0,
 
         pub fn next(it: *Iterator, gpa: Allocator, account: *Ids.Account) Error!?Elem {
             while (it.depth > 0) {
                 it.depth -= 1;
-                const id, const tags = it.stack[it.depth];
+                const id, const tags, const rs = it.stack[it.depth];
                 // A node is met once a pass only where no wrap tags it.
-                if (it.pass != 0 and (!it.t.hasRefs(id) or (tags == 0 and !it.t.enter(id, it.pass)))) continue;
+                if (it.pass != 0 and (!it.t.hasRefs(id) or (tags == 0 and rs == 0 and !it.t.enter(id, it.pass)))) continue;
                 const n = it.t.node(id);
                 if (n.mask == wrap) {
-                    it.stack[it.depth] = .{ n.right, (try it.t.tags.merge(gpa, account, tags, n.left)) orelse continue };
+                    it.stack[it.depth] = .{ n.right, (try it.t.tags.merge(gpa, account, tags, n.left)) orelse continue, rs };
                     it.depth += 1;
                     continue;
                 }
-                if (n.mask == 0) return .{ .key = n.prefix, .routes = n.left, .tags = tags, .many = n.right != 0 };
-                it.stack[it.depth] = .{ n.right, tags };
-                it.stack[it.depth + 1] = .{ n.left, tags };
+                if (n.mask == rwrap) {
+                    it.stack[it.depth] = .{ n.right, tags, n.left };
+                    it.depth += 1;
+                    continue;
+                }
+                if (n.mask == 0) return .{ .key = n.prefix, .routes = if (rs != 0) rs else n.left, .tags = tags, .many = n.right != 0 };
+                it.stack[it.depth] = .{ n.right, tags, rs };
+                it.stack[it.depth + 1] = .{ n.left, tags, rs };
                 it.depth += 2;
             }
             return null;
@@ -363,7 +415,7 @@ pub const Table = struct {
     pub fn iterate(t: *Table, s: u32, pass: u32) Iterator {
         var it: Iterator = .{ .t = t, .pass = pass };
         if (s != none) {
-            it.stack[0] = .{ s, 0 };
+            it.stack[0] = .{ s, 0, 0 };
             it.depth = 1;
         }
         return it;
@@ -428,4 +480,31 @@ test "two arms keep the tags common to them, and an arm's own key gains its arm"
     const x1 = try t.one(g, &account, 5, t1, false);
     var c = t.iterate(try t.coexist(g, &account, x0, x1), 0);
     try testing.expect(!(try c.next(g, &account)).?.many);
+}
+
+test "two arms over one plain subtree join in one route wrap" {
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    var t: Table = .{};
+    defer t.deinit(testing.allocator);
+    const g = testing.allocator;
+    var tower: u32 = empty;
+    for (0..32) |k| tower = try t.coexist(g, &account, tower, try t.one(g, &account, @intCast(k), 0, false));
+    const a0 = try t.tags.armOf(g, &account, 0);
+    const a1 = try t.tags.armOf(g, &account, 1);
+    const t0 = try t.tags.internTags(g, &account, &.{.{ 9, a0 }});
+    const t1 = try t.tags.internTags(g, &account, &.{.{ 9, a1 }});
+    const made = t.nodes.items.len;
+    const both = try t.join2(g, &account, tower, t0, tower, t1, false);
+    // One node over the tower, not one a key.
+    try testing.expect(t.nodes.items.len - made <= 2);
+    // Each element under both arms' routes, as a join key by key gives it.
+    const want = try t.tags.unite(g, &account, try t.tags.wrapRoutes(g, &account, 0, t0), try t.tags.wrapRoutes(g, &account, 0, t1));
+    var it = t.iterate(both, 0);
+    var n: u32 = 0;
+    while (try it.next(g, &account)) |e| : (n += 1) {
+        try testing.expectEqual(want, e.routes);
+        try testing.expect(e.tags == 0 and !e.many);
+    }
+    try testing.expectEqual(@as(u32, 32), n);
 }
