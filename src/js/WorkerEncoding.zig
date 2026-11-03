@@ -3,7 +3,7 @@
 const std = @import("std");
 
 // Bump when the prescribed representation changes; fingerprints include it.
-pub const version = "private-worker-encoding-2";
+pub const version = "private-worker-encoding-3";
 
 const Field = struct { source: []const u8, encoded: []const u8 };
 // Deliberately exclude public Options fields, descriptor keys, diagnostic
@@ -28,7 +28,6 @@ const fields = [_]Field{
     .{ .source = "events", .encoded = "s" },
     .{ .source = "native", .encoded = "t" },
     .{ .source = "interrupted", .encoded = "u" },
-    .{ .source = "eventEnabled", .encoded = "evOn" },
     .{ .source = "wire", .encoded = "w" },
     .{ .source = "queue", .encoded = "e" },
     .{ .source = "next", .encoded = "i" },
@@ -42,6 +41,12 @@ const fields = [_]Field{
     .{ .source = "wake", .encoded = "E" },
     .{ .source = "peer", .encoded = "F" },
 };
+
+/// Prescribed keys share typed records with normally renamed fields. Their
+/// output spellings cannot be colours for those other fields (#1803).
+pub fn reserveFields(arena: std.mem.Allocator, reserved: *std.StringHashMapUnmanaged(void)) std.mem.Allocator.Error!void {
+    for (fields) |entry| try reserved.put(arena, entry.encoded, {});
+}
 
 pub fn field(source: []const u8) []const u8 {
     for (fields) |entry| if (std.mem.eql(u8, entry.source, source)) return entry.encoded;

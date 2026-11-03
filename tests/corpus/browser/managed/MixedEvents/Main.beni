@@ -1,0 +1,80 @@
+-- One shared page keeps events; each projected worker gets its own answer.
+import Browser
+import Browser.Worker as Worker
+import Browser.WorkerStream as Stream
+import Hosted
+import Html
+import Probe
+import Task
+
+
+quiet : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ Bool ⊥ String ⊥ ⊥)
+quiet =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → Ok (Probe.possible ⊤)
+        , stream = Worker.noStream
+        }
+
+
+loud : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ Bool ⊥ String Int ⊥)
+loud =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start =
+            λcontext _ →
+                _ = Worker.emit context 7
+                ⊤
+        , handle = λ_ _ _ → Ok (Probe.possible ⊤)
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise ⊤ = Task.scope λowner →
+    case Worker.open owner quiet ⊤ Worker.options of
+        Err _ →
+            "quiet open failed"
+        Ok silent →
+            case Worker.open owner loud ⊤ Worker.options of
+                Err _ →
+                    "loud open failed"
+                Ok speaking →
+                    silentAnswer = Worker.call silent ⊤
+                    loudAnswer = Worker.call speaking ⊤
+                    item = Stream.next (Worker.events speaking)
+                    _ = Worker.close silent
+                    _ = Worker.close speaking
+                    case ( silentAnswer, loudAnswer, item ) of
+                        ( Ok False, Ok True, Ok (Stream.Item chunk) ) →
+                            if Probe.possible ⊤ && Stream.value chunk == 7 then
+                                "mixed"
+                            else
+                                "wrong page answer"
+                        _ →
+                            "wrong worker answer"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

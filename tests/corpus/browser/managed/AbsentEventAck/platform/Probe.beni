@@ -1,5 +1,12 @@
-import Browser.Worker as Worker
+import Js
 
 
--- A malformed control frame on a protocol whose event type is empty.
-pub foreign impure ack : Worker.Handle protocol → ⊤
+pub foreign impure install : ⊤ → ⊤
+
+
+foreign impure inject : Bool → ⊤
+
+
+-- Inject the known EventAck control code with the observed Hello identity.
+pub ack : ⊤ → ⊤
+ack ⊤ = inject (Js.development ⊤)

@@ -1,4 +1,5 @@
-import Browser.Worker as Worker
+pub foreign impure install : ⊤ → ⊤
 
 
-pub foreign impure fail : Worker.Handle protocol → ⊤
+-- Inject at the real native endpoint after Ready.
+pub foreign impure fail : ⊤ → ⊤

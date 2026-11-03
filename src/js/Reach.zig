@@ -91,6 +91,7 @@
 //! on one thread.
 
 const std = @import("std");
+const WorkerIntrinsic = @import("WorkerIntrinsic.zig");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
 const Dispatch = @import("../check/Dispatch.zig");
@@ -314,6 +315,8 @@ pub const Input = struct {
     schema_library: bool = false,
     /// `--test-hooks`: what `Js.testHooks` is (`JsIntrinsic.droppedArm`).
     test_hooks: bool = false,
+    worker_events_module: ?Graph.Index = null,
+    worker_events_possible: bool = true,
     /// Whether the program's shape runs take their shapes (`SchemaValid`,
     /// `shape_threshold`), decided once for the whole program by `Emit`.
     /// An embedded module's packed edges are made with it false.
@@ -1287,6 +1290,8 @@ pub const Builder = struct {
                     marks[d.lhs] = true;
                 } else if (replies and @import("../check/Wire.zig").replyIntrinsic(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
+                } else if (WorkerIntrinsic.isReference(b.in.worker_events_module, m, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) {
+                    marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // Any packing and unpacking call their shared sibling.
                     marks[d.lhs] = which != .any_pack and which != .any_unpack and
@@ -1720,7 +1725,7 @@ pub const Builder = struct {
                 .case => if (g.b.in.interner) |interner| {
                     const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
                     const never: Node = .{ .module = g.m, .kind = .ctor, .index = never_ctor };
-                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks)) |branch| {
+                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks) orelse WorkerIntrinsic.droppedArm(g.b.in.worker_events_module, g.m, g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.worker_events_possible)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
                         continue;
                     }

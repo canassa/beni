@@ -1,0 +1,73 @@
+-- Native handles and callbacks stay in worker-local state through boot and calls.
+import Browser
+import Browser.Host.TextEncoder as Encoder
+import Browser.Host.Uint8Array as Bytes
+import Browser.Worker as Worker
+import Hosted
+import Html
+import Task
+
+
+type alias State =
+    encoder : Encoder.TextEncoder
+    measure : String → Int
+    pause : ⊤ → ⊤
+
+
+worker : Worker.Program ⊤ State (Worker.Protocol String Int ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init =
+            λ_ _ →
+                encoder = Encoder.create ⊤
+                Ok
+                    { encoder = encoder
+                    , measure = λtext → Bytes.byteLength (Encoder.encode encoder text)
+                    , pause = λ⊤ → Task.yieldNow ⊤
+                    }
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ state request →
+                state.pause ⊤
+                Ok (state.measure request + Bytes.byteLength (Encoder.encode state.encoder request))
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise ⊤ = Task.scope λowned →
+    case Worker.open owned worker ⊤ Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            result = Worker.call handle "hé"
+            _ = Worker.close handle
+            case result of
+                Ok count →
+                    String.fromInt count
+                Err _ →
+                    "call failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }

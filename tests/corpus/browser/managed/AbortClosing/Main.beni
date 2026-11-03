@@ -22,10 +22,10 @@ exercise outlet = Task.scope λowned →
         Err _ →
             "open failed"
         Ok handle →
-            Probe.hold handle
+            Probe.hold ⊤
             closing = Task.spawn λ⊤ → Worker.close handle
             Task.callback λresume →
-                Probe.onClose handle λ⊤ → Task.resume resume ⊤
+                Probe.onClose λ⊤ → Task.resume resume ⊤
                 λ⊤ → ⊤
             aborted = Worker.abort handle
             observed = Task.join closing
@@ -36,10 +36,10 @@ exercise outlet = Task.scope λowned →
                     Err _ →
                         False
                     Ok secondHandle →
-                        Probe.hold secondHandle
+                        Probe.hold ⊤
                         finishing = Task.spawn λ⊤ → Task.closeRoot other
                         Task.callback λresume →
-                            Probe.onClose secondHandle λ⊤ → Task.resume resume ⊤
+                            Probe.onClose λ⊤ → Task.resume resume ⊤
                             λ⊤ → ⊤
                         _ = Worker.abort secondHandle
                         Task.join finishing
@@ -53,7 +53,10 @@ exercise outlet = Task.scope λowned →
 main : Browser.Program
 main =
     Browser.hosted
-        { init = λ_ → "idle"
+        { init =
+            λ_ →
+                Probe.install ⊤
+                "idle"
         , update =
             λowner msg model →
                 case msg of

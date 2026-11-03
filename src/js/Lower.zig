@@ -70,6 +70,7 @@ const Types = @import("../check/Types.zig");
 const MarkupTree = @import("MarkupTree.zig");
 const Suspend = @import("Suspend.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
+const WorkerIntrinsic = @import("WorkerIntrinsic.zig");
 const Operator = @import("Operator.zig");
 const SchemaCtor = @import("SchemaCtor.zig");
 const SchemaLower = @import("SchemaLower.zig");
@@ -247,7 +248,10 @@ pub const Input = struct {
     encode_worker_private: bool = false,
     worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
     worker_definition: ?u32 = null,
+    worker_storage_module: ?Graph.Index = null,
+    worker_storage_definition: bool = false,
     worker_events: ?bool = null,
+    worker_events_possible: bool = true,
     worker_event_constructors: []const u32 = &.{},
     worker_host: bool = false,
     worker_host_client: bool = false,
@@ -2269,7 +2273,9 @@ pub const Lowerer = struct {
         // followed nothing out of it, with or without a survivor set.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks) orelse continue;
+            const at: Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, at, l.interner, !l.in.development, l.in.test_hooks) orelse
+                WorkerIntrinsic.droppedArm(l.in.worker_storage_module, l.in.module, l.in.graph, l.in.interfaces, l.bir, at, l.interner, l.in.worker_events_possible) orelse continue;
             const body = l.bir.instData(branch).rhs;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
@@ -2356,11 +2362,22 @@ pub const Lowerer = struct {
     /// `inst` is one whose other arm binds nothing (`backend.md` §4,
     /// *`Js.development` is the build's mode*): the `case` is written as
     /// that body alone, with no test, and the dropped arm not at all.
+    fn workerDroppedArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        const dropped = WorkerIntrinsic.droppedArm(l.in.worker_storage_module, l.in.module, l.in.graph, l.in.interfaces, l.bir, inst, l.interner, l.in.worker_events_possible) orelse return null;
+        l.askSelf(.worker_events, l.in.worker_events_possible, 0, 0);
+        return dropped;
+    }
+
+    fn workerEventsLiteral(l: *Lowerer, p: u32) Allocator.Error!Node.Index {
+        l.askSelf(.worker_events, l.in.worker_events_possible, 0, 0);
+        return l.add(if (l.in.worker_events_possible) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+    }
+
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         l.askSelf(.development, l.in.development, 0, 0);
         l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
         const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks) orelse
-            l.probeDroppedArm(inst) orelse return null;
+            l.workerDroppedArm(inst) orelse l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
         for (branches) |branch| {
             if (branch == dropped) continue;
@@ -3050,6 +3067,7 @@ pub const Lowerer = struct {
             },
             .development => l.in.development,
             .test_hooks => l.in.test_hooks,
+            .worker_events => l.in.worker_events_possible,
             .opt_plain => l.in.dispatch.optPlain(@fromBackingInt(@intCast(fact.index))),
             .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
             .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
@@ -3560,6 +3578,20 @@ pub const Lowerer = struct {
         // consumed this declaration must not take the recorded body
         // (`backend.md` §9, *The funnel*, `.consumed`).
         records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+        if (l.in.worker_storage_module == l.in.module and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "eventsPossible")) {
+            if (!l.liveDecl(index)) {
+                try l.recEnd(records.direct, index);
+                return;
+            }
+            l.restartNames();
+            const param = try l.fresh(l.well.temp);
+            const value = try l.workerEventsLiteral(l.pos(d.inst_start));
+            const body = try l.returnStmt(value, l.pos(d.inst_start));
+            const arrow = try l.arrowOf(&.{param}, &.{body}, l.pos(d.inst_start));
+            try l.constDecl(out, try l.topName(index), arrow, l.pos(d.inst_start));
+            try l.recEnd(records.direct, index);
+            return;
+        }
         // The handle's content for this module steers whether the
         // declaration has pieces of its own (`livePiece`, `liftPieces`), so
         // the record carries its answer (`directHasPieces`).
@@ -3680,35 +3712,43 @@ pub const Lowerer = struct {
                 if (l.in.worker_definition != null and l.in.worker_definition.? == index and l.in.worker_wire != null and for (l.in.worker_wire.?.roots) |root| {
                     if (root.decl == index) break true;
                 } else false) {
-                    const global = try l.add(.global_this, p, 0, 0);
-                    const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
-                    const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
-                    var properties: std.ArrayList(Node.Index) = .empty;
-                    const plan = try l.wirePlan(l.in.worker_wire, l.in.module, index, p);
-                    if (l.b.tagOf(plan) != .null_lit) try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
-                    if (l.in.worker_events) |enabled| try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$events"), try l.add(if (enabled) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p));
-                    if (properties.items.len != 0) {
+                    if (l.in.worker_storage_definition) {
+                        const plan = try l.wirePlan(l.in.worker_wire, l.in.module, index, p);
+                        var properties: std.ArrayList(Node.Index) = .empty;
+                        if (l.b.tagOf(plan) != .null_lit) try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
                         const metadata = try l.object(properties.items, p);
-                        if (l.in.development) {
-                            value = try l.call(assign, &.{ value, metadata }, p);
-                        } else {
-                            // Preserve the definition's identity. Direct stores expose
-                            // compiler-owned metadata to Spec; the original operation
-                            // still boxes a platform's primitive representation.
-                            const target = try l.fresh(l.well.temp);
-                            try l.constDecl(&stmts, target, value, p);
-                            const target_value = try l.ident(target, p);
-                            const is_object = try l.binary(.logical_and, try l.binary(.strict_eq, try l.unary(.worker_definition_type, target_value, p), try l.stringNode("object", p), p), try l.binary(.strict_ne, target_value, try l.nullNode(p), p), p);
-                            var stores: std.ArrayList(Node.Index) = .empty;
-                            for (properties.items) |prop| {
-                                const data = l.b.dataOf(prop);
-                                const field_target = try l.add(.member, p, target_value.int(), data.lhs);
-                                try stores.append(l.scratch, try l.add(.assign, p, field_target.int(), data.rhs));
+                        value = try l.call(try l.workerStorage("attachMetadata", p), &.{ value, metadata }, p);
+                    } else {
+                        const global = try l.add(.global_this, p, 0, 0);
+                        const object_global = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+                        const assign = try l.member(object_global, try l.interner.getOrPut(l.gpa, "assign"), p);
+                        var properties: std.ArrayList(Node.Index) = .empty;
+                        const plan = try l.wirePlan(l.in.worker_wire, l.in.module, index, p);
+                        if (l.b.tagOf(plan) != .null_lit) try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$wire"), plan, p));
+                        if (l.in.worker_events) |enabled| try properties.append(l.scratch, try l.property(try l.interner.getOrPut(l.gpa, "$events"), try l.add(if (enabled) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p));
+                        if (properties.items.len != 0) {
+                            const metadata = try l.object(properties.items, p);
+                            if (l.in.development) {
+                                value = try l.call(assign, &.{ value, metadata }, p);
+                            } else {
+                                // Preserve the definition's identity. Direct stores expose
+                                // compiler-owned metadata to Spec; the original operation
+                                // still boxes a platform's primitive representation.
+                                const target = try l.fresh(l.well.temp);
+                                try l.constDecl(&stmts, target, value, p);
+                                const target_value = try l.ident(target, p);
+                                const is_object = try l.binary(.logical_and, try l.binary(.strict_eq, try l.unary(.worker_definition_type, target_value, p), try l.stringNode("object", p), p), try l.binary(.strict_ne, target_value, try l.nullNode(p), p), p);
+                                var stores: std.ArrayList(Node.Index) = .empty;
+                                for (properties.items) |prop| {
+                                    const data = l.b.dataOf(prop);
+                                    const field_target = try l.add(.member, p, target_value.int(), data.lhs);
+                                    try stores.append(l.scratch, try l.add(.assign, p, field_target.int(), data.rhs));
+                                }
+                                try stores.append(l.scratch, target_value);
+                                const range = try l.b.addRange(stores.items);
+                                const direct = try l.add(.sequence, p, @backingInt(range.start), @backingInt(range.end));
+                                value = try l.condOf(is_object, direct, try l.call(assign, &.{ target_value, metadata }, p), p);
                             }
-                            try stores.append(l.scratch, target_value);
-                            const range = try l.b.addRange(stores.items);
-                            const direct = try l.add(.sequence, p, @backingInt(range.start), @backingInt(range.end));
-                            value = try l.condOf(is_object, direct, try l.call(assign, &.{ target_value, metadata }, p), p);
                         }
                     }
                 }
@@ -3954,6 +3994,10 @@ pub const Lowerer = struct {
     /// this one shows them: such a value is exported and its result read.
     fn emitterCalled(l: *Lowerer, index: u32) bool {
         const d = l.bir.decls[index];
+        if (l.in.worker_storage_module == l.in.module) {
+            const spelling = l.text(l.bir.symbol(d.name));
+            if (std.mem.eql(u8, spelling, "entryDescriptor") or std.mem.eql(u8, spelling, "attachMetadata")) return true;
+        }
         if (l.in.graph.isCloudflare(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Worker.Object") and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "replyBrand")) return true;
         if (l.in.worker_host_client and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "installHostStop")) return true;
         if (l.in.worker_host) {
@@ -6752,6 +6796,7 @@ pub const Lowerer = struct {
     /// Put the fact in the allocation itself: a later write would also join
     /// the initially absent field's undefined value in the may-analysis.
     fn constructorEvents(l: *Lowerer, record: JsIr.ExtraIndex, enabled: bool, p: u32) Allocator.Error!void {
+        if (l.in.worker_storage_module == l.in.module) return;
         const f = l.b.record(@backingInt(record), JsIr.Func);
         const statements = try l.scratch.dupe(u32, l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]);
         for (statements) |raw| {
@@ -6766,6 +6811,27 @@ pub const Lowerer = struct {
             const range = try l.b.addRange(props.items);
             l.b.nodes.items(.data)[value.int()] = .{ .lhs = @backingInt(range.start), .rhs = @backingInt(range.end) };
         }
+    }
+
+    fn workerStorageKind(l: *Lowerer, kind: @import("../entry/Plan.zig").KindIndex) bool {
+        if (l.in.worker_storage_module == null or @backingInt(kind) >= l.in.worker_kinds.len) return false;
+        const definition = l.in.worker_kinds[@backingInt(kind)].definition;
+        return std.mem.eql(u8, definition.programType, "Browser.Worker.Program") and std.mem.eql(u8, definition.runtime, "Browser.WorkerRuntime");
+    }
+
+    /// Private source constructors preserve the typed Program representation.
+    fn workerStorage(l: *Lowerer, spelling: []const u8, p: u32) Allocator.Error!Node.Index {
+        const module = l.in.worker_storage_module orelse return l.missingCoreValue(p, "Browser.Worker", spelling, "the builtin worker module is missing");
+        const bir = l.in.birs[module.int()];
+        for (bir.decls, 0..) |d, i| {
+            const symbol = bir.symbol(d.name);
+            if (!std.mem.eql(u8, l.interner.slice(symbol), spelling)) continue;
+            if (module == l.in.module) return l.ident(try l.topName(@intCast(i)), p);
+            const entry: Needed = .{ .module = module, .base = symbol.toOptional() };
+            try l.needName(entry);
+            return l.ident(try l.neededName(entry), p);
+        }
+        return l.missingCoreValue(p, "Browser.Worker", spelling, "the private worker constructor is missing");
     }
 
     fn workerDescriptor(l: *Lowerer, descriptor: @import("WorkerEntry.zig").Descriptor, p: u32) Allocator.Error!Node.Index {
@@ -6787,7 +6853,9 @@ pub const Lowerer = struct {
             try l.property(try l.interner.getOrPut(l.gpa, "fingerprint"), try l.stringNode(descriptor.fingerprint, p), p),
             try l.property(try l.interner.getOrPut(l.gpa, "url"), try l.member(url, try l.interner.getOrPut(l.gpa, "href"), p), p),
         });
-        return l.object(properties.items, p);
+        const metadata = try l.object(properties.items, p);
+        if (l.workerStorageKind(descriptor.kind)) return l.call(try l.workerStorage("entryDescriptor", p), &.{metadata}, p);
+        return metadata;
     }
 
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
@@ -11036,6 +11104,10 @@ pub const Lowerer = struct {
             return l.binary(.add, v[0], v[1], p);
         }
 
+        if (WorkerIntrinsic.isReference(l.in.worker_storage_module, l.in.module, l.in.interfaces, l.bir, callee_inst, l.interner)) {
+            for (arg_insts) |arg| try l.discard(out, arg, p);
+            return l.workerEventsLiteral(p);
+        }
         if (try l.nativeCallExpr(out, callee_inst, arg_insts, p)) |native| return native;
         // A `Js` intrinsic is the JavaScript it names, written in place,
         // with no call and no import (research 47).

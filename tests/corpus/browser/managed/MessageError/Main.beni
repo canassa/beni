@@ -34,7 +34,7 @@ exercise _ = Task.scope λowned →
                         Worker.send handle prepared
                     Err _ →
                         Err Worker.ChannelClosed
-            Probe.fail handle
+            Probe.fail ⊤
             result =
                 case pending of
                     Ok ticket →
@@ -55,7 +55,10 @@ exercise _ = Task.scope λowned →
 main : Browser.Program
 main =
     Browser.hosted
-        { init = λ_ → "idle"
+        { init =
+            λ_ →
+                Probe.install ⊤
+                "idle"
         , update =
             λowner msg model →
                 case msg of

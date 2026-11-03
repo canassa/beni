@@ -375,3 +375,51 @@ deadline uses the typed native timer; its handle is not stored because the
 shutdown path never cancels it. The diagnostic reports remain one shared
 plain-data array, attached directly to that native rejection, so later abandoned
 worker appends remain visible without erasing the error or the listener.
+
+Dedicated-worker transport state uses one opaque Peer with a typed Ref boundary
+and a fixed Cell row. Native endpoints, listener removers, startup and reply
+resumes, request slots and cancellation jobs retain their real types. Tickets
+own typed outcome slots; only success/failure payloads are wire data. A Handle
+retains its concrete event stream through checked Any storage, separate from
+its Peer. A Context retains the request scope and the connection's root scope;
+a ConnectionId owns that root-scope identity.
+
+A worker Program separates the typed boot definition from a data-only entry
+descriptor. Generated host descriptors and child metadata use private source
+helpers, rooted only for builtin worker builds. Custom entry-kind Program
+representations keep their existing protocol. Hello sends data-only Options;
+the native policy stays at the launcher and the guest reconstructs Nothing.
+Incoming native events pass the generated checked-data adapter before frame
+inspection. No callback, Fiber, Scope, Policy or native endpoint passes through
+Js.Value in this transport.
+
+The boot definition returns two synchronous closed jobs, for interrupt and
+completion, rather than a Fiber in the Program's nominal field type. Each job
+captures its real typed Fiber. Interrupt starts the cancellation task; completion
+starts the original waiter, which observes the root's full exit, closes its
+lifetime, sends Closed and closes the worker. The transport installs its listeners
+before starting that waiter, with the same number of fibers and cleanup order.
+No nominal storage class combines the suspending work with a demanded sync hook
+(transparent-effects-proposal.md §14.5).
+
+Event counters and credit limits live in their own fixed-shape Cell, allocated
+only for an inhabited event role. The shared Peer holds its optional state;
+it has no event-enabled mutable flag. This preserves event-capability pruning
+without deleting fields from a fixed Cell or retaining dormant counter storage.
+The guest's wire generation remains null until Hello, and only a launched native
+Worker consumes a host instance number; guest setup does not consume one.
+
+**Manager decision, 2026-11-03 — worker event build constant (#1797).**
+`Browser.Worker.eventsPossible` replaces the stored Program capability flag.
+Each direct branch reads the intrinsic at its use site, from the checked event
+role inhabitation fact. The entry keeps events if any reachable channel may
+carry them; generic/unknown roles remain possible. This governs allocation,
+limits, emit/ACK handling and the page's event offer/ACK hooks, while a page's
+stream end/failure behavior remains available for an empty event type.
+No Spec propagation through records, Cells or parameters establishes this fact.
+The same source function gives first-class callers the same entry answer.
+
+The private control encoding shares typed records with ordinary fields. Its
+prescribed output spellings are reserved before each entry assigns short field
+names, just like the Wire palette. An ordinary field cannot take the spelling of
+a fixed control key in the same object (#1803).

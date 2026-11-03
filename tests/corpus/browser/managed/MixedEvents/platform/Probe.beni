@@ -1,0 +1,5 @@
+import Browser.Worker as Worker
+
+
+pub possible : ⊤ → Bool
+possible ⊤ = Worker.eventsPossible ⊤

@@ -276,6 +276,8 @@ pub const Fact = struct {
         test_hooks = 21,
         /// Whether an intrinsic element representation cannot carry NONE.
         opt_plain = 22,
+        /// Worker.eventsPossible, from this entry's checked roles.
+        worker_events = 23,
     };
 
     fn lessThan(a: Fact, b: Fact) bool {

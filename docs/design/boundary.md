@@ -905,6 +905,19 @@ is the build's mode*). *(Amended 2026-10-02: it is `development : () -> bool`, w
 function may not be polymorphic (§4, check 1). The call is written in place as the literal, as the
 value was.)*
 
+**Worker event build constant (manager, 2026-11-03).**
+The platform-private `Browser.Worker.eventsPossible : ⊤ → Bool` is written
+in place as a literal for each worker-bearing entry, from the checked Wire
+fact that an event role is inhabited (#1725). A direct `if` on it keeps only
+that entry's branch; reachability never visits the dropped branch. Generic or
+shared entries keep events when any reachable channel may carry them, including
+an unresolved role. Both worker setup and the page's event-only delivery/ACK
+paths test the intrinsic at the use site. No capability flag is stored in a
+Program, Peer, Cell or parameter. First-class uses share the entry's one source
+function with the same constant answer. The shared CorePrivate fence permits
+only platform machinery to name it; a same-named untrusted module cannot acquire
+the intrinsic.
+
 **`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
 object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a
 list literal of pair literals written in place, each key a string literal that is a JavaScript

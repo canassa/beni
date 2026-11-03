@@ -25,7 +25,10 @@ type Msg
 main : Browser.Program
 main =
     Browser.hosted
-        { init = λ_ → "idle"
+        { init =
+            λ_ →
+                Probe.install ⊤
+                "idle"
         , update =
             λowner msg model →
                 case msg of
@@ -37,7 +40,7 @@ main =
                                     result = Worker.open scope worker "config" Worker.options
                                     case result of
                                         Ok handle →
-                                            Probe.defect handle
+                                            Probe.defect ⊤
                                             Hosted.emit outlet (Finished "ready")
                                         Err _ →
                                             Hosted.emit outlet (Finished "failed")

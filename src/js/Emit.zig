@@ -1364,6 +1364,7 @@ const Emitter = struct {
     worker_runtime: ?EntryPlan.Value = null,
     worker_kind: EntryPlan.KindIndex = .none,
     worker_events: ?bool = null,
+    worker_events_possible: bool = true,
     output_prefix: []const u8 = "",
     /// `Lower.Input.core_private`, the same for every module of the build.
     core_private: Lower.CorePrivate = @splat(true),
@@ -1590,7 +1591,24 @@ const Emitter = struct {
         return e.graph().find(.platform, e.session.interner.find("Browser.Worker") orelse return null);
     }
 
+    fn workerStorageRoots(e: *Emitter, out: *std.ArrayList(Reach.Node)) !void {
+        if (e.worker_candidates.len == 0 and e.worker_kind == .none) return;
+        var builtin = e.worker_kind != .none and e.workerWirePlanOptional(e.worker_kind);
+        for (e.worker_candidates) |descriptor| if (e.workerWirePlanOptional(descriptor.kind)) {
+            builtin = true;
+            break;
+        };
+        if (!builtin) return;
+        const module = e.builtinWorkerWire() orelse return;
+        for (e.bir(module).decls, 0..) |d, di| {
+            const name = e.session.interner.slice(e.bir(module).symbol(d.name));
+            if (std.mem.eql(u8, name, "entryDescriptor") or std.mem.eql(u8, name, "attachMetadata"))
+                try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(di) });
+        }
+    }
+
     fn workerHostRoots(e: *Emitter, out: *std.ArrayList(Reach.Node)) !void {
+        try e.workerStorageRoots(out);
         const module = e.workerHostModule() orelse return;
         const b = e.bir(module);
         for (b.decls, 0..) |d, di| {
@@ -1619,7 +1637,9 @@ const Emitter = struct {
 
     fn workerDiscoveryReach(e: *Emitter, entry: ?Entry) !void {
         try e.eliminate(entry);
-        if (e.hasWorkerLaunch() or e.session.entry_plan.selected != .none) {
+        // Projections inherit candidates and their entry fingerprint. Rediscovery
+        // here would reset that fingerprint to the whole build's value.
+        if (e.worker_kind == .none and (e.hasWorkerLaunch() or e.session.entry_plan.selected != .none)) {
             try e.workerCandidates();
             e.reach.deferred = e.deferred;
             var wire_types: std.ArrayList(Dispatch.TypeId) = .empty;
@@ -1629,6 +1649,24 @@ const Emitter = struct {
             e.reach.wire_types = wire_types.items;
             try e.walk();
         }
+        const possible = e.workerEventsPossible();
+        if (e.worker_events_possible != possible) {
+            e.worker_events_possible = possible;
+            try e.eliminate(entry);
+        }
+    }
+
+    // A shared entry keeps events if any of its reachable channels can carry
+    // them. Unknown/generic roles conservatively keep the event path.
+    fn workerEventsPossible(e: *Emitter) bool {
+        if (e.worker_events == true) return true;
+        var observed = e.worker_events != null;
+        for (e.worker_candidates) |descriptor| {
+            if (!e.live.decl(descriptor.module, descriptor.decl) and !e.live.twin(descriptor.module, descriptor.decl)) continue;
+            observed = true;
+            if (descriptor.event_capability orelse true) return true;
+        }
+        return !observed;
     }
 
     fn hasWorkerLaunch(e: *const Emitter) bool {
@@ -1747,6 +1785,7 @@ const Emitter = struct {
                 return std.mem.lessThan(u8, a.identity, b.identity);
             }
         }.less);
+        for (out.items) |*descriptor| descriptor.event_capability = try e.workerEventCapability(descriptor.*);
         e.worker_candidates = out.items;
         const deferred = try e.scratch.alloc(Reach.Node, out.items.len);
         for (deferred, out.items) |*n, d| n.* = .{ .module = d.module, .kind = .decl, .index = d.decl };
@@ -2026,7 +2065,7 @@ const Emitter = struct {
             var projection = try e.workerProjection(descriptor);
             projection.extra_roots = try projection.coarseRuntimeRoots();
             const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
-            try projection.eliminate(root);
+            try projection.workerDiscoveryReach(root);
             try projection.checkEntryRealm(root);
             try projection.discoverWorkers(root, &found);
             try e.diagnostics.appendSlice(e.gpa, projection.diagnostics.items);
@@ -2069,7 +2108,7 @@ const Emitter = struct {
             }
             const root: Entry = .{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) };
             projection.extra_roots = try projection.coarseRuntimeRoots();
-            try projection.eliminate(root);
+            try projection.workerDiscoveryReach(root);
             try projection.directWorkerWire(root);
             try projection.shareValidators();
             try projection.refuseMarkupWithoutLowering();
@@ -6011,7 +6050,7 @@ const Emitter = struct {
         for (e.worker_entries) |descriptor| {
             var projection = try e.workerProjection(descriptor);
             projection.extra_roots = try projection.coarseRuntimeRoots();
-            try projection.eliminate(.{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) });
+            try projection.workerDiscoveryReach(.{ .module = descriptor.module, .decl = @fromBackingInt(descriptor.decl) });
             try projection.closeBoundary();
             if (projection.boundary) |boundary| {
                 var it = boundary.pinned.keyIterator();
@@ -6247,6 +6286,7 @@ const Emitter = struct {
         var conflicts = try e.fieldConflicts(counts);
         for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
         var reserved: std.StringHashMapUnmanaged(void) = .empty;
+        if (e.encodeWorkerPrivate()) try @import("WorkerEncoding.zig").reserveFields(e.scratch, &reserved);
         // Reserve the wire palette before assigning entry-local names. A
         // page-private field can never steal a wire spelling in this entry.
         if (e.wire_names) |wire| {
@@ -6391,6 +6431,8 @@ const Emitter = struct {
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
             .test_hooks = e.options.test_hooks,
+            .worker_events_module = e.builtinWorkerWire(),
+            .worker_events_possible = e.worker_events_possible,
             .forwarding_foreigns = e.forwarding_foreigns,
             .cuts = e.cuts,
             .pinned = e.lift_roots,
@@ -7376,7 +7418,7 @@ const Emitter = struct {
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !((e.worker_candidates.len != 0 or e.worker_kind != .none) and e.builtinWorkerWire() == m) and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7389,6 +7431,7 @@ const Emitter = struct {
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .encode_worker_private = e.privateWorkerModule(m),
                 .worker_events = e.worker_events,
+                .worker_events_possible = e.worker_events_possible,
                 .worker_event_constructors = event_constructors.items,
                 .bir = e.bir(m),
                 .worker_host = e.workerHostModule() == m,
@@ -7399,6 +7442,8 @@ const Emitter = struct {
                 .worker_wire_direct_calls = if (e.worker_wire_direct_module == m) e.worker_wire_direct_calls else &.{},
                 .worker_descriptors = slot.worker_descriptors,
                 .worker_definition = if (t.entry != null and t.entry.?.module == m) t.entry.?.decl.int() else null,
+                .worker_storage_module = e.builtinWorkerWire(),
+                .worker_storage_definition = e.worker_kind != .none and e.workerWirePlanOptional(e.worker_kind),
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,

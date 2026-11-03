@@ -10,6 +10,7 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Browser.Worker", .name = "eventsPossible", .access = .platform },
     .{ .module = "Browser.Host.Worker", .name = "closeSelf", .access = .platform },
     .{ .module = "Js", .name = "Builder" },
     .{ .module = "Js.Array", .name = null },

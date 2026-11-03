@@ -1,5 +1,5 @@
-import Browser.Worker as Worker
+pub foreign impure install : ⊤ → ⊤
 
 
--- An ErrorEvent without an error object remains fatal after Ready.
-pub foreign impure defect : Worker.Handle protocol → ⊤
+-- Inject at the real native endpoint after Ready.
+pub foreign impure defect : ⊤ → ⊤

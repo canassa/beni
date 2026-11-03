@@ -1,0 +1,1 @@
+{"platform":true,"name":"worker-mixed-events","platforms":["browser"],"reexports":["Browser","Browser.Worker","Browser.WorkerStream","Hosted","Html"]}

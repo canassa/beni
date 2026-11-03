@@ -2059,21 +2059,20 @@ test "release worker init runs when specialisation removes its unused state" {
     const source = try w.read("platform/Worker.beni");
     const signature = try std.mem.replaceOwned(u8, w.arena.allocator(), source, "init : (⊤, ⊤ → state)", "init : (⊤, ⊤ → Result String state)");
     const old =
-        \\                    state = callbacks.init ⊤ ⊤
-        \\                    listen λmessage →
-        \\                        Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
-        \\                    callbacks.start state ⊤
+        \\    state = callbacks.init ⊤ ⊤
+        \\    listen λmessage → Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+        \\    callbacks.start state ⊤
         \\
     ;
     const replacement =
-        \\                    case callbacks.init ⊤ ⊤ of
-        \\                        Err _ → ⊤
-        \\                        Ok state →
-        \\                            listen λmessage →
-        \\                                Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
-        \\                            callbacks.start state ⊤
+        \\    case callbacks.init ⊤ ⊤ of
+        \\        Err _ → ⊤
+        \\        Ok state →
+        \\            listen λmessage → Task.start (λ⊤ → reply (callbacks.handle message state ⊤)) λ_ → ⊤
+        \\            callbacks.start state ⊤
         \\
     ;
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, signature, old));
     try w.write("platform/Worker.beni", try std.mem.replaceOwned(u8, w.arena.allocator(), signature, old, replacement));
     try w.write("platform/Probe.beni", "pub foreign impure mark : ⊤ → ⊤\n");
     try w.write("platform/Probe.js", "export const mark = (_) => globalThis.onInit();\n");
@@ -2106,6 +2105,7 @@ test "release worker init runs when specialisation removes its unused state" {
         \\
     );
     const built = try w.run(&.{ "build", "--allow-unchecked-workers", "--platform=platform", "--release", "--out=out", "Main.beni" });
+    try testing.expectEqualStrings("", built.stderr);
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     try w.expectProgram("probe.mjs", .{ .stdout = "worker init ran\n" });
@@ -2802,5 +2802,48 @@ test "native Map signatures preserve their element parameter" {
         try testing.expectEqual(@as(u8, 1), result.exit_code);
         try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
         try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
+    }
+}
+
+test "builtin worker typed storage emits identical cold and warm entries at jobs 1 and 8" {
+    // PREPARE: native state and its suspended callback remain worker-local.
+    for ([_]struct { fixture: []const u8, entries: usize }{
+        .{ .fixture = "NativeLocalState", .entries = 1 },
+        .{ .fixture = "MixedEvents", .entries = 2 },
+    }) |case| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const arena = w.arena.allocator();
+        try w.copyTree(try std.fmt.allocPrint(arena, "tests/corpus/browser/managed/{s}", .{case.fixture}), "_expected.");
+        for ([_]bool{ false, true }) |release| {
+            const flags: []const []const u8 = if (release) &.{"--release"} else &.{};
+            const cache = if (release) "--cache-dir=cache-release" else "--cache-dir=cache-dev";
+            // EXECUTE: each mode starts cold, then reuses its checked interfaces.
+            for ([_]struct { out: []const u8, jobs: []const u8 }{
+                .{ .out = "cold", .jobs = "--jobs=1" },
+                .{ .out = "warm", .jobs = "--jobs=1" },
+                .{ .out = "parallel", .jobs = "--jobs=8" },
+                .{ .out = "parallel-warm", .jobs = "--jobs=8" },
+            }) |run| {
+                const built = try w.run(try std.mem.concat(arena, []const u8, &.{ &.{ "build", "--allow-unchecked-workers", if (case.entries == 2) "--platform=platform" else "--platform=browser", "--source-maps", cache, run.jobs, try std.fmt.allocPrint(arena, "--out={s}", .{run.out}), "Main.beni" }, flags }));
+                try testing.expectEqualStrings("", built.stderr);
+                try testing.expectEqual(@as(u8, 0), built.exit_code);
+                try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+            }
+            // VERIFY: compare every emitted module and map, including the child.
+            const files = try w.listFiles("cold");
+            var entries: usize = 0;
+            for (files) |path| {
+                if (std.mem.startsWith(u8, path, "_workers/") and std.mem.endsWith(u8, path, "/_main.mjs")) entries += 1;
+            }
+            try testing.expectEqual(case.entries, entries);
+            for ([_][]const u8{ "warm", "parallel", "parallel-warm" }) |out| {
+                try testing.expectEqualDeep(files, try w.listFiles(out));
+                for (files) |path| {
+                    try testing.expectEqualStrings(try w.read(try std.fmt.allocPrint(arena, "cold/{s}", .{path})), try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ out, path })));
+                }
+            }
+            for ([_][]const u8{ "cold", "warm", "parallel", "parallel-warm" }) |out| try w.tmp.dir.deleteTree(w.io, out);
+        }
     }
 }
