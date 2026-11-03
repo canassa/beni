@@ -3,6 +3,16 @@
 < content-type: text/plain; charset=utf-8
 <
 < typed:relayed
+> GET /relay-trie
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< typed:relayed
+> GET /relay-view
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< typed:relayed
 > GET /unrelated
 < 200
 < content-type: text/plain; charset=utf-8
