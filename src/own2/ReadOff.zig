@@ -827,6 +827,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
 /// described once per place, at every slot of its list (§2.10).
 fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     try paramEffects(&e.sink, leaf, true, .escapes);
+
     const s = &e.sink;
     const f = e.fr();
     const from = try s.host.sync(&e.ev, e.escapes.items);

@@ -226,6 +226,11 @@ pub const Table = struct {
     pub fn head(t: *const Table, c: Id) Head {
         return t.heads.items[c];
     }
+    /// Whether code `c` returns and its result holds no object (`Dict.empty`).
+    pub fn holdsNothing(t: *const Table, c: Id) bool {
+        const h = t.head(c);
+        return h.flags.returns and !h.flags.pessimistic and h.res_root == 0;
+    }
     pub fn effectsOf(t: *const Table, r: Range) []const Effect {
         return t.effects.items[r.start..][0..r.len];
     }

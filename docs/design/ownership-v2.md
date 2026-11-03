@@ -411,6 +411,13 @@ A value is an entry of the walk's value table:
 | `alt` | `choice`, `arms` | one value of several, by the arm that ran (§2.3.5) |
 | `shared` | `d` | a top-level value |
 
+*Amended 2026-11-03 (#1713): a top-level value that holds no object.* A reference to a parameterless
+declaration whose contract returns and says no arrival at any slot (`Dict.empty`, which is `Dict Leaf`) is `scalar`,
+not `shared d`: there is no object to name, so a write a callee makes of a slot below it (`#Dict.0#Node.2`, a path
+the value does not have) names nothing, where it was refused `top-level` (`run/SanitiserEmptyValue`). A value whose
+contract has an arrival, or that has none yet (a group still solved), stays `shared d`; a parameterless `foreign` is
+`host` (§2.10, *host objects*).
+
 Projection by a step: a `built` value gives its kid (a list literal's `front i` its `i`th item, `[*]` an `alt`
 over its items keyed by the literal); a `ref` gives the child position (or, for a family, the family
 extended by the step); an `alt` projects each arm and keeps its choice; `scalar`, `top` and `shared` give
@@ -1492,6 +1499,15 @@ codes of their own. Their parameters are their own, then their **captures**: the
 the body reads, in local order. The body is walked as its own frame, and its contract is read off as any
 code's. A block's local functions that call each other are a group, solved as §2.12 solves a declaration
 group.
+
+*Amended 2026-11-03 (#1745): a parameter written as a pattern.* A code's parameter place is its local's type for a
+name (`λx`) and, for a pattern (`λ( k, v )`, `λ⊤`), the parameter's place in the code's own function type: the
+lambda's, or the local function's. Before, it was the pattern instruction's type, which the checker does not
+record, so the place was a type variable's and what the pattern bound was lost: `Dict.fromList`'s result said
+only `shared`, `List.map xs λ( _, v ) → v` said its elements were fresh, and an edit in place of a list the
+result held ran under it (`run/SanitiserLambdaPattern`; the sanitised runs trapped). With the bindings kept, a
+callback's write of a pattern's part is a write of its supply, which a worded row with a callback reads as
+unknown code (`List.update`'s `focus`): those writes are refused at the call until the row is read (#1704).
 
 The value of a lambda is `built(closure, site ι, kids = the captures' values at creation)`: the closure holds
 its captures, so a holder of the closure holds them (§2.8 *Dead*: `captured`). Calling a closure value is a
