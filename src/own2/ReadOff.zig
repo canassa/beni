@@ -45,7 +45,7 @@ fn expandFor(e: *Evaluation, li: u32, sub: Relation.Sub, out: *std.ArrayList(u32
     const saved = e.ev.cur_sub;
     e.ev.cur_sub = if (e.solver != null) sub else null;
     defer e.ev.cur_sub = saved;
-    try e.ev.expand(li, out);
+    try e.ev.expandRouted(li, out);
 }
 
 /// Describe value `v` at result slot `q` of the result's root into `out`
@@ -238,10 +238,10 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
     if ((try s.described.getOrPut(e.gpa(), try Put.describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
     const held = try Held.atoms(f, try Put.resList(s, out), q);
     var i: usize = 0;
-    while (i < e.ev.keyItems(ki)[0].len) : (i += 1) {
-        const items = e.ev.keyItems(ki);
-        const y = (try f.withTags(items[0][i], tags)) orelse continue;
-        try describeItem(s, y, items[1][i], prefix, q, held, out);
+    while (i < e.ev.keys.items[ki].leaves.items.len) : (i += 1) {
+        const k = e.ev.keys.items[ki];
+        const y = (try f.withTags(k.leaves.items[i], tags)) orelse continue;
+        try describeItem(s, y, k.at.items[i], prefix, q, held, out);
     }
 }
 
@@ -571,7 +571,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                         const sub = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = if (Slots.isSub(sl)) try f.slots.internSorted(gpa, f.account, &.{sl}) else try Subtree.below(f.slots, gpa, f.account, f.places, Slots.pathOf(sl)), .tags = l.tags });
                         var xs: std.ArrayList(u32) = .empty;
                         defer xs.deinit(gpa);
-                        try e.ev.expand(sub, &xs);
+                        try e.ev.expandRouted(sub, &xs);
                         for (xs.items) |x| {
                             try describeLeaf(s, x, q, true, out);
                             for (qs_all) |qs| try describeLeaf(s, x, .from(qs), true, out);
