@@ -80,14 +80,15 @@ test "a program computes something and prints the right answer" {
     // One `.mjs` per source module, mirroring the source tree, packages in
     // directories of their own, plus each sibling next to its module and the
     // platform's runtime (backend.md §5, boundary.md §5.2). `Node` has no
-    // sibling since 2026-10-23 (#877): its values are beni over `Js`.
+    // sibling since 2026-10-23 (#877): its values are beni over `Js`, and
+    // since 2026-11-03 the runtime is the module `Rt`, not a copied file.
     for ([_][]const u8{
         "out/Main.mjs",
         "out/_main.mjs",
         "out/_core/Basics.mjs",
         "out/_core/List.mjs",
         "out/_platform/Node.mjs",
-        "out/_platform/runtime.foreign.mjs",
+        "out/_platform/Rt.mjs",
     }) |path| {
         if (!w.exists(path)) {
             std.debug.print("expected {s} to exist\n", .{path});
@@ -529,8 +530,9 @@ test "a markup program builds byte-identical at every --jobs, and runs" {
     // └─────────────────────────────────────────┘
     try expectSameTree(&w, "one", "many");
     try expectSameTree(&w, "one-rel", "many-rel");
-    // The markup runtime is copied because a module imports it.
-    try testing.expect(w.exists("one/_platform/markup.foreign.mjs"));
+    // The markup runtime is the module `Rt`, written because a module
+    // imports it (and the entry file its `run`).
+    try testing.expect(w.exists("one/_platform/Rt.mjs"));
 }
 
 test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps string tags and unbuilt arms in release" {
@@ -3520,9 +3522,12 @@ test "a release application is one file with no import or export; --library keep
     try testing.expectEqualStrings("_main.mjs", tree[0]);
     try testing.expectEqualStrings("_manifest.txt", tree[1]);
     const one = try w.read("out/_main.mjs");
-    try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";"));
+    // No import at all since the `node` runtime is beni (2026-11-03): the
+    // hand-written runtime imported `node:process`, the module reads the
+    // global.
+    try testing.expect(std.mem.startsWith(u8, one, "const ") or std.mem.startsWith(u8, one, "let "));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "\n"));
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "import"));
+    try testing.expectEqual(@as(usize, 0), std.mem.count(u8, one, "import"));
     try testing.expect(std.mem.indexOf(u8, one, "export") == null);
     try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), ";export{e,c};\n"));
 
@@ -4832,24 +4837,27 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         "check-release-map.mjs",
         "out/_main.mjs",
         "run",
-        "p=|a=>{",
+        "q=|a=>{",
         "let b=a*7919",
         "let |b=a*7919",
         "b=|a*7919",
         "b+b*3",
-        "q=|b=>{if",
-        "return a(p(",
+        "r=|a=>{if",
+        "return b(q(",
         "throw new Error",
-        "r=|a=>a.length",
-        "r(n(a))",
-        "r(|n(a))",
-        "s=|b=>{let d=0",
-        "for(let c=b",
-        "for(let |c=b",
+        "s=|a=>a.length",
+        "s(o(a))",
+        "s(|o(a))",
+        "t=|a=>{let d=0",
+        "for(let c=a",
+        "for(let |c=a",
         "let |d=0",
-        "import process",
+        // The runtime is the module `Rt` since 2026-11-03 (#1810): its
+        // `run` is beni, mapped to `Rt.beni`, and the entry's call of it
+        // is the one unmapped text.
+        "globalThis.process",
         "process.stdout",
-        "u(t)",
+        "a(u)",
     });
 
     // ┌─────────────────────────────────────────┐
@@ -4858,28 +4866,29 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     try testing.expectEqualStrings("", checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/List.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
-        \\p=|a=>{ -> Main.beni:24:13 spread
+        \\q=|a=>{ -> Main.beni:24:13 spread
         \\let b=a*7919 -> Main.beni:22:5
         \\let |b=a*7919 -> Main.beni:22:5 doubled
         \\b=|a*7919 -> Main.beni:23:9
         \\b+b*3 -> Main.beni:24:5
-        \\q=|b=>{if -> Main.beni:12:5 describe
-        \\return a(p( -> Main.beni:14:13
+        \\r=|a=>{if -> Main.beni:12:5 describe
+        \\return b(q( -> Main.beni:14:13
         \\throw new Error -> Main.beni:17:13
-        \\r=|a=>a.length -> Main.beni:29:5 total
-        \\r(n(a)) -> Main.beni:34:17
-        \\r(|n(a)) -> Main.beni:33:14
-        \\s=|b=>{let d=0 -> Main.beni:50:5 report
-        \\for(let c=b -> Main.beni:49:9
-        \\for(let |c=b -> Main.beni:49:9 i
+        \\s=|a=>a.length -> Main.beni:29:5 total
+        \\s(o(a)) -> Main.beni:34:17
+        \\s(|o(a)) -> Main.beni:33:14
+        \\t=|a=>{let d=0 -> Main.beni:50:5 report
+        \\for(let c=a -> Main.beni:49:9
+        \\for(let |c=a -> Main.beni:49:9 i
         \\let |d=0 -> Main.beni:49:9 acc
-        \\import process -> unmapped
-        \\process.stdout -> unmapped
-        \\u(t) -> unmapped
+        \\globalThis.process -> Rt.beni:22:30
+        \\process.stdout -> Rt.beni:22:30 (11 before)
+        \\a(u) -> unmapped
         \\frame describe Main.beni:17:13
         \\frame <anonymous> Main.beni:55:114
         \\exit 1
@@ -4987,10 +4996,10 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "a(|b())", "a(|b*2)" });
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "b(|c())", "b(|a*2)" });
     const and_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=and-out", "and" }, .{ .raw_diagnostics = true });
     try expectBuilt(and_built);
-    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "a()?\"y\"" });
+    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "b()?\"y\"" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4998,12 +5007,13 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings("", checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/Debug.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
-        \\a(|b()) -> Main.beni:14:9
-        \\a(|b*2) -> Main.beni:8:41
+        \\b(|c()) -> Main.beni:14:9
+        \\b(|a*2) -> Main.beni:8:41
         \\frame todo Debug.beni:43:15
         \\frame <anonymous> Main.beni:14:9
         \\exit 1
@@ -5013,10 +5023,11 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings("", and_checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
         \\source beni:///core/Debug.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
         \\source ../and/Main.beni: its text
-        \\a()?"y" -> Main.beni:8:16
+        \\b()?"y" -> Main.beni:8:16
         \\
     , and_checked.stdout);
 }
@@ -5093,7 +5104,8 @@ test "a release library build writes a map beside every module" {
         maps += @intFromBool(has_map);
     }
     try testing.expect(maps >= 2);
-    try testing.expect(w.exists("lib/_platform/runtime.foreign.mjs"));
+    try testing.expect(w.exists("lib/_platform/Rt.mjs"));
+    try testing.expect(w.exists("lib/_platform/Rt.mjs.map"));
     const core_map = try w.read("lib/_core/List.mjs.map");
     try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"List.mjs\",\"sources\":[\"beni:///core/List.beni\"],\"sourcesContent\":[\""));
 }
