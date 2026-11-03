@@ -467,7 +467,16 @@ node. The slot domain now does the same:
   tags merged in (a route that conflicts with them is dropped); a `many` element is two entries of the
   distinct check (§2.9.3). A **pass** that reads many values' leaves for one purpose (the read-off's deep
   reads, §2.10) visits each set node once: a node met again in the pass with no outer tags adds nothing,
-  since every leaf below it was taken. Each node carries one bit, whether a leaf below it is a `ref` or a
+  since every leaf below it was taken. *Amended 2026-11-03 (#1714):* nor does one met again under outer
+  tags that cannot filter it. Each node keeps its **span**, the earliest and latest choice that filters an
+  element below it (its wraps' tags, its route wraps' and its leaves' routes), made with the node; a leaf
+  whose reading merges the reader's tags in (a call's or a supply's, expanded under them, or a deferred
+  storage) spans every choice. Outer tags whose choices all lie outside the span drop no element, so the
+  node gives the keys it gives with no outer tags, and a pass's reader keeps the keys (a parameter's read
+  is its slots), not their tags: the pass takes it once. Without it, an inline chain `x_k = if c then
+  x_{k-1} else [ 1 ]`, every node of `x_{k-1}` under `x_k`'s wrap, read all k leaves at each use (Σk:
+  24 988 / 225 397 / 2 846 209 records at 100 / 400 / 1 600 links; now 14 992 / 65 401 / 286 213). Each
+  node carries one bit, whether a leaf below it is a `ref` or a
   deferred storage, and the pass skips a node without it (a read reads parameters' objects only), so a
   tower of literals costs its parameters' leaves, never its atoms. A pass never fills what is kept: an
   instantiation or an expansion (§2.11.2) made under it is made whole.

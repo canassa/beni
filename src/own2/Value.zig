@@ -262,7 +262,8 @@ pub const Frame = struct {
     }
 
     fn oneOf(f: *Frame, l: Leaf) Error!u32 {
-        return f.sets.one(f.gpa, f.account, try f.leaf(l), 0, l.kind == .ref or l.kind == .recons);
+        // Open: a call's, a supply's or a deferred leaf, read under the reader's tags.
+        return f.sets.one(f.gpa, f.account, try f.leaf(l), 0, l.kind == .ref or l.kind == .recons, l.kind == .recons or (l.kind == .ref and f.roots.items[l.root].kind != .param));
     }
 
     /// Value `v`'s leaf sets, deep and its storage's, from its kids' (§2.3.4).
