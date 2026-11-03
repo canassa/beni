@@ -1,0 +1,7 @@
+-- Native message data has no list token. Keep every plain graph check, then
+-- return the original value; List normalization and copy jobs are unreachable.
+import Probe
+
+
+main : Probe.Program
+main = Probe.program ⊤

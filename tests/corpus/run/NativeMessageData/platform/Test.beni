@@ -3,11 +3,11 @@ import Js
 
 
 pub opaque type Program
-    = Program (Event.Event → String) String
+    = Program (Event.Event → String) (Event.Event → Maybe Js.Value) String
 
 
 pub program : String, sync (Event.Event → String) → Program
-program name probe = Program probe name
+program name probe = Program probe Event.dataOnly name
 
 
 -- Only data crosses the native projection; no getter or callback is invoked.

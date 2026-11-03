@@ -1,0 +1,10 @@
+import Browser.Host.Event as Event
+import Js
+
+
+pub opaque type Program
+    = Program (Event.Event → Maybe Js.Value) String
+
+
+pub program : ⊤ → Program
+program ⊤ = Program Event.dataOnly "native message data"
