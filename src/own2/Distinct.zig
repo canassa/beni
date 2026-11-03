@@ -337,6 +337,41 @@ pub fn sepOf(e: *Eval, v: u32) Error!Cond {
 const Ent = Entries.Ent;
 const Occs = Entries.Occs;
 
+/// Whether a callee's occurrence `o`, projected to entry leaf `li`, names
+/// one object of one invocation (§2.9.3, *candidates of one object*): not
+/// deep nor apart, a path of fields, tuple indices and constructor
+/// arguments only, at a slot some step below can name.
+fn singular(f: *Value.Frame, o: u64, li: u32) bool {
+    if (Contract.isDeep(o) or Contract.isApart(o) or Contract.isFed(o)) return false;
+    for (f.slots.relWords(Contract.occRel(o))) |w| switch (Place.Step.fromWord(w).kind) {
+        .field, .index, .ctor_arg => {},
+        else => return false,
+    };
+    const l = f.leafAt(li);
+    return !Subtree.symbolic(f.slots, l.slots) and !Entries.wildEntry(f, .{ .leaf = li, .route = 0, .occ = o, .block = none });
+}
+
+/// Whether a callback's answer among `ents` may be another entry's object
+/// (§2.9.3, #1711), for the pairs with an entry from `fresh` on: the
+/// earlier pairs were asked in an earlier round. Unknown code may answer
+/// any object its caller reaches, so an answer is apart from no other
+/// entry but an alternative to it or one its own block vouches for.
+fn answerMeets(f: *Value.Frame, ents: []const Ent, alive: []const bool, fresh: usize) Error!bool {
+    for (ents, 0..) |en, i| {
+        if (!alive[i] or !isAnswer(f, f.leafAt(en.leaf))) continue;
+        for (ents[if (i >= fresh) 0 else fresh..], if (i >= fresh) 0 else fresh..) |o, k| {
+            if (k == i or !alive[k]) continue;
+            if ((o.block != none and o.block == en.block) or Entries.oneObject(o, en)) continue;
+            if (try Entries.routesMeet(f, en, o)) return true;
+        }
+    }
+    return false;
+}
+
+fn isAnswer(f: *const Value.Frame, l: Value.Leaf) bool {
+    return l.kind == .answer or (l.kind == .ref and f.roots.items[l.root].kind == .cb);
+}
+
 /// §2.9.3: every object the entries name is distinct from every other's,
 /// by the factored check (never a table of pairs). The groups are kept
 /// across rounds (`Entries.Rounds`): a round checks only the groups its
@@ -346,7 +381,8 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     const f = e.f;
     var st: Entries.Rounds = .{};
     defer st.deinit(g);
-    for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .routes = p.routes }, .{ none, @intCast(k), 0 });
+    // A callee's occurrence that names one object: its entries are candidates of it.
+    for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .routes = p.routes, .one = if (routed and singular(f, p.occ, p.leaf)) @intCast(k) else none }, .{ none, @intCast(k), 0 });
     // The conditions met, gathered and made one at the end: a merge per
     // entry or group would cost their product (§2.9.3's linear bound).
     var occs: Occs = .{};
@@ -380,12 +416,17 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     defer taken.deinit(g);
     var dirty: std.ArrayList(u32) = .empty;
     defer dirty.deinit(g);
+    // The candidates of one object and the apart entries made, by leaf, block,
+    // occurrence and route set: one met again is compared as the first, and
+    // adds nothing (a fold's accumulator, fed its own answer).
+    var cands: Ids.FixedDict(6) = .{};
+    defer cands.deinit(g);
     var fresh: usize = 0;
     var rounds: u32 = 0;
     while (true) : (rounds += 1) {
         const ents = st.ents.items;
         try e.charge(.cond, @intCast(1 + ents.len - fresh));
-        if (try Entries.answerMeets(f, ents, st.alive.items, fresh)) return Cond.unprovable;
+        if (try answerMeets(f, ents, st.alive.items, fresh)) return Cond.unprovable;
         // The new entries into their groups; a second parameter's group
         // makes every parameter group ask its occurrences.
         const params = st.params;
@@ -497,7 +538,8 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 // answer): its objects are that ancestor's, which this
                 // chain reads already (the least fixpoint, §2.9.3).
                 if (try Chains.onChain(e, &st, ti, x)) continue;
-                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = rs.items[nth] }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
+                if ((en.one != none or Contract.isApart(en.occ)) and (try cands.getOrPut(g, .{ x, en.one, blk, @truncate(en.occ), @intCast(en.occ >> 32), rs.items[nth] })).found_existing) continue;
+                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = rs.items[nth], .one = en.one }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
         // Families of the expansion ask their own separation.
