@@ -45,11 +45,13 @@ pub markup map : Html a, (a → b) → Html b
 
 
 --| The value of the form control an event came from.
-pub foreign impure targetValue : Event → String
+pub targetValue : Event → String
+targetValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
 
 
 --| Whether the checkbox an event came from is checked.
-pub foreign impure targetChecked : Event → Bool
+pub targetChecked : Event → Bool
+targetChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
 
 
 -- What a handler reads of the event it is handed (`boundary.md` §9.8.10).
@@ -130,8 +132,26 @@ foreign type Dispatched
 -- delegated walk defines as that element: `boundary.md` §9.8.20 (d)).
 -- Called on another event, that element could be the document, which has
 -- no box, so it is not `pub` and no program can call it. A `via` can name
--- a value that is not `pub` (`boundary.md` §9.3).
-foreign impure pointer : Dispatched → Pointer
+-- a value that is not `pub` (`boundary.md` §9.3). The position is read
+-- now, while the event is dispatched: `currentTarget` is null after it.
+-- The key is `ev`, which `pointerEvent` reads; the keys of a `Js.object`
+-- are literal in every build. No parameter is called `event`, the
+-- window's global, nor `e`, the prelude's constant.
+pointer : Dispatched → Pointer
+pointer v =
+    ev = Js.from v
+    box = Js.call (Js.get ev "currentTarget") "getBoundingClientRect" []
+    Js.to
+        (Js.object
+            [ ( "ev", ev )
+            , ( "x", Js.from (number (Js.get ev "clientX") - number (Js.get box "left")) )
+            , ( "y", Js.from (number (Js.get ev "clientY") - number (Js.get box "top")) )
+            ]
+        )
+
+
+number : Js.Value → Float
+number v = Js.to v
 
 
 --| The pointer's identity: the same number from its first event to its

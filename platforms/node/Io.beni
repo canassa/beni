@@ -197,7 +197,96 @@ pub readDir : String → Result FileError (List Entry)
 readDir path = Task.callback λresume → startReadDir path resume
 
 
-foreign impure startReadDir : String, Resume (Result FileError (List Entry)) → (⊤ → ⊤)
+-- Start one `fs.promises.readdir`, resume the waiting fiber once with its
+-- answer, and return what cancels the wait. `readdir` takes no signal, so
+-- a cancelled fiber's listing finishes and no one waits for it: the
+-- canceller writes a ref the two handlers read. The module is asked of
+-- `process` at each call, as `startRead` asks. A rejection is a failure
+-- Node documents, by its `code`, which is the `FileError`, or a defect,
+-- thrown again, so that it is a rejection nothing handles and Node
+-- reports it and exits 1 (`CLAUDE.md` rule 9;
+-- `transparent-effects-proposal.md` §16.5).
+startReadDir : String, Resume (Result FileError (List Entry)) → (⊤ → ⊤)
+startReadDir path resume =
+    cancelled = Js.ref False
+    fs = Js.call (Js.global "process") "getBuiltinModule" [ Js.from "node:fs/promises" ]
+    listing =
+        Js.apply (Js.get fs "readdir")
+            [ Js.from path, Js.object [ ( "withFileTypes", Js.from True ) ] ]
+    _ =
+        Js.call listing "then"
+            [ Js.from λentries → listed cancelled resume entries
+            , Js.from λerror → dirRejected cancelled resume error
+            ]
+    λ⊤ → Js.write cancelled True
+
+
+-- The fulfilment handler of a listing (above): each `Dirent` as an
+-- `Entry`, sorted by name in code point order (`String.compare`), which
+-- is the order of the UTF-8 bytes, the same on every file system.
+listed : Js.Ref Bool, Resume (Result FileError (List Entry)), Value → ⊤
+listed cancelled resume entries =
+    if not (Js.read cancelled) then
+        list = List.map (Js.to entries) λentry →
+            { name = Js.to (Js.get entry "name"), kind = kindOf entry }
+        Task.resume resume (Ok (List.sortBy list λentry → entry.name))
+
+
+-- `EntryKind` from the `Dirent`'s own tests, in that order. A symbolic
+-- link is not followed.
+kindOf : Value → EntryKind
+kindOf entry =
+    if Js.to (Js.call entry "isFile" []) then
+        File
+    else if Js.to (Js.call entry "isDirectory" []) then
+        Directory
+    else if Js.to (Js.call entry "isSymbolicLink" []) then
+        Symlink
+    else
+        Other
+
+
+-- The rejection handler of a listing (above): `rejected`'s shape with no
+-- abort case.
+dirRejected : Js.Ref Bool, Resume (Result FileError (List Entry)), Value → ⊤
+dirRejected cancelled resume error =
+    code =
+        if Js.instanceOf error (Js.global "Error") then
+            Js.get error "code"
+        else
+            Js.undefined
+    if
+        Js.typeIs code "string"
+            && Js.to (Js.call (Js.global "Object") "hasOwn" [ dirCodes, code ])
+    then
+        -- A cancelled fiber waits for no answer; an unknown error below is
+        -- a defect even so.
+        if not (Js.read cancelled) then
+            Task.resume
+                resume
+                (Err (Js.to (Js.call (Js.global "Reflect") "get" [ dirCodes, code ])))
+    else
+        Js.throw error
+
+
+-- `FileError`'s constructor for each failure Node documents for
+-- `fs.promises.readdir`, by the error's `code`, as `codes` is for
+-- `readFile`: apart from it, since `IsADirectory` and `TooLarge` are
+-- never a listing's answer.
+dirCodes : Value
+dirCodes =
+    Js.object
+        [ ( "ENOENT", Js.from NotFound )
+        , ( "EACCES", Js.from PermissionDenied )
+        , ( "EPERM", Js.from PermissionDenied )
+        , ( "ENOTDIR", Js.from NotADirectory )
+        , ( "EMFILE", Js.from TooManyOpenFiles )
+        , ( "ENFILE", Js.from TooManyOpenFiles )
+        , ( "ELOOP", Js.from SymlinkLoop )
+        , ( "ENAMETOOLONG", Js.from NameTooLong )
+        -- A TypeError: the path holds a NUL character.
+        , ( "ERR_INVALID_ARG_VALUE", Js.from InvalidPath )
+        ]
 
 
 -- Start one `fs.promises.readFile`, resume the waiting fiber once with its
