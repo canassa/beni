@@ -1577,6 +1577,11 @@ with no contract), stay `⊤`.
   accepted (`Task` 1198:28, five in browser-tea's `Tea`, `Record.copy`'s callers in Sternhalma and
   bike-wars, `Control` 17:5). The cost table's growth does not move; `Schema.shapeOf` costs 283 388 records
   (272 813 before) and `shapesOf`'s growth is 6 744 (5 622): the escaped objects its result now says.
+  *Amended 2026-11-03 (the join with #1714's read-off shortcuts):* a call read off by its callee's arrivals
+  renamed (`CallGraft.slotArrivals`, *a parameter's path grafted*) or by its callee's node grafted
+  (`AtomGraft`) never expands its leaf, so the read-off asks `hosted` of the call's fresh objects itself:
+  where an escape of the frame reaches them, `host` is said beside the arrivals. Without it `core/Schema`'s
+  compiled run answered its issues `fresh` only, and so did `read`, `decode` and every caller (17 summaries).
 
 *Specified 2026-11-02 (#1714), not built: a contract is a tree of shared subtrees.* A contract names one entry
 per result slot and one effect per parameter slot, and a reader walks every entry. So a type whose two parts

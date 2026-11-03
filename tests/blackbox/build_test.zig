@@ -8872,6 +8872,45 @@ test "the checker v2's dump names a shared value, a method call, and gives lists
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary less: res crossing; nondup yes; reads π1ε* π2ε*\n") != null);
 }
 
+test "the checker v2 reads a schema run's issues as host objects where the run hands its context to JavaScript" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.10, *host objects*: `core/Schema`'s compiled
+    // run hands its context to JavaScript and answers the issues the
+    // context collects, so they arrive `host` beside `fresh`. A call
+    // whose arguments are the caller's parameters whole is read off by
+    // its callee's arrivals renamed (`CallGraft`), and that read must say
+    // `host` too: without it `Schema.read`'s issues were `fresh` only.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Schema
+        \\
+        \\
+        \\schema Box =
+        \\    keep : Int
+        \\
+        \\
+        \\pub taken : Schema.Value → Result (List Schema.Issue) Int
+        \\taken v =
+        \\    b = (Schema.read (Box.schema ⊤) v)?
+        \\    Ok b.keep
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary taken: res #1.0 fresh host, #1.0[*] fresh host,") != null);
+}
+
 /// A family of the holder index's (`ownership-v2.md` §2.8 *The holder
 /// index*, §4.1), `n` wide: its source and the declaration it measures.
 fn holderFamily(a: std.mem.Allocator, family: []const u8, n: u32) !struct { []const u8, []const u8 } {

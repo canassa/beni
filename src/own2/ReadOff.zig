@@ -504,6 +504,8 @@ fn wholeAtoms(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: Put.ResLis
     if (!try AtomGraft.offCycles(f, dest)) return false;
     for (hits.items) |h| if (h.depth < xw.len) for (h.arrivals) |a| try Put.arriveWide(s, dest, a, out);
     try Put.emitPart(s, dest, n, out);
+    // The grafted node's atoms are the call's fresh objects: `host` where an escape reaches them.
+    if (try hosted(s, try f.leaf(.{ .kind = .fresh, .atom = r.a }), dest.int(), true, out)) try Put.arriveWide(s, dest, .{ .kind = .host }, out);
     return true;
 }
 
@@ -674,7 +676,15 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
             if (r.kind == .call and l.tags == 0) {
                 var arrs: std.ArrayList(Contract.Arrival) = .empty;
                 defer arrs.deinit(gpa);
-                if (try CallGraft.slotArrivals(&e.ev, r.a, .from(sl), &arrs)) return for (arrs.items) |x| try Put.arrive(s, at, x, out);
+                if (try CallGraft.slotArrivals(&e.ev, r.a, .from(sl), &arrs)) {
+                    for (arrs.items) |x| try Put.arrive(s, at, x, out);
+                    // Its fresh arrivals are the call's objects: `host` where an escape reaches them.
+                    for (arrs.items) |x| if (x.kind == .fresh) {
+                        if (try hosted(s, try f.leaf(.{ .kind = .fresh, .atom = r.a }), at.int(), false, out)) try Put.arrive(s, at, .{ .kind = .host }, out);
+                        break;
+                    };
+                    return;
+                }
             }
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
