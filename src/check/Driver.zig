@@ -505,6 +505,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .entry_constructors = d.options.entry_constructors,
         .entry_kinds = d.options.entry_kinds,
         .core_app = d.options.core_app,
+        .app_is_platform = d.options.app_is_platform,
         .host_free = d.options.host_free,
         .crossing = d.options.crossing,
         .informational = d.options.informational,

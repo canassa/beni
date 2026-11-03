@@ -312,7 +312,7 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
 fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex) Error!void {
     const privacy = @import("../resolve/CorePrivate.zig");
     if (privacy.denied(
-        privacy.authority(entry.package, false),
+        privacy.authority(entry.package, false, s.cx.app_is_platform),
         s.cx.interner.slice(entry.module_name),
         s.cx.interner.slice(s.evidence.get(id).method),
         true,

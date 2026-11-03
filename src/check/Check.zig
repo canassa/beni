@@ -177,6 +177,7 @@ pub const Options = struct {
     keep_stores: bool = false,
     /// Authorize root-package core sources, as in name resolution.
     core_app: bool = false,
+    app_is_platform: bool = false,
     host_free: bool = false,
     ownership: ?*const @import("../own/Enforce.zig").Context = null,
     /// The ownership checker v2's hook (`ownership-v2.md` §3.7, §8 S3a), in

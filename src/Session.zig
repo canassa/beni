@@ -2128,6 +2128,7 @@ fn resolveModules(session: *Session) RunError!void {
     // incrementality tests read.
     session.resolution = try Resolve.run(gpa, worker.arena.allocator(), &session.graph, &session.store, &session.artifacts, &session.interner, &session.profile, .{
         .core_app = session.options.core,
+        .app_is_platform = session.app_is_platform,
         .io = session.io,
         .jobs = session.options.jobs,
         .size_by_work = session.options.size_by_work,
@@ -2730,6 +2731,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .entry_kinds = r.entry_kinds,
                     .keep_stores = r.session.options.keep_type_stores,
                     .core_app = r.session.options.core,
+                    .app_is_platform = r.session.app_is_platform,
                     .host_free = r.session.options.host_free,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,

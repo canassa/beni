@@ -142,6 +142,7 @@ pub fn run(
         .graph = graph,
         .template = .{
             .core_app = parallel.core_app,
+            .app_is_platform = parallel.app_is_platform,
             .gpa = gpa,
             .scratch = scratch,
             .graph = graph,
@@ -185,6 +186,7 @@ pub fn run(
 /// How `run` may spread the modules over threads.
 pub const Parallel = struct {
     core_app: bool = false,
+    app_is_platform: bool = false,
     io: Io,
     /// At most this many threads, the calling one included. 1 resolves
     /// every module on the calling thread.
@@ -498,6 +500,7 @@ const SchemaSource = union(enum) {
 
 const Pass = struct {
     core_app: bool = false,
+    app_is_platform: bool = false,
     gpa: Allocator,
     scratch: Allocator,
     graph: *const Graph,
@@ -794,11 +797,11 @@ const Pass = struct {
     fn resolveImported(p: *Pass, m: Graph.Index, target: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
         const privacy = @import("CorePrivate.zig");
         if (privacy.denied(
-            privacy.authority(p.graph.modulePackage(target), false),
+            privacy.authority(p.graph.modulePackage(target), false, p.app_is_platform),
             p.interner.slice(p.graph.moduleName(target)),
             p.interner.slice(name),
             namespace == .value,
-            privacy.authority(p.graph.modulePackage(m), p.core_app),
+            privacy.authority(p.graph.modulePackage(m), p.core_app, p.app_is_platform),
             p.interner.slice(p.graph.moduleName(m)),
         )) {
             try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });

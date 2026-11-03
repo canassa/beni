@@ -110,8 +110,10 @@ pub const Input = struct {
     roundtrip_dispatch: bool = false,
     /// Compute the crossing bits (checker-v2.md §36).
     crossing: bool = true,
-    /// Internal rollout option; enable after typed Task storage lands.
+    /// Effective authority of root-package authoring sources.
     core_app: bool = false,
+    app_is_platform: bool = false,
+    /// Internal rollout option; enable after typed Task storage lands.
     host_free: bool = false,
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
@@ -193,7 +195,8 @@ pub fn check(in: Input) Error!Check.Counters {
         .interner = in.interner,
         .interfaces = in.interfaces,
         .module = in.module,
-        .authority = @import("../resolve/CorePrivate.zig").authority(in.graph.modulePackage(in.module), in.core_app),
+        .authority = @import("../resolve/CorePrivate.zig").authority(in.graph.modulePackage(in.module), in.core_app, in.app_is_platform),
+        .app_is_platform = in.app_is_platform,
         .bir = bir,
         .schemas = &schemas,
         .too_deep = &too_deep,
