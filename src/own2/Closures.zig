@@ -20,6 +20,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Forest = @import("Forest.zig");
+const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
 
@@ -44,8 +45,11 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
         const h = e.contracts.head(c);
         const sig = try e.ctx.codeSig(e.ctx.ctx, cl.code);
-        const writes = e.contracts.effectsOf(h.writes);
-        if (writes.len == 0) continue;
+        if (h.writes.len == 0) continue;
+        var flat: std.ArrayList(Contract.Effect) = .empty;
+        defer flat.deinit(gpa);
+        try e.contracts.writesFlat(gpa, gpa, f.account, f.slots, f.places, h.writes, &flat);
+        const writes = flat.items;
         if (!back_done) {
             back_done = true;
             try handedBack(e, &back);
