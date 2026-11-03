@@ -23,6 +23,7 @@ const Eval = @import("Eval.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const Canon = @import("Canon.zig");
+const AtomGraft = @import("AtomGraft.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -594,6 +595,7 @@ fn describeCallWide(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: ResL
     const e = s.e;
     const f = e.fr();
     const gpa = e.gpa();
+    if (try wholeAtoms(s, l, sl, dest, out)) return;
     try describeBelow(s, l.root, sl, l.tags, dest, out);
     const k = f.places.kind(f.places.pathPlace(sl));
     if ((k != .@"opaque" and k != .@"var") or f.places.pathPlace(sl) == f.places.pathPlace(dest)) return;
@@ -610,6 +612,29 @@ fn describeCallWide(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: ResL
         }
         for (ps.items) |p| try describeLeaf(s, p.leaf, .from(qs), true, out);
     }
+}
+
+/// A call's subtree at `sl` whose settled callee says only atoms at and
+/// below the slot and open above it (`AtomGraft`): the open atoms above
+/// said wide at `dest` and the callee's node there grafted at `dest`.
+fn wholeAtoms(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: ResList) Error!bool {
+    const e = s.e;
+    const f = e.fr();
+    const r = f.roots.items[l.root];
+    if (r.kind != .call or l.tags != 0 or out.label != none) return false;
+    const cl = f.calls.items[r.a];
+    if (cl.contract == none) return false;
+    if (e.ev.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
+    const pk = f.places.kind(f.places.pathPlace(sl));
+    if (pk == .@"var" or pk == .@"opaque" or f.places.pathPlace(sl) != f.places.pathPlace(dest)) return false;
+    const xw = if (sl == r.path) &.{} else f.slots.relWords(try f.slots.relOf(e.gpa(), f.account, f.places, sl));
+    var hits: std.ArrayList(Contract.Hit) = .empty;
+    defer hits.deinit(e.gpa());
+    const n = (try AtomGraft.atomsAt(f, &e.contracts.trees, e.contracts.head(cl.contract).res_root, xw, &hits)) orelse return false;
+    if (!try AtomGraft.offCycles(f, dest)) return false;
+    for (hits.items) |h| if (h.depth < xw.len) for (h.arrivals) |a| try arriveWide(s, dest, a, out);
+    try emitPart(s, dest, n, out);
+    return true;
 }
 
 /// Leaf `li` at result slot `q` and, by structure, at every slot below it.
