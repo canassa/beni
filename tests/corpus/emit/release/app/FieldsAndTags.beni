@@ -3,9 +3,8 @@
 -- `total` follow by use, then text. `Light`'s constructors are tagged 0, 1
 -- and 2 — their declaration order — so `case` switches on numbers and the
 -- derived `compare` `List.sort` calls reads the tags themselves, with no
--- `$$order` table. The `Node`
--- program record crosses to the platform's runtime and keeps `code` and
--- `out`.
+-- `$order` table. The typed `Node.Program` is read by the typed entry
+-- runtime, so its fields can receive short names too.
 import Node
 
 

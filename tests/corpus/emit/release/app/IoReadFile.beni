@@ -1,9 +1,7 @@
--- `Io.run` and `Io.readFile` under `--release` once `Io.js` is gone
--- (plans/runtime-in-beni.md step 10): `finish` reads the host `Program`'s
--- two properties and sets the exit code, `startRead` asks `process` for
--- `node:fs/promises`, and the rejection handler names the abort and reads
--- the code table, one object of the constructors, by its own keys;
--- `Exit` and `Result` carry integer tags, `FileError` its strings.
+-- `Io.run` and `Io.readFile` under `--release`: the typed Node.Program
+-- reaches the typed entry runtime, and generated NodeProcess/NodeFs recipes
+-- write its output and read the file. Rejections are classified through
+-- native error bindings; no Program or callback passes through Js.Value.
 import Io
 import Node exposing (Program)
 

@@ -1,5 +1,11 @@
---! The Node platform: one output string and an exit code. Programs are
---! opaque beni values, consumed by the platform's typed entry runtime.
+--! The Node platform (`docs/design/boundary.md` §5.2, §8): one output
+--! string and an exit code. It is the platform the compiler tests use to
+--! build programs, run their JavaScript and check what they print.
+--!
+--! A `Program` is an opaque beni value. User code obtains one through this
+--! module; the platform's typed entry runtime reads it and performs the
+--! host operations through generated native bindings. The value stays typed
+--! throughout, including when `Io.run` produces it.
 
 --| What `main` is. A program says what to write to standard output and what
 --| exit code to leave behind, and the platform does both.
@@ -7,22 +13,38 @@ pub opaque type Program
     = Program Int String
 
 
---| Write one line to standard output and exit 0.
+--| A program that writes one line to standard output and exits 0.
+--|
+--|     main : Program
+--|     main =
+--|         Node.print "hello"
 pub print : String → fresh Program
 print line = Program 0 (line ++ "\n")
 
 
---| Write each string as its own line and exit 0.
+--| A program that writes each string as its own line and exits 0. An empty
+--| list writes nothing.
+--|
+--|     main : Program
+--|     main =
+--|         Node.printLines [ "one", "two" ]
 pub printLines : borrowed List String → fresh Program
 printLines lines = Program 0 (if List.isEmpty lines then "" else String.join lines "\n" ++ "\n")
 
 
---| Write one line and exit with the code you give it.
+--| A program that writes one line and exits with the code you give it. A
+--| non-zero code is how a command-line program says it failed.
+--|
+--| The line comes first, so a pipeline can end with `Node.exitWith 1`.
+--|
+--|     main : Program
+--|     main =
+--|         Node.exitWith "could not read the file" 1
 pub exitWith : String, Int → fresh Program
 exitWith line code = Program code (line ++ "\n")
 
 
---| Write nothing and exit 0.
+--| A program that writes nothing and exits 0.
 pub done : Program
 done = Program 0 ""
 
