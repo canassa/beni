@@ -20,12 +20,12 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
-const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
 const Routed = @import("Routed.zig");
 const Graft = @import("Graft.zig");
 const RowEnv = @import("RowEnv.zig");
 const Host = @import("Host.zig");
+const LabelChain = @import("LabelChain.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -80,6 +80,9 @@ pub const Evaluation = struct {
     }
     pub fn fr(e: *Evaluation) *Value.Frame {
         return &e.w.f;
+    }
+    pub fn chain(e: *Evaluation) LabelChain.Chain {
+        return .{ .f = &e.w.f, .virt = &e.w.virt, .contracts = e.contracts, .arena = e.ev.arena };
     }
     fn account(e: *Evaluation) *Ids.Account {
         return e.w.f.account;
@@ -201,7 +204,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             // handed to `List.update`), the label keeps that row's mark:
             // what it is supplied may be the taken element (#1760).
             var origin = l.origin;
-            if (takenOutward(e, q)) origin[2] |= RowEnv.taken_origin;
+            if (LabelChain.takenOutward(e.chain(), q)) origin[2] |= RowEnv.taken_origin;
             const got = try e.w.derived.getOrPut(gpa, .{ j, slot, origin[0], origin[1], origin[2] });
             if (!got.found_existing) {
                 got.value_ptr.* = @intCast(f.cbs.items.len);
@@ -227,40 +230,9 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
     }
 }
 
-/// Whether call `q` is a known code's run by a label that calls it many
-/// times (`calls` many), at any level outward (§2.11.3, #1721).
-pub fn outwardMany(e: *Evaluation, q: u32) bool {
-    const f = e.fr();
-    var cur = q;
-    while (f.calls.items[cur].virtual) {
-        const o = virtualOuter(e, cur) orelse return false;
-        const lab = e.contracts.labelsOf(e.contracts.head(f.calls.items[o[0]].contract).labels)[o[1]];
-        if (lab.calls == .many) return true;
-        cur = o[0];
-    }
-    return false;
-}
-
-/// Whether call `q` is a known code's run by a `taken` label (§2.13.6), at
-/// any level outward: its supplies may be the taken element.
-fn takenOutward(e: *Evaluation, q: u32) bool {
-    const f = e.fr();
-    var cur = q;
-    while (f.calls.items[cur].virtual) {
-        const o = virtualOuter(e, cur) orelse return false;
-        const lab = e.contracts.labelsOf(e.contracts.head(f.calls.items[o[0]].contract).labels)[o[1]];
-        if (lab.origin[2] & RowEnv.taken_origin != 0) return true;
-        cur = o[0];
-    }
-    return false;
-}
-
 /// Every entry of tree `root`, in the canonical order, in the round.s arena.
 pub fn entriesOf(e: *Evaluation, root: Contract.Node) Error!*Forest.Entries {
-    const es = try e.ev.arena.create(Forest.Entries);
-    es.* = .{};
-    try es.of(&e.contracts.trees, e.ev.arena, e.fr().places, root, &.{});
-    return es;
+    return LabelChain.entriesOf(e.chain(), root);
 }
 
 /// What a known cell callback answers is stored back in the cell
@@ -447,11 +419,11 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         // refuses.
         d.callback = true;
         d.kind = .callsite;
-        const outer = virtualOuter(e, q);
+        const outer = LabelChain.virtualOuter(e.chain(), q);
         if (outer) |o| {
             // The outer call may be virtual too (a label of a known code's own label): the operands pending are the walked call's.
             var wq = o[0];
-            while (wq >= e.w.walk_calls) wq = (virtualOuter(e, wq) orelse break)[0];
+            while (wq >= e.w.walk_calls) wq = (LabelChain.virtualOuter(e.chain(), wq) orelse break)[0];
             d.pending = if (wq < e.w.walk_calls) e.w.sites.items[wq].pending else none;
             const oc = f.calls.items[o[0]];
             const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
@@ -464,14 +436,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             // Every label the write's supply comes through, outward: a
             // slot any of them keeps refuses (#1758).
             d.wslot = x.slot;
-            var lvs: std.ArrayList(Level) = .empty;
-            defer lvs.deinit(gpa);
-            try supplyLevels(e, q, x.j, words, &lvs);
-            for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
-                for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, lv.words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), lv.words)) {
-                    d.kept = true;
-                };
-            };
+            if (try LabelChain.keptOutward(e.chain(), q, x.j, words)) d.kept = true;
             // A virtual call's head is a code, never an instruction: the walked call names the demand.
             d.callee_inst = if (wq < e.w.walk_calls) f.calls.items[wq].head else none;
             const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
@@ -480,86 +445,6 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         }
     }
     try addDemand(e, d);
-}
-
-/// What each callee write relies on (§2.11.2 item 4), instantiated on its
-/// call's arguments: after the group's facts are delivered, since the
-/// distinct check reads every expansion whole.
-pub fn finishDemands(e: *Evaluation) Error!void {
-    const f = e.fr();
-    // A call's instantiated `req`, made once a call (§2.11.2 item 4).
-    const req_of = try e.ev.arena.alloc(?Cond, f.calls.items.len);
-    @memset(req_of, null);
-    for (e.demands.items) |*d| {
-        if (d.call == none) continue;
-        const call = f.calls.items[d.call];
-        const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
-        if (req_of[d.call] == null) req_of[d.call] = (try Graft.movedReq(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
-        d.relies = req_of[d.call].?;
-        if (!call.virtual or d.wslot == none) continue;
-        // Each label the supply comes through: its supplies' condition,
-        // and a `taken` row's container occurrences, at its call (#1758).
-        var lvs: std.ArrayList(Level) = .empty;
-        defer lvs.deinit(e.gpa());
-        try supplyLevels(e, d.call, d.arg, f.slots.relWords(d.wslot), &lvs);
-        for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
-            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), lv.call));
-            if (lv.lab.origin[2] & RowEnv.taken_origin != 0) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
-                var run = os;
-                d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, &run), lv.call));
-            };
-        };
-    }
-}
-
-/// A label a virtual call's supply comes through: the call `call` whose
-/// callee's label `lab` it applies, the supply `k`, written at `words`.
-pub const Level = struct { call: u32, lab: Contract.Label, k: u32, words: []const u32 };
-
-/// The labels virtual call `q`'s argument `k`, written at `words`, is
-/// supplied through, outward (§2.11.3, #1758). Where the call it applies a
-/// label of is virtual too (a known code's label of a known code, `h = λv
-/// → g v` called by a callee's label), that supply is in turn its own
-/// parameter's: what an arrival of it at the supply says, so the outer
-/// label's condition, kept slots and `taken` occurrences hold the write too.
-/// The calls go down (a virtual call follows the call it applies), so the
-/// chain ends; each level's (k, words) is listed once.
-pub fn supplyLevels(e: *Evaluation, q: u32, k: u32, words: []const u32, out: *std.ArrayList(Level)) Error!void {
-    const f = e.fr();
-    const gpa = e.gpa();
-    var cur = q;
-    var ks: std.ArrayList(Level) = .empty;
-    defer ks.deinit(gpa);
-    try ks.append(gpa, .{ .call = q, .lab = undefined, .k = k, .words = words });
-    while (f.calls.items[cur].virtual and ks.items.len != 0) {
-        const o = virtualOuter(e, cur) orelse break;
-        const oc = f.calls.items[o[0]];
-        const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
-        var next: std.ArrayList(Level) = .empty;
-        defer next.deinit(gpa);
-        const own = if (oc.virtual and oc.callee_val != none) oc.args.len - f.kidsOf(f.val(oc.callee_val)).len else 0;
-        for (ks.items) |kw| {
-            try out.append(gpa, .{ .call = o[0], .lab = lab, .k = kw.k, .words = kw.words });
-            if (!oc.virtual) continue;
-            for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == kw.k) {
-                const es = try entriesOf(e, su.res_root);
-                for (es.items.items) |rs| for (rs.arrivals) |a| {
-                    if (a.kind != .param or a.j >= own) continue;
-                    const at = es.wordsOf(rs);
-                    const nw: []const u32 = if (std.mem.startsWith(u32, kw.words, at))
-                        try std.mem.concat(e.ev.arena, u32, &.{ f.slots.relWords(a.slot), kw.words[at.len..] })
-                    else if (std.mem.startsWith(u32, at, kw.words)) f.slots.relWords(a.slot) else continue;
-                    const seen = for (next.items) |n| {
-                        if (n.k == a.j and std.mem.eql(u32, n.words, nw)) break true;
-                    } else false;
-                    if (!seen) try next.append(gpa, .{ .call = o[0], .lab = lab, .k = a.j, .words = nw });
-                };
-            };
-        }
-        ks.clearRetainingCapacity();
-        try ks.appendSlice(gpa, next.items);
-        cur = o[0];
-    }
 }
 
 fn addDemand(e: *Evaluation, d: Demand) Error!void {
@@ -608,17 +493,6 @@ fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
     defer ps.deinit(e.gpa());
     try Slots.replay(e.gpa(), f.account, f.places, try f.places.rootPath(e.gpa(), at), words, &ps);
     return if (ps.items.len != 0) .from(ps.items[0]) else .none;
-}
-
-/// The walk's call a virtual call applies a label of: `(call, label)`.
-pub fn virtualOuter(e: *Evaluation, q: u32) ?[2]u32 {
-    var it = e.w.virt.keys.items;
-    var i: usize = 0;
-    while (i + 1 < it.len) : (i += 2) {
-        if (e.w.virt.values.items[i / 2] == q) return .{ it[i], it[i + 1] };
-    }
-    _ = &it;
-    return null;
 }
 
 pub fn tokenOf(e: *Evaluation, inst: u32) u32 {

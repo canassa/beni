@@ -21,6 +21,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
+const Outward = @import("Outward.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -921,7 +922,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         // than once per activation, whatever each source says alone.
         // Passed on inside a known code an outer label runs (`λv → f v`
         // handed to `List.map`), it runs as often as that label (#1721).
-        const lc: Contract.Calls = if (lab.calls != .none and Eval.outwardMany(e, p[1])) .many else lab.calls;
+        const lc: Contract.Calls = if (lab.calls != .none and Outward.outwardMany(e, p[1])) .many else lab.calls;
         dl.calls = if (lc == .none) dl.calls else if (dl.calls == .none) lc else .many;
         // The supplies at this call's function type: a callee's supply slot
         // of a type variable's place (`apply : (a → b), a → b`) takes the
@@ -1057,27 +1058,8 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
             sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2] }));
             if (pi < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi]);
-            // Passed on inside a known code an outer label runs, what it is
-            // supplied is that label's supply: the invocations' supplies are
-            // apart only under each such label's condition too (#1721).
-            if (call.virtual) {
-                const own = call.args.len - f.kidsOf(f.val(call.callee_val)).len;
-                const es = try Eval.entriesOf(e, su.res_root);
-                for (es.items.items) |rs| for (rs.arrivals) |a| {
-                    if (a.kind != .param or a.j >= own) continue;
-                    var lvs: std.ArrayList(Eval.Level) = .empty;
-                    defer lvs.deinit(e.gpa());
-                    try Eval.supplyLevels(e, p[1], a.j, f.slots.relWords(a.slot), &lvs);
-                    for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |ou| if (ou.k == lv.k) {
-                        sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSel(&e.ev, try e.contracts.cond(arena, ou.cond), lv.call));
-                        // A slot the outer label keeps is kept here: the part
-                        // arriving from it, whole.
-                        for (e.contracts.effectsOf(ou.kept)) |kp| if (std.mem.startsWith(u32, lv.words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), lv.words)) {
-                            _ = try Contract.Draft.addEffect(&sup.kept, arena, .{ .j = 0, .slot = try f.slots.relOfWords(e.gpa(), f.account, f.places, es.wordsOf(rs)), .deep = true });
-                        };
-                    };
-                };
-            }
+            // Passed on inside a known code, the outer labels' too (#1721).
+            try Outward.passSupply(e, arena, p[1], su, sup);
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
