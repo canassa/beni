@@ -438,8 +438,17 @@ fn destsOf(s: *Sink, from: PathId, slot: PathId, q: PathId, out: *std.ArrayList(
         return out.append(gpa, d);
     }
     const start = out.items.len;
-    const rel = (try f.slots.relBelow(gpa, f.account, f.places, from, slot)) orelse Slots.root;
-    try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), out);
+    // Below `q` itself, a slot named by `q`'s steps and its own is that
+    // slot (§2.1, *one position, one name*): its steps replayed are its name.
+    if (from == q) {
+        const qw = f.slots.relWords(try f.slots.relOf(gpa, f.account, f.places, q));
+        const sw = f.slots.relWords(try f.slots.relOf(gpa, f.account, f.places, slot));
+        if (std.mem.startsWith(u32, sw, qw)) try out.append(gpa, slot.int());
+    }
+    if (out.items.len == start) {
+        const rel = (try f.slots.relBelow(gpa, f.account, f.places, from, slot)) orelse Slots.root;
+        try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), out);
+    }
     if (out.items.len == start + 1) try s.dests.put(gpa, .{ from.int(), q.int(), slot.int() }, out.items[start]);
 }
 
