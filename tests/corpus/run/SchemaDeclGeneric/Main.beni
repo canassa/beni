@@ -145,6 +145,30 @@ main =
         , Show.result (Boxed.print Schema.int (Boxed.Full { content = 7, rest = Boxed.Empty })) λs →
             s
         , "-- decode, encode, read and write, with a schema passed at run time"
+        , Show.result
+            (Schema.decode (Page.schema counted) { items = [ "3" ], total = 1 })
+            ints
+        , Show.result (Schema.encodeWith (Page.schema counted) all { items = [ 5, 6 ], total = 2 }) λp →
+            String.join p.items ","
+        , Show.result
+            (Schema.read (Page.schema counted) (Show.host "{\"items\":[\"4\"],\"total\":1}"))
+            ints
+        , Show.value (Schema.write (Page.schema counted) { items = [ 6 ], total = 1 })
         , Show.result (Schema.decode (Page.schema (Schema.tagged "k" [])) { items = [], total = 0 }) λ_ →
             "?"
+        , Show.result
+            (Schema.readWith
+                (Page.schema (Schema.list counted))
+                all
+                (Show.host "{\"items\":[[\"1\",2]],\"total\":1}")
+            )
+            λp →
+                String.join
+                    (List.map p.items λxs → String.join (List.map xs String.fromInt) ",")
+                    "/"
+        , Show.value
+            (Schema.write
+                (Boxed.schema counted)
+                (Boxed.Full { content = 8, rest = Boxed.Empty })
+            )
         ]
