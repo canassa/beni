@@ -1568,6 +1568,19 @@ slot (§2.1, *one position, one name*: its steps replayed are its name; checked 
 no slot differs), so it is read off its name, two records, and never replayed. `Schema.shapesOf`'s growth 2 581
 → 0, `boxOf` 6 384 → 1 708, `asVariant` 5 837 → 1 810, `variantList` 5 041 → 183, `fieldList` 3 645 → 0,
 `describedOf` 1 622 → 0; `Schema.shapeOf` 263 634 → 258 000, `Dict.descend` → 19 896, `oneOfHelp` → 179 864.
+*Amended 2026-11-03 (#1714):* those result slots are no longer remembered per `(from, q, slot)`. A read — a value
+below `from` described at result slot `q`, or a call root's callee entries read at the root's path (`feedBelow`, which
+remembered one caller slot per `(root path, entry)`) — has **a column** (`Dests.zig`): an entry per slot the read
+meets, kept in the slots' order. A leaf's named slots, a key's items and the slots below a call's slot are entered
+as one batch, in that order, before they are read; an item delivered later is entered when it arrives. Each entry
+is made once, from its nearest ancestor in the column: that ancestor's result slots (`q`, or the root's path, for
+none) the remaining steps on, one record a step, as `Slots.replay` takes them; below `q = from` a slot named by
+`q`'s steps and its own is itself, one record. A slot whose canonical name is not its parent's and one more step
+(a fold, `relBelow`'s walk) is replayed from `q`. A column covers only what its read meets: filled up front over
+`belowAll(from)`, `Schema.shapeOf` and `shapesOf` pass the limit. Every summary is the same; growth is worse
+nowhere and better in 31 accounts, totals 8 431 down. `Schema.shapeOf` 258 000 → 220 738, `shapesOf` 24 348 → 22 195,
+`describedHost` 6 927 → 4 956, `Fields16` 136 119 → 132 529, `Dict.descend` 19 896 → 19 500; `variantList`'s growth
+183 → 0, `boxOf` 1 708 → 1 356, `asVariant` 1 810 → 937.
 
 ### 2.11 Calls
 
@@ -4188,6 +4201,7 @@ L0  Ids  Counters  Scratch
 | `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
+| `Dests.zig` | 3 | a read's result slots as a column, an entry per slot met made once from its nearest ancestor in it (§2.10 *Read-off*, #1714) | Ids, Place, Slots |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |

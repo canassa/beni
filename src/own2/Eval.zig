@@ -77,7 +77,7 @@ pub const Evaluation = struct {
             e.sink.building.deinit(g);
             e.sink.nodes.deinit(g);
             e.sink.acyclic.deinit(g);
-            e.sink.dests.deinit(g);
+            e.sink.reads.deinit(g);
         }
     }
 
@@ -589,8 +589,8 @@ pub const Sink = struct {
     nodes: Ids.FixedDict(6) = .{},
     /// Per place: 1 when no place below it is on a cycle, else 2.
     acyclic: Ids.FixedDict(1) = .{},
-    /// `(from, q, slot)` → the one result slot `ReadOff.destsOf` replays.
-    dests: Ids.FixedDict(3) = .{},
+    /// Per read `(from, q)`: its result slots (`ReadOff.destsOf`).
+    reads: Relation.Dests.Reads(2) = .{},
     /// 0 not known; 1 nothing the frame reads grows; 2 something does.
     frozen: u8 = 0,
     /// The subtrees begun so far.
