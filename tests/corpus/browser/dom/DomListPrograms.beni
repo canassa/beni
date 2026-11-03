@@ -1,0 +1,19 @@
+-- #1786: Browser.programs also receives a trie-backed List.
+import Browser
+
+
+page : Int → Browser.Program
+page n =
+    Browser.program
+        { init = λ⊤ → n
+        , update = λmsg _ → msg
+        , view = λmodel → <p>{String.fromInt model}</p>
+        }
+
+
+pages : Int, List Browser.Program → List Browser.Program
+pages n acc = if n == 0 then acc else pages (n - 1) (List.push acc (Browser.programs []))
+
+
+main : Browser.Program
+main = Browser.programs (pages 40 [ page 1 ])

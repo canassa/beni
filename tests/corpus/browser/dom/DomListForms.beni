@@ -1,0 +1,42 @@
+-- #1786: a trie and its suffix view must use the same renderer reader
+-- as a plain array. The corpus runs development and release.
+import Browser
+import Html exposing (Html)
+
+
+rows : Int, List Int → List Int
+rows n acc = if n == 0 then acc else rows (n - 1) (List.push acc n)
+
+
+items : List Int
+items = rows 40 []
+
+
+view : Int → Html Int
+view _ =
+    <main>
+        <section id="keyed">
+            <For each={items} keyed={λn → n}>
+                {λn → <i>{String.fromInt n}</i>}
+            </For>
+        </section>
+        <section id="position">
+            <For each={items} keyed={False}>
+                {λn → <i>{String.fromInt n}</i>}
+            </For>
+        </section>
+        <section id="suffix">
+            <For each={List.drop items 38} keyed={False}>
+                {λn → <i>{String.fromInt n}</i>}
+            </For>
+        </section>
+        <section id="plain">
+            <For each={[ 1, 2 ]} keyed={False}>
+                {λn → <i>{String.fromInt n}</i>}
+            </For>
+        </section>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = λmsg _ → msg, view = view }
