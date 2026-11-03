@@ -386,6 +386,9 @@ pub fn build(b: *std.Build) void {
     native_tool_module.addAnonymousImport("webref_receipt", .{
         .root_source_file = b.path("docs/design/research/workers/sources.json"),
     });
+    native_tool_module.addAnonymousImport("cloudflare_types", .{
+        .root_source_file = b.path("docs/design/research/workers/cloudflare-workers-types-5.20261102.1.tgz"),
+    });
     const native_tool = b.addExecutable(.{ .name = "beni-native-bindings", .root_module = native_tool_module });
     const native_step = b.step("native-bindings", "Generate the pinned native type and binding metadata catalogue");
     const native_run = b.addRunArtifact(native_tool);

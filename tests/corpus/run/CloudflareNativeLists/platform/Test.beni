@@ -1,0 +1,29 @@
+import Browser.Host.Cloudflare as Native
+import Browser.Host.Response as HostResponse
+import Js.Protocol as Protocol
+
+
+pub opaque type Program
+    = Program
+        (List Native.Definition → Native.Program)
+        (List (String × String) → HostResponse.Response)
+        (Native.ObjectState, Native.Socket, List String → ⊤)
+        String
+
+
+pub program : String → Program
+program label = Program make makeResponse install label
+
+
+make : List Native.Definition → Native.Program
+make definitions = Native.program (λ_ _ _ → Protocol.defect "unused fetch") definitions
+
+
+makeResponse : List (String × String) → HostResponse.Response
+makeResponse headers = Native.responseCreate 200 (Just "ok") headers
+
+
+install : Native.ObjectState, Native.Socket, List String → ⊤
+install state socket tags =
+    Native.acceptSocket state socket tags
+    Native.socketInitialize socket "id" "protocol" tags

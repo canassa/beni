@@ -1,8 +1,37 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
 import Browser.Host.Rejection as Rejection
+import Js
+
+
+pub foreign type Resolvers a
 
 
 pub foreign type Promise a
 
 
-pub foreign impure observe : borrowed Promise a, escaped sync (a → ⊤), escaped sync (Rejection.Rejection → ⊤) → ⊤
+pub foreign impure promise : borrowed Resolvers a → Promise a
+
+
+pub foreign impure resolve : borrowed Resolvers a, a → ⊤
+
+
+pub foreign impure reject : borrowed Resolvers a, borrowed Rejection.Rejection → ⊤
+
+
+pub foreign impure after : borrowed Promise a, escaped sync (a → ⊤) → Promise ⊤
+
+
+pub foreign impure observe :
+      borrowed Promise a
+    , escaped sync (a → ⊤)
+    , escaped sync (Rejection.Rejection → ⊤)
+    → ⊤
+
+
+pub foreign impure unitResolvers : ⊤ → Resolvers ⊤
+
+
+pub foreign impure stringResolvers : ⊤ → Resolvers String
+
+
+pub foreign impure dataResolvers : ⊤ → Resolvers Js.Value

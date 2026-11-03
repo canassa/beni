@@ -4,6 +4,7 @@ const std = @import("std");
 const Idl = @import("Idl.zig");
 pub const Callable = @import("Callable.zig");
 pub const CheckedData = @import("CheckedData.zig");
+pub const cloudflare_source = @import("Cloudflare.zig").source;
 const Allocator = std.mem.Allocator;
 pub const source = .{
     .package = "@webref/idl",
@@ -48,6 +49,7 @@ pub const Catalogue = struct {
     intrinsic_revision: u32 = 1,
     format_version: u32 = 2,
     source: @TypeOf(source) = source,
+    cloudflare_source: @TypeOf(cloudflare_source) = cloudflare_source,
     files: []const File,
     declarations: []const Declaration,
     members: []const Member,

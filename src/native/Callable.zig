@@ -61,7 +61,7 @@ pub fn validate(c: anytype) bool {
 pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
-    try w.writeAll("-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
+    try w.writeAll(if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.\n" else "-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
     if (std.mem.eql(u8, module, "Browser.Host.Events")) try w.writeAll("import Browser.Host.Event as Event\nimport Browser.Host.EventTarget as EventTarget\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.HTMLAnchorElement as HTMLAnchorElement\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.EventTarget as EventTarget\n\n\n");
@@ -74,7 +74,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.MessageChannel")) try w.writeAll("import Browser.Host.MessagePort as MessagePort\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Timers")) try w.writeAll("-- A browser numeric timer id or a Node Timeout handle; never plain data.\npub foreign type Timer\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("pub foreign type Frame\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("import Browser.Host.Rejection as Rejection\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("import Browser.Host.Rejection as Rejection\nimport Js\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.AbortController")) try w.writeAll("import Browser.Host.AbortSignal as AbortSignal\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.NodeFs")) try w.writeAll("import Browser.Host.AbortSignal as AbortSignal\nimport Browser.Host.Promise as Promise\nimport Browser.Host.NodeDirent as NodeDirent\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Data") or std.mem.eql(u8, module, "Browser.Host.Json")) try w.writeAll("import Js\n\n\n");
@@ -93,10 +93,12 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Worker")) try w.writeAll("import Js\nimport Browser.Host.EventTarget as EventTarget\n\n\npub foreign type Endpoint\n\n\npub type CreateError\n    = SyntaxError\n    | SecurityError\n    | TypeError\n\n\npub type PostError\n    = DataCloneError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Js\nimport Browser.Host.Rejection as Rejection\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Console") or std.mem.eql(u8, module, "Browser.Host.Rejection")) try w.writeAll("import Js\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) try w.writeAll(@import("Cloudflare.zig").declarations);
+    if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("pub foreign type Resolvers a\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
-        try w.print("{s}pub foreign {s} {s} : {s}\n", .{ if (type_name == null) "\n" else "\n\n", @tagName(row.effect), row.name, row.signature });
+        try w.print("{s}pub foreign {s} {s} :{s}{s}\n", .{ if (type_name == null and !std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "\n" else "\n\n", @tagName(row.effect), row.name, if (std.mem.startsWith(u8, row.signature, "\n")) "" else " ", row.signature });
     }
     return out.toOwnedSlice();
 }
@@ -107,6 +109,75 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .cf_socketInitialize => "(socket, id, protocol, tags) => { socket.serializeAttachment({ data: null, id, protocol, tags: Array.isArray(tags) ? tags : tags.$plain ? tags.$plain() : tags.b.slice(tags.o) }); return null; }",
+            .cf_unitResolvers => "(ignored) => { return globalThis.Promise.withResolvers(); }",
+            .cf_stringResolvers => "(ignored) => { return globalThis.Promise.withResolvers(); }",
+            .cf_dataResolvers => "(ignored) => { return globalThis.Promise.withResolvers(); }",
+            .cf_responseResolvers => "(ignored) => { return globalThis.Promise.withResolvers(); }",
+            .cf_program => "(fetch, definitions) => { return { fetch, objects: (Array.isArray(definitions) ? definitions : definitions.$plain ? definitions.$plain() : definitions.b.slice(definitions.o)).slice() }; }",
+            .cf_definition => "(name, start) => { return { name, start }; }",
+            .cf_instance => "(fetch, alarm, rpc, message, closed, failed) => { return { fetch, alarm, rpc: (chain, kind, id, text) => rpc(chain == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: chain }, kind, id == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: id }, text), webSocketMessage: (socket, value) => message(socket, typeof value === \"string\" ? { $: \"Just\", a: value } : { $: \"Nothing\", a: null }), webSocketClose: closed, webSocketError: failed }; }",
+            .cf_namespace => "(env, name) => { const binding = env[name]; return binding == null || typeof binding.idFromName !== \"function\" || typeof binding.fetch === \"function\" ? { $: \"Nothing\", a: null } : { $: \"Just\", a: binding }; }",
+            .cf_service => "(env, name) => { const binding = env[name]; return binding == null || typeof binding.fetch !== \"function\" ? { $: \"Nothing\", a: null } : { $: \"Just\", a: binding }; }",
+            .cf_variable => "(env, name) => { const binding = env[name]; return typeof binding === \"string\" ? { $: \"Just\", a: binding } : { $: \"Nothing\", a: null }; }",
+            .cf_byName => "(ns, name) => { return ns.getByName(name); }",
+            .cf_uniqueId => "(ns) => { return ns.newUniqueId(); }",
+            .cf_idFromString => "(ns, text) => { try { return { $: \"Just\", a: ns.idFromString(text) }; } catch (error) { if (!(error instanceof globalThis.TypeError)) throw error; return { $: \"Nothing\", a: null }; } }",
+            .cf_getStub => "(ns, id) => { return ns.get(id); }",
+            .cf_stubId => "(stub) => { return stub.id; }",
+            .cf_idText => "(id) => { return id.toString(); }",
+            .cf_idName => "(id) => { return id.name == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: id.name }; }",
+            .cf_requestMethod => "(request) => { return request.method; }",
+            .cf_requestUrl => "(request) => { return request.url; }",
+            .cf_requestPath => "(request) => { return new globalThis.URL(request.url).pathname; }",
+            .cf_requestHeaders => "(request) => { return request.headers; }",
+            .cf_requestText => "(request) => { return request.text(); }",
+            .cf_requestCopy => "(request, headers) => { return new globalThis.Request(request, { headers }); }",
+            .cf_requestSignal => "(request) => { return request.signal == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: request.signal }; }",
+            .cf_onAbort => "(signal, callback) => { signal.addEventListener(\"abort\", () => callback(null)); return null; }",
+            .cf_responseCreate => "(status, body, headers) => { const pairs = Array.isArray(headers) ? headers : headers.$plain ? headers.$plain() : headers.b.slice(headers.o); return new globalThis.Response(body.$ === \"Just\" ? body.a : null, { status, headers: pairs.map(pair => [pair.a, pair.b]) }); }",
+            .cf_responseCopy => "(response) => { return new globalThis.Response(response.body, response); }",
+            .cf_stubFetch => "(stub, request) => { return stub.fetch(request); }",
+            .cf_serviceFetch => "(service, request) => { return service.fetch(request); }",
+            .cf_stubRpc => "(stub, chain, kind, id, text) => { return stub.$beni(chain, kind, id.$ === \"Just\" ? id.a : null, text); }",
+            .cf_overloaded => "(reason) => { return reason != null && reason.overloaded === true; }",
+            .cf_reset => "(reason) => { return reason != null && reason.durableObjectReset === true; }",
+            .cf_retryable => "(reason) => { return reason != null && reason.retryable === true; }",
+            .cf_errorText => "(reason) => { return String(reason); }",
+            .cf_randomUUID => "(ignored) => { return globalThis.crypto.randomUUID(); }",
+            .cf_waitUntil => "(context, promise) => { context.waitUntil(promise); return null; }",
+            .cf_objectWaitUntil => "(state, promise) => { state.waitUntil(promise); return null; }",
+            .cf_objectId => "(state) => { return state.id; }",
+            .cf_objectAbort => "(state, reason) => { state.abort(reason); return null; }",
+            .cf_alarmSet => "(state, when) => { state.storage.setAlarm(when); return null; }",
+            .cf_alarmDelete => "(state) => { state.storage.deleteAlarm(); return null; }",
+            .cf_sockets => "(state) => { return state.getWebSockets(); }",
+            .cf_socketsTagged => "(state, tag) => { return state.getWebSockets(tag); }",
+            .cf_acceptSocket => "(state, socket, tags) => { state.acceptWebSocket(socket, Array.isArray(tags) ? tags : tags.$plain ? tags.$plain() : tags.b.slice(tags.o)); return null; }",
+            .cf_autoResponse => "(state, request, response) => { state.setWebSocketAutoResponse(new globalThis.WebSocketRequestResponsePair(request, response)); return null; }",
+            .cf_socketPair => "(ignored) => { return new globalThis.WebSocketPair(); }",
+            .cf_socketClient => "(pair) => { return pair[0]; }",
+            .cf_socketServer => "(pair) => { return pair[1]; }",
+            .cf_socketResponse => "(client, protocol) => { return new globalThis.Response(null, { status: 101, webSocket: client, headers: protocol === \"\" ? [] : [[\"sec-websocket-protocol\", protocol]] }); }",
+            .cf_socketCloseEmpty => "(socket) => { socket.close(); return null; }",
+            .cf_consoleError => "(text) => { globalThis.console.error(text); return null; }",
+            .cf_consoleLog => "(text) => { globalThis.console.log(text); return null; }",
+            .cf_consoleReason => "(text, reason) => { globalThis.console.error(text, reason); return null; }",
+            .promise_of => "(resolvers) => { return resolvers.promise; }",
+            .promise_resolve => "(resolvers, value) => { resolvers.resolve(value); return null; }",
+            .promise_reject => "(resolvers, reason) => { resolvers.reject(reason); return null; }",
+            .promise_after => "(promise, done) => { return promise.then(done); }",
+            .cf_socketEq => "(a, b) => { return a === b; }",
+            .cf_socketState => "(socket) => { return socket.readyState; }",
+            .cf_socketSend => "(socket, text) => { socket.send(text); return null; }",
+            .cf_socketClose => "(socket, code, reason) => { socket.close(code, reason); return null; }",
+            .cf_socketAttachment => "(socket) => { return socket.deserializeAttachment(); }",
+            .cf_socketAttach => "(socket, data) => { socket.serializeAttachment(data); return null; }",
+            .cf_kv => "(state) => { const kv = state.storage.kv; return kv == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: kv }; }",
+            .cf_kvGet => "(store, key) => { const value = store.get(key); return value == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .cf_kvPut => "(store, key, text) => { try { store.put(key, text); return true; } catch (error) { if (!(error instanceof globalThis.Error) || !String(error.message).includes(\"SQLITE_FULL\")) throw error; return false; } }",
+            .cf_kvDelete => "(store, key) => { return store.delete(key); }",
+            .cf_kvKeys => "(store, prefix) => { return Array.from(store.list({ prefix }), pair => pair[0]); }",
             .worker_supported => "(ignored) => { return typeof globalThis.Worker === \"function\"; }",
             .worker_create => "(url, name, credentials) => { try { return { $: \"Ok\", a: new globalThis.Worker(url, { type: \"module\", name, credentials }) }; } catch (error) { if (error instanceof globalThis.DOMException && (error.name === \"SyntaxError\" || error.name === \"SecurityError\")) return { $: \"Err\", a: error.name }; if (error instanceof globalThis.TypeError) return { $: \"Err\", a: \"TypeError\" }; throw error; } }",
             .worker_endpoint => "(worker) => { return worker; }",
