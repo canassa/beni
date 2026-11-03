@@ -139,81 +139,10 @@ test "typed lowering closes generic operand packets with checked source evidence
         \\        Just _ → "data"
         \\        Nothing → "hidden"
     );
-    try w.write("platform/beni.json",
-        \\{"platform":true,"name":"evidence","platforms":["html"],"reexports":["Html"],"program":"Probe.Program","runtime":"runtime.js","markup":{"lowering":"typed-toy","module":"Probe","runtime":"runtime.js"}}
-    );
-    try w.write("platform/runtime.js",
-        \\export const run = program => console.log(program.t);
-        \\export const text = value => ({t: value});
-        \\export const map = (value, tagger) => value;
-    );
-    try w.write("platform/Probe.js", "export const show = value => value;\n");
-    try w.write("platform/Probe.beni",
-        \\import Html exposing (Html)
-        \\import Js.Any as Any
-        \\import CaptureCheck
-        \\
-        \\pub foreign type Program
-        \\pub foreign pure show : Html msg → Program
-        \\pub opaque type Saved = Saved Any.Any
-        \\pub save value = Saved (Any.pack value)
-        \\
-        \\pub first rows = List.head rows
-        \\pub sample rows =
-        \\    case rows of
-        \\        [ ( _, _, _, value ), …_ ] → value.sample
-        \\        [] → sample rows
-        \\
-        \\pub keyValue : List (Saved × Saved × Saved × { sample : a, keyOf : a → key }) → key
-        \\keyValue rows =
-        \\    case rows of
-        \\        [ ( _, _, _, value ), …_ ] → value.keyOf value.sample
-        \\        [] → keyValue rows
-        \\
-        \\read : Any.Any, a → Maybe a
-        \\read saved _ = Any.unpack saved
-        \\
-        \\pub inspect : List (Saved × Saved × Saved × { sample : a, keyOf : a → key }) → String
-        \\inspect rows =
-        \\    case rows of
-        \\        [ ( Saved firstBox, Saved secondBox, _, value ), …_ ] →
-        \\            original = read firstBox value.sample
-        \\            originalKey = read secondBox (value.keyOf value.sample)
-        \\            case ( original, originalKey ) of
-        \\                ( Just _, Just _ ) → "matched"
-        \\                _ → "wrong identity"
-        \\        [] → "empty"
-        \\
-        \\pub capture : Saved, packet → String
-        \\capture (Saved saved) example =
-        \\    original = read saved example
-        \\    case original of
-        \\        Just _ → "tuple matched"
-        \\        Nothing → "tuple identity changed"
-        \\
-        \\pub data value = CaptureCheck.data value
-    );
-    try w.write("src/View.beni",
-        \\import Html exposing (Html)
-        \\import Probe
-        \\
-        \\pub view : List (Probe.Saved × Probe.Saved × Probe.Saved × { sample : a, keyOf : a → key }) → Html msg
-        \\view rows =
-        \\    render : List (Probe.Saved × Probe.Saved × Probe.Saved × { sample : a, keyOf : a → key }) → Html msg
-        \\    render input = <For each={input} keyed={False}>{λ_ → <></>}</For>
-        \\    render rows
-    );
-    try w.write("src/Main.beni",
-        \\import Probe
-        \\import View
-        \\
-        \\main : Probe.Program
-        \\main =
-        \\    value = { count = 42, names = [ "one", "two" ] }
-        \\    key = "key"
-        \\    rows = [ ( Probe.save value, Probe.save key, Probe.save ( value, key ), { sample = value, keyOf = λ_ → key } ) ]
-        \\    Probe.show (View.view rows)
-    );
+    // #1782: typed-toy uses the same generated sample call both in a
+    // capture packet and in a checked-data call; first is shared too.
+    // The release specialiser must account for every structural use.
+    try w.copyTree("tests/corpus/external-platform/SharedGeneratedOperands", "_");
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
@@ -232,5 +161,21 @@ test "typed lowering closes generic operand packets with checked source evidence
         try testing.expectEqual(@as(u8, 0), built.exit_code);
         try testing.expectEqualStrings("", built.stderr);
         try w.expectProgram("out/_main.mjs", .{ .stdout = "matched/matched/tuple matched/data\n" });
+    }
+}
+
+test "a shared generated call is rewritten once when its replacement is a call" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/external-platform/SharedCallForward", "_");
+    for ([_][]const []const u8{
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "--release", "Main.beni" },
+    }) |args| {
+        const built = try w.runWith(args, .{ .raw_diagnostics = true });
+        if (built.exit_code != 0) std.debug.print("{s}\n", .{built.stderr});
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "rightleft/rightleft\n" });
     }
 }

@@ -1,0 +1,16 @@
+import Probe
+import View
+
+
+main : Probe.Program
+main =
+    value = { count = 42, names = [ "one", "two" ] }
+    key = "key"
+    rows =
+        [ ( Probe.save value
+          , Probe.save key
+          , Probe.save ( value, key )
+          , { sample = value, keyOf = λ_ → key }
+          )
+        ]
+    Probe.show (View.view rows)

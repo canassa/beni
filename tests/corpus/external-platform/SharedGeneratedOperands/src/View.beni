@@ -1,0 +1,13 @@
+import Html exposing (Html)
+import Probe
+
+
+pub view :
+      List (Probe.Saved × Probe.Saved × Probe.Saved × { sample : a, keyOf : a → key })
+    → Html msg
+view rows =
+    render :
+          List (Probe.Saved × Probe.Saved × Probe.Saved × { sample : a, keyOf : a → key })
+        → Html msg
+    render input = <For each={input} keyed={False}>{λ_ → <></>}</For>
+    render rows

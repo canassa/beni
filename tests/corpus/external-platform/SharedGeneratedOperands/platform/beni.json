@@ -1,0 +1,1 @@
+{"platform":true,"name":"evidence","platforms":["html"],"reexports":["Html"],"program":"Probe.Program","runtime":"runtime.js","markup":{"lowering":"typed-toy","module":"Probe","runtime":"runtime.js"}}

@@ -6773,7 +6773,13 @@ const Spec = struct {
                     }
                 }
             }
+            // A lowering may use one generated call in several places.
+            // Writing it changes them all, including when it stays a call:
+            // its old Small must not be applied to the replacement.
+            var visited: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
             for (calls.items) |c| {
+                if (visited.isSet(c.call.int())) continue;
+                visited.set(c.call.int());
                 if (m.ir.tag(c.call) != .call) continue;
                 // Every change is to the call's statement.
                 within(m, c.top);
@@ -7704,20 +7710,27 @@ const Spec = struct {
         // A call the statement no longer reaches — `inlineSmallPass` lists
         // a statement's calls before it writes any, and a body written in
         // may have dropped one — changes nothing a walk of it meets.
-        if (!countedCall(m.ir, scan, call)) return null;
+        const copies = countedCalls(m.ir, scan, call);
+        if (copies == 0) return null;
         if (!opaqueChild(m.ir, e) and std.mem.indexOfScalar(Index, scan.sensitive.items, call) != null) return null;
-        return s.retract(m, top, &.{call.int()});
+        const r = (try s.retract(m, top, &.{call.int()})).?;
+        if (copies > 1) {
+            const nodes = try s.walkFrom(m, &.{call.int()});
+            for (1..copies) |_| try s.countNames(m, r.scan, nodes, .take);
+        }
+        return .{ .scan = r.scan, .copies = copies };
     }
 
-    /// Whether `scan` counts `call`, by its callee's name listing it. A call
-    /// of anything else is not known to be counted: a copy of a call's root
+    /// How many occurrences of `call` the scan counts, by its callee's
+    /// name listing it. Rewriting a shared node changes every occurrence.
+    /// A call of anything else is not known to be counted: a copy of a call's root
     /// (`Copy.atom`) shares the call's callee, so the callee alone cannot
     /// say the call itself is still met.
-    fn countedCall(ir: *const JsIr, scan: *NameScan, call: Index) bool {
+    fn countedCalls(ir: *const JsIr, scan: *NameScan, call: Index) u32 {
         const callee: Index = @fromBackingInt(@intCast(ir.data(call).lhs));
-        if (ir.tag(callee) != .ident) return false;
-        const u = findUse(scan, ir.data(callee).lhs) orelse return false;
-        return std.mem.indexOfScalar(Index, u.calls.items, call) != null;
+        if (ir.tag(callee) != .ident) return 0;
+        const u = findUse(scan, ir.data(callee).lhs) orelse return 0;
+        return @intCast(std.mem.countScalar(Index, u.calls.items, call));
     }
 
     /// The name `obj` is, when it is an `ident`.
@@ -7796,7 +7809,11 @@ const Spec = struct {
 
     /// What `retract` kept of a statement before a change replaces subtrees
     /// of it: its scan, the subtrees' part taken out.
-    const Retracted = struct { scan: *NameScan };
+    const Retracted = struct {
+        scan: *NameScan,
+        /// A call rewritten in place changes all of its structural uses.
+        copies: u32 = 1,
+    };
 
     /// Before a change inside top-level statement `top` that replaces the
     /// subtrees at `roots` (each a node the walk of `top` meets, once for
@@ -7814,7 +7831,8 @@ const Spec = struct {
     /// `retract` was given stood: what was kept of `top`, with the new
     /// subtrees' part, kept again as of now.
     fn extend(s: *Spec, m: *Mod, top: Index, r: Retracted, roots: []const u32) Allocator.Error!void {
-        try s.countNames(m, r.scan, try s.walkFrom(m, roots), .add);
+        const nodes = try s.walkFrom(m, roots);
+        for (0..r.copies) |_| try s.countNames(m, r.scan, nodes, .add);
         r.scan.epoch = m.epoch;
         // A safety build checks the update at once: the statement may change
         // again before anything asks for it.
