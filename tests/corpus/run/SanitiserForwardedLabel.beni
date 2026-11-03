@@ -1,0 +1,45 @@
+-- A runtime catch for a callback passed on inside a lambda that a callee
+-- runs many times (`ownership-v2.md` §2.11.3): `mp rs f = List.map rs λv → f
+-- v`. The label of `f` that `mp` passes on had the lambda's one call as its
+-- count, `once`, its supplies apart, and nothing kept, whatever the label
+-- that runs the lambda said. So `mp [ k, k ] λv → List.push v 5` pushed `k`
+-- twice in place, through `List.map` and through a hand-written `mapL`; the
+-- sanitised runs trapped. Each is refused now.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+mapL : List a, (a → b) → List b
+mapL xs f =
+    case xs of
+        [] →
+            []
+
+        [ x, …rest ] →
+            [ f x, …mapL rest f ]
+
+
+viaCore : List (List Int), (List Int → List Int) → List (List Int)
+viaCore rs f = List.map rs λv → f v
+
+
+viaUser : List (List Int), (List Int → List Int) → List (List Int)
+viaUser rs f = mapL rs λv → f v
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = viaCore [ k, k ] λv → List.push v 5
+    m = [ 2 ]
+    b = viaUser [ m, m ] λv → List.push v 6
+    Node.printLines [ shows a, shows b ]

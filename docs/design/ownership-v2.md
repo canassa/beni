@@ -1933,6 +1933,21 @@ So `myMap xs f = case xs of … [ x, …rest ] → [ f x, …myMap rest f ]` cal
 and the recursive call's label (once, on the first round) are two. Before, the sources were joined (`once ⊔
 once = once`), so `mapHelp`'s label, and with it `List.map`'s, `List.initialize`'s and every recursive walker's,
 was once, and a closure that writes a capture was accepted there.
+*Amended 2026-11-03 (#1721, through a lambda):* a label passed on **inside a known code that an outer label runs**
+— `mp rs f = List.map rs λv → f v`, `f` passed on at the lambda's virtual call — takes the outer labels too,
+at every level outward (§2.11.4, #1758). Its `calls` is many where any of them is many: the lambda runs once per
+element, so `f` does. Its supplies' condition adds each outer label's supply condition at that label's call, and
+a slot an outer label keeps is kept, as the part that arrives from it. Before this, only the lambda's one call
+was counted: `mp`'s label was `once`, its supply `sep yes`, nothing kept, and `mp [ k, k ] λv → List.push v 5`
+pushed `k` twice in place, through `List.map` and through a hand-written map (`run/SanitiserForwardedLabel`; the
+sanitised runs trapped). Sound because the lambda's supply is the outer label's, so each invocation of the passed
+label is an invocation of the outer one. Two apart lists through a hand-written map are still accepted
+(`run/SanitiserForwardedLabelApart`). A fold's `fed` occurrence, asked of the forwarding lambda (`List.foldl xs
+start λx acc → step x acc`), is decided as §2.11.3 *a label's answer handed back* says, with one more arrival: an
+answer at the root that is the answer of a label the code passes on to the frame's label `F`, which it hands its
+parameter `k` whole as `F`'s argument `k′`, is `fed F k′`. Sound because under that occurrence `F`'s answer is
+what it was handed as `k′`, which is the code's `k`, or fresh. Without it, `ownership/CapturedParam`'s `sumBy` is
+refused at its caller.
 Projected by structure: each part of the caller's argument arrives at its own slot below the supply slot, at
 the call's function type, as a direct label's argument does. A callee supply slot of a type variable's place
 (`apply : (a → b), a → b`) takes the whole argument, so one arrival there for `{ f0 = a, f1 = b }` would leave
