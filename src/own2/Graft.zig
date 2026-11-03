@@ -297,10 +297,13 @@ pub fn fold(ev: *Relation.Eval, c: Contract.Cond) Error!Contract.Cond {
     if (c.no or c.sel.len < 2) return c;
     const g = ev.gpa();
     const f = ev.f;
-    const run = try ev.arena.dupe(u64, c.sel);
-    Contract.sortOccs(f.slots, run);
     var out: std.ArrayList(u64) = .empty;
     defer out.deinit(g);
+    // A `fed` occurrence asks no object apart (§2.11.3): it is kept as it is.
+    var kept: std.ArrayList(u64) = .empty;
+    for (c.sel) |o| if (Contract.isFed(o)) try out.append(g, o) else try kept.append(ev.arena, o);
+    const run = kept.items;
+    Contract.sortOccs(f.slots, run);
     var i: usize = 0;
     while (i < run.len) {
         const j = Contract.occParam(run[i]);
@@ -439,6 +442,7 @@ fn baseOf(ev: *Relation.Eval, call: Value.Call, j: u32) Error!?Base {
 /// Null otherwise.
 pub fn movedReq(ev: *Relation.Eval, call: Value.Call, c: Contract.Cond) Error!?Contract.Cond {
     if (c.no or c.sel.len == 0) return null;
+    for (c.sel) |o| if (Contract.isFed(o)) return null;
     const g = ev.gpa();
     var js: std.ArrayList(u32) = .empty;
     defer js.deinit(g);

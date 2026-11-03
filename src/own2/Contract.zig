@@ -36,6 +36,11 @@ pub const occDeep = Conds.occDeep;
 pub const isDeep = Conds.isDeep;
 pub const occParam = Conds.occParam;
 pub const occRel = Conds.occRel;
+pub const fed_bit = Conds.fed_bit;
+pub const occFed = Conds.occFed;
+pub const isFed = Conds.isFed;
+pub const fedParam = Conds.fedParam;
+pub const fedArg = Conds.fedArg;
 pub const weakest = Conds.weakest;
 pub const sortOccs = Conds.sortOccs;
 

@@ -1790,6 +1790,27 @@ as a fold's accumulator is after the first step, or `choose c x (g ⊤)` — can
 `unknown`), but its known objects can: each is judged on its own, and one held after the call keeps the part's
 slot. Before this, the unknown half hid the known one, and `keepFold acc g = ( fold xs acc λ_ a → g a, acc )`
 supplied `acc` to `g` unkept.
+*Amended 2026-11-03 (#1713):* **a label's answer handed back to it.** A recursive walker that hands its label's
+answer back to the label as its argument `k` — a fold's accumulator, `fold rest (f x acc) f` — asked the
+supplies' condition of the next invocation of that answer. The answer is unknown code's, so the condition was
+`no`, and every write of a fold's accumulator was refused `disjoint (approx)` at the caller, however fresh the
+initial value was. Now, at a call that passes the frame's label on, an argument that is the answer of a
+direct call of the same function slot `(j, s)`, handed back as the label's argument `k` (the callee's
+parameter arrives whole at the supply `k`), is read in that call's condition as what the direct call was
+handed as `k`, deep; and the condition gains the occurrence `fed (j, s) k`. At the same call the part is
+judged as that argument is: one held after the call (a pending operand, a live local, through the answer
+that holds it) keeps the slot, as the answer would. A `fed` occurrence instantiated at a caller is the
+caller's own `fed` where the callee's function slot is one of the caller's parameters (the label passes on);
+where a known code `K` is applied there, it holds when every arrival of `K`'s result at a slot that holds an
+object is `K`'s own parameter `k` or `fresh`; anywhere else it is `no`. Sound because under `fed`, an answer
+holds only what it was handed as `k` and objects its invocation made: an invocation's argument `k` is the
+initial value or a part of an earlier invocation's argument `k`, each judged at its own call, so the
+condition read through the answer asks exactly what it would ask of those objects; a fresh object is
+distinct from every object that existed before it. Measured (2026-11-03): v2 accepts `List.foldl xs []
+λn acc → List.push acc n`, `List.foldr` and user-written folds alike; a code that answers another argument
+(`λx acc → … x`), a capture, or anything else is refused as before; a walker that also holds the answer it
+hands back (`a = f x acc` then `[ a, …keepFold rest a f ]`) is refused, where without the judging at the
+pass the sanitiser traps. Text: `π3{ε!2}` (the function at `π3ε` answers its argument 2).
 
 At a caller where the label's function value is **known** — a lambda, a local function, a declaration, a
 constructor, or an `alt` of them — the label is applied: for each possible code `K`, `K`'s contract is
@@ -4190,7 +4211,7 @@ L0  Ids  Counters  Scratch
 | `AtomGraft.zig` | 7 | a call's subtree of atoms read as the callee's node: the atom test on a result tree's node, and whether a cycle spans a result slot (§2.10 *Read-off*, #1714) | Ids, Trees, Forest, Value |
 | `Held.zig` | 6 | the atoms a draft's result holds open at or above a slot, which the read-off of a call's subtree below it need not describe again (§2.10 *Read-off*, #1716) | Ids, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
-| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries, CallGraft |
+| `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries, CallGraft, Fed |
 | `RouteWalk.zig` | 8 | one walk of a value along several paths, a value several arms or levels below a `⟲` reach read once under a route set; an arrival's leaves at a parameter's slot with their sets (§2.3.5, §2.11.2, #1714) | Ids, Place, Slots, Relation, Coexist |
 | `DagRoutes.zig` | 8 | a holder DAG's items under the route sets their arrivals unite, in decreasing value id; a leaf under an item's routes (§2.8, #1714) | Ids, Coexist, Relation |
 | `ApartPlain.zig` | 8 | a selection's apart and plain occurrences of one parameter read part by part, split from `Distinct` (§2.9.1, #1714) | Ids, Slots, Subtree, Contract, Relation |
@@ -4199,6 +4220,7 @@ L0  Ids  Counters  Scratch
 | `CallGraft.zig` | 8 | a call whose arguments are the caller's parameters whole: the callee's arrivals at a call slot and its condition renamed, never projected; a demand's written path replayed when its line is printed (§2.10 *a parameter's path grafted*, §2.11.2, #1225, #1714) | Ids, Place, Slots, Contract, Relation |
 | `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, a cell callback's supply, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
+| `Fed.zig` | 8 | a label's answer handed back to it: what a pass reads and judges for that answer, and the `fed` occurrence renamed or decided at a caller (§2.11.3, #1713); below `Distinct` | Ids, Slots, Forest, Contract, Relation |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder (a DAG once a node), buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Value, Relation |
@@ -4207,7 +4229,7 @@ L0  Ids  Counters  Scratch
 | `HoldAt.zig` | 10 | the paths at which a hold holds a target, and the relation there (§2.8, #1714), split from `Descent` | Ids, Slots, Subtree, MeetRun, Value, Relation, Distinct |
 | `Descent.zig` | 10 | the best-hold descent over a holder DAG; the paths at which a hold holds a target (§2.8, #1714) | Ids, Facts, Trees, PlaceBelow, Liveness, Later, Sweep, DagRoutes, HoldAt |
 | `Kept.zig` | 10 | a group's judgements kept across its rounds: each with its key, the footprints and holder events it read, its writes; the round's print of what no key names (§2.12, #1714) | Ids, Facts, Contract, Value, Walk |
-| `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept |
+| `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept, Fed |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |

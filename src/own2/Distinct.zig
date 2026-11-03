@@ -18,6 +18,7 @@ const PlaceBelow = @import("PlaceBelow.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
+const Fed = @import("Fed.zig");
 const Entries = @import("Entries.zig");
 const RouteWalk = @import("RouteWalk.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -227,10 +228,26 @@ fn arrivesAtPlain(e: *Eval, reach: *const Reach, o: u64) Error!bool {
 /// `call`'s arguments (§2.9.3's routed rule): every object at a selected
 /// occurrence, projected, distinct from every other.
 pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
-    if (c.no) return Cond.unprovable;
-    if (c.sel.len == 0) return Cond.yes;
+    return instSelFeed(e, c, call, null);
+}
+
+/// `instSel` at a call that may pass the frame's label on (`feed`, §2.11.3,
+/// *a label's answer handed back to it*): `Fed` reads the label's own answer
+/// handed back as what its call was handed, and decides `fed` occurrences.
+pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
+    if (c0.no) return Cond.unprovable;
+    if (c0.sel.len == 0) return Cond.yes;
+    var fed: std.ArrayList(u64) = .empty;
+    var rest: std.ArrayList(u64) = .empty;
+    for (c0.sel) |o| if (!Contract.isFed(o)) try rest.append(e.arena, o) else switch (try Fed.at(e, call, o)) {
+        .yes => {},
+        .no => return Cond.unprovable,
+        .occ => |x| try fed.append(e.arena, x),
+    };
+    const c: Cond = .{ .sel = rest.items };
+    if (c.sel.len == 0) return withFed(e, Cond.yes, fed.items);
     // Arguments that are the caller's parameters whole: renamed (`CallGraft`).
-    if (try CallGraft.sel(e, c, call)) |rc| return rc;
+    if (try CallGraft.sel(e, c, call)) |rc| return withFed(e, rc, fed.items);
     const g = e.gpa();
     const cl = e.f.calls.items[call];
     var ps: std.ArrayList(Proj) = .empty;
@@ -248,8 +265,10 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     // A literal read part by part: its plain occurrences whole first (`Graft`).
     if (Graft.plainsOnLiteral(e, c, cl)) {
         try projectAll(e, c, cl, got, true);
+        var fed0: std.ArrayList(u64) = .empty;
         for (c.sel, got) |o, *gp| {
-            for (gp.items) |p| try ps.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
+            const k = if (feed) |fd| try Fed.supplyOf(e, call, fd.label, Contract.occParam(o)) else null;
+            for (gp.items) |p| if (feed == null or !try Fed.replace(e, p, o, k, feed.?, &ps, &fed0)) try ps.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
             gp.clearRetainingCapacity();
         }
         if ((try distinct(e, ps.items, true)).no) return Cond.unprovable;
@@ -259,7 +278,8 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     for (c.sel, got) |o, *gp| {
         e.parts = ApartPlain.mixed(c.sel, Contract.occParam(o));
         const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
-        for (gp.items) |p| try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
+        const k = if (feed) |fd| try Fed.supplyOf(e, call, fd.label, Contract.occParam(o)) else null;
+        for (gp.items) |p| if (feed == null or !try Fed.replace(e, p, o, k, feed.?, to, &fed)) try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
     }
     // An apart and a plain projection of one place by one route are taken
     // apart by their routes; two route sets there are written out.
@@ -269,7 +289,12 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     }
     try ps.appendSlice(g, plains.items);
     try ApartPlain.withoutPlain(e, aps.items, plains.items, &ps);
-    return distinct(e, ps.items, true);
+    return withFed(e, try distinct(e, ps.items, true), fed.items);
+}
+
+/// `res` with the `fed` occurrences a call asks of its caller.
+fn withFed(e: *Eval, res: Cond, fed: []u64) Error!Cond {
+    return if (fed.len == 0 or res.no) res else Cond.conj(e.arena, e.account(), res, try Cond.of(e.account(), fed));
 }
 
 /// Each parameter's occurrences of `c` (`plain`: its plain ones only) into
