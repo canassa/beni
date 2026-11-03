@@ -200,18 +200,21 @@ pub const Within = struct {
     fn lookup(x: *Within, f: *Frame, ents: []const Ent, earlier: []const u32, i: u32, routed: bool) Error!bool {
         const l = f.leafAt(ents[i].leaf);
         const sym = Subtree.symbolic(f.slots, l.slots);
-        for (if (sym) earlier else x.sym.items) |j| if (try pairMay(f, ents[i], ents[j], routed)) return true;
+        // An earlier member several of its slots meet is asked once.
+        var tested: Ids.FixedDict(1) = .{};
+        defer tested.deinit(f.gpa);
+        for (if (sym) earlier else x.sym.items) |j| if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
         const pos = f.pos.items;
         for (Subtree.explicit(f.slots, l.slots)) |s| {
             try f.charge(.inspection, 1);
             if (x.at.get(.{ l.pos, 5, s })) |here| for (x.lists.items[here].items) |j| {
-                if (try pairMay(f, ents[i], ents[j], routed)) return true;
+                if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
             };
             var p = l.pos;
             while (p != none) : (p = pos[p].parent) {
                 try f.charge(.inspection, 1);
                 if (x.at.get(.{ p, 4, s })) |here| for (x.lists.items[here].items) |j| {
-                    if (try pairMay(f, ents[i], ents[j], routed)) return true;
+                    if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
                 };
                 if (pos[p].parent == none) continue;
                 const kinds: []const u32 = switch (pos[p].kind) {
@@ -223,13 +226,18 @@ pub const Within = struct {
                 for (kinds) |k| {
                     try f.charge(.inspection, 1);
                     const here = x.at.get(.{ pos[p].parent, k, s }) orelse continue;
-                    for (x.lists.items[here].items) |j| if (try pairMay(f, ents[i], ents[j], routed)) return true;
+                    for (x.lists.items[here].items) |j| if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
                 }
             }
         }
         return false;
     }
 };
+
+fn pairOnce(f: *Frame, tested: *Ids.FixedDict(1), a: Ent, b: Ent, j: u32, routed: bool) Error!bool {
+    if ((try tested.getOrPut(f.gpa, .{j})).found_existing) return false;
+    return pairMay(f, a, b, routed);
+}
 
 /// A group: a root's entries (`root`) or an atom's (`none`).
 pub const Group = struct {

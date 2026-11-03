@@ -1193,7 +1193,7 @@ changed (a parameter's group for its new members' pairs and occurrences; a call'
 as before), and asks the answer rule only for pairs with a new entry; a second parameter's group makes every
 parameter group ask its occurrences, as before. A new member is compared with the earlier ones, pairwise up to
 eight and then by the index, which also lists each entry under every ancestor (`(ancestor, 5, slot)`) so that a
-new entry meets the earlier ones below it. The root to expand is the greatest of a heap of the expandable roots,
+new entry meets the earlier ones below it; an earlier entry that several of its slots meet is asked once. The root to expand is the greatest of a heap of the expandable roots,
 or of the groups that ask to be expanded (`must`), a stale one skipped. A vouched block keeps the first of two
 equal leaves in the inline order (its members compared by the expansions they came from, below their common
 ancestor: each entry keeps a skew-binary jump pointer, whose depth is a function of its own depth alone, so the
