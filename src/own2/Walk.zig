@@ -90,7 +90,7 @@ pub const Context = struct {
     tryShape: *const fn (ctx: *anyopaque, inst: u32) ?[3]u32,
 };
 
-pub const Sig = struct { params: []const PlaceId, own: u32, result: PlaceId };
+pub const Sig = Relation.Sig;
 
 /// What `Groups` hands a walk: the code and its frame of instructions.
 pub const Code = struct {
@@ -118,8 +118,10 @@ pub const Demand = struct {
     token: u32,
     /// The instruction whose value is the base, its text's root.
     base_inst: u32,
-    /// The path below the base the write is at, for the text.
+    /// The path below the base the write is at, for the text: with
+    /// `write_rel`, its root, those steps replayed when it is printed.
     write_path: PathId = .none,
+    write_rel: u32 = 0,
     callee_inst: u32 = none,
     /// A `once` demand's written capture: the base is this local, not
     /// `base_inst` (`none` otherwise).
@@ -154,8 +156,9 @@ pub const Demand = struct {
     /// A write grafted at the frame's parameter (`Graft`, §2.11.2): its
     /// `(j, slot, tree)`, what the read-off adds; `j` is `none` otherwise.
     graft: [3]u32 = .{ none, 0, 0 },
-    /// The other routes a grouped demand covers (`Graft`), named in its line.
-    also: []const PathId = &.{},
+    /// The other routes a grouped demand covers (`Graft`), named in its
+    /// line: steps from `write_path`, as `write_rel`.
+    also: []const u32 = &.{},
 };
 
 /// A local's binding.

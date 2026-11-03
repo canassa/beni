@@ -62,6 +62,11 @@ pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below,
 /// `d`: a `describe_below` consumer's prefix slot (its key's).
 pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0 };
 
+/// A module code's parameters' places, its own place and its result's
+/// (`Walk.Sig`, read by `CallGraft` too).
+pub const Sig = struct { params: []const PlaceId, own: u32, result: PlaceId };
+pub const CodeSig = struct { ctx: *anyopaque, of: *const fn (ctx: *anyopaque, code: u32) Error!Sig };
+
 /// The group being solved (§2.12): its members' drafts, read while they
 /// grow, and the queue of what is still to be delivered.
 pub const Live = struct {
@@ -163,6 +168,8 @@ pub const Eval = struct {
     /// A deep projection read part by part (`Distinct.instSel`): a literal
     /// below the slot gives each part's own objects at its own route.
     parts: bool = false,
+    /// The module codes' signatures, when the evaluation reads them.
+    code_sig: ?CodeSig = null,
 
     pub fn deinit(e: *Eval) void {
         const g = e.f.gpa;
