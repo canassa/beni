@@ -137,6 +137,8 @@ pub const Output = struct {
 /// around the site.
 pub const Slot = struct {
     inst: Bir.Inst.Index,
+    /// A generated call's checked operand, separate from source call roots.
+    operand: bool = false,
     root: u32,
     type: Var,
     /// The site's declaration, or `no_let` (a P5 row: never).

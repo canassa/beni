@@ -2732,6 +2732,27 @@ takes the route and the page's text, from that text — and binds the lambda's p
 known (`program_shape`) and, in the prerender tree, one whose conversions may be impure
 (`prerender_impure`). A lowering that targets 1.22 sees what it saw.
 
+**Version 1.24** (*added 2026-11-03*, additive, gated on nothing; #1612):
+checked operand evidence. A lowering opts into `Lowering.operand_evidence` for
+`identity`, `checked_data`, or both. `Context.evidence(value, path, kind)` returns
+an opaque compiler-issued token for that checked source operand's type. A path
+steps through a List item, a function parameter or result, a tuple field, or a
+named record field. An empty path selects the whole type. Demands flow through
+the ordinary identity fixpoint and hidden quantifier ABI, including local
+functions and imports; dispatch artifacts retain the checked structural terms.
+Lowerings that request neither kind retain their existing calls and output.
+
+`tupleEvidence(fields, kind)` composes a compiler-generated capture tuple from
+field tokens in order. `suppliedRuntime(name, evidence)` supplies the runtime
+export's hidden arguments in its checked quantifier order. Its result is used
+directly as `Js.call`'s callee; the compiler emits a direct call with hidden
+arguments before the written arguments, without allocating an adapter closure.
+Each token must have the required evidence kind. Missing source types, invalid
+paths, mismatched evidence and written arities are compiler errors. A lowering
+cannot derive an identity from a host value or invent a checked-data witness.
+The existing Schema endpoint adapter remains valid for ordinary runtime calls;
+its identities and checkers come from the actual Schema carrier.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

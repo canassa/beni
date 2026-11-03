@@ -129,6 +129,9 @@ pub const Markup = struct {
     /// The markup type: a `pub foreign type` of one parameter.
     type_module: Symbol.Optional = .none,
     type_name: Symbol.Optional = .none,
+    /// The selected lowering's checked capture demands (identity/data bits).
+    operand_evidence: u8 = 0,
+
     /// `children`, interned: the field a component's children fill
     /// (`language.md` §11.8), which no source need spell.
     children: Symbol.Optional = .none,

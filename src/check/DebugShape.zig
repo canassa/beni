@@ -74,7 +74,7 @@ pub fn rows(
             .log => if (func.params.len == 2) func.params[1] else continue,
         };
         const start: u32 = @intCast(nodes.items.len);
-        try walk(gpa, store, interner, printed, &nodes, &stack, &fields, false);
+        try walk(gpa, store, interner, printed, &nodes, &stack, &fields, false, false);
         const len: u32 = @as(u32, @intCast(nodes.items.len)) - start;
         if (len == 1 and nodes.items[start].kind == .unknown) {
             nodes.shrinkRetainingCapacity(start);
@@ -92,21 +92,25 @@ pub fn rows(
 /// values of (`dump --stage=writes --msg-types`, browser-direct.md §8.3,
 /// amended 2026-10-09), read as `Debug.toString` reads a printed value's.
 pub fn shape(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var) Allocator.Error![]Dispatch.DebugNode {
-    return shapeInternal(gpa, store, interner, v, false);
+    return shapeInternal(gpa, store, interner, v, false, false);
 }
 
 pub fn shapeVariables(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var) Allocator.Error![]Dispatch.DebugNode {
-    return shapeInternal(gpa, store, interner, v, true);
+    return shapeInternal(gpa, store, interner, v, true, false);
 }
 
-fn shapeInternal(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var, variables: bool) Allocator.Error![]Dispatch.DebugNode {
+pub fn operandShape(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var) Allocator.Error![]Dispatch.DebugNode {
+    return shapeInternal(gpa, store, interner, v, true, true);
+}
+
+fn shapeInternal(gpa: Allocator, store: *TypeStore, interner: *const InternPool.Global, v: Var, variables: bool, functions: bool) Allocator.Error![]Dispatch.DebugNode {
     var nodes: std.ArrayList(Dispatch.DebugNode) = .empty;
     defer nodes.deinit(gpa);
     var stack: std.ArrayList(Item) = .empty;
     defer stack.deinit(gpa);
     var fields: std.ArrayList(TypeStore.Field) = .empty;
     defer fields.deinit(gpa);
-    try walk(gpa, store, interner, v, &nodes, &stack, &fields, variables);
+    try walk(gpa, store, interner, v, &nodes, &stack, &fields, variables, functions);
     return nodes.toOwnedSlice(gpa);
 }
 
@@ -121,6 +125,7 @@ fn walk(
     stack: *std.ArrayList(Item),
     fields: *std.ArrayList(TypeStore.Field),
     variables: bool,
+    functions: bool,
 ) Allocator.Error!void {
     stack.clearRetainingCapacity();
     try stack.append(gpa, .{ .type = root });
@@ -137,11 +142,11 @@ fn walk(
                 try stack.append(gpa, .{ .type = f.value });
             },
             .type => |t| {
-                if (written > max_nodes) {
+                if (written > (if (functions) @as(u32, 1 << 16) else max_nodes)) {
                     try nodes.append(gpa, .{ .kind = .unknown });
                     continue;
                 }
-                try node(gpa, store, interner, t, nodes, stack, fields, variables);
+                try node(gpa, store, interner, t, nodes, stack, fields, variables, functions);
             },
         }
     }
@@ -165,6 +170,7 @@ fn node(
     stack: *std.ArrayList(Item),
     fields: *std.ArrayList(TypeStore.Field),
     variables: bool,
+    functions: bool,
 ) Allocator.Error!void {
     switch (store.resolvedContent(v)) {
         // Which type a variable holds is not known here, and an `err` is a
@@ -173,7 +179,18 @@ fn node(
         .err, .alias => try nodes.append(gpa, .{ .kind = .unknown }),
         .structure => |flat| switch (flat) {
             .unit => try nodes.append(gpa, .{ .kind = .unit }),
-            .func => try nodes.append(gpa, .{ .kind = .function }),
+            .func => |fun| {
+                const params = if (functions) Walk.function(store, v).?.params else &.{};
+                try nodes.append(gpa, .{ .kind = .function, .count = if (functions) @intCast(params.len + 1) else 0 });
+                if (functions) {
+                    try stack.append(gpa, .{ .type = fun.result });
+                    var k = params.len;
+                    while (k > 0) {
+                        k -= 1;
+                        try stack.append(gpa, .{ .type = params[k] });
+                    }
+                }
+            },
             .empty_record => try nodes.append(gpa, .{ .kind = .record }),
             .tuple => {
                 const elements = Walk.positions(store, v);

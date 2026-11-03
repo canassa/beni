@@ -354,8 +354,17 @@ const Pass = struct {
     }
 
     fn checkedTerm(p: *Pass, slot: Elaborate.Slot, position: []const u32, terms: *std.ArrayList(Dispatch.Term), args: *std.ArrayList(TermIndex)) Error!TermIndex {
-        const nodes = try DebugShape.shapeVariables(p.scratch, p.store, p.in.cx.interner, slot.type);
-        for (nodes) |node| switch (node.kind) {
+        const nodes = if (slot.operand)
+            try DebugShape.operandShape(p.scratch, p.store, p.in.cx.interner, slot.type)
+        else
+            try DebugShape.shapeVariables(p.scratch, p.store, p.in.cx.interner, slot.type);
+        if (slot.operand) for (nodes) |node| {
+            if (node.kind == .unknown) {
+                try p.refuse(slot.inst, "This capture's type is too large for me to name.\n");
+                break;
+            }
+        };
+        for (if (slot.operand and slot.root & Dispatch.checked_evidence == 0) &.{} else nodes) |node| switch (node.kind) {
             .field => try p.boundary.append(p.gpa, .{ .decl = slot.decl, .kind = .field, .value = node.value }),
             .named => try p.boundary.append(p.gpa, .{ .decl = slot.decl, .kind = .type, .value = node.value }),
             else => {},
@@ -465,6 +474,11 @@ pub fn run(in: Input) Error!Result {
     const counts = try scratch.alloc(u32, binders + 1);
     @memset(counts, 0);
     for (slots, p.callee, 0..) |s, *c, i| {
+        if (s.operand) {
+            c.* = .none;
+            try seeds.append(scratch, @intCast(i));
+            continue;
+        }
         c.* = calleeOf(cx, in.out, in.lets, decls_len, s);
         switch (c.*) {
             .binder => |b| if (b < binders) {
@@ -586,7 +600,7 @@ pub fn run(in: Input) Error!Result {
         ids.clearRetainingCapacity();
         for (wanted) |j| {
             const s = for (at..end) |k| {
-                if (slots[k].root == j and p.keyed[k]) break k;
+                if (!slots[k].operand and slots[k].root == j and p.keyed[k]) break k;
             } else {
                 // A callee's identity with no slot to supply it: the
                 // evidence-count assert names it after the module's last
@@ -641,6 +655,19 @@ pub fn run(in: Input) Error!Result {
         try args.appendSlice(gpa, roots);
         try args.appendSlice(gpa, ids.items);
         site.evidence = .{ .start = roots_start, .len = @intCast(roots.len + ids.items.len) };
+    }
+
+    // A generated call reads the checked operand tree, never the callee's
+    // argument roots. Its structural leaves use the same hidden parameters.
+    var operand_at: usize = 0;
+    for (sites) |*site| {
+        while (operand_at < slots.len and slots[operand_at].inst.int() < site.inst.int()) operand_at += 1;
+        while (operand_at < slots.len and slots[operand_at].inst == site.inst) : (operand_at += 1) {
+            const slot = slots[operand_at];
+            if (!slot.operand or !p.keyed[operand_at]) continue;
+            const root = (try p.checkedTerm(slot, position, &terms, &args)).toOptional();
+            if (slot.root & Dispatch.checked_evidence != 0) site.operand_data = root else site.operand_identity = root;
+        }
     }
 
     // Step 4: a declaration that takes identities, named as evidence.
@@ -857,8 +884,8 @@ fn prepareSlots(in: Input, quantified: Quantified) Error!void {
     try slots.appendSlice(a, in.out.slots);
     for (in.uses) |use| {
         if (use.inst.int() >= bir.insts.len) continue;
-        const inst = call_of[use.inst.int()].unwrap() orelse use.inst;
-        try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | use.quantified | (if (use.checked) Dispatch.checked_evidence else @as(u32, 0)), .type = use.v, .decl = use.decl, .let = scopes.of(use.inst) });
+        const inst = if (use.operand) use.inst else call_of[use.inst.int()].unwrap() orelse use.inst;
+        try slots.append(a, .{ .inst = inst, .root = Dispatch.identity_quantifier | use.quantified | (if (use.checked) Dispatch.checked_evidence else @as(u32, 0)), .type = use.v, .decl = use.decl, .let = scopes.of(use.inst), .operand = use.operand });
     }
     // Effects already retained every own instantiation's quantifier copies.
     // Index the records by source instruction, including method-call copies.
@@ -910,13 +937,13 @@ fn prepareSlots(in: Input, quantified: Quantified) Error!void {
     }
     const Sort = struct {
         fn less(_: void, x: Elaborate.Slot, y: Elaborate.Slot) bool {
-            return if (x.inst != y.inst) x.inst.int() < y.inst.int() else x.root < y.root;
+            return if (x.inst != y.inst) x.inst.int() < y.inst.int() else if (x.operand != y.operand) !x.operand else x.root < y.root;
         }
     };
     std.mem.sort(Elaborate.Slot, slots.items, {}, Sort.less);
     var kept: usize = 0;
     for (slots.items) |slot| {
-        if (kept != 0 and slots.items[kept - 1].inst == slot.inst and slots.items[kept - 1].root == slot.root) continue;
+        if (kept != 0 and slots.items[kept - 1].inst == slot.inst and slots.items[kept - 1].operand == slot.operand and slots.items[kept - 1].root == slot.root) continue;
         slots.items[kept] = slot;
         kept += 1;
     }

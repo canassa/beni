@@ -3351,6 +3351,50 @@ const Emitter = struct {
     /// stored endpoint identities have exactly its two quantified types.
     /// Other evidence still needs an explicit typed caller; it cannot be
     /// recovered from a value's shape or a template's identity.
+    fn runtimeVariablePath(e: *Emitter, original: RuntimeType, owner: *const Interface, q: u32, path: *std.ArrayList(beni_markup.TypeStep), depth: u32) Allocator.Error!bool {
+        if (depth >= max_alias_depth) return false;
+        const view = try e.expandRuntimeType(original);
+        const term = view.iface.term(view.at);
+        if (term.tag == .@"var") return view.iface == owner and term.lhs == q;
+        const start = path.items.len;
+        switch (term.tag) {
+            .func => {
+                for (view.iface.range(term.lhs), 0..) |param, index| {
+                    try path.append(e.scratch, .{ .function_param = @intCast(index) });
+                    if (try e.runtimeVariablePath(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(param)), .bindings = view.bindings }, owner, q, path, depth + 1)) return true;
+                    path.shrinkRetainingCapacity(start);
+                }
+                try path.append(e.scratch, .function_result);
+                if (try e.runtimeVariablePath(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(term.rhs)), .bindings = view.bindings }, owner, q, path, depth + 1)) return true;
+            },
+            .tuple => for (view.iface.range(term.lhs), 0..) |field, index| {
+                try path.append(e.scratch, .{ .tuple_field = @intCast(index) });
+                if (try e.runtimeVariablePath(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(field)), .bindings = view.bindings }, owner, q, path, depth + 1)) return true;
+                path.shrinkRetainingCapacity(start);
+            },
+            .record => {
+                const fields = view.iface.range(term.lhs);
+                var i: usize = 0;
+                while (i + 1 < fields.len) : (i += 2) {
+                    try path.append(e.scratch, .{ .record_field = e.session.interner.slice(view.iface.symbol(@fromBackingInt(@intCast(fields[i])))) });
+                    if (try e.runtimeVariablePath(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(fields[i + 1])), .bindings = view.bindings }, owner, q, path, depth + 1)) return true;
+                    path.shrinkRetainingCapacity(start);
+                }
+            },
+            .app => {
+                const ref = view.iface.typeRef(@fromBackingInt(@intCast(term.lhs))) orelse return false;
+                const args = view.iface.range(term.rhs);
+                if (ref.package == .core and std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.module)), "List") and std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.name)), "List") and args.len == 1) {
+                    try path.append(e.scratch, .list_item);
+                    if (try e.runtimeVariablePath(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(args[0])), .bindings = view.bindings }, owner, q, path, depth + 1)) return true;
+                }
+            },
+            else => {},
+        }
+        path.shrinkRetainingCapacity(start);
+        return false;
+    }
+
     fn runtimeIdentityArguments(e: *Emitter, iface: *const Interface, scheme: Interface.Scheme) !?[]const Lower.Markup.IdentityArgument {
         const root = try e.expandRuntimeType(.{ .iface = iface, .at = scheme.body });
         const function = root.iface.term(root.at);
@@ -3377,6 +3421,13 @@ const Emitter = struct {
                         if (endpoint_view.iface == iface and variable.tag == .@"var" and variable.lhs == q)
                             break :found .{ .argument = @intCast(argument), .endpoint = if (which == 0) .encoded else .typed };
                     }
+                }
+                // Other type variables must come from an actual checked
+                // source operand. The lowering supplies a compiler token.
+                for (params, 0..) |param, argument| {
+                    var path: std.ArrayList(beni_markup.TypeStep) = .empty;
+                    if (try e.runtimeVariablePath(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(param)), .bindings = root.bindings }, iface, q, &path, 0))
+                        break :found .{ .argument = @intCast(argument), .path = try path.toOwnedSlice(e.scratch) };
                 }
                 return null;
             };
@@ -3510,6 +3561,7 @@ const Emitter = struct {
         const module = e.graph().lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
         const b = e.bir(module);
         for (supplied.identities) |identity| {
+            if (identity.path != null) continue;
             const name = if (identity.kind == .checked_data) (if (identity.endpoint == .encoded) "encodedCheck" else "typedCheck") else (if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity");
             for (b.decls, 0..) |decl, index| {
                 if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(decl.name)), name)) continue;

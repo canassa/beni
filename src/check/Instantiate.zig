@@ -119,7 +119,7 @@ pub const CastCopies = struct {
     vars: std.ArrayList(Var) = .empty,
 };
 
-pub const IdentityUse = struct { inst: Bir.Inst.Index, decl: u32, module: Graph.Index, value: u32, quantified: u32, v: Var, checked: bool = false };
+pub const IdentityUse = struct { inst: Bir.Inst.Index, decl: u32, module: Graph.Index, value: u32, quantified: u32, v: Var, checked: bool = false, operand: bool = false };
 
 pub const CrossingUse = struct { inst: Bir.Inst.Index, decl: ?u32, v: Var };
 

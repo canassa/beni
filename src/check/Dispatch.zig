@@ -183,6 +183,10 @@ pub const Site = struct {
     /// The roots, one per requirement of the instantiated scheme, in
     /// canonical order: a range of `args`.
     evidence: Range = .empty,
+    /// Structural checked types whose leaves read this binder's hidden
+    /// evidence. They never add arguments to the source expression's call.
+    operand_identity: TermIndex.Optional = .none,
+    operand_data: TermIndex.Optional = .none,
 };
 
 /// One declaration's hidden parameters, its arity and its calling
@@ -1007,6 +1011,9 @@ const I7 = struct {
 
     fn siteOk(cx: I7, bir: *const Bir, site: Site) bool {
         const d = cx.d;
+        for ([_]TermIndex.Optional{ site.operand_identity, site.operand_data }) |maybe| {
+            if (maybe.unwrap()) |root| if (!cx.termOk(root, null)) return false;
+        }
         if (@as(u64, site.evidence.start) + site.evidence.len > d.args.len) return false;
         const tag: ?Bir.Inst.Tag = if (site.inst.int() < bir.insts.len) bir.instTag(site.inst) else null;
         const wants_callee = if (tag) |t| (t == .method_call or t == .type_dispatch) else false;

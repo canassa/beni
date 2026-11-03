@@ -485,7 +485,9 @@ pub const Markup = struct {
     pub const IdentityArgument = struct {
         kind: enum { identity, checked_data } = .identity,
         argument: u32,
-        endpoint: enum { encoded, typed },
+        endpoint: enum { encoded, typed } = .typed,
+        /// null: stored Schema capability; []: the whole checked operand.
+        path: ?[]const beni_markup.TypeStep = null,
     };
     pub const Supplied = struct {
         name: []const u8,
@@ -8224,7 +8226,7 @@ pub const Lowerer = struct {
                 try parameters.append(l.scratch, try l.termName(.{ .param = parameter }, p));
             },
             .checked => |shape| {
-                const children = dispatch.argsAt(shape.args);
+                const children = if (shape.kind == .function) &.{} else dispatch.argsAt(shape.args);
                 try nodes.append(l.scratch, .{ .kind = shape.kind, .value = shape.value, .count = @intCast(children.len) });
                 var n = children.len;
                 while (n > 0) {
@@ -20565,6 +20567,10 @@ pub const Lowerer = struct {
         var args: std.ArrayList(Node.Index) = .empty;
         for (params) |*param| param.* = try l.fresh(l.well.temp);
         for (supplied.identities) |identity| {
+            if (identity.path != null) {
+                try l.report(.internal, l.region, "The markup lowering must supply checked operand evidence for {s}.", .{supplied.name});
+                return target;
+            }
             const getter = try l.coreSchemaValue(if (identity.kind == .checked_data) (if (identity.endpoint == .encoded) "encodedCheck" else "typedCheck") else (if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity"), p);
             const schema = try l.ident(params[identity.argument], p);
             try args.append(l.scratch, try l.call(getter, &.{schema}, p));
@@ -20669,6 +20675,8 @@ const MarkupState = struct {
     bound: []Bound,
     /// The lowering's statement lists, by `Block` handle.
     blocks: std.ArrayList(StmtList) = .empty,
+    evidence: std.ArrayList(struct { value: Node.Index, kind: beni_markup.EvidenceKind }) = .empty,
+    supplied_calls: std.ArrayList(struct { token: Node.Index, target: JsIr.NameIndex, evidence: []const Node.Index, arity: u32, call_arity: u32 }) = .empty,
     /// The module-level declarations the lowering hoisted, in hoist order.
     hoisted: std.ArrayList(Node.Index) = .empty,
     /// The start data the lowering contributed.
@@ -20809,6 +20817,248 @@ const MarkupContext = struct {
     fn value(impl: *anyopaque, v: M.Value.Index) E!M.Expr {
         const l = lowerer(impl);
         return expr(try l.markupValue(v));
+    }
+
+    fn evidenceRoot(l: *Lowerer, inst: Inst.Index, kind: M.EvidenceKind) ?Dispatch.TermIndex {
+        const site = l.in.dispatch.siteOf(inst) orelse return null;
+        return (if (kind == .identity) site.operand_identity else site.operand_data).unwrap();
+    }
+
+    fn evidenceRead(l: *Lowerer, local: u32, links: []const u32, kind: M.EvidenceKind) ?Dispatch.TermIndex {
+        const owner = l.decl_index orelse return null;
+        const decl = l.bir.decls[owner];
+        // Match an actual checked read, including its field path. A root
+        // hoisted by the lowering retains this same source expression.
+        var i = decl.inst_start.int();
+        while (i < decl.inst_end.int()) : (i += 1) {
+            const inst: Inst.Index = @fromBackingInt(@intCast(i));
+            const root = evidenceRoot(l, inst, kind) orelse continue;
+            var cursor = inst;
+            var n = links.len;
+            while (n != 0) {
+                const data = l.bir.instData(cursor);
+                const link: u32 = switch (l.bir.instTag(cursor)) {
+                    .field_access => @backingInt(l.bir.symbols[data.rhs]),
+                    .tuple_index => data.rhs | Bir.tuple_link,
+                    else => break,
+                };
+                if (link != links[n - 1]) break;
+                n -= 1;
+                cursor = @fromBackingInt(@intCast(data.lhs));
+            }
+            if (n == 0 and l.bir.instTag(cursor) == .local and l.bir.instData(cursor).lhs == local) return root;
+        }
+        return null;
+    }
+
+    fn pathTerm(l: *Lowerer, root: Dispatch.TermIndex, path: []const M.TypeStep) ?Dispatch.TermIndex {
+        var current = root;
+        for (path) |step| {
+            const term = l.in.dispatch.term(current);
+            if (term != .checked) return null;
+            const shape = term.checked;
+            const children = l.in.dispatch.argsAt(shape.args);
+            current = switch (step) {
+                .list_item => if (shape.kind == .named and shape.value == l.in.types.well_known.list.int() and children.len == 1) children[0] else return null,
+                .function_param => |index_| if (shape.kind == .function and children.len > index_ + 1) children[index_] else return null,
+                .function_result => if (shape.kind == .function and children.len != 0) children[children.len - 1] else return null,
+                .tuple_field => |index_| if (shape.kind == .tuple and children.len > index_) children[index_] else return null,
+                .record_field => |field| field: {
+                    if (shape.kind != .record) return null;
+                    for (children) |child| {
+                        const t = l.in.dispatch.term(child);
+                        if (t != .checked or t.checked.kind != .field) continue;
+                        if (std.mem.eql(u8, l.interner.slice(@fromBackingInt(@intCast(t.checked.value))), field)) {
+                            const values = l.in.dispatch.argsAt(t.checked.args);
+                            if (values.len == 1) break :field values[0];
+                        }
+                    }
+                    return null;
+                },
+            };
+        }
+        return current;
+    }
+
+    fn evidenceError(l: *Lowerer) E {
+        l.report(.internal, l.region, "The markup lowering requested evidence without a matching checked operand, type path, or evidence kind.", .{}) catch return error.OutOfMemory;
+        return error.Reported;
+    }
+
+    fn keepEvidence(l: *Lowerer, value_: Node.Index, kind: M.EvidenceKind) E!M.Evidence {
+        const index_: M.Evidence = @fromBackingInt(@intCast(l.mk.?.evidence.items.len));
+        try l.mk.?.evidence.append(l.scratch, .{ .value = value_, .kind = kind });
+        return index_;
+    }
+
+    fn evidence(impl: *anyopaque, v: M.Value.Index, path: []const M.TypeStep, kind: M.EvidenceKind) E!M.Evidence {
+        const l = lowerer(impl);
+        const source = l.mk.?.built.values[@backingInt(v)];
+        const root = switch (source) {
+            .inst, .callee => |inst| evidenceRoot(l, inst, kind),
+            .call => |call_| evidenceRoot(l, call_.inst, kind),
+            .let_value => |let| evidenceRoot(l, let.inst, kind),
+            .capture => |local| evidenceRead(l, local, &.{}, kind),
+            .read => |read| evidenceRead(l, read.local, read.links[0..read.len], kind),
+            .input => |record| input: {
+                const read = l.bir.extraData(record, Bir.MarkupInput);
+                var links: [Bir.max_input_links]u32 = undefined;
+                for (0..read.len) |k| links[k] = read.link(k);
+                break :input evidenceRead(l, read.local, links[0..read.len], kind);
+            },
+            else => null,
+        } orelse return evidenceError(l);
+        const selected = pathTerm(l, root, path) orelse return evidenceError(l);
+        const value_ = if (kind == .identity) try operandIdentity(l, selected) else try l.checkedWitness(selected, pos(l));
+        return keepEvidence(l, value_, kind);
+    }
+
+    // Compose the ordinary identity spelling from checked type heads and
+    // hidden parameter terms. Never inspect a value or parse identity text.
+    fn operandIdentity(l: *Lowerer, root: Dispatch.TermIndex) E!Node.Index {
+        const Piece = union(enum) { text: []const u8, term: Dispatch.TermIndex };
+        var pending: std.ArrayList(Piece) = .empty;
+        var children: std.ArrayList(Piece) = .empty;
+        var text: std.ArrayList(u8) = .empty;
+        var values: std.ArrayList(Node.Index) = .empty;
+        try pending.append(l.scratch, .{ .term = root });
+        while (pending.pop()) |piece| switch (piece) {
+            .text => |bytes| try text.appendSlice(l.scratch, bytes),
+            .term => |index_| {
+                const term = l.in.dispatch.term(index_);
+                if (term == .param) {
+                    if (text.items.len != 0) {
+                        try values.append(l.scratch, try l.stringNode(text.items, pos(l)));
+                        text.clearRetainingCapacity();
+                    }
+                    try values.append(l.scratch, try l.termName(term, pos(l)));
+                    continue;
+                }
+                if (term != .checked) return evidenceError(l);
+                const shape = term.checked;
+                const args = l.in.dispatch.argsAt(shape.args);
+                children.clearRetainingCapacity();
+                switch (shape.kind) {
+                    .unknown => try children.append(l.scratch, .{ .text = "_" }),
+                    .unit => try children.append(l.scratch, .{ .text = "()" }),
+                    .named => {
+                        const entry = l.in.types.entry(@fromBackingInt(@intCast(shape.value)));
+                        try children.appendSlice(l.scratch, &.{
+                            .{ .text = switch (entry.package) {
+                                .core => "core:",
+                                .platform => "platform:",
+                                .app => "",
+                            } },
+                            .{ .text = l.interner.slice(entry.module_name) },
+                            .{ .text = "." },
+                            .{ .text = l.interner.slice(entry.name) },
+                        });
+                        if (args.len != 0) {
+                            try children.append(l.scratch, .{ .text = "(" });
+                            for (args, 0..) |arg, i| {
+                                if (i != 0) try children.append(l.scratch, .{ .text = "," });
+                                try children.append(l.scratch, .{ .term = arg });
+                            }
+                            try children.append(l.scratch, .{ .text = ")" });
+                        }
+                    },
+                    .function, .tuple => {
+                        try children.append(l.scratch, .{ .text = "(" });
+                        for (args, 0..) |arg, i| {
+                            if (shape.kind == .function and i + 1 == args.len) {
+                                try children.append(l.scratch, .{ .text = "->" });
+                            } else if (i != 0) try children.append(l.scratch, .{ .text = "," });
+                            try children.append(l.scratch, .{ .term = arg });
+                        }
+                        try children.append(l.scratch, .{ .text = ")" });
+                    },
+                    .record => {
+                        try children.append(l.scratch, .{ .text = "{" });
+                        var fields: usize = 0;
+                        for (args) |arg| {
+                            const child = l.in.dispatch.term(arg);
+                            if (child != .checked) return evidenceError(l);
+                            const payload = l.in.dispatch.argsAt(child.checked.args);
+                            if (payload.len != 1) return evidenceError(l);
+                            if (child.checked.kind == .row) {
+                                try children.append(l.scratch, .{ .text = "|" });
+                            } else if (child.checked.kind == .field) {
+                                if (fields != 0) try children.append(l.scratch, .{ .text = "," });
+                                fields += 1;
+                                try children.appendSlice(l.scratch, &.{ .{ .text = l.interner.slice(@fromBackingInt(@intCast(child.checked.value))) }, .{ .text = "=" } });
+                            } else return evidenceError(l);
+                            try children.append(l.scratch, .{ .term = payload[0] });
+                        }
+                        try children.append(l.scratch, .{ .text = "}" });
+                    },
+                    else => return evidenceError(l),
+                }
+                var n = children.items.len;
+                while (n != 0) {
+                    n -= 1;
+                    try pending.append(l.scratch, children.items[n]);
+                }
+            },
+        };
+        if (text.items.len != 0) try values.append(l.scratch, try l.stringNode(text.items, pos(l)));
+        var result = values.items[0];
+        for (values.items[1..]) |value_| result = try l.binary(.add, result, value_, pos(l));
+        return result;
+    }
+
+    fn tupleEvidence(impl: *anyopaque, fields: []const M.Evidence, kind: M.EvidenceKind) E!M.Evidence {
+        const l = lowerer(impl);
+        const values = try l.scratch.alloc(Node.Index, fields.len);
+        for (fields, values) |field, *value_| {
+            const at_ = @backingInt(field);
+            if (at_ >= l.mk.?.evidence.items.len) return evidenceError(l);
+            const item = l.mk.?.evidence.items[at_];
+            if (item.kind != kind) return evidenceError(l);
+            value_.* = item.value;
+        }
+        const value_ = if (kind == .identity) value: {
+            var result = try l.stringNode("(", pos(l));
+            for (values, 0..) |item, i| {
+                if (i != 0) result = try l.binary(.add, result, try l.stringNode(",", pos(l)), pos(l));
+                result = try l.binary(.add, result, item, pos(l));
+            }
+            break :value try l.binary(.add, result, try l.stringNode(")", pos(l)), pos(l));
+        } else value: {
+            const nodes = try l.scratch.alloc(Dispatch.DebugNode, values.len + 1);
+            nodes[0] = .{ .kind = .tuple, .count = @intCast(values.len) };
+            for (nodes[1..], 0..) |*item, i| item.* = .{ .kind = .parameter, .value = @intCast(i) };
+            break :value try l.checkedShape(nodes, values, pos(l));
+        };
+        return keepEvidence(l, value_, kind);
+    }
+
+    fn suppliedRuntime(impl: *anyopaque, name_: []const u8, evidence_: []const M.Evidence) E!M.Expr {
+        const l = lowerer(impl);
+        const markup = l.in.markup orelse return evidenceError(l);
+        const module = markup.module orelse return evidenceError(l);
+        for (markup.supplied) |supplied| {
+            if (!std.mem.eql(u8, supplied.name, name_)) continue;
+            if (evidence_.len != supplied.identities.len) return evidenceError(l);
+            const values = try l.scratch.alloc(Node.Index, evidence_.len);
+            for (evidence_, supplied.identities, values) |token, expected, *value_| {
+                const at_ = @backingInt(token);
+                if (at_ >= l.mk.?.evidence.items.len) return evidenceError(l);
+                const item = l.mk.?.evidence.items[at_];
+                if (@backingInt(item.kind) != @backingInt(expected.kind)) return evidenceError(l);
+                value_.* = item.value;
+            }
+            var known = false;
+            for (l.markup_module_uses.items) |use| known = known or std.mem.eql(u8, use, name_);
+            if (!known) try l.markup_module_uses.append(l.scratch, supplied.name);
+            const target = if (module == l.in.module) try l.topName(supplied.decl) else target: {
+                try l.need(module, supplied.value);
+                break :target try l.externalName(module, supplied.value);
+            };
+            const token = try l.ident(target, pos(l));
+            try l.mk.?.supplied_calls.append(l.scratch, .{ .token = token, .target = target, .evidence = values, .arity = supplied.arity, .call_arity = supplied.call_arity });
+            return expr(token);
+        }
+        return evidenceError(l);
     }
 
     fn rowValues(impl: *anyopaque, into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name) E!?M.Expr {
@@ -21425,6 +21675,18 @@ const MarkupContext = struct {
 
     fn call(impl: *anyopaque, callee: M.Expr, args: []const M.Expr) E!M.Expr {
         const l = lowerer(impl);
+        for (l.mk.?.supplied_calls.items) |bound| if (bound.token == node(callee)) {
+            if (args.len != bound.arity) {
+                try l.report(.internal, l.region, "The markup lowering calls a supplied runtime with the wrong written arity.", .{});
+                return error.Reported;
+            }
+            var all: std.ArrayList(Node.Index) = .empty;
+            try all.appendSlice(l.scratch, bound.evidence);
+            try all.appendSlice(l.scratch, @ptrCast(args));
+            var n = bound.arity;
+            while (n < bound.call_arity) : (n += 1) try all.append(l.scratch, try l.nullNode(pos(l)));
+            return expr(try l.call(try l.ident(bound.target, pos(l)), all.items, pos(l)));
+        };
         return expr(try l.call(node(callee), @ptrCast(args), pos(l)));
     }
 
@@ -21534,6 +21796,9 @@ const MarkupContext = struct {
         .hoist_function = hoistFunction,
         .hoisted = hoisted,
         .runtime = runtime,
+        .evidence = evidence,
+        .tuple_evidence = tupleEvidence,
+        .supplied_runtime = suppliedRuntime,
         .value = value,
         .row_values = rowValues,
         .row_values_apart = rowValuesApart,

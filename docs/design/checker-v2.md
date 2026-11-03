@@ -6012,6 +6012,17 @@ stored profile: its index is the byte length of a sequence of NUL-separated
 structural edges, packed into the remaining words. Ordinary type paths retain
 kinds 0–6. Modules with no Any profile allocate no such graph.
 
+**Checked markup operands (2026-11-03; boundary.md §9.4.6, version 1.24).**
+A lowering may request identity or checked-data evidence for its source operands.
+These demands enter the same identity fixpoint as ordinary Any and Data calls.
+Local function boundaries retain their quantified roots even when no written
+source call needs evidence: the generated runtime call is the seed. Each dispatch
+site has independent optional `operand_identity` and `operand_data` roots;
+structural checked terms retain function parameters and results for type paths.
+They are separate from the site's callee evidence and do not change its arity.
+Dispatch sidecar version 19 records and validates both roots. A lowering that
+requests no operand evidence adds no demands or hidden parameters.
+
 Schema members publish their own checked type's solved effect classes,
 including callbacks in their result, through the same effect-block format.
 They have no ordinary value declaration summary to reuse. Importing a schema
@@ -6551,7 +6562,7 @@ operations and structural equality cannot consume it.
 is withdrawn: nested Opt and rigid annotated variables are admitted. The
 checker publishes intrinsic references whose element representation cannot
 be Opt as sorted Dispatch.opt_plain indices. It follows aliases and possible
-release erasure through single-field wrappers. Dispatch sidecar v19 preserves
+release erasure through single-field wrappers. Dispatch sidecar v20 preserves
 the decision; emission records it as an opt_plain funnel fact. Interface kind
 byte 6 is reserved and no longer emitted; record kind stays at byte 7.
 `workers-task-storage.md` owns the runtime representation and soundness rule.

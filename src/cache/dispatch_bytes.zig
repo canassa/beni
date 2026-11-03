@@ -94,8 +94,10 @@ pub const magic = "BENIDSP\x00";
 /// 15: effect declaration byte 2 carries the totality proof.
 /// 16: effect rows grow to 8 bytes with call and initializer realm masks.
 /// 17: identity-only binders and tagged unconstrained quantifier slots.
-/// 19 adds static Opt representation decisions.
-pub const format_version: u32 = 19;
+/// 18: checked-data demands and structural witness terms.
+/// 19: static Opt representation decisions.
+/// 20: checked markup operand roots in each site.
+pub const format_version: u32 = 20;
 
 pub const Column = enum(u32) {
     terms,
@@ -132,7 +134,7 @@ pub const Column = enum(u32) {
         return switch (c) {
             .terms => term_bytes,
             .args => 4,
-            .sites => 16,
+            .sites => 24,
             .decls => 20,
             .lets => 20,
             .requirements => 12,
@@ -233,10 +235,12 @@ pub fn write(
     const sites = try gpa.alloc(u8, d.sites.len * Column.sites.width());
     defer gpa.free(sites);
     for (d.sites, 0..) |s, i| {
-        const row = sites[i * 16 ..][0..16];
+        const row = sites[i * 24 ..][0..24];
         std.mem.writeInt(u32, row[0..4], @backingInt(s.inst), .little);
         std.mem.writeInt(u32, row[4..8], @backingInt(s.callee), .little);
         writeRange(row[8..16], s.evidence);
+        std.mem.writeInt(u32, row[16..20], @backingInt(s.operand_identity), .little);
+        std.mem.writeInt(u32, row[20..24], @backingInt(s.operand_data), .little);
     }
 
     const decls = try gpa.alloc(u8, d.decls.len * Column.decls.width());
@@ -770,11 +774,13 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         const sites = try gpa.alloc(Dispatch.Site, lengths[@backingInt(Column.sites)]);
         out.table.sites = sites;
         for (sites, 0..) |*s, i| {
-            const row = in_bytes[i * 16 ..][0..16];
+            const row = in_bytes[i * 24 ..][0..24];
             s.* = .{
                 .inst = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
                 .callee = @fromBackingInt(@intCast(std.mem.readInt(u32, row[4..8], .little))),
                 .evidence = readRange(row[8..16]),
+                .operand_identity = @fromBackingInt(@intCast(std.mem.readInt(u32, row[16..20], .little))),
+                .operand_data = @fromBackingInt(@intCast(std.mem.readInt(u32, row[20..24], .little))),
             };
         }
     }
@@ -1149,7 +1155,8 @@ pub fn verify(l: *const Loaded) bool {
                 switch (shape.kind) {
                     .parameter => return false,
                     .field, .row => if (r.len != 1) return false,
-                    .unknown, .function, .unit => if (r.len != 0) return false,
+                    .unknown, .unit => if (r.len != 0) return false,
+                    .function => {},
                     .record => for (d.argsAt(r)) |arg| {
                         const child = d.terms[arg.int()];
                         if (child != .checked or (child.checked.kind != .field and child.checked.kind != .row)) return false;
@@ -1173,6 +1180,15 @@ pub fn verify(l: *const Loaded) bool {
     for (d.sites) |s| {
         if (s.callee.unwrap()) |c| if (c.int() >= terms) return false;
         if (!rootsOk(d, s.evidence)) return false;
+        for ([_]Dispatch.TermIndex.Optional{ s.operand_identity, s.operand_data }) |operand| {
+            if (operand.unwrap()) |root| {
+                if (root.int() >= terms) return false;
+                switch (d.terms[root.int()]) {
+                    .checked, .param => {},
+                    else => return false,
+                }
+            }
+        }
     }
     // The effect answers are looked up by binary search, so they ascend; and
     // there is one per declaration or none.
@@ -2064,4 +2080,36 @@ test "checked data evidence round-trips symbols and independent hidden demands" 
     // A scalar with a child is corrupt evidence, not a partial shape to trust.
     bytes[columnAt(bytes, .terms) + 1] = @backingInt(Dispatch.DebugNode.Kind.unit);
     try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+}
+
+test "checked markup operand roots round-trip and reject corrupt references" {
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const table: Dispatch = .{
+        .terms = &.{
+            .{ .checked = .{ .kind = .function, .args = .{ .start = 0, .len = 2 } } },
+            .{ .checked = .{ .kind = .unit } },
+            .{ .checked = .{ .kind = .unit } },
+        },
+        .args = &.{ @fromBackingInt(1), @fromBackingInt(2) },
+        .sites = &.{.{ .inst = @fromBackingInt(0), .operand_identity = @fromBackingInt(0), .operand_data = @fromBackingInt(1) }},
+    };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    defer loaded.deinit(gpa);
+    try testing.expectEqualSlices(Dispatch.Term, table.terms, loaded.table.terms);
+    try testing.expectEqualSlices(Dispatch.Site, table.sites, loaded.table.sites);
+    // A cached operand is dereferenced by the lowering before any host call.
+    // Both columns must reject references beyond the term table.
+    const at = columnAt(bytes, .sites);
+    for ([_]usize{ 16, 20 }) |offset| {
+        const saved = std.mem.readInt(u32, bytes[at + offset ..][0..4], .little);
+        std.mem.writeInt(u32, bytes[at + offset ..][0..4], 3, .little);
+        try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+        std.mem.writeInt(u32, bytes[at + offset ..][0..4], saved, .little);
+    }
 }

@@ -1042,7 +1042,7 @@ pub fn closeLet(s: *Solve, binders: []const u32) Error!void {
     defer reqs.deinit(scratch);
     for (binders) |i| {
         const b = s.tree.binders.items[i];
-        const identities = s.instantiate.identity_uses.items.len != 0;
+        const identities = s.instantiate.identity_uses.items.len != 0 or (s.cx.bir.uses_markup and s.cx.graph.markup.operand_evidence != 0);
         const binding_kind = letBinding(s, b);
         if (!b.header or (binding_kind != .function and !(identities and binding_kind == .annotated))) continue;
         all.clearRetainingCapacity();

@@ -69,12 +69,31 @@ const std = @import("std");
 /// (`Placement.Places.prerender_data`), the program it makes
 /// (`Program.data`), and the two calls that read the value into the
 /// lambda's parameter (`programDataSchema`, `programDataBind`).
-pub const version: Version = .{ .major = 1, .minor = 23 };
+pub const version: Version = .{ .major = 1, .minor = 24 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
 /// major version 1 is handed it.
 pub const gated: Version = .{ .major = 1, .minor = 0 };
+
+pub const EvidenceKind = enum(u8) { identity, checked_data };
+pub const EvidenceKinds = packed struct(u8) {
+    identity: bool = false,
+    checked_data: bool = false,
+    reserved: u6 = 0,
+};
+
+/// A path through the checked type of a source operand.
+pub const TypeStep = union(enum) {
+    list_item,
+    function_param: u32,
+    function_result,
+    tuple_field: u32,
+    record_field: []const u8,
+};
+
+/// A compiler-issued token; it carries no runtime object.
+pub const Evidence = enum(u32) { _ };
 
 pub const Version = struct {
     major: u16,
@@ -100,6 +119,9 @@ pub const Lowering = struct {
     /// The markup runtime's exports this lowering's emitted code imports,
     /// each with its parameter count (§9.4.5).
     runtime: []const RuntimeExport,
+    /// The evidence needed to close typed capture packets. Only a lowering
+    /// that consumes this evidence requests it; other modules keep their ABI.
+    operand_evidence: EvidenceKinds = .{},
     /// Runs once per module that has a surviving markup root, before any of
     /// its roots: hoists what the module needs.
     module: *const fn (cx: *Context, tree: *const Tree) Error!void,
@@ -1177,7 +1199,25 @@ pub const Context = struct {
         return cx.vtable.runtime(cx.impl, name);
     }
 
-    /// What value `v` is bound to: in `root`, a value of that root; inside
+    /// Evidence for the checked source type at a path. The lowering must
+    /// declare the kind in operand_evidence. This does not evaluate v.
+    pub fn evidence(cx: *Context, v: Value.Index, path: []const TypeStep, kind: EvidenceKind) Error!Evidence {
+        return cx.vtable.evidence(cx.impl, v, path, kind);
+    }
+
+    /// The checked type of a capture tuple built by this lowering, in field
+    /// order. Every field token must have the requested kind.
+    pub fn tupleEvidence(cx: *Context, fields: []const Evidence, kind: EvidenceKind) Error!Evidence {
+        return cx.vtable.tuple_evidence(cx.impl, fields, kind);
+    }
+
+    /// A callee for Js.call, with the supplied compiler evidence. The token
+    /// must be used directly as that call's callee; no closure is allocated.
+    pub fn suppliedRuntime(cx: *Context, name: []const u8, evidence_: []const Evidence) Error!Expr {
+        return cx.vtable.supplied_runtime(cx.impl, name, evidence_);
+    }
+
+    /// What value v is bound to: in `root`, a value of that root; inside
     /// a function a row was placed in, a value of that row's root.
     pub fn value(cx: *Context, v: Value.Index) Error!Expr {
         return cx.vtable.value(cx.impl, v);
@@ -1991,6 +2031,9 @@ pub const VTable = struct {
     hoist_function: *const fn (impl: *anyopaque, hint: []const u8, params: []const Name, body: Block) Error!Name,
     hoisted: *const fn (impl: *anyopaque, hint: []const u8) ?Name,
     runtime: *const fn (impl: *anyopaque, name: []const u8) Error!Name,
+    evidence: *const fn (impl: *anyopaque, v: Value.Index, path: []const TypeStep, kind: EvidenceKind) Error!Evidence,
+    tuple_evidence: *const fn (impl: *anyopaque, fields: []const Evidence, kind: EvidenceKind) Error!Evidence,
+    supplied_runtime: *const fn (impl: *anyopaque, name: []const u8, evidence_: []const Evidence) Error!Expr,
     value: *const fn (impl: *anyopaque, v: Value.Index) Error!Expr,
     row_values: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name) Error!?Expr,
     row_values_apart: *const fn (impl: *anyopaque, block: Block, apart_block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name, apart: []const Value.Index) Error!?Expr,

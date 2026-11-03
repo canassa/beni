@@ -586,11 +586,12 @@ fn ownTermsOf(
     // option string is unchanged, so its key is too.
     const markup = graph.markup;
     const markup_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m)
-        try std.fmt.allocPrint(scratch, "{s};markup={t},{s}.{s}", .{
+        try std.fmt.allocPrint(scratch, "{s};markup={t},{s}.{s};operands={d}", .{
             reply_context,
             markup.status,
             if (markup.type_module.unwrap()) |s| interner.slice(s) else "",
             if (markup.type_name.unwrap()) |s| interner.slice(s) else "",
+            markup.operand_evidence,
         })
     else
         reply_context;

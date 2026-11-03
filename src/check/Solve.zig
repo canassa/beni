@@ -1019,7 +1019,8 @@ pub fn closeFrame(s: *Solve, binders: []const u32, annotated: []const u32, membe
     // the proven-undetermined default (§9.4).
     try Decide.close(s);
     // A `let` function binding's own requirements are promoted to it (§8.4).
-    if (!top and (s.resolver.wanters.items.len != 0 or s.instantiate.identity_uses.items.len != 0)) try Resolve.closeLet(s, binders);
+    const operand_evidence = s.cx.bir.uses_markup and s.cx.graph.markup.operand_evidence != 0;
+    if (!top and (s.resolver.wanters.items.len != 0 or s.instantiate.identity_uses.items.len != 0 or operand_evidence)) try Resolve.closeLet(s, binders);
     if (members) |m| {
         if (s.resolver.wanters.items.len != 0) {
             // Step 7 unifies nothing: a default answers `undetermined`, a

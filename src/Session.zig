@@ -2117,6 +2117,11 @@ fn resolveModules(session: *Session) RunError!void {
         session.graph = .empty;
         session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner, platforms, keep);
     }
+    if (session.graph.markup.lowering.unwrap()) |name| {
+        if (@import("js/Emit.zig").findLowering(session.interner.slice(name))) |lowering| {
+            session.graph.markup.operand_evidence = @bitCast(lowering.operand_evidence);
+        }
+    }
     session.profile.end(0, graph_token, .graph, Profile.Event.no_file, 0);
     session.profile.addCounter(.modules, session.graph.count());
     session.profile.addCounter(.edges, session.graph.edgeCount());

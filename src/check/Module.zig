@@ -987,7 +987,8 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     const lets = try gpa.alloc(Dispatch.LetInfo, let_rows.len);
     errdefer gpa.free(lets);
     const let_schemes = try scratch.alloc(Var, let_rows.len);
-    const let_identity_roots: [][]const Var.Optional = if (solver.instantiate.identity_uses.items.len != 0) try scratch.alloc([]const Var.Optional, let_rows.len) else &.{};
+    const operand_uses = try @import("MarkupOperands.zig").uses(solver.cx, solver.instantiate.identity_uses.items);
+    const let_identity_roots: [][]const Var.Optional = if (operand_uses.len != 0) try scratch.alloc([]const Var.Optional, let_rows.len) else &.{};
     if (let_identity_roots.len != 0) {
         for (let_identity_roots, let_rows) |*out_roots, row| out_roots.* = row.identity_roots;
     }
@@ -1028,7 +1029,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .let_schemes = let_schemes,
         .checks = groups.decl_display,
         .let_identity_roots = let_identity_roots,
-        .uses = solver.instantiate.identity_uses.items,
+        .uses = operand_uses,
         .out = &out,
     }) else .{};
     in.dispatch.deinit(gpa);

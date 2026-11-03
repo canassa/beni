@@ -10,7 +10,7 @@ const std = @import("std");
 const m = @import("beni_markup");
 const parser = @import("platform_html").parser_table;
 
-pub const lowerings = [_]m.Lowering{.{
+pub const lowerings = [_]m.Lowering{ .{
     .name = "toy",
     .targets = .{ .major = 1, .minor = 0 },
     .runtime = &.{
@@ -19,7 +19,7 @@ pub const lowerings = [_]m.Lowering{.{
     },
     .module = module,
     .root = root,
-}};
+}, @import("typed.zig").lowering };
 
 /// `wrap`, hoisted once per module: `(tag, inner) => tag + "[" + inner + "]"`.
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {

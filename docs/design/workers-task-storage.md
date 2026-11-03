@@ -123,7 +123,7 @@ No Opt formation or payload-kind restriction remains: nested Opt and rigid
 annotated variables are valid. Js.Value, undefined and ⊤ remain valid payloads.
 
 The checker publishes static decisions as sorted intrinsic-reference indices
-in Dispatch.opt_plain. Dispatch sidecar v19 preserves them, and the emission
+in Dispatch.opt_plain. Dispatch sidecar v20 preserves them, and the emission
 funnel records each decision it reads. Cold, warm and dispatch-round-trip builds
 therefore use the same representation without backend type reconstruction.
 Record kind retains interface byte 7; the withdrawn non-Opt kind byte 6 is
