@@ -447,7 +447,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     // authorise no write (§7.3); their clean bit says whether a caller
     // there was checked.
     var channel = [1]Hoists.Table{.empty};
-    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .channels = &channel });
+    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .below = if (kept) |k| k.below else false, .channels = &channel });
     if (session.graph.modulePackage(m) != .app) {
         gpa.free(channel[0].writes);
         channel[0].writes = &.{};
