@@ -82,6 +82,9 @@ pub const Context = struct {
     /// its parameters' appended, its result's returned; null when it has
     /// no function type.
     siteSig: *const fn (ctx: *anyopaque, inst: u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
+    /// The same of a label's origin: the function type its callback call's
+    /// head has there; null when it has none to hand.
+    originSig: *const fn (ctx: *anyopaque, origin: [3]u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
     /// The pessimistic contract of a call of `arity` arguments.
     pessimistic: *const fn (ctx: *anyopaque, arity: u32) Error!Contract.Id,
     /// A `try`'s shape: `(success ordinal, failure ordinal, failure arity)` of its
@@ -135,8 +138,8 @@ pub const Demand = struct {
     /// and the argument written.
     call: u32 = none,
     arg: u32 = none,
-    /// A `taken` label's supply write: its container's occurrences at the label's caller (`Eval.finishDemands`).
-    taken_occs: ?[2]u64 = null,
+    /// A virtual call's write: the written slot of its argument `arg` (`Eval.finishDemands` reads the labels it is supplied through).
+    wslot: u32 = none,
     /// A construction's base value: its storage, the targets, is read again
     /// by each evaluation (a prepend's re-cons reads the calls' contracts).
     base_value: u32 = none,

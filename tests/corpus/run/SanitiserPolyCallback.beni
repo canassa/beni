@@ -6,9 +6,9 @@
 -- below it can name: v2 read the answer at `.values` as the whole answer
 -- (a fresh record) and accepted the push, and the sanitised build's read of
 -- `xs` trapped. The answer is read at the call's own function type
--- (`viaApply`), or, where that type is not to hand (a callback inside a
--- constructor, `viaReader`, also as a local function, `viaLocal`), the call
--- is unknown.
+-- (`viaApply`), or, for a callback inside a constructor (`viaReader`, also
+-- as a local function, `viaLocal`), at the type the label's own call `f
+-- value` has its callee at.
 import List
 import Node exposing (Program)
 import String

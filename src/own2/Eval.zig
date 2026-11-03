@@ -141,11 +141,18 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 // The supplies and the answer at the call site's function
                 // type, never the code's own: a polymorphic code (`a → a`)
                 // has a type variable's place, which no step below it can
-                // name (`.values` of an `R → R` label). Where the site's
-                // type is not to hand, a code with such a place is unknown.
+                // name (`.values` of an `R → R` label). The site is the
+                // argument's instruction, else the type the label's origin
+                // call has its callee at (a capture has no instruction at
+                // the call, #1758). Where neither is to hand, a code with
+                // such a place is unknown.
                 var site: std.ArrayList(PlaceId) = .empty;
                 defer site.deinit(gpa);
-                const site_result: ?PlaceId = if (f.slots.relWords(l.slot).len == 0 and l.j < call.arg_insts.len) try e.ctx.siteSig(e.ctx.ctx, call.arg_insts[l.j], &site) else null;
+                var site_result: ?PlaceId = if (f.slots.relWords(l.slot).len == 0 and l.j < call.arg_insts.len) try e.ctx.siteSig(e.ctx.ctx, call.arg_insts[l.j], &site) else null;
+                if (site_result == null or site.items.len != sig.own) {
+                    site.clearRetainingCapacity();
+                    site_result = try e.ctx.originSig(e.ctx.ctx, l.origin, &site);
+                }
                 const at_site = site_result != null and site.items.len == sig.own;
                 var wild = false;
                 if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
@@ -171,6 +178,15 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 try f.calls.append(gpa, .{ .inst = call.inst, .point = call.point, .args = kids, .arg_insts = &.{}, .root = root, .code = if (wild) none else x.head, .virtual = true, .answers = @intCast(li), .callee_val = fv });
                 got.value_ptr.* = vi;
                 f.calls.items[vi].contract = (if (wild) null else e.ctx.contractOf(e.ctx.ctx, x.head)) orelse try e.ctx.pessimistic(e.ctx.ctx, @intCast(kids.len));
+                // Read as unknown code, the known code still runs: it has
+                // escaped here, so its own parameter writes are demands on
+                // `⊤` and a capture write is `once` (§2.11.4, #1758).
+                if (wild) {
+                    var ls: std.ArrayList(u32) = .empty;
+                    defer ls.deinit(gpa);
+                    try e.ev.leavesOf(fv, 0, &ls);
+                    for (ls.items) |lf| try addEscape(e, lf, call.point);
+                }
             }
             try e.ev.known.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
             if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellAnswer(e, q, l, cs, got.value_ptr.*);
@@ -412,11 +428,16 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) for ((try entriesOf(e, su.res_root)).items.items) |rs| for (rs.arrivals) |a| {
                 if (a.kind == .param and Cells.throughContents(f.slots, a.slot)) d.deep = true;
             };
-            for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == x.j) {
-                for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), words)) {
+            // Every label the write's supply comes through, outward: a
+            // slot any of them keeps refuses (#1758).
+            d.wslot = x.slot;
+            var lvs: std.ArrayList(Level) = .empty;
+            defer lvs.deinit(gpa);
+            try supplyLevels(e, q, x.j, words, &lvs);
+            for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
+                for (e.contracts.effectsOf(su.kept)) |kp| if (std.mem.startsWith(u32, lv.words, f.slots.relWords(kp.slot)) or std.mem.startsWith(u32, f.slots.relWords(kp.slot), lv.words)) {
                     d.kept = true;
                 };
-                if (lab.origin[2] & RowEnv.taken_origin != 0) d.taken_occs = try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, gpa, e.ev.arena, su, words, x.deep);
             };
             // A virtual call's head is a code, never an instruction: the walked call names the demand.
             d.callee_inst = if (wq < e.w.walk_calls) f.calls.items[wq].head else none;
@@ -442,16 +463,69 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
         if (req_of[d.call] == null) req_of[d.call] = (try Graft.movedReq(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
         d.relies = req_of[d.call].?;
-        if (!call.virtual) continue;
-        const outer = virtualOuter(e, d.call) orelse continue;
-        const lab = e.contracts.labelsOf(e.contracts.head(f.calls.items[outer[0]].contract).labels)[outer[1]];
-        for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == d.arg) {
-            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), outer[0]));
+        if (!call.virtual or d.wslot == none) continue;
+        // Each label the supply comes through: its supplies' condition,
+        // and a `taken` row's container occurrences, at its call (#1758).
+        var lvs: std.ArrayList(Level) = .empty;
+        defer lvs.deinit(e.gpa());
+        try supplyLevels(e, d.call, d.arg, f.slots.relWords(d.wslot), &lvs);
+        for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
+            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), lv.call));
+            if (lv.lab.origin[2] & RowEnv.taken_origin != 0) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
+                var run = os;
+                d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, &run), lv.call));
+            };
         };
-        if (d.taken_occs) |os| {
-            var run = os;
-            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, &run), outer[0]));
+    }
+}
+
+/// A label a virtual call's supply comes through: the call `call` whose
+/// callee's label `lab` it applies, the supply `k`, written at `words`.
+const Level = struct { call: u32, lab: Contract.Label, k: u32, words: []const u32 };
+
+/// The labels virtual call `q`'s argument `k`, written at `words`, is
+/// supplied through, outward (§2.11.3, #1758). Where the call it applies a
+/// label of is virtual too (a known code's label of a known code, `h = λv
+/// → g v` called by a callee's label), that supply is in turn its own
+/// parameter's: what an arrival of it at the supply says, so the outer
+/// label's condition, kept slots and `taken` occurrences hold the write too.
+/// The calls go down (a virtual call follows the call it applies), so the
+/// chain ends; each level's (k, words) is listed once.
+fn supplyLevels(e: *Evaluation, q: u32, k: u32, words: []const u32, out: *std.ArrayList(Level)) Error!void {
+    const f = e.fr();
+    const gpa = e.gpa();
+    var cur = q;
+    var ks: std.ArrayList(Level) = .empty;
+    defer ks.deinit(gpa);
+    try ks.append(gpa, .{ .call = q, .lab = undefined, .k = k, .words = words });
+    while (f.calls.items[cur].virtual and ks.items.len != 0) {
+        const o = virtualOuter(e, cur) orelse break;
+        const oc = f.calls.items[o[0]];
+        const lab = e.contracts.labelsOf(e.contracts.head(oc.contract).labels)[o[1]];
+        var next: std.ArrayList(Level) = .empty;
+        defer next.deinit(gpa);
+        const own = if (oc.virtual and oc.callee_val != none) oc.args.len - f.kidsOf(f.val(oc.callee_val)).len else 0;
+        for (ks.items) |kw| {
+            try out.append(gpa, .{ .call = o[0], .lab = lab, .k = kw.k, .words = kw.words });
+            if (!oc.virtual) continue;
+            for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == kw.k) {
+                const es = try entriesOf(e, su.res_root);
+                for (es.items.items) |rs| for (rs.arrivals) |a| {
+                    if (a.kind != .param or a.j >= own) continue;
+                    const at = es.wordsOf(rs);
+                    const nw: []const u32 = if (std.mem.startsWith(u32, kw.words, at))
+                        try std.mem.concat(e.ev.arena, u32, &.{ f.slots.relWords(a.slot), kw.words[at.len..] })
+                    else if (std.mem.startsWith(u32, at, kw.words)) f.slots.relWords(a.slot) else continue;
+                    const seen = for (next.items) |n| {
+                        if (n.k == a.j and std.mem.eql(u32, n.words, nw)) break true;
+                    } else false;
+                    if (!seen) try next.append(gpa, .{ .call = o[0], .lab = lab, .k = a.j, .words = nw });
+                };
+            };
         }
+        ks.clearRetainingCapacity();
+        try ks.appendSlice(gpa, next.items);
+        cur = o[0];
     }
 }
 
