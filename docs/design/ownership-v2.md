@@ -1708,6 +1708,24 @@ A verdict from round r is stale in round r + 1 only where something it read move
   never a table of earlier answers to unrelated questions. `rot` re-judges the demands of the parameters
   whose nodes moved: one a round.
 
+**As built** [#1714] (`Kept.zig`). A demand's key is its fields (point, kind, base, call, argument,
+pending clock, `relies.no`, the `kept`/`many`/`callback` bits) with its targets' leaves and its
+operands' values; leaves are interned, so equal lists are equal objects. A judgement records the later
+uses' footprints it read, each `(call, parameter)` with the callee's read and write tree node of that
+parameter (`Later.Uses.feet`, `Descent.cover`), and where it stood in the round's **holder events**: a
+holder keyed, a hold done, a holder's aggregated holds done (§2.8's sweep), the state that later
+judgements read. It is taken again only when the round's events so far are the round before's, event for
+event; it then makes its own events again (a keying by keying the live holders, as it did) and its
+operand and pending writes, for `req`. What no key names is compared once a round, whole: each member's
+candidate (result node, result condition, labels with their supplies, flags), its draft's result and
+labels as the expansions read them live, and each frame's escapes. This is coarser than the spec's node
+per field read for the result (a moved result re-judges the round), and exact. Only demands are kept; a
+label's supplied parts are judged every round. Under `-Downership-full-cross-check` every demand is
+judged and a kept judgement it would have taken is compared with it (line, events, writes); a difference
+panics. Measured (Debug, one job): `rot` with 8, 16, 32 and 64 lists costs 6 799, 21 712, 76 799 and
+287 898 records (8 377, 28 522, 105 321 and 406 404 before), growth 0 of 65 536 at 64 (51 561 before);
+its demand records fall from 198 658 to 58 232. The cost table's other rows are unchanged.
+
 **Termination.** The vocabulary is finite: the slots are fixed by the types, the arrivals by the parameters'
 slots and the labels by the instructions. Every delivered fact is added once; every condition moves at most
 once per occurrence. The account (§4.4) bounds the work in records, reserved before work; there is no round
@@ -3926,7 +3944,8 @@ L0  Ids  Counters  Scratch
 | `Stack.zig` | 8 | the pending operands by clock and key: their leaves listed once, lists by push with trees of removal and `rank₂`, aggregated ones (§2.8) | Ids, Value, Relation, Distinct, Walk, Regions |
 | `Later.zig` | 8 | a holder's later uses that read a hold at a path, through call uses' footprints, asked once a judgement (§2.7, §2.8, #1714) | Ids, Facts, Slots, Value, Relation, Contract, Forest, Walk, Liveness, Regions |
 | `Descent.zig` | 10 | the best-hold descent over a holder DAG; the paths at which a hold holds a target (§2.8, #1714) | Ids, Facts, Slots, Trees, PlaceBelow, Subtree, Value, Relation, Distinct, Liveness, Later, Sweep |
-| `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells |
+| `Kept.zig` | 10 | a group's judgements kept across its rounds: each with its key, the footprints and holder events it read, its writes; the round's print of what no key names (§2.12, #1714) | Ids, Facts, Contract, Value, Walk |
+| `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
