@@ -24,6 +24,7 @@ const Graft = @import("Graft.zig");
 const Coexist = @import("Coexist.zig");
 const Chains = @import("Chains.zig");
 const Ends = @import("Ends.zig");
+const AtomSets = @import("AtomSets.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -419,7 +420,6 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     var st: Entries.Rounds = .{};
     defer st.deinit(g);
     for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .routes = p.routes }, .{ none, @intCast(k), 0 });
-    const acc: Cond = .{};
     // The conditions met, gathered and made one at the end: a merge per
     // entry or group would cost their product (§2.9.3's linear bound).
     var occs: Occs = .{};
@@ -535,6 +535,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         if (must == null and st.nonempty < 2) break;
         if (rounds > 4096) return Cond.unprovable;
         const unvouched = must != null and st.groups.items[st.of_root.items[latest]].must == 1;
+        if (must == null and try AtomSets.settled(e, &st)) break; // its atoms meet nothing
         // The latest expandable root meets another: its entries become
         // what they come from (one level), a block it vouched for, in the
         // order the entries are read (a leaf met twice keeps its first).
@@ -580,8 +581,8 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             }
         }
     }
-    if (occs.run.items.len == 0) return acc;
-    return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
+    if (occs.run.items.len == 0) return Cond.yes;
+    return Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items));
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------
