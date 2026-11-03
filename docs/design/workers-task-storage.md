@@ -143,6 +143,15 @@ lower directly to native array operations. List's private builder, base,
 offset and view operations use these alongside its existing indexed reads
 and writes. No `Js.Buffer` is needed.
 
+List keeps its persistent radix tree and a claimable 32-element tail until
+the ownership-backed representation can replace both together. The tree and
+tail protocol are beni over typed builders and Cell; native wrappers retain
+the real Header and its pure flattening callback. Every suffix view uses the
+private native View constructor. Its core-only isView predicate is available
+to platform Wire and reply discovery. The checked data conversion receives a
+private Cell token by value, checks only logical List elements, and projects
+views to plain arrays without invoking their protocol callbacks.
+
 The native queueMicrotask, timeout/clearTimeout, optional Node setImmediate,
 MessageChannel/MessagePort, Date.now and Math.random operations are generated
 from the reviewed native catalogue. Task owns the macrotask FIFO, its lazy

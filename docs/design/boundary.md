@@ -691,7 +691,11 @@ inference.
 `Js.Data.checked : a → Maybe Js.Value`, one core-only checked conversion,
 fenced by `resolve/CorePrivate.zig`. It reads the whole reachable data graph
 without invoking a callback, accessor or conversion method, and returns Just
-the original value only when the graph contains no callable or native value.
+the value only when its logical data graph contains no callable or native value.
+Plain host data is retained unchanged. Internal List views and trie headers are
+projected to plain arrays after checking their logical elements, without calling
+their protocol callbacks. A private typed Cell token supplied by List identifies
+these wrappers; unrelated objects never receive that treatment.
 Schema calls it only on the failure path with reportInput enabled. Otherwise
 Issue.input is Nothing. Schema.Value remains plain host data and Issues remain
 Wire-safe; Any is not used for Schema's reported input.
@@ -731,7 +735,12 @@ and other exceptions propagate.
 **Typed List arrays** (owner, 2026-11-02; #1295, #1612) are a core-only
 rule-6 extension. Allocation, indexed get/set, length, builder completion
 and List view wrap/unwrap retain the element type, including native handles
-and callbacks. The private List declarations are fenced by
+and callbacks. The persistent tree and claimable tail are beni. A tail buffer
+may fill an unused slot only when its claimed count matches the current header;
+an earlier branch copies at most 32 elements. The read-only buffer view never
+resizes it. Private wrappers retain the typed header and flattening callback;
+foreign `viewOf` constructs every suffix view with the private View prototype.
+Trie headers remain distinguishable by their own `$plain` callback. The private List declarations are fenced by
 `resolve/CorePrivate.zig` and lower directly to native array operations.
 They add no user surface or Js.Buffer. `workers-task-storage.md` records
 the decision.

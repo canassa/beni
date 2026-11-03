@@ -8216,3 +8216,30 @@ which justifies `escaped a → fresh Any`; the identity guard and payload remain
 typed. Reply discovery's corresponding region reads message containers into
 local scan state and returns a newly allocated list of immutable String ids.
 It does not retain or mutate the borrowed message after returning.
+
+### Typed persistent List storage (2026-11-03; §24.8 implementation note)
+
+List retains its persistent tree until ownership and the plain-array writes can
+replace it together. Every header is a fresh record. Tree nodes and full leaves
+are immutable; a changed path copies arrays of at most 32 entries. The private
+tail is a typed Builder behind a Cell. Its claimed count must equal a header's
+own tail count before `writeArray` fills the next unused slot. Earlier headers
+cannot observe that slot. A fork from an earlier count copies at most 32 values.
+A full tail is never written again after becoming a leaf.
+
+`put` and `done` retain their fresh-builder obligations. `peekArray` returns an
+alias without changing length; it is read only, and only a full immutable tail
+becomes a tree leaf. `writeArray` is an impure native capacity write with aliased
+inputs, confined to List. Its public observational purity follows from the
+claim check, not an assertion that a shared buffer is exclusive. Element types,
+including callback and native types, survive each operation.
+
+`base` returns the array or a header's cached flat copy; neither readers nor
+suffix views write it. `viewOf` creates a fresh private View holding its base and
+offset, and `isView` only checks that prototype. Every view uses the native
+constructor. The flat cache is private mutable metadata and never changes a
+header's logical elements. The checked data conversion uses List's private Cell
+token to inspect logical elements and project views to host arrays, without
+invoking the stored protocol callback. The native array and wrapper operations
+are pinned at their actual lowering regions with the defining core package;
+passed-as-value implementations and the View constructor are pinned too.
