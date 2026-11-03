@@ -77,7 +77,9 @@ shaped _ = scan { b = [ local "record-first", local "record-second" ], o = 1, le
 
 
 pub noReply : (⊤ → ⊤) → List String
-noReply effect = replyIds { effect = effect ⊤, ordinary = 42 }
+noReply effect =
+    replyIds
+        { effect = effect ⊤, ordinary = 42, cell = Js.cell { value = 42 }, option = Js.some 42 }
 
 
 line : a → ⊤

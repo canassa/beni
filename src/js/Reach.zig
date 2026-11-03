@@ -1138,6 +1138,11 @@ pub const Builder = struct {
                         const call_data = bir.instData(@fromBackingInt(scan.inst));
                         const callee_position = if (bir.instTag(@fromBackingInt(scan.inst)) == .method_call) scan.inst else call_data.lhs;
                         if (callee_position != position or !reply_needs[scan.node]) continue;
+                        if (b.opt_none) |none| for (plan.nodes, 0..) |node, ni| {
+                            if (node.kind != .opt or !reply_needs[ni]) continue;
+                            try decl_targets.append(b.scratch, .{ .node = none, .chain = guards.at(position) });
+                            break;
+                        };
                         const owner = b.in.graph.find(.platform, b.in.interner.?.find("Worker.Object") orelse continue) orelse continue;
                         const owner_bir = b.in.birOf(owner);
                         for (owner_bir.decls, 0..) |decl, di| {

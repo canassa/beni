@@ -2656,6 +2656,25 @@ test "Cloudflare reply scans traverse typed persistent list headers" {
     }
 }
 
+test "Cloudflare reply scans follow Ref Cell and Opt in known and generic positions" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReplyScanProgram(&w);
+    try w.copyTreeInto("tests/platforms/reply-scan-stores", "platform", "_expected.");
+    try w.write("Main.beni", "import Page\nimport Stores\nmain : Page.Program\nmain = Page.program Stores.run\n");
+    for ([_]bool{ false, true }) |release| {
+        const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
+            &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+            if (release) &.{"--release"} else &.{},
+        });
+        const built = try w.run(args);
+        try testing.expectEqualStrings("", built.stderr);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "stores passed\n" });
+    }
+}
+
 test "Cloudflare reply scans elide Reply-free traversal and fence application callers" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

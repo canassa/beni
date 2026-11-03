@@ -6656,7 +6656,7 @@ pub const Lowerer = struct {
             if (node.kind == .tagged and edges.len == 1 and (try l.replyCtor(wire, node, edges[0].label.unwrap().?, inst)) == .unboxed) {
                 const tuple = wire.nodes[edges[0].child];
                 const child = wire.edges[tuple.edges.start].child;
-                try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(9, p), try l.intNode(child, p) }, p));
+                try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(10, p), try l.intNode(child, p) }, p));
                 continue;
             }
             var emitted: std.ArrayList(Node.Index) = .empty;
@@ -6671,7 +6671,12 @@ pub const Lowerer = struct {
         }
         var keys: std.ArrayList(Node.Index) = .empty;
         for ([_][]const u8{ "brand", "id", "local" }) |key| try keys.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, key), p));
-        return @import("ReplyScan.zig").emit(l, value, try l.intNode(root, p), try l.arrayNode(nodes.items, p), brand, try l.arrayNode(keys.items, p), is_view, p);
+        var opt_none: ?Node.Index = null;
+        for (wire.nodes, 0..) |node, i| if (needs[i] and node.kind == .opt) {
+            opt_none = try l.optNone(p);
+            break;
+        };
+        return @import("ReplyScan.zig").emit(l, value, try l.intNode(root, p), try l.arrayNode(nodes.items, p), brand, try l.arrayNode(keys.items, p), is_view, opt_none, p);
     }
 
     // ownership pin end: replyIds

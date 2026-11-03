@@ -233,11 +233,15 @@ data. Actual List views have a private class identity and the Wire fallback
 normalizes only their active elements, never records with matching field names.
 
 Reply scans instead compute conservative reachability for NoReply suppression.
-A Reply reachable through a `Js.Ref`'s `v` field counts as held. That plain
-storage wrapper is traversable data in reply mode, including at a generic
-position; it needs no new Ref representation or identity test. Functions and
-native objects with non-data prototypes remain leaves. This exception does not
-permit traversal through a branded Reply's owner or print payloads.
+A Reply reachable through a `Js.Ref`'s `v` field, a `Js.Cell`'s record fields,
+or a present `Js.Opt` payload counts as held. Known-type and generic
+positions follow the same data: Ref storage is a plain wrapper, Cell is
+the record itself, and Opt is its payload or the private absence identity.
+Known Opt plans skip that identity before entering the payload plan; the
+generic walk reaches no fields in the empty sentinel. Neither allocates
+a wrapper or changes the core representation. Functions and native objects
+with non-data prototypes remain leaves. This exception does not permit
+traversal through a branded Reply's owner or print payloads.
 
 The type-key cache section's format 4 stores reply roots in instruction order,
 with a mode bit on plan nodes and a separate canonical nominal-type palette.

@@ -165,12 +165,14 @@ page_fuzz_test.test.a missed write of a controlled input's value is caught #0 10
 page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 4233ee20420100ef432a5f3356c02e5f8badb672f3a2a32dfca43b3f6381e692
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 df80cf41f293a227e438b3ae01f5f6524264f09041988726a747daae715cc0c0
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 db44601cee0289ff6a3d9d3ca29e91311faf41f013b3ab83e5b58299538154b8
-platform_test.test.Cloudflare reply scans elide Reply-free traversal and fence application callers #0 b78ba5fa99b9da695b637e525fdd2067eafa0950b76a1bbc357558baed938861
-platform_test.test.Cloudflare reply scans rederive plans when a cached platform becomes Cloudflare #0 f2279f4d1ecf04ce3f4a2a91f7c61edcf78d3a67a419ab3821cef8d6f404ae79
-platform_test.test.Cloudflare reply scans traverse typed persistent list headers #0 e7485208e06652d016ce14ca9c606f4ce7424300a67a03516d57ecc989c04f6d
-platform_test.test.Cloudflare reply scans traverse typed persistent list headers #1 06f395fafa4ba479a3671765d7db6879d9a5180007e204280b5846887983a244
-platform_test.test.Cloudflare reply scans use typed plans, generic guards, active views and cached roots #0 130367c347ecb74f012baee08f93b6e2ab34b4898a2b590e6df336d415af92df
-platform_test.test.Cloudflare reply scans use typed plans, generic guards, active views and cached roots #1 d48b7e86976b4cb9aa0e4cb9c371e3fe9ac268fda4e827cc3ed5750972b3f0cc
+platform_test.test.Cloudflare reply scans elide Reply-free traversal and fence application callers #0 d5b62e1a6ef3816a127f2b4a08bc20d9b723887cc8546b4e5e6e820e4a6e4675
+platform_test.test.Cloudflare reply scans follow Ref Cell and Opt in known and generic positions #0 d0f31516a4f28f0a9c4bf36556704dea4fc2dce2aaea9b4bf6fe0ada9bef36db
+platform_test.test.Cloudflare reply scans follow Ref Cell and Opt in known and generic positions #1 66e527e1d2c8dfeac4003fe268f4466f94090f473b32cbf05aea73a86c295665
+platform_test.test.Cloudflare reply scans rederive plans when a cached platform becomes Cloudflare #0 fbf185a21cfa1eb248e9ca2110eb0b490b0d734da71ce404b5eb2f941cf3a679
+platform_test.test.Cloudflare reply scans traverse typed persistent list headers #0 5ff8c6b50e3dd301591dfe3fbb2bd3da9386686e1300a2d55c5d37d59b4a47e1
+platform_test.test.Cloudflare reply scans traverse typed persistent list headers #1 95f2d90fc2f46fee17e801d20c5687e70d68a91444887f08194dfef1bfe9b857
+platform_test.test.Cloudflare reply scans use typed plans, generic guards, active views and cached roots #0 b2c3d4d625ea47a5215a17da03d1a821fbdc324512f22d84cca810e015b4aeb0
+platform_test.test.Cloudflare reply scans use typed plans, generic guards, active views and cached roots #1 282fc03d62d6a0b1ec9d307a3cf2b8e79121040bf0597ae1fc1d7eb5bf29a91f
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #0 38e7c63d07b9cb509df45fc367b8f7bfc09e8e11b9ee8211de4d366a5aaf2d48
 platform_test.test.generic aliased runtime may store a suspending callback without calling it #1 f2eb89eaa16eb2b0c0233313ac47b88a5d61b8cc6d01b318716c0c1277e4b7ed
