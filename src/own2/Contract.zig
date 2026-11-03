@@ -726,7 +726,7 @@ pub const Table = struct {
     fn arrivalHas(t: *const Table, slots: *const Slots.Table, ids: [2]Id, q: Arrival, p: Arrival, suffix: []const u32) bool {
         if (p.kind != q.kind) return false;
         switch (p.kind) {
-            .fresh, .top => return true,
+            .fresh, .top, .host => return true,
             .shared => return p.j == q.j and p.slot == q.slot,
             .cb => {
                 const lp = t.labelAt(ids[0], p.j);

@@ -10040,7 +10040,11 @@ fn chainCallCold(w: *World) ![3]u64 {
         var pn: [16]u8 = undefined;
         var cn: [16]u8 = undefined;
         const name = try std.fmt.bufPrint(&cn, "called{d}", .{n});
-        out[i] = try accountTotal(dump.stdout, name) - try accountTotal(dump.stdout, try std.fmt.bufPrint(&pn, "plain{d}", .{n})) - try accountField(dump.stdout, name, "demands");
+        // The plain chain's read-off asks each built leaf whether an
+        // escape reaches it (§2.10, *host objects*), which the call's
+        // result does not: the call can cost less than the plain chain
+        // and its demands, its own records then 0.
+        out[i] = (try accountTotal(dump.stdout, name)) -| (try accountTotal(dump.stdout, try std.fmt.bufPrint(&pn, "plain{d}", .{n})) + try accountField(dump.stdout, name, "demands"));
     }
     return out;
 }

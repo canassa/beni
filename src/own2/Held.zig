@@ -15,11 +15,12 @@ const Value = @import("Value.zig");
 const Error = Value.Error;
 
 /// The atoms a draft holds open at or above a result slot: fresh objects,
-/// `⊤`, and up to `shared_max` shared values (any more are described as
+/// `⊤`, host objects, and up to `shared_max` shared values (any more are described as
 /// before).
 pub const Atoms = struct {
     fresh: bool = false,
     top: bool = false,
+    host: bool = false,
     shared_n: u8 = 0,
     shared: [shared_max][2]u32 = undefined,
 
@@ -39,6 +40,7 @@ pub fn atoms(f: *Value.Frame, res: *const Contract.Draft.Res, q: Ids.PathId) Err
         switch (rs.a.kind) {
             .fresh => held.fresh = true,
             .top => held.top = true,
+            .host => held.host = true,
             .shared => if (held.shared_n < Atoms.shared_max) {
                 held.shared[held.shared_n] = .{ rs.a.j, rs.a.slot };
                 held.shared_n += 1;
@@ -54,6 +56,7 @@ pub fn has(held: Atoms, l: Value.Leaf) bool {
     return switch (l.kind) {
         .site, .fresh => held.fresh,
         .top => held.top,
+        .host => held.host,
         .shared => for (held.shared[0..held.shared_n]) |x| {
             if (x[0] == l.atom and x[1] == l.extra) break true;
         } else false,
