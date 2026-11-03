@@ -51,10 +51,14 @@ const layers = [_]Entry{
     .{ .file = "TagTree.zig", .layer = 2, .max_lines = 250 },
     // What a place graph says below a path, split from `Subtree` (#1714).
     .{ .file = "PlaceBelow.zig", .layer = 2, .max_lines = 70 },
+    // A place graph's encoding and equality, split from `Place` (#1714).
+    .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
+    // The identity tree's one normal form, below `Contract` (#1714).
+    .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
@@ -65,6 +69,10 @@ const layers = [_]Entry{
     .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 630 },
     .{ .file = "Rows.zig", .layer = 5, .max_lines = 320 },
+    // A selection in its one spelling of a subtree (#1714).
+    .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
+    // A set met against a run of slots in one pass, for `Descent` (#1714).
+    .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 530 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
@@ -78,6 +86,10 @@ const layers = [_]Entry{
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
+    // A call's subtree of atoms read as the callee's node (#1714).
+    .{ .file = "AtomGraft.zig", .layer = 7, .max_lines = 70 },
+    // The entries' inline order by jump pointers, for `Chains` (#1714).
+    .{ .file = "Jumps.zig", .layer = 7, .max_lines = 60 },
     // One walk of a value along several paths by route sets, below
     // `Distinct` (#1714, §2.11.2).
     .{ .file = "Routed.zig", .layer = 8, .max_lines = 370 },
@@ -87,6 +99,16 @@ const layers = [_]Entry{
     // A callee's tree and condition taken as the caller's at a call whose
     // arguments are its parameters whole (#1225, #1714, §2.10).
     .{ .file = "CallGraft.zig", .layer = 8, .max_lines = 170 },
+    // A deep apart occurrence beside plain ones, split from `Distinct` (#1714).
+    .{ .file = "ApartParts.zig", .layer = 8, .max_lines = 130 },
+    // A value's leaves at their slots, split from `Relation` (#1714).
+    .{ .file = "Parts.zig", .layer = 8, .max_lines = 70 },
+    // What the distinct check reads of its rounds, split from `Distinct` (#1714).
+    .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
+    // A chain of calls handing one object on, split from `Relation` (#1714).
+    .{ .file = "Ends.zig", .layer = 8, .max_lines = 40 },
+    // A call's leaf's atoms, for the distinct check (#1714).
+    .{ .file = "AtomSets.zig", .layer = 8, .max_lines = 240 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -99,6 +121,8 @@ const layers = [_]Entry{
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
     .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
+    // Demands judged once for their twins (#1714).
+    .{ .file = "Twins.zig", .layer = 10, .max_lines = 90 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
     .{ .file = "Holders.zig", .layer = 10, .max_lines = 700 },
     // The holder index and its sweep, split from `Holders` (#1714): holds
@@ -111,7 +135,8 @@ const layers = [_]Entry{
     // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
     // A supply part judged by its known objects too (#1712).
     // The read-off, split from `Eval` (#1714).
-    .{ .file = "ReadOff.zig", .layer = 11, .max_lines = 1160 },
+    // Where the read-off puts what it describes, split from `ReadOff` (#1714).
+    .{ .file = "Put.zig", .layer = 11, .max_lines = 170 },
     // The best-hold descent over a holder DAG, below Resolve (#1714).
     .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
@@ -119,6 +144,7 @@ const layers = [_]Entry{
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
     // A group's judgements kept across its rounds (§2.12, #1714).
     .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
+    .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
@@ -415,7 +441,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 52), layers.len);
+    try testing.expectEqual(@as(usize, 65), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
