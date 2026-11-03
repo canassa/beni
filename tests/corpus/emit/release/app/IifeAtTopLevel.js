@@ -1,1 +1,1 @@
-import process from"node:process";const c=a=>{if(a.$o.length!==0)process.stdout.write(a.$o);process.exitCode=a.$c};const a=b=>({$c:0,$o:b+"\n"});const b=a(String(73));c(b);
+const a=b=>{let c=b.$o;if(c.length!==0)globalThis.process.stdout.write(c);globalThis.process.exitCode=0};const b=a=>({$o:a+"\n"});const c=b(String(73));a(c);

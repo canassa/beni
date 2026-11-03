@@ -1,0 +1,183 @@
+--! The `node` platform's runtime (`docs/design/backend.md` §15.6,
+--! `docs/design/boundary.md` §5.2 and §9.2): a runtime module, as
+--! `browser`'s `Rt` is. It supplies `run`, what the entry file hands `main`
+--! to, the `ssr` lowering's seven exports and the `html` vocabulary's two
+--! markup primitives. Markup under `ssr` is `{ t: string }`, HTML already
+--! escaped, so a rendered string is never escaped twice. Every value takes
+--! the declared count of parameters over `Js.Value`: the lowering's calls
+--! are typed by nobody.
+
+import Js exposing (Value)
+
+
+-- ---- The program runtime (boundary.md §5.2) -------------------------------
+
+-- `(program)`: a `Program` is `{ $c, $o }`, the exit code and the output,
+-- built by `Node.beni` (its header says why the keys hold a `$`). Write the
+-- output when there is one, and leave the exit code behind.
+pub run : Value → ⊤
+run program =
+    out = Js.get program "$o"
+    if not (Js.same (Js.get out "length") (Js.from 0)) then
+        _ = Js.call (Js.get (Js.global "process") "stdout") "write" [ out ]
+        ⊤
+    Js.set (Js.global "process") "exitCode" (Js.get program "$c")
+
+
+-- ---- The markup runtime (backend.md §15.6) --------------------------------
+
+-- A list's elements, by backend.md §4's protocol: the array itself, or a
+-- view's or a trie's plain copy. Read, never written.
+elements : Value → Value
+elements xs =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ xs ]) then
+        xs
+    else
+        Js.call xs "$plain" []
+
+
+-- The replacer `replace` calls with each match: the reference the
+-- character is written as. A `case`, not the file's object read by the
+-- character: a `Js.object` key must be an identifier (boundary.md §4.2).
+replacement : Value → Value
+replacement c =
+    case Js.to c of
+        "&" →
+            Js.from "&amp;"
+
+        "<" →
+            Js.from "&lt;"
+
+        "\"" →
+            Js.from "&quot;"
+
+        _ →
+            Js.from "&#13;"
+
+
+-- The characters text, and an attribute value, are escaped for. `g`
+-- patterns, made once: `Js.regExp` refuses `g` (boundary.md §4.2, a shared
+-- `lastIndex`), and `replace` resets `lastIndex` itself.
+textPattern : Value
+textPattern = Js.construct (Js.global "RegExp") [ Js.from "[&<\r]", Js.from "g" ]
+
+
+attrPattern : Value
+attrPattern = Js.construct (Js.global "RegExp") [ Js.from "[&<\"\r]", Js.from "g" ]
+
+
+-- Text as a page's parser reads it back.
+pub escape : Value → Value
+escape s = Js.call s "replace" [ textPattern, Js.from replacement ]
+
+
+-- A double-quoted attribute value as a page's parser reads it back.
+pub escapeAttr : Value → Value
+escapeAttr value = Js.call value "replace" [ attrPattern, Js.from replacement ]
+
+
+-- Elm's rule: a URL whose scheme is `javascript:`, or `data:text/html`,
+-- with any whitespace or control character where a browser ignores one,
+-- runs script, so it is written as nothing. A test of one pattern, which
+-- throws nothing: nothing to catch.
+pub safeUrl : Value → Value
+safeUrl url =
+    if Js.to (Js.call scriptUrl "test" [ url ]) then
+        Js.from ""
+    else
+        url
+
+
+-- The pattern `safeUrl` refuses, made once.
+scriptUrl : Value
+scriptUrl =
+    Js.regExp
+        "^[\\s\\x00-\\x20]*(j\\s*a\\s*v\\s*a\\s*s\\s*c\\s*r\\s*i\\s*p\\s*t\\s*:|d\\s*a\\s*t\\s*a\\s*:\\s*t\\s*e\\s*x\\s*t\\s*/\\s*h\\s*t\\s*m\\s*l\\s*[,;])"
+        "i"
+
+
+-- `(items, row, fallback)`: the rows of `items` concatenated, each
+-- `row(item, position)` a block; the fallback's text when there are none.
+pub list : Value, Value, Value → Value
+list items row fallback =
+    if Js.same (Js.get items "length") (Js.from 0) then
+        if Js.isNull fallback then Js.from "" else Js.get fallback "t"
+    else
+        a = elements items
+        rows a row 0 (Js.to (Js.get a "length")) ""
+
+
+-- The rows from `position` on, after `out`.
+rows : Value, Value, Int, Int, String → Value
+rows a row position n out =
+    if position < n then
+        rows
+            a
+            row
+            (position + 1)
+            n
+            (out ++ Js.to (Js.get (Js.apply row [ Js.at a position, Js.from position ]) "t"))
+    else
+        Js.from out
+
+
+-- `(entries)`: a class list's text: the names whose flag is `True`, a name
+-- holding whitespace being several, each once, in first-occurrence order.
+pub classes : Value → Value
+classes entries =
+    seen = Js.construct (Js.global "Set") []
+    names = Js.array []
+    Js.each (elements entries) λentry →
+        if Js.to (Js.get entry "b") then
+            Js.each (Js.call (Js.get entry "a") "split" [ spaces ]) λname →
+                if not (Js.same name (Js.from "") || Js.to (Js.call seen "has" [ name ])) then
+                    _ = Js.call seen "add" [ name ]
+                    _ = Js.call names "push" [ name ]
+                    ⊤
+    Js.call names "join" [ Js.from " " ]
+
+
+spaces : Value
+spaces = Js.regExp "[\\t\\n\\f\\r ]+" ""
+
+
+-- `(entries)`: a style list's text: each property once, in first-occurrence
+-- order, with its last value; an empty last value removes it.
+pub styles : Value → Value
+styles entries =
+    values = Js.construct (Js.global "Map") []
+    Js.each (elements entries) λentry →
+        _ = Js.call values "set" [ Js.get entry "a", Js.get entry "b" ]
+        ⊤
+    out = Js.ref ""
+    Js.each values λpair →
+        value = Js.at pair 1
+        if not (Js.same value (Js.from "")) then
+            Js.write out "${Js.read out}${str (Js.at pair 0)}:${str value};"
+    Js.from (Js.read out)
+
+
+-- `(text, tag)`: text written into a raw-text element (a `<style>`), where
+-- nothing is decoded: as it is, but for `</` before the element's own name,
+-- in any case, which would end the element early and is written `<\/` — in
+-- CSS, a `/` escaped is a `/`.
+pub rawText : Value, Value → Value
+rawText s tag =
+    Js.call s "replace"
+        [ Js.construct (Js.global "RegExp") [ Js.from "</(?=${str tag})", Js.from "gi" ]
+        , Js.from "<\\/"
+        ]
+
+
+str : Value → String
+str v = Js.to v
+
+
+-- `Html.text`: the text, as a text hole shows it.
+pub text : Value → Value
+text s = Js.object [ ( "t", escape s ) ]
+
+
+-- `Html.map`: a string carries no handler for the function to wrap.
+pub map : Value, Value → Value
+map html f = html
