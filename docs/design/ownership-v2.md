@@ -1041,7 +1041,10 @@ whose `below` is `↓#0.4` since a cycle holds an object, §2.3.1; two more roun
 contract's selections (`res_cond`, `req`, a supply's condition) are read off in one spelling (`Canon.zig`,
 at the read-off, §2.10): a deep occurrence `(j, p)*` whose `below(p)` written out has at most `below_min`
 slots is those slots, with its apartness; past the bound, at a type variable's or an opaque place, or at steps
-that name no single path, it stays. Equality of contracts is then equality of the normal form, so a round
+that name no single path, it stays. Past the bound is decided first off the place graph: each place keeps a
+lower bound on the object slots below a path at it (`Place.slotsAtLeast`, made with its component: each object
+place of the component once, and what is below each step out of it), so a type of many places is read in one
+lookup, not a walk of its places a selection (#1714: `Schema.described*` 254 → 244 growth records). Equality of contracts is then equality of the normal form, so a round
 that only respells a subtree changes nothing (§2.12): `Dict.descend` is 3 rounds and 25 773 records, with
 `below`'s cycle rule kept for the walk's slot sets. The other direction (written-out slots past the bound to
 the symbol) is not taken: nothing reads a subtree past `below_min` slot by slot into a selection but a
