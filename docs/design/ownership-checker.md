@@ -5096,6 +5096,12 @@ compiler's. Its excerpt is the renderer's. A run that reports one does not repor
 The trailing excerpt every other diagnostic gets is not printed: the message holds its places. A JSON diagnostic
 carries the same message.
 
+A conservative escape rejection still names a live holder when provenance can
+place one. Reporting collects the holder and its later read without changing
+escape facts, the rejection, or its approximate status. The message retains the
+escape reason as well as the holder's path through a call. A holder that is no
+longer read supplies no such explanation; the escape rejection still stands.
+
 *Amended 2026-10-17 (issue #272):* a `need` line (§16.2, §30.9) is about a function value, not a list, and its
 message says so. Its sentence names the function value — the argument as written, "a lambda", or "a function
 value" when nothing names it — says that it must return a list it owns, and why that fails: the exact detail, or

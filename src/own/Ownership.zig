@@ -21151,6 +21151,10 @@ const Walker = struct {
         }
         if (worst) |cs| {
             rec.prelim = .{ .cause = cs, .detail = worst_detail, .approx = worst_approx };
+            // Keep a conservative escape rejection, but do not discard the
+            // holder's source locations merely because it was decided first.
+            if (cs == .escaped and w.mode == .report and spec.fields == null and !spec.entry)
+                try w.collectHolders(&rec);
             try w.demands.append(w.a, rec);
             return;
         }
@@ -21243,6 +21247,12 @@ const Walker = struct {
             try w.demands.append(w.a, rec);
             return;
         }
+        try w.collectHolders(&rec);
+        try w.demands.append(w.a, rec);
+    }
+
+    /// Diagnostic holder evidence does not change a demand's escape facts.
+    fn collectHolders(w: *Walker, rec: *DemandRec) Allocator.Error!void {
         // The holders, resolved against later uses once the walk is done.
         var holders: std.ArrayList(Holder) = .empty;
         for (try w.holderLocals()) |l| {
@@ -21256,7 +21266,7 @@ const Walker = struct {
                 // question (`callbackKeeps`).
                 const ec = w.cells.items[e.cell];
                 if (ec.kind == .cbres) if (w.instCol(?AV, w.cb_args, ec.b, null)) |handed| {
-                    for (cells.items) |c| {
+                    for (rec.cells) |c| {
                         const cc = w.cells.items[c.cell];
                         if (cc.kind == .param and cc.b == 0) continue;
                         if ((try w.reaches(handed, &.{.{ .path = eps, .cell = c.cell }})) == null) continue;
@@ -21264,7 +21274,7 @@ const Walker = struct {
                         break;
                     }
                 };
-                for (cells.items) |c| {
+                for (rec.cells) |c| {
                     var split = false;
                     const cv = (try w.coversAt(e.cell, c.cell)) orelse blk: {
                         const b = (try w.splitBase(c.cell, @intCast(l))) orelse continue;
@@ -21284,13 +21294,12 @@ const Walker = struct {
         // A capture: the captured local itself, read again in this frame
         // after the demand (§18.8: the closure's own later reads of what it
         // gave up, as a send's payload, §23.7).
-        for (cells.items) |e| {
+        for (rec.cells) |e| {
             const x = w.cells.items[try w.takenBase(e.cell)];
             if (x.kind != .env or x.a >= w.local_frame.len or w.local_frame[x.a] == w.frame) continue;
             try holders.append(w.a, .{ .local = x.a, .path = x.path, .approx = e.approx });
         }
         rec.holders = try holders.toOwnedSlice(w.a);
-        try w.demands.append(w.a, rec);
     }
 
     /// The locals a demand here may find a holder among: bound, in this
@@ -21720,7 +21729,7 @@ const Walker = struct {
             d.detail = p.detail;
             d.approx = p.approx orelse p.cause.approximate();
             d.assumed = false;
-            return d;
+            if (p.cause != .escaped or rec.holders.len == 0) return d;
         }
         // Each holder's first later use in a compatible branch.
         // §31.14: the hoists, one per use, whatever number of the uses'
@@ -21864,12 +21873,19 @@ const Walker = struct {
                 },
                 else => wr.print(" holds it and is read at {d}:{d}", .{ up.line, up.col }) catch return error.OutOfMemory,
             }
-            d.verdict = .{ .rejected = bst.cause };
-            d.detail = try buf.toOwnedSlice();
-            d.approx = bst.cause.approximate();
+            if (rec.prelim) |p| {
+                // This is additional diagnostic evidence only: preserve the
+                // rejection and the escape's conservative classification.
+                d.detail = try std.fmt.allocPrint(out, "{s}; {s}", .{ buf.written(), p.detail });
+            } else {
+                d.verdict = .{ .rejected = bst.cause };
+                d.detail = try buf.toOwnedSlice();
+                d.approx = bst.cause.approximate();
+            }
             d.assumed = false;
             return d;
         }
+        if (rec.prelim != null) return d;
         // §18.4: exclusive contents the write needs and may not have.
         if (rec.xfail) |r| {
             // What a limit lowered follows from the limit (#233).

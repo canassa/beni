@@ -278,7 +278,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     if (need and d.via_token != none and d.via_token != d.span[0])
         try places.append(a, .{ .m = m, .first = d.via_token, .last = d.via_token, .label = "the function here may return a list it does not own" });
     if (cause) |c| switch (c) {
-        .alias, .captured, .call, .level => if (d.keep_token != none and d.holder.len > 0) {
+        .alias, .captured, .call, .level, .escaped => if (d.keep_token != none and d.holder.len > 0) {
             const verb: []const u8 = if (c == .captured) "holds" else "keeps";
             try places.append(a, .{ .m = m, .first = d.keep_token, .last = d.keep_token, .label = try std.fmt.allocPrint(a, "{s} {s} the list here", .{ holder, verb }) });
         },
@@ -287,7 +287,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         },
         else => {},
     };
-    if (cause == .call and d.via_token != none) {
+    if ((cause == .call or (cause == .escaped and d.holder.len > 0)) and d.via_token != none) {
         const label = if (d.holder.len > 0)
             try std.fmt.allocPrint(a, "{s} may hold the list through this call", .{holder})
         else
@@ -295,7 +295,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         try places.append(a, .{ .m = m, .first = d.via_token, .last = d.via_token, .label = label });
     }
     if (cause) |c| switch (c) {
-        .later_use, .alias, .call, .captured, .level => if (d.read_span[0] != none) {
+        .later_use, .alias, .call, .captured, .level, .escaped => if (d.read_span[0] != none) {
             const verb: []const u8 = if (c == .captured) "used" else "read";
             // A read written before the edit, as a tuple's first item, that
             // happens after it, when the tuple is built.

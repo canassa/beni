@@ -1,0 +1,15 @@
+-- Escapes stay rejected with or without a later local read.
+-- A known later read enriches the message without replacing the escape reason.
+import Task
+
+
+pub noLaterRead : List Int → List Int
+noLaterRead xs =
+    _ = Task.spawn λ⊤ → List.length xs
+    List.push xs 1
+
+
+pub laterRead : List Int → List Int × Int
+laterRead xs =
+    _ = Task.spawn λ⊤ → List.length xs
+    ( List.push xs 1, List.length xs )
