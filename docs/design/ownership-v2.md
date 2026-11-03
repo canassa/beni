@@ -1281,7 +1281,15 @@ than `claim`'s, and `got` does not return where `claim` does not.
   at or above the result slot already holds is said there for every slot below it, so it is not described again
   (`Held.zig`; one lookup in the draft, one record, as an arrival's; a committed tree joined in is not read). Without
   that, `Schema.shapeOf` describes the same fresh objects at every slot of its recursive result and passes its
-  allowance.
+  allowance. *A call's subtree of atoms* (#1714, 2026-11-03; `AtomGraft.zig`): where a settled callee (no live
+  draft) says only atoms at and below a call's slot and open above it, and the slot's place is the result slot's,
+  the read-off grafts the callee's node there and says the open atoms above it wide, instead of reading a key below
+  the slot item by item. Each node of a result tree keeps whether every arrival at and below it is an atom, made
+  with the node, so the test at a call's root reads no node; a deeper slot is walked from the root, a record a
+  node. The graft names the slots below the result slot by the callee's own steps, so it is taken only where no
+  place on the result slot's path above it is reachable from its place (no cycle spans it, and `Place.extend`
+  then folds every return below it as the callee does). Every summary is the slot-by-slot read's; `shapesOf`'s
+  growth goes from 5 622 to 3 119.
 - `res_cond`: the distinct check of §2.9.3 over the result's leaves.
 - `reads`, `writes`, `escapes`: the frame's uses of its parameters' positions, its demands' targets that are
   parameter leaves (whatever their verdicts), and its escapes, each as `(j, slot)`. A call contributes its
@@ -3975,6 +3983,7 @@ L0  Ids  Counters  Scratch
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Entries.zig` | 6 | the distinct check's entries and its rounds' state: groups kept across rounds, the within-group index, the heaps of roots to expand (§2.9.3) | Ids, Slots, Subtree, Contract, Value |
+| `AtomGraft.zig` | 7 | a call's subtree of atoms read as the callee's node: the atom test on a result tree's node, and whether a cycle spans a result slot (§2.10 *Read-off*, #1714) | Ids, Trees, Forest, Value |
 | `Held.zig` | 6 | the atoms a draft's result holds open at or above a slot, which the read-off of a call's subtree below it need not describe again (§2.10 *Read-off*, #1716) | Ids, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries |
