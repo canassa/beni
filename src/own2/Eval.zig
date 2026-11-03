@@ -23,6 +23,7 @@ const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Cells = @import("Cells.zig");
 const Paths = @import("Paths.zig");
+const Host = @import("Host.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -70,12 +71,7 @@ pub const Evaluation = struct {
         e.escapes.deinit(g);
         e.passes.deinit(g);
         if (e.facts_on) {
-            e.sink.label_at.deinit(g);
-            e.sink.described.deinit(g);
-            e.sink.effected.deinit(g);
-            e.sink.building.deinit(g);
-            e.sink.nodes.deinit(g);
-            e.sink.acyclic.deinit(g);
+            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.acyclic, &e.sink.host }) |l| l.deinit(g);
         }
     }
 
@@ -597,6 +593,8 @@ pub const Sink = struct {
     /// The shallowest subtree in progress that a description met again:
     /// what is made below it is not kept.
     cut: usize = std.math.maxInt(usize),
+    /// The sources the frame's escapes reach (§2.10, *host objects*).
+    host: Host.State = .{},
 };
 
 /// A subtree being described at path `q` (`depth` steps from its root).

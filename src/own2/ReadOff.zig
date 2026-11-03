@@ -20,6 +20,7 @@ const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const Held = @import("Held.zig");
+const Host = @import("Host.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -110,7 +111,10 @@ fn valueBody(s: *Sink, v: u32, q: PathId, out: ResList, stack: ?*std.ArrayList(I
             while (i < ks.len) : (i += 2) if (stack) |st| try st.append(gpa, .{ .v = ks[i + 1], .q = q }) else try describe(s, ks[i + 1], q, out);
         },
         .built => {
-            if (x.site != none and Slots.isObject(f.places, q)) try arrive(s, q, .{ .kind = .fresh }, out);
+            if (x.site != none and Slots.isObject(f.places, q)) {
+                try arrive(s, q, .{ .kind = .fresh }, out);
+                if (try hosted(s, try f.leaf(.{ .kind = .site, .atom = x.site }), q.int(), false, out)) try arrive(s, q, .{ .kind = .host }, out);
+            }
             if (x.form == .list and x.head != 0) {
                 var ls: std.ArrayList(u32) = .empty;
                 defer ls.deinit(gpa);
@@ -141,7 +145,7 @@ fn valueBody(s: *Sink, v: u32, q: PathId, out: ResList, stack: ?*std.ArrayList(I
                 for (ls.items) |l| try describeLeaf(s, l, q, true, out);
             }
         },
-        .ref, .top, .shared => {
+        .ref, .top, .shared, .host => {
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
             try e.ev.leavesOf(v, 0, &ls);
@@ -194,10 +198,12 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
     const f = e.fr();
     const gpa = e.gpa();
     const l = f.leafAt(li);
+    if (try hosted(s, li, q.int(), l.kind == .ref, out)) if (l.kind == .ref) try arriveWide(s, q, .{ .kind = .host }, out) else try arrive(s, q, .{ .kind = .host }, out);
     switch (l.kind) {
         .site, .fresh => try arrive(s, q, .{ .kind = .fresh }, out),
         .shared => try arrive(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         .top => try arrive(s, q, .{ .kind = .top }, out),
+        .host => try arrive(s, q, .{ .kind = .host }, out),
         .answer => try arrive(s, q, .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra }, out),
         .recons => unreachable,
         .ref => {
@@ -482,7 +488,7 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
     var keyed = false;
     for (here) |a| {
         ls.clearRetainingCapacity();
-        if (a.kind == .fresh or a.kind == .top or a.kind == .shared) try e.ev.arrivalLeaves(call, c, a, &.{}, &ls) else if (!keyed) {
+        if (a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host) try e.ev.arrivalLeaves(call, c, a, &.{}, &ls) else if (!keyed) {
             keyed = true;
             try ls.appendSlice(gpa, try e.ev.instAt(call, cs, which));
         }
@@ -513,7 +519,7 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
         };
         // A projection with nothing at the slot itself (a record's, a
         // constructor's) still has its parts below it.
-        if ((below.items.len != 0 and (uniform or calls)) or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+        if ((below.items.len != 0 and (uniform or calls)) or a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host) {
             for (if (uniform) atoms.items else below.items) |x| if (try f.withTags(x, tags)) |y| {
                 if (f.places.kind(f.places.pathPlace(q)) == .@"var") try describeLeaf(s, y, q, true, out) else try describeWide(s, y, q, out);
             };
@@ -613,10 +619,12 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: ResList) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const l = f.leafAt(li);
+    if (try hosted(s, li, q.int(), true, out)) try arriveWide(s, q, .{ .kind = .host }, out);
     switch (l.kind) {
         .site, .fresh => try arriveWide(s, q, .{ .kind = .fresh }, out),
         .shared => try arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         .top => try arriveWide(s, q, .{ .kind = .top }, out),
+        .host => try arriveWide(s, q, .{ .kind = .host }, out),
         .answer => try arriveWide(s, q, .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra }, out),
         .recons => unreachable,
         .ref => {
@@ -814,9 +822,34 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: EffList) Error!void {
     }
 }
 
-/// An escape made while the read-off is under way.
+/// An escape made while the read-off is under way. An own leaf said that
+/// it reaches is `host` where it was said, or, said inside a subtree
+/// described once per place, at every slot of its list (§2.10).
 fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     try paramEffects(&e.sink, leaf, true, .escapes);
+    const s = &e.sink;
+    const f = e.fr();
+    const from = try s.host.sync(&e.ev, e.escapes.items);
+    var i: usize = 0;
+    if (from != s.host.escs.items.len) while (i < s.host.told.items.len) : (i += 1) {
+        const t = s.host.told.items[i];
+        if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
+        const r = if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q));
+        const list = try resList(s, .{ .label = t.label, .k = t.k });
+        try f.charge(.edge, 1);
+        const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
+        if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.wide or t.built, .{ .kind = .host }, 0);
+    };
+}
+
+/// Whether an escape of the frame reaches own leaf `li` (a call's is said by
+/// its key's), said at `q` (`none`: not kept), noted for a later escape (§2.10).
+fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: ResList) Error!bool {
+    const e = s.e;
+    if (!Host.own(e.fr(), li) or e.ev.expandable(e.fr().leafAt(li))) return false;
+    try s.host.tell(e.gpa(), .{ .leaf = li, .q = q, .label = out.label, .k = out.k, .wide = wide, .built = s.building.items.len != 0 or q == none });
+    _ = try s.host.sync(&e.ev, e.escapes.items);
+    return s.host.reaches(&e.ev, e.escapes.items, 0, li, Distinct.overlap);
 }
 
 /// A demand's written parameter slots (whatever its verdict).
@@ -1059,10 +1092,12 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: ResList) Error!void {
     while (stack.pop()) |x| {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
         const l = f.leafAt(x);
+        if (try hosted(s, x, none, l.kind == .ref, out)) _ = if (l.kind == .ref) try Contract.Draft.addWide(try resList(s, out), s.arena, rel, .{ .kind = .host }) else try Contract.Draft.addArrival(try resList(s, out), s.arena, rel, .{ .kind = .host });
         const a: Contract.Arrival = switch (l.kind) {
             .site, .fresh => .{ .kind = .fresh },
             .shared => .{ .kind = .shared, .j = l.atom, .slot = l.extra },
             .top => .{ .kind = .top },
+            .host => .{ .kind = .host },
             .answer => .{ .kind = .cb, .j = try labelIndex(s, l.atom), .slot = l.extra },
             .recons => unreachable,
             .ref => {

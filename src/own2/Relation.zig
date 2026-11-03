@@ -419,7 +419,7 @@ pub const Eval = struct {
             const rest = words[it.at..];
             switch (x.kind) {
                 .scalar, .bot => {},
-                .top => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route }),
+                .top, .host => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = if (x.kind == .host) .host else .top, .tags = it.tags }), .route = it.route }),
                 .shared => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it.tags }), .route = it.route }),
                 .alt => {
                     // Read deep whole: its leaf set, the leaves its arms give.
@@ -949,7 +949,7 @@ pub const Eval = struct {
                 uniform = false;
                 break;
             };
-            if ((uniform and below.items.len != 0) or a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+            if ((uniform and below.items.len != 0) or a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host) {
                 for (if (uniform) atoms.items else below.items) |x| try e.addBelow(ki, x, at_base);
                 return;
             }
@@ -972,7 +972,7 @@ pub const Eval = struct {
             // At `base` itself, what the arrival gives there: read once.
             for (acc.items) |x| try e.addBelow(ki, x, base.int());
             return;
-        } else if (a.kind == .fresh or a.kind == .top or a.kind == .shared) {
+        } else if (a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host) {
             // An atom at one slot: itself, never through the slot's key.
             var acc: std.ArrayList(u32) = .empty;
             defer acc.deinit(e.gpa());
@@ -990,7 +990,7 @@ pub const Eval = struct {
     pub fn uniformAtoms(e: *Eval, x: u32, out: *std.ArrayList(u32)) Error!bool {
         const l = e.f.leafAt(x);
         switch (l.kind) {
-            .top, .shared => {
+            .top, .shared, .host => {
                 try out.append(e.gpa(), x);
                 return true;
             },
@@ -1016,7 +1016,7 @@ pub const Eval = struct {
         for (hits.items) |hit| {
             if (!hit.open) continue;
             for (hit.arrivals) |a| switch (a.kind) {
-                .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top, .tags = l.tags })),
+                .top, .host => try out.append(e.gpa(), try e.f.leaf(.{ .kind = if (a.kind == .host) .host else .top, .tags = l.tags })),
                 .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot, .tags = l.tags })),
                 .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = r.a, .tags = l.tags })),
                 .param, .cb => return false,
@@ -1165,7 +1165,7 @@ pub const Eval = struct {
         const cl = e.f.calls.items[call];
         switch (a.kind) {
             .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = call })),
-            .top => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top })),
+            .top, .host => try out.append(e.gpa(), try e.f.leaf(.{ .kind = if (a.kind == .host) .host else .top })),
             .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot })),
             .param => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));

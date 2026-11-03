@@ -22,7 +22,7 @@ const Runs = @import("Runs.zig").Runs;
 
 pub const Range = Ids.Range;
 
-pub const ArrivalKind = enum(u8) { param, fresh, shared, cb, top };
+pub const ArrivalKind = enum(u8) { param, fresh, shared, cb, top, host };
 
 /// One arrival (§2.10 `res`): `π_j·slot`, `fresh`, `shared (module, decl)`
 /// (`j`, `slot`), `cb label` (`j`: the label's index in its contract), `⊤`.

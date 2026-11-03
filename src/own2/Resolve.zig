@@ -361,13 +361,11 @@ const Resolver = struct {
         // (§2.8, *Base keys*).
         var fx: Holders.Facts = .{};
         for (targets) |t| {
-            const tf = try r.keys.factsOf(r.ev(), t);
-            fx.unknown = fx.unknown or tf.unknown;
-            fx.param = fx.param or tf.param;
-            if (std.mem.order(u32, &tf.shared, &fx.shared) == .lt) fx.shared = tf.shared;
+            fx.join(try r.keys.factsOf(r.ev(), t));
         }
-        if (fx.unknown or targets.len == 0) {
-            refuse(o, .unknown);
+        // A host object escaped, or JavaScript made it (§2.10, *host objects*).
+        if (fx.unknown or fx.host or targets.len == 0) {
+            refuse(o, if (fx.unknown or targets.len == 0) .unknown else .escaped);
             if (targets.len != 0) o.exactness = .approximate;
             return line;
         }
@@ -536,7 +534,7 @@ const Resolver = struct {
             if ((try seen.getOrPut(r.gpa(), .{x})).found_existing) continue;
             const xl = fr.leafAt(x);
             switch (xl.kind) {
-                .answer, .top => continue,
+                .answer, .top, .host => continue,
                 .ref => switch (fr.roots.items[xl.root].kind) {
                     .cb => continue,
                     .call, .supply => {

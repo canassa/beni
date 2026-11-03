@@ -25,7 +25,7 @@
 //! | `cellwrite`, `cellcomplete` | a storage write of the cell `π1` |
 //! | `cellstored` | the value escapes behind the barrier |
 //! | `cellupdate`, `cellmodify` | a label called once, supplied `π1◆` |
-//! | anything else (`taken`, `lent`, callbacks' rows), `unknown` | the result `⊤`, not separated |
+//! | anything else (`taken`, `lent`, callbacks' rows), `unknown` | the result `⊤` (a `foreign`'s not `lent`: `host`; a loan is beni's), not separated |
 //!
 //! Obligations kept here: O9 (rows state their bodies: a row is taken as
 //! given, never inferred).
@@ -50,9 +50,10 @@ pub const Signature = struct {
     params: []const Param,
     result: PlaceId,
     result_words: u32 = 0,
-    /// The worded declaration's `(module, declaration)`: the origin of a
-    /// cell callback's label.
+    /// The worded declaration's `(module, declaration)`, a cell label's origin.
     origin: ?[2]u32 = null,
+    /// A `foreign`: what its words leave unnamed is `host` (§2.10), not `⊤`.
+    foreign: bool = false,
 };
 
 pub const Env = struct {
@@ -86,7 +87,7 @@ pub const Env = struct {
         // one wide entry at the root; anything else is named at each slot
         // (`belowAll`, charged).
         const set = try Subtree.below(env.slots, env.gpa, env.account, env.places, r);
-        if (Subtree.symbolic(env.slots, set) and (a.kind == .fresh or a.kind == .top or a.kind == .shared)) {
+        if (Subtree.symbolic(env.slots, set) and (a.kind == .fresh or a.kind == .top or a.kind == .shared or a.kind == .host)) {
             _ = try Draft.addWide(&d.res, env.arena, Slots.root, a);
             return;
         }
@@ -144,15 +145,15 @@ pub const Env = struct {
 };
 
 /// The pessimistic contract (§2.10): every argument read and escaped deep,
-/// the result `⊤`, not separated.
-pub fn pessimistic(env: Env, arity: u32) Error!Contract.Id {
+/// the result `⊤` (a `foreign`'s `host`, §2.10), not separated.
+pub fn pessimistic(env: Env, arity: u32, host: bool) Error!Contract.Id {
     var d: Draft = .{ .arity = arity, .flags = .{ .returns = true, .pessimistic = true } };
     for (0..arity) |j| {
         _ = try Draft.addEffect(&d.reads, env.arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
         _ = try Draft.addEffect(&d.escapes, env.arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
     }
     try Draft.markOpen(&d.res, env.arena, Slots.root);
-    _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .top });
+    _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = if (host) .host else .top });
     d.res_cond = .unprovable;
     return env.commit(&d);
 }
@@ -301,12 +302,11 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
             known_result = true;
         }
         if (!known_result or Env.has(rw, .unknown) or Env.has(rw, .escaped) or Env.has(rw, .lent) or Env.has(rw, .lentoptional)) {
-            if (!known_result or rw != 0) {
-                try env.everySlot(&d, sig.result, .{ .kind = .top });
-                try Draft.markOpen(&d.res, env.arena, Slots.root);
-                _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .top });
-                exclusive = false;
-            }
+            const unknown: Contract.ArrivalKind = if (sig.foreign and !Env.has(rw, .lent) and !Env.has(rw, .lentoptional)) .host else .top;
+            try env.everySlot(&d, sig.result, .{ .kind = unknown });
+            try Draft.markOpen(&d.res, env.arena, Slots.root);
+            _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = unknown });
+            exclusive = false;
         }
     }
     d.res_cond = if (exclusive) .yes else .unprovable;

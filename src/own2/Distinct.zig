@@ -559,6 +559,9 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         if (tp.kind == .plain and Step.fromWord(tp.a).kind == .contents) return .no;
     }
     if (x.kind == .top or t.kind == .top) return .may;
+    // A host object is no target that is still writable (§2.10, *host
+    // objects*): it may be another host object only.
+    if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
     // An unknown label's answer may be anything its closure was handed:

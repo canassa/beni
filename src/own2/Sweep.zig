@@ -145,7 +145,7 @@ fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(H
                     try stack.append(g, .{ .v = kv, .q = nq, .tags = it.tags });
                 }
             },
-            .ref, .top, .shared => {
+            .ref, .top, .shared, .host => {
                 var ls: std.ArrayList(u32) = .empty;
                 defer ls.deinit(g);
                 try ev.leavesOf(it.v, it.tags, &ls);

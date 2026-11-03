@@ -59,7 +59,7 @@ pub const Context = struct {
     fieldRank: *const fn (ctx: *anyopaque, s: Bir.SymbolIndex) u32,
     /// A constructor reference's `(ordinal, arity)`.
     ctorOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
-    /// A parameterless value's `(module, declaration)`.
+    /// A parameterless value's `(module, declaration)`; `none` for a `foreign`'s.
     sharedOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
     callee: *const fn (ctx: *anyopaque, inst: u32, args: []const u32) Error!Callee,
@@ -435,7 +435,7 @@ const Walker = struct {
         const fr = k.f();
         const x = fr.val(v);
         switch (x.kind) {
-            .scalar, .bot, .top, .shared => return v,
+            .scalar, .bot, .top, .shared, .host => return v,
             .ref => {
                 if (x.family != Slots.empty) {
                     const sw: Step = if (kind == .plain) Step.fromWord(a) else Step.elem;
@@ -586,6 +586,7 @@ const Walker = struct {
                 try k.evidence(i);
                 if (k.isCallee(i)) return .{};
                 if (k.ctx.sharedOf(k.ctx.ctx, i)) |md| {
+                    if (md[0] == none) return .{ .v = try fr.mk(.{ .kind = .host }) };
                     if (Slots.holdsAny(fr.places, try fr.places.rootPath(k.gpa, try k.placeOf(i)))) return .{ .v = try fr.mk(.{ .kind = .shared, .head = md[0], .site = md[1] }) };
                     return .{ .v = try fr.scalar() };
                 }

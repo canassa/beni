@@ -114,6 +114,8 @@ pub const Kind = enum(u8) {
     ref,
     alt,
     shared,
+    /// A parameterless `foreign`'s value (§2.10, *host objects*).
+    host,
 };
 
 /// What a `built` value is (§2.3.3).
@@ -167,6 +169,8 @@ pub const LeafKind = enum(u8) {
     top,
     /// A prepend's deferred storage, `atom` its value (§2.3.4; a leaf set's).
     recons,
+    /// Objects JavaScript made, or beni objects that escaped (§2.10, *host objects*).
+    host,
 };
 
 pub const Leaf = struct {
@@ -270,8 +274,8 @@ pub const Frame = struct {
         const a = f.account;
         switch (v.kind) {
             .scalar, .bot => return .{ Leaves.empty, Leaves.empty },
-            .top, .shared => {
-                const x = try f.oneOf(if (v.kind == .top) .{ .kind = .top } else .{ .kind = .shared, .atom = v.head, .extra = v.site });
+            .top, .shared, .host => {
+                const x = try f.oneOf(if (v.kind == .shared) .{ .kind = .shared, .atom = v.head, .extra = v.site } else .{ .kind = if (v.kind == .top) .top else .host });
                 return .{ x, x };
             },
             .ref => {
@@ -318,7 +322,6 @@ pub const Frame = struct {
     pub fn mkWords(f: *Frame, ws: []const u32) Error![]const u32 {
         return f.arena.dupe(u32, ws);
     }
-
     pub fn scalar(f: *Frame) Error!u32 {
         return f.mk(.{ .kind = .scalar });
     }

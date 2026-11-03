@@ -117,6 +117,7 @@ const Res = struct {
                 try w.print("@{d})", .{l.origin[2]});
             },
             .top => try w.writeAll(" ⊤"),
+            .host => try w.writeAll(" host"),
         };
     }
 };

@@ -426,6 +426,7 @@ The **leaves** of a value are its objects, each said once:
 | `site ι`, `fresh k` | the atom's objects |
 | `shared d` | the top-level value's objects |
 | `⊤` | unknown objects |
+| `host` | objects JavaScript made, or beni objects that escaped (§2.10, *host objects*): a `foreign`'s unknown result, or an escaped object a callee answers |
 
 A deep read of a value reaches every leaf of it: for a `ref`, `below` of its slot, a symbol `↓p` past
 `below_min` slots (§2.3.1). **Shallow storage and
@@ -1250,6 +1251,60 @@ constructor at the type's place with `C#i ← πᵢ` at each argument slot, `res
 argument (a constructor duplicates nothing), no write. **A code with no contract** (a `foreign` without
 words, an imported declaration whose module published none, a declaration past its limit) has the
 pessimistic contract: every argument read and escaped deep, the result `⊤`, `res_cond no`.
+
+*Amended 2026-11-03 (#1735, #1744, the manager's decision): host objects.* A `foreign`'s unknown result is not
+unknown code's. **The rule:** the objects of a `foreign`'s result that its words do not name (a result with no
+word, `unknown` or `escaped`; a `foreign` with no words at all) are **host objects**: objects JavaScript made,
+or beni objects that escaped before the call returned. Such a result arrives `host`, an arrival and a leaf of
+its own (§2.3.4), and never `⊤`. An imported `foreign` is read this way too: its module publishes nothing an
+importer applies, so the importer reads its words, or their absence, itself. A parameterless `foreign`
+(`Js.null`) is a `host` value. `lent` and `lentoptional` results, and every other source of `⊤` (unknown
+code's answer, a worded declaration that is not a `foreign`, a declaration past its limit, an imported one
+with no contract), stay `⊤`.
+- **Why it holds.** A `foreign` body is JavaScript. It reaches a beni object in three ways only: through an
+  argument, through what an earlier `foreign` call kept, and through what a beni callback that it calls
+  answers. An argument with no word, or `escaped`, escapes deep at the call (§2.4, boundary rule 6); a
+  `borrowed` one is "not kept, not in the result", an `unused` one is not read, and an `aliased`,
+  `returned` or `stored` one is named by its own arrival (§2.13.6). What an earlier call kept escaped at
+  that call. A callback handed to a `foreign` escapes deep with its captures, so what it answers is either
+  escaped or made by that call of it, and nothing else in beni holds the latter. A cell's contents written
+  through `Js.ref`/`Js.write` are `escaped` arguments. So every beni object that a host leaf names escaped
+  at an earlier point, in the frame that made it or in a frame that was handed it.
+- **Escapes reach every frame that can name the object.** A frame names an object through a parameter, a
+  call's result, a label's answer or supply, or its own site. An escape of a parameter's object is the
+  contract's `escapes` (§2.10), applied at the call. **An escape of any other object the result or a
+  supply holds** is said by the arrival `host` beside its own arrival: the read-off (§2.10 *Read-off*) says
+  a call's or a supply's subtree by the leaves its key holds, and each of the frame's own objects it says
+  there (a site, a callee's fresh objects, a label's answer or result) that one of the frame's escapes of
+  its own objects holds, read through the calls' keys, gets `host` at that slot too. An escape that holds
+  a label's answer may hold what the label was handed, so then each object is asked of each escape by the
+  one relation (§2.9.2). The check is by the escape's objects, not its point (an escape in another arm
+  also adds it), so it may say more than happened, never less. An escape the read-off is told of after an
+  object was said (a group's delivery, §2.12) adds `host` where the object was said, or, said inside a
+  subtree described once per place, at every slot of its list.
+  Before this, `g ⊤ = y = [ 1, 2 ]; keep y; y` said `res ε fresh`, its caller edited `g ⊤` in place, and
+  JavaScript read the edit (`run/SanitiserEscapedResult`; also through a callee's fresh list and a
+  callback's answer). Master's v1 says `res esc1` for the same body.
+- **What a `host` leaf is.** A write of a target that holds one is refused `escaped`. A holder's `host`
+  leaf holds no target that is still writable, so it is in no bucket of the holder index (§2.8) and in no
+  bucket of the escape index. In the one relation (§2.9.2) a `host` leaf may be the same object as another
+  `host` leaf or a `⊤` one, and is apart from every other leaf, with no condition. That is sound because
+  the relation is only read to accept a write: a target that a host leaf may name is refused itself, and a
+  target that no host leaf names is, by the two points above, an object no host leaf holds. A `host`
+  arrival is an atom: the same at every slot, held wide as `fresh`, `⊤` and a shared value are.
+- **What it buys.** `Task.scope`'s `openScope` builds its handle with `Js.from`, stores its finaliser with
+  `Js.set` (so the record escapes) and holds `Js.construct`'s `Set`: its result is `ε host`, not
+  `ε fresh ⊤`, and the scope label's supply is apart from the lists the callback edits (`Control` 17:5,
+  #1735). A spawned fiber's or a finaliser's hold on those lists is still refused at the edit (`escaped`).
+- **Text and block.** It prints `host`. The block's arrival kind 5 is `host` (block version 18).
+- **As built (2026-11-03).** `Host.zig` keeps the frame's escapes of its own objects and what the read-off
+  said; `Rows`/`Groups` give a `foreign` the `host` result; `Distinct.overlapRaw`, `Holders` and
+  `Resolve.judge` read the leaf. Ledger over every root: one position moves accepted → refused,
+  `BallMachine` `Main` 36:5, where `Control.run`'s edit of `m.world◆.balls` is now accepted at 17:5 and
+  relies on its caller to separate the balls (the program was refused at 17:5 before); eleven move refused →
+  accepted (`Task` 1198:28, five in browser-tea's `Tea`, `Record.copy`'s callers in Sternhalma and
+  bike-wars, `Control` 17:5). The cost table's growth does not move; `Schema.shapeOf` costs 283 388 records
+  (272 813 before) and `shapesOf`'s growth is 6 744 (5 622): the escaped objects its result now says.
 
 *Specified 2026-11-02 (#1714), not built: a contract is a tree of shared subtrees.* A contract names one entry
 per result slot and one effect per parameter slot, and a reader walks every entry. So a type whose two parts

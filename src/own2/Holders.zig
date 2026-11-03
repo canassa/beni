@@ -29,7 +29,18 @@ pub const Key = [3]u32;
 
 /// What a leaf comes from, in a word: whether it reaches unknown objects
 /// or a parameter's, and the least shared value it reaches (`none`).
-pub const Facts = struct { unknown: bool = false, param: bool = false, shared: [2]u32 = .{ none, none } };
+/// `host`: a host object (§2.10, *host objects*): it has no base key, so it
+/// holds no target, and a target that may be one is refused `escaped`.
+pub const Facts = struct {
+    unknown: bool = false,
+    param: bool = false,
+    host: bool = false,
+    shared: [2]u32 = .{ none, none },
+
+    pub fn join(a: *Facts, b: Facts) void {
+        a.* = .{ .unknown = a.unknown or b.unknown, .param = a.param or b.param, .host = a.host or b.host, .shared = leastShared(a.shared, b.shared) };
+    }
+};
 
 /// Conditions gathered (§2.9.4): each met condition's occurrences appended,
 /// made one selection at the end by one sort, never merged one by one.
@@ -179,15 +190,13 @@ pub const Keys = struct {
                     if (mode == .runs) try acc.append(g, .{ 3, l.atom, l.extra });
                 },
                 .answer, .top => fx.unknown = true,
+                .host => fx.host = true,
                 .recons => unreachable,
             }
             const span = w.span.items[at];
             for (w.kids.items[span[0]..span[1]]) |c| {
                 if (k.made(c, .facts)) {
-                    const cf = k.facts.items[c].?;
-                    fx.unknown = fx.unknown or cf.unknown;
-                    fx.param = fx.param or cf.param;
-                    fx.shared = leastShared(fx.shared, cf.shared);
+                    fx.join(k.facts.items[c].?);
                 }
                 if (mode == .runs and k.made(c, .runs)) {
                     const r = k.run.items[c];
