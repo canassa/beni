@@ -3502,6 +3502,7 @@ beni source writes it**, as Elm's writes Elm, with Elm's spacing:
 | `Set` | `Set.fromList ['a','b']` |
 | function | `<function>` |
 | `foreign type` | `<internals>` |
+| `Schema.Schema e a` | `<internals>` |
 
 *Amended 2026-10-02 (§12.10; built the same day):* from the enforce step the unit value prints
 `⊤`, and `Mark ()` prints `Mark ⊤`, as source writes them.

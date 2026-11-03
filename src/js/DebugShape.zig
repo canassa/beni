@@ -98,6 +98,7 @@ const Writer = struct {
         if (e.package == .core) {
             const module = w.cx.interner.slice(e.module_name);
             const name = w.cx.interner.slice(e.name);
+            if (!w.cx.checked_data and std.mem.eql(u8, module, "Schema") and std.mem.eql(u8, name, "Schema")) return .{ .code = "\"x\"" };
             if (w.cx.checked_data) {
                 if ((std.mem.eql(u8, module, "Js") or std.mem.eql(u8, module, "Schema")) and std.mem.eql(u8, name, "Value")) return .{ .code = "\"v\"" };
                 if (std.mem.eql(u8, module, "Js")) {

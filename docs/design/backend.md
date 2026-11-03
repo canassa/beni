@@ -2797,6 +2797,11 @@ and nothing in Â§9's walk changes. `toStringAs : Js.Value, a â String` an
 String, a â a` are `pub` because the emitter imports them by interface, and harmless because no
 program outside core and a platform can make a `Js.Value`.
 
+A statically known `Schema.Schema e a` prints `<internals>`, including inside
+other values. Its engine state and stored callbacks are private. The descriptor
+uses the same opaque code as a foreign value and never traverses that state.
+Checked-data witnesses keep their separate structural validation rules.
+
 **The descriptor** is one JSON text, `[root, defs]`, written by `src/js/DebugShape.zig`. A type
 is `"i"` (an `Int`, or an `Int32`, which is a number too), `"f"` a `Float`, `"s"` a `String`,
 `"c"` a `Char`, `"b"` a `Bool`, `"u"` `()`, `"F"` a function, `"x"` a `foreign type`, `"?"`
