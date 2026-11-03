@@ -1,0 +1,45 @@
+-- A runtime check of a fold's accumulator written in place (`ownership-v2.md`
+-- §2.11.3, *a label's answer handed back to it*). A fold hands its
+-- callback's answer back to it as the next accumulator. v2 read that answer
+-- as unknown code's and refused every in-place edit of the accumulator,
+-- however fresh the first one was. Now the answer is read as the
+-- accumulator it was handed, as long as the known callback answers only that
+-- argument and objects it makes. Each line is a fold that edits its
+-- accumulator in place, and then a list the program still holds.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+fold : List a, b, (a, b → b) → b
+fold l acc f =
+    case l of
+        [] →
+            acc
+
+        [ x, …rest ] →
+            fold rest (f x acc) f
+
+
+left : ⊤ → String
+left ⊤ = ints (List.foldl (List.range 1 4) [] λn acc → List.push acc n)
+
+
+right : ⊤ → String
+right ⊤ = ints (List.foldr [ 1, 2, 3 ] [] λn acc → List.push acc (n * 10))
+
+
+own : List Int → String
+own seed =
+    r = fold [ 4, 5 ] (List.copy seed) λn acc → List.push acc n
+    "${ints r} ${ints seed}"
+
+
+main : Program
+main = Node.printLines [ left ⊤, right ⊤, own [ 9 ] ]

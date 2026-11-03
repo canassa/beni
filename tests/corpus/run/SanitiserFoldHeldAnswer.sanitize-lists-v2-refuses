@@ -1,0 +1,2 @@
+# v2 refuses the edit: keepFold holds the answer it hands back, a pending operand of its list literal (§2.11.3).
+33:28 list_still_used SanitiserFoldHeldAnswer.keepFold

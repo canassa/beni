@@ -1,8 +1,5 @@
-//! L4: a contract's text (`docs/design/ownership-v2.md` §2.10, §3.5): the
-//! `summary` line of `beni dump --stage=ownership`, each field in the
-//! canonical order the table keeps it in.
-//!
-//! Obligations kept here: none of §2.14's (text only).
+//! L4: a contract's text (`docs/design/ownership-v2.md` §2.10, §3.5): the `summary` line of
+//! `beni dump --stage=ownership`, each field in canonical order. Obligations kept here: none (text).
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
@@ -54,14 +51,16 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
     try w.writeAll("⇐ sel");
     var last: u32 = Ids.none_int;
     for (run) |o| {
-        if (Contract.occParam(o) != last) {
+        const j = if (Contract.isFed(o)) Contract.fedParam(o) else Contract.occParam(o);
+        if (j != last) {
             if (last != Ids.none_int) try w.writeAll("}");
-            try w.print(" π{d}{{", .{Contract.occParam(o) + 1});
-            last = Contract.occParam(o);
+            try w.print(" π{d}{{", .{j + 1});
+            last = j;
         } else try w.writeAll(",");
         try relText(slots, places, names, w, Contract.occRel(o));
         if (Contract.isDeep(o)) try w.writeAll("*");
         if (Contract.isApart(o)) try w.writeAll("~");
+        if (Contract.isFed(o)) try w.print("!{d}", .{Contract.fedArg(o) + 1});
     }
     try w.writeAll("}");
 }

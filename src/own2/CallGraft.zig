@@ -126,7 +126,7 @@ pub fn sel(ev: *Relation.Eval, c: Cond, call: u32) Error!?Cond {
             if (ow.found_existing) return null;
             ow.value_ptr.* = j;
         }
-        x.* = (o & ~(@as(u64, 0x3fff_ffff) << 32)) | (@as(u64, got.value_ptr.*) << 32);
+        x.* = (o & ~(@as(u64, 0x1fff_ffff) << 32)) | (@as(u64, got.value_ptr.*) << 32);
     }
     return try Cond.of(ev.account(), out);
 }
