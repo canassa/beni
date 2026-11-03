@@ -92,6 +92,8 @@ const layers = [_]Entry{
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
     .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
+    // Demands judged once for their twins (#1714).
+    .{ .file = "Twins.zig", .layer = 10, .max_lines = 90 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
     .{ .file = "Holders.zig", .layer = 10, .max_lines = 700 },
     // The holder index and its sweep, split from `Holders` (#1714): holds
@@ -408,7 +410,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 49), layers.len);
+    try testing.expectEqual(@as(usize, 50), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
