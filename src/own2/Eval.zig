@@ -95,7 +95,7 @@ pub const Evaluation = struct {
 /// Begin an evaluation of `w`: every call's contract read now, each
 /// callee's labels mapped or applied, the calls' demands and escapes made.
 pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, solver: ?*const Group, x: u32, e: *Evaluation) Error!void {
-    e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
+    e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena, .routed = Routed.paramLeaves }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
     if (solver) |sv| e.ev.live = sv.live;
     const f = &w.f;
     const gpa = f.gpa;
