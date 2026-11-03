@@ -31,8 +31,7 @@ pub const RootKind = enum(u8) {
     call,
     /// `a`: the label's index in `Frame.cbs`: its answer (§2.11.3).
     cb,
-    /// `a`: the index in `Frame.supplies`: what a callee hands one of its
-    /// labels, described by the callee's supply (§2.11.3).
+    /// `a`: the index in `Frame.supplies`: what a callee hands one of its labels, described by the callee's supply (§2.11.3).
     supply,
 };
 
@@ -51,8 +50,7 @@ pub const Call = struct {
     arg_insts: []const u32,
     root: u32,
     contract: u32 = none,
-    /// The code the call runs when it is one of the module's (`Groups`'
-    /// numbering), else `none`.
+    /// The code the call runs when it is one of the module's (`Groups`' numbering), else `none`.
     code: u32 = none,
     /// The callee's value when the call is of a function value.
     callee_val: u32 = none,
@@ -114,6 +112,8 @@ pub const Kind = enum(u8) {
     ref,
     alt,
     shared,
+    /// A parameterless `foreign`'s value (§2.10, *host objects*).
+    host,
 };
 
 /// What a `built` value is (§2.3.3).
@@ -161,12 +161,13 @@ pub const LeafKind = enum(u8) {
     fresh,
     /// A top-level value: `atom` the module, `extra` the declaration.
     shared,
-    /// The answer of a label the frame cannot apply (§2.11.3): `atom` its
-    /// `cbs` index, `extra` the answer's slot (a `Slots.Rel`).
+    /// The answer of a label the frame cannot apply (§2.11.3): `atom` its `cbs` index, `extra` the answer's slot (a `Slots.Rel`).
     answer,
     top,
     /// A prepend's deferred storage, `atom` its value (§2.3.4; a leaf set's).
     recons,
+    /// Objects JavaScript made, or beni objects that escaped (§2.10, *host objects*).
+    host,
 };
 
 pub const Leaf = struct {
@@ -273,8 +274,8 @@ pub const Frame = struct {
         const a = f.account;
         switch (v.kind) {
             .scalar, .bot => return .{ Leaves.empty, Leaves.empty },
-            .top, .shared => {
-                const x = try f.oneOf(if (v.kind == .top) .{ .kind = .top } else .{ .kind = .shared, .atom = v.head, .extra = v.site });
+            .top, .shared, .host => {
+                const x = try f.oneOf(if (v.kind == .shared) .{ .kind = .shared, .atom = v.head, .extra = v.site } else .{ .kind = if (v.kind == .top) .top else .host });
                 return .{ x, x };
             },
             .ref => {
@@ -321,7 +322,6 @@ pub const Frame = struct {
     pub fn mkWords(f: *Frame, ws: []const u32) Error![]const u32 {
         return f.arena.dupe(u32, ws);
     }
-
     pub fn scalar(f: *Frame) Error!u32 {
         return f.mk(.{ .kind = .scalar });
     }
