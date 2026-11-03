@@ -261,6 +261,8 @@ pub const Rounds = struct {
     /// root (max-heaps, stale entries skipped when read).
     expandable: std.ArrayList(u32) = .empty,
     musts: std.ArrayList(u32) = .empty,
+    /// The leaves some entry has (`Chains.onChain` walks a chain only for one).
+    has_leaf: Ids.FixedDict(1) = .{},
 
     pub fn deinit(r: *Rounds, g: Allocator) void {
         for (r.groups.items) |*gr| {
@@ -269,12 +271,14 @@ pub const Rounds = struct {
         }
         inline for (.{ &r.ents, &r.alive, &r.par, &r.groups, &r.of_root, &r.expandable, &r.musts, &r.dirty }) |l| l.deinit(g);
         r.atoms.deinit(g);
+        r.has_leaf.deinit(g);
     }
 
     pub fn add(r: *Rounds, g: Allocator, en: Ent, par: [3]u32) Error!void {
         try r.ents.append(g, en);
         try r.alive.append(g, true);
         try r.par.append(g, par);
+        try r.has_leaf.put(g, .{en.leaf}, 0);
     }
 
     /// Put entry `i` in its group (a root's, an atom's, or none), which is
