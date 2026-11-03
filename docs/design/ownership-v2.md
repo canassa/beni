@@ -1493,7 +1493,9 @@ doubling literal over one list projected 2ᵏ paths onto the same list.
   546 / 11 008 at depth 4 / 8 (one demand a path) is 231 / 464, one demand. The ledger moves no verdict;
   72 summaries differ, each asking at least what it asked (a deep occurrence moved where the instantiation
   wrote its parts out, `s*~` for `s~, s[*]*~`). Lines merge where routes share a state or a value
-  (`ParamLeafByNode`'s `alone` and `deep`, `CallOtherPathsKeys`, `LevelPlacesCall`). **Not built:** `req`
+  (`ParamLeafByNode`'s `alone` and `deep`, `CallOtherPathsKeys`, `LevelPlacesCall`); the merged line names every
+  route it covers: a state's further targets by their least routes, a second route into a literal's `(node,
+  value)` by its own steps (n + 1 routes for a doubling literal of depth n). **Not built:** `req`
   as a tree (the fold keeps it linear here).
 
 *Specified 2026-11-03 (#1714): stored selections fold exactly.* A stored selection (a contract's `req`, a
