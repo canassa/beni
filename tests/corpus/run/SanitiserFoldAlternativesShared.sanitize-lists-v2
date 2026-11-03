@@ -1,0 +1,3 @@
+A fold whose accumulator holds one list at two parts (ownership-v2.md §2.9.3, candidates of one object): built
+again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each fold; with the parts read as
+candidates of one object, each sanitised run showed the stale read.

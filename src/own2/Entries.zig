@@ -27,7 +27,14 @@ const none: u32 = Ids.none_int;
 
 /// An entry: its leaf, its literal route, its occurrence, its block, and
 /// the route set it is reached under (§2.11.2; 0 for its leaf's tags alone).
-pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32, routes: u32 = 0 };
+/// `one`: the given entry this one is a candidate for, when that entry's
+/// occurrence names one object (`singular`); `none` otherwise.
+pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32, routes: u32 = 0, one: u32 = none };
+
+/// Whether two entries are candidates of one object: never two of its places.
+pub fn oneObject(a: Ent, b: Ent) bool {
+    return a.one != none and a.one == b.one;
+}
 
 /// Whether two entries' routes hold together (`Coexist.setsMeet`).
 pub fn routesMeet(f: *Frame, a: Ent, b: Ent) Error!bool {
@@ -86,13 +93,13 @@ pub fn allApart(ents: []const Ent, idx: []const u32) bool {
 pub fn atomTwice(f: *Frame, ents: []const Ent, idx: []const u32) Error!bool {
     var es: std.ArrayList(Coexist.Entry) = .empty;
     defer es.deinit(f.gpa);
-    for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ), .routes = ents[i].routes });
+    for (idx) |i| try es.append(f.gpa, .{ .tags = f.leafAt(ents[i].leaf).tags, .block = ents[i].block, .apart = Contract.isApart(ents[i].occ), .routes = ents[i].routes, .one = ents[i].one });
     return Coexist.anyPair(&f.sets.tags, f.gpa, f.account, es.items);
 }
 
 pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
     try f.charge(.cond, 1);
-    if (a.block != none and a.block == b.block) return false;
+    if ((a.block != none and a.block == b.block) or oneObject(a, b)) return false;
     if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ and a.routes == b.routes) return false;
     // Apart occurrences need only be apart from the plain ones.
     if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
@@ -106,27 +113,6 @@ pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
     if (r.rel != .related or !try Subtree.meetIn(f.slots, f.gpa, f.account, f.places, la.slots, lb.slots)) return false;
     // Their routes last: a route set's meet costs its nodes.
     return routesMeet(f, a, b);
-}
-
-/// Whether a callback's answer among `ents` may be another entry's object
-/// (§2.9.3, #1711), for the pairs with an entry from `fresh` on: the
-/// earlier pairs were asked in an earlier round. Unknown code may answer
-/// any object its caller reaches, so an answer is apart from no other
-/// entry but an alternative to it or one its own block vouches for.
-pub fn answerMeets(f: *Frame, ents: []const Ent, alive: []const bool, fresh: usize) Error!bool {
-    for (ents, 0..) |en, i| {
-        if (!alive[i] or !isAnswer(f, f.leafAt(en.leaf))) continue;
-        for (ents[if (i >= fresh) 0 else fresh..], if (i >= fresh) 0 else fresh..) |o, k| {
-            if (k == i or !alive[k]) continue;
-            if (o.block != none and o.block == en.block) continue;
-            if (try routesMeet(f, en, o)) return true;
-        }
-    }
-    return false;
-}
-
-fn isAnswer(f: *const Frame, l: Value.Leaf) bool {
-    return l.kind == .answer or (l.kind == .ref and f.roots.items[l.root].kind == .cb);
 }
 
 /// The pairs within one group (§2.9.3): its first `seen` members were
