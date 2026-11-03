@@ -121,7 +121,8 @@ const layers = [_]Entry{
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
     // A label's answer handed back to it, and its `fed` occurrence (#1713).
-    .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
+    // A fed answer read through a label a known code passes on (#1721).
+    .{ .file = "Fed.zig", .layer = 8, .max_lines = 160 },
     // The sources a frame's escapes reach, for the read-off's `host` (#1744).
     .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
     // A demand says whether it is a cell operation (#1727).

@@ -109,6 +109,10 @@ pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
         var es: Forest.Entries = .{};
         defer es.deinit(e.gpa());
         try es.of(&e.contracts.trees, e.gpa(), e.places(), kh.res_root, &.{});
+        // An answer that is the answer of a label `K` passes on to the
+        // frame's, handed `k` whole (`λx acc → step x acc`): fed where that
+        // label is, at the argument it is handed `k` as (#1721).
+        var through: ?u64 = null;
         for (es.items.items) |rs| {
             if (!try holdsAt(e, root, es.wordsOf(rs))) continue;
             for (rs.arrivals) |a| switch (a.kind) {
@@ -117,9 +121,19 @@ pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
                     if (x.kind != .ref or try holdsAt(e, e.f.roots.items[x.root].path, e.f.slots.relWords(a.slot))) return .no;
                 },
                 .fresh => {},
+                .cb => {
+                    if (es.wordsOf(rs).len != 0) return .no;
+                    const fc = e.label_map.get(.{ vi, a.j }) orelse return .no;
+                    const k2 = (try supplyOf(e, vi, a.j, k)) orelse return .no;
+                    const cb = e.f.cbs.items[fc];
+                    const occ = Contract.occFed(cb.j, cb.slot, k2);
+                    if (through) |t| if (t != occ) return .no;
+                    through = occ;
+                },
                 else => return .no,
             };
         }
+        if (through) |t| return .{ .occ = t };
         return .yes;
     }
     return .no;

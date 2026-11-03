@@ -227,6 +227,20 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
     }
 }
 
+/// Whether call `q` is a known code's run by a label that calls it many
+/// times (`calls` many), at any level outward (§2.11.3, #1721).
+pub fn outwardMany(e: *Evaluation, q: u32) bool {
+    const f = e.fr();
+    var cur = q;
+    while (f.calls.items[cur].virtual) {
+        const o = virtualOuter(e, cur) orelse return false;
+        const lab = e.contracts.labelsOf(e.contracts.head(f.calls.items[o[0]].contract).labels)[o[1]];
+        if (lab.calls == .many) return true;
+        cur = o[0];
+    }
+    return false;
+}
+
 /// Whether call `q` is a known code's run by a `taken` label (§2.13.6), at
 /// any level outward: its supplies may be the taken element.
 fn takenOutward(e: *Evaluation, q: u32) bool {
@@ -500,7 +514,7 @@ pub fn finishDemands(e: *Evaluation) Error!void {
 
 /// A label a virtual call's supply comes through: the call `call` whose
 /// callee's label `lab` it applies, the supply `k`, written at `words`.
-const Level = struct { call: u32, lab: Contract.Label, k: u32, words: []const u32 };
+pub const Level = struct { call: u32, lab: Contract.Label, k: u32, words: []const u32 };
 
 /// The labels virtual call `q`'s argument `k`, written at `words`, is
 /// supplied through, outward (§2.11.3, #1758). Where the call it applies a
@@ -510,7 +524,7 @@ const Level = struct { call: u32, lab: Contract.Label, k: u32, words: []const u3
 /// label's condition, kept slots and `taken` occurrences hold the write too.
 /// The calls go down (a virtual call follows the call it applies), so the
 /// chain ends; each level's (k, words) is listed once.
-fn supplyLevels(e: *Evaluation, q: u32, k: u32, words: []const u32, out: *std.ArrayList(Level)) Error!void {
+pub fn supplyLevels(e: *Evaluation, q: u32, k: u32, words: []const u32, out: *std.ArrayList(Level)) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     var cur = q;
