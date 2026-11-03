@@ -900,7 +900,7 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
       kept := ?_
       keptEscaped := ?_
       bindings := by simpa only [heapSame] using inv.bindings
-      described := by simpa only [heapSame] using inv.described
+      described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
       linksValid := Soundness.linksValid_of_empty _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)

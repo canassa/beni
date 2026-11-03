@@ -83,8 +83,11 @@ theorem input_described : Describes naming pre.heap canonical (.ref 1) :=
   allocated_list_described (integers := [2]) rfl ⟨.parameter 0 [], by simp, by simp [naming]⟩
 
 theorem inputs_described : ∀ i : Nat,
-    Describes naming pre.heap (entry.inputs[i]?.getD .bottom) ((args ++ [])[i]?.getD (.int 0)) := by
-  rw [entry_inputs]
+    Describes naming pre.heap
+      (entryAbstract program.declarations ((inputTypes program.declarations entry.decl)[i]?.getD .int)
+        (entry.inputs[i]?.getD .bottom))
+      ((args ++ [])[i]?.getD (.int 0)) := by
+  rw [entry_inputs, entry_decl]
   intro i
   cases i with
   | zero => exact input_described
@@ -98,7 +101,9 @@ theorem inputs_described : ∀ i : Nat,
 
 theorem classes : GuardsHold program.declarations {} entry.summary [] ∧
     ∀ j f, ([] : List (Nat × Abstract)).lookup j = some f →
-      DescribesClosure naming pre.heap f ((args ++ [])[j]?.getD (.int 0)) := by
+      DescribesClosure naming pre.heap
+        (entryAbstract program.declarations ((inputTypes program.declarations entry.decl)[j]?.getD .int) f)
+        ((args ++ [])[j]?.getD (.int 0)) := by
   refine ⟨?_, ?_⟩
   · intro g hg
     rw [entry_guards] at hg
@@ -119,16 +124,19 @@ theorem inputs_length : entry.inputs.length = args.length + ([] : List Value).le
 
 /-- The written-storage premise holds: the only input array is the written
     view; its linked source (address 0) is at no input path. -/
-theorem linked : LinkedWritesCovered entry.summary entry.inputs (args ++ []) args.length pre := by
+theorem linked : LinkedWritesCovered entry.summary entry.inputs
+    (inputTypes program.declarations entry.decl) (args ++ []) args.length pre := by
   intro i q c _ _ _ d _ j p canonJ arrayJ
   cases j with
   | zero =>
-    obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref (integers := [2]) (show pre.heap[1]? = some ([2].map Value.int) from rfl) arrayJ
+    obtain ⟨root, rfl⟩ := arrayAt_flat_ref (integers := [2]) (show pre.heap[1]? = some ([2].map Value.int) from rfl) arrayJ
+    obtain rfl := CallDerivation.entryPath_eq_nil root
     refine Or.inl ?_
     rw [entry_writes, entry_consumes]
     cbv
   | succ j =>
-    change ArrayAt pre.heap (.int 0) p d at arrayJ
+    change ArrayAt pre.heap (.int 0) _ d at arrayJ
+    generalize entryPath _ p = concrete at arrayJ
     cases arrayJ
 
 /-- The trigger of the premise is real: input 0's root is written. -/

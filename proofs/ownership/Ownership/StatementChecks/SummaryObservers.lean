@@ -114,9 +114,11 @@ theorem empty_described (c : Nat) (hc : pre.heap[c]? = some []) :
   · exact .array hc (by intro x hx; simp at hx)
 
 theorem inputs_described : ∀ i : Nat,
-    Describes naming pre.heap (entry.inputs[i]?.getD .bottom)
+    Describes naming pre.heap
+      (entryAbstract program.declarations ((inputTypes program.declarations entry.decl)[i]?.getD .int)
+        (entry.inputs[i]?.getD .bottom))
       ((args ++ [])[i]?.getD (.int 0)) := by
-  rw [entry_inputs]
+  rw [entry_inputs, entry_decl]
   intro i
   cases i with
   | zero => exact empty_described 0 rfl
@@ -146,7 +148,9 @@ theorem inputs_length : entry.inputs.length = args.length + ([] : List Value).le
 
 theorem classes : GuardsHold program.declarations {} entry.summary [] ∧
     ∀ j f, ([] : List (Nat × Abstract)).lookup j = some f →
-      DescribesClosure naming pre.heap f ((args ++ [])[j]?.getD (.int 0)) := by
+      DescribesClosure naming pre.heap
+        (entryAbstract program.declarations ((inputTypes program.declarations entry.decl)[j]?.getD .int) f)
+        ((args ++ [])[j]?.getD (.int 0)) := by
   refine ⟨guards_hold, ?_⟩
   intro j f h
   simp at h
@@ -171,13 +175,18 @@ theorem pre_does_not_keep_second : ¬ keptReaches pre 1 := by
     cases lookup
     simp at mem
 
-theorem no_call_sound : ¬ CallSound entry.summary entry.inputs args args.length pre post (.ref 0) := by
+theorem no_call_sound : ¬ CallSound program.declarations entry.summary entry.inputs
+    (inputTypes program.declarations entry.decl) (resultType program.declarations entry.decl)
+    args args.length pre post (.ref 0) := by
   intro h
   have canon : canonicalPath entry.inputs 1 [] := by
     unfold canonicalPath
     rw [entry_inputs]
     simp [inputs, Abstract.paths]
-  have arrayAt : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 1 := .here _
+  have arrayAt : ArrayAt pre.heap (args[1]?.getD (.int 0))
+      (entryPath ((inputTypes program.declarations entry.decl)[1]?.getD .int) []) 1 := by
+    rw [entryPath_nil]
+    exact .here _
   have noEscape : rowHas entry.summary.escapes (inputOrigin args.length 1 []) = false := by rw [entry_escapes]; rfl
   exact pre_does_not_keep_second (h.noNewHolders 1 [] 1 canon arrayAt noEscape post_keeps_second)
 

@@ -27,3 +27,4 @@ import Ownership.StatementChecks.CallDerivationInstance
 import Ownership.StatementChecks.LinkedWriteInstance
 import Ownership.LinkedWriteValid
 import Ownership.StatementChecks.LinkedWriteValidInstance
+import Ownership.StatementChecks.DictEntryPaths

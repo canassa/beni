@@ -36,6 +36,24 @@ def tyAt : Ty → Path → Option Ty
     | none => none
   | _, _ => none
 
+/-- `tyAt` and `fieldType` agree where `tyAt` has a type. -/
+theorem fieldType_of_tyAt {ty t : Ty} {p : Path} (typed : tyAt ty p = some t) :
+    Soundness.fieldType ty p = t := by
+  induction p generalizing ty with
+  | nil =>
+    rw [Soundness.fieldType_nil]
+    simpa [tyAt] using typed
+  | cons step rest ih =>
+    cases step <;> cases ty <;> simp [tyAt] at typed
+    rename_i i ts
+    cases lookup : ts[i]? with
+    | none => simp [lookup] at typed
+    | some t' =>
+      simp only [lookup] at typed
+      show Soundness.fieldType (ts[i]?.getD .int) rest = t
+      rw [lookup]
+      exact ih typed
+
 end Ownership.FlatFragment.Fields
 
 namespace Ownership.FlatFragment.Support
@@ -153,7 +171,7 @@ theorem demand_success_not_escaped
 The invariant permits observers and aliases; it relates their origins to the
 actual checker prefix's recorded escapes. -/
 theorem demand_success_no_kept_reaches
-    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes gamma)
     (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
     (receiver : named gamma cs root)
     (member : observer ∈ hs.kept.toList) :
@@ -210,7 +228,7 @@ end
 /-- The outside footprint follows from the checked demand and the observer
 invariant. It is not an independent no-alias or empty-observer assumption. -/
 theorem demand_success_observer_footprint
-    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes gamma)
     (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
     (receiver : named gamma cs root)
     (observers : RepresentsMany hs.heap depth hs.kept.toList observations footprint) :
@@ -224,7 +242,7 @@ theorem demand_success_observer_footprint
 checker demand excludes their reachable receiver. Arbitrary other sharing is
 legal, and old dead aliases need no observation correspondence. -/
 theorem demand_success_observers_after_write
-    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes gamma)
     (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
     (receiver : named gamma cs root)
     (observers : RepresentsMany hs.heap depth hs.kept.toList observations footprint) :
@@ -232,7 +250,7 @@ theorem demand_success_observers_after_write
   representsMany_after_write observers (demand_success_observer_footprint inv run receiver observers)
 
 theorem demand_success_observer_snapshots_after_write
-    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes gamma)
     (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
     (receiver : named gamma cs root)
     (observers : RepresentsMany hs.heap depth hs.kept.toList observations footprint) :
@@ -578,6 +596,42 @@ inductive FlatAbstract : Ty → Abstract → Prop where
       FlatAbstract error ae → FlatAbstract success aa →
       FlatAbstract (.result error success) (.record [.scalar, ae, aa])
 
+/-- Fields of flat abstracts, read through their types, are the same fields. -/
+theorem entryFields_of_flat {ds : List Decl} :
+    ∀ (ts : List Ty) (as : List Abstract), ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a →
+        entryAbstract ds t a = a) →
+      entryFields ds ts as = as
+  | [], [], _, _ => rfl
+  | t :: ts, a :: as, lengths, fields => by
+    show entryAbstract ds t a :: entryFields ds ts as = a :: as
+    rw [fields 0 t a rfl rfl,
+      entryFields_of_flat ts as (by simpa using lengths)
+        (fun i t' a' ht ha => fields (i + 1) t' a' ht ha)]
+  | [], _ :: _, lengths, _ => by simp at lengths
+  | _ :: _, [], lengths, _ => by simp at lengths
+
+/-- A flat type has no dictionary and no function, so reading a flat abstract
+    through its type changes nothing (#1796). -/
+theorem entryAbstract_of_flatAbstract {ds : List Decl} {t : Ty} {a : Abstract}
+    (shape : FlatAbstract t a) : entryAbstract ds t a = a := by
+  induction shape with
+  | bottom ty => cases ty <;> rfl
+  | int => rfl
+  | list t roots element certificate _ _ ih =>
+    show Abstract.list roots (entryAbstract ds t element) certificate = _
+    rw [ih]
+  | chainBottom roots certificate => rfl
+  | chainScalar roots certificate => rfl
+  | record ts as lengths _ ih =>
+    show Abstract.record (entryFields ds ts as) = _
+    rw [entryFields_of_flat ts as lengths ih]
+  | result error success ae aa _ _ ihError ihSuccess =>
+    show Abstract.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
+      entryAbstract ds success aa] = _
+    rw [ihError, ihSuccess]
+    rfl
+
 /-- The runtime shapes of a binding's abstract, and the tags of its result
 values. A binding that holds a value is live code, so its abstract is not
 bottom: an integer's is the scalar, a list's a list description. Both
@@ -746,7 +800,7 @@ structure FlatInvariant (declarations : List Decl)
     (env : List (Var × Observation × Value)) (live : Live)
     (aenv : Env Abstract) (tenv : Env Ty)
     (escapes : List Origin) (gamma : Naming) : Prop where
-  toInvariant : Invariant vs hs env live aenv escapes gamma
+  toInvariant : Invariant declarations vs hs env live aenv tenv escapes gamma
   links : hs.links = []
   abstractKeys : env.map Prod.fst = aenv.map Prod.fst
   typeKeys : env.map Prod.fst = tenv.map Prod.fst
@@ -805,11 +859,6 @@ theorem FlatInvariant.bindings {declarations : List Decl} {vs : ValueSemantics.S
       ∃ o' w', projectObs o p = some o' ∧ projectVal w p = some w' ∧ Corresponds hs.heap o' w' :=
   inv.toInvariant.bindings
 
-theorem FlatInvariant.described {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
-    ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) → aenv.lookup x = some a →
-      projectVal w p = some w' → Describes gamma hs.heap (a.atPath p) w' :=
-  inv.toInvariant.described
-
 theorem FlatInvariant.named {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
     ∀ x o w a, env.lookup x = some (o, w) → aenv.lookup x = some a →
       ∀ q c, immutablePath q = true → ArrayAt hs.heap w q c → named gamma (a.cellsAt q) c :=
@@ -851,7 +900,7 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
       ({ fuel } : ValueSemantics.State) ({ fuel } : InPlaceSemantics.State)
       [] live [] [] escapes emptyNaming := by
   refine {
-    toInvariant := invariant_initial fuel live escapes emptyNaming emptyNaming_separating
+    toInvariant := invariant_initial declarations fuel live [] escapes emptyNaming emptyNaming_separating
     links := rfl
     abstractKeys := rfl
     typeKeys := rfl
@@ -1466,3 +1515,70 @@ theorem flatAbstract_atPath {tk ty : Ty} {a : Abstract} {p : Path}
         exact ih shape' at_p
 
 end Ownership.FlatFragment.Fields
+
+/-! The live clause through the type (#1796). A flat type has no dictionary,
+so at a live path of a flat binding the typed abstract is the abstract. -/
+
+namespace Ownership.FlatFragment.VariableFacts
+
+theorem lookup_exists_of_same_keys (left : Env α) (right : Env β)
+    (keys : left.map Prod.fst = right.map Prod.fst)
+    (found : right.lookup key = some value) : ∃ actual, left.lookup key = some actual := by
+  have present : (right.lookup key).isSome := by simp [found]
+  obtain ⟨pair, member, equal⟩ := List.lookup_isSome_iff.mp present
+  have rightKey : pair.1 ∈ right.map Prod.fst := List.mem_map.mpr ⟨pair, member, rfl⟩
+  rw [← keys] at rightKey
+  obtain ⟨actualPair, actualMember, sameName⟩ := List.mem_map.mp rightKey
+  have actualEqual : key == actualPair.1 := by simpa only [sameName] using equal
+  have actualPresent : (left.lookup key).isSome :=
+    List.lookup_isSome_iff.mpr ⟨actualPair, actualMember, actualEqual⟩
+  cases actual : left.lookup key with
+  | none => simp [actual] at actualPresent
+  | some value => exact ⟨value, rfl⟩
+
+end Ownership.FlatFragment.VariableFacts
+
+namespace Ownership.FlatFragment.State
+
+open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.Fields
+
+/-- At a typed path of a flat binding, the typed abstract is the abstract. -/
+theorem entryAbstract_atPath_flat {ds : List Decl} {ty t : Ty} {a : Abstract} {p : Path}
+    (shape : FlatAbstract ty a) (typed : tyAt ty p = some t) :
+    entryAbstract ds (fieldType ty p) (a.atPath p) = a.atPath p := by
+  rw [fieldType_of_tyAt typed]
+  exact entryAbstract_of_flatAbstract (flatAbstract_atPath shape typed)
+
+/-- The typed live clause of `Invariant` from the untyped one, in a flat
+    environment. -/
+theorem described_typed_of_flat {ds : List Decl} {heap : Heap} {env : List (Var × Observation × Value)}
+    {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming}
+    (shapes : ∀ x ty abstract, tenv.lookup x = some ty → aenv.lookup x = some abstract →
+      FlatAbstract ty abstract)
+    (liveTyped : ∀ x p ty, (x, p) ∈ live → tenv.lookup x = some ty → ∃ t, tyAt ty p = some t)
+    (untyped : ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) →
+      aenv.lookup x = some a → projectVal w p = some w' → Describes gamma heap (a.atPath p) w') :
+    ∀ x p, (x, p) ∈ live → ∀ o w a t w', env.lookup x = some (o, w) → aenv.lookup x = some a →
+      tenv.lookup x = some t → projectVal w p = some w' →
+        Describes gamma heap (entryAbstract ds (fieldType t p) (a.atPath p)) w' := by
+  intro x p use o w a t w' binding found declared projected
+  obtain ⟨t', typed⟩ := liveTyped x p t use declared
+  rw [entryAbstract_atPath_flat (shapes x t a declared found) typed]
+  exact untyped x p use o w a w' binding found projected
+
+/-- The live clause of a flat invariant, untyped: a flat type has no
+    dictionary, so the typed abstract is the abstract (#1796). -/
+theorem FlatInvariant.described {declarations : List Decl} {vs : ValueSemantics.State}
+    {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live}
+    {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) → aenv.lookup x = some a →
+      projectVal w p = some w' → Describes gamma hs.heap (a.atPath p) w' := by
+  intro x p use o w a w' binding found projected
+  obtain ⟨t, declared⟩ :=
+    Ownership.FlatFragment.VariableFacts.lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
+  obtain ⟨t', typed⟩ := inv.liveTyped x p t use declared
+  have described := inv.toInvariant.described x p use o w a t w' binding found declared projected
+  rwa [entryAbstract_atPath_flat (inv.abstractShapes x t a declared found) typed] at described
+
+end Ownership.FlatFragment.State
