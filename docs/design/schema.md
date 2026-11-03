@@ -3808,3 +3808,9 @@ earlier clause requiring a forced-library path or differential execution against
 The maker/API inventory for this decision was reviewed before deletion. Retained public
 signatures remain; only the three named projections are removed from the implemented API. Measure release bundle sizes for schema fixtures, `bench/corpus` and a
 dynamic-composition case before and after; compiled speed must not regress.
+
+Temporary exception: [#1814](https://github.com/canassa/beni/issues/1814) records the
+owner-approved residual ordinary compiled parse/print regression for this HostFree integration.
+Re-measure it on the final integration tip and fix any regression above noise before #1616
+reaches `master`. This exception does not establish speed parity or relax the compiled-path
+requirement beyond that integration.

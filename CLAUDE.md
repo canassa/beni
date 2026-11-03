@@ -88,7 +88,7 @@ parse and print (`schema.md` §6 *The specialised path*, §16 *As built — S4*)
 library interpreter on every workload and ahead of Valibot, Zod and Effect, each direction
 reachable on its own; the corpus builds every schema `run/` fixture compiled against its hand-checked golden.
 **Every schema runs compiled** (owner decision, 2026-11-03; `schema.md` A.14): runtime
-builders and endpoint projections compose workers; the interpreter and hidden
+builders compose workers; the interpreter and hidden
 `--schema-library` flag are withdrawn. A.6 owns interface v2, frontend artifact v3 (now
 v4: a new token and a wider exposed row), cache entry v2 (now v3) and the
 unhashed plan v1. Remaining decisions lead the document; H4 remains open. The

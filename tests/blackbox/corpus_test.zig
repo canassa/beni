@@ -1722,6 +1722,8 @@ const Case = struct {
     /// Every schema runs compiled, including runtime composition (schema.md A.14).
     /// A compiled-schemas marker additionally requires a Schema module in
     /// development output; its text explains the fixture and is not blessed.
+    /// The retired-name guard below is not proof that runs avoid description
+    /// walks; #1818 tracks a guard using the actual execution/inspection boundary.
     fn checkCompiledSchemas(c: Case, out_dir: []const u8) !void {
         const path = try std.fmt.allocPrint(c.arena, "{s}/_core/Schema.mjs", .{out_dir});
         if (!c.w.exists(path)) {

@@ -5211,7 +5211,7 @@ three comparator flags â whether anything the build lowers asks for `eq$pri
 `compare$char` as a value (`primitiveValue`) â which are module-level, like the runtime flags and
 for the same reason (`uses_runtime` is the or of its three): a live declaration's evidence sets
 one exactly as a row's does, and the comparator constants of the unit list are selected by them;
-the markup and direct handles; the entry declaration; the schema plans and `--schema-library`;
+the markup and direct handles; the entry declaration; the schema plans;
 the shapes fork's `schema_shapes` (`schema.md` Â§6: whether a module takes shape runs or workers,
 a module-level answer); `core_private`; and the `debug` context. Two module-fixed reads go through the funnel as well, so
 that a row can record them: the `Js.maySuspend` probe answers a `$s` body consumed, and whether a
@@ -5397,8 +5397,9 @@ is the build's own state â a build with no recorder pays one null check per
 are Â§9's list: the six survivor sets (asked as `decl`, `derived`, `twin`, `ctor`, `schema` and
 `lift`); the dead arms (`arm_dead`, and the `probe` of a `Js.maySuspend` body); `consumed` and
 `wanted`; `nullary`; the three comparator flags (`primitive`); `entry`, `development`,
-`core_private`, `schema_library`, `debug`, `markup` and `direct`; whether a derived row's
-`$$steps` helper was appended (`steps`); every cross-module `needName` (`askNeed`); and the
+`core_private`, `debug`, `markup` and `direct`; later additions are `test_hooks`,
+`opt_plain` and per-entry `worker_events`. The withdrawn `schema_library` fact is no longer
+asked. The list also records whether a derived row's `$steps` helper was appended (`steps`); every cross-module `needName` (`askNeed`); and the
 runtime exports, which are a module-level or (`orRuntime`). The asks made before the first unit
 â the reach walk, `findDeadArms`, the `wanted`/`consumed` loop, the entry declaration, the head
 imports and a lift â are recorded and belong to no unit, so a build that would answer one
@@ -5409,36 +5410,32 @@ list, with issue #432's question, the maker's canonical answer and the fixture t
 boundary (below).
 
 `src/js/EmitPack.zig` is the row (`Kind.emit`, pack `version` 3, the row format's v1): keyed by
-SipHash-1-3 over `"BENIEMIT"`, the format version, the module key and one byte of
-`--schema-library`, one row per option. A row holds the module's unit text as one blob and, per
-unit, its selector, its run of facts, its range of the text, the marks' identities and the
+SipHash-1-3 over `"BENIEMIT"`, the format version, the module key and
+a reserved zero byte, with one row per checked module key. A row holds the module's unit text
+as one blob and, per unit, its selector, its run of facts, its range of the text, the marks' identities and the
 identities it introduced, its `Needed` entries in ask order, its runtime bits and the outgoing
 edges the join replays. The head, the tail and the footer are not stored: the join rebuilds
 them.
 
 `src/core_pack_main.zig` makes the rows. After the entry, front-end and edge lists, one pass
 lowers each cacheable embedded module ONCE with canonical facts â a development build,
-`--schema-library` off, an all-live `Reach.Result` (`canonicalLive`), `lifts` empty and no
+an all-live `Reach.Result` (`canonicalLive`), `lifts` empty and no
 direct handle â prints it as head, one piece per unit and tail, joins the pieces back, encodes
-them, and adds the one payload under both option keys; the pack stores the bytes of two rows
-with the same content once, as it does for edge lists. The maker then checks itself: it decodes
+them, and adds one payload under the module key. Equal payload bytes are stored once, as
+for edge lists. The maker then checks itself: it decodes
 every row, rebuilds the pieces from the row and joins them, requiring the natural join of the
 same lowering byte for byte. A module the maker cannot cache â one that writes markup (a static
 scan of its `.ext_value`s and `.top`s, and `uses_markup`), names a program constructor or a
 placement, declares a `schema`, or owns a codec plan â has NO row at all (Â§9, *The maker*;
 `fast-compiler.md` Â§8): the completeness check asks the same `refuses` question of every module
-before it requires both rows, and the exact post-lowering net
+before it requires that module's row, and the exact post-lowering net
 (`Lower.Result.uses_markup_runtime`) fails the maker with the module named, because the check
 cannot see a refusal the static scan cannot. No embedded module is refused today, and every row
-is non-empty. The 116 emit rows are 58 keys â 55 modules, plus three extra chain instances,
-since a platform module that declares a `foreign` value carries both the lowering of its own
-chain layer and the build's in its key, and the vocabulary module carries the chain's facts
-(`cache/Key.zig`): a module has one row per distinct answer of the chains it can be checked in.
-`Html` is keyed four times (its own chain, `dom`, `inline` and `ssr`, with `browser` and
-`browser-tea`'s `dom` one). Equal bytes are stored once: the 58 keys hold 51 payloads totalling
-2 081 276 bytes, because a key's two option rows, a module's extra chain instance and the five
-modules with no unit at all (`Js`, `Record`, `Url/Parser/Internal`, node's `Ssr` and
-`browser-inline`'s `Tea`) share their bytes.
+is non-empty. The original slice's measurement covered 58 checked-module keys (55 modules
+and three extra chain instances), sharing 51 payloads totalling 2 081 276 bytes. Those are
+historical measurements, rather than the current module inventory. A current checked-module
+key has one emit row; different platform chains may still produce different module keys,
+and equal payloads are still stored once.
 
 No build reads a row, so nothing the gates see moved: a master-against-branch `diff -r` of the
 three evidence trees is empty â 16, 43 and 62 files byte for byte, source maps included â the

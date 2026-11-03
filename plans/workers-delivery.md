@@ -9,3 +9,14 @@ Why: after 3 days and 45 commits on #1304, one native binding works and no worke
 - **Phase 3** realm check C (#1295). **Phase 4** Wire with shared names (#1296) and the dedicated runtime (#1297) → first public launch. **Phase 5** ports/shared/transfers/pools/streams (#1298–#1300).
 
 Managed by Claude Code (manager/reviewer); implementation by Codex agents on dagon.
+
+## Before the HostFree PR review
+
+- [#1817](https://github.com/canassa/beni/issues/1817): recover compiled Schema case fusion;
+  successful workers currently allocate variants before the caller consumes them. Bisect
+  ff284e1d82..5c1b416, check the typed Opt sentinel boundary, and fix this before #1616
+  reaches master. Carry its status in the HostFree PR.
+- [#1814](https://github.com/canassa/beni/issues/1814): re-measure ordinary compiled Schema
+  parse/print on the final integration tip. Its temporary exception ends before master.
+- [#1818](https://github.com/canassa/beni/issues/1818): replace the retired-name compiled-schema check with a meaningful
+  assertion that execution avoids description walks while inspection remains allowed.

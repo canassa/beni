@@ -121,7 +121,7 @@ pub type UnknownKeys
     | Reject
 
 
---| Root options shared by compiled runners and library interpretation.
+--| Root options shared by generated runners and runtime-composed workers.
 --| reportInput retains plain data only; a callable or native input is Nothing
 --| (the owner, 2026-11-02), and reporting is off by default.
 pub type alias Options =
