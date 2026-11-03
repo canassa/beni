@@ -212,9 +212,11 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: ResList) Error!v
             const by_structure = !whole or f.places.pathPlace(pslot) == f.places.pathPlace(q);
             // A parameter's whole subtree of more than `Slots.below_min` objects
             // read by structure at its own place, where no place below it is on
-            // a cycle (so its paths are its steps), is one open arrival, never one
-            // a slot below it (§2.10, *Arrivals by structure*).
-            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and try acyclicBelow(s, f.places.pathPlace(q)) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot)) {
+            // a cycle (so its paths are its steps), is one open arrival, never
+            // one a slot below it (§2.10, *Arrivals by structure*). So is one
+            // in the result at its own path (so its paths fold as the
+            // result's) that `Subtree.written_max` slots cannot write out.
+            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none and try Subtree.moreBelow(f.slots, gpa, f.account, f.places, pslot, Subtree.written_max)))) {
                 return arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var" }, out);
             }
             // A call's or a supply's whole subtree read by structure is read
