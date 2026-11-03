@@ -1146,6 +1146,14 @@ calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a 
 runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
 `list`, and a build that composes and describes schemas without running one ships no worker.
 
+The interpreter's record traversal reads supplied typed fields by offset. It
+allocates a private typed array builder for the output's field count, fills only
+the successful prefix, and finishes that prefix once. Error accumulation still
+visits fields in source order; a failed record never constructs a partial program
+value. This uses the existing core-private typed array primitives and preserves
+field data types throughout, without repeated small-list copies or temporary
+field-pull tuples.
+
 **Checked endpoint identities** (2026-11-03). The engine-owned source builders
 `typedBox`, `primitiveWith` and `compiledBoxWith` carry the same hidden
 identity demands as `Any.pack`. Their private `endpointIdentity` witness

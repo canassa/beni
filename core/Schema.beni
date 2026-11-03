@@ -41,6 +41,7 @@ import Browser.Host.Json as HostJson
 import Int32
 import Js
 import Js.Any as Any
+import Js.Array as Array
 import Js.Data as Data
 import Js.Protocol as Protocol
 
@@ -1994,41 +1995,73 @@ fieldsFrom :
     , Path
     , Datum
     , List Datum
-    , List Datum
+    , Int
+    , Js.Builder Datum
+    , Int
     , Js.Value
     → Maybe (List Datum)
-fieldsFrom c fs depth path parent supplied out rawOut =
+fieldsFrom c fs depth path parent supplied inputOffset out outputOffset rawOut =
     case fs of
         [] →
-            Just out
+            Just (Array.arrayDone out outputOffset)
         [ entry, …rest ] →
-            ( input, remaining ) =
-                case supplied of
-                    [] →
-                        ( Nothing, [] )
-                    [ item, …tail ] →
-                        ( Just item, tail )
+            input = if c.sh then Nothing else List.get supplied inputOffset
             case runField c entry depth path parent input of
                 Nothing →
                     if c.all then
-                        fieldsFrom c rest depth path parent remaining out rawOut
+                        fieldsFrom
+                            c
+                            rest
+                            depth
+                            path
+                            parent
+                            supplied
+                            (inputOffset + 1)
+                            out
+                            outputOffset
+                            rawOut
                     else
                         Nothing
                 Just answer →
-                    next =
+                    if c.dh then
                         case answer of
                             FieldValue result →
-                                if c.dh then
-                                    Js.set
-                                        rawOut
-                                        (if c.dst == encodedSide then entry.key else entry.name)
-                                        (hostDatum result)
-                                    out
-                                else
-                                    List.push out result
-                            FieldOmitted missing →
-                                if c.dh then out else List.push out missing
-                    fieldsFrom c rest depth path parent remaining next rawOut
+                                Js.set
+                                    rawOut
+                                    (if c.dst == encodedSide then entry.key else entry.name)
+                                    (hostDatum result)
+                            FieldOmitted _ →
+                                ⊤
+                        fieldsFrom
+                            c
+                            rest
+                            depth
+                            path
+                            parent
+                            supplied
+                            (inputOffset + 1)
+                            out
+                            outputOffset
+                            rawOut
+                    else
+                        result =
+                            case answer of
+                                FieldValue fieldDatum →
+                                    fieldDatum
+                                FieldOmitted missing →
+                                    missing
+                        next = Array.arraySet out outputOffset result
+                        fieldsFrom
+                            c
+                            rest
+                            depth
+                            path
+                            parent
+                            supplied
+                            (inputOffset + 1)
+                            next
+                            (outputOffset + 1)
+                            rawOut
 
 
 recordOf : Context, List FieldNode, Maps, Maybe Owner, Int, Path, Datum → Maybe Datum
@@ -2047,7 +2080,8 @@ recordOf c fs maps owner depth path parent =
         else
             supplied = if c.sh then [] else (accessAt maps c.src).view parent
             rawOut = if c.dh then newObject owner else Js.null
-            case fieldsFrom c fs depth path parent supplied [] rawOut of
+            outputBuilder = Array.arrayAllocate (if c.dh then 0 else List.length fs)
+            case fieldsFrom c fs depth path parent supplied 0 outputBuilder 0 rawOut of
                 Nothing →
                     Nothing
                 Just out →
