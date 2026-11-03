@@ -28,7 +28,10 @@ anyone tries to prove it.
   path), with clauses 1–3 (and, for map, the certificate) checked.
 
 Everything here is executable code over the definitions of `Soundness.lean`
-and is not part of any proof. -/
+and is not part of any proof. The configurations and the generated programs
+hold no dictionary, so `entryAbstract` and `entryPath` (#1796) are the
+identity on what the readings below see, and the readings test the typed
+clauses as they are. -/
 
 namespace Ownership.Falsify
 

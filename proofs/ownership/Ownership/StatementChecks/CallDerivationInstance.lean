@@ -94,6 +94,7 @@ def vs : ValueSemantics.State := { fuel := 994 }
 def env : List (Var × Observation × Value) :=
   [(2, .closure 0 [], .closure 0 []), (1, .list [.int 2], .ref 1), (0, .list [.int 1, .int 2], .ref 0)]
 def aenv : Env Abstract := [(2, fAbs), (1, restAbs), (0, xsAbs)]
+def tenv : Env Ty := [(2, .fn [.list .int] (.list .int)), (1, .list .int), (0, .list .int)]
 /-- The uses of the call and of its continuation: `xs` is dead. -/
 def live : Live := union (uses call) (removeVars [3] (union (uses (.prim .length [.var 3])) []))
 
@@ -108,7 +109,7 @@ theorem checker_env :
 
 theorem live_eq : live = [(2, []), (1, [])] := by cbv
 
-theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming := by
+theorem invariant : Invariant [writer] vs hs env live aenv tenv ({} : St).facts.escapes naming := by
   refine
     { reads := rfl, external := rfl, fuel := rfl, keptSize := rfl
       kept := ?_, keptEscaped := ?_, bindings := ?_, described := ?_, named := ?_
@@ -136,7 +137,7 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       · simp [Observation.depth] at hn
       · simp [Observation.depth] at hn
       · rfl
-  · intro x p hl o w a w' he ha hp
+  · intro x p hl o w a t w' he ha ht hp
     rw [live_eq] at hl
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hl
     rcases hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -144,6 +145,8 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       cases he
       change some fAbs = some a at ha
       cases ha
+      change some (Ty.fn [.list .int] (.list .int)) = some t at ht
+      cases ht
       change some (Value.closure 0 []) = some w' at hp
       cases hp
       exact describes_f _
@@ -151,6 +154,8 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       cases he
       change some restAbs = some a at ha
       cases ha
+      change some (Ty.list .int) = some t at ht
+      cases ht
       change some (Value.ref 1) = some w' at hp
       cases hp
       exact allocated_list_described (integers := [2]) rfl ⟨s0, by simp, by simp [naming_s0]⟩
@@ -200,6 +205,7 @@ def site : List Nat := [1, 1, 1, 0]
 
 theorem entry_writes : entry.summary.writes = [.parameter 0 []] := LinkedCallControl.entry_writes
 theorem entry_consumes : entry.summary.consumes = [] := LinkedCallControl.entry_consumes
+theorem entry_decl : entry.decl = 0 := LinkedCallControl.entry_decl
 
 theorem apply_run : ∃ result after,
     (applyCall ctx entry.summary site [restAbs] [] []).run ({} : St) = .ok (result, after) := by
@@ -211,7 +217,8 @@ theorem apply_run : ∃ result after,
     cases ok
 
 /-- The derivation at this call: every hypothesis is discharged here. -/
-theorem covered : LinkedWritesCovered entry.summary entry.inputs [.ref 1] 1 hs := by
+theorem covered : LinkedWritesCovered entry.summary entry.inputs
+    (inputTypes program.declarations entry.decl) [.ref 1] 1 hs := by
   obtain ⟨result, after, run⟩ := apply_run
   exact CallDerivation.linkedWritesCovered_of_applyCall (atoms := [.var 1]) (actuals := [restAbs])
     (args := [.ref 1]) invariant rfl
@@ -229,6 +236,11 @@ theorem covered : LinkedWritesCovered entry.summary entry.inputs [.ref 1] 1 hs :
       intro k x h
       rcases k with _ | k
       · simp at h; subst h; exact ⟨_, _, rfl, rfl⟩
+      · simp at h)
+    (by
+      intro k x h
+      rcases k with _ | k
+      · simp at h; subst h; rw [entry_decl]; rfl
       · simp at h)
     (by
       intro k x h

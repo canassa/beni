@@ -160,9 +160,11 @@ theorem second_described : Describes naming pre.heap second (.ref 0) := by
     exact .int _ _
 
 theorem inputs_described : ∀ i : Nat,
-    Describes naming pre.heap (entry.inputs[i]?.getD .bottom)
+    Describes naming pre.heap
+      (entryAbstract program.declarations ((inputTypes program.declarations entry.decl)[i]?.getD .int)
+        (entry.inputs[i]?.getD .bottom))
       ((args ++ [])[i]?.getD (.int 0)) := by
-  rw [entry_inputs]
+  rw [entry_inputs, entry_decl]
   intro i
   cases i with
   | zero => exact first_described
@@ -179,7 +181,9 @@ theorem inputs_described : ∀ i : Nat,
 
 theorem classes : GuardsHold program.declarations {} entry.summary [] ∧
     ∀ j f, ([] : List (Nat × Abstract)).lookup j = some f →
-      DescribesClosure naming pre.heap f ((args ++ [])[j]?.getD (.int 0)) := by
+      DescribesClosure naming pre.heap
+        (entryAbstract program.declarations ((inputTypes program.declarations entry.decl)[j]?.getD .int) f)
+        ((args ++ [])[j]?.getD (.int 0)) := by
   refine ⟨?_, ?_⟩
   · intro g hg
     rw [entry_guards] at hg
@@ -224,7 +228,8 @@ theorem pre_linksValid : LinksValid pre := by
 
 /-- The written-storage premise fails: input 0 is written at its root, the
     link joins its array to input 1's array, and no row permits input 1. -/
-theorem not_covered : ¬ LinkedWritesCovered entry.summary entry.inputs args args.length pre := by
+theorem not_covered : ¬ LinkedWritesCovered entry.summary entry.inputs
+    (inputTypes program.declarations entry.decl) args args.length pre := by
   intro h
   have canon0 : canonicalPath entry.inputs 0 [] := by
     unfold canonicalPath
@@ -234,8 +239,12 @@ theorem not_covered : ¬ LinkedWritesCovered entry.summary entry.inputs args arg
     unfold canonicalPath
     rw [entry_inputs]
     simp [inputs, second, Abstract.paths]
-  have at0 : ArrayAt pre.heap (args[0]?.getD (.int 0)) [] 1 := .here _
-  have at1 : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 0 := .here _
+  have at0 : ArrayAt pre.heap (args[0]?.getD (.int 0))
+      (entryPath ((inputTypes program.declarations entry.decl)[0]?.getD .int) []) 1 := by
+    rw [entryPath_nil]; exact .here _
+  have at1 : ArrayAt pre.heap (args[1]?.getD (.int 0))
+      (entryPath ((inputTypes program.declarations entry.decl)[1]?.getD .int) []) 0 := by
+    rw [entryPath_nil]; exact .here _
   have permitted0 : WritePermitted entry.summary args.length 0 [] := by
     refine Or.inl ?_
     rw [entry_writes, entry_consumes]
@@ -262,7 +271,8 @@ theorem bothSummary_writes : bothSummary.writes = [.parameter 0 [], .parameter 1
 theorem bothSummary_consumes : bothSummary.consumes = [] := entry_consumes
 
 theorem covered_when_both_written :
-    LinkedWritesCovered bothSummary entry.inputs args args.length pre := by
+    LinkedWritesCovered bothSummary entry.inputs (inputTypes program.declarations entry.decl)
+      args args.length pre := by
   intro i q c _ _ _ d _ j p canonJ _
   refine Or.inl ?_
   unfold canonicalPath at canonJ
@@ -286,13 +296,17 @@ theorem covered_when_both_written :
 #guard Falsify.linkedWritesCoveredB bothSummary entry.inputs args args.length pre.links pre.heap == true
 
 
-theorem no_call_sound : ¬ CallSound entry.summary entry.inputs args args.length pre post (.ref 1) := by
+theorem no_call_sound : ¬ CallSound program.declarations entry.summary entry.inputs
+    (inputTypes program.declarations entry.decl) (resultType program.declarations entry.decl)
+    args args.length pre post (.ref 1) := by
   intro h
   have canon : canonicalPath entry.inputs 1 [] := by
     unfold canonicalPath
     rw [entry_inputs]
     simp [inputs, second, Abstract.paths]
-  have arrayAt : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 0 := .here _
+  have arrayAt : ArrayAt pre.heap (args[1]?.getD (.int 0))
+      (entryPath ((inputTypes program.declarations entry.decl)[1]?.getD .int) []) 0 := by
+    rw [entryPath_nil]; exact .here _
   have changed : post.heap[0]? ≠ pre.heap[0]? := by
     intro e
     simp [post, pre] at e

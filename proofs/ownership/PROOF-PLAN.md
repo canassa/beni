@@ -643,3 +643,34 @@ results and integer chains. `ElementType` and its tag helpers are gone.
 `accepted_flat_anf_traces_agree` keeps its statement and covers the expanded fragment.
 The checker, interpreters and three general proof obligations do not change.
 Dictionary forms remain the next step in item 3.
+
+As built (2026-11-03, #1796): the relation through the type. Slice 3 found
+that no naming covered an accepted dictionary of lists: the checker's element
+is the value's abstract, and the runtime stores the value at field 1 of an
+entry record (`StatementChecks/DictEntryPaths.lean`, `no_cover`). The owner
+decided (Jayson, `ownership-proofs-q7`): an abstract dictionary element step
+is the concrete entry's element step and field 1, in the coverage and the
+certificate clauses; the checker, the interpreters and path-by-path coverage
+stay.
+
+- `entryPath` and `entryAbstract` (`Soundness.lean`). `Covers`,
+  `CertifiedExclusive` and `Describes` keep their definitions; a clause reads
+  `entryAbstract ds t a`.
+- `Invariant` takes the declarations and the type environment. `CallSound`
+  and `LinkedWritesCovered` take the input types (and `CallSound` the result
+  type). `summary_sound`, `map_summary_sound` and `invariant_preserved` are
+  restated with the types; they keep their `sorry`, and the pinned set does
+  not change.
+- `CallDerivation.mem_namesAt_entryPath` (the bridge at a first-order
+  abstract), `root_paths_entryAbstract` and
+  `LinkedWriteStep.mem_paths_entryAbstract` (the typed abstract holds the
+  abstract's cell lists) carry the proved call and linked-write lemmas over.
+- The flat fragment: `entryAbstract_of_flatAbstract` (a flat abstract is its
+  own typed abstract), `described_typed_of_flat` and the untyped
+  `FlatInvariant.described`. No case theorem changed.
+
+Slice 3 adds `FlatType.dict` and the dictionary forms; at a dictionary type
+the flat lemmas then read `entryAbstract`. A closure's captures are typed by
+its declaration, which `Ty.fn` does not name; `entryAbstract` reads them
+through `ds`, and `entryPath` keeps a capture step as it is, since a
+canonical path of a function input is `[]` or `[.env]`.

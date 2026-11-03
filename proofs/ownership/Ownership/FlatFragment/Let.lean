@@ -127,18 +127,20 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       rcases liveSub _ use with equal | old
       · exact absurd equal same
       · exact inv.bindings key p old o w' binding
-  · intro key p use o w' a' w'' binding abstractBinding valuePath
+  · intro key p use o w' a' t' w'' binding abstractBinding declared valuePath
     by_cases same : key = v
     · subst same
       obtain ⟨t, at_p⟩ := liveTyped p use
-      rw [lookup_cons_same] at binding abstractBinding
+      rw [lookup_cons_same] at binding abstractBinding declared
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
+      cases Option.some.inj declared
+      rw [entryAbstract_atPath_flat flatAbstract at_p]
       exact describes_project flatAbstract at_p described valuePath
-    · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
+    · rw [lookup_cons_other _ _ _ same] at binding abstractBinding declared
       rcases liveSub _ use with equal | old
       · exact absurd equal same
-      · exact inv.described key p old o w' a' w'' binding abstractBinding valuePath
+      · exact inv.toInvariant.described key p old o w' a' t' w'' binding abstractBinding declared valuePath
   · intro key o w' a' binding abstractBinding q c immutable located
     by_cases same : key = v
     · subst same
@@ -282,11 +284,12 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
   · intro key p use o w' binding
     have different := noUse _ use
     exact inv.bindings key p use o w' (by rw [lookup_cons_other _ _ _ different]; exact binding)
-  · intro key p use o w' a' w'' binding abstractBinding valuePath
+  · intro key p use o w' a' t' w'' binding abstractBinding declared valuePath
     have different := noUse _ use
-    exact inv.described key p use o w' a' w''
+    exact inv.toInvariant.described key p use o w' a' t' w''
       (by rw [lookup_cons_other _ _ _ different]; exact binding)
-      (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) valuePath
+      (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding)
+      (by rw [lookup_cons_other _ _ _ different]; exact declared) valuePath
   · intro key o w' a' binding abstractBinding q c immutable located
     have different := envOther key _ binding
     exact inv.named key o w' a'

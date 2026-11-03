@@ -346,6 +346,227 @@ theorem cellsAt_of_mem_paths (a : Abstract) (p : Path) (cs : List Origin) (o : O
       · exact ih _ later
   exact general a.paths [] path
 
+/-! ## Dictionary entries (#1796)
+
+The typed relation reads an abstract through its type (`entryAbstract`), and
+a summary reads a canonical path on the heap through `entryPath`. At a
+first-order abstract the two are one mapping: a name of the typed abstract at
+the concrete path of `q` is a name of the abstract at `q`. -/
+
+theorem entryAbstract_bottom (ds : List Decl) (t : Ty) : entryAbstract ds t .bottom = .bottom := by
+  cases t <;> rfl
+
+theorem entryAbstract_scalar (ds : List Decl) (t : Ty) : entryAbstract ds t .scalar = .scalar := by
+  cases t <;> rfl
+
+theorem entryAbstract_symbolic (ds : List Decl) (t : Ty) (slot : Nat) (ty : Ty) (cs es : List Origin) :
+    entryAbstract ds t (.symbolic slot ty cs es) = .symbolic slot ty cs es := by
+  cases t <;> rfl
+
+theorem entryAbstract_function (ds : List Decl) (t : Ty) (cs : List Origin)
+    (alts : List (Nat × List Abstract)) :
+    entryAbstract ds t (.function cs alts) = .function cs (entryAlternatives ds alts) := by
+  cases t <;> rfl
+
+theorem entryAbstract_list (ds : List Decl) (t : Ty) (cs : List Origin) (x : Abstract)
+    (ex : Certificate) : ∃ y, entryAbstract ds t (.list cs x ex) = .list cs y ex := by
+  cases t <;> exact ⟨_, rfl⟩
+
+theorem entryAbstract_record (ds : List Decl) (t : Ty) (xs : List Abstract) :
+    ∃ ys, entryAbstract ds t (.record xs) = .record ys := by
+  cases t <;> exact ⟨_, rfl⟩
+
+/-- Field `i` of fields read through their types is field `i` read through
+    type `i` (`Int` past the types). -/
+theorem entryFields_getElem? (ds : List Decl) :
+    ∀ (ts : List Ty) (xs : List Abstract) (i : Nat),
+      (entryFields ds ts xs)[i]? = xs[i]?.map (entryAbstract ds (ts[i]?.getD .int))
+  | ts, [], i => by cases ts <;> rfl
+  | [], x :: xs, 0 => rfl
+  | [], x :: xs, i + 1 => by
+    show (entryFields ds [] xs)[i]? = _
+    rw [entryFields_getElem? ds [] xs i]
+    rfl
+  | t :: ts, x :: xs, 0 => rfl
+  | t :: ts, x :: xs, i + 1 => by
+    show (entryFields ds ts xs)[i]? = _
+    rw [entryFields_getElem? ds ts xs i]
+    rfl
+
+theorem resultSlot_eq (error success : Ty) (i : Nat) :
+    resultSlot error success i = ([.int, error, success] : List Ty)[i]?.getD .int := by
+  match i with
+  | 0 => rfl
+  | 1 => rfl
+  | 2 => rfl
+  | _ + 3 => rfl
+
+/-- The concrete path of a step keeps the step at its head. -/
+theorem entryPath_cons (t : Ty) (step : Step) (rest : Path) :
+    ∃ rest', entryPath t (step :: rest) = step :: rest' := by
+  cases t <;> cases step <;> exact ⟨_, rfl⟩
+
+theorem entryPath_env (t : Ty) (rest : Path) : entryPath t (.env :: rest) = .env :: rest := by
+  cases t <;> rfl
+
+/-- Only the empty path has the empty concrete path. -/
+theorem entryPath_eq_nil {t : Ty} {q : Path} (empty : entryPath t q = []) : q = [] := by
+  cases q with
+  | nil => rfl
+  | cons step rest =>
+    obtain ⟨rest', concrete⟩ := entryPath_cons t step rest
+    rw [concrete] at empty
+    cases empty
+
+/-- The typed abstract has the abstract's root cells and no other. -/
+theorem root_paths_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} {cs : List Origin}
+    (member : ([], cs) ∈ (entryAbstract ds t a).paths) : ([], cs) ∈ a.paths := by
+  cases a with
+  | bottom => rwa [entryAbstract_bottom] at member
+  | scalar => rwa [entryAbstract_scalar] at member
+  | symbolic slot ty roots es => rwa [entryAbstract_symbolic] at member
+  | list roots x ex =>
+    obtain ⟨y, typed⟩ := entryAbstract_list ds t roots x ex
+    rw [typed] at member
+    simp only [Abstract.paths, List.mem_cons, List.mem_map] at member ⊢
+    rcases member with root | ⟨_, _, element⟩
+    · exact Or.inl root
+    · simp at element
+  | record xs =>
+    obtain ⟨ys, typed⟩ := entryAbstract_record ds t xs
+    rw [typed] at member
+    simp [Abstract.paths] at member
+  | function roots alts =>
+    rw [entryAbstract_function] at member
+    simp only [Abstract.paths, List.mem_cons] at member ⊢
+    rcases member with root | captured
+    · exact Or.inl root
+    · simp at captured
+
+/-- The bridge (#1796): at a first-order abstract, a name of the typed
+    abstract at the concrete path `entryPath t q` is a name of the abstract at
+    the abstract path `q`. -/
+theorem mem_namesAt_entryPath (ds : List Decl) (q : Path) :
+    ∀ (t : Ty) (a : Abstract) (o : Origin), hasFunction a = false →
+      o ∈ namesAt (entryAbstract ds t a) (entryPath t q) → o ∈ namesAt a q := by
+  induction q with
+  | nil =>
+    intro t a o _ member
+    rw [entryPath_nil] at member
+    obtain ⟨cs, path, inCs⟩ := mem_cellsAt _ [] o member
+    exact cellsAt_of_mem_paths a [] cs o (root_paths_entryAbstract path) inCs
+  | cons step rest ih =>
+    intro t a o firstOrder member
+    obtain ⟨rest', concrete⟩ := entryPath_cons t step rest
+    cases a with
+    | bottom =>
+      rw [entryAbstract_bottom, namesAt_bottom] at member
+      simp at member
+    | scalar =>
+      rw [entryAbstract_scalar, namesAt_scalar] at member
+      simp at member
+    | function _ _ => simp [hasFunction] at firstOrder
+    | symbolic _ _ _ _ => simp [hasFunction] at firstOrder
+    | list cs x ex =>
+      have firstOrderX : hasFunction x = false := by simpa [hasFunction] using firstOrder
+      cases step with
+      | element =>
+        cases t with
+        | dict t' =>
+          change o ∈ namesAt (.list cs (.record [.scalar, entryAbstract ds t' x]) ex)
+            (.element :: .field 1 :: entryPath t' rest) at member
+          simp only [namesAt] at member ⊢
+          by_cases unknown : cs.contains .unknown = true
+          · rw [if_pos unknown] at member ⊢
+            exact member
+          · rw [if_neg unknown] at member ⊢
+            simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.getD_some] at member
+            exact ih t' x o firstOrderX member
+        | list t' =>
+          change o ∈ namesAt (.list cs (entryAbstract ds t' x) ex) (.element :: entryPath t' rest) at member
+          simp only [namesAt] at member ⊢
+          by_cases unknown : cs.contains .unknown = true
+          · rw [if_pos unknown] at member ⊢
+            exact member
+          · rw [if_neg unknown] at member ⊢
+            exact ih t' x o firstOrderX member
+        | chain t' =>
+          change o ∈ namesAt (.list cs (entryAbstract ds t' x) ex) (.element :: entryPath t' rest) at member
+          simp only [namesAt] at member ⊢
+          by_cases unknown : cs.contains .unknown = true
+          · rw [if_pos unknown] at member ⊢
+            exact member
+          · rw [if_neg unknown] at member ⊢
+            exact ih t' x o firstOrderX member
+        | builder t' =>
+          change o ∈ namesAt (.list cs (entryAbstract ds t' x) ex) (.element :: entryPath t' rest) at member
+          simp only [namesAt] at member ⊢
+          by_cases unknown : cs.contains .unknown = true
+          · rw [if_pos unknown] at member ⊢
+            exact member
+          · rw [if_neg unknown] at member ⊢
+            exact ih t' x o firstOrderX member
+        | int => exact member
+        | record _ => exact member
+        | result _ _ => exact member
+        | fn _ _ => exact member
+      | field i =>
+        obtain ⟨y, typed⟩ := entryAbstract_list ds t cs x ex
+        rw [typed, concrete] at member
+        simpa only [namesAt] using member
+      | capture i =>
+        obtain ⟨y, typed⟩ := entryAbstract_list ds t cs x ex
+        rw [typed, concrete] at member
+        simpa only [namesAt] using member
+      | env =>
+        obtain ⟨y, typed⟩ := entryAbstract_list ds t cs x ex
+        rw [typed, concrete] at member
+        simpa only [namesAt] using member
+    | record xs =>
+      cases step with
+      | field i =>
+        have field : ∀ (ts : List Ty),
+            o ∈ namesAt (.record (entryFields ds ts xs)) (.field i :: entryPath (ts[i]?.getD .int) rest) →
+              o ∈ namesAt (.record xs) (.field i :: rest) := by
+          intro ts typedMember
+          simp only [namesAt] at typedMember ⊢
+          rw [entryFields_getElem?] at typedMember
+          cases lookup : xs[i]? with
+          | none =>
+            rw [lookup] at typedMember
+            simp only [Option.map_none, Option.getD_none] at typedMember
+            rw [namesAt_bottom] at typedMember
+            simp at typedMember
+          | some x =>
+            rw [lookup] at typedMember
+            simp only [Option.map_some, Option.getD_some] at typedMember ⊢
+            exact ih _ x o (record_component_firstOrder xs i x lookup firstOrder) typedMember
+        cases t with
+        | record ts => exact field ts member
+        | result error success =>
+          apply field [.int, error, success]
+          change o ∈ namesAt (.record (entryFields ds [.int, error, success] xs))
+            (.field i :: entryPath (resultSlot error success i) rest) at member
+          rwa [resultSlot_eq] at member
+        | int => exact member
+        | list _ => exact member
+        | chain _ => exact member
+        | builder _ => exact member
+        | dict _ => exact member
+        | fn _ _ => exact member
+      | element =>
+        obtain ⟨ys, typed⟩ := entryAbstract_record ds t xs
+        rw [typed, concrete] at member
+        simp [namesAt] at member
+      | capture _ =>
+        obtain ⟨ys, typed⟩ := entryAbstract_record ds t xs
+        rw [typed, concrete] at member
+        simp [namesAt] at member
+      | env =>
+        obtain ⟨ys, typed⟩ := entryAbstract_record ds t xs
+        rw [typed, concrete] at member
+        simp [namesAt] at member
+
 /-! ## The premise at a first-order call without captures -/
 
 /-- An argument that holds an array at a path is in range. -/
@@ -363,16 +584,18 @@ theorem arg_in_range {hs : InPlaceSemantics.State} {args : List Value} {i : Nat}
     call's own demands, no other input path holds an array linked to a
     written one. -/
 theorem linkedWritesCovered_of_applyCall
-    {vs : ValueSemantics.State} {hs : InPlaceSemantics.State}
-    {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract}
+    {ds : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty}
     {γ : Naming} {ctx : Context} {before after : St}
-    (inv : Invariant vs hs env live aenv before.facts.escapes γ)
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes γ)
     (config : ctx.config = {})
     {s : Summary} {site : List Nat} {later : List Origin} {result : Abstract}
     {atoms : List Atom} {actuals : List Abstract} {args : List Value}
     (allVars : ∀ (k : Nat) (a : Atom), atoms[k]? = some a → ∃ x, a = Atom.var x)
     (actualOf : ∀ (k : Nat) (x : Var), atoms[k]? = some (Atom.var x) → ∃ a, aenv.lookup x = some a ∧ actuals[k]? = some a)
     (argOf : ∀ (k : Nat) (x : Var), atoms[k]? = some (Atom.var x) → ∃ o w, env.lookup x = some (o, w) ∧ args[k]? = some w)
+    {tys : List Ty}
+    (typeOf : ∀ (k : Nat) (x : Var), atoms[k]? = some (Atom.var x) → tenv.lookup x = some (tys[k]?.getD .int))
     (liveOperands : ∀ (k : Nat) (x : Var), atoms[k]? = some (Atom.var x) → (x, []) ∈ live)
     (argsLength : args.length = atoms.length)
     (firstOrder : ∀ a ∈ actuals, hasFunction a = false)
@@ -381,7 +604,7 @@ theorem linkedWritesCovered_of_applyCall
     (rowsBase : ∀ w ∈ s.writes ++ s.consumes, w.base = w)
     (run : (applyCall ctx s site actuals [] later).run before = .ok (result, after))
     (ins : List Abstract) :
-    LinkedWritesCovered s ins args args.length hs := by
+    LinkedWritesCovered s ins tys args args.length hs := by
   intro i q c _ arrayAtC permitted d connected j p _ arrayAtD
   -- Operand i.
   have iLt : i < args.length := arg_in_range arrayAtC
@@ -393,8 +616,9 @@ theorem linkedWritesCovered_of_applyCall
   have liveI := liveOperands i xI lookupI
   rw [argI] at arrayAtC
   simp only [Option.getD_some] at arrayAtC
-  have coversI : Covers γ hs.heap absI wI :=
-    (inv.described xI [] liveI oI wI absI wI envI aenvI rfl).1.1
+  have coversI : Covers γ hs.heap (entryAbstract ds (tys[i]?.getD .int) absI) wI := by
+    have described := (inv.described xI [] liveI oI wI absI _ wI envI aenvI (typeOf i xI lookupI) rfl).1.1
+    rwa [fieldType_nil] at described
   -- Operand j.
   have jLt : j < args.length := arg_in_range arrayAtD
   have jBound : j < atoms.length := argsLength ▸ jLt
@@ -405,12 +629,14 @@ theorem linkedWritesCovered_of_applyCall
   have liveJ := liveOperands j xJ lookupJ
   rw [argJ] at arrayAtD
   simp only [Option.getD_some] at arrayAtD
-  have coversJ : Covers γ hs.heap absJ wJ :=
-    (inv.described xJ [] liveJ oJ wJ absJ wJ envJ aenvJ rfl).1.1
+  have coversJ : Covers γ hs.heap (entryAbstract ds (tys[j]?.getD .int) absJ) wJ := by
+    have described := (inv.described xJ [] liveJ oJ wJ absJ _ wJ envJ aenvJ (typeOf j xJ lookupJ) rfl).1.1
+    rwa [fieldType_nil] at described
   -- The written path is not an environment path: the argument is no closure.
   have notEnv : ∀ rest, q ≠ .env :: rest := by
     intro rest same
     subst same
+    rw [entryPath_env] at arrayAtC
     unfold ArrayAt at arrayAtC
     cases arrayAtC with
     | @env d caps _ _ _ _ =>
@@ -436,7 +662,9 @@ theorem linkedWritesCovered_of_applyCall
     have disjoint := (demandProblem_sound γ inv.separating ({} : Config) before.facts.escapes _ _ _ problem).2.2
       default_no_disjoint
     -- The written array is named by the row's cells.
-    obtain ⟨o, oMember, cIn⟩ := coversI q c arrayAtC
+    obtain ⟨o, oTyped, cIn⟩ := coversI _ c arrayAtC
+    have oMember := mem_namesAt_entryPath ds q _ absI o
+      (firstOrder absI (List.mem_of_getElem? actualI)) oTyped
     obtain ⟨cs, pathQ, oInCs⟩ := namesAt_mem_paths_exact q absI o oMember
       (firstOrder absI (List.mem_of_getElem? actualI)) (known absI (List.mem_of_getElem? actualI))
     have oInCells : o ∈ absI.cellsAt q := cellsAt_of_mem_paths absI q cs o pathQ oInCs
@@ -444,7 +672,9 @@ theorem linkedWritesCovered_of_applyCall
     have guarded : Protected hs env live d :=
       Or.inl ⟨xJ, [], oJ, wJ, wJ, liveJ, envJ, rfl, atPath_reaches arrayAtD⟩
     have dIn : d ∈ γ o := (inv.linkNamed c d connected guarded o).mp cIn
-    obtain ⟨o', o'Member, dIn'⟩ := coversJ p d arrayAtD
+    obtain ⟨o', o'Typed, dIn'⟩ := coversJ _ d arrayAtD
+    have o'Member := mem_namesAt_entryPath ds p _ absJ o'
+      (firstOrder absJ (List.mem_of_getElem? actualJ)) o'Typed
     obtain ⟨cs', pathP, o'InCs'⟩ := namesAt_mem_paths_exact p absJ o' o'Member
       (firstOrder absJ (List.mem_of_getElem? actualJ)) (known absJ (List.mem_of_getElem? actualJ))
     have o'InOthers : o' ∈ otherPaths actuals [] (.parameter i q) :=

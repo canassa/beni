@@ -49,21 +49,6 @@ namespace Ownership.FlatFragment.VariableFacts
 
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Env
 
-theorem lookup_exists_of_same_keys (left : Env α) (right : Env β)
-    (keys : left.map Prod.fst = right.map Prod.fst)
-    (found : right.lookup key = some value) : ∃ actual, left.lookup key = some actual := by
-  have present : (right.lookup key).isSome := by simp [found]
-  obtain ⟨pair, member, equal⟩ := List.lookup_isSome_iff.mp present
-  have rightKey : pair.1 ∈ right.map Prod.fst := List.mem_map.mpr ⟨pair, member, rfl⟩
-  rw [← keys] at rightKey
-  obtain ⟨actualPair, actualMember, sameName⟩ := List.mem_map.mp rightKey
-  have actualEqual : key == actualPair.1 := by simpa only [sameName] using equal
-  have actualPresent : (left.lookup key).isSome :=
-    List.lookup_isSome_iff.mpr ⟨actualPair, actualMember, actualEqual⟩
-  cases actual : left.lookup key with
-  | none => simp [actual] at actualPresent
-  | some value => exact ⟨value, rfl⟩
-
 theorem runtime_binding_of_abstract
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (found : aenv.lookup key = some abstract) :

@@ -168,8 +168,8 @@ theorem live_cases (x : Var) (p : Path)
     live source protects the link component, so the view must carry the
     source's origins; each is named by its own site, and the two sites do
     not alias. -/
-theorem no_invariant (gamma : Naming) :
-    ¬ Invariant valuePre heapPre pairedEnv (union (uses expression) after) abstractEnv [] gamma := by
+theorem no_invariant (ds : List Decl) (tenv : Env Ty) (gamma : Naming) :
+    ¬ Invariant ds valuePre heapPre pairedEnv (union (uses expression) after) abstractEnv tenv [] gamma := by
   intro h
   have liveEq : union (uses expression) after = [(0, []), (1, [])] := by cbv
   have yLive : (1, []) ∈ union (uses expression) after := by rw [liveEq]; simp
@@ -189,8 +189,8 @@ theorem no_invariant (gamma : Naming) :
   have distinct : aliases (.site [] 0) (.site [] 1) = false := by decide
   exact h.separating (.site [] 0) (.site [] 1) distinct 1 sourceNamed yIn
 
-theorem typed : WellTyped [] heapPre.heap pairedEnv expression := by
-  refine ⟨typeEnv, .list .int, by cbv, ?_⟩
+theorem typed : WellTypedAt [] heapPre.heap pairedEnv typeEnv expression (.list .int) := by
+  refine ⟨by cbv, ?_⟩
   intro x o w u he ht
   cases x with
   | zero =>
@@ -234,9 +234,10 @@ theorem honest : ∀ x a, abstractEnv.lookup x = some a → HonestClosures [] a 
       contradiction
 
 theorem covered : ∀ x q, (x, q) ∈ union (uses expression) after →
-    ∀ o w, pairedEnv.lookup x = some (o, w) → (abstractEnv.lookup x).isSome = true := by
+    ∀ o w, pairedEnv.lookup x = some (o, w) →
+      (abstractEnv.lookup x).isSome = true ∧ (typeEnv.lookup x).isSome = true := by
   intro x q hl o w he
-  rcases live_cases x q hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> rfl
+  rcases live_cases x q hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact ⟨rfl, rfl⟩
 
 theorem value_run :
     (ValueSemantics.eval 10 [] none (valueEnv pairedEnv) expression).run valuePre =
@@ -246,8 +247,8 @@ theorem heap_run :
     (InPlaceSemantics.eval 10 [] none (heapEnv pairedEnv) expression).run heapPre =
       .ok (.ref 0, heapPost) := by cbv
 
-theorem no_post_invariant (gamma : Naming) :
-    ¬ Invariant valuePost heapPost pairedEnv after abstractEnv [] gamma := by
+theorem no_post_invariant (ds : List Decl) (tenv : Env Ty) (gamma : Naming) :
+    ¬ Invariant ds valuePost heapPost pairedEnv after abstractEnv tenv [] gamma := by
   intro h
   obtain ⟨o, w, ho, hw, hc⟩ := h.bindings 1 [] (by simp [after])
     (.list [.int 0]) (.ref 1) rfl
@@ -391,7 +392,7 @@ theorem describedOrdered_source :
 
 /-- Every clause but `LinkNamed` holds with the distinct naming. -/
 theorem only_linkNamed (linked : LinkNamed heapOrdered envOrdered liveOrdered namingOrdered) :
-    Invariant valuePre heapOrdered envOrdered liveOrdered abstractEnv [] namingOrdered := by
+    Invariant [] valuePre heapOrdered envOrdered liveOrdered abstractEnv typeEnv [] namingOrdered := by
   refine
     { reads := rfl, external := rfl, fuel := rfl, keptSize := rfl
       kept := ?_, keptEscaped := ?_, bindings := ?_, described := ?_, named := ?_
@@ -410,7 +411,7 @@ theorem only_linkNamed (linked : LinkNamed heapOrdered envOrdered liveOrdered na
     · change some (Observation.list [.int 0], Value.ref 0) = some (o, w) at he
       cases he
       exact ⟨.list [.int 0], .ref 0, rfl, rfl, correspondsOrdered_source⟩
-  · intro x p hl o w a w' he ha hp
+  · intro x p hl o w a t w' he ha ht hp
     rw [liveOrdered_eq] at hl
     simp only [List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hl
     rcases hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
@@ -418,6 +419,8 @@ theorem only_linkNamed (linked : LinkNamed heapOrdered envOrdered liveOrdered na
       cases he
       change some (abstractValue 0) = some a at ha
       cases ha
+      change some (Ty.list .int) = some t at ht
+      cases ht
       change some (Value.ref 1) = some w' at hp
       cases hp
       exact describedOrdered_view
@@ -425,6 +428,8 @@ theorem only_linkNamed (linked : LinkNamed heapOrdered envOrdered liveOrdered na
       cases he
       change some (abstractValue 1) = some a at ha
       cases ha
+      change some (Ty.list .int) = some t at ht
+      cases ht
       change some (Value.ref 0) = some w' at hp
       cases hp
       exact describedOrdered_source
@@ -453,8 +458,8 @@ theorem only_linkNamed (linked : LinkNamed heapOrdered envOrdered liveOrdered na
 
 /-- No naming satisfies the strengthened invariant at the ordered witness:
     `LinkNamed` and `Separating` alone exclude it. -/
-theorem ordered_no_invariant (gamma : Naming) :
-    ¬ Invariant valuePre heapOrdered envOrdered liveOrdered abstractEnv [] gamma := by
+theorem ordered_no_invariant (ds : List Decl) (tenv : Env Ty) (gamma : Naming) :
+    ¬ Invariant ds valuePre heapOrdered envOrdered liveOrdered abstractEnv tenv [] gamma := by
   intro h
   have yLive : (1, []) ∈ liveOrdered := by rw [liveOrdered_eq]; simp
   obtain ⟨xOrigin, xMember, xIn⟩ :=

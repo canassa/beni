@@ -115,7 +115,7 @@ theorem flatInvariant_state_frame
       kept := by simpa only [valueKept, heapKept, heapSame] using inv.kept
       keptEscaped := by simpa only [heapKept, heapSame] using inv.keptEscaped
       bindings := by simpa only [heapSame] using inv.bindings
-      described := by simpa only [heapSame] using inv.described
+      described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
       linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)

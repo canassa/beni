@@ -68,20 +68,20 @@ theorem reaches_atPath {heap : Heap} {v w : Value} (reaches : Reaches heap v w) 
     new path to it would have to pass through the written component, which
     no observer and no continuation-live holder reaches before the write. -/
 theorem linkNamed_after_writeLinked
-    {vs : ValueSemantics.State} {hs hs' : State} {env : List (Var × Observation × Value)}
-    {live after : Live} {aenv : Env Abstract} {γ : Naming} {before afterSt : St}
-    (inv : Invariant vs hs env live aenv before.facts.escapes γ)
+    {ds : List Decl} {vs : ValueSemantics.State} {hs hs' : State} {env : List (Var × Observation × Value)}
+    {live after : Live} {aenv : Env Abstract} {tenv : Env Ty} {γ : Naming} {before afterSt : St}
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes γ)
     (liveAfter : ∀ u ∈ after, u ∈ live)
     {x : Var} {ox : Observation} {c : Nat} (receiverLive : (x, []) ∈ live)
     (envX : env.lookup x = some (ox, .ref c))
     {cs later others : List Origin} (receiverNamed : named γ cs c)
     {u : Unit} (demandRun : (demand ({} : Config) cs later others).run before = .ok (u, afterSt))
-    (laterCovers : ∀ (y : Var) (p : Path) (o : Observation) (w : Value) (a : Abstract) (w' : Value)
-      (q : Path) (cell : Origin), (y, p) ∈ after → env.lookup y = some (o, w) →
-      aenv.lookup y = some a → projectVal w p = some w' → cell ∈ namesAt (a.atPath p) q →
-      cell ∈ later)
+    (laterCovers : ∀ (y : Var) (p : Path) (o : Observation) (w : Value) (a : Abstract) (t : Ty)
+      (w' : Value) (q : Path) (cell : Origin), (y, p) ∈ after → env.lookup y = some (o, w) →
+      aenv.lookup y = some a → tenv.lookup y = some t → projectVal w p = some w' →
+      cell ∈ namesAt (entryAbstract ds (fieldType t p) (a.atPath p)) q → cell ∈ later)
     (covered : ∀ (y : Var) (p : Path), (y, p) ∈ after → ∀ (o : Observation) (w : Value),
-      env.lookup y = some (o, w) → (aenv.lookup y).isSome = true)
+      env.lookup y = some (o, w) → (aenv.lookup y).isSome = true ∧ (tenv.lookup y).isSome = true)
     {xs : List Value} {r : Value} (run : (writeLinked c xs).run hs = .ok (r, hs')) :
     LinkNamed hs' env after γ := by
   have frame := writeLinked_preserves run
@@ -99,12 +99,14 @@ theorem linkNamed_after_writeLinked
       env.lookup y = some (o, w) → projectVal w p = some w' →
       ∀ a, LinkConnected hs.links c a → ¬ Reaches hs.heap w' (.ref a) := by
     intro y p o w w' member envY proj a connected reaches
-    obtain ⟨ay, aenvY⟩ := Option.isSome_iff_exists.mp (covered y p member o w envY)
-    have covers : Covers γ hs.heap (ay.atPath p) w' :=
-      (inv.described y p (liveAfter _ member) o w ay w' envY aenvY proj).1.1
+    obtain ⟨ay, aenvY⟩ := Option.isSome_iff_exists.mp (covered y p member o w envY).1
+    obtain ⟨ty, tenvY⟩ := Option.isSome_iff_exists.mp (covered y p member o w envY).2
+    have covers : Covers γ hs.heap (entryAbstract ds (fieldType ty p) (ay.atPath p)) w' :=
+      (inv.described y p (liveAfter _ member) o w ay ty w' envY aenvY tenvY proj).1.1
     obtain ⟨q, path⟩ := reaches_atPath reaches
     obtain ⟨cell, cellMember, aIn⟩ := covers q a path
-    have inLater : cell ∈ later := laterCovers y p o w ay w' q cell member envY aenvY proj cellMember
+    have inLater : cell ∈ later :=
+      laterCovers y p o w ay ty w' q cell member envY aenvY tenvY proj cellMember
     exact demand_success_live_separate inv.separating demandRun a (componentNamed a connected)
       ⟨cell, inLater, aIn⟩
   have protectedBefore : ∀ d, Protected hs' env after d → Protected hs env live d := by
@@ -368,6 +370,163 @@ theorem namesAt_mem_paths_general (q : Path) (b : Abstract) (cell : Origin)
       | field _ => simp [namesAt] at member
       | element => simp [namesAt] at member
 
+/-! ## Dictionary entries (#1796): the typed abstract's cells -/
+
+/-- A path of a record is a path of one of its fields, below a field step. -/
+theorem mem_record_paths {ys : List Abstract} {r : Path} {cs : List Origin}
+    (member : (r, cs) ∈ (Abstract.record ys).paths) :
+    ∃ i y r', ys[i]? = some y ∧ r = .field i :: r' ∧ (r', cs) ∈ y.paths := by
+  simp only [Abstract.paths, List.mem_flatMap, List.mem_map] at member
+  obtain ⟨⟨⟨y, yMem⟩, i⟩, pairMem, ⟨r', cs'⟩, path, eq⟩ := member
+  rw [List.mk_mem_zipIdx_iff_getElem?] at pairMem
+  simp only [Prod.mk.injEq] at eq
+  obtain ⟨rfl, rfl⟩ := eq
+  refine ⟨i, y, r', ?_, rfl, path⟩
+  rw [List.getElem?_attach] at pairMem
+  have found : ys[i]? = some y ∧ y ∈ ys := by simpa using pairMem
+  exact found.1
+
+/-- A path of a function value is its root or a path of a capture of one of
+    its alternatives, below a capture step. -/
+theorem mem_function_paths {cs0 : List Origin} {alts : List (Nat × List Abstract)} {r : Path} {cs : List Origin}
+    (member : (r, cs) ∈ (Abstract.function cs0 alts).paths) :
+    (r = [] ∧ cs = cs0) ∨ ∃ alt ∈ alts, ∃ i y r', alt.2[i]? = some y ∧ r = .capture i :: r' ∧ (r', cs) ∈ y.paths := by
+  simp only [Abstract.paths, List.mem_cons, List.mem_flatMap, List.mem_map, Prod.mk.injEq] at member
+  rcases member with ⟨rfl, rfl⟩ | ⟨⟨alt, altMem⟩, _, ⟨⟨y, yMem⟩, i⟩, pairMem, ⟨r', cs'⟩, path, rfl, rfl⟩
+  · exact Or.inl ⟨rfl, rfl⟩
+  · right
+    rw [List.mk_mem_zipIdx_iff_getElem?, List.getElem?_attach] at pairMem
+    have found : alt.2[i]? = some y ∧ y ∈ alt.2 := by simpa using pairMem
+    exact ⟨alt, altMem, i, y, r', found.1, rfl, path⟩
+
+/-- An alternative of the typed function value is an alternative of the
+    function value, its captures read through their declaration's types. -/
+theorem mem_entryAlternatives {ds : List Decl} {alts : List (Nat × List Abstract)} {alt : Nat × List Abstract}
+    (member : alt ∈ entryAlternatives ds alts) :
+    ∃ alt0 ∈ alts, alt = (alt0.1, entryFields ds (captureTypes ds alt0.1) alt0.2) := by
+  induction alts with
+  | nil => cases member
+  | cons head alts ih =>
+    rcases head with ⟨id, caps⟩
+    change alt ∈ (id, entryFields ds (captureTypes ds id) caps) :: entryAlternatives ds alts at member
+    rcases List.mem_cons.mp member with same | later
+    · exact ⟨(id, caps), List.mem_cons_self .., same⟩
+    · obtain ⟨alt0, mem0, eq0⟩ := ih later
+      exact ⟨alt0, List.mem_cons_of_mem _ mem0, eq0⟩
+
+/-- Every cell list of the typed abstract is a cell list of the abstract. -/
+theorem mem_paths_entryAbstract (ds : List Decl) (t : Ty) (a : Abstract) (r : Path) (cs : List Origin)
+    (member : (r, cs) ∈ (entryAbstract ds t a).paths) : ∃ r', (r', cs) ∈ a.paths := by
+  match a with
+  | .bottom => rw [entryAbstract_bottom] at member; exact ⟨r, member⟩
+  | .scalar => rw [entryAbstract_scalar] at member; exact ⟨r, member⟩
+  | .symbolic slot ty roots es => rw [entryAbstract_symbolic] at member; exact ⟨r, member⟩
+  | .list roots x ex =>
+    have elementCase : ∀ (y : Abstract), (∀ r'' , (r'', cs) ∈ y.paths → ∃ r', (r', cs) ∈ x.paths) →
+        (r, cs) ∈ (Abstract.list roots y ex).paths → ∃ r', (r', cs) ∈ (Abstract.list roots x ex).paths := by
+      intro y back inList
+      simp only [Abstract.paths, List.mem_cons, List.mem_map, Prod.mk.injEq] at inList
+      rcases inList with ⟨rfl, rfl⟩ | ⟨⟨r'', cs'⟩, path, rfl, rfl⟩
+      · exact ⟨[], by simp [Abstract.paths]⟩
+      · obtain ⟨r', path'⟩ := back r'' path
+        exact ⟨.element :: r', list_path_mem _ x ex r' _ path'⟩
+    cases t with
+    | dict t' =>
+      apply elementCase (.record [.scalar, entryAbstract ds t' x]) _ member
+      intro r'' path
+      obtain ⟨i, y, r''', lookup, rfl, path'⟩ := mem_record_paths path
+      match i, lookup with
+      | 0, lookup =>
+        simp at lookup
+        subst lookup
+        simp [Abstract.paths] at path'
+      | 1, lookup =>
+        simp at lookup
+        subst lookup
+        exact mem_paths_entryAbstract ds t' x r''' cs path'
+    | list t' => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds t' x r'' cs path) member
+    | chain t' => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds t' x r'' cs path) member
+    | builder t' => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds t' x r'' cs path) member
+    | int => exact ⟨r, member⟩
+    | record _ => exact ⟨r, member⟩
+    | result _ _ => exact ⟨r, member⟩
+    | fn _ _ => exact ⟨r, member⟩
+  | .record xs =>
+    have fields : ∀ (ts : List Ty), (r, cs) ∈ (Abstract.record (entryFields ds ts xs)).paths →
+        ∃ r', (r', cs) ∈ (Abstract.record xs).paths := by
+      intro ts inRecord
+      obtain ⟨i, y, r'', lookup, rfl, path⟩ := mem_record_paths inRecord
+      rw [entryFields_getElem?] at lookup
+      cases found : xs[i]? with
+      | none => rw [found] at lookup; cases lookup
+      | some x =>
+        rw [found] at lookup
+        simp only [Option.map_some, Option.some.injEq] at lookup
+        subst lookup
+        have smaller : sizeOf x < 1 + sizeOf xs := by
+          have := List.sizeOf_lt_of_mem (List.mem_of_getElem? found)
+          omega
+        obtain ⟨r', path'⟩ := mem_paths_entryAbstract ds _ x r'' cs path
+        exact ⟨.field i :: r', record_path_mem xs i x r' cs found path'⟩
+    cases t with
+    | record ts => exact fields ts member
+    | result e s => exact fields [.int, e, s] member
+    | int => exact ⟨r, member⟩
+    | list _ => exact ⟨r, member⟩
+    | chain _ => exact ⟨r, member⟩
+    | builder _ => exact ⟨r, member⟩
+    | dict _ => exact ⟨r, member⟩
+    | fn _ _ => exact ⟨r, member⟩
+  | .function roots alts =>
+    rw [entryAbstract_function] at member
+    rcases mem_function_paths member with ⟨rfl, rfl⟩ | ⟨alt, altMem, i, y, r'', lookup, rfl, path⟩
+    · exact ⟨[], by simp [Abstract.paths]⟩
+    · obtain ⟨alt0, mem0, rfl⟩ := mem_entryAlternatives altMem
+      simp only at lookup
+      rw [entryFields_getElem?] at lookup
+      cases found : alt0.2[i]? with
+      | none => rw [found] at lookup; cases lookup
+      | some x =>
+        rw [found] at lookup
+        simp only [Option.map_some, Option.some.injEq] at lookup
+        subst lookup
+        have smaller : sizeOf x < 1 + sizeOf roots + sizeOf alts := by
+          have inCaps := List.sizeOf_lt_of_mem (List.mem_of_getElem? found)
+          have inAlts := List.sizeOf_lt_of_mem mem0
+          have inPair : sizeOf alt0.2 < sizeOf alt0 := by
+            rcases alt0 with ⟨id, caps⟩
+            simp only [Prod.mk.sizeOf_spec]
+            omega
+          omega
+        obtain ⟨r', path'⟩ := mem_paths_entryAbstract ds _ x r'' cs path
+        exact ⟨.capture i :: r', function_path_mem roots alts alt0 mem0 i x found r' cs path'⟩
+termination_by sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals omega
+
+/-- Every name of the typed abstract below a live use's field path is a live
+    cell: the typed abstract holds the abstract's cell lists and no other. -/
+theorem namesAt_entryAbstract_in_liveCells (ds : List Decl) (env : Env Abstract) (l : Live) (y : Var)
+    (p : Path) (a : Abstract) (t : Ty) (use : (y, p) ∈ l) (found : env.lookup y = some a)
+    (fieldPath : ∀ s ∈ p, ∃ i, s = Step.field i) (q : Path) (cell : Origin)
+    (member : cell ∈ namesAt (entryAbstract ds t (a.atPath p)) q) : cell ∈ liveCells env l := by
+  obtain ⟨r, cs, path, inCs⟩ := namesAt_mem_paths_general q _ cell member
+  obtain ⟨r', path'⟩ := mem_paths_entryAbstract ds t (a.atPath p) r cs path
+  have shifted := atPath_paths_shift p fieldPath a r' cs path'
+  rw [Ownership.FlatFragment.LiveCells.liveCells_eq_fold]
+  apply Ownership.FlatFragment.LiveCells.foldl_member _
+    (Ownership.FlatFragment.LiveCells.useStep_mono env) l [] (y, p) use cell
+  intro acc
+  unfold Ownership.FlatFragment.LiveCells.useStep
+  simp only [found]
+  apply Ownership.FlatFragment.LiveCells.foldl_member _
+    (Ownership.FlatFragment.LiveCells.pathStep_mono p) a.paths acc (p ++ r', cs) shifted cell
+  intro acc'
+  unfold Ownership.FlatFragment.LiveCells.pathStep
+  simp only [isPrefix_append, Bool.true_or, ite_true]
+  exact Ownership.FlatFragment.Description.mem_union acc' cs cell (Or.inr inCs)
+
 /-- Every name at a path below a live use's field path is a live cell. -/
 theorem namesAt_atPath_in_liveCells (env : Env Abstract) (l : Live) (y : Var) (p : Path)
     (a : Abstract) (use : (y, p) ∈ l) (found : env.lookup y = some a)
@@ -391,9 +550,9 @@ theorem namesAt_atPath_in_liveCells (env : Env Abstract) (l : Live) (y : Var) (p
 /-- The naming clause after a demand-guarded linked write, with the checker's
     own live cells: `later` holds every live cell of the continuation. -/
 theorem linkNamed_after_writeLinked_liveCells
-    {vs : ValueSemantics.State} {hs hs' : State} {env : List (Var × Observation × Value)}
-    {live after : Live} {aenv : Env Abstract} {γ : Naming} {before afterSt : St}
-    (inv : Invariant vs hs env live aenv before.facts.escapes γ)
+    {ds : List Decl} {vs : ValueSemantics.State} {hs hs' : State} {env : List (Var × Observation × Value)}
+    {live after : Live} {aenv : Env Abstract} {tenv : Env Ty} {γ : Naming} {before afterSt : St}
+    (inv : Invariant ds vs hs env live aenv tenv before.facts.escapes γ)
     (liveAfter : ∀ u ∈ after, u ∈ live)
     {x : Var} {ox : Observation} {c : Nat} (receiverLive : (x, []) ∈ live)
     (envX : env.lookup x = some (ox, .ref c))
@@ -401,12 +560,13 @@ theorem linkNamed_after_writeLinked_liveCells
     {u : Unit} (demandRun : (demand ({} : Config) cs later others).run before = .ok (u, afterSt))
     (laterIncludes : ∀ cell ∈ liveCells aenv after, cell ∈ later)
     (covered : ∀ (y : Var) (p : Path), (y, p) ∈ after → ∀ (o : Observation) (w : Value),
-      env.lookup y = some (o, w) → (aenv.lookup y).isSome = true)
+      env.lookup y = some (o, w) → (aenv.lookup y).isSome = true ∧ (tenv.lookup y).isSome = true)
     {xs : List Value} {r : Value} (run : (writeLinked c xs).run hs = .ok (r, hs')) :
     LinkNamed hs' env after γ := by
   refine linkNamed_after_writeLinked inv liveAfter receiverLive envX receiverNamed demandRun ?_ covered run
-  intro y p o w a w' q cell member envY aenvY proj cellMember
+  intro y p o w a t w' q cell member envY aenvY _ proj cellMember
   exact laterIncludes cell
-    (namesAt_atPath_in_liveCells aenv after y p a member aenvY (projectVal_fieldPath proj) q cell cellMember)
+    (namesAt_entryAbstract_in_liveCells ds aenv after y p a _ member aenvY (projectVal_fieldPath proj)
+      q cell cellMember)
 
 end Ownership.LinkedWriteStep

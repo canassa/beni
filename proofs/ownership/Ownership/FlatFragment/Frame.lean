@@ -184,7 +184,9 @@ theorem flatInvariant_heap_frame {gamma : Naming}
       inv.bindings x p (liveSub _ use) o w binding
     exact ⟨o', w', observationPath, valuePath,
       corresponds_of_agree (liveAgree x p use o w w' binding valuePath) paired⟩
-  · intro x p use o w a w' binding abstractBinding valuePath
+  · refine described_typed_of_flat inv.abstractShapes
+      (fun x p ty member declared => inv.liveTyped x p ty (liveSub _ member) declared) ?_
+    intro x p use o w a w' binding abstractBinding valuePath
     exact described_flat_frame inv (liveAgree x p use o w w' binding valuePath) namingSame (liveSub _ use)
       binding abstractBinding valuePath (inv.described x p (liveSub _ use) o w a w' binding abstractBinding valuePath)
   · intro x o w a binding abstractBinding q c immutable located
