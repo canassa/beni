@@ -1,0 +1,3 @@
+A callback whose own callback edits a cell's list in place (ownership-v2.md §2.11.3, §2.11.4): built again under
+--ownership=v2 and the list stale-read sanitiser. The checker panicked on the write (#1753); v2 refuses the closure
+that edits what its captured cell holds, which List.map calls many times.
