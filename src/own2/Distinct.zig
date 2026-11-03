@@ -20,6 +20,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
 const Routed = @import("Routed.zig");
+const CallGraft = @import("CallGraft.zig");
 const Graft = @import("Graft.zig");
 const Coexist = @import("Coexist.zig");
 
@@ -203,6 +204,8 @@ fn arrivesAtPlain(e: *Eval, res: Contract.Node, o: u64, plain: []const []const u
 pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     if (c.no) return Cond.unprovable;
     if (c.sel.len == 0) return Cond.yes;
+    // Arguments that are the caller's parameters whole: renamed (`CallGraft`).
+    if (try CallGraft.sel(e, c, call)) |rc| return rc;
     const g = e.gpa();
     const cl = e.f.calls.items[call];
     var ps: std.ArrayList(Proj) = .empty;

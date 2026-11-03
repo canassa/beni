@@ -84,6 +84,9 @@ const layers = [_]Entry{
     // A write onto a caller's parameter stops there, its targets read off
     // the callee's tree (#1714, §2.11.2).
     .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
+    // A callee's tree and condition taken as the caller's at a call whose
+    // arguments are its parameters whole (#1225, #1714, §2.10).
+    .{ .file = "CallGraft.zig", .layer = 8, .max_lines = 170 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -412,7 +415,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 51), layers.len);
+    try testing.expectEqual(@as(usize, 52), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
