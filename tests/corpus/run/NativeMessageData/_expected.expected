@@ -12,3 +12,5 @@ accessor: refused
 symbol: refused
 bigint: refused
 calls: 0
+differential: 652
+getters: 0

@@ -4,10 +4,12 @@ pub const body = bodyFor(false);
 pub const sibling = "// Generated checked graph conversion; native/CheckedData.zig owns the check.\nexport const checkedGraph = (typeWitness, listToken, value) => {\n" ++ bodyFor(true) ++ "};\n";
 
 fn bodyFor(comptime typed: bool) []const u8 {
-    return (if (typed) "  if (typeof typeWitness === \"function\") return typeWitness(value);\n" else "") ++ prefix ++ (if (typed) packet_key else "") ++ graph_begin ++
-        (if (typed) graph_packet else "") ++ graph_end ++
-        (if (typed) witness_check else "") ++ project_begin ++
-        (if (typed) project_packet else "") ++ project_end;
+    // Native message data has no beni list token or packet metadata. Keep the
+    // same graph checks, then return the original value without projection.
+    if (!typed) return graph_begin ++ graph_loop ++ graph_objects ++ graph_end ++ plain_return;
+    return "  if (typeof typeWitness === \"function\") return typeWitness(value);\n" ++ prefix ++ packet_key ++
+        graph_begin ++ graph_views ++ graph_loop ++ graph_lists ++ graph_objects ++ graph_packet ++ graph_end ++
+        witness_check ++ project_begin ++ project_packet ++ project_end;
 }
 
 const prefix =
@@ -27,7 +29,15 @@ const packet_key =
 const graph_begin =
     \\  const pending = [value];
     \\  const seen = new Set();
+    \\
+;
+
+const graph_views =
     \\  const views = new Map();
+    \\
+;
+
+const graph_loop =
     \\  while (pending.length) {
     \\    const current = pending.pop();
     \\    if (current === null) continue;
@@ -36,6 +46,10 @@ const graph_begin =
     \\    if (kind !== "object") continue;
     \\    if (seen.has(current)) continue;
     \\    seen.add(current);
+    \\
+;
+
+const graph_lists =
     \\    if (listToken !== undefined && data(current, "$t") === listToken) {
     \\      const count = data(current, "length");
     \\      const elements = new Array(count);
@@ -60,6 +74,10 @@ const graph_begin =
     \\      for (const element of elements) pending.push(element);
     \\      continue;
     \\    }
+    \\
+;
+
+const graph_objects =
     \\    const prototype = Object.getPrototypeOf(current);
     \\    if (Array.isArray(current) ? prototype !== Array.prototype : prototype !== null && prototype !== Object.prototype) return { $: "Nothing", a: null };
     \\    for (const key of Reflect.ownKeys(current)) {
@@ -78,6 +96,11 @@ const graph_end =
     \\      pending.push(descriptor.value);
     \\    }
     \\  }
+    \\
+;
+
+const plain_return =
+    \\  return { $: "Just", a: value };
     \\
 ;
 

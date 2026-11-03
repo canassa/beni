@@ -198,7 +198,7 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
             .worker_terminate => "(worker) => { worker.terminate(); return null; }",
             .worker_event_target => "(endpoint) => { return endpoint; }",
             .global_event_target => "(ignored) => { return globalThis; }",
-            .event_data_only => "(event) => { const value = event.data; const listToken = undefined;\n" ++ CheckedData.body ++ "}",
+            .event_data_only => "(event) => { const value = event.data;\n" ++ CheckedData.body ++ "}",
             .event_error => "(event) => { const error = event.error; return error == null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: error }; }",
             .console_error_data => "(label, data) => { globalThis.console.error(label, data); return null; }",
             .rejection_abandoned => "(error, reports) => { error.abandonedWorkers = reports; return null; }",
