@@ -3155,6 +3155,13 @@ maker's worker from its `Made`. `Reach` exempts no constructor of `Engine` or `M
 application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `root`
 (`SchemaGraph.Member`), with guarded edges to the other three (`root_guards`).
 
+The stored worker result is a core-only `Js.Opt o`: success is the typed
+payload itself, and failure is the shared absence sentinel also held in the
+context. Generated workers and beni composition use this same protocol. A schema
+value stores a worker directly; it adds no per-call adapter or `Just` allocation.
+The public runners construct `Result` once at the boundary. Optional worker
+registration still uses `Maybe`, once when the schema is constructed.
+
 - **The guarantee is a corpus check.** A `.compiled-schemas`
   file marks a `run/` or `browser/` fixture (`tests/corpus/README.md`). The fixture's development
   build must then ship no `Schema$run` and no `Schema$box`. Eighteen fixtures carry the marker:
