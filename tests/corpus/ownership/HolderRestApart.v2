@@ -1,0 +1,1 @@
+v2 refuses mapT's callback writes, which v1 accepts as callback-param; the update's deep writes below the record-update base are accepted by both (#1742).
