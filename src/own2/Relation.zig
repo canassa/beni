@@ -28,6 +28,7 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const KeySets = @import("KeySets.zig");
 const Value = @import("Value.zig");
+pub const Dests = @import("Dests.zig");
 
 pub const Error = Ids.ChargeError;
 pub const Cond = Contract.Cond;
@@ -170,8 +171,8 @@ pub const Eval = struct {
     /// `(call, prefix, which)` → a key below the prefix; `(key, leaf, at)`.
     below_memo: Ids.FixedDict(3) = .{},
     below_has: Ids.FixedDict(3) = .{},
-    /// `(root path, rel)` → the one caller slot a callee's entry is at.
-    slot_memo: Ids.FixedDict(2) = .{},
+    /// Per call root's path: the caller slots of its callee's entries.
+    slot_cols: Dests.Reads(1) = .{},
     inst_depth: u32 = 0,
     /// A read-off pass (§2.3.4 *Reading*): 0 when none.
     pass: u32 = 0,
@@ -214,7 +215,7 @@ pub const Eval = struct {
         e.key_subs.deinit(g);
         e.below_memo.deinit(g);
         e.below_has.deinit(g);
-        e.slot_memo.deinit(g);
+        e.slot_cols.deinit(g);
     }
 
     pub fn charge(e: *Eval, cat: Ids.Category, n: u32) Error!void {
@@ -855,12 +856,12 @@ pub const Eval = struct {
         const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));
         const rw = e.f.slots.relWords(rel);
         if (rw.len >= pw.len and std.mem.eql(u32, pw, rw[0..pw.len])) {
-            // The caller slot of the entry, once per (root, entry).
-            if (e.slot_memo.get(.{ r.path.int(), rel })) |one| return e.feedAt(ki, .from(one), @intCast(rw.len), open, a);
+            // The caller slots of the entry: the root's column.
+            const col = &e.slot_cols.cols.items[try e.slot_cols.col(e.gpa(), .{r.path.int()})];
+            try Dests.addRel(.{ .gpa = e.gpa(), .account = e.account(), .places = e.places(), .slots = e.f.slots }, col, r.path, rel);
             var paths: std.ArrayList(u32) = .empty;
             defer paths.deinit(e.gpa());
-            try Slots.replay(e.gpa(), e.account(), e.places(), r.path, rw, &paths);
-            if (paths.items.len == 1) try e.slot_memo.put(e.gpa(), .{ r.path.int(), rel }, paths.items[0]);
+            try paths.appendSlice(e.gpa(), col.at(rel).?);
             if (paths.items.len == 0) try paths.append(e.gpa(), k.slot.int());
             for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(rw.len), open, a);
         } else if (open and rw.len < pw.len and std.mem.eql(u32, rw, pw[0..rw.len])) {
