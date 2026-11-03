@@ -1,0 +1,14 @@
+-- Dedicated-only close must be refused even through a platform wrapper.
+import Browser
+import CloseProbe
+import Html
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → CloseProbe.close ⊤
+        , update = λ_ _ model → model
+        , settle = λ_ model → model
+        , view = λ_ → <main>closed</main>
+        }

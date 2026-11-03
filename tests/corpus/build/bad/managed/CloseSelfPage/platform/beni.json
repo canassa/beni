@@ -1,0 +1,1 @@
+{"platform":true,"name":"worker-close-page-probe","platforms":["browser"],"reexports":["Browser"]}

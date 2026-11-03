@@ -44,6 +44,7 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .worker_close_self => a.len == 1 and unit(cx, a[0]) and unit(cx, r),
         .global_is_page => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Bool"),
         .event_error_message => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
         .rejection_create => a.len == 1 and named(cx, a[0], "String", "String") and native(cx, r, "Rejection"),

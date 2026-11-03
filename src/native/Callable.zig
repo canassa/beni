@@ -109,6 +109,7 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .worker_close_self => "(ignored) => { globalThis.close(); return null; }",
             .global_is_page => "(ignored) => { return typeof globalThis.window !== \"undefined\"; }",
             .event_error_message => "(event) => { return typeof globalThis.ErrorEvent === \"function\" && event instanceof globalThis.ErrorEvent ? { $: \"Just\", a: event.message } : { $: \"Nothing\", a: null }; }",
             .rejection_create => "(message) => { return new globalThis.Error(message); }",

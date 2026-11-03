@@ -19,6 +19,9 @@ pub type PostError
 pub foreign type Worker
 
 
+pub foreign impure closeSelf : ⊤ → ⊤
+
+
 pub foreign impure supported : ⊤ → Bool
 
 

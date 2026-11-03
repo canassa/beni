@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"tests/corpus/check/bad/WorkerClosePrivate.beni","start":{"line":6,"col":11},"end":{"line":6,"col":33}},"title":"PRIVATE NAME","message":"This name is private to core and platform runtimes."}]

@@ -1,0 +1,6 @@
+-- Applications cannot invoke the private worker shutdown binding directly.
+import Browser.Host.Worker as NativeWorker
+
+
+pub close : ⊤ → ⊤
+close ⊤ = NativeWorker.closeSelf ⊤

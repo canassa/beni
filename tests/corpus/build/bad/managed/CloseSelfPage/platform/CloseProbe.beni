@@ -1,0 +1,6 @@
+import Browser.Host.Worker as NativeWorker
+
+
+-- Platform authority permits the binding; its realm still forbids a page call.
+pub close : ⊤ → ⊤
+close ⊤ = NativeWorker.closeSelf ⊤

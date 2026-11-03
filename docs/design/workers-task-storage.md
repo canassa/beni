@@ -361,3 +361,10 @@ overwriting a key retains its place, deletion followed by insertion moves it to
 the end. Pair records are new, while element identities are retained. Later table
 mutations do not change that snapshot. Ownership is conservative: unworded
 `set` escapes its value and `get` grants no freshness or editing permission.
+
+**Manager approval, 2026-11-03 — dedicated worker shutdown.** The generated
+`Browser.Host.Worker.closeSelf : ⊤ → ⊤` operation calls `globalThis.close()`
+with no catch. Its native availability is dedicated workers only; the realm
+check rejects a page call. The shared CorePrivate fence reserves the operation
+for platform machinery. This replaces the worker runtime's raw global close
+without changing its cleanup order.

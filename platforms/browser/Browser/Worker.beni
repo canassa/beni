@@ -5,6 +5,7 @@ import Browser.Host.RegExp as HostRegExp
 import Browser.Host.Rejection as Rejection
 import Browser.Host.TextEncoder as TextEncoder
 import Browser.Host.Uint8Array as Uint8Array
+import Browser.Host.Worker as NativeWorker
 import Browser.WorkerStream exposing (Sink, Stream)
 import Browser.WorkerWire as Wire
 import Duration exposing (Duration)
@@ -1099,7 +1100,7 @@ runDefinition definition =
             _ = Task.wait root
             Task.closeRoot lifetime
             _ = sendFrame peer "Closed" 0 Js.null
-            Js.to (Js.call (Js.global "self") "close" [])
+            NativeWorker.closeSelf ⊤
         )
         λ_ → ⊤
 
