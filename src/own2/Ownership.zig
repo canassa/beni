@@ -197,7 +197,7 @@ fn belowLine(mod: *Groups.Module, gpa: Allocator, w: *std.Io.Writer, names: Cont
         try w.print(" π{d}", .{j + 1});
         if (pl == .none) continue;
         const root = try mod.places.rootPath(gpa, pl);
-        if (try Subtree.moreBelow(&mod.slots, gpa, &account, &mod.places, root, 512)) {
+        if (try @import("BelowSize.zig").moreBelow(&mod.slots, gpa, &account, &mod.places, root, 512)) {
             try w.writeAll(" …");
             continue;
         }

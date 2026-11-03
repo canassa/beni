@@ -16,6 +16,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
+const BelowSize = @import("BelowSize.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const Value = @import("Value.zig");
@@ -153,9 +154,9 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 const at_site = site_result != null and site.items.len == sig.own;
                 var wild = false;
                 if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
-                    wild = wild or try Subtree.wildBelow(gpa, f.places, p);
+                    wild = wild or try BelowSize.wildBelow(gpa, f.places, p);
                 };
-                if (!at_site) wild = wild or try Subtree.wildBelow(gpa, f.places, sig.result);
+                if (!at_site) wild = wild or try BelowSize.wildBelow(gpa, f.places, sig.result);
                 var args: std.ArrayList(u32) = .empty;
                 defer args.deinit(gpa);
                 for (0..sig.own) |k| {
