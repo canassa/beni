@@ -19,6 +19,7 @@ const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Fed = @import("Fed.zig");
+const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
 const RouteWalk = @import("RouteWalk.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -239,7 +240,7 @@ pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
     if (c0.sel.len == 0) return Cond.yes;
     var fed: std.ArrayList(u64) = .empty;
     var rest: std.ArrayList(u64) = .empty;
-    for (c0.sel) |o| if (!Contract.isFed(o)) try rest.append(e.arena, o) else switch (try Fed.at(e, call, o)) {
+    for (c0.sel) |o| if (!Contract.isFed(o)) try rest.append(e.arena, o) else switch (try FedCall.at(e, call, o)) {
         .yes => {},
         .no => return Cond.unprovable,
         .occ => |x| try fed.append(e.arena, x),
@@ -267,7 +268,7 @@ pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
         try projectAll(e, c, cl, got, true);
         var fed0: std.ArrayList(u64) = .empty;
         for (c.sel, got) |o, *gp| {
-            const k = if (feed) |fd| try Fed.supplyOf(e, call, fd.label, Contract.occParam(o)) else null;
+            const k = if (feed) |fd| try FedCall.supplyOf(e, call, fd.label, Contract.occParam(o)) else null;
             for (gp.items) |p| if (feed == null or !try Fed.replace(e, p, o, k, feed.?, &ps, &fed0)) try ps.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
             gp.clearRetainingCapacity();
         }
@@ -278,7 +279,7 @@ pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
     for (c.sel, got) |o, *gp| {
         e.parts = ApartPlain.mixed(c.sel, Contract.occParam(o));
         const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
-        const k = if (feed) |fd| try Fed.supplyOf(e, call, fd.label, Contract.occParam(o)) else null;
+        const k = if (feed) |fd| try FedCall.supplyOf(e, call, fd.label, Contract.occParam(o)) else null;
         for (gp.items) |p| if (feed == null or !try Fed.replace(e, p, o, k, feed.?, to, &fed)) try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
     }
     // An apart and a plain projection of one place by one route are taken

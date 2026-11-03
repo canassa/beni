@@ -25,6 +25,7 @@ const Regions = @import("Regions.zig");
 const Liveness = @import("Liveness.zig");
 const Prepass = @import("Prepass.zig");
 const Bir = @import("../bir/Bir.zig");
+const WalkContext = @import("WalkContext.zig");
 
 pub const Error = Ids.ChargeError;
 pub const PathId = Ids.PathId;
@@ -37,60 +38,8 @@ const none: u32 = Ids.none_int;
 /// The high bit of a closure's `head`: a fixed contract, not a code.
 pub const fixed_bit: u32 = 1 << 31;
 
-/// What a call runs (`Context.callee`).
-pub const Callee = union(enum) {
-    /// The result and every argument cross: nothing to track.
-    harmless,
-    /// A constructor applied: `(ordinal, arity)`.
-    ctor: [2]u32,
-    /// A code of the module (`Groups`' numbering): its current contract.
-    code: u32,
-    /// A fixed contract: words, an import, a derived method, pessimistic.
-    contract: Contract.Id,
-    /// A function value: the head is evaluated.
-    value,
-};
-
-/// The module's services a walk reads (`Groups` implements them).
-pub const Context = struct {
-    ctx: *anyopaque,
-    placeOfInst: *const fn (ctx: *anyopaque, inst: u32) Error!PlaceId,
-    placeOfLocal: *const fn (ctx: *anyopaque, local: u32) Error!PlaceId,
-    fieldRank: *const fn (ctx: *anyopaque, s: Bir.SymbolIndex) u32,
-    /// A constructor reference's `(ordinal, arity)`.
-    ctorOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
-    /// A parameterless value's `(module, declaration)`; `.{ none, 0 }` for a
-    /// `foreign`'s, `.{ none, 1 }` for one that holds no object.
-    sharedOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
-    isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
-    callee: *const fn (ctx: *anyopaque, inst: u32, args: []const u32) Error!Callee,
-    /// A function reference used as a value (`top`, `ext_value`, a
-    /// constructor, a schema member): its code or fixed contract (with
-    /// `fixed_bit`), or null when it is not a function.
-    funcRef: *const fn (ctx: *anyopaque, inst: u32) Error!?u32,
-    /// The codes of the declarations a dispatch site at `inst` passes as evidence (appended, each once).
-    evidenceCodes: *const fn (ctx: *anyopaque, inst: u32, out: *std.ArrayList(u32)) Error!void,
-    /// The code of a lambda or a local function's `let_def`.
-    codeOf: *const fn (ctx: *anyopaque, inst: u32) ?u32,
-    /// A code's captures (declaration-relative locals, sorted).
-    capturesOf: *const fn (ctx: *anyopaque, code: u32) []const u32,
-    /// A code's current contract, or null.
-    contractOf: *const fn (ctx: *anyopaque, code: u32) ?Contract.Id,
-    /// A code's places: its parameters' (own, then captures) and its result's.
-    codeSig: *const fn (ctx: *anyopaque, code: u32) Error!Relation.Sig,
-    /// The places of the function type instruction `inst` has at its site:
-    /// its parameters' appended, its result's returned; null when it has
-    /// no function type.
-    siteSig: *const fn (ctx: *anyopaque, inst: u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
-    /// The same of a label's origin: the function type its callback call's
-    /// head has there; null when it has none to hand.
-    originSig: *const fn (ctx: *anyopaque, origin: [3]u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
-    /// The pessimistic contract of a call of `arity` arguments.
-    pessimistic: *const fn (ctx: *anyopaque, arity: u32) Error!Contract.Id,
-    /// A `try`'s shape: `(success ordinal, failure ordinal, failure arity)` of its
-    /// scrutinee's type (`Ok`/`Err` or `Just`/`Nothing`), or null.
-    tryShape: *const fn (ctx: *anyopaque, inst: u32) ?[3]u32,
-};
+pub const Callee = WalkContext.Callee;
+pub const Context = WalkContext.Context;
 
 /// What `Groups` hands a walk: the code and its frame of instructions.
 pub const Code = struct {
@@ -138,7 +87,7 @@ pub const Demand = struct {
     /// and the argument written.
     call: u32 = none,
     arg: u32 = none,
-    /// A virtual call's write: the written slot of its argument `arg` (`Eval.finishDemands` reads the labels it is supplied through).
+    /// A virtual call's write: the written slot of its argument `arg` (`Outward.finishDemands` reads the labels it is supplied through).
     wslot: u32 = none,
     /// A construction's base value: its storage, the targets, is read again
     /// by each evaluation (a prepend's re-cons reads the calls' contracts).

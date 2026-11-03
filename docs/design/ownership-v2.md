@@ -4400,6 +4400,17 @@ L12; `Groups` L13; `Block`, `Message`, `Report`, `Hoists` L14; `Ownership` L15; 
 *Amended 2026-11-03 (#1752): `RowEnv` (L5: the tables a row is read in, its result and parameter slots, and what
 a `taken` callback's write asks at its caller; Ids, Place, Slots, Subtree, Contract, Forest) was split out of
 `Rows`, which moved to L6.*
+*Amended 2026-11-03 (#1758, #1760, #1721): the hole fixes stay under every line target, by five splits
+along their seams. L8: `LabelChain` (the labels a virtual call's supply comes through, outward, §2.11.3:
+`virtualOuter`, the outward count and `taken` mark, `supplyLevels`, a slot an outer label keeps; Ids, Forest,
+Contract, RowEnv, Value), out of `Eval`; `FedCall` (a callee's `fed` occurrence at a call, renamed or
+decided, and the label argument a callee's parameter arrives at whole; Ids, Slots, Forest, Contract,
+Relation), out of `Fed`, which keeps what a pass reads of the frame's own answer handed back; `WalkContext`
+(the module's services a walk reads, which `Groups` implements; Ids, Contract, Relation, Bir), out of
+`Walk`. L11: `Outward` (a demand's instantiated `req` and each outer label's condition and `taken`
+occurrences, `finishDemands`; a passed-on label's outer supplies, from `ReadOff.condsOff`; Ids, Contract,
+RowEnv, LabelChain, Graft, Distinct, Eval). L12: `Codes` (a module's codes and one declaration's answer;
+Ids, Walk, Kept), out of `Groups`. `Walk`, `Groups` and `Eval` re-export what their readers named.*
 
 ```
 L13 Enforce
@@ -4459,7 +4470,12 @@ L0  Ids  Counters  Scratch
 | `CallGraft.zig` | 8 | a call whose arguments are the caller's parameters whole: the callee's arrivals at a call slot and its condition renamed, never projected; a demand's written path replayed when its line is printed (§2.10 *a parameter's path grafted*, §2.11.2, #1225, #1714) | Ids, Place, Slots, Contract, Relation |
 | `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, a cell callback's supply, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
-| `Fed.zig` | 8 | a label's answer handed back to it: what a pass reads and judges for that answer, and the `fed` occurrence renamed or decided at a caller (§2.11.3, #1713); below `Distinct` | Ids, Slots, Forest, Contract, Relation |
+| `Fed.zig` | 8 | a label's answer handed back to it: what a pass reads and judges for that answer (§2.11.3, #1713); below `Distinct` | Ids, Slots, Contract, Relation |
+| `FedCall.zig` | 8 | a callee's `fed` occurrence at a call, renamed or decided, and the label argument a callee's parameter arrives at whole (§2.11.3, #1713, #1721); below `Distinct` | Ids, Slots, Forest, Contract, Relation |
+| `WalkContext.zig` | 8 | the module's services a walk reads; `Groups` implements them (§2.6, §2.11.3) | Ids, Contract, Relation |
+| `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |
+| `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
+| `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
 | `Sweep.zig` | 8 | the holder index and its sweep: holds listed once a holder (a DAG once a node), buckets by next use and position, aggregated holders (§2.8) | Ids, Place, Slots, Value, Relation |

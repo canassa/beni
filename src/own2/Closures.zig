@@ -107,7 +107,7 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         if (!call.virtual or call.callee_val == none or d.arg == none) continue;
         const own = call.args.len - f.kidsOf(f.val(call.callee_val)).len;
         if (d.arg < own or d.cell) continue;
-        const outer = Eval.virtualOuter(e, d.call) orelse continue;
+        const outer = @import("LabelChain.zig").virtualOuter(e.chain(), d.call) orelse continue;
         const labels = e.contracts.labelsOf(e.contracts.head(f.calls.items[outer[0]].contract).labels);
         const lab = labels[outer[1]];
         var same: u32 = 0;

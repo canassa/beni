@@ -121,13 +121,18 @@ const layers = [_]Entry{
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
     // A label's answer handed back to it, and its `fed` occurrence (#1713).
-    // A fed answer read through a label a known code passes on (#1721).
-    .{ .file = "Fed.zig", .layer = 8, .max_lines = 160 },
+    .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
     // The sources a frame's escapes reach, for the read-off's `host` (#1744).
     .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
+    // A callee's `fed` occurrence at a call, split from `Fed` (#1721).
+    .{ .file = "FedCall.zig", .layer = 8, .max_lines = 105 },
+    // The module's services a walk reads, split from `Walk` (#1758).
+    .{ .file = "WalkContext.zig", .layer = 8, .max_lines = 75 },
+    // The labels a virtual call's supply comes through, outward, split
+    // from `Eval` (#1758, #1760, #1721).
+    .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
     // A demand says whether it is a cell operation (#1727).
-    // A capture label's site type at its origin, a write's slot (#1758).
-    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1250 },
+    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
@@ -135,8 +140,7 @@ const layers = [_]Entry{
     .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
-    // The labels a supply comes through, outward (#1758, #1760, #1721).
-    .{ .file = "Eval.zig", .layer = 10, .max_lines = 760 },
+    .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
     // Demands judged once for their twins (#1714).
     .{ .file = "Twins.zig", .layer = 10, .max_lines = 90 },
     // What resolution reads of the leaves: base keys, the escape index (#1714).
@@ -162,12 +166,15 @@ const layers = [_]Entry{
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
     // A group's judgements kept across its rounds (§2.12, #1714).
     .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
-    // A passed-on label takes its outer labels' count and conditions (#1721).
-    .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1190 },
+    // What the labels outward of a virtual call add to its demands and to
+    // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
+    .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
+    // A module's codes and one declaration's answer, split from `Groups` (#1758).
+    .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
     // Evidence terms as function values (#1708).
-    // A label's site type at its origin (#1758).
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1930 },
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
     .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
@@ -461,7 +468,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 72), layers.len);
+    try testing.expectEqual(@as(usize, 77), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
