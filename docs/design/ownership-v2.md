@@ -2007,6 +2007,16 @@ passes it on; a supply that is no parameter's slot there was judged at the pass.
 write; refused for `[ a, a ]`, through a helper, and for a list at another path of another element. Asked of
 nothing, or with the mark lost at a pass, the sanitised runs of `run/SanitiserListUpdateShared` show the stale
 read; asked `[*]*` plain, rows that share a key the callback does not write are refused.
+*Amended 2026-11-03 (#1760):* the mark is kept by a label a known code passes on **inside** the taken callback, as
+well as by the callback itself: `upd rs f = List.update rs 0 λv → f v` hands `f` the element through a lambda
+that the row's label runs. There the label of `f` that `upd` passes on had the lambda's call `f v` as its
+origin, without the mark, so its supply `π1[*]` was asked nothing at `upd`'s callers, and `upd [ k, k ] λv →
+List.push v 5` edited `k` in place while the other element held it (`run/SanitiserListUpdateForward`; the
+sanitised run trapped). Now a label passed on from a virtual call that a `taken` label runs, at any level
+outward, carries the mark in its origin. Sound because what such a label is supplied is what the `taken` label
+supplied, or a part of it, or objects that are not the row's at all. The condition is then asked of its param
+arrivals. An arrival from elsewhere only asks more. Fresh elements, and rows that share only a key the callback
+does not write, are still accepted (`run/SanitiserListUpdateForwardApart`).
 
 The value of a lambda is `built(closure, site ι, kids = the captures' values at creation)`: the closure holds
 its captures, so a holder of the closure holds them (§2.8 *Dead*: `captured`). Calling a closure value is a

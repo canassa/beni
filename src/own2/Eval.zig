@@ -197,10 +197,15 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             // origin and function slot, whatever call met it).
             const slot = try f.slots.relOf(gpa, f.account, f.places, f.pos.items[x.pos].slot);
             const j = f.roots.items[x.root].a;
-            const got = try e.w.derived.getOrPut(gpa, .{ j, slot, l.origin[0], l.origin[1], l.origin[2] });
+            // Passed on by a known code a `taken` label runs (`λv → f v`
+            // handed to `List.update`), the label keeps that row's mark:
+            // what it is supplied may be the taken element (#1760).
+            var origin = l.origin;
+            if (takenOutward(e, q)) origin[2] |= RowEnv.taken_origin;
+            const got = try e.w.derived.getOrPut(gpa, .{ j, slot, origin[0], origin[1], origin[2] });
             if (!got.found_existing) {
                 got.value_ptr.* = @intCast(f.cbs.items.len);
-                try f.cbs.append(gpa, .{ .j = j, .slot = slot, .origin = l.origin });
+                try f.cbs.append(gpa, .{ .j = j, .slot = slot, .origin = origin });
             }
             try e.ev.label_map.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
             try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
@@ -220,6 +225,20 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             for (ls.items) |lf| try addEscape(e, lf, call.point);
         };
     }
+}
+
+/// Whether call `q` is a known code's run by a `taken` label (§2.13.6), at
+/// any level outward: its supplies may be the taken element.
+fn takenOutward(e: *Evaluation, q: u32) bool {
+    const f = e.fr();
+    var cur = q;
+    while (f.calls.items[cur].virtual) {
+        const o = virtualOuter(e, cur) orelse return false;
+        const lab = e.contracts.labelsOf(e.contracts.head(f.calls.items[o[0]].contract).labels)[o[1]];
+        if (lab.origin[2] & RowEnv.taken_origin != 0) return true;
+        cur = o[0];
+    }
+    return false;
 }
 
 /// Every entry of tree `root`, in the canonical order, in the round.s arena.

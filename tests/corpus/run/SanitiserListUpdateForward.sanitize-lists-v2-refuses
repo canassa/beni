@@ -1,0 +1,2 @@
+# v2 refuses the edit of a list the rest of the row also holds, through the lambda that passes the callback on (§2.13.6, taken).
+25:9 list_may_be_shared SanitiserListUpdateForward.upd

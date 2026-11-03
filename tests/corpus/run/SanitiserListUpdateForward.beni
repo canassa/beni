@@ -1,0 +1,26 @@
+-- A runtime catch for `List.update`'s callback passed on inside a lambda
+-- (`ownership-v2.md` §2.11.4, §2.13.6, `taken`): `upd rs f = List.update rs 0
+-- λv → f v` hands the element to `f` through a lambda that calls it. The
+-- row's condition, that the edited list occurs nowhere else in the list,
+-- was kept only where `f` itself was handed to `List.update`; through the
+-- lambda it was lost, and `upd [ k, k ] λv → List.push v 5` edited `k` in
+-- place while the other element still held it. Refused now; accepted, the
+-- sanitised run shows the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+upd : List (List Int), (List Int → List Int) → List (List Int)
+upd rs f = List.update rs 0 λv → f v
+
+
+main : Program
+main =
+    k = [ 1 ]
+    r = upd [ k, k ] λv → List.push v 5
+    Node.print (String.join (List.map r show) ";")
