@@ -121,6 +121,9 @@ names its flat element type. List reads, writes and copies use that type.
 Records and field projections preserve the type structure. Result constructors
 name a flat type for the unused slot; a result case binds the active payload.
 Integer chains support construction and a case that binds the head and tail.
+Dictionaries (#522) support the empty dictionary, an insert, a remove, a
+lookup and the size; typing fixes their keys to integers. A dictionary focus
+is outside the fragment: the checker summarises its body as a scope.
 Each branch or case arm is itself a fragment expression. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
@@ -145,6 +148,12 @@ inductive FlatANF0 : Expr → Prop where
   | set : FlatANF0 (.prim .set [receiver, index, item])
   | copy : FlatANF0 (.prim .copy [receiver])
   | prepend : FlatANF0 (.prim .prepend [item, receiver])
+  | dictEmpty (t : Ty) : Ownership.FlatFragment.State.FlatType t → Ownership.FlatFragment.State.DictFree t →
+      FlatANF0 (.prim (.dictEmpty t) [])
+  | dictInsert : FlatANF0 (.prim .dictInsert [receiver, key, item])
+  | dictRemove : FlatANF0 (.prim .dictRemove [receiver, key])
+  | dictGet : FlatANF0 (.prim .dictGet [receiver, key])
+  | dictSize : FlatANF0 (.prim .dictSize [receiver])
 
 theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
     (run : lookup env key = .ok value) :
@@ -1418,6 +1427,18 @@ theorem uses_copy (receiver : Atom) : uses (.prim .copy [receiver]) = atomsUses 
 theorem uses_prepend (item receiver : Atom) :
     uses (.prim .prepend [item, receiver]) = atomsUses [item, receiver] := rfl
 
+theorem uses_dictInsert (receiver key item : Atom) :
+    uses (.prim .dictInsert [receiver, key, item]) = atomsUses [receiver, key, item] := rfl
+
+theorem uses_dictRemove (receiver key : Atom) :
+    uses (.prim .dictRemove [receiver, key]) = atomsUses [receiver, key] := rfl
+
+theorem uses_dictGet (receiver key : Atom) :
+    uses (.prim .dictGet [receiver, key]) = atomsUses [receiver, key] := rfl
+
+theorem uses_dictSize (receiver : Atom) :
+    uses (.prim .dictSize [receiver]) = atomsUses [receiver] := rfl
+
 theorem flatExpr_default_uses (flat : FlatANF0 expression) :
     usesWith ({} : Config) expression = uses expression := by
   induction flat with
@@ -1440,6 +1461,11 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | set => simp_all [usesWith, uses, usesArms, Config.has]
   | copy => simp_all [usesWith, uses, usesArms, Config.has]
   | prepend => simp_all [usesWith, uses, usesArms, Config.has]
+  | dictEmpty _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | dictInsert => simp_all [usesWith, uses, usesArms, Config.has]
+  | dictRemove => simp_all [usesWith, uses, usesArms, Config.has]
+  | dictGet => simp_all [usesWith, uses, usesArms, Config.has]
+  | dictSize => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
 

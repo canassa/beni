@@ -1,4 +1,4 @@
-import Ownership.FlatFragment.ChainCase
+import Ownership.FlatFragment.Dictionary
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
 
@@ -460,6 +460,84 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     have free : DictFree type := by
       obtain ⟨t, _, _, rfl⟩ := exprType_prepend_success (fun _ _ h => flat_atom_type inv h) typed
       exact dictFree_of_flat_list flatOut
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @dictEmpty t _ freeT =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ _ afterSub defaultConfig accepted
+    obtain ⟨success, failure⟩ :=
+      Ownership.FlatFragment.Dictionary.dictEmpty_preserved (depth := depth) freeT inv typed defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @dictInsert receiver key item =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ [receiver, key, item], ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      rw [uses_dictInsert]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    exact Ownership.FlatFragment.Dictionary.dictInsert_preserved (depth := depth) inv typed
+      (covered receiver (by simp)) (covered key (by simp)) (covered item (by simp)) afterSub defaultConfig accepted
+  | @dictRemove receiver key =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ [receiver, key], ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      rw [uses_dictRemove]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    exact Ownership.FlatFragment.Dictionary.dictRemove_preserved (depth := depth) inv typed
+      (covered receiver (by simp)) (covered key (by simp)) afterSub defaultConfig accepted
+  | @dictGet receiver key =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ [receiver, key], ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      rw [uses_dictGet]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    obtain ⟨free, _, shapeOut, success, failure⟩ :=
+      Ownership.FlatFragment.Dictionary.dictGet_preserved (depth := depth) inv typed
+        (covered receiver (by simp)) (covered key (by simp)) defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success_of_dictFree free shapeOut success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @dictSize receiver =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_dictSize]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨typeInt, _, resultScalar, success, failure⟩ :=
+      Ownership.FlatFragment.Dictionary.dictSize_preserved (depth := depth) inv typed covered defaultConfig accepted
+    subst typeInt
+    subst resultScalar
+    have free : DictFree .int := .int
+    have shapeOut : FlatAbstract .int .scalar := .int
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
@@ -1255,5 +1333,108 @@ private def taggedProbe (p : Program) (expected : Int) : Bool :=
 #guard taggedProbe (resultElementStores 8) 7
 #guard InPlaceSemantics.writeCount (resultElementStores 1) 100 == 2
 #guard taggedProbe nestedResultElements 7
+
+/-! ### Dictionaries (slice 3 of #522, #1796)
+
+A dictionary of `t` is its entries in insertion order, each the record of an
+integer key and a value; the relation reads it through that representation
+(`entryType`, `entryAbstract`). `dictOps` inserts two lists, replaces the first
+in place, removes the second and an absent key, reads the size and a lookup,
+and pushes onto the value it found: accepted, five in-place writes (an insert
+or a remove that changes the entries counts one), both runs end at `2`.
+`dictValueWritten` pushes onto a value got out of the dictionary and reads the
+dictionary afterwards: rejected (the Dead test), and the two runs read `1` and
+`2`. `dictBranch` joins a dictionary with one entry and an empty one in a
+branch and looks the key up: accepted, both runs end at `7` or at `0`.
+`dictInRecord` stores a record holding a list in a dictionary and puts the
+dictionary in a result in a record: accepted, both runs end at the same value. -/
+
+def dictOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal .int) [.int 3])
+  (.letE 3 (.prim (.dictEmpty (.list .int)) [])
+  (.letE 4 (.prim .dictInsert [.var 3, .int 1, .var 0])
+  (.letE 5 (.prim .dictInsert [.var 4, .int 2, .var 1])
+  (.letE 6 (.prim .dictInsert [.var 5, .int 1, .var 2])
+  (.letE 7 (.prim .dictRemove [.var 6, .int 2])
+  (.letE 8 (.prim .dictRemove [.var 7, .int 9])
+  (.letE 9 (.prim .dictSize [.var 8])
+  (.letE 10 (.prim .dictGet [.var 8, .int 1])
+  (.resultCase (.var 10) 11 12 (.atom (.var 9))
+    (.letE 13 (.prim .push [.var 12, .var 9]) (.prim .length [.var 13])))))))))))))) }
+
+theorem dictOps_flat : FlatANF0 dictOps.main :=
+  .letE (.literal .int .int .int) (.letE (.literal .int .int .int) (.letE (.literal .int .int .int)
+    (.letE (.dictEmpty (.list .int) (.list .int .int .int) (.list _ .int))
+      (.letE .dictInsert (.letE .dictInsert (.letE .dictInsert (.letE .dictRemove (.letE .dictRemove
+        (.letE .dictSize (.letE .dictGet (.resultCase .atom (.letE .push .length))))))))))))
+
+def dictValueWritten : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.dictEmpty (.list .int)) [])
+  (.letE 2 (.prim .dictInsert [.var 1, .int 1, .var 0])
+  (.letE 3 (.prim .dictGet [.var 2, .int 1])
+  (.resultCase (.var 3) 4 5 (.atom (.int 0))
+    (.letE 6 (.prim .push [.var 5, .int 1])
+    (.letE 7 (.prim .dictGet [.var 2, .int 1])
+    (.resultCase (.var 7) 8 9 (.atom (.int 0)) (.prim .length [.var 9]))))))))) }
+
+theorem dictValueWritten_flat : FlatANF0 dictValueWritten.main :=
+  .letE (.literal .int .int .int) (.letE (.dictEmpty (.list .int) (.list .int .int .int) (.list _ .int))
+    (.letE .dictInsert (.letE .dictGet (.resultCase .atom (.letE .push (.letE .dictGet
+      (.resultCase .atom .length)))))))
+
+def dictBranch (condition : Int) : Program := { main :=
+  (.letE 0 (.prim (.dictEmpty .int) [])
+  (.letE 1 (.prim .dictInsert [.var 0, .int 1, .int 7])
+  (.letE 2 (.prim (.dictEmpty .int) [])
+  (.letE 3 (.branch (.int condition) (.atom (.var 1)) (.atom (.var 2)))
+  (.letE 4 (.prim .dictGet [.var 3, .int 1])
+  (.resultCase (.var 4) 5 6 (.atom (.int 0)) (.atom (.var 6)))))))) }
+
+theorem dictBranch_flat (condition : Int) : FlatANF0 (dictBranch condition).main :=
+  .letE (.dictEmpty .int .int .int) (.letE .dictInsert (.letE (.dictEmpty .int .int .int)
+    (.letE (.branch .atom .atom) (.letE .dictGet (.resultCase .atom .atom)))))
+
+def dictInRecord : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 4])
+  (.letE 1 (.prim .record [.var 0, .int 5])
+  (.letE 2 (.prim (.dictEmpty (.record [.list .int, .int])) [])
+  (.letE 3 (.prim .dictInsert [.var 2, .int 1, .var 1])
+  (.letE 4 (.prim (.ok .int) [.var 3])
+  (.letE 5 (.prim .record [.var 4, .int 0])
+  (.atom (.var 5)))))))) }
+
+theorem dictInRecord_flat : FlatANF0 dictInRecord.main := by
+  have flatRecord : FlatType (.record [.list .int, .int]) := .record _ (by
+    intro t member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with rfl | rfl
+    · exact .list .int .int .int
+    · exact .int)
+  have freeRecord : DictFree (.record [.list .int, .int]) := .record _ (by
+    intro t member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with rfl | rfl
+    · exact .list _ .int
+    · exact .int)
+  exact .letE (.literal .int .int .int) (.letE .record
+    (.letE (.dictEmpty _ flatRecord freeRecord) (.letE .dictInsert (.letE (.ok .int) (.letE .record .atom)))))
+
+#guard taggedProbe dictOps 2
+#guard InPlaceSemantics.writeCount dictOps 100 == 5
+#guard match check dictValueWritten with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run dictValueWritten 100, InPlaceSemantics.run dictValueWritten 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+#guard taggedProbe (dictBranch 1) 0
+#guard taggedProbe (dictBranch 0) 7
+#guard (check dictInRecord).isOk
+#guard match ValueSemantics.run dictInRecord 100, InPlaceSemantics.run dictInRecord 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads && a.finalValue == b.finalValue
+  | _, _ => false
 
 end Ownership.FlatFragment.Preservation

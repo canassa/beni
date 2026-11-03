@@ -5402,5 +5402,25 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
+  | @dictEmpty t _ _ =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @dictInsert receiver key item =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @dictRemove receiver key =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @dictGet receiver key =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @dictSize receiver =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
 
 end Ownership.FlatFragment.Fields

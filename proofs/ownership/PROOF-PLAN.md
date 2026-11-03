@@ -665,12 +665,41 @@ stay.
   abstract), `root_paths_entryAbstract` and
   `LinkedWriteStep.mem_paths_entryAbstract` (the typed abstract holds the
   abstract's cell lists) carry the proved call and linked-write lemmas over.
-- The flat fragment: `entryAbstract_of_flatAbstract` (a flat abstract is its
-  own typed abstract), `described_typed_of_flat` and the untyped
-  `FlatInvariant.described`. No case theorem changed.
+- The flat fragment: see slice 3 below.
 
-Slice 3 adds `FlatType.dict` and the dictionary forms; at a dictionary type
-the flat lemmas then read `entryAbstract`. A closure's captures are typed by
-its declaration, which `Ty.fn` does not name; `entryAbstract` reads them
-through `ds`, and `entryPath` keeps a capture step as it is, since a
-canonical path of a function input is `[]` or `[.env]`.
+A closure's captures are typed by its declaration, which `Ty.fn` does not
+name; `entryAbstract` reads them through `ds`, and `entryPath` keeps a capture
+step as it is, since a canonical path of a function input is `[]` or `[.env]`.
+
+As built (2026-11-03, #522 slice 3, with #1796 in one pull request): the
+dictionary forms in the flat fragment.
+
+- `DictFree` (`Support.lean`). `FlatType.list t` and `FlatType.dict t` ask
+  `DictFree t`: a list element and a dictionary's value hold no dictionary.
+  A record or a result can hold one. No type that the fragment admitted
+  before leaves it. `FlatANF0` gets `dictEmpty t` (with `DictFree t`),
+  `dictInsert`, `dictRemove`, `dictGet` and `dictSize`; `literal t` also asks
+  `DictFree t`.
+- `FlatInvariant` keeps its static clauses at the source type and states its
+  heap clauses at the representation: `entryType t` (a dictionary of `t` is a
+  list of records `[Int, t]`) and `entryAbstract ds t a`. `AllocatedFlatValue`,
+  `TagsDeep`, `ResultTags` and `ChainTags` do not change. Where a type holds no
+  dictionary both are the identity (`entryType_of_dictFree`,
+  `entryAbstract_of_dictFree`). `Preserved` concludes at the representation;
+  the cases with no dictionary operand convert at the end
+  (`success_of_dictFree`), and the cases that can see one (atom, let, branch,
+  the two cases, record, ok, err, shared) carry it (`flat_atom_entry`,
+  `entryAbstract_join`, `flatAbstract_entry`).
+- The five cases (`FlatFragment/Dictionary.lean`): the empty dictionary is a
+  fresh empty array; the size is a length; a lookup is an element read
+  (`dictFind_corresponds`); a remove filters the entries in place, and the
+  kept footprint is a sublist of the old one (`filtered_footprint_nodup`,
+  `filtered_footprint_once`); an insert is a push or an in-place set of one
+  entry (`dictPut_split`), with the push's certificate lemmas and the store
+  tests on the value read through the entry's field 1.
+- Probes `dictOps`, `dictValueWritten`, `dictBranch`, `dictInRecord`
+  (`Trace.lean`); the #1796 witness is in the fragment
+  (`DictEntryPaths.program_flat`, `program_traces_agree`).
+- `dictFocus` stays out: the checker summarises its body with `inferScope`
+  and `applyScope` (canonical origins), as for the list focus; its proof needs
+  #165 step 3. `accepted_flat_anf_traces_agree` keeps its statement.
