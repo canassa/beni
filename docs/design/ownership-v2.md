@@ -1562,7 +1562,12 @@ item of a key below a prefix walked up from its slot and replayed the steps agai
 `bench/corpus`'s `Codec.Decode.oneOfHelp`, whose recursive `Result Error a` reads 519 items at a few dozen
 slots a round, spent 69 000 of its 251 712 growth records there and now needs 182 461 (`path` 156 606 → 91 484).
 A slot the steps reach several of (a `⟲` that stands for several levels) is replayed each time. Every summary is
-the same; no account grows (`Dict.descend` 24 180 → 21 138, `Fields16` 149 250 → 137 922).
+the same; no account grows (`Dict.descend` 24 180 → 21 138, `Fields16` 149 250 → 137 922). Where `from` is
+`q` itself (a call's result read at its own root, a cast's), a slot whose canonical steps extend `q`'s is that
+slot (§2.1, *one position, one name*: its steps replayed are its name; checked over the ledger's roots and core,
+no slot differs), so it is read off its name, two records, and never replayed. `Schema.shapesOf`'s growth 2 581
+→ 0, `boxOf` 6 384 → 1 708, `asVariant` 5 837 → 1 810, `variantList` 5 041 → 183, `fieldList` 3 645 → 0,
+`describedOf` 1 622 → 0; `Schema.shapeOf` 263 634 → 258 000, `Dict.descend` → 19 896, `oneOfHelp` → 179 864.
 
 ### 2.11 Calls
 
