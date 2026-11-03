@@ -13198,7 +13198,10 @@ test "the checker v2 takes one walk for a rotating writer at any width, the mark
     // every parameter backwards along them. A delivered mark wakes no walk:
     // one inference walk, and the read check's validation. 4a took n + 1.
     // The slot domain (#1685) walks once and delivers in rounds; every
-    // parameter is written.
+    // parameter is written. A round judges only the demands whose reads
+    // moved (§2.12, *judgements kept across rounds*): 287 898 records at
+    // 64, inside the allowance (406 404 and growth 51 561 when every round
+    // judged every demand).
     for ([_]usize{ 4, 16, 64 }) |n| {
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
@@ -13215,6 +13218,7 @@ test "the checker v2 takes one walk for a rotating writer at any width, the mark
         try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit rot") == null);
         try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "rot", "walks"));
         try testing.expect(try accountField(dump.stdout, "rot", "rounds") <= n + 2);
+        try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "rot", "growth"));
         var buf: [16]u8 = undefined;
         try testing.expect(std.mem.indexOf(u8, dump.stdout, try std.fmt.bufPrint(&buf, " π{d}ε; req", .{n})) != null);
     }
