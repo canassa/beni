@@ -59,6 +59,15 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
             const ts = Slots.pathOf(el).int();
             // A slot, or a whole subtree (`↓ts`, §2.3.1), the holder meets.
             if (!try Subtree.meetIn(fr.slots, g, fr.account, fr.places, lf.slots, try fr.slots.internSorted(g, fr.account, &.{el}))) continue;
+            // Held at the leaf's own slot, the hold's path is the target's,
+            // a node of its trie when no `⟲` is on its way (§2.8).
+            if (hd.q == pslot and !fr.places.paths.col.info[ts].levels) {
+                try fr.account.reserve(.path, 1 + fr.places.ancestorAt(.from(ts), fr.places.pathDepth(pslot))[1]);
+                if (!fr.places.isPrefix(pslot, .from(ts))) continue;
+                try out.append(g, .{ .from(ts), o });
+                any = true;
+                continue;
+            }
             const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
             var ps: std.ArrayList(u32) = .empty;
             defer ps.deinit(g);

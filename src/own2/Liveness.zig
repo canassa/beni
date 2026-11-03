@@ -90,8 +90,9 @@ pub const Index = struct {
     uses: Ids.Columns(Use) = .empty,
     /// Per local: its run of `uses`.
     by_local: []Ids.Range = &.{},
-    /// Per local: its last point of use, or `none`.
+    /// Per local: its last point of use, or `none`; its deepest use's depth.
     last: []u32 = &.{},
+    deepest: []u32 = &.{},
     /// The merge-sort tree: `size` leaves (a power of two), node `i`'s
     /// pairs at `pairs[off[i]..off[i + 1]]`, sorted by point, and its max
     /// tree over their `rank₂` at `maxes[mt_off[i]..mt_off[i + 1]]` (leaves
@@ -111,6 +112,7 @@ pub const Index = struct {
         x.uses.deinit(gpa);
         gpa.free(x.by_local);
         gpa.free(x.last);
+        gpa.free(x.deepest);
         gpa.free(x.off);
         gpa.free(x.pairs);
         gpa.free(x.mt_off);
@@ -125,6 +127,11 @@ pub const Index = struct {
 
     pub fn get(x: *const Index, id: UseId) Use {
         return x.uses.get(id.int());
+    }
+
+    /// The depth of `local`'s deepest use's path (0 when it has none).
+    pub fn deepestOf(x: *const Index, local: u32) u32 {
+        return if (local < x.deepest.len) x.deepest[local] else 0;
     }
 
     /// The last point `local` is used at, or `none` (§2.8's holder expiry).
@@ -210,6 +217,9 @@ pub const Index = struct {
         @memset(x.by_local, .empty);
         x.last = try gpa.alloc(u32, max_local);
         @memset(x.last, none);
+        x.deepest = try gpa.alloc(u32, max_local);
+        @memset(x.deepest, 0);
+        for (uses) |u| x.deepest[u.local] = @max(x.deepest[u.local], places.pathDepth(u.path));
         const locals = x.uses.col.local;
         const points = x.uses.col.point;
         var i: u32 = 0;
@@ -464,10 +474,9 @@ pub const Index = struct {
         while (at < r.start + r.len) {
             const end = x.groupEnd(at, r.start + r.len);
             try charge.reserve(gpa, .inspection, 1);
-            if (try filter.accept(filter.ctx, x.uses.get(at), .from(at))) {
-                if (try x.firstAfter(gpa, charge, .{ .start = at, .len = end - at }, p, t)) |u| {
-                    if (best == null or pairLess(x.pairOf(u), x.pairOf(best.?))) best = u;
-                }
+            // The filter judges only a group with an earlier use after `p`.
+            if (try x.firstAfter(gpa, charge, .{ .start = at, .len = end - at }, p, t)) |u| {
+                if ((best == null or pairLess(x.pairOf(u), x.pairOf(best.?))) and try filter.accept(filter.ctx, x.uses.get(at), .from(at))) best = u;
             }
             at = end;
         }
@@ -581,9 +590,13 @@ pub const Index = struct {
         const t = try threshold(gpa, charge, regions, p);
         var steps: std.ArrayList(Place.Step) = .empty;
         defer steps.deinit(gpa);
-        try stepsOf(gpa, charge, places, q, &steps, lanes);
+        // A prefix deeper than every use of `h` holds none: the queries start
+        // at the deepest one's depth, reached by `q`'s jump pointers.
+        const top = places.ancestorAt(q, @min(places.pathDepth(q), x.deepestOf(h)));
+        try charge.reserve(gpa, .path, top[1]);
+        try stepsOf(gpa, charge, places, top[0], &steps, lanes);
         // `prefix`: the path of the query's depth, walked up with it.
-        var prefix = q;
+        var prefix = top[0];
         var best: ?UseId = null;
         var depth = steps.items.len + 1;
         while (depth > 0) : (depth -= 1) {
@@ -607,6 +620,8 @@ pub const Index = struct {
 
     /// `useUnder`, its steps and its one range query on step lanes (#1225).
     pub fn useUnderIn(x: *const Index, gpa: Allocator, charge: Charge, places: *const Place.Table, regions: *const Regions.Tree, h: u32, q: PathId, p: u32, filter: Filter, lanes: ?StepLanes) Error!?UseId {
+        // No use of `h` is as deep as `q`: none is at or below it.
+        if (x.deepestOf(h) < places.pathDepth(q)) return null;
         const t = try threshold(gpa, charge, regions, p);
         var steps: std.ArrayList(Place.Step) = .empty;
         defer steps.deinit(gpa);
