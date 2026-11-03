@@ -20,6 +20,7 @@ const Slots = @import("Slots.zig");
 const Trees = @import("Trees.zig");
 const PlaceBelow = @import("PlaceBelow.zig");
 const Subtree = @import("Subtree.zig");
+const MeetRun = @import("MeetRun.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
@@ -54,11 +55,13 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
     if (lf.kind == .ref and tls.items.len != 0) {
         const pslot = fr.pos.items[lf.pos].slot;
         var any = false;
-        for (tls.items) |tli| for (fr.slots.elems(fr.leafAt(tli).slots)) |el| {
-            if (Slots.isNot(el)) continue;
+        var met: std.ArrayList(u32) = .empty;
+        defer met.deinit(g);
+        // Each slot, or whole subtree (`↓ts`, §2.3.1), the holder meets: one
+        // pass over the target leaf's slots (`MeetRun`).
+        for (tls.items) |tli| try MeetRun.meetRun(fr.slots, g, fr.account, fr.places, lf.slots, fr.slots.elems(fr.leafAt(tli).slots), &met);
+        for (met.items) |el| {
             const ts = Slots.pathOf(el).int();
-            // A slot, or a whole subtree (`↓ts`, §2.3.1), the holder meets.
-            if (!try Subtree.meetIn(fr.slots, g, fr.account, fr.places, lf.slots, try fr.slots.internSorted(g, fr.account, &.{el}))) continue;
             const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
             var ps: std.ArrayList(u32) = .empty;
             defer ps.deinit(g);
@@ -67,7 +70,7 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
                 try out.append(g, .{ .from(p), o });
                 any = true;
             }
-        };
+        }
         if (any) {
             // The holder's other objects are the target only where its
             // root is not separated: held at the holder's path, under
