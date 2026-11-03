@@ -32,9 +32,11 @@ pub fn madeAfter(e: *Eval, a: Leaf, l: Leaf) bool {
 }
 
 /// Whether entry `at` or one it was expanded from has leaf `x`; a step
-/// each, charged. The chain's leaves are distinct (a leaf met again is
-/// never added), so it is at most the leaves long.
+/// each, charged, and only for a leaf some entry has. The chain's leaves are
+/// distinct (a leaf met again is never added), so it is at most the leaves long.
 pub fn onChain(e: *Eval, st: *const Entries.Rounds, at: u32, x: u32) Error!bool {
+    // A leaf no entry has is on no chain: one lookup, no walk.
+    if (st.has_leaf.get(.{x}) == null) return false;
     var a = at;
     while (a != none) : (a = st.par.items[a][0]) {
         try e.charge(.cond, 1);

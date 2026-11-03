@@ -142,6 +142,9 @@ pub const Eval = struct {
     /// Expansions in progress (a fold's answer feeds itself): a leaf met
     /// again while it is expanded adds nothing.
     expanding: Ids.FixedDict(1) = .{},
+    /// `endOf`'s answers by `(leaf, grown)`; `grown` counts what keys gained.
+    end_memo: Ids.FixedDict(2) = .{},
+    grown: u32 = 0,
     scratch: std.ArrayList(u32) = .empty,
     /// Set while a group is solved (§2.12): a member's call reads its
     /// growing draft, and what reads a key subscribes to it.
@@ -178,6 +181,7 @@ pub const Eval = struct {
         e.inst_stack.deinit(g);
         e.routes.deinit(g);
         e.expanding.deinit(g);
+        e.end_memo.deinit(g);
         e.scratch.deinit(g);
         for (e.keys.items) |*k| {
             k.leaves.deinit(g);
@@ -672,6 +676,25 @@ pub const Eval = struct {
         return e.inst_leaves.items[start..][0..acc.items.len];
     }
 
+    /// What leaf `x` of one object slot of a call's result ends at when each
+    /// call on the way has one leaf there: a chain of calls handing one object on
+    /// is one step for the distinct check (§2.9.3). Kept while no key grows.
+    pub fn endOf(e: *Eval, x: u32) Error!u32 {
+        const l = e.f.leafAt(x);
+        if (l.kind != .ref or l.tags != 0 or l.routes != 0 or e.f.roots.items[l.root].kind != .call) return x;
+        const sl = Subtree.explicit(e.f.slots, l.slots);
+        if (sl.len != 1 or Subtree.subs(e.f.slots, l.slots).len != 0) return x;
+        // One object: never a family's slot, nor one no step below names.
+        const pk = e.places().kind(e.places().pathPlace(.from(sl[0])));
+        if (e.f.places.isSummary(.from(sl[0])) or pk == .@"var" or pk == .@"opaque") return x;
+        if (e.end_memo.get(.{ x, e.grown })) |y| return y;
+        try e.end_memo.put(e.gpa(), .{ x, e.grown }, x); // met again: itself
+        const run = try e.instAt(e.f.roots.items[l.root].a, .from(sl[0]), none);
+        const y = if (run.len == 1 and run[0] != x) try e.endOf(run[0]) else x;
+        try e.end_memo.put(e.gpa(), .{ x, e.grown }, y);
+        return y;
+    }
+
     /// `instAt` while a group is solved (§2.12 *Deliveries*): the key is
     /// made once, filled from the callee's contract or, for a member, from
     /// its draft as it stands; it grows when the draft does, and the
@@ -1034,6 +1057,7 @@ pub const Eval = struct {
 
     fn addBelow(e: *Eval, ki: u32, x: u32, at: u32) Error!void {
         if ((try e.below_has.getOrPut(e.gpa(), .{ ki, x, at })).found_existing) return;
+        e.grown +%= 1;
         try e.charge(.edge, 1);
         const k = &e.keys.items[ki];
         try k.leaves.append(e.gpa(), x);
@@ -1075,6 +1099,7 @@ pub const Eval = struct {
 
     fn addLeaf(e: *Eval, ki: u32, x: u32) Error!void {
         if ((try e.key_has.getOrPut(e.gpa(), .{ ki, x })).found_existing) return;
+        e.grown +%= 1;
         try e.charge(.edge, 1);
         const k = &e.keys.items[ki];
         try k.leaves.append(e.gpa(), x);
