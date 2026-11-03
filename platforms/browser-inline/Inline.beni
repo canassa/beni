@@ -11,7 +11,7 @@ import Browser.Host.Element as HostElement
 import Browser.Host.Event as HostEvent
 import Browser.Host.EventTarget as EventTarget
 import Browser.Host.Events as HostEvents
-import Browser.Host.Map as NativeMap
+import Browser.Host.KeyMap as NativeMap
 import Browser.Host.Node as HostNode
 import Browser.Host.Rejection as HostRejection
 import Cmd exposing (Cmd)

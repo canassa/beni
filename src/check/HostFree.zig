@@ -325,7 +325,7 @@ test "HostFree renderer storage retains imported erasure obligations in platform
     });
     for ([_]struct { file: []const u8, path: [:0]const u8, package: @import("../resolve/Graph.zig").Package }{
         .{ .file = "core/Browser/Host/Array.beni", .path = "Browser/Host/Array.beni", .package = .core },
-        .{ .file = "core/Browser/Host/Map.beni", .path = "Browser/Host/Map.beni", .package = .core },
+        .{ .file = "core/Browser/Host/KeyMap.beni", .path = "Browser/Host/KeyMap.beni", .package = .core },
         .{ .file = "core/Js/Any.beni", .path = "Js/Any.beni", .package = .core },
         .{ .file = "tests/fixtures/renderer-storage-erasure/Library.beni", .path = "Library.beni", .package = .core },
         .{ .file = "tests/fixtures/renderer-storage-erasure/platform/Test.beni", .path = "Test.beni", .package = .platform },
@@ -344,7 +344,7 @@ test "HostFree renderer storage retains imported erasure obligations in platform
     try testing.expectEqual(@as(usize, 4), refusals);
     try testing.expectEqual(@as(usize, 4), p.session.diagnostics.items.len);
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.Array.View") != null);
-    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.Map.Map") != null);
+    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.KeyMap.Map") != null);
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "erases a callable") != null);
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Js.Any.Any") != null);
 }
