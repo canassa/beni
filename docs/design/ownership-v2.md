@@ -1435,9 +1435,11 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    `π_j·s` projects `a_j` by the steps of `s` (a `⟲` is projected into a literal exactly, as the values one
    or more levels below at the same place, and into a reference by its descendant paths, never its own
    storage); `fresh` is the atom `fresh k`; `cb L` the call's label instantiation (§2.11.3); `⊤` is `⊤`. The
-   instantiation is built once per call per candidate generation (§2.12) and never re-read lazily. Its
-   leaves carry no route (#1714), so the walk of a `⟲` into a literal meets each (value, place) once, not
-   once per path: `xᵢ = if n == i then Node xᵢ₋₁ [] Leaf else xᵢ₋₁` names `xᵢ₋₁` twice, 2ⁱ paths.
+   instantiation is built once per call per candidate generation (§2.12) and never re-read lazily. The walk
+   of a `⟲` into a literal meets each (value, place, literal route) once, not once per path (#1714): two
+   arrivals by one literal route are one position, and they give the same projections. Its leaves carry no
+   route, so it meets each (value, place) once. `xᵢ = if n == i then Node xᵢ₋₁ [] Leaf else xᵢ₋₁` names
+   `xᵢ₋₁` twice, 2ⁱ paths but i + 1 literal routes.
    *The identity control* (#1714, 2026-11-03, the manager's decision): where the callee is settled when the
    caller is walked (a contract from an earlier group, an import, words; never a member of the caller's own
    group), its `res` is the identity tree on parameter `j` (`ε… π_j·ε` and nothing else, `Trees.identity`),

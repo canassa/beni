@@ -166,7 +166,8 @@ pub const Eval = struct {
     /// A deep projection read part by part (`Distinct.instSel`): a literal
     /// below the slot gives each part's own objects at its own route.
     parts: bool = false,
-    /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place.
+    /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place,
+    /// not once a place and literal route.
     no_routes: bool = false,
 
     pub fn deinit(e: *Eval) void {
@@ -559,10 +560,10 @@ pub const Eval = struct {
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(e.gpa());
         try stack.append(e.gpa(), .{ .v = v, .place = place, .route = route, .below = false });
-        var met: Ids.FixedDict(3) = .{};
+        var met: Ids.FixedDict(4) = .{};
         defer met.deinit(e.gpa());
         while (stack.pop()) |it| {
-            if (e.no_routes and (try met.getOrPut(e.gpa(), .{ it.v, it.place.int(), @intFromBool(it.below) })).found_existing) continue;
+            if ((try met.getOrPut(e.gpa(), .{ it.v, it.place.int(), @intFromBool(it.below), if (e.no_routes) 0 else it.route })).found_existing) continue;
             try e.charge(.inspection, 1);
             const x = e.f.val(it.v);
             switch (x.kind) {
