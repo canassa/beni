@@ -22,6 +22,7 @@ const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
+const Canon = @import("Canon.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -1060,6 +1061,22 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     for (d.writes.items) |x| if (x.j >= code.params.len) try e.contracts.effectFlat(e.gpa(), e.gpa(), f.account, f.slots, f.places, x, &flat);
     for (flat.items) |x| if (!Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
+    };
+    // Each condition in its one spelling (§2.9.1, *One spelling of a subtree*).
+    var nj: usize = 0;
+    for (f.roots.items) |r| if (r.kind == .param) {
+        nj = @max(nj, r.a + 1);
+    };
+    const roots = try arena.alloc(PathId, nj);
+    @memset(roots, .none);
+    for (f.roots.items) |r| if (r.kind == .param and r.a < roots.len) {
+        roots[r.a] = r.path;
+    };
+    const cx: Canon.Ctx = .{ .gpa = e.gpa(), .arena = arena, .account = f.account, .slots = f.slots, .places = f.places, .roots = roots };
+    d.res_cond = try Canon.canonical(cx, d.res_cond);
+    d.req = try Canon.canonical(cx, d.req);
+    for (d.labels.items) |*l| for (l.supplies.items) |*sup| {
+        sup.cond = try Canon.canonical(cx, sup.cond);
     };
 }
 
