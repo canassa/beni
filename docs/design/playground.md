@@ -441,7 +441,11 @@ bootstrap script (`playground/frame.js`, inlined in the frame's `srcdoc`):
 1. makes a blob URL for each module in the frame's own origin, dependencies first, after it
    replaces each relative import specifier with the blob URL of the file it names;
 2. replaces `node:process` with a small module whose `stdout.write` sends the text to the parent
-   (a printing program on the `node` platform, `platforms/node/runtime.js`);
+   (a printing program on the `node` platform, `platforms/node/runtime.js`). *Amended 2026-11-03*
+   (`plans/runtime-in-beni.md` step 15): the `node` platform's runtime is beni over `Js` and
+   reads `process` as a global, so the frame defines `globalThis.process` first — `stdout` and
+   `stderr` that send to the parent, the `exitCode` setter, a `beforeExit` that never comes, and
+   `getBuiltinModule` for `node:fs/promises` — and the two stand-in modules export that object;
 3. imports the entry module, `_main.mjs`, which mounts the program on the frame's `<body>`.
 
 The frame sends an uncaught error and an unhandled rejection to the parent from its `error` and

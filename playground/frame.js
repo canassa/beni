@@ -9,7 +9,9 @@
 // makes a blob URL in the frame's own origin for each module, dependencies
 // first, with each relative import specifier replaced by the blob URL of the
 // file it names and `node:process` and `node:fs/promises` by small modules
-// that report to the page, and imports `_main.mjs`.
+// that report to the page — and `process` as a global of the frame, which
+// the `node` platform's runtime, beni over `Js`, reads — and imports
+// `_main.mjs`.
 // What the program prints, logs or throws goes to the page by
 // `postMessage`, from listeners: nothing here catches.
 "use strict";
@@ -31,22 +33,32 @@
 
   const files = JSON.parse(document.getElementById("beni-files").textContent);
 
-  // The two modules of Node a program on the `node` platform imports
-  // (`platforms/node/runtime.js` and `Io.js`): its output goes to the page,
-  // and the page has no files to read.
+  // What a program on the `node` platform reads of Node: its output goes
+  // to the page, and the page has no files to read. The platform's runtime
+  // (`platforms/node/Rt.beni`, `Io.beni`) is beni over `Js` and reads
+  // `process` as a global, and asks it for `node:fs/promises` with
+  // `getBuiltinModule`; a hand-written file imports the two by name, so
+  // the same objects stand in for the modules.
+  const fsPromises = {
+    readFile: (path) => Promise.reject(Object.assign(new Error(`ENOENT: the playground has no file ${path}`), { code: "ENOENT" })),
+  };
+  const builtins = { "node:fs/promises": fsPromises };
+  globalThis.process = {
+    stdout: { write: (text) => post("stdout", String(text)) },
+    stderr: { write: (text) => post("console", String(text).replace(/\n$/, "")) },
+    set exitCode(code) {
+      post("exit", String(code));
+    },
+    // `beforeExit` never comes: the frame's loop does not end.
+    on: () => {},
+    getBuiltinModule: (name) => {
+      if (!Object.hasOwn(builtins, name)) throw new Error(`the playground has no ${name}`);
+      return builtins[name];
+    },
+  };
   const shims = {
-    "node:process": [
-      'const write = (text) => parent.postMessage({ beni: "stdout", text: String(text) }, "*");',
-      "export const stdout = { write };",
-      "export default {",
-      "  stdout,",
-      '  set exitCode(code) { parent.postMessage({ beni: "exit", text: String(code) }, "*"); },',
-      "};",
-    ].join("\n"),
-    "node:fs/promises": [
-      "export const readFile = (path) =>",
-      '  Promise.reject(Object.assign(new Error(`ENOENT: the playground has no file ${path}`), { code: "ENOENT" }));',
-    ].join("\n"),
+    "node:process": "export const stdout = globalThis.process.stdout;\nexport default globalThis.process;",
+    "node:fs/promises": "export const readFile = globalThis.process.getBuiltinModule('node:fs/promises').readFile;",
   };
 
   const blob = (text) => URL.createObjectURL(new Blob([text], { type: "text/javascript" }));

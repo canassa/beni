@@ -158,7 +158,7 @@ in beni and checks them against published vectors.
 **Markup runs** (2026-09-29): the markup lowering interface
 (`src/markup/Interface.zig`, imported by a lowering as `beni_markup`;
 [`boundary.md`](docs/design/boundary.md) §9.4–§9.5) and the `node`
-platform's `ssr` lowering (`platforms/node/zig/`, runtime `markup.js`;
+platform's `ssr` lowering (`platforms/node/zig/`, runtime `Rt.beni` since 2026-11-03, `markup.js` before;
 [`backend.md`](docs/design/backend.md) §15.6). A platform's Zig is compiled
 into beni through a registry `build.zig` generates; `-Dplatform=<dir>` adds
 one, and `test-blackbox` proves it with `tests/platforms/toy`. A program
