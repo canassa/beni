@@ -151,9 +151,9 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             // read by structure at its own place, where no place below it is on
             // a cycle (so its paths are its steps), is one open arrival, never
             // one a slot below it (§2.10, *Arrivals by structure*). So is one
-            // in the result at its own path (so its paths fold as the
-            // result's) that `BelowSize.written_max` slots cannot write out.
-            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none and try BelowSize.moreBelow(f.slots, gpa, f.account, f.places, pslot, BelowSize.written_max)))) {
+            // in the result at its own path (its paths fold as the result's),
+            // whatever its size: the identity tree, one node (§2.11.2).
+            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) {
                 return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var" }, out);
             }
             // A call's or a supply's whole subtree read by structure is read
@@ -442,7 +442,10 @@ fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, held: Hel
         // A type variable's slot has no structure below it: what is open
         // there is all of it at the slot, which `arrive` keeps open.
         const wide = open and f.places.kind(f.places.pathPlace(.from(dest))) != .@"var";
-        if (wide) try describeWide(s, try e.ev.widen(li, at), .from(dest), out) else try describeLeaf(s, li, .from(dest), true, out);
+        // A parameter's whole subtree is said as the read-off says one
+        // (open only where its paths fold as the slot's, §2.10).
+        const whole_param = wide and f.leafAt(li).kind == .ref and f.roots.items[f.leafAt(li).root].kind == .param;
+        if (wide and !whole_param) try describeWide(s, try e.ev.widen(li, at), .from(dest), out) else try describeLeaf(s, if (whole_param) try e.ev.widen(li, at) else li, .from(dest), true, out);
     }
 }
 

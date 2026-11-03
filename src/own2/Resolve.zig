@@ -39,6 +39,7 @@ const TagTree = @import("TagTree.zig");
 const Later = @import("Later.zig");
 const Descent = @import("Descent.zig");
 const Kept = @import("Kept.zig");
+const Parts = @import("Parts.zig");
 const Twins = @import("Twins.zig");
 
 pub const Error = Ids.ChargeError;
@@ -596,7 +597,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
                 var ls: std.ArrayList(Relation.Part) = .empty;
                 defer ls.deinit(f.gpa);
-                try e.ev.partsOf(v, es.wordsOf(rs), &ls);
+                try Parts.of(&e.ev, v, es.wordsOf(rs), &ls);
                 const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else none;
                 for (ls.items) |part| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending });
             };
