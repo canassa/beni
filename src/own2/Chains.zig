@@ -11,6 +11,7 @@ const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
+const Jumps = @import("Jumps.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -46,12 +47,12 @@ pub fn onChain(e: *Eval, st: *const Entries.Rounds, at: u32, x: u32) Error!bool 
 }
 
 /// `xs` in the inline order of the check's entries (an insertion sort by
-/// `Entries.Rounds.before`, its comparisons charged).
+/// `Jumps.before`, its comparisons charged).
 pub fn sortInline(e: *Eval, st: *const Entries.Rounds, xs: []u32) Error!void {
     var i: usize = 1;
     while (i < xs.len) : (i += 1) {
         var k = i;
-        while (k > 0 and try st.before(e.f, xs[k], xs[k - 1])) : (k -= 1) std.mem.swap(u32, &xs[k], &xs[k - 1]);
+        while (k > 0 and try Jumps.before(e.f, st.par.items, st.jump.items, xs[k], xs[k - 1])) : (k -= 1) std.mem.swap(u32, &xs[k], &xs[k - 1]);
     }
 }
 

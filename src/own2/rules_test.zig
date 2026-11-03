@@ -84,6 +84,8 @@ const layers = [_]Entry{
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
     // A call's subtree of atoms read as the callee's node (#1714).
     .{ .file = "AtomGraft.zig", .layer = 7, .max_lines = 70 },
+    // The entries' inline order by jump pointers, for `Chains` (#1714).
+    .{ .file = "Jumps.zig", .layer = 7, .max_lines = 60 },
     // One walk of a value along several paths by route sets, below
     // `Distinct` (#1714, §2.11.2).
     .{ .file = "Routed.zig", .layer = 8, .max_lines = 370 },
@@ -426,7 +428,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 58), layers.len);
+    try testing.expectEqual(@as(usize, 59), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
