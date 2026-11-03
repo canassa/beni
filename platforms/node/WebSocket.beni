@@ -605,16 +605,33 @@ pong ws payload =
 
 -- Read every whole frame received. A frame's header is checked as soon as
 -- it is whole, so a message over the limit is refused before its bytes
--- are kept.
+-- are kept. One self-recursive tail function, so the tail-call loop
+-- writes it as the sibling's `while`: a chunk of ten thousand tiny frames
+-- runs in constant stack (#1801).
 parse : Js.Value → ⊤
 parse ws =
-    if hasEnded ws then
-        ⊤
-    else if Js.isNull (Js.get ws "frame") then
-        if readHeader ws then
-            parseBody ws
+    if not (hasEnded ws) then
+        if headerReady ws then
+            if bodyWhole ws then
+                takeFrame ws
+                parse ws
+
+
+-- The next frame's header, read when it is not yet: `False` while bytes
+-- are missing or once the connection failed.
+headerReady : Js.Value → Bool
+headerReady ws =
+    if Js.isNull (Js.get ws "frame") then
+        readHeader ws
     else
-        parseBody ws
+        True
+
+
+bodyWhole : Js.Value → Bool
+bodyWhole ws =
+    frameLength : Int
+    frameLength = Js.to (Js.get (Js.get ws "frame") "length")
+    Js.to (Js.get ws "bytes") ≥ frameLength
 
 
 -- The header of the next frame, when it is whole: `True` with `frame` set,
@@ -732,34 +749,31 @@ overLimit ws frameLength =
         Nothing
 
 
--- The frame whose header is read, once its payload is whole.
-parseBody : Js.Value → ⊤
-parseBody ws =
+-- The frame whose header is read and whose payload is whole: taken,
+-- unmasked and handled by its opcode.
+takeFrame : Js.Value → ⊤
+takeFrame ws =
     current = Js.get ws "frame"
     frameLength : Int
     frameLength = Js.to (Js.get current "length")
-    if Js.to (Js.get ws "bytes") < frameLength then
+    Js.set ws "frame" Js.null
+    payload =
+        if frameLength == 0 then
+            emptyBuffer ⊤
+        else
+            take ws frameLength
+    unmask payload (Js.get current "mask") 0 (length payload)
+    opcode : Int
+    opcode = Js.to (Js.get current "opcode")
+    if opcode == 0x8 then
+        peerClosed ws payload
+    else if opcode == 0x9 then
+        pong ws payload
+    else if opcode == 0xa then
+        -- A pong answers nothing this side asked: it is ignored.
         ⊤
     else
-        Js.set ws "frame" Js.null
-        payload =
-            if frameLength == 0 then
-                emptyBuffer ⊤
-            else
-                take ws frameLength
-        unmask payload (Js.get current "mask") 0 (length payload)
-        opcode : Int
-        opcode = Js.to (Js.get current "opcode")
-        if opcode == 0x8 then
-            peerClosed ws payload
-        else if opcode == 0x9 then
-            pong ws payload
-        else if opcode == 0xa then
-            -- A pong answers nothing this side asked: it is ignored.
-            ⊤
-        else
-            dataFrame ws (Js.to (Js.get current "fin")) payload
-        parse ws
+        dataFrame ws (Js.to (Js.get current "fin")) payload
 
 
 -- Unmask `payload` in place with the 4-byte `mask`, from `i` to `n`.
