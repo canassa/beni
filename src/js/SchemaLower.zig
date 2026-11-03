@@ -296,7 +296,6 @@ const Op = SchemaGraph.Op;
 const Gen = struct {
     in_description: bool = false,
     worker_checks: ?[]const NameIndex = null,
-    checks_by_identity: ?*std.AutoHashMapUnmanaged(Node.Index, Node.Index) = null,
     l: *Lowerer,
     sg: *const SchemaGraph,
     plan: *const SchemaPlan,
@@ -533,14 +532,6 @@ const Gen = struct {
         return out;
     }
 
-    fn checkMap(g: *Gen) !*std.AutoHashMapUnmanaged(Node.Index, Node.Index) {
-        if (g.checks_by_identity) |map| return map;
-        const map = try g.l.scratch.create(std.AutoHashMapUnmanaged(Node.Index, Node.Index));
-        map.* = .empty;
-        g.checks_by_identity = map;
-        return map;
-    }
-
     fn checkName(g: *Gen, i: usize) !NameIndex {
         return g.local(try std.fmt.allocPrint(g.l.scratch, "$check{d}", .{i}));
     }
@@ -579,7 +570,7 @@ const Gen = struct {
     fn typeIdentity(g: *Gen, n: PNode, encoded: bool, params: []const NameIndex) !Node.Index {
         const identity_root = if (encoded) g.plan.nodes.items(.encoded_term)[@backingInt(n)] else g.plan.nodes.items(.program_term)[@backingInt(n)];
         if (try @import("SchemaIdentity.zig").expression(g.l, g.plan, identity_root, try g.identityParameters(params), g.p)) |value| {
-            try (try g.checkMap()).put(g.l.scratch, value, try g.typeCheck(n, encoded, params));
+            try g.l.schema_checks.put(g.l.scratch, value, try g.typeCheck(n, encoded, params));
             return value;
         }
         try g.l.reportSchemaIdentity(g.p);
@@ -595,12 +586,12 @@ const Gen = struct {
 
     fn unitIdentity(g: *Gen) !Node.Index {
         const identity = try g.str("()");
-        try (try g.checkMap()).put(g.l.scratch, identity, try g.l.checkedShape(&.{.{ .kind = .unit }}, &.{}, g.p));
+        try g.l.schema_checks.put(g.l.scratch, identity, try g.l.checkedShape(&.{.{ .kind = .unit }}, &.{}, g.p));
         return identity;
     }
 
     fn packDatum(g: *Gen, identity: Node.Index, value: Node.Index) !Node.Index {
-        return g.call(try g.core("packed"), &.{ identity, (try g.checkMap()).get(identity) orelse {
+        return g.call(try g.core("packed"), &.{ identity, g.l.schema_checks.get(identity) orelse {
             try g.l.reportSchemaIdentity(g.p);
             return g.lit(.undefined_lit);
         }, value });
@@ -661,8 +652,8 @@ const Gen = struct {
     fn wrappedIdentity(g: *Gen, prefix: []const u8, inner: Node.Index) !Node.Index {
         const wrapped = try g.bin(.add, try g.bin(.add, try g.str(prefix), inner), try g.str(")"));
         const type_id = g.l.in.types.find(g.l.in.graph, .core, try g.sym("Schema"), try g.sym("Presence"));
-        const check = try g.l.checkedShape(&.{ .{ .kind = .named, .count = 1, .value = type_id.int() }, .{ .kind = .parameter, .value = 0 } }, &.{(try g.checkMap()).get(inner).?}, g.p);
-        try (try g.checkMap()).put(g.l.scratch, wrapped, check);
+        const check = try g.l.checkedShape(&.{ .{ .kind = .named, .count = 1, .value = type_id.int() }, .{ .kind = .parameter, .value = 0 } }, &.{g.l.schema_checks.get(inner).?}, g.p);
+        try g.l.schema_checks.put(g.l.scratch, wrapped, check);
         return wrapped;
     }
 

@@ -171,49 +171,43 @@ fn build(e: *Effects, index: usize) Effects.Error!void {
     if (@import("Realms.zig").stored(e, r) or @import("Realms.zig").unknown(e.store, r)) return;
     if (content != .structure) return;
     var buffer: [64]u8 = undefined;
-    switch (content.structure) {
-        .func => |f| {
-            const params = e.store.vars(f.params);
-            const name = std.fmt.bufPrint(&buffer, "f{d}", .{params.len}) catch unreachable;
-            const function = try child(e, holder, name, true);
-            try attach(e, function, r);
-            for (params, 0..) |parameter, i| {
-                const key = std.fmt.bufPrint(&buffer, "p{d}", .{i}) catch unreachable;
-                try merge(e, try child(e, function, key, false), try value(e, parameter));
-            }
-            try merge(e, try child(e, function, "r", false), try value(e, f.result));
+    const parent = switch (content.structure) {
+        .func => blk: {
+            const function = Walk.function(e.store, r).?;
+            const name = std.fmt.bufPrint(&buffer, "f{d}", .{function.params.len}) catch unreachable;
+            const node = try child(e, holder, name, true);
+            try attach(e, node, r);
+            break :blk node;
         },
-        .app => |a| {
+        .app => |a| blk: {
             if (a.type == .none) return;
             const identity = e.types.entry(a.type);
             const name = try std.fmt.allocPrint(e.gpa, "n{s}:{s}.{s}", .{ @tagName(identity.package), e.interner.slice(identity.module_name), e.interner.slice(identity.name) });
             defer e.gpa.free(name);
-            const application = try child(e, holder, name, e.carries(r));
-            try attach(e, application, r);
-            for (e.store.vars(a.args), 0..) |argument, i| {
-                const key = std.fmt.bufPrint(&buffer, "a{d}", .{i}) catch unreachable;
-                try merge(e, try child(e, application, key, false), try value(e, argument));
-            }
+            const node = try child(e, holder, name, e.carries(r));
+            try attach(e, node, r);
+            break :blk node;
         },
-        .record => |record| {
-            const object = try child(e, holder, "o", false);
-            for (e.store.fields(record.fields)) |field| {
-                const name = try std.fmt.allocPrint(e.gpa, "k{s}", .{e.interner.slice(field.name)});
-                defer e.gpa.free(name);
-                try merge(e, try child(e, object, name, false), try value(e, field.value));
-            }
-            try merge(e, try child(e, object, "x", false), try value(e, record.ext));
+        .record => try child(e, holder, "o", false),
+        .tuple => blk: {
+            const name = std.fmt.bufPrint(&buffer, "t{d}", .{Walk.positions(e.store, r).len}) catch unreachable;
+            break :blk try child(e, holder, name, false);
         },
-        .tuple => |range| {
-            const elements = e.store.vars(range);
-            const name = std.fmt.bufPrint(&buffer, "t{d}", .{elements.len}) catch unreachable;
-            const tuple = try child(e, holder, name, false);
-            for (elements, 0..) |element, i| {
-                const key = std.fmt.bufPrint(&buffer, "e{d}", .{i}) catch unreachable;
-                try merge(e, try child(e, tuple, key, false), try value(e, element));
-            }
-        },
-        .unit, .empty_record => {},
+        .unit, .empty_record => return,
+    };
+    var ordinal: u32 = 0;
+    while (Walk.stepped(e.store, r, ordinal)) |step| : (ordinal += 1) {
+        const name = switch (step.kind) {
+            .param => std.fmt.bufPrint(&buffer, "p{d}", .{step.index}) catch unreachable,
+            .result => "r",
+            .argument => std.fmt.bufPrint(&buffer, "a{d}", .{step.index}) catch unreachable,
+            .element => std.fmt.bufPrint(&buffer, "e{d}", .{step.index}) catch unreachable,
+            .field => try std.fmt.allocPrint(e.gpa, "k{s}", .{e.interner.slice(@fromBackingInt(step.index))}),
+            .extension => "x",
+            .expansion => unreachable, // resolved() read through aliases above.
+        };
+        defer if (step.kind == .field) e.gpa.free(name);
+        try merge(e, try child(e, parent, name, false), try value(e, step.v));
     }
 }
 

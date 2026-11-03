@@ -9,6 +9,7 @@ answer,label
 {"answer":43,"label":"packet"}
 update is independent
 refused different type
+refused different boxed type
 tuple
 unpacked record is data
 updated record is data

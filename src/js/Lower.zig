@@ -1289,6 +1289,9 @@ pub const Lowerer = struct {
     /// scratch. The slice lives in `scratch`, which outlives the
     /// module's lowering.
     record_names: ?struct { rep: RecordRep, names: []const Symbol } = null,
+    /// Checked-data witnesses indexed by identity-expression nodes. Shared by
+    /// every schema generator in this module, so growing the column is linear.
+    schema_checks: stamped.Column(Node.Index, Node.Index) = .{},
     diagnostics: std.ArrayList(Item) = .empty,
     /// Per `core_private_values`, whether this module already reported the
     /// core lacking it (`corePrivate`).

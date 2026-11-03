@@ -103,6 +103,11 @@ main =
                 "refused different type"
             Just _ →
                 "accepted different type"
+        , case wrong boxed of
+            Nothing →
+                "refused different boxed type"
+            Just _ →
+                "accepted different boxed type"
         , if tuple == ( 42, "packet" ) then "tuple" else "wrong tuple"
         , case Data.checked value of
             Just _ →
