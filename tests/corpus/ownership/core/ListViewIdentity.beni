@@ -1,0 +1,6 @@
+-- The private prototype test reads no element and retains no argument.
+import List
+
+
+main : Bool
+main = List.isView [ 1, 2 ]

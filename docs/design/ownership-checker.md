@@ -8254,3 +8254,9 @@ same rule while host-output fields are written to their separate plain object.
 First-error traversal returns immediately; all-error traversal keeps collecting
 issues and discards a partial output when any issue was found. Typed workers and
 the interpreter use the same accumulation rule.
+
+The reply scan's compiler-region pins cover both lowering's fresh empty-list
+path and the iterative scanner. The private beni `scan` wrapper forwards that
+borrowed-input, fresh-result contract and is pinned normally. `List.isView`
+only tests the private View prototype, retaining nothing; its one borrowed
+argument has no later read for an unsafe unused flip to expose.

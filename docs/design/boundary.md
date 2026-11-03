@@ -747,6 +747,16 @@ Trie headers remain distinguishable by their own `$plain` callback. The private 
 They add no user surface or Js.Buffer. `workers-task-storage.md` records
 the decision.
 
+**Cloudflare reply discovery** (owner, 2026-11-03; #1612) is a
+platform-private rule-6 extension. `Worker.Object.replyIds : borrowed msg → fresh List String`
+is available only inside the actual Cloudflare platform. It is a saturated-call
+intrinsic, with no JavaScript sibling and no first-class value. The compiler
+derives a reply-mode Wire plan from the checked argument type and caches its
+per-call root. It returns the ids of local nominal `Worker.Object.Reply`
+handles without converting the message to `Js.Value`. A Reply-free argument
+returns an empty list without traversal; evaluating that argument keeps its
+ordinary effects. `workers-emission.md` specifies the traversal and private brand.
+
 **Typed protocol invocation** (owner, 2026-11-01; #1295, #1612) is an
 approved core-private rule-6 extension for Task's typed callback storage.
 It invokes a typed possibly-suspending callback as one synchronous protocol

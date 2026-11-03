@@ -40,7 +40,7 @@ const Symbol = InternPool.Symbol;
 const TypeKey = TypeKeys.TypeKey;
 
 pub const magic = "BENITKY\x00";
-pub const format_version: u32 = 3;
+pub const format_version: u32 = 4;
 
 const Column = enum(u32) {
     nodes,
@@ -58,6 +58,8 @@ const Column = enum(u32) {
     wire_roots,
     wire_roles,
     wire_types,
+    reply_scans,
+    reply_types,
     strings,
 
     const count: u32 = @typeInfo(Column).@"enum".field_names.len;
@@ -67,9 +69,10 @@ const Column = enum(u32) {
             .nodes => 16,
             .args, .labels, .locals, .decls, .wild, .record_labels => 4,
             .insts, .type_refs, .records => 12,
-            .wire_nodes, .wire_roots => 12,
-            .wire_edges, .wire_roles => 8,
-            .wire_types => 4,
+            .wire_nodes => 16,
+            .wire_roots => 12,
+            .wire_edges, .wire_roles, .reply_scans => 8,
+            .wire_types, .reply_types => 4,
             .strings => 1,
         };
     }
@@ -173,13 +176,14 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         std.mem.writeInt(u32, row[4..8], k.key.int(), .little);
         std.mem.writeInt(u32, row[8..12], k.result.int(), .little);
     }
-    const wire_nodes = try gpa.alloc(u8, a.wire.nodes.len * 12);
+    const wire_nodes = try gpa.alloc(u8, a.wire.nodes.len * 16);
     defer gpa.free(wire_nodes);
     for (a.wire.nodes, 0..) |n, i| {
-        const row = wire_nodes[i * 12 ..][0..12];
-        std.mem.writeInt(u32, row[0..4], @backingInt(n.kind), .little);
+        const row = wire_nodes[i * 16 ..][0..16];
+        std.mem.writeInt(u32, row[0..4], @backingInt(n.kind) | (if (n.reply_mode) @as(u32, 0x80000000) else 0), .little);
         std.mem.writeInt(u32, row[4..8], n.edges.start, .little);
         std.mem.writeInt(u32, row[8..12], n.edges.len, .little);
+        std.mem.writeInt(u32, row[12..16], n.type_index orelse no_ref, .little);
     }
     const wire_edges = try gpa.alloc(u8, a.wire.edges.len * 8);
     defer gpa.free(wire_edges);
@@ -206,15 +210,19 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
     }
     const wire_types = try gpa.alloc(u8, a.wire.types.len * 4);
     defer gpa.free(wire_types);
-    for (a.wire.types, 0..) |id, i| {
-        const named = types.named(id).?;
-        const key: [3]u32 = .{ @backingInt(named.package), try S.string(gpa, &strings, &seen, interner.slice(named.module)), try S.string(gpa, &strings, &seen, interner.slice(named.name)) };
-        const gop = try ref_index.getOrPut(gpa, key);
-        if (!gop.found_existing) {
-            gop.value_ptr.* = @intCast(refs.items.len);
-            try refs.append(gpa, key);
+    const reply_types = try gpa.alloc(u8, a.wire.scan_types.len * 4);
+    defer gpa.free(reply_types);
+    for ([_][]const Types.TypeId{ a.wire.types, a.wire.scan_types }, [_][]u8{ wire_types, reply_types }) |ids, encoded| {
+        for (ids, 0..) |id, i| {
+            const named = types.named(id).?;
+            const key: [3]u32 = .{ @backingInt(named.package), try S.string(gpa, &strings, &seen, interner.slice(named.module)), try S.string(gpa, &strings, &seen, interner.slice(named.name)) };
+            const gop = try ref_index.getOrPut(gpa, key);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = @intCast(refs.items.len);
+                try refs.append(gpa, key);
+            }
+            std.mem.writeInt(u32, encoded[i * 4 ..][0..4], gop.value_ptr.*, .little);
         }
-        std.mem.writeInt(u32, wire_types[i * 4 ..][0..4], gop.value_ptr.*, .little);
     }
     const type_refs = try gpa.alloc(u8, refs.items.len * 12);
 
@@ -238,7 +246,13 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         std.mem.writeInt(u32, row[4..8], r.fields.len, .little);
         std.mem.writeInt(u32, row[8..12], @intFromBool(r.open), .little);
     }
-    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, records, record_labels, wire_nodes, wire_edges, wire_roots, wire_roles, wire_types, strings.items };
+    const reply_scans = try gpa.alloc(u8, a.wire.scans.len * 8);
+    defer gpa.free(reply_scans);
+    for (a.wire.scans, 0..) |scan, i| {
+        std.mem.writeInt(u32, reply_scans[i * 8 ..][0..4], scan.inst, .little);
+        std.mem.writeInt(u32, reply_scans[i * 8 + 4 ..][0..4], scan.node, .little);
+    }
+    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, records, record_labels, wire_nodes, wire_edges, wire_roots, wire_roles, wire_types, reply_scans, reply_types, strings.items };
 
     const lengths = [Column.count]u32{
         @intCast(a.nodes.len),
@@ -256,6 +270,8 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         @intCast(a.wire.roots.len),
         @intCast(a.wire.roles.len),
         @intCast(a.wire.types.len),
+        @intCast(a.wire.scans.len),
+        @intCast(a.wire.scan_types.len),
         @intCast(strings.items.len),
     };
     var offsets: [Column.count]u32 = undefined;
@@ -423,8 +439,8 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         out.artifact.wire.nodes = nodes;
         const node_bytes = col(bytes, offsets, .wire_nodes);
         for (nodes, 0..) |*n, i| {
-            const row = node_bytes[i * 12 ..][0..12];
-            n.* = .{ .kind = std.enums.fromInt(Wire.Kind, std.mem.readInt(u32, row[0..4], .little)) orelse return error.BadSection, .edges = .{ .start = std.mem.readInt(u32, row[4..8], .little), .len = std.mem.readInt(u32, row[8..12], .little) } };
+            const row = node_bytes[i * 16 ..][0..16];
+            n.* = .{ .kind = std.enums.fromInt(Wire.Kind, std.mem.readInt(u32, row[0..4], .little) & 0x7fffffff) orelse return error.BadSection, .edges = .{ .start = std.mem.readInt(u32, row[4..8], .little), .len = std.mem.readInt(u32, row[8..12], .little) }, .type_index = if (std.mem.readInt(u32, row[12..16], .little) == no_ref) null else std.mem.readInt(u32, row[12..16], .little), .reply_mode = std.mem.readInt(u32, row[0..4], .little) & 0x80000000 != 0 };
         }
         const edges = try gpa.alloc(Wire.Edge, lengths[@backingInt(Column.wire_edges)]);
         out.artifact.wire.edges = edges;
@@ -457,6 +473,24 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             id.* = @fromBackingInt(raw);
         }
     }
+    {
+        const Wire = @import("../check/Wire.zig");
+        const ids = try gpa.alloc(Types.TypeId, lengths[@backingInt(Column.reply_types)]);
+        out.artifact.wire.scan_types = ids;
+        const type_bytes = col(bytes, offsets, .reply_types);
+        for (ids, 0..) |*id, i| {
+            const raw = std.mem.readInt(u32, type_bytes[i * 4 ..][0..4], .little);
+            if (raw >= out.type_refs.len) return error.BadSection;
+            id.* = @fromBackingInt(raw);
+        }
+        const scans = try gpa.alloc(Wire.Scan, lengths[@backingInt(Column.reply_scans)]);
+        out.artifact.wire.scans = scans;
+        const scan_bytes = col(bytes, offsets, .reply_scans);
+        for (scans, 0..) |*scan, i| scan.* = .{
+            .inst = std.mem.readInt(u32, scan_bytes[i * 8 ..][0..4], .little),
+            .node = std.mem.readInt(u32, scan_bytes[i * 8 + 4 ..][0..4], .little),
+        };
+    }
     if (!verify(&out.artifact)) return error.BadSection;
 
     return out;
@@ -481,12 +515,21 @@ fn symbolAt(blob: []const u8, at: u32, in: *Interning) ReadError!?Symbol {
 pub fn verify(a: *const TypeKeys.Artifact) bool {
     for (a.wire.nodes) |n| {
         if (@as(u64, n.edges.start) + n.edges.len > a.wire.edges.len) return false;
-        if (n.kind == .list and n.edges.len != 1) return false;
-        if (n.kind == .stable and n.edges.len != 0) return false;
+        if ((n.kind == .list or n.kind == .ref) and n.edges.len != 1) return false;
+        if (n.type_index) |ti| if (ti >= (if (n.reply_mode) a.wire.scan_types.len else a.wire.types.len)) return false;
+        if ((n.kind == .tagged or n.kind == .reply) and n.type_index == null) return false;
+        if ((n.kind == .stable or n.kind == .reply) and n.edges.len != 0) return false;
+        if ((n.kind == .reply or n.kind == .ref) and !n.reply_mode) return false;
+        for (a.wire.edges[n.edges.start..][0..n.edges.len]) |edge| {
+            if (edge.child >= a.wire.nodes.len or a.wire.nodes[edge.child].reply_mode != n.reply_mode) return false;
+        }
+    }
+    for (a.wire.scans, 0..) |scan, i| {
+        if (scan.node >= a.wire.nodes.len or !a.wire.nodes[scan.node].reply_mode or (i != 0 and a.wire.scans[i - 1].inst >= scan.inst)) return false;
     }
     for (a.wire.edges) |edge| if (edge.child >= a.wire.nodes.len) return false;
     for (a.wire.roots) |root| if (@as(u64, root.roles.start) + root.roles.len > a.wire.roles.len) return false;
-    for (a.wire.roles) |role| if (role.node >= a.wire.nodes.len) return false;
+    for (a.wire.roles) |role| if (role.node >= a.wire.nodes.len or a.wire.nodes[role.node].reply_mode) return false;
     for (a.records) |r|
         if (@as(u64, r.fields.start) + r.fields.len > a.record_labels.len) return false;
     for (a.nodes, 0..) |n, i| {
@@ -526,6 +569,14 @@ fn keyOk(a: *const TypeKeys.Artifact, k: TypeKey) bool {
 /// place; one that names no type of this build is `.none`.
 pub fn resolve(l: *Loaded, graph: *const Graph, types: *const Types) void {
     for (@constCast(l.artifact.wire.types)) |*id| {
+        const r = l.type_refs[id.int()];
+        id.* = types.find(graph, r.package, r.module, r.name);
+    }
+    for (@constCast(l.artifact.wire.scan_types)) |*id| {
+        if (id.int() >= l.type_refs.len) {
+            id.* = .none;
+            continue;
+        }
         const r = l.type_refs[id.int()];
         id.* = types.find(graph, r.package, r.module, r.name);
     }

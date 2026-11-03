@@ -1,0 +1,128 @@
+import Js
+import List
+import Result
+import Schema
+
+
+replyBrand : Js.Ref ⊤
+replyBrand = Js.ref ⊤
+
+
+type ReplyOwner
+    = ReplyOwner { callback : ⊤ → ⊤, hidden : Maybe (Reply ⊤) }
+
+
+pub opaque type Reply a
+    = Reply
+        { brand : Js.Ref ⊤
+        , id : String
+        , local : Bool
+        , owner : Maybe ReplyOwner
+        , print : a → Result (List Schema.Issue) String
+        }
+
+
+pub foreign pure replyIds : borrowed msg → fresh List String
+
+
+pub local : String → Reply ⊤
+local id = Reply { brand = replyBrand, id = id, local = True, owner = Nothing, print = λ_ → Ok "" }
+
+
+pub remote : String → Reply ⊤
+remote id =
+    Reply
+        { brand = replyBrand
+        , id = id
+        , local = False
+        , owner = Just (ReplyOwner { callback = λ_ → ⊤, hidden = Just (local "hidden-owner") })
+        , print = λ_ → Ok ""
+        }
+
+
+pub nested : ⊤ → List String
+nested _ =
+    replyIds
+        { pair = ( local "first", remote "outbound" )
+        , list = [ local "second", local "third" ]
+        , callback = λ_ → local "hidden"
+        }
+
+
+scan : borrowed msg → fresh List String
+scan message = replyIds message
+
+
+pub generic : ⊤ → List String
+generic _ =
+    scan
+        { nested = Just (local "generic")
+        , native = Js.ref (local "native")
+        , outbound = remote "outbound"
+        , fake = { brand = Js.ref ⊤, id = "impostor", local = True }
+        }
+
+
+pub view : ⊤ → List String
+view _ =
+    case [ local "inactive", local "active" ] of
+        [ _, …rest ] →
+            scan rest
+        [] →
+            []
+
+
+pub shaped : ⊤ → List String
+shaped _ = scan { b = [ local "record-first", local "record-second" ], o = 1, length = 1 }
+
+
+pub noReply : (⊤ → ⊤) → List String
+noReply effect = replyIds { effect = effect ⊤, ordinary = 42 }
+
+
+line : a → ⊤
+line value =
+    Js.to
+        (Js.call (Js.global "console") "log"
+            [ Js.call (Js.global "JSON") "stringify" [ Js.from value ] ]
+        )
+
+
+pub run : ⊤ → ⊤
+run _ =
+    line (nested ⊤)
+    line (generic ⊤)
+    line (view ⊤)
+    line (shaped ⊤)
+    line (boxed ⊤)
+    line (typedRef ⊤)
+    line (cyclic ⊤)
+    line (noReply λ_ → line "effect")
+
+
+type Box a
+    = Box a
+
+
+pub boxed : ⊤ → List String
+boxed _ = replyIds (Box (Just (local "boxed")))
+
+
+type Cycle
+    = Cycle { reply : Reply ⊤, next : Js.Ref (Maybe Cycle) }
+
+
+pub cyclic : ⊤ → List String
+cyclic _ =
+    next = Js.ref Nothing
+    value = Cycle { reply = local "cycle", next = next }
+    Js.write next (Just value)
+    scan value
+
+
+pub emptyRun : ⊤ → ⊤
+emptyRun _ = line (noReply λ_ → line "effect")
+
+
+pub typedRef : ⊤ → List String
+typedRef _ = replyIds (Js.ref (local "typed-ref"))

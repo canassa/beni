@@ -100,3 +100,5 @@ core       Js.none               ownership/core/JsCellOptWords.beni  -
 core       Js.some               ownership/core/JsCellOptWords.beni  1:returned>-+res:->fresh
 core       Js.optMatch           ownership/core/JsCellOptWords.beni  2:returned>-+3:returned>-+res:->fresh
 core       Js.optWithDefault     ownership/core/JsCellOptWords.beni  1:returned>-+2:returned>-+res:->fresh
+# A one-argument borrowed read occurs at the call, so unused is not observable.
+core List.isView ownership/core/ListViewIdentity.beni -

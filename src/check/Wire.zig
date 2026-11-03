@@ -13,10 +13,11 @@ const Allocator = std.mem.Allocator;
 const Var = Store.Var;
 
 pub const Range = struct { start: u32 = 0, len: u32 = 0 };
-pub const Node = struct { kind: Kind, edges: Range = .{} };
-pub const Kind = enum(u32) { stable, list, record, tuple, tagged, variable, open_record };
+pub const Node = struct { kind: Kind, edges: Range = .{}, type_index: ?u32 = null, reply_mode: bool = false };
+pub const Kind = enum(u32) { stable, list, record, tuple, tagged, variable, open_record, reply, ref };
 pub const Edge = struct { label: Symbol.Optional = .none, child: u32 };
 pub const Root = struct { decl: u32, roles: Range };
+pub const Scan = struct { inst: u32, node: u32 };
 pub const Role = struct { index: u32, node: u32 };
 pub const Artifact = struct {
     nodes: []const Node = &.{},
@@ -24,6 +25,8 @@ pub const Artifact = struct {
     roots: []const Root = &.{},
     roles: []const Role = &.{},
     types: []const Types.TypeId = &.{},
+    scans: []const Scan = &.{},
+    scan_types: []const Types.TypeId = &.{},
 
     pub fn deinit(a: *Artifact, gpa: Allocator) void {
         gpa.free(a.nodes);
@@ -31,6 +34,8 @@ pub const Artifact = struct {
         gpa.free(a.roots);
         gpa.free(a.roles);
         gpa.free(a.types);
+        gpa.free(a.scans);
+        gpa.free(a.scan_types);
         a.* = .{};
     }
 };
@@ -157,13 +162,40 @@ pub fn build(in: @import("TypeKeys.zig").Input, imported: []const Use, kinds: []
             }
         }
     }
+    const clone_types = try cx.gpa.dupe(Types.TypeId, w.types.items);
+    errdefer cx.gpa.free(clone_types);
+    w.types.clearRetainingCapacity();
+    var scans: std.ArrayList(Scan) = .empty;
+    if (cx.graph.isCloudflare(cx.module)) {
+        w.replies = true;
+        w.defer_all = true;
+        w.memo.clearRetainingCapacity();
+        for (0..cx.bir.insts.len) |i| {
+            const inst: Bir.Inst.Index = @fromBackingInt(@as(u32, @intCast(i)));
+            const data = cx.bir.instData(inst);
+            const argument: Bir.Inst.Index = if (replyMethod(cx.graph, cx.interfaces, cx.bir, cx.module, in.dispatch, inst, cx.interner))
+                @fromBackingInt(@intCast(data.lhs))
+            else argument: {
+                if (cx.bir.instTag(inst) != .call) continue;
+                if (!replyIntrinsic(cx.graph, cx.interfaces, cx.bir, cx.module, @fromBackingInt(@intCast(data.lhs)), cx.interner)) continue;
+                const args = cx.bir.extraSlice(cx.bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
+                if (args.len != 1) continue;
+                break :argument args[0];
+            };
+            const value = in.inst_type[argument.int()].unwrap() orelse continue;
+            const node = try w.node(value, "message", 0);
+            try scans.append(a, .{ .inst = @intCast(i), .node = node });
+        }
+    }
     var artifact: Artifact = .{};
     errdefer artifact.deinit(cx.gpa);
     artifact.nodes = try cx.gpa.dupe(Node, w.nodes.items);
     artifact.edges = try cx.gpa.dupe(Edge, w.edges.items);
     artifact.roots = try cx.gpa.dupe(Root, roots.items);
     artifact.roles = try cx.gpa.dupe(Role, roles.items);
-    artifact.types = try cx.gpa.dupe(Types.TypeId, w.types.items);
+    artifact.scan_types = try cx.gpa.dupe(Types.TypeId, w.types.items);
+    artifact.scans = try cx.gpa.dupe(Scan, scans.items);
+    artifact.types = clone_types;
     return .{ .quantifiers = marked, .paths = w.requirements.items, .artifact = artifact };
 }
 
@@ -174,6 +206,7 @@ const Builder = struct {
     types: std.ArrayList(Types.TypeId) = .empty,
     memo: std.ArrayList(struct { type: Types.TypeId, args: []const Var, node: u32 }) = .empty,
     defer_all: bool = false,
+    replies: bool = false,
     owners: []const Var = &.{},
     bindings: std.ArrayList(struct { variable: Var, owner: Var }) = .empty,
     marked: []bool = &.{},
@@ -306,11 +339,12 @@ const Builder = struct {
         const index: u32 = @intCast(w.nodes.items.len);
         const start: u32 = @intCast(w.edges.items.len);
         try w.edges.appendSlice(w.cx.scratch, edges);
-        try w.nodes.append(w.cx.scratch, .{ .kind = kind, .edges = .{ .start = start, .len = @intCast(edges.len) } });
+        try w.nodes.append(w.cx.scratch, .{ .kind = kind, .reply_mode = w.replies, .edges = .{ .start = start, .len = @intCast(edges.len) } });
         return index;
     }
 
     fn node(w: *Builder, original: Var, path: []const u8, depth: u32) Allocator.Error!u32 {
+        if (depth > 512 and w.replies) return w.add(.variable, &.{});
         if (depth > 512) return w.bad(path, "a type whose Wire graph cannot be resolved");
         const cx = w.cx;
         const a = cx.scratch;
@@ -328,7 +362,7 @@ const Builder = struct {
             .alias => return w.node(Walk.follow(cx.store, cx.store.find(original), .expansion, 0).?, path, depth + 1),
             .structure => |s| switch (s) {
                 .unit, .empty_record => return w.add(.stable, &.{}),
-                .func => return w.bad(path, "a function"),
+                .func => return if (w.replies) w.add(.stable, &.{}) else w.bad(path, "a function"),
                 .tuple => {
                     var edges: std.ArrayList(Edge) = .empty;
                     for (try a.dupe(Var, Walk.positions(cx.store, original)), 0..) |v, i| try edges.append(a, .{ .child = try w.node(v, try std.fmt.allocPrint(a, "{s}[{d}]", .{ path, i }), depth + 1) });
@@ -375,10 +409,22 @@ const Builder = struct {
                         return w.add(.list, &.{.{ .child = child }});
                     }
                     if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Schema") and std.mem.eql(u8, cx.interner.slice(entry.name), "Value")) return w.add(.stable, &.{});
+                    if (w.replies and entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js") and std.mem.eql(u8, cx.interner.slice(entry.name), "Ref")) {
+                        return w.add(.ref, &.{.{ .child = try w.node(args[0], path, depth + 1) }});
+                    }
+                    if (w.replies and entry.package == .platform and cx.graph.isCloudflare(entry.module) and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Worker.Object") and std.mem.eql(u8, cx.interner.slice(entry.name), "Reply")) {
+                        const index = try w.add(.reply, &.{});
+                        w.nodes.items[index].type_index = @intCast(w.types.items.len);
+                        try w.types.append(a, app.type);
+                        return index;
+                    }
+                    if (w.replies and (entry.kind == .foreign or entry.schema_endpoint)) return w.add(.stable, &.{});
                     if (entry.kind == .foreign or entry.schema_endpoint) return w.bad(path, try std.fmt.allocPrint(a, "the native type `{s}.{s}`", .{ cx.interner.slice(entry.module_name), cx.interner.slice(entry.name) }));
                     const index = try w.add(.tagged, &.{});
+                    w.nodes.items[index].type_index = @intCast(w.types.items.len);
+                    try w.types.append(a, app.type);
                     try w.memo.append(a, .{ .type = app.type, .args = args, .node = index });
-                    if (std.mem.indexOfScalar(Types.TypeId, w.types.items, app.type) == null) try w.types.append(a, app.type);
+
                     const bir = cx.artifacts.bir(cx.graph.moduleFile(entry.module));
                     const decl = bir.decl(entry.decl);
                     var b: Types.Builder = .init(cx.store, cx.types, cx.graph, cx.artifacts, entry.module, bir, .flex, 0, a, cx.interner);
@@ -406,6 +452,28 @@ const Builder = struct {
 /// Propagate the need to normalize from list views to their parents. Stable
 /// recursive subgraphs have no runtime traversal at all.
 pub fn normalization(a: Allocator, plan: *const Artifact) Allocator.Error![]bool {
+    return needed(a, plan, false);
+}
+
+pub fn replyNodes(a: Allocator, plan: *const Artifact) Allocator.Error![]bool {
+    const needs = try needed(a, plan, true);
+    const reachable = try a.alloc(bool, plan.nodes.len);
+    defer a.free(reachable);
+    @memset(reachable, false);
+    var todo: std.ArrayList(u32) = .empty;
+    defer todo.deinit(a);
+    for (plan.scans) |scan| try todo.append(a, scan.node);
+    while (todo.pop()) |index| {
+        if (reachable[index]) continue;
+        reachable[index] = true;
+        const node = plan.nodes[index];
+        for (plan.edges[node.edges.start..][0..node.edges.len]) |edge| try todo.append(a, edge.child);
+    }
+    for (needs, reachable) |*need, reaches| need.* = need.* and reaches;
+    return needs;
+}
+
+fn needed(a: Allocator, plan: *const Artifact, replies: bool) Allocator.Error![]bool {
     const needs = try a.alloc(bool, plan.nodes.len);
     @memset(needs, false);
     const starts = try a.alloc(u32, plan.nodes.len + 1);
@@ -423,7 +491,7 @@ pub fn normalization(a: Allocator, plan: *const Artifact) Allocator.Error![]bool
     };
     var queue: std.ArrayList(u32) = .empty;
     defer queue.deinit(a);
-    for (plan.nodes, 0..) |n, i| if (n.kind == .list or n.kind == .variable or n.kind == .open_record) {
+    for (plan.nodes, 0..) |n, i| if (n.reply_mode == replies and ((!replies and n.kind == .list) or (replies and n.kind == .reply) or n.kind == .variable or n.kind == .open_record)) {
         needs[i] = true;
         try queue.append(a, @intCast(i));
     };
@@ -466,7 +534,7 @@ pub fn inhabited(a: Allocator, plan: *const Artifact) Allocator.Error![]bool {
             cursors[edge.child] += 1;
         }
         has_value[i] = switch (node.kind) {
-            .stable, .variable, .list => true,
+            .stable, .variable, .list, .reply, .ref => true,
             .record, .tuple, .open_record => node.edges.len == 0,
             .tagged => false,
         };
@@ -486,4 +554,37 @@ pub fn inhabited(a: Allocator, plan: *const Artifact) Allocator.Error![]bool {
         }
     }
     return has_value;
+}
+
+pub fn replyIntrinsic(graph: *const @import("../resolve/Graph.zig"), interfaces: []const @import("../resolve/Interface.zig"), bir: *const Bir, module: @import("../resolve/Graph.zig").Index, inst: Bir.Inst.Index, pool: anytype) bool {
+    var owner = module;
+    const data = bir.instData(inst);
+    const name = switch (bir.instTag(inst)) {
+        .top => bir.symbol(bir.decls[data.lhs].name),
+        .ext_value => blk: {
+            owner = @fromBackingInt(@intCast(data.lhs));
+            const iface = &interfaces[owner.int()];
+            break :blk iface.symbol(iface.values[data.rhs].name);
+        },
+        else => return false,
+    };
+    return graph.isCloudflare(owner) and std.mem.eql(u8, pool.slice(graph.moduleName(owner)), "Worker.Object") and std.mem.eql(u8, pool.slice(name), "replyIds");
+}
+
+/// Static dispatch is another direct saturated call, with the receiver first.
+pub fn replyMethod(graph: *const @import("../resolve/Graph.zig"), interfaces: []const @import("../resolve/Interface.zig"), bir: *const Bir, module: @import("../resolve/Graph.zig").Index, dispatch: *const @import("Dispatch.zig"), inst: Bir.Inst.Index, pool: anytype) bool {
+    if (bir.instTag(inst) != .method_call) return false;
+    const site = dispatch.siteOf(inst) orelse return false;
+    const callee = site.callee.unwrap() orelse return false;
+    var owner = module;
+    const name = switch (dispatch.term(callee)) {
+        .top => |top| bir.symbol(bir.decl(top.decl).name),
+        .ext => |ext| blk: {
+            owner = ext.module;
+            const iface = &interfaces[owner.int()];
+            break :blk iface.symbol(iface.values[@backingInt(ext.value)].name);
+        },
+        else => return false,
+    };
+    return graph.isCloudflare(owner) and std.mem.eql(u8, pool.slice(graph.moduleName(owner)), "Worker.Object") and std.mem.eql(u8, pool.slice(name), "replyIds");
 }

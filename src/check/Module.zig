@@ -477,7 +477,7 @@ pub fn check(in: Input) Error!Check.Counters {
 
     var wire_quantifiers: []const bool = &.{};
     var wire_paths: []const @import("Wire.zig").Requirement = &.{};
-    if (!quiet and report.errors == 0 and (in.entry_kinds.len != 0 or solver.instantiate.wire.items.len != 0)) {
+    if (!quiet and report.errors == 0 and (in.entry_kinds.len != 0 or solver.instantiate.wire.items.len != 0 or in.graph.isCloudflare(in.module))) {
         const wire = try @import("Wire.zig").build(.{
             .cx = &cx,
             .gpa = gpa,
@@ -497,6 +497,7 @@ pub fn check(in: Input) Error!Check.Counters {
             .dispatch = in.dispatch,
             .keyed = false,
         }, solver.instantiate.wire.items, in.entry_kinds, report.staging().items);
+        in.type_keys.wire.deinit(gpa);
         in.type_keys.wire = wire.artifact;
         wire_quantifiers = wire.quantifiers;
         wire_paths = wire.paths;

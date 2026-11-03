@@ -1679,6 +1679,9 @@ test "worker Wire rejects function fields and native values" {
         .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function", .generic = true },
         .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`", .generic = true },
         .{ .message = "{ outer : { inner : { callback : (⊤ → ⊤) } } }", .path = "message.outer.inner.callback", .reason = "a function" },
+        .{ .message = "{ raw : Worker.Ref }", .path = "message.raw", .reason = "the native type `Js.Ref`" },
+        .{ .message = "{ raw : Worker.Ref }", .path = "message.raw", .reason = "the native type `Js.Ref`", .generic = true },
+        .{ .message = "{ outer : { value : Worker.Ref } }", .path = "message.outer.value", .reason = "the native type `Js.Ref`", .generic = true },
     };
     for (cases) |scenario| {
         // PREPARE
@@ -1687,7 +1690,7 @@ test "worker Wire rejects function fields and native values" {
         try writeWorkerPlatform(&w);
         // Expose the native alias from the same platform as the transport.
         const worker = try w.read("platform/Worker.beni");
-        try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n", .{worker}));
+        try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n\npub type alias Ref = Js.Ref Int\n", .{worker}));
         try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\n{s}main : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open {s}\n    ⊤)\n", .{
             if (scenario.generic) "a" else scenario.message,
             if (scenario.generic) try std.fmt.allocPrint(w.arena.allocator(), "specific : Worker.Program {s} String ⊤\nspecific = worker\n", .{scenario.message}) else "",
@@ -2580,4 +2583,167 @@ test "CorePrivate Cloudflare named and method fences use the loaded layer identi
     try testing.expectEqual(@as(u8, 1), spoof.exit_code);
     try testing.expectEqual(@as(usize, 1), spoof.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.private_name, spoof.diagnostics[0].code);
+
+}
+
+fn writeReplyScanProgram(w: *World) !void {
+    try w.copyTreeInto("tests/platforms/reply-scan", "platform", "_expected.");
+    try w.write("Main.beni",
+        \\import Page
+        \\import Scanner
+        \\main : Page.Program
+        \\main = Page.program Scanner.run
+        \\
+    );
+}
+
+test "Cloudflare reply scans use typed plans, generic guards, active views and cached roots" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReplyScanProgram(&w);
+    for ([_]bool{ false, true }) |release| {
+        const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
+            &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
+            if (release) &.{"--release"} else &.{},
+        });
+        const cold = try w.run(args);
+        try testing.expectEqual(@as(u8, 0), cold.exit_code);
+        try testing.expectEqual(@as(usize, 0), cold.diagnostics.len);
+        try w.expectProgram("out/_main.mjs", .{
+            .stdout = "[\"second\",\"third\",\"first\"]\n" ++
+                "[\"native\",\"generic\"]\n" ++
+                "[\"active\"]\n" ++
+                "[\"record-first\",\"record-second\"]\n" ++
+                "[\"boxed\"]\n" ++
+                "[\"typed-ref\"]\n" ++
+                "[\"cycle\"]\n" ++
+                "\"effect\"\n[]\n[\"external\"]\n[\"method\"]\n",
+        });
+        const emitted_path = if (release) "out/_main.mjs" else "out/_platform/Worker/Object.mjs";
+        const platform_bytes = try w.read(emitted_path);
+        const cached_args = try std.mem.concat(w.arena.allocator(), []const u8, &.{ args, &.{"--self-profile=cache-load.json"} });
+        const cached = try w.run(cached_args);
+        try testing.expectEqual(@as(u8, 0), cached.exit_code);
+        try testing.expectEqual(@as(usize, 0), cached.diagnostics.len);
+        try testing.expectEqualStrings(platform_bytes, try w.read(emitted_path));
+        try expectReplyPlanCacheHit(&w, "cache-load.json");
+        const serial_args = try std.mem.concat(w.arena.allocator(), []const u8, &.{
+            &.{ "build", "--platform=platform", "--no-cache", "--jobs=1", "--out=out", "Main.beni" },
+            if (release) &.{"--release"} else &.{},
+        });
+        const serial = try w.run(serial_args);
+        try testing.expectEqual(@as(u8, 0), serial.exit_code);
+        try testing.expectEqualStrings(platform_bytes, try w.read(emitted_path));
+    }
+}
+
+test "Cloudflare reply scans elide Reply-free traversal and fence application callers" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReplyScanProgram(&w);
+    try w.write("Main.beni", "import Page\nimport Worker.Object as Object\nmain : Page.Program\nmain = Page.program Object.emptyRun\n");
+    const built = try w.run(&.{ "build", "--platform=platform", "--release", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "\"effect\"\n[]\n" });
+    const emitted = try w.read("out/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, emitted, "Map") == null);
+    try testing.expect(std.mem.indexOf(u8, emitted, "Set") == null);
+    try testing.expect(std.mem.indexOf(u8, emitted, "instanceof") == null);
+    try w.write("Main.beni", "import Worker.Object as Object\nmain = Object.replyIds 42\n");
+    const refused = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), refused.exit_code);
+    try testing.expectEqual(@as(usize, 1), refused.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.private_name, refused.diagnostics[0].code);
+    try w.write("Main.beni", "import Worker.Object as Object\nmain = (Object.local \"id\").replyIds\n");
+    const method = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), method.exit_code);
+    try testing.expectEqual(@as(usize, 1), method.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.private_method, method.diagnostics[0].code);
+    try w.write("Main.beni", "import List\nmain = [ 1 ].isView\n");
+    const view_method = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), view_method.exit_code);
+    try testing.expectEqual(@as(usize, 1), view_method.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.private_method, view_method.diagnostics[0].code);
+    const trusted = try w.run(&.{ "check", "--core", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), trusted.exit_code);
+    try testing.expectEqual(@as(usize, 0), trusted.diagnostics.len);
+}
+
+test "Cloudflare reply scans refuse first-class use and a different platform layer" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReplyScanProgram(&w);
+    const source = try w.read("platform/Scanner.beni");
+    try w.write("platform/Scanner.beni", try std.mem.concat(w.arena.allocator(), u8, &.{ source, "\n\npub asValue : Int → List String\nasValue = Object.replyIds\n" }));
+    try w.write("Main.beni", "import Page\nimport Scanner\nmain : Page.Program\nmain = Page.program (λ_ →\n    _ = Scanner.asValue 42\n    ⊤)\n");
+    const first_class = try w.run(&.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), first_class.exit_code);
+    try testing.expectEqual(@as(usize, 1), first_class.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.not_implemented, first_class.diagnostics[0].code);
+    try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"other\",\"program\":\"Page.Program\",\"runtime\":\"runtime.js\"}");
+    const other = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), other.exit_code);
+    try testing.expect(other.diagnostics.len != 0);
+    for (other.diagnostics) |item| try testing.expectEqual(diagnostic.Code.private_name, item.code);
+}
+
+test "Cloudflare reply scans do not reuse permissions after the platform identity changes" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReplyScanProgram(&w);
+    // Only static dispatch refers to the intrinsic, so the ordinary import
+    // resolver cannot mask a stale checker result after the manifest edit.
+    try w.write("platform/Scanner.beni",
+        \\import Worker.Object as Object
+        \\pub run : ⊤ → ⊤
+        \\run _ =
+        \\    _ = (Object.local "local").replyIds
+        \\    ⊤
+        \\
+    );
+    const args: []const []const u8 = &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" };
+    const cold = try w.run(args);
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    const warm = try w.run(args);
+    try testing.expectEqual(@as(u8, 0), warm.exit_code);
+    try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"other\",\"program\":\"Page.Program\",\"runtime\":\"runtime.js\"}");
+    const changed = try w.run(args);
+    try testing.expectEqual(@as(u8, 1), changed.exit_code);
+    try testing.expectEqual(@as(usize, 1), changed.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.private_method, changed.diagnostics[0].code);
+}
+
+fn expectReplyPlanCacheHit(w: *World, trace: []const u8) !void {
+    const Event = struct {
+        name: []const u8,
+        args: struct { file: []const u8 = "" } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read(trace), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var saw_object = false;
+    var checked_object = false;
+    for (parsed.value.traceEvents) |event| {
+        if (!std.mem.endsWith(u8, event.args.file, "platform/Worker/Object.beni")) continue;
+        saw_object = true;
+        if (std.mem.eql(u8, event.name, "constrain")) checked_object = true;
+    }
+    try testing.expect(saw_object);
+    try testing.expect(!checked_object);
+}
+
+test "Cloudflare reply scans rederive plans when a cached platform becomes Cloudflare" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeReplyScanProgram(&w);
+    try w.write("platform/Scanner.beni", "import Worker.Object as Object\npub run : ⊤ → ⊤\nrun _ = Object.emptyRun ⊤\n");
+    try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"other\",\"program\":\"Page.Program\",\"runtime\":\"runtime.js\"}");
+    // Outside Cloudflare this is an ordinary foreign with an ordinary sibling.
+    try w.write("platform/Worker/Object.js", "export const replyIds = message => [];\n");
+    const ordinary = try w.run(&.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), ordinary.exit_code);
+    try w.write("platform/beni.json", "{\"platform\":true,\"name\":\"cloudflare\",\"program\":\"Page.Program\",\"runtime\":\"runtime.js\"}");
+    const built = try w.run(&.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "\"effect\"\n[]\n" });
 }

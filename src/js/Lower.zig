@@ -3937,6 +3937,7 @@ pub const Lowerer = struct {
     /// this one shows them: such a value is exported and its result read.
     fn emitterCalled(l: *Lowerer, index: u32) bool {
         const d = l.bir.decls[index];
+        if (l.in.graph.isCloudflare(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Worker.Object") and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "replyBrand")) return true;
         if (l.in.worker_host_client and std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "installHostStop")) return true;
         if (l.in.worker_host) {
             const spelling = l.text(l.bir.symbol(d.name));
@@ -3950,7 +3951,7 @@ pub const Lowerer = struct {
         if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
 
         if (!d.kind.isValue()) return false;
-        return corePrivateSlot(l.bir.symbol(d.name)) != null;
+        return corePrivateSlot(l.bir.symbol(d.name)) != null or std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "isView");
     }
 
     /// The `import` statements, built once the reference list is complete
@@ -6577,6 +6578,96 @@ pub const Lowerer = struct {
     /// machinery that makes `?` evaluate in written order makes this do so
     /// too. A branch of a short circuit or of a `case` has an `out` of its
     /// own, so nothing is ever evaluated that the source would not have.
+    // ownership pin begin: replyIds
+    fn replyCtor(l: *Lowerer, wire: *const @import("../check/Wire.zig").Artifact, node: @import("../check/Wire.zig").Node, tag: Symbol) CtorRep {
+        const entry = l.in.types.entry(wire.scan_types[node.type_index.?]);
+        if (entry.module == l.in.module) {
+            for (l.bir.ctors, 0..) |ctor, i| if (ctor.decl == entry.decl and l.bir.symbol(ctor.name) == tag) return l.ctorRepLocal(@intCast(i));
+        } else {
+            const iface = &l.in.interfaces[entry.module.int()];
+            for (iface.ctors, 0..) |ctor, i| if (iface.symbol(ctor.name) == tag) return l.ctorRepExternal(entry.module, @intCast(i));
+        }
+        if (l.in.schemas) |schemas| {
+            const bir = schemas.birOf(entry.module);
+            const decl = bir.decl(entry.decl);
+            var max: u32 = 0;
+            for (bir.declCtors(decl)) |ctor| max = @max(max, Bir.SubRange.len(.{ .start = ctor.args_start, .end = ctor.args_end }));
+            for (bir.declCtors(decl), 0..) |ctor, i| {
+                if (bir.symbol(ctor.name) != tag) continue;
+                const int: CtorRep.Tag = if (l.integerTags(wire.scan_types[node.type_index.?])) @intCast(i) else null;
+                if (int != null and max == 1 and decl.ctors_end - decl.ctors_start == 1) return .unboxed;
+                if (max == 0) return .{ .bare_tag = int };
+                return .{ .tagged = .{ .fields = max, .int = int } };
+            }
+        }
+        unreachable; // The cached plan names a checked nominal constructor.
+    }
+
+    fn replyPrivate(l: *Lowerer, module: Graph.Index, spelling: []const u8, p: u32) Allocator.Error!Node.Index {
+        const symbol = try l.interner.getOrPut(l.gpa, spelling);
+        if (module == l.in.module) {
+            for (l.bir.decls, 0..) |decl, i| if (l.bir.symbol(decl.name) == symbol) return l.ident(try l.topName(@intCast(i)), p);
+            try l.report(.internal, @fromBackingInt(@as(u32, 0)), "The Cloudflare reply intrinsic requires its private `{s}` binding.", .{spelling});
+            return l.nullNode(p);
+        }
+        const needed: Needed = .{ .module = module, .base = symbol.toOptional() };
+        try l.needName(needed);
+        return l.ident(try l.neededName(needed), p);
+    }
+
+    fn replyScan(l: *Lowerer, out: *StmtList, inst: Inst.Index, args: []const Inst.Index, p: u32) Allocator.Error!Node.Index {
+        const Wire = @import("../check/Wire.zig");
+        const wire = l.in.worker_wire orelse unreachable;
+        const root = for (wire.scans) |scan| {
+            if (scan.inst == inst.int()) break scan.node;
+        } else {
+            try l.report(.internal, inst, "A reply scan has no checked call plan.", .{});
+            return l.nullNode(p);
+        };
+        const needs = try Wire.replyNodes(l.scratch, wire);
+        if (!needs[root]) {
+            try l.discard(out, args[0], p);
+            return l.arrayNode(&.{}, p);
+        }
+        const value = try l.expr(out, args[0]);
+        const owner = l.in.graph.find(.platform, l.interner.global.find("Worker.Object").?).?;
+        const brand = try l.replyPrivate(owner, "replyBrand", p);
+        const list = l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()).?;
+        const is_view = try l.replyPrivate(list, "isView", p);
+        var nodes: std.ArrayList(Node.Index) = .empty;
+        for (wire.nodes, 0..) |node, ni| {
+            if (!needs[ni]) {
+                try nodes.append(l.scratch, try l.intNode(0, p));
+                continue;
+            }
+            if (node.kind == .reply) {
+                const rep = l.replyCtor(wire, node, l.interner.global.find("Reply").?);
+                try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(7, p), try l.add(if (rep == .unboxed) .true_lit else .false_lit, p, 0, 0) }, p));
+                continue;
+            }
+            const edges = wire.edges[node.edges.start..][0..node.edges.len];
+            if (node.kind == .tagged and edges.len == 1 and l.replyCtor(wire, node, edges[0].label.unwrap().?) == .unboxed) {
+                const tuple = wire.nodes[edges[0].child];
+                const child = wire.edges[tuple.edges.start].child;
+                try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(9, p), try l.intNode(child, p) }, p));
+                continue;
+            }
+            var emitted: std.ArrayList(Node.Index) = .empty;
+            for (edges, 0..) |edge, ei| {
+                const label = if (edge.label.unwrap()) |label|
+                    if (node.kind == .record or node.kind == .open_record) try l.fieldString(label, p) else try l.tagLiteral(l.replyCtor(wire, node, label), label, p)
+                else
+                    try l.stringNode(l.interner.slice(try l.slotName(@intCast(ei))), p);
+                try emitted.append(l.scratch, try l.arrayNode(&.{ label, try l.intNode(edge.child, p) }, p));
+            }
+            try nodes.append(l.scratch, try l.arrayNode(&.{ try l.intNode(@backingInt(node.kind), p), try l.arrayNode(emitted.items, p) }, p));
+        }
+        var keys: std.ArrayList(Node.Index) = .empty;
+        for ([_][]const u8{ "brand", "id", "local" }) |key| try keys.append(l.scratch, try l.fieldString(try l.interner.getOrPut(l.gpa, key), p));
+        return @import("ReplyScan.zig").emit(l, value, try l.intNode(root, p), try l.arrayNode(nodes.items, p), brand, try l.arrayNode(keys.items, p), is_view, p);
+    }
+
+    // ownership pin end: replyIds
     fn wirePlan(l: *Lowerer, maybe: ?*const @import("../check/Wire.zig").Artifact, module: Graph.Index, decl: u32, p: u32) Allocator.Error!Node.Index {
         const wire = maybe orelse return l.nullNode(p);
         const root = for (wire.roots) |root| {
@@ -6665,6 +6756,10 @@ pub const Lowerer = struct {
     }
 
     fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (l.in.graph.isCloudflare(l.in.module) and @import("../check/Wire.zig").replyIntrinsic(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.interner)) {
+            try l.report(.not_implemented, inst, "`Worker.Object.replyIds` is private compiler machinery and requires a direct saturated call.", .{});
+            return l.add(.undefined_lit, l.pos(inst), 0, 0);
+        }
         if (l.in.worker_descriptors.len != 0) {
             if (l.declTarget(l.in.module.int(), inst)) |ref| {
                 for (l.in.worker_descriptors) |descriptor| {
@@ -10120,6 +10215,8 @@ pub const Lowerer = struct {
     fn methodCallExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
+        if (l.in.graph.isCloudflare(l.in.module) and @import("../check/Wire.zig").replyMethod(l.in.graph, l.in.interfaces, l.bir, l.in.module, l.in.dispatch, inst, l.interner))
+            return l.replyScan(out, inst, &.{@fromBackingInt(@intCast(d.lhs))}, p);
         const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
         const args: Bir.SubRange = .{ .start = m.args_start, .end = m.args_end };
         l.region = inst;
@@ -10728,6 +10825,8 @@ pub const Lowerer = struct {
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (l.in.graph.isCloudflare(l.in.module) and @import("../check/Wire.zig").replyIntrinsic(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner))
+            return l.replyScan(out, inst, arg_insts, p);
         // These built-in calls only read compiler plan metadata before the payload.
         if (std.mem.indexOfScalar(Inst.Index, l.in.worker_wire_direct_calls, inst) != null)
             return l.expr(out, arg_insts[3]);

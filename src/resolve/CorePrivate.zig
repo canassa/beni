@@ -20,6 +20,8 @@ const entries = [_]Entry{
     .{ .module = "Js", .name = "some", .access = .runtime },
     .{ .module = "Js", .name = "optMatch", .access = .runtime },
     .{ .module = "Js", .name = "optWithDefault", .access = .runtime },
+    .{ .module = "List", .name = "isView", .access = .platform },
+    .{ .module = "Worker.Object", .name = "replyIds", .access = .cloudflare, .value_only = true },
     .{ .module = "Node", .name = "output", .access = .platform },
     .{ .module = "Node", .name = "exitCode", .access = .platform },
     .{ .module = "Browser.Worker", .name = "run", .access = .worker },

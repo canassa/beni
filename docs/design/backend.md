@@ -928,6 +928,13 @@ with the trie.
    A reader indexes it in place. If a reader needs an array of its own, `xs.$b.slice(xs.$o)` is
    that array. It is the reader's copy, and `core/List` does not cache it.
 
+Amendment (owner, 2026-11-03): views use one private constructor and prototype in `core/List.js`.
+Their fields and all typed readers stay unchanged. The platform-private
+`List.isView` tests that identity; generic scans must use it rather than infer
+a view from a user record with the same fields. Plain arrays keep their
+ordinary prototype. The implementation's fixed view keys are `b`, `o`, and
+`length` (the ``/`` notation above names those same base/offset roles).
+
 The idiom is `const a = Array.isArray(xs) ? xs : xs.$b, o = Array.isArray(xs) ? 0 : xs.$o;`,
 then an index loop from `o`. `$plain()` is withdrawn. No reader may write either form (invariant
 1). What a sibling may return as a list is unchanged: a fresh plain array, or a list it was
