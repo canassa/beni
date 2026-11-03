@@ -904,11 +904,11 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.everywhere = true;
         }
     }
-    // `build/bad/workers/`: projects built for `cloudflare`, whose refusals
+    // `build/bad/workers/` and `check/bad/workers/`: projects built for `cloudflare`, whose refusals
     // are that platform's own marks — an object's `tick` that may wait
     // (`boundary.md` §9.12 (e.5)); the `workers/` kind cannot hold a build
     // that fails.
-    if (kind == .build_bad) {
+    if (kind == .build_bad or kind == .check_bad) {
         const workers_dir = try std.fs.path.join(arena, &.{ kind_dir, "workers" });
         const start = fixtures.items.len;
         try collect(arena, workers_dir, false, false, &fixtures, true);

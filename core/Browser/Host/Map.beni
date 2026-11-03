@@ -1,0 +1,17 @@
+-- Generated from ECMA-262, 16th edition (2025), §24.1; reviewed adapters in native/Map.zig.
+pub foreign type Map key value
+
+
+pub foreign impure make : ⊤ → Map String a
+
+
+pub foreign impure get : Map String a, String → Maybe a
+
+
+pub foreign impure set : Map String a, String, a → ⊤
+
+
+pub foreign impure remove : Map String a, String → ⊤
+
+
+pub foreign impure entries : Map String a → List (String × a)

@@ -34,11 +34,40 @@ fn argument(cx: *const Context, v: Var, module: []const u8, name: []const u8, in
     const args = Walk.positions(cx.store, v);
     return if (index < args.len) args[index] else null;
 }
+fn mapItem(cx: *const Context, v: Var) ?Var {
+    const key = argument(cx, v, "Browser.Host.Map", "Map", 0) orelse return null;
+    if (!named(cx, key, "String", "String")) return null;
+    return argument(cx, v, "Browser.Host.Map", "Map", 1);
+}
 pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const f = Walk.function(cx.store, v) orelse return false;
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .map_make => a.len == 1 and unit(cx, a[0]) and mapItem(cx, r) != null,
+        .map_get => blk: {
+            if (a.len != 2 or !named(cx, a[1], "String", "String")) break :blk false;
+            const item = mapItem(cx, a[0]) orelse break :blk false;
+            const output = argument(cx, r, "Maybe", "Maybe", 0) orelse break :blk false;
+            break :blk cx.store.find(item) == cx.store.find(output);
+        },
+        .map_set => blk: {
+            if (a.len != 3 or !named(cx, a[1], "String", "String") or !unit(cx, r)) break :blk false;
+            const item = mapItem(cx, a[0]) orelse break :blk false;
+            break :blk cx.store.find(item) == cx.store.find(a[2]);
+        },
+        .map_delete => a.len == 2 and mapItem(cx, a[0]) != null and named(cx, a[1], "String", "String") and unit(cx, r),
+        .map_entries => blk: {
+            if (a.len != 1) break :blk false;
+            const item = mapItem(cx, a[0]) orelse break :blk false;
+            const pair = argument(cx, r, "List", "List", 0) orelse break :blk false;
+            switch (cx.store.resolvedContent(pair)) {
+                .structure => |shape| if (shape != .tuple) break :blk false,
+                else => break :blk false,
+            }
+            const fields = Walk.positions(cx.store, pair);
+            break :blk fields.len == 2 and named(cx, fields[0], "String", "String") and cx.store.find(item) == cx.store.find(fields[1]);
+        },
         .cf_socketInitialize => a.len == 4 and named(cx, a[0], "Browser.Host.Cloudflare", "Socket") and named(cx, a[1], "String", "String") and named(cx, a[2], "String", "String") and (if (argument(cx, a[3], "List", "List", 0)) |item| named(cx, item, "String", "String") else false) and unit(cx, r),
         .cf_unitResolvers => a.len == 1 and unit(cx, a[0]) and (if (argument(cx, r, "Browser.Host.Promise", "Resolvers", 0)) |item| unit(cx, item) else false),
         .cf_stringResolvers => a.len == 1 and unit(cx, a[0]) and (if (argument(cx, r, "Browser.Host.Promise", "Resolvers", 0)) |item| named(cx, item, "String", "String") else false),

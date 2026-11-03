@@ -61,7 +61,7 @@ pub fn validate(c: anytype) bool {
 pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
-    try w.writeAll(if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.\n" else "-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
+    try w.writeAll(if (std.mem.eql(u8, module, "Browser.Host.Map")) "-- Generated from ECMA-262, 16th edition (2025), §24.1; reviewed adapters in native/Map.zig.\n" else if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.\n" else "-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
     if (std.mem.eql(u8, module, "Browser.Host.Events")) try w.writeAll("import Browser.Host.Event as Event\nimport Browser.Host.EventTarget as EventTarget\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.HTMLAnchorElement as HTMLAnchorElement\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.EventTarget as EventTarget\n\n\n");
@@ -109,6 +109,11 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         const body = switch (row.recipe) {
+            .map_make => "(ignored) => { return new globalThis.Map(); }",
+            .map_get => "(map, key) => { return map.has(key) ? { $: \"Just\", a: map.get(key) } : { $: \"Nothing\", a: null }; }",
+            .map_set => "(map, key, value) => { map.set(key, value); return null; }",
+            .map_delete => "(map, key) => { map.delete(key); return null; }",
+            .map_entries => "(map) => { return Array.from(map, pair => ({ a: pair[0], b: pair[1] })); }",
             .cf_socketInitialize => "(socket, id, protocol, tags) => { socket.serializeAttachment({ data: null, id, protocol, tags: Array.isArray(tags) ? tags : tags.$plain ? tags.$plain() : tags.b.slice(tags.o) }); return null; }",
             .cf_unitResolvers => "(ignored) => { return globalThis.Promise.withResolvers(); }",
             .cf_stringResolvers => "(ignored) => { return globalThis.Promise.withResolvers(); }",

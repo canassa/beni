@@ -1,0 +1,63 @@
+import Browser.Host.Map as NativeMap
+import Js
+import String
+
+
+pub opaque type Program
+    = Program (⊤ → String) String
+
+
+pub program : ⊤ → Program
+program ⊤ = Program run "typed map"
+
+
+type alias Payload =
+    run : Int → Int
+    stamp : Js.Ref Int
+
+
+show : List (String × Payload) → String
+show pairs =
+    String.join
+        (List.map pairs λ( key, value ) →
+            "${key}:${String.fromInt (value.run 41)}:${String.fromInt (Js.read value.stamp)}"
+        )
+        ","
+
+
+run : ⊤ → String
+run ⊤ =
+    table = NativeMap.make ⊤
+    stamp = Js.ref 7
+    NativeMap.set table "first" { run = λn → n + 1, stamp = stamp }
+    NativeMap.set table "second" { run = λn → n * 2, stamp = stamp }
+    snapshot = NativeMap.entries table
+    NativeMap.set table "first" { run = λn → n * 3, stamp = stamp }
+    NativeMap.remove table "second"
+    NativeMap.set table "second" { run = λn → n + 10, stamp = stamp }
+    NativeMap.remove table "absent"
+    Js.write stamp 8
+    units = NativeMap.make ⊤
+    NativeMap.set units "undefined" (hostUnit ⊤)
+    present =
+        case NativeMap.get units "undefined" of
+            Just _ →
+                "present"
+            Nothing →
+                "missing"
+    missing =
+        case NativeMap.get units "absent" of
+            Just _ →
+                "present"
+            Nothing →
+                "missing"
+    selected =
+        case NativeMap.get table "first" of
+            Just value →
+                String.fromInt (value.run 41)
+            Nothing →
+                "missing"
+    "${show snapshot} / ${show (NativeMap.entries table)} / ${present},${missing},${selected}"
+
+
+foreign impure hostUnit : ⊤ → ⊤

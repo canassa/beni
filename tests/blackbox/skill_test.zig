@@ -452,6 +452,11 @@ test "the generated API reference of html is what zig build skill-api writes tod
 
 test "the generated API reference of cloudflare is what zig build skill-api writes today" {
     try expectPackageCurrent("cloudflare");
+    const api = try Io.Dir.cwd().readFileAlloc(testing.io, "skills/beni/references/api-cloudflare.md", testing.allocator, .limited(world.max_stream_bytes));
+    defer testing.allocator.free(api);
+    for ([_][]const u8{ "fromHost", "hostResponse", "makeRequest", "hostRequest", "requestWithBody", "requestBody", "wrapEnv", "nativeEnv", "setDraining", "chainNow", "selfRef", "refStub", "refPost", "printRef", "settleHost", "hostState", "fromNative", "toNative", "replyIds" }) |name| {
+        try testing.expect(!hasWord(api, name));
+    }
 }
 
 test "the generator's package list is every platform in the repository, and no generated file is an orphan" {

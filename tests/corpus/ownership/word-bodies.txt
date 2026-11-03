@@ -292,7 +292,7 @@ core/Js/Any.js Js.Any.pack 7e5109fb2c066bd589d93b37971a381c53799bb034761b0be7212
 core/Js/Any.js Js.Any.unpack 6a43c64191a8c740770f79a1e9785d088ce84f56b7b78c3a6a695efec7fb7ed6
 
 tests/platforms/reply-scan/Worker/Object.beni Worker.Object.scan 9d9c0630fd53b5199f39b00ce82a65f6f9f5ba612f15be0833a07a3c2bd60881
-src/js/Lower.zig Worker.Object.replyIds e1ce16d0e2c61f84e2c16732773ff1006ea3a017db160a9fd6b85c85360cd7a9 intrinsic:tests/platforms/reply-scan
-src/js/Lower.zig Worker.Object.replyIds e1ce16d0e2c61f84e2c16732773ff1006ea3a017db160a9fd6b85c85360cd7a9 intrinsic:platforms/cloudflare
-src/js/ReplyScan.zig Worker.Object.replyIds 9bce985edc71f4cb314e2888f14e3957e510a8e6bc8b441b0ebc9b5a9581321e intrinsic:tests/platforms/reply-scan
-src/js/ReplyScan.zig Worker.Object.replyIds 9bce985edc71f4cb314e2888f14e3957e510a8e6bc8b441b0ebc9b5a9581321e intrinsic:platforms/cloudflare
+src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9bfc7e729556a5dcc2dcac04f intrinsic:tests/platforms/reply-scan
+src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9bfc7e729556a5dcc2dcac04f intrinsic:platforms/cloudflare
+src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1baded4bee7fddbbd741305ed2755 intrinsic:tests/platforms/reply-scan
+src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1baded4bee7fddbbd741305ed2755 intrinsic:platforms/cloudflare

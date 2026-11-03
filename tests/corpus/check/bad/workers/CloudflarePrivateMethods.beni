@@ -1,0 +1,46 @@
+import WebSocket
+import Worker
+import Worker.Object as Object
+
+
+asSocket : WebSocket.Socket → WebSocket.Socket
+asSocket socket = socket
+
+
+asRequest : Worker.Request → Worker.Request
+asRequest request = request
+
+
+asRef : Worker.Ref msg → Worker.Ref msg
+asRef ref = ref
+
+
+asContext : Object.Context msg → Object.Context msg
+asContext context = context
+
+
+pub socketNative socket = (asSocket socket).toNative
+
+
+pub requestNative request = (asRequest request).hostRequest
+
+
+pub requestPayload request = (asRequest request).requestBody
+
+
+pub environmentNative context = (Worker.env context).nativeEnv
+
+
+pub stub ref = (asRef ref).refStub
+
+
+pub localPost ref = (asRef ref).refPost
+
+
+pub printMessage ref message = (asRef ref).printRef message
+
+
+pub stateNative context = (asContext context).hostState
+
+
+pub socketSend socket = (asSocket socket).toNative.socketSend "payload"

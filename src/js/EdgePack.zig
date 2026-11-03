@@ -112,6 +112,8 @@ pub fn input(scratch: Allocator, session: *const Session, options: Options) Allo
         d.* = if (i < session.checked.dispatch.len) &session.checked.dispatch[i] else &Dispatch.empty;
     }
     return .{
+        // Packed edges must see the same checked scan roots as live lowering.
+        .type_keys = session.checked.type_keys,
         .graph = &session.graph,
         .store = &session.store,
         .birs = birs,

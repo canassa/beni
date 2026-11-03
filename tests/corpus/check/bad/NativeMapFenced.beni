@@ -1,0 +1,4 @@
+import Browser.Host.Map as NativeMap
+
+
+pub table = NativeMap.make ⊤
