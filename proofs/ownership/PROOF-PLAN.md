@@ -618,3 +618,28 @@ array), `once_of_separated` (a container array once:
 `accepted_flat_anf_traces_agree` keeps its statement; `flat_preserved` and the
 case theorems conclude one more fact (the shape). Probes `nestedPush`,
 `nestedAlias`, `nestedSet`, `nestedItemAlias` and `nestedRecord` (`Trace.lean`).
+
+
+As built (2026-11-03, #932, #522): lists now admit every `FlatType`, including
+results and integer chains. `ElementType` and its tag helpers are gone.
+`FlatANF0.literal` takes a flat element type.
+
+- `TagsDeep heap t a w` follows arrays, records and active result payloads.
+  Each array element has `ResultTags` and `ChainTags` for every corresponding observation.
+- `FlatInvariant.deepTags` requires this relation at each live typed path.
+  Dead aliases retain their existing rules.
+- `tagsDeep_of_agree` preserves the clause across the heap frame.
+  `tagsDeep_project`, `tagsDeep_mapOrigins` and the join lemmas preserve its structural cases.
+- `Preserved.success` and each case theorem conclude `TagsDeep` for the result.
+  `flatInvariant_bind` projects that conclusion to the new binding's live paths.
+- `at` takes tags from the selected element or the fallback, then joins the abstracts.
+  Literals, writes, copies and prepends carry the elements' tags into the new array.
+- `resultElements` checks both result arms and fallback reads.
+  `chainElements` checks empty chains, nonempty chains and fallback reads.
+  `resultElementStores` checks push, set, copy, prepend and shared values.
+  `nestedResultElements` checks tags through two array levels.
+  Each program has a fragment-scope theorem and build-time runtime checks in `Trace.lean`.
+
+`accepted_flat_anf_traces_agree` keeps its statement and covers the expanded fragment.
+The checker, interpreters and three general proof obligations do not change.
+Dictionary forms remain the next step in item 3.

@@ -142,7 +142,7 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          shaped2, tags2, chains2⟩ := armPreserved.success y s2 armValueRun
+          shaped2, tags2, chains2, deep2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -178,6 +178,14 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
           · rcases joined with rfl | rfl
             · exact resultTags_join tags2 shapeArm shapeOther'
             · exact resultTags_join_right tags2 shapeOther' shapeArm
+        have deepJoin : TagsDeep hs2.heap type result actual := by
+          rcases shapeOther with rfl | shapeOther'
+          · rcases joined with rfl | rfl
+            · rw [join_bottom_right]; exact deep2
+            · rw [join_bottom_left]; exact deep2
+          · rcases joined with rfl | rfl
+            · exact tagsDeep_join deep2 shapeArm shapeOther'
+            · exact tagsDeep_join_right deep2 shapeOther' shapeArm
         have chainsJoin : ChainTags type result value := by
           rcases shapeOther with rfl | shapeOther'
           · rcases joined with rfl | rfl
@@ -187,7 +195,7 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
             · exact chainTags_join chains2 shapeArm shapeOther'
             · exact chainTags_join_right chains2 shapeOther' shapeArm
         refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_, ?_,
-          tagsJoin, chainsJoin⟩
+          tagsJoin, chainsJoin, by simpa only [heapObserved_heap] using deepJoin⟩
         · rw [heap_resultCase_eval_equation hs (heapEnv env) heapInput]
           rw [if_neg noDepth, if_neg heapFuel]
           simp only [heapArmRun]
@@ -286,7 +294,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
     fun use member => usesLive use (union_left _ _ use member)
   -- The input.
   obtain ⟨o, w, abstract, valueInput, heapInput, abstractRun, paired, described, observed, valueTyped,
-    flatInput, shape, allocated, tags, chains⟩ := flat_atom_values inv inputTyped covered
+    flatInput, shape, allocated, tags, chains, deepTags⟩ := flat_atom_values inv inputTyped covered
   cases shape with
   | bottom _ => exact absurd rfl (resultTags_ne_bottom tags)
   | result _ _ ae aa hE hS =>
@@ -408,7 +416,8 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           obtain ⟨flatB, rightShape⟩ := successStatic bottomS rightRun
           -- The invariant under the binder, at the ticked states and the arm's facts.
           have invArm := flatInvariant_bind (ticked_invariant inv) freshOk paired2 describedS flatA hS
-            observedS allocatedS tagsS chainsS successLiveSub successLiveTyped
+            observedS allocatedS tagsS chainsS
+            (by cases deepTags with | ok _ _ _ _ _ _ d => exact d) successLiveSub successLiveTyped
           have armPreserved := ihSuccess (valueTicked vs) (heapTicked hs) ((ok, o2, wS) :: env)
             (union (uses onSuccess) after) ((ok, aa) :: aenv) ((ok, a) :: tenv)
             {middle with facts := before.facts} last gamma b' (ok :: bound) after (site ++ [1]) right
@@ -453,7 +462,8 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           · rw [bottomE] at bottom; cases bottom
           obtain ⟨flatType, leftShape⟩ := errorStatic bottomE leftRun
           have invArm := flatInvariant_bind (ticked_invariant inv) freshErr paired1 describedE flatE hE
-            observedE allocatedE tagsE chainsE errorLiveSub errorLiveTyped
+            observedE allocatedE tagsE chainsE
+            (by cases deepTags with | err _ _ _ _ _ _ d => exact d) errorLiveSub errorLiveTyped
           have armPreserved := ihError (valueTicked vs) (heapTicked hs) ((err, o1, wE) :: env)
             (union (uses onError) after) ((err, ae) :: aenv) ((err, e) :: tenv) before middle gamma type
             (err :: bound) after (site ++ [0]) left childFuel (depth - 1) _ invArm errorTyped errorShadow

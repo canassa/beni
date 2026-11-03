@@ -313,7 +313,7 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     intro tenv type types typed
     obtain ⟨t, receiverTyped, _, _, rfl⟩ := exprType_at_success (fun _ _ h => atom_type_flat types h) typed
     cases atom_type_flat types receiverTyped with
-    | list _ elemT => exact elementType_flat elemT
+    | list _ elemT => exact elemT
   | @set receiver index item =>
     intro tenv type types typed
     obtain ⟨t, receiverTyped, _, _, rfl⟩ := exprType_set_success (fun _ _ h => atom_type_flat types h) typed
@@ -443,7 +443,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       obtain ⟨i, as_i⟩ := List.mem_iff_getElem?.mp member
       obtain ⟨ty, types_i⟩ := index_of_same_length lenA as_i
       have shape := (fields i ty a types_i as_i).2
-      rw [ty_equal_flat_right (elementType_flat elemT) (allT ty (List.mem_of_getElem? types_i))] at shape
+      rw [ty_equal_flat_right elemT (allT ty (List.mem_of_getElem? types_i))] at shape
       exact shape
     refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
     rw [← first]
@@ -463,7 +463,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     subst listType
     subst tI
     subst resultType
-    have elemT : ElementType t := by
+    have elemT : FlatType t := by
       cases static_atom_type static headTyped with
       | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
@@ -822,7 +822,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     obtain ⟨t, receiverTyped, indexTyped, fallbackTyped, typeEq⟩ :=
       exprType_at_success (fun _ _ h => static_atom_type static h) typed
     subst type
-    have elemT : ElementType t := by
+    have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
@@ -842,7 +842,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨elementType_flat elemT, ?_, ?_⟩
+      refine ⟨elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · rw [primitive_at_run] at run
@@ -851,7 +851,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have second : next = {before with facts := {before.facts with
           reads := union before.facts.reads ((union roots element.cells).filter external)}} :=
         (congrArg Prod.snd equal).symm
-      refine ⟨elementType_flat elemT, ?_, ?_⟩
+      refine ⟨elemT, ?_, ?_⟩
       · rw [← first]; exact flatAbstract_join elementShape fallbackShape
       · rw [second]; exact fun _ escaped => escaped
   | @set receiver index item =>
@@ -860,7 +860,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     obtain ⟨t, receiverTyped, indexTyped, itemTyped, listType⟩ :=
       exprType_set_success (fun _ _ h => static_atom_type static h) typed
     subst listType
-    have elemT : ElementType t := by
+    have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
@@ -899,7 +899,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     obtain ⟨t, receiverTyped, listType⟩ :=
       exprType_copy_success (fun _ _ h => static_atom_type static h) typed
     subst listType
-    have elemT : ElementType t := by
+    have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
@@ -928,7 +928,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     obtain ⟨t, itemTyped, receiverTyped, listType⟩ :=
       exprType_prepend_success (fun _ _ h => static_atom_type static h) typed
     subst listType
-    have elemT : ElementType t := by
+    have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted

@@ -98,7 +98,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     have covered : ∀ use ∈ atomUses a, use ∈ live :=
       fun use member => usesLive use (by simpa [uses, usesArms] using member)
     obtain ⟨o, w, abs, valueAtom, heapAtom, abstractRun, paired, described, observed, valueTyped,
-      _, _, allocated, tags, chains⟩ := flat_atom_values inv atomTyped covered
+      _, _, allocated, tags, chains, deep⟩ := flat_atom_values inv atomTyped covered
     obtain ⟨atomRun, checkerState⟩ := infer_atom_success defaultConfig accepted
     subst checkerState
     rw [abstractRun] at atomRun
@@ -118,7 +118,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
           refine ⟨w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
             Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
             Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), ?_, ?_,
-            observed, ?_, ?_, tags, chains⟩
+            observed, ?_, ?_, tags, chains, by simpa only [heapAtomPost_heap] using deep⟩
           · rw [heapAtomPost_heap]; exact paired
           · rw [heapAtomPost_heap]; exact described
           · rw [heapAtomPost_heap]; exact valueTyped
@@ -148,10 +148,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @push receiver item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -183,10 +183,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @scalar op a b sop =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -209,10 +209,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @shared value =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -227,10 +227,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value' vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value' vs' run
+        shaped, tags, chains, deep⟩ := success value' vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
 
   | @record args =>
@@ -247,10 +247,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
 
   | @ok error x flatError =>
@@ -267,10 +267,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @err success x flatSuccess =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -286,10 +286,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success' value vs' run
+        shaped, tags, chains, deep⟩ := success' value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @resultCase onError onSuccess input err ok errorFlat successFlat ihError ihSuccess =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -304,10 +304,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @link head tail =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -329,10 +329,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @chainCase onEnd onLink input head tail endFlat linkFlat ihEnd ihLink =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -365,10 +365,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @set receiver index item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -408,10 +408,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
   | @prepend item receiver =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -433,10 +433,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        shaped, tags, chains⟩ := success value vs' run
+        shaped, tags, chains, deep⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, shaped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
 
 /-- The public trace corollary for the fragment, with the exact conclusion
@@ -1134,5 +1134,91 @@ theorem nestedRecord_flat : FlatANF0 nestedRecord.main :=
       t.finalValue == t'.finalValue && t.finalValue == .int 2
   | _, _ => false
 #guard InPlaceSemantics.writeCount nestedRecord 100 == 1
+
+/-! ### Lists of results and chains (#932)
+
+The scope proofs below require the new flat element types. The runtime probes
+exercise tags from array elements, fallback values, joins and nested arrays. -/
+
+def resultElements (condition index : Int) : Program := { main :=
+  (.letE 0 (.prim (.ok .int) [.int 7])
+  (.letE 1 (.prim (.err .int) [.int 9])
+  (.letE 2 (.branch (.int condition)
+    (.prim (.literal (.result .int .int)) [.var 0])
+    (.prim (.literal (.result .int .int)) [.var 1]))
+  (.letE 3 (.prim .at [.var 2, .int index, .var 1])
+  (.resultCase (.var 3) 4 5 (.atom (.var 4)) (.atom (.var 5))))))) }
+
+theorem resultElements_flat (condition index : Int) : FlatANF0 (resultElements condition index).main :=
+  .letE (.ok .int) (.letE (.err .int)
+    (.letE (.branch (.literal _ (.result _ _ .int .int)) (.literal _ (.result _ _ .int .int)))
+      (.letE .atRead (.resultCase .atom .atom))))
+
+def chainElements (condition index : Int) : Program := { main :=
+  (.letE 0 (.prim (.endChain .int) [])
+  (.letE 1 (.prim .link [.int 7, .var 0])
+  (.letE 2 (.branch (.int condition)
+    (.prim (.literal (.chain .int)) [.var 0])
+    (.prim (.literal (.chain .int)) [.var 1]))
+  (.letE 3 (.prim .at [.var 2, .int index, .var 0])
+  (.chainCase (.var 3) 4 5 (.atom (.int 0)) (.atom (.var 4))))))) }
+
+theorem chainElements_flat (condition index : Int) : FlatANF0 (chainElements condition index).main :=
+  .letE .endChain (.letE .link
+    (.letE (.branch (.literal _ .chainInt) (.literal _ .chainInt))
+      (.letE .atRead (.chainCase .atom .atom))))
+
+def resultElementStores (index : Int) : Program := { main :=
+  (.letE 0 (.prim (.ok .int) [.int 7])
+  (.letE 1 (.prim (.err .int) [.int 9])
+  (.letE 2 (.prim (.literal (.result .int .int)) [.var 0])
+  (.letE 3 (.prim .push [.var 2, .var 1])
+  (.letE 4 (.prim .set [.var 3, .int 0, .var 1])
+  (.letE 5 (.prim .copy [.var 4])
+  (.letE 6 (.prim .prepend [.var 0, .var 5])
+  (.letE 7 (.prim .shared [.var 6])
+  (.letE 8 (.prim .at [.var 7, .int index, .var 0])
+  (.resultCase (.var 8) 9 10 (.atom (.var 9)) (.atom (.var 10)))))))))))) }
+
+theorem resultElementStores_flat (index : Int) : FlatANF0 (resultElementStores index).main :=
+  .letE (.ok .int) (.letE (.err .int) (.letE (.literal _ (.result _ _ .int .int))
+    (.letE .push (.letE .set (.letE .copy (.letE .prepend (.letE .shared
+      (.letE .atRead (.resultCase .atom .atom)))))))))
+
+def nestedResultElements : Program := { main :=
+  (.letE 0 (.prim (.ok .int) [.int 7])
+  (.letE 1 (.prim (.literal (.result .int .int)) [.var 0])
+  (.letE 2 (.prim (.literal (.list (.result .int .int))) [.var 1])
+  (.letE 3 (.prim (.literal (.result .int .int)) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim (.err .int) [.int 9])
+  (.letE 6 (.prim .at [.var 4, .int 0, .var 5])
+  (.resultCase (.var 6) 7 8 (.atom (.var 7)) (.atom (.var 8)))))))))) }
+
+theorem nestedResultElements_flat : FlatANF0 nestedResultElements.main :=
+  .letE (.ok .int) (.letE (.literal _ (.result _ _ .int .int))
+    (.letE (.literal _ (.list _ (.result _ _ .int .int)))
+      (.letE (.literal _ (.result _ _ .int .int)) (.letE .atRead (.letE (.err .int)
+        (.letE .atRead (.resultCase .atom .atom)))))))
+
+private def taggedProbe (p : Program) (expected : Int) : Bool :=
+  (check p).isOk && match ValueSemantics.run p 100, InPlaceSemantics.run p 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == .int expected
+  | _, _ => false
+
+#guard taggedProbe (resultElements 1 0) 9
+#guard taggedProbe (resultElements 0 0) 7
+#guard taggedProbe (resultElements 1 8) 9
+#guard taggedProbe (resultElements 0 (-1)) 9
+#guard taggedProbe (chainElements 1 0) 7
+#guard taggedProbe (chainElements 0 0) 0
+#guard taggedProbe (chainElements 0 8) 0
+#guard taggedProbe (chainElements 0 (-1)) 0
+#guard taggedProbe (resultElementStores 0) 7
+#guard taggedProbe (resultElementStores 1) 9
+#guard taggedProbe (resultElementStores 8) 7
+#guard InPlaceSemantics.writeCount (resultElementStores 1) 100 == 2
+#guard taggedProbe nestedResultElements 7
 
 end Ownership.FlatFragment.Preservation
